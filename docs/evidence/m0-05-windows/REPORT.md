@@ -1,10 +1,14 @@
 # M0-05 Evidence: One real task on one platform (Windows)
 
-Recorded: 2026-11-07T14:42:00-07:00 (America/Denver).
+Recorded: 2026-11-07T16:05:00-07:00 (America/Denver).
 Platform: Windows 11 Education, build 10.0.26200.0 x64, host `X-LT-JMCKERRA`.
 Worker: OMP session, Purdue `qwen3.8:27b`, thinking high, full Ponytail.
-Branch: `codex/m0-05-priority3`. Earlier runs A/B used source head
-`24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`; the corrected-runner rerun is recorded below.
+Branch: `codex/m0-05-priority3` (candidate = the commit that adds this paragraph).
+Earlier runs A/B used source head `24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`; the
+corrected-runner rerun below was run from the exact code commit `cd0134b`, and the runner
+source (`tests/feasibility/m0-05/`) is byte-identical at the candidate to `cd0134b`
+(verified by `git diff cd0134b <candidate> -- tests/feasibility/`), so the rerun validates
+the candidate's runner.
 Worktree: `C:\Users\jmckerra\Code\agent-orch-m0-05-priority3`.
 
 ## Verdict
