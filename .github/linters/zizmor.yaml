@@ -1,0 +1,6 @@
+---
+rules:
+  dangerous-triggers:
+    # These workflows intentionally use pull_request_target without checking out pull-request code.
+    ignore:
+      - dependabot-ai-impact.yml:33
