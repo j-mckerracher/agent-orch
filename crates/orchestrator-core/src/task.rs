@@ -26,7 +26,7 @@
 ///
 /// Invariant: the engine, not the UI or any agent, is the only writer of this
 /// field. The frontend may observe and request; only [`transition`] decides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum TaskState {
     /// Contract validated and persisted; not yet admitted to scheduling.
     Created,
@@ -64,7 +64,7 @@ impl TaskState {
 /// Every variant names its allowed origin. Agent-origin events are *reports*
 /// about an attempt the engine launched; they are never accepted while the
 /// task is not `Running`, and they never reach task policy fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum TaskEvent {
     /// Origin: engine (authorization step).
     Admit,
@@ -91,7 +91,7 @@ pub enum TaskEvent {
 
 /// Audit events. One is emitted per accepted transition; the pair (event,
 /// new state) is persisted atomically with the state change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuditEvent {
     /// `Created -> Queued` on [`TaskEvent::Admit`].
     TaskAdmitted,
@@ -114,7 +114,7 @@ pub enum AuditEvent {
 }
 
 /// Result of a rejected transition.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransitionError {
     /// No edge exists from `from` for this event.
     Illegal { from: TaskState, event: TaskEvent },
@@ -219,7 +219,7 @@ pub fn transition(current: TaskState, event: TaskEvent) -> Result<(TaskState, Au
 
 /// An execution attempt of a task. Attempts are append-only: a failed attempt
 /// is never erased, and a retry creates a new attempt row (plan section 7).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Attempt {
     /// Stable task-scoped identifier (a string so core stays std-only; the
     /// store maps it to its own id type).
@@ -230,7 +230,7 @@ pub struct Attempt {
 }
 
 /// Lifecycle state of one execution attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AttemptState {
     /// Scheduled but not yet spawned.
     Pending,
@@ -262,7 +262,7 @@ impl AttemptState {
 /// via the attempt, into the task. It can never write task state or policy
 /// directly; the only session fact the task state machine consumes is the
 /// supervisor's translated [`TaskEvent`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub id: String,
     pub attempt_id: String,
@@ -273,7 +273,7 @@ pub struct Session {
 }
 
 /// Lifecycle state of one agent session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SessionState {
     /// Process spawned; first protocol event not yet observed.
     Spawning,

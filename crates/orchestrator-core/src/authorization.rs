@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 /// This is a value, not a grant: holding an `Authorization` does not let the
 /// holder act. The engine checks proposals against it at submission and
 /// records the check in the audit journal.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Authorization {
     /// The autonomy a proposed contract may request. A proposal requesting
     /// workspace writes is denied unless this autonomy grants them; `ApprovalRequired`
@@ -42,7 +42,7 @@ impl Authorization {
 
 /// The kind of gated operation an approval authorizes, in the same vocabulary
 /// the engine uses for delivery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActionKind {
     /// Integrate a verified candidate into a local branch (local-review
     /// delivery).
@@ -57,7 +57,7 @@ pub enum ActionKind {
 /// Where a gated operation applies. Typed so a destination change is a
 /// visible, comparable difference — not a free string an agent could
 /// reformat to slip past an equality check.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Destination {
     /// Integrate into a named local branch of the primary checkout.
     LocalBranch { branch: String },
@@ -75,7 +75,7 @@ pub enum Destination {
 /// parameter, the candidate commit, or the task voids the match. This is the
 /// invariant that stops a worker from approving one diff for one destination
 /// and delivering another (plan section 13, "Approval integrity").
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Action {
     pub kind: ActionKind,
     /// Destination and operation parameters, fully bound.
@@ -113,7 +113,7 @@ impl Action {
 }
 
 /// Which dimension of a bound action failed to match on application.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActionMismatch {
     /// A different operation kind was requested than approved.
     Kind,
@@ -129,7 +129,7 @@ pub enum ActionMismatch {
 
 /// A granted approval. Terminal once resolved; a resolved approval is
 /// evidence, not a reusable token.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Approval {
     pub id: String,
     pub action: Action,
@@ -141,7 +141,7 @@ pub struct Approval {
 }
 
 /// Lifecycle of an approval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ApprovalState {
     /// Granted and not yet consumed.
     Granted,
@@ -164,7 +164,7 @@ impl ApprovalState {
 }
 
 /// The result of attempting to apply an approval to a concrete action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ApplyError {
     /// The approval is not in the `Granted` state.
     NotGranted,

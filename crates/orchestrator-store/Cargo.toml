@@ -1,8 +1,17 @@
 [package]
 name = "orchestrator-store"
-description = "SQLite persistence (WAL) for tasks, sessions, and the atomic event journal. Migrations live under migrations/."
+description = "Local durable task records (one JSON file per task) behind a small store API; replaced by SQLite in M2."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+orchestrator-core = { path = "../orchestrator-core" }
+# serde/serde_json serialize the domain records; std::fs does the I/O.
+# No sqlx: M2 will add SQLite, and the Store trait is the replacement seam.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+# None: tests use std::env::temp_dir for scratch data dirs.
