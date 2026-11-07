@@ -1,8 +1,19 @@
 # M0-02 native macOS runbook
 
-This std-only probe checks process launch, stdout/stderr capture, concurrent
-children, and termination of a child process tree on the host OS. The Windows
-run passed; the macOS result is still needed.
+Updated: 2026-11-07T13:25:20-07:00 (America/Denver).
+
+## Required follow-up
+
+Run the task's **Rust** probe on macOS. The Python process-group smoke test in
+`docs/laptop-verification-plan.md` verifies a native OS primitive, but it does
+not compile or run this Rust probe and cannot close M0-02. The Windows run of
+this same Rust probe passed. The Codex check is M0-03 and does not need to be
+repeated for this follow-up.
+
+The probe is self-contained and uses only the Rust standard library. It checks
+Rust process launch, stdout/stderr capture, four concurrent children, a
+non-zero child exit, and termination of a child process tree on the native
+host OS.
 
 ## Get the probe
 
