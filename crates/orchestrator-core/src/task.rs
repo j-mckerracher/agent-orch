@@ -292,6 +292,86 @@ impl SessionState {
     }
 }
 
+/// Monotonic lifecycle of one execution attempt. Same rule as the task
+/// table: the table is the exhaustive set of legal edges, terminal
+/// states accept no moves, and no state regresses.
+const ATTEMPT_MOVE: &[(AttemptState, AttemptState)] = &[
+    (AttemptState::Pending, AttemptState::Running),
+    (AttemptState::Pending, AttemptState::Cancelled),
+    (AttemptState::Running, AttemptState::CandidateReady),
+    (AttemptState::Running, AttemptState::Failed),
+    (AttemptState::Running, AttemptState::Cancelled),
+    (AttemptState::CandidateReady, AttemptState::Succeeded),
+    (AttemptState::CandidateReady, AttemptState::Failed),
+    (AttemptState::CandidateReady, AttemptState::Cancelled),
+];
+
+/// Validate one attempt state change. Callers must persist the change only
+/// when this accepts it; terminal states accept nothing.
+pub fn attempt_transition(
+    current: AttemptState,
+    next: AttemptState,
+) -> Result<(), LifecycleError> {
+    ATTEMPT_MOVE
+        .iter()
+        .any(|(f, t)| *f == current && *t == next)
+        .then_some(())
+        .ok_or(LifecycleError::IllegalAttempt { current, next })
+}
+
+/// Monotonic lifecycle of one agent session. A session's `Exited`/`Aborted`
+/// is a *report about that process*, not a verdict on the attempt or the
+/// task: the tables here never touch [`TaskState`].
+const SESSION_MOVE: &[(SessionState, SessionState)] = &[
+    (SessionState::Spawning, SessionState::Running),
+    (SessionState::Spawning, SessionState::Exited),
+    (SessionState::Spawning, SessionState::Aborted),
+    (SessionState::Running, SessionState::Exited),
+    (SessionState::Running, SessionState::Aborted),
+];
+
+/// Validate one session state change; see [`attempt_transition`].
+pub fn session_transition(
+    current: SessionState,
+    next: SessionState,
+) -> Result<(), LifecycleError> {
+    SESSION_MOVE
+        .iter()
+        .any(|(f, t)| *f == current && *t == next)
+        .then_some(())
+        .ok_or(LifecycleError::IllegalSession { current, next })
+}
+
+/// Result of a rejected attempt or session state change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum LifecycleError {
+    /// No edge exists from `current` to `next` for an attempt.
+    IllegalAttempt {
+        current: AttemptState,
+        next: AttemptState,
+    },
+    /// No edge exists from `current` to `next` for a session.
+    IllegalSession {
+        current: SessionState,
+        next: SessionState,
+    },
+}
+
+impl std::fmt::Display for LifecycleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LifecycleError::IllegalAttempt { current, next } => {
+                write!(f, "illegal attempt transition: {current:?} -> {next:?}")
+            }
+            LifecycleError::IllegalSession { current, next } => {
+                write!(f, "illegal session transition: {current:?} -> {next:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LifecycleError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +596,90 @@ mod tests {
                 .count();
             assert!(covered > 0, "event {event:?} has no edges");
         }
+    }
+
+    fn all_attempt_states() -> [AttemptState; 6] {
+        [
+            AttemptState::Pending,
+            AttemptState::Running,
+            AttemptState::CandidateReady,
+            AttemptState::Failed,
+            AttemptState::Succeeded,
+            AttemptState::Cancelled,
+        ]
+    }
+
+    fn all_session_states() -> [SessionState; 4] {
+        [
+            SessionState::Spawning,
+            SessionState::Running,
+            SessionState::Exited,
+            SessionState::Aborted,
+        ]
+    }
+
+    #[test]
+    fn attempt_edges_match_the_table_exactly() {
+        // Every table edge applies; every other ordered pair is rejected.
+        for &(from, next) in ATTEMPT_MOVE {
+            assert!(attempt_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+        }
+        for &from in &all_attempt_states() {
+            for &next in &all_attempt_states() {
+                let legal = ATTEMPT_MOVE.iter().any(|(f, t)| *f == from && *t == next);
+                assert_eq!(
+                    attempt_transition(from, next).is_ok(),
+                    legal,
+                    "{from:?} -> {next:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attempt_terminals_accept_nothing_and_nothing_is_undone() {
+        for terminal in [
+            AttemptState::Failed,
+            AttemptState::Succeeded,
+            AttemptState::Cancelled,
+        ] {
+            for &next in &all_attempt_states() {
+                assert!(
+                    attempt_transition(terminal, next).is_err(),
+                    "terminal {terminal:?} accepted a move to {next:?}"
+                );
+            }
+        }
+        // Regression: a running attempt never steps back to Pending, and a
+        // candidate never steps back to Running.
+        assert!(attempt_transition(
+            AttemptState::Running,
+            AttemptState::Pending
+        )
+        .is_err());
+        assert!(attempt_transition(
+            AttemptState::CandidateReady,
+            AttemptState::Running
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn session_edges_match_the_table_exactly() {
+        for &(from, next) in SESSION_MOVE {
+            assert!(session_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+        }
+        for &from in &all_session_states() {
+            for &next in &all_session_states() {
+                let legal = SESSION_MOVE.iter().any(|(f, t)| *f == from && *t == next);
+                assert_eq!(
+                    session_transition(from, next).is_ok(),
+                    legal,
+                    "{from:?} -> {next:?}"
+                );
+            }
+        }
+        // Regression: no session state is ever undone.
+        assert!(session_transition(SessionState::Running, SessionState::Spawning).is_err());
     }
 }

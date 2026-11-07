@@ -4,7 +4,7 @@
 //! replaces this file layout with SQLite; the [`Store`] trait is the
 //! replacement seam, and the invariants below hold for any backend.
 //!
-//! Updated: 2026-11-07T13:21:11-07:00 (M1-01 implementation).
+//! Updated: 2026-11-07T13:43:00-07:00 (M1-01 follow-up: lifecycle gaps).
 //!
 //! # Invariants enforced here (core owns the state tables, this crate owns
 //! their durability)
@@ -26,25 +26,39 @@
 //!   [`orchestrator_core::task::TaskState`]. A session exiting (even cleanly)
 //!   can never move a task to `Succeeded` — only the engine's
 //!   `VerificationOutcome { passed: true }` transition does that.
+//! - **Lifecycle edges are the core tables, applied at the store.** A new
+//!   attempt exists only while the task is `Queued` and starts `Pending`;
+//!   a new session starts `Spawning` and names an attempt this record
+//!   itself recorded with the matching `task_id`. State changes validate
+//!   against [`orchestrator_core::task::attempt_transition`] and
+//!   [`orchestrator_core::task::session_transition`]; terminal states are
+//!   immutable.
 //! - **History is append-only.** Failed attempts and terminal sessions are
 //!   immutable; retries append a new attempt and a new journal entry.
 //!
 //! # Assumptions / limits
 //!
-//! - Single writer process. Cross-process locking and the WAL/journal
-//!   schema are M2-01 (SQLite) scope. In-process callers on one
-//!   `FileStore` handle are serialized by a mutex (no shared temp path,
-//!   no lost transition); two processes writing the same directory are
-//!   last-writer-wins with no optimistic concurrency in M1.
+//! - **One handle per data directory.** In-process callers on one
+//!   `FileStore` handle are serialized by its mutex, covering `create`
+//!   as well as every mutation: no shared temp path, no lost transition,
+//!   no duplicate-create race. Sequential close and reopen is supported
+//!   (every accepted mutation is durable before it returns). Two separate
+//!   handles over the same directory are *not* serialized with each other
+//!   in M1, and two processes writing the same directory are
+//!   last-writer-wins with no optimistic concurrency. Cross-process
+//!   locking and the WAL/journal schema are M2-01 (SQLite) scope.
 //! - `std::fs::rename` replaces the destination on both supported platforms
 //!   (Windows `MoveFileEx`, POSIX atomic rename). This is what makes the
-//!   rewrite atomic.
+//!   rewrite atomic. A failed write may leave the temp file
+//!   (`<id>.<pid>.tmp`) behind: `list` skips any non-`.json` name, so a
+//!   leftover temp file is invisible to readers and harmless; the
+//!   previous record is untouched either way.
 use std::path::Path;
 
 use orchestrator_core::contract::{validate as validate_contract, ContractError, TaskContract};
 use orchestrator_core::task::{
-    transition, Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent, TaskState,
-    TransitionError,
+    attempt_transition, session_transition, transition, Attempt, AttemptState, AuditEvent,
+    LifecycleError, Session, SessionState, TaskEvent, TaskState, TransitionError,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -129,6 +143,27 @@ pub enum StoreError {
     /// A terminal session cannot be updated.
     #[error("session {session_id} is terminal ({state:?}) and immutable")]
     TerminalSession { session_id: String, state: SessionState },
+    /// A new attempt can only be recorded while the task is `Queued`;
+    /// `Created` tasks have not been admitted, `Succeeded`/`Cancelled`
+    /// tasks are settled, and `Running`/`Verifying` already own an attempt.
+    #[error("cannot add an attempt while the task is in state {0:?}")]
+    NotAcceptingAttempts(TaskState),
+    /// A new attempt must carry a nonempty id.
+    #[error("attempt id must be nonempty for task {task_id}")]
+    EmptyAttemptId { task_id: String },
+    /// A new attempt must start `Pending`; a fresh row is not yet running.
+    #[error("new attempt {attempt_id} must start Pending, got {state:?}")]
+    AttemptNotPending { attempt_id: String, state: AttemptState },
+    /// A new session must start `Spawning`.
+    #[error("new session {session_id} must start Spawning, got {state:?}")]
+    SessionNotSpawning { session_id: String, state: SessionState },
+    /// The attempt a session names is recorded on this task but carries a
+    /// different `task_id` — a malformed record that must not be linked.
+    #[error("session {session_id} names attempt {attempt_id} with a foreign task_id")]
+    MalformedAttempt { session_id: String, attempt_id: String },
+    /// The attempt or session state change is not a legal edge.
+    #[error("lifecycle: {0}")]
+    Lifecycle(#[from] LifecycleError),
     /// A stored file does not parse as a [`TaskRecord`].
     #[error("corrupt record for task {task_id}: {detail}")]
     Corrupt { task_id: String, detail: String },
@@ -194,13 +229,16 @@ pub trait Store {
 }
 
 /// File-backed [`Store`]: one `<data_dir>/tasks/<task_id>.json` per task,
-/// written by temp-file + rename. The temp file is removed if anything
-/// fails before the rename, so a failure leaves the previous record intact.
+/// written by temp-file + rename. A failed write or a process exit between
+/// the temp write and the rename may leave the temp file behind; `list`
+/// ignores non-`.json` names, so a leftover is harmless and the previous
+/// record is always intact.
 pub struct FileStore {
     tasks: std::path::PathBuf,
-    /// Serializes mutations on this handle so concurrent in-process
-    /// callers cannot share the pid-only temp path or lose a transition.
-    /// It does not span processes (see the crate-level limits).
+    /// Serializes `create` and every mutation on this handle so concurrent
+    /// in-process callers cannot share the pid-only temp path, race the
+    /// duplicate-create check, or lose a transition. It does not span
+    /// handles or processes: one handle per data directory (crate header).
     lock: std::sync::Mutex<()>,
 }
 
@@ -282,6 +320,10 @@ impl FileStore {
 impl Store for FileStore {
     fn create(&self, contract: &TaskContract) -> Result<(), StoreError> {
         validate_contract(contract)?;
+        // Same lock as `mutate`: the duplicate check and the write are one
+        // critical section, so two in-process creates of the same id on
+        // this handle cannot both pass the check.
+        let _g = self.lock.lock().unwrap_or_else(|p| p.into_inner());
         let path = self.path_for(&contract.id)?;
         if path.exists() {
             return Err(StoreError::AlreadyExists(contract.id.clone()));
@@ -340,6 +382,26 @@ impl Store for FileStore {
                     task_id: task_id.to_string(),
                 });
             }
+            // A new attempt is only legal while the task is `Queued` (the
+            // engine has admitted it and its scheduler slot is open):
+            // `Created` is not yet admitted; `Running`/`Verifying` already
+            // own an attempt; `Succeeded`/`Cancelled` are settled and take
+            // no work; `Failed`/`VerificationFailed` retry via a transition
+            // that re-queues first, so the new attempt still lands here.
+            if r.state != TaskState::Queued {
+                return Err(StoreError::NotAcceptingAttempts(r.state));
+            }
+            if attempt.id.is_empty() {
+                return Err(StoreError::EmptyAttemptId {
+                    task_id: task_id.to_string(),
+                });
+            }
+            if attempt.state != AttemptState::Pending {
+                return Err(StoreError::AttemptNotPending {
+                    attempt_id: attempt.id.clone(),
+                    state: attempt.state,
+                });
+            }
             // Bind the attempt to this task's contract and keep its
             // numbering sequential from 1, so a stray or reordered row
             // cannot be slipped into the history.
@@ -385,6 +447,8 @@ impl Store for FileStore {
                     state: a.state,
                 });
             }
+            // The core table decides the edge; the store just persists.
+            attempt_transition(a.state, state)?;
             if a.task_id != r.contract.id {
                 return Err(StoreError::CrossTaskAttempt {
                     attempt_id: attempt_id.to_string(),
@@ -407,11 +471,27 @@ impl Store for FileStore {
                 });
             }
             // A session belongs to exactly one attempt; it must be one this
-            // task already recorded.
-            if !r.attempts.iter().any(|a| a.id == session.attempt_id) {
-                return Err(StoreError::UnknownAttempt {
+            // task already recorded *with this task's own id*. A malformed
+            // record whose attempt row names a foreign task is rejected
+            // here rather than linked into the session history.
+            let attempt = r
+                .attempts
+                .iter()
+                .find(|a| a.id == session.attempt_id)
+                .ok_or_else(|| StoreError::UnknownAttempt {
                     session_id: session.id.clone(),
                     attempt_id: session.attempt_id.clone(),
+                })?;
+            if attempt.task_id != r.contract.id {
+                return Err(StoreError::MalformedAttempt {
+                    session_id: session.id.clone(),
+                    attempt_id: session.attempt_id.clone(),
+                });
+            }
+            if session.state != SessionState::Spawning {
+                return Err(StoreError::SessionNotSpawning {
+                    session_id: session.id.clone(),
+                    state: session.state,
                 });
             }
             r.sessions.push(session.clone());
@@ -441,6 +521,8 @@ impl Store for FileStore {
                     state: s.state,
                 });
             }
+            // The core table decides the edge; the store just persists.
+            session_transition(s.state, state)?;
             s.state = state;
             Ok(())
         })?;
@@ -584,6 +666,9 @@ mod tests {
                 .add_session("t1", &session("s1", "a1"))
                 .unwrap();
             store
+                .update_session_state("t1", "s1", SessionState::Running)
+                .unwrap();
+            store
                 .update_session_state("t1", "s1", SessionState::Exited)
                 .unwrap();
             store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
@@ -600,7 +685,7 @@ mod tests {
             rec.events,
             vec![AuditEvent::TaskAdmitted, AuditEvent::ExecutionStarted]
         );
-        assert!(rec.version >= 5);
+        assert!(rec.version >= 6);
     }
 
     #[test]
@@ -743,6 +828,9 @@ mod tests {
         // moves the task.
         store
             .update_session_state("t1", "s1", SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state("t1", "a1", AttemptState::Running)
             .unwrap();
         store
             .update_attempt_state("t1", "a1", AttemptState::CandidateReady)
@@ -904,5 +992,201 @@ mod tests {
             assert_eq!(a.attempt_number, i as u32 + 1, "sequence must stay contiguous");
         }
         assert!(ok.iter().any(|&b| b), "at least one attempt must land");
+    }
+
+    #[test]
+    fn attempt_state_moves_follow_central_table() {
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        store
+            .add_attempt("t1", &attempt("a1", "t1", 1))
+            .unwrap();
+        store
+            .update_attempt_state("t1", "a1", AttemptState::Running)
+            .unwrap();
+        // Regression and jump-over edges are rejected exactly as in core.
+        assert!(store
+            .update_attempt_state("t1", "a1", AttemptState::Pending)
+            .is_err());
+        store
+            .update_attempt_state("t1", "a1", AttemptState::CandidateReady)
+            .unwrap();
+        store
+            .update_attempt_state("t1", "a1", AttemptState::Succeeded)
+            .unwrap();
+        // Terminal attempts are immutable.
+        assert!(matches!(
+            store.update_attempt_state("t1", "a1", AttemptState::Running),
+            Err(StoreError::TerminalAttempt { .. })
+        ));
+        assert_eq!(
+            store.get("t1").unwrap().attempts[0].state,
+            AttemptState::Succeeded
+        );
+    }
+
+    #[test]
+    fn session_state_moves_follow_central_table() {
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        store
+            .add_attempt("t1", &attempt("a1", "t1", 1))
+            .unwrap();
+        store
+            .add_session("t1", &session("s1", "a1"))
+            .unwrap();
+        store
+            .update_session_state("t1", "s1", SessionState::Running)
+            .unwrap();
+        // No state is ever undone.
+        assert!(store
+            .update_session_state("t1", "s1", SessionState::Spawning)
+            .is_err());
+        store
+            .update_session_state("t1", "s1", SessionState::Exited)
+            .unwrap();
+        assert!(matches!(
+            store.update_session_state("t1", "s1", SessionState::Aborted),
+            Err(StoreError::TerminalSession { .. })
+        ));
+        assert_eq!(
+            store.get("t1").unwrap().sessions[0].state,
+            SessionState::Exited
+        );
+    }
+
+    #[test]
+    fn new_attempt_requires_queued_task() {
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        // Not yet admitted: no attempt can exist.
+        let before = store.get("t1").unwrap();
+        assert!(matches!(
+            store.add_attempt("t1", &attempt("a1", "t1", 1)),
+            Err(StoreError::NotAcceptingAttempts(TaskState::Created))
+        ));
+        assert_eq!(store.get("t1").unwrap(), before, "version must not move");
+        // Settled task: no attempt can resurrect it.
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        store
+            .add_attempt("t1", &attempt("a1", "t1", 1))
+            .unwrap();
+        drive(&store, "t1", TaskState::Queued, TaskState::Succeeded);
+        let before = store.get("t1").unwrap();
+        assert!(matches!(
+            store.add_attempt("t1", &attempt("a2", "t1", 2)),
+            Err(StoreError::NotAcceptingAttempts(TaskState::Succeeded))
+        ));
+        assert_eq!(store.get("t1").unwrap(), before, "version must not move");
+    }
+
+    #[test]
+    fn new_attempt_must_be_pending_with_nonempty_id() {
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        let before = store.get("t1").unwrap();
+        let mut running = attempt("a1", "t1", 1);
+        running.state = AttemptState::Running;
+        assert!(matches!(
+            store.add_attempt("t1", &running),
+            Err(StoreError::AttemptNotPending {
+                state: AttemptState::Running,
+                ..
+            })
+        ));
+        assert!(matches!(
+            store.add_attempt("t1", &attempt("", "t1", 1)),
+            Err(StoreError::EmptyAttemptId { .. })
+        ));
+        assert_eq!(store.get("t1").unwrap(), before, "version must not move");
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+        assert_eq!(store.get("t1").unwrap().attempts.len(), 1);
+    }
+
+    #[test]
+    fn new_session_must_start_spawning() {
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        store
+            .add_attempt("t1", &attempt("a1", "t1", 1))
+            .unwrap();
+        let mut running = session("s1", "a1");
+        running.state = SessionState::Running;
+        assert!(matches!(
+            store.add_session("t1", &running),
+            Err(StoreError::SessionNotSpawning {
+                state: SessionState::Running,
+                ..
+            })
+        ));
+        assert!(store.get("t1").unwrap().sessions.is_empty());
+        store.add_session("t1", &session("s1", "a1")).unwrap();
+        assert_eq!(store.get("t1").unwrap().sessions.len(), 1);
+    }
+
+    #[test]
+    fn malformed_stored_attempt_is_not_linked_to_new_rows() {
+        // Simulate a record whose attempt row names a foreign task (a
+        // legacy or corrupted row): neither sessions nor state updates may
+        // accept it.
+        let dir = new_dir();
+        let store = FileStore::new(&dir).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.transition("t1", TaskEvent::Admit).unwrap();
+        store
+            .add_attempt("t1", &attempt("a1", "t1", 1))
+            .unwrap();
+        let path = dir.join("tasks").join("t1.json");
+        let mut rec: TaskRecord = serde_json::from_str(
+            std::fs::read_to_string(&path).unwrap().as_str(),
+        )
+        .unwrap();
+        rec.attempts[0].task_id = "other".into();
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&rec).unwrap(),
+        )
+        .unwrap();
+        // A fresh handle (the reopen) must refuse the malformed row.
+        let store = FileStore::new(&dir).unwrap();
+        assert!(matches!(
+            store.add_session("t1", &session("s1", "a1")),
+            Err(StoreError::MalformedAttempt { .. })
+        ));
+        assert!(matches!(
+            store.update_attempt_state("t1", "a1", AttemptState::Running),
+            Err(StoreError::CrossTaskAttempt { .. })
+        ));
+    }
+
+    #[test]
+    fn concurrent_creates_same_id_exactly_one_wins() {
+        use std::sync::Arc;
+        let dir = new_dir();
+        let store = Arc::new(FileStore::new(&dir).unwrap());
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || store.create(&contract("dup")).is_ok())
+            })
+            .collect();
+        let ok: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            ok.iter().filter(|&&b| b).count(),
+            1,
+            "exactly one create may win: {ok:?}"
+        );
+        // The winner's record is well-formed; no temp files leaked in.
+        let rec = store.get("dup").unwrap();
+        assert_eq!(rec.contract.id, "dup");
     }
 }
