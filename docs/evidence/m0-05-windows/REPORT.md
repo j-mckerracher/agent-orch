@@ -3,18 +3,20 @@
 Recorded: 2026-11-07T14:42:00-07:00 (America/Denver).
 Platform: Windows 11 Education, build 10.0.26200.0 x64, host `X-LT-JMCKERRA`.
 Worker: OMP session, Purdue `qwen3.8:27b`, thinking high, full Ponytail.
-Branch: `codex/m0-05-priority3` at source head `24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`.
+Branch: `codex/m0-05-priority3`. Earlier runs A/B used source head
+`24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`; the corrected-runner rerun is recorded below.
 Worktree: `C:\Users\jmckerra\Code\agent-orch-m0-05-priority3`.
 
 ## Verdict
 
 PASS for Windows: a real Codex CLI one-shot (native desktop executable, not the old npm
 wrapper) performed the fixed M0-05 task — replacing the single line of `TASK.txt` in a fresh
-disposable Git repository — and every acceptance check passed. Two consecutive passing runs
-were captured (run A `run-20261107-143134`, run B `run-20261107-144044`) to demonstrate
-reproducibility. macOS: not yet run; the companion runbook is
-`docs/evidence/m0-05-macos-runbook.md`. M0-05 stays open until native macOS evidence is
-reviewed.
+disposable Git repository — and every acceptance check passed. Two earlier consecutive runs
+(A `run-20261107-143134`, B `run-20261107-144044`) demonstrated reproducibility. The hardened
+runner was then tested from its exact code commit in
+`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`; all checks passed. macOS: not yet
+run; the companion instructions are `docs/evidence/m0-05-macos-runbook.md`. M0-05 stays open
+until native macOS evidence is reviewed.
 
 This is a feasibility proof for the orchestrator's execution model. It does not test the
 product CLI (still a scaffold) and implements no M1-03/M1-04 features.
@@ -97,7 +99,7 @@ preserved as diagnostic evidence and is not M0-05 acceptance evidence. Do not re
 
 No fake or no-op agent was used; every captured run above invoked the real codex.exe.
 
-## Run B (final) results — `raw/run-20261107-144044/`
+## Earlier run B results — `raw/run-20261107-144044/`
 
 ```
 exit-status-0                      PASS  exit=0
@@ -130,6 +132,28 @@ Resulting diff (task repo):
 `item.completed(agent_message "TASK_DEMO_OK")` → `turn.completed`. Stderr carried only
 non-fatal plugin/skills warnings (same as M0-03).
 
+## Corrected-runner validation
+
+The hardened runner code commit is
+`cd0134bbc7ea38ebfed925b649b1c6df6e3cc11c`. The final Windows rerun used that exact
+`source_head` and the real native Codex executable. Evidence is in
+`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`.
+
+| Check | Result |
+|---|---|
+| Codex | `codex-cli 0.167.0-alpha.3.2`, logged in with ChatGPT |
+| PowerShell | 7.5.4 (`pwsh`; the runner requires 7.2 or later for `ArgumentList`) |
+| Process exit / timeout | `0` / `false` |
+| JSONL parse / completed turn | 6 lines parse / exactly 1 completed turn |
+| Final agent message | exactly `TASK_DEMO_OK` |
+| Task file | exact bytes `M0_TASK_AFTER` + LF (`4d 30 5f 54 41 53 4b 5f 41 46 54 45 52 0a`) |
+| Changed task-repo paths | exactly `TASK.txt`, `git diff --check` clean |
+| Primary checkout | tracked status and all non-output untracked paths identical before/after |
+
+The runner captured stdout/stderr as raw bytes while draining both pipes asynchronously,
+then enforced its 60-second deadline and process-tree cleanup. The new run produced
+`M0-05 WINDOWS RUN: PASS` and runner exit 0.
+
 ## Isolation proof
 
 `primary-status-before.txt` / `primary-status-after.txt` (run B) are byte-identical:
@@ -141,14 +165,16 @@ runner always passes `-C <temp repo>`.
 ## Reproduce on this Windows host
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-05/run-m0-05.ps1 `
+$RunId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N')
+$OutDir = "docs/evidence/m0-05-windows/raw/run-$RunId"
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-05/run-m0-05.ps1 `
   -CodexPath "C:\Users\jmckerra\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe" `
   -PrimaryCheckout "C:\Users\jmckerra\Code\agent-orch-m0-05-priority3" `
-  -OutDir "docs/evidence/m0-05-windows/raw/run-<new timestamp>"
+  -OutDir $OutDir
 ```
 
 Exit 0 means all checks passed; `result.md` in the out dir lists each check. The runner is
-deterministic except for the GUID temp-repo name and Codex's internal thread IDs.
+deterministic except for the run ID, GUID temp-repo name, and Codex's internal thread IDs.
 
 ## Raw artifacts
 
@@ -161,9 +187,10 @@ deterministic except for the GUID temp-repo name and Codex's internal thread IDs
 - `raw/diag-sandbox-1/{read-only,workspace-write,danger-full-access}/`,
   `raw/diag-sandbox-2/unelevated-*`: sandbox probes.
 
-Note: `task-file.txt` carries a UTF-8 BOM because PS 5.1 `Set-Content -Encoding utf8` writes
-one to evidence files; `task-file-hex.txt` is the byte-exact dump of the task repo's actual
-`TASK.txt` (BOM present in `stdout.jsonl` was stripped by the runner before parsing).
+Note: historical run artifacts captured under PowerShell 5.1 may contain a UTF-8 BOM in
+text evidence files. The corrected runner uses PowerShell 7.5.4 and captures stdout/stderr
+as raw bytes. `task-file-hex.txt` is the byte-exact dump of the task repo's actual `TASK.txt`
+in every run.
 
 ## Limitations
 
