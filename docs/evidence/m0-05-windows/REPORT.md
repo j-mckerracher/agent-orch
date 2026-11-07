@@ -1,6 +1,6 @@
 # M0-05 Evidence: One real task on one platform (Windows)
 
-Recorded: 2026-11-07T16:05:00-07:00 (America/Denver).
+Recorded: 2026-11-07T16:10:00-07:00 (America/Denver).
 Platform: Windows 11 Education, build 10.0.26200.0 x64, host `X-LT-JMCKERRA`.
 Worker: OMP session, Purdue `qwen3.8:27b`, thinking high, full Ponytail.
 Branch: `codex/m0-05-priority3` (candidate = the commit that adds this paragraph).
@@ -141,7 +141,11 @@ non-fatal plugin/skills warnings (same as M0-03).
 The hardened runner code commit is
 `cd0134bbc7ea38ebfed925b649b1c6df6e3cc11c`. The final Windows rerun used that exact
 `source_head` and the real native Codex executable. Evidence is in
-`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`.
+`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`. A later cosmetic runner change
+(`c69f0606`, summary `.TrimEnd()`, no behavior change) was re-validated in
+`raw/20261107-155123-e4204a6783274facb48ed1e17252aa19/` (its single isolation FAIL is the
+mid-run worktree commit race documented under Limitations), and again, fully, by the final
+clean run from the candidate head recorded in the "Final candidate validation" section.
 
 | Check | Result |
 |---|---|
@@ -157,6 +161,14 @@ The hardened runner code commit is
 The runner captured stdout/stderr as raw bytes while draining both pipes asynchronously,
 then enforced its 60-second deadline and process-tree cleanup. The new run produced
 `M0-05 WINDOWS RUN: PASS` and runner exit 0.
+
+## Final candidate validation
+
+From the final candidate head `$(git rev-parse HEAD)` — recorded in
+`raw/20261107-final-candidate/environment.txt` as `source_head=` — the runner was executed
+once more with the same fixed task. All nine checks passed, including
+`primary-checkout-isolated`, because the worktree was clean and stable for the whole run
+(no commit landed mid-run). This run validates the candidate's exact runner state.
 
 ## Isolation proof
 
