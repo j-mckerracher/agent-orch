@@ -17,7 +17,7 @@
 //                   child's tree; verify the grandchild is gone too
 //
 // Exit code 0 iff every scenario passed.
-// Updated: 2026-11-07T10:45-07:00
+// Updated: 2026-11-07T13:39:39-07:00 (use safe std Unix process-group API).
 
 use std::env::{args, current_exe};
 use std::io::{BufRead, BufReader, Read};
@@ -302,14 +302,9 @@ fn kill_tree(me: &std::path::Path) -> i32 {
     #[cfg(unix)]
     {
         // Put the child in a new process group so `kill -9 -<pid>` targets
-        // exactly this subtree.
-        cmd.pre_exec(|| {
-            if unsafe { setpgid(0, 0) } == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
+        // exactly this subtree. `process_group(0)` is equivalent to
+        // `setpgid(0, 0)` and avoids a post-fork `pre_exec` callback.
+        cmd.process_group(0);
     }
     let mut child = cmd.spawn().expect("spawn spawn-kid child");
     let child_pid = child.id();
@@ -400,11 +395,6 @@ fn kill_child_and_descendants(pid: u32) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-#[cfg(unix)]
-extern "C" {
-    fn setpgid(pid: i32, pgid: i32) -> i32;
 }
 
 #[cfg(not(target_os = "windows"))]
