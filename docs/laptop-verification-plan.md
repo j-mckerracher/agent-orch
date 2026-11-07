@@ -61,8 +61,9 @@ table syntax; those generated formatting changes were reverted after checking.
 
 ## Remaining coverage
 
-- M0-02 and M0-03 remain `todo` because this session establishes only their
-  macOS portion. Windows subprocess and Codex protocol evidence is still needed.
+- The initial smoke checks did not close M0-02 or M0-03. M0-02 is now `blocked`
+  by the Rust compilation failure described below. M0-03 remains `todo` on
+  main; the Windows task-branch evidence has not been integrated.
 - The GUI check covers launch and rendering only. The `ping` invoke bridge
   remains unexercised; agent execution, persistence, and isolation are absent
   from the scaffold.
@@ -70,3 +71,23 @@ table syntax; those generated formatting changes were reverted after checking.
   upgrades, and clean-machine smoke tests were not exercised.
 - M0-05 and the M0 milestone remain incomplete. A successful end-to-end task
   requires implementation beyond this scaffold and evidence on both platforms.
+
+## Follow-up from remote task instructions
+
+On 2026-11-07, fetched `origin` and read the new native macOS instructions on
+`origin/codex/m0-02-priority2` and `origin/codex/m0-03-priority2`.
+The M0-02 runbook explicitly requires its Rust probe, rather than the earlier
+Python OS-primitive check, and says the Codex check need not be repeated for
+this follow-up.
+
+Follow-up plan: create a separate worktree of the M0-02 task branch, run its
+unchanged Rust probe with `cargo run --release --locked --offline`, preserve
+the environment and complete output, and record any failure without changing
+and rerunning the probe. Commit the evidence and push it to `origin/main`.
+
+The probe failed to compile with exit 101: `src/main.rs:306` calls the unsafe
+`CommandExt::pre_exec` method without an enclosing unsafe block. No scenarios
+ran. M0-02 is blocked on correcting the native Unix compilation error and
+obtaining a successful native macOS run. The earlier smoke checks remain
+valid within their recorded scope. See [the Rust probe failure report](evidence/m0-02-macos.md)
+and its complete raw artifacts.

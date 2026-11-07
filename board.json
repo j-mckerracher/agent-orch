@@ -59,12 +59,12 @@
       "id": "M0-02",
       "milestone": "M0",
       "title": "Prove cross-platform subprocess execution",
-      "status": "todo",
+      "status": "blocked",
       "depends_on": [
         "M0-01"
       ],
       "details": "Exercise subprocess launch, output and termination on native macOS and Windows.",
-      "important_context": " Native macOS arm64 probe on 2026-11-07 passed launch, stdout and stderr capture, and SIGTERM termination of a disposable Python subprocess in its own process group; return code -15. This verifies an OS primitive, not an implemented runtime adapter or Windows coverage. Evidence: docs/laptop-verification-plan.md.",
+      "important_context": " Native macOS arm64 probe on 2026-11-07 passed launch, stdout and stderr capture, and SIGTERM termination of a disposable Python subprocess in its own process group; return code -15. This verifies an OS primitive, not an implemented runtime adapter or Windows coverage. Evidence: docs/laptop-verification-plan.md. Follow-up 2026-11-07: fetched native macOS runbook from origin/codex/m0-02-priority2 at 8e213e4535e08e827e6204d69780b6b38fc25558. Ran its unchanged Rust probe in detached worktree /private/tmp/agent-orch-m0-02-macos with cargo run --release --locked --offline. Compilation failed, exit 101, E0133 at src/main.rs:306: cmd.pre_exec requires an unsafe block. No scenarios ran. Per runbook, did not modify or rerun the probe. Blocked until the Unix compilation error is corrected and the native macOS probe succeeds. Full environment, stdout, stderr, and exit code are committed under docs/evidence/m0-02-macos/; report docs/evidence/m0-02-macos.md. Windows evidence exists on the task branch but that branch is not merged into main. The earlier Python probe cannot close this Rust feasibility task.",
       "priority": 2
     },
     {
