@@ -1,6 +1,6 @@
 # Agent orchestrator implementation primer
 
-Updated: 2026-11-07T08:58:34-07:00.
+Updated: 2026-11-07T09:28:42-07:00.
 
 You are an orchestrating agent implementing [the technical implementation plan](docs/technical-implementation-plan.md). Read that plan, this primer, and [board.json](board.json) before selecting work. The plan describes the target architecture and its safety constraints. The board tracks the actual state of implementation; it is not proof that a feature works.
 
@@ -13,6 +13,15 @@ Every delegated worker must use **Purdue `qwen3.8:27b` with thinking set to `hig
 [utilities/omp_headless.py](utilities/omp_headless.py) launches OMP in one-shot text mode or persistent `--rpc` mode and adds the shared agent instructions. Pass `--provider purdue --model qwen3.8:27b --thinking high` for the required worker configuration. The thinking option is optional and defaults to OMP's configured setting when omitted, so the launcher does not enforce `high` by itself. Confirm the actual model and thinking level for each worker session; in RPC mode, OMP's `get_state` response exposes both. In RPC mode, the caller must handle OMP's JSON protocol and interactive requests, including questions and approvals. The pass-through does not provide an interactive interface by itself.
 
 Every delegated worker must load and follow the installed `oh-my-pstack` skills. Use `poteto-mode` to select the applicable workflow and `pstack-pi` for host-specific and delegation mechanics. Every worker adding code must use the installed Ponytail extension. Confirm the required skills and extension are available for each worker. If they are unavailable, stop the affected worker's work and report the blocker. Pass these requirements and this primer to every delegated worker. A prompt is an instruction, not proof that a child loaded a skill or used the requested model.
+
+Purdue caps `qwen3.8:27b` at 20 calls per minute. On a rate-limit error, allow a cooldown and retry; preserve the attempt and do not substitute another model.
+
+### Windows worker lessons
+
+- Verify the actual worker session with RPC `get_state`, and observe the Ponytail load notification and successful skill reads before relying on the session. Preserve its session file and record the session ID in the board. A separate probe does not establish the configuration of the worker session.
+- OMP's shell on Windows may resolve `npm` to a Unix wrapper that fails on `/dev/null`; use `npm.cmd` or a native Windows shell. Allow for slow registry calls and report their actual results.
+- A missing `cl.exe` on `PATH` does not prove Visual C++ tools are absent. Check Visual Studio with `vswhere.exe` and use its `VsDevCmd.bat` where needed. Do not start an installer based only on a PATH check.
+- Consume RPC events without printing cumulative streaming snapshots: they can produce enormous output. Configure the monitor's output for UTF-8 or safely escape unsupported characters; a Windows console encoding error can terminate the monitor and interrupt the worker. Handle interactive requests explicitly, and monitor for stalled or repetitive reasoning. If intervention is needed, preserve the attempt and inspect the worktree before retrying; do not infer success from the process state.
 
 ## Maintain the board
 
