@@ -25,7 +25,9 @@ Document API contracts, inputs and outputs, errors, side effects, invariants, ow
 concurrency and security assumptions, and non-obvious design decisions where applicable.
 Use clear names and types, and use docstrings or comments where the code alone cannot
 communicate the contract or rationale. Keep documentation accurate when behavior changes;
-avoid repeating obvious implementation details. Preserve existing conventions and user
+avoid repeating obvious implementation details. Whenever you create or change documentation,
+include the date and time of the change in the documentation, including the time zone or UTC
+offset. Preserve existing conventions and user
 changes. Verify changes with appropriate checks, and report any unverified behavior or
 limitations. Every agent adding code MUST use Ponytail and follow the rules supplied by
 the installed OMP Ponytail extension. Ensure Ponytail is active before adding code; if
