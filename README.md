@@ -6,7 +6,7 @@ TypeScript, SQLite. The full design lives in
 [docs/technical-implementation-plan.md](docs/technical-implementation-plan.md);
 `board.json` tracks which parts of it are actually implemented.
 
-Updated: 2026-11-07T09:45:00-07:00
+Updated: 2026-11-07T09:46:00-07:00
 
 ## What exists today (scaffold)
 
@@ -20,7 +20,7 @@ Updated: 2026-11-07T09:45:00-07:00
 - Desktop frontend (`apps/desktop/src`): one React page that builds with Vite.
   It talks to no engine.
 - Tauri host (`apps/desktop/src-tauri`): one window and a no-op `ping` command
-  proving the invoke bridge. It does not call the engine.
+  exposed to the invoke bridge. The bridge has not been exercised, and the host does not call the engine.
 
 Nothing here executes an agent task, persists state, or isolates a Git
 worktree. Those are the plan's later milestones.
@@ -74,15 +74,17 @@ window). All commands run from the repository root.
 cargo build --workspace
 
 # Desktop frontend (installs into apps/desktop/node_modules)
-npm.cmd --prefix apps/desktop install
-npm.cmd --prefix apps/desktop run build
+npm --prefix apps/desktop install
+npm --prefix apps/desktop run build
 
 # Tauri host (standalone package; writes apps/desktop/src-tauri/Cargo.lock)
 cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Dev loop (serves the Vite app and opens the Tauri window)
-npm.cmd --prefix apps/desktop run tauri dev
+npm --prefix apps/desktop run tauri dev
 ```
+
+On Windows, use `npm.cmd` instead of `npm` if the shell selects a Unix wrapper.
 
 The scaffold was verified on Windows with the three build commands above.
 The GUI window and the macOS build are unverified.
