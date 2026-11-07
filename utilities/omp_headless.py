@@ -2,7 +2,7 @@
 """Run omp headless in one-shot text mode or persistent RPC UI mode.
 
 Examples:
-  python utilities/omp_headless.py --provider openai-codex --model gpt-6-luna "Hello"
+  python utilities/omp_headless.py --provider purdue --model qwen3.8:27b --thinking high "Hello"
   Get-Content prompt.txt -Raw | python utilities/omp_headless.py --provider openai-codex --model gpt-6-luna
   python utilities/omp_headless.py --provider openai-codex --model gpt-6-luna --rpc
 
@@ -45,11 +45,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--provider", required=True, help="OMP provider ID")
     parser.add_argument("--model", required=True, help="Model ID for the provider")
+    parser.add_argument("--thinking", choices=("off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"),
+                        help="OMP thinking level; omit to use its configured default")
     parser.add_argument("--rpc", action="store_true", help="Pass through persistent RPC UI protocol on stdin/stdout")
     parser.add_argument("prompt", nargs="?", help="Prompt text; if omitted, read from stdin")
     args = parser.parse_args()
     command = ["omp", "--model", f"{args.provider}/{args.model}",
                "--append-system-prompt", AGENT_INSTRUCTIONS]
+    if args.thinking is not None:
+        command += ["--thinking", args.thinking]
 
     if args.rpc:
         if args.prompt is not None:
