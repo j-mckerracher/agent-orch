@@ -1,6 +1,15 @@
 # M0-02 native macOS runbook
 
-Updated: 2026-11-07T13:39:39-07:00 (America/Denver).
+Updated: 2026-11-07T13:46:56-07:00 (America/Denver).
+
+## Assignment for the macOS verification agent
+
+This runbook is addressed to the agent operating on the Mac. The repository
+owner is delegating the run and will not execute these commands. The agent is
+responsible for fetching the task branch, running the probe, preserving the
+full evidence, and pushing an evidence-only update. Do not edit the probe or
+`board.json`; the implementation coordinator owns source fixes and board
+status.
 
 ## Required follow-up
 
@@ -51,11 +60,25 @@ git rev-parse HEAD
 ## Run
 
 ```sh
+mkdir -p docs/evidence/m0-02-macos/retry-1
+{
+  sw_vers
+  uname -a
+  uname -m
+  rustc --version
+  cargo --version
+  git rev-parse HEAD
+} > docs/evidence/m0-02-macos/retry-1/environment.txt
+
 cd tests/feasibility/m0-02
-uname -a
-rustc --version
-cargo --version
-cargo run --release --locked --offline
+set +e
+cargo run --release --locked --offline \
+  > ../../../docs/evidence/m0-02-macos/retry-1/stdout.txt \
+  2> ../../../docs/evidence/m0-02-macos/retry-1/stderr.txt
+probe_status=$?
+printf '%s\n' "$probe_status" \
+  > ../../../docs/evidence/m0-02-macos/retry-1/exit.txt
+set -e
 ```
 
 The offline build uses only the Rust standard library. A passing run prints
@@ -64,12 +87,32 @@ then `RESULT ALL PASS`, and exits with status 0. `kill-tree` starts a child in
 its own process group and checks that terminating the group also ends its
 grandchild.
 
-If a scenario fails or the process hangs, stop it and report the complete
-output and exit status; do not rerun by changing the probe. Please send back:
+## Preserve and publish the result
 
-- macOS version (`sw_vers` output), architecture (`uname -m`), `rustc` and
-  `cargo` versions;
-- the complete probe output and exit status;
-- any failure or timeout details.
+Preserve this retry separately from the first failed compile; do not overwrite
+`docs/evidence/m0-02-macos/` files from that run. Capture the following under
+`docs/evidence/m0-02-macos/retry-1/` in the task-branch clone:
+
+- `environment.txt`: `sw_vers`, `uname -a`, `uname -m`, `rustc --version`,
+  `cargo --version`, and `git rev-parse HEAD`;
+- `stdout.txt` and `stderr.txt`: complete output from the probe command;
+- `exit.txt`: the probe command's actual exit status;
+- `result.md`: pass or failure summary, including any timeout details.
+
+If any scenario fails or the command hangs, stop it, preserve the output and
+exit status, and do not edit or rerun the probe. If all four scenarios pass,
+record that all pass and exit status is zero. In either case, publish the
+evidence:
+
+1. Create a separate evidence checkout from the current `origin/main` (for
+   example, a Git worktree); do not merge the task branch.
+2. Copy only the new `retry-1/` artifacts into
+   `docs/evidence/m0-02-macos/retry-1/` there. Update
+   `docs/evidence/m0-02-macos.md` and `docs/laptop-verification-plan.md` to
+   summarize this attempt and link the raw files. Preserve the first attempt.
+3. Commit and push only those evidence/documentation paths. Do not change
+   `board.json`; the implementation coordinator will update its status after
+   reviewing the evidence. If the repository's push policy requires a branch,
+   push the evidence-only branch and report its commit.
 
 The macOS evidence is required before M0-02 can be marked complete.
