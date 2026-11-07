@@ -3,13 +3,13 @@
 Recorded: 2026-11-07T16:10:00-07:00 (America/Denver).
 Platform: Windows 11 Education, build 10.0.26200.0 x64, host `X-LT-JMCKERRA`.
 Worker: OMP session, Purdue `qwen3.8:27b`, thinking high, full Ponytail.
-Branch: `codex/m0-05-priority3`; candidate = the commit that adds this paragraph.
-Earlier runs A/B used source head `24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`; the
-hardened-runner rerun was run from the exact code commit `cd0134b`, and the final
-candidate run (below) from `3a0a35d`. Runner source (`tests/feasibility/m0-05/`) is
-byte-identical from `3a0a35d` through the candidate (verify with
-`git diff 3a0a35d <candidate> -- tests/feasibility/`, empty), so the final run validates
-the candidate's runner.
+Branch: `codex/m0-05-priority3`. Earlier runs A/B used source head
+`24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8`; the hardened-runner rerun used code commit
+`cd0134b`, and the final Windows candidate run used source head
+`3a0a35de688addc7687ad5fd55b65a06e7959298`. The Mac run used candidate head
+`b1718b985deae5b5fb562738aa968f7688e0c9f0`. Runner source is unchanged across the later
+documentation/evidence commits; verify with `git diff 3a0a35de688addc7687ad5fd55b65a06e7959298
+HEAD -- tests/feasibility/m0-05/` (expected empty).
 Worktree: `C:\Users\jmckerra\Code\agent-orch-m0-05-priority3`.
 
 ## Verdict
@@ -19,9 +19,11 @@ wrapper) performed the fixed M0-05 task — replacing the single line of `TASK.t
 disposable Git repository — and every acceptance check passed. Two earlier consecutive runs
 (A `run-20261107-143134`, B `run-20261107-144044`) demonstrated reproducibility. The hardened
 runner was then tested from its exact code commit in
-`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`; all checks passed. macOS: not yet
-run; the companion instructions are `docs/evidence/m0-05-macos-runbook.md`. M0-05 stays open
-until native macOS evidence is reviewed.
+`raw/20261107-154412-2768843b9995481eaafe738054a7f5b1/`, followed by a clean final candidate
+run. Native macOS evidence also passes; it is preserved on evidence-only branch
+`codex/m0-05-macos-evidence-20261107-160208-618` at commit
+`59edf4df6d96f85916826b7d5db0ba67fceb942d`. The Mac branch is based on the tested candidate
+head and changes only `docs/evidence/m0-05-macos/`.
 
 This is a feasibility proof for the orchestrator's execution model. It does not test the
 product CLI (still a scaffold) and implements no M1-03/M1-04 features.
@@ -172,6 +174,22 @@ checks passed, including `primary-checkout-isolated`, because the worktree was c
 stable for the whole run (no commit landed mid-run). `environment.txt` in that dir records
 `source_head=3a0a35de688addc7687ad5fd55b65a06e7959298`. Runner exit 0.
 
+## Native macOS validation
+
+The Mac agent ran the self-test and the fixed real Codex task from candidate head
+`b1718b985deae5b5fb562738aa968f7688e0c9f0`. The self-test passed. The first real attempt
+(`raw/run-20261107-160208-618-real/`) is preserved and failed with exit 1, timeout false;
+Codex reported `failed to initialize in-process app-server client: Operation not permitted`.
+A fresh retry (`raw/run-20261107-160208-618-retry-1/`) passed all nine checks with exit 0 and
+timeout false. Its environment records macOS 26.7.1 arm64, native `/opt/homebrew/bin/codex`
+version 0.167.0, Python 3.9.6, and an active ChatGPT login. The task file's actual bytes are
+captured in `task-file-hex.txt`; the runbook lists the artifacts the runner produces.
+
+The retry's JSONL includes an `item.completed` error item for deprecated `codex_hooks`
+configuration, followed by the successful file-writing command, exact `TASK_DEMO_OK` message,
+and `turn.completed`. Process exit, final message, task bytes, changed paths, and checkout
+isolation all passed, so the warning item did not represent task failure.
+
 ## Isolation proof
 
 `primary-status-before.txt` / `primary-status-after.txt` (run B) are byte-identical:
@@ -212,14 +230,13 @@ in every run.
 
 ## Limitations
 
-- Windows evidence only; macOS remains unverified pending the runbook.
+- The demonstrated task is one file and one turn. Concurrency, long tasks, approvals, and
+  multi-file diffs are out of scope for M0-05.
 - Single account (ChatGPT login), CLI-default model; other accounts/plans may map to
   different default models (M0-03 recorded a plan-dependent model rejection).
 - The `windows.sandbox="unelevated"` pin is a per-invocation workaround for this host's
   broken elevated sandbox; a different host may not need it, and `danger-full-access` was
   deliberately **not** used for the demo runs (only for diagnosis).
-- One task, one file, one turn: concurrency, long tasks, approvals, and multi-file diffs are
-  out of scope for M0-05.
 - Codex exits 0 even when the agent's task *itself* failed (attempt 2); the acceptance
   checks above are why the demo verifies content, not just exit status.
 - The `primary-checkout-isolated` check compares worktree status before/after; a commit

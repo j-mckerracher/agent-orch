@@ -166,7 +166,8 @@ git push origin "$EVIDENCE_BRANCH"
 - Keep the raw run dir complete: `environment.txt`, `primary-status-before.txt`,
   `primary-status-after.txt`, `init-commit.txt`, `post-status.txt`, `post-diff.txt`,
   `diff-check.txt`, `stdout.jsonl`, `stderr.txt`, `last-message.txt`, `exit.txt`,
-  `task-file.txt`, `task-file-hex.txt`, `result.md`.
+  `timeout.txt`, `task-file-hex.txt`, `result.md`. The hex dump is the exact byte record;
+  the macOS runner does not write a separate decoded `task-file.txt`.
 
 ## Step 7 — Report back
 
@@ -190,3 +191,5 @@ Send the coordinator:
   material. Do not "normalize" the capture.
 - If the demo cannot run at all, report **M0-05 macOS: blocked** with the exact stderr and
   exit code. M0-05 stays open until native macOS evidence is reviewed.
+- If Codex exits before producing `result.md`, preserve the partial raw run directory and
+  report the exact `exit.txt`, `timeout.txt`, and `stderr.txt`; do not synthesize a PASS file.
