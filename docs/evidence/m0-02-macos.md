@@ -33,6 +33,14 @@ required before M0-02 can pass. The earlier Python subprocess check is
 evidence for a native OS primitive and does not establish that this Rust
 probe passes.
 
+After this failed run, the task branch fixed the Unix setup in commit
+`e062fb4` by replacing the `pre_exec` callback with
+`CommandExt::process_group(0)`. A Windows rerun of that candidate passed all
+four scenarios. The Unix-only path still needs a native macOS run; the
+verification agent should follow the current
+[agent-facing runbook](https://github.com/j-mckerracher/agent-orch/blob/codex/m0-02-priority2/docs/evidence/m0-02-macos-runbook.md)
+and preserve this first failure unchanged.
+
 The updated M0-02 instructions explicitly say the Codex check need not be
 repeated for this follow-up. The earlier native macOS Codex result remains
 documented in [the laptop verification results](../laptop-verification-plan.md).

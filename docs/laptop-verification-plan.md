@@ -61,9 +61,10 @@ table syntax; those generated formatting changes were reverted after checking.
 
 ## Remaining coverage
 
-- The initial smoke checks did not close M0-02 or M0-03. M0-02 is now `blocked`
-  by the Rust compilation failure described below. M0-03 remains `todo` on
-  main; the Windows task-branch evidence has not been integrated.
+- The initial smoke checks did not close M0-02 or M0-03. M0-02 remains
+  `blocked` pending a successful native macOS run of the corrected Rust probe.
+  The first compile failure is preserved below. M0-03 remains `todo` on main;
+  the Windows task-branch evidence has not been integrated.
 - The GUI check covers launch and rendering only. The `ping` invoke bridge
   remains unexercised; agent execution, persistence, and isolation are absent
   from the scaffold.
@@ -80,14 +81,24 @@ The M0-02 runbook explicitly requires its Rust probe, rather than the earlier
 Python OS-primitive check, and says the Codex check need not be repeated for
 this follow-up.
 
-Follow-up plan: create a separate worktree of the M0-02 task branch, run its
-unchanged Rust probe with `cargo run --release --locked --offline`, preserve
-the environment and complete output, and record any failure without changing
-and rerunning the probe. Commit the evidence and push it to `origin/main`.
+The initial follow-up used a separate worktree of the M0-02 task branch at
+`8e213e4` and ran the unchanged Rust probe with
+`cargo run --release --locked --offline`. It preserved the environment and
+complete output in the evidence commit described below; the probe was not
+modified or rerun after that failure.
 
-The probe failed to compile with exit 101: `src/main.rs:306` calls the unsafe
-`CommandExt::pre_exec` method without an enclosing unsafe block. No scenarios
-ran. M0-02 is blocked on correcting the native Unix compilation error and
-obtaining a successful native macOS run. The earlier smoke checks remain
-valid within their recorded scope. See [the Rust probe failure report](evidence/m0-02-macos.md)
-and its complete raw artifacts.
+The first Rust probe run failed to compile with exit 101: `src/main.rs:306`
+called unsafe `CommandExt::pre_exec` without an enclosing unsafe block. No
+scenarios ran. The task branch now fixes this with safe
+`CommandExt::process_group(0)`; its Windows rerun passed all four scenarios.
+That does not verify the Unix-only code, so M0-02 remains blocked pending a
+successful native macOS run. The first failure and its complete raw artifacts
+remain preserved in [the Rust probe report](evidence/m0-02-macos.md).
+
+## Next action for the macOS verification agent
+
+The Mac verification agent should fetch the latest `codex/m0-02-priority2`
+branch and follow the agent-facing
+[M0-02 macOS runbook](https://github.com/j-mckerracher/agent-orch/blob/codex/m0-02-priority2/docs/evidence/m0-02-macos-runbook.md).
+The runbook identifies the corrected probe, capture paths, and evidence-only
+publish procedure. Do not run the earlier source revision or edit the probe.
