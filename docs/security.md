@@ -1,6 +1,6 @@
 # Security Architecture and Threat Model
 
-Updated: 2026-11-07T12:30:00-07:00 (America/Los_Angeles).
+Updated: 2026-11-07T11:38:03-07:00 (America/Denver).
 
 Status: M0-04 candidate. This document defines the v1 threat model for the
 orchestrator and states which threats are addressed by the domain contracts in

@@ -10,7 +10,7 @@
 //! The engine is the only actor that *applies* an authorization; everything
 //! else *proposes* against it.
 
-use crate::contract::{AutonomyPolicy, DeliveryPolicy};
+use crate::contract::{AutonomyPolicy, DeliveryPolicy, VerificationPolicy};
 use std::collections::BTreeSet;
 
 /// The bounds a caller is authorized to grant. A proposal may stay within the
@@ -29,6 +29,8 @@ pub struct Authorization {
     /// delivery not in this set is denied. `LocalReview` never implies
     /// `PullRequest`; each choice is authorized independently.
     pub delivery: BTreeSet<DeliveryPolicy>,
+    /// The verification gate authorized for this proposal.
+    pub verification: VerificationPolicy,
 }
 
 impl Authorization {
@@ -60,7 +62,10 @@ pub enum Destination {
     /// Integrate into a named local branch of the primary checkout.
     LocalBranch { branch: String },
     /// Open a PR against a named remote and target branch.
-    PullRequest { remote: String, target_branch: String },
+    PullRequest {
+        remote: String,
+        target_branch: String,
+    },
     /// Write a report artifact to a path.
     ReportArtifact { path: String },
 }
@@ -75,6 +80,9 @@ pub struct Action {
     pub kind: ActionKind,
     /// Destination and operation parameters, fully bound.
     pub destination: Destination,
+    /// Every remaining operation parameter must be represented here and bound
+    /// to the approval. Delivery implementations must not accept unbound inputs.
+    pub parameters: std::collections::BTreeMap<String, String>,
     /// The exact candidate commit the approval was reviewed against.
     pub candidate_commit: String,
     /// The task the approval applies to. Approvals are not transferable
@@ -90,6 +98,9 @@ impl Action {
         }
         if self.destination != other.destination {
             return Err(ActionMismatch::Destination);
+        }
+        if self.parameters != other.parameters {
+            return Err(ActionMismatch::Parameters);
         }
         if self.candidate_commit != other.candidate_commit {
             return Err(ActionMismatch::CandidateCommit);
@@ -108,6 +119,8 @@ pub enum ActionMismatch {
     Kind,
     /// A different destination (or parameter) was requested than approved.
     Destination,
+    /// An operation parameter changed after approval.
+    Parameters,
     /// The candidate changed after the approval was granted.
     CandidateCommit,
     /// The approval is being applied to a different task.
@@ -171,7 +184,10 @@ pub fn apply(approval: &Approval, action: &Action) -> Result<(), ApplyError> {
     if approval.state != ApprovalState::Granted {
         return Err(ApplyError::NotGranted);
     }
-    approval.action.matches(action).map_err(ApplyError::Mismatch)
+    approval
+        .action
+        .matches(action)
+        .map_err(ApplyError::Mismatch)
 }
 
 #[cfg(test)]
@@ -184,6 +200,7 @@ mod tests {
             destination: Destination::LocalBranch {
                 branch: "main".into(),
             },
+            parameters: std::collections::BTreeMap::new(),
             candidate_commit: "abc123".into(),
             task_id: "t1".into(),
         }
@@ -242,10 +259,22 @@ mod tests {
     }
 
     #[test]
+    fn changed_operation_parameter_denied() {
+        let mut a = action();
+        a.parameters.insert("source_branch".into(), "other".into());
+        assert_eq!(
+            apply(&approval(), &a),
+            Err(ApplyError::Mismatch(ActionMismatch::Parameters))
+        );
+    }
+
+    #[test]
     fn changed_kind_denied() {
         let mut a = action();
         a.kind = ActionKind::ReportPublish;
-        a.destination = Destination::ReportArtifact { path: "r.md".into() };
+        a.destination = Destination::ReportArtifact {
+            path: "r.md".into(),
+        };
         assert_eq!(
             apply(&approval(), &a),
             Err(ApplyError::Mismatch(ActionMismatch::Kind))
@@ -288,6 +317,7 @@ mod tests {
         let mut e = Authorization {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             delivery: BTreeSet::new(),
+            verification: VerificationPolicy::None,
         };
         assert!(!e.delivery_grants(DeliveryPolicy::PullRequest));
         e.delivery.insert(DeliveryPolicy::LocalReview);

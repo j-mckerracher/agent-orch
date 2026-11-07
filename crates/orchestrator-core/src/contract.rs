@@ -153,7 +153,10 @@ impl std::fmt::Display for ContractError {
             ContractError::DuplicateDependency => write!(f, "duplicate dependency"),
             ContractError::EmptyAgent => write!(f, "agent must be resolved"),
             ContractError::EmptyVerificationCommands => {
-                write!(f, "Commands verification policy must carry at least one command")
+                write!(
+                    f,
+                    "Commands verification policy must carry at least one command"
+                )
             }
         }
     }
@@ -182,9 +185,10 @@ pub fn validate(contract: &TaskContract) -> Result<(), ContractError> {
     }
     match &contract.verification {
         VerificationPolicy::Commands { commands }
-            if commands
-                .iter()
-                .any(|cmd| cmd.is_empty() || cmd.iter().any(|s| s.is_empty())) =>
+            if commands.is_empty()
+                || commands
+                    .iter()
+                    .any(|cmd| cmd.is_empty() || cmd.iter().any(|s| s.is_empty())) =>
         {
             return Err(ContractError::EmptyVerificationCommands);
         }
@@ -225,7 +229,7 @@ pub enum Validation {
 
 /// Validate a proposal against `envelope`.
 ///
-/// Two independent authorization checks, matching plan section 5.2 ("An LLM
+/// Three independent authorization checks, matching plan section 5.2 ("An LLM
 /// must not be able to silently change its own autonomy or delivery policy")
 /// and section 13 ("schema validation and immutable policy enforcement"):
 ///
@@ -238,6 +242,8 @@ pub enum Validation {
 ///    choices the envelope explicitly authorizes. `PullRequest` is never
 ///    implied by any autonomy or by `LocalReview`; it is granted only if the
 ///    envelope lists it.
+///
+/// 3. **Verification.** The proposal must retain the authorized gate.
 ///
 /// Delivery and autonomy are orthogonal; neither implies the other.
 pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> Validation {
@@ -252,6 +258,11 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
                 "autonomy {:?} differs from the envelope's {:?}; an agent may not change its own autonomy policy",
                 proposal.autonomy, envelope.autonomy
             ),
+        };
+    }
+    if proposal.verification != envelope.verification {
+        return Validation::Denied {
+            reason: "verification policy differs from the authorized gate".into(),
         };
     }
     // Delivery: the proposed delivery must be explicitly authorized.
@@ -320,10 +331,14 @@ mod tests {
         }
     }
 
-    fn env(autonomy: AutonomyPolicy, delivery: &std::collections::BTreeSet<DeliveryPolicy>) -> Authorization {
+    fn env(
+        autonomy: AutonomyPolicy,
+        delivery: &std::collections::BTreeSet<DeliveryPolicy>,
+    ) -> Authorization {
         Authorization {
             autonomy,
             delivery: delivery.clone(),
+            verification: VerificationPolicy::None,
         }
     }
 
@@ -361,9 +376,7 @@ mod tests {
         };
         assert_eq!(validate(&c), Err(ContractError::EmptyVerificationCommands));
         c.verification = VerificationPolicy::Commands { commands: vec![] };
-        // An empty gate list is allowed (equivalent to None); a *blank*
-        // command entry is not.
-        assert_eq!(validate(&c), Ok(()));
+        assert_eq!(validate(&c), Err(ContractError::EmptyVerificationCommands));
     }
 
     #[test]
@@ -386,6 +399,7 @@ mod tests {
         let e = Authorization {
             autonomy: AutonomyPolicy::ApprovalRequired,
             delivery: std::collections::BTreeSet::from([DeliveryPolicy::LocalReview]),
+            verification: VerificationPolicy::None,
         };
         assert_eq!(validate_proposal(&p, &e), Validation::Accept);
     }
@@ -415,6 +429,22 @@ mod tests {
             &std::collections::BTreeSet::from([DeliveryPolicy::LocalReview]),
         );
         assert_eq!(validate_proposal(&p, &e), Validation::Accept);
+    }
+
+    #[test]
+    fn proposal_cannot_remove_authorized_verification_gate() {
+        let p = proposal();
+        let mut e = env(
+            AutonomyPolicy::WorkspaceWrites,
+            &std::collections::BTreeSet::from([DeliveryPolicy::LocalReview]),
+        );
+        e.verification = VerificationPolicy::Commands {
+            commands: vec![vec!["cargo".into(), "test".into()]],
+        };
+        assert!(matches!(
+            validate_proposal(&p, &e),
+            Validation::Denied { .. }
+        ));
     }
 
     #[test]
