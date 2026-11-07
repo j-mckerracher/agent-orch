@@ -164,11 +164,12 @@ then enforced its 60-second deadline and process-tree cleanup. The new run produ
 
 ## Final candidate validation
 
-From the final candidate head `$(git rev-parse HEAD)` — recorded in
-`raw/20261107-final-candidate/environment.txt` as `source_head=` — the runner was executed
-once more with the same fixed task. All nine checks passed, including
-`primary-checkout-isolated`, because the worktree was clean and stable for the whole run
-(no commit landed mid-run). This run validates the candidate's exact runner state.
+From clean candidate head `3a0a35de688addc7687ad5fd55b65a06e7959298` the runner was
+executed once more with the same fixed task. Evidence is in
+`raw/20261107-final-candidate-20261107-155733-441c6271e13c43d9838f7e26878d7ae7/`; all nine
+checks passed, including `primary-checkout-isolated`, because the worktree was clean and
+stable for the whole run (no commit landed mid-run). `environment.txt` in that dir records
+`source_head=3a0a35de688addc7687ad5fd55b65a06e7959298`. Runner exit 0.
 
 ## Isolation proof
 
@@ -220,3 +221,9 @@ in every run.
   out of scope for M0-05.
 - Codex exits 0 even when the agent's task *itself* failed (attempt 2); the acceptance
   checks above are why the demo verifies content, not just exit status.
+- The `primary-checkout-isolated` check compares worktree status before/after; a commit
+  landing in this worktree mid-run legitimately fails it. Run
+  `raw/20261107-155123-e4204a6783274facb48ed1e17252aa19/` (from `c69f0606`) is preserved
+  as exactly that case: 8/9 checks passed and the before/after delta is precisely one
+  evidence commit that landed mid-run. The final candidate run above was made from a
+  clean, stable worktree.
