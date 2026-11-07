@@ -4,7 +4,7 @@
 //! replaces this file layout with SQLite; the [`Store`] trait is the
 //! replacement seam, and the invariants below hold for any backend.
 //!
-//! Updated: 2026-11-07T13:43:00-07:00 (M1-01 follow-up: lifecycle gaps).
+//! Updated: 2026-11-07T13:51:57-07:00 (M1-01 review: clarify power-loss durability).
 //!
 //! # Invariants enforced here (core owns the state tables, this crate owns
 //! their durability)
@@ -17,9 +17,11 @@
 //!   validates via the single central table
 //!   [`orchestrator_core::task::transition`], appends the returned
 //!   [`orchestrator_core::task::AuditEvent`] to the record's ordered
-//!   journal, and persists both in the single atomic rewrite. The pair can
-//!   never be half-written: rename is all-or-nothing, so a crash leaves the
-//!   previous record intact (the new transition simply never happened).
+//!   journal, and persists both in one temp-file replacement. A failure
+//!   before rename leaves the previous record intact; a successful atomic
+//!   rename exposes the complete new record. This prevents an in-place
+//!   partial overwrite, but M1 does not `sync_all` the file or parent
+//!   directory and does not guarantee survival of power loss.
 //! - **Attempts and sessions are separate records of separate lifetimes.**
 //!   They are stored as their own collections with their own ids and
 //!   terminal-state rules; none of their methods touches
@@ -42,10 +44,11 @@
 //!   `FileStore` handle are serialized by its mutex, covering `create`
 //!   as well as every mutation: no shared temp path, no lost transition,
 //!   no duplicate-create race. Sequential close and reopen is supported
-//!   (every accepted mutation is durable before it returns). Two separate
-//!   handles over the same directory are *not* serialized with each other
-//!   in M1, and two processes writing the same directory are
-//!   last-writer-wins with no optimistic concurrency. Cross-process
+//!   and tested for successful mutations. The file and parent directory
+//!   are not explicitly synced, so power-loss durability is not guaranteed.
+//!   Two separate handles over the same directory are *not* serialized
+//!   with each other in M1, and two processes writing the same directory
+//!   are last-writer-wins with no optimistic concurrency. Cross-process
 //!   locking and the WAL/journal schema are M2-01 (SQLite) scope.
 //! - `std::fs::rename` replaces the destination on both supported platforms
 //!   (Windows `MoveFileEx`, POSIX atomic rename). This is what makes the
