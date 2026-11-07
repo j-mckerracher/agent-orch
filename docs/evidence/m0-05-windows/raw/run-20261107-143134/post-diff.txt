@@ -1,0 +1,7 @@
+﻿diff --git a/TASK.txt b/TASK.txt
+index 0b2d8d7..6116b56 100644
+--- a/TASK.txt
++++ b/TASK.txt
+@@ -1 +1 @@
+-M0_TASK_BEFORE
++M0_TASK_AFTER
