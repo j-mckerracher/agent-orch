@@ -61,9 +61,10 @@ table syntax; those generated formatting changes were reverted after checking.
 
 ## Remaining coverage
 
-- The initial smoke checks did not close M0-02 or M0-03. M0-02 remains
-  `blocked` pending a successful native macOS run of the corrected Rust probe.
-  The first compile failure is preserved below. M0-03 remains `todo` on main;
+- The initial smoke checks did not close M0-02 or M0-03. The corrected M0-02
+  Rust probe now passes on native macOS; the implementation coordinator owns
+  reviewing the evidence and updating its board status. The first compile
+  failure is preserved below. M0-03 remains `todo` on main;
   the Windows task-branch evidence has not been integrated.
 - The GUI check covers launch and rendering only. The `ping` invoke bridge
   remains unexercised; agent execution, persistence, and isolation are absent
@@ -91,14 +92,29 @@ The first Rust probe run failed to compile with exit 101: `src/main.rs:306`
 called unsafe `CommandExt::pre_exec` without an enclosing unsafe block. No
 scenarios ran. The task branch now fixes this with safe
 `CommandExt::process_group(0)`; its Windows rerun passed all four scenarios.
-That does not verify the Unix-only code, so M0-02 remains blocked pending a
-successful native macOS run. The first failure and its complete raw artifacts
+That Windows run did not verify the Unix-only code, so M0-02 remained blocked
+pending the native macOS retry recorded below. The first failure and its complete raw artifacts
 remain preserved in [the Rust probe report](evidence/m0-02-macos.md).
 
-## Next action for the macOS verification agent
+## Updated retry instructions
 
-The Mac verification agent should fetch the latest `codex/m0-02-priority2`
-branch and follow the agent-facing
+The Mac verification agent was instructed to fetch the latest
+`codex/m0-02-priority2` branch and follow the agent-facing
 [M0-02 macOS runbook](https://github.com/j-mckerracher/agent-orch/blob/codex/m0-02-priority2/docs/evidence/m0-02-macos-runbook.md).
 The runbook identifies the corrected probe, capture paths, and evidence-only
 publish procedure. Do not run the earlier source revision or edit the probe.
+
+## Corrected Rust probe retry completed
+
+Followed the updated runbook on 2026-11-07. Created a fresh probe worktree
+from `origin/codex/m0-02-priority2` at
+`1b006b5053617eb8a7fa961dc4d88b870cc4c76c` and a separate evidence worktree
+from `origin/main` at `1c2189470c879ff97d1242a47eceb7881c2c33f4`.
+
+The unchanged `cargo run --release --locked --offline` command passed
+`launch-stream`, `stderr-exit`, `fanout`, and `kill-tree`, printed
+`RESULT ALL PASS`, and exited 0. No timeout occurred. Complete retry output
+and environment are preserved under
+[`docs/evidence/m0-02-macos/retry-1/`](evidence/m0-02-macos/retry-1/result.md).
+The initial failure remains preserved. Only evidence and documentation were
+changed; the implementation coordinator owns probe fixes and board status.
