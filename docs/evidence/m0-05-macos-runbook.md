@@ -30,18 +30,22 @@ product CLI was tested.
 ## Step 1 — Fetch the task branch
 
 From the Mac agent's Mac primary checkout of `agent-orch` (any path, e.g.
-`~/Code/agent-orch`), or a fresh clone:
+`~/Code/agent-orch`), or a fresh clone, create one collision-safe run ID and worktree path:
 
 ```
+RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
+WORKTREE="/tmp/m0-05-macos-$RUN_ID"
 git fetch origin codex/m0-05-priority3
-git rev-parse FETCH_HEAD   # record this SHA; must equal the SHA the Windows worker reported
+TASK_BRANCH_SHA="$(git rev-parse FETCH_HEAD)"
+echo "task_branch_sha=$TASK_BRANCH_SHA"
+test ! -e "$WORKTREE" || { echo "worktree path already exists: $WORKTREE" >&2; exit 2; }
 ```
 
 Work from a detached worktree so the task branch itself is never touched:
 
 ```
-git worktree add --detach /tmp/m0-05-macos FETCH_HEAD
-cd /tmp/m0-05-macos
+git worktree add --detach "$WORKTREE" "$TASK_BRANCH_SHA"
+cd "$WORKTREE"
 ```
 
 Verify the prompt file matches the canonical version committed on the branch:
@@ -54,18 +58,25 @@ git rev-parse HEAD:tests/feasibility/m0-05/task-prompt.txt
 ## Step 2 — Locate and record the native Codex CLI
 
 ```
-command -v codex          # expected: /usr/local/bin/codex
-codex --version           # record exactly (Windows used codex-cli 0.167.0-alpha.3.2;
-                          # any version is acceptable, but record it — JSONL framing
-                          # differs across versions per M0-03)
-codex login status        # expected: "Logged in using ..."
+command -v python3        # required by the runner for bounded launch and verification
+python3 --version         # record exactly
+command -v codex          # inspect whether this is the native desktop binary
+codex --version           # record exactly; JSONL framing can vary by version
+codex login status        # must show an active login
 ```
 
 If `command -v codex` is empty or points at an npm wrapper, also try
-`~/Library/Application Support/Codex/bin/*/codex` (the native desktop layout mirrors
-Windows: `...\Codex\bin\<sha>\<ver>\codex.exe` -> `...\Codex\bin\<sha>\<ver>\codex`).
-Use the **native executable**, not the npm wrapper. Record its full path in
-`environment.txt` (the runner does this automatically from `$1`).
+`~/Library/Application Support/Codex/bin/<build-id>/codex` (the native desktop layout
+mirrors Windows: `.../Codex/bin/<build-id>/codex.exe` becomes `.../Codex/bin/<build-id>/codex`).
+Set the full native path once in `CODEX`; do not use an npm wrapper:
+
+```
+CODEX="$(command -v codex)"
+# If that is an npm wrapper, replace CODEX with the executable under:
+# "$HOME/Library/Application Support/Codex/bin/<build-id>/codex"
+"$CODEX" --version
+"$CODEX" login status
+```
 
 ## Step 3 (optional, recommended) — Runner self-test with the bundled mock
 
@@ -73,8 +84,8 @@ Before spending a real Codex run, verify the runner mechanics on the host:
 
 ```
 chmod +x tests/feasibility/m0-05/mock-codex.sh
-OUT="docs/evidence/m0-05-macos/selftest-$(date +%Y%m%d-%H%M%S)"
-bash tests/feasibility/m0-05/run-m0-05.sh "$(pwd)/tests/feasibility/m0-05/mock-codex.sh" "$PWD" "$OUT"
+SELFTEST_OUT="docs/evidence/m0-05-macos/selftest-$RUN_ID"
+bash tests/feasibility/m0-05/run-m0-05.sh "$PWD/tests/feasibility/m0-05/mock-codex.sh" "$PWD" "$SELFTEST_OUT"
 ```
 
 This must print `M0-05 MACOS RUN: PASS` with all nine checks (mocked agent, real
@@ -86,8 +97,8 @@ runner works on this host.
 ## Step 4 — Run the demo
 
 ```
-OUT="docs/evidence/m0-05-macos/raw/run-$(date +%Y%m%d-%H%M%S)"
-bash tests/feasibility/m0-05/run-m0-05.sh "$(command -v codex)" "$PWD" "$OUT"
+OUT="docs/evidence/m0-05-macos/raw/run-$RUN_ID"
+bash tests/feasibility/m0-05/run-m0-05.sh "$CODEX" "$PWD" "$OUT"
 echo "RUNNER_EXIT=$?"
 ```
 
@@ -127,17 +138,20 @@ The runner exits 0 only if every check passed. If it exits nonzero, read `result
 
 ## Step 6 — Publish an evidence-only update (no board edit, no task-branch merge)
 
-From the detached worktree `/tmp/m0-05-macos`:
+From the detached worktree stored in `$WORKTREE`, create the evidence branch once and use
+that same variable for both branch creation and push:
 
 ```
+EVIDENCE_BRANCH="codex/m0-05-macos-evidence-$RUN_ID"
+git switch -c "$EVIDENCE_BRANCH"
 git add docs/evidence/m0-05-macos
+git diff --cached --check
 git commit -m "evidence: M0-05 macOS single-task run ($(date +%Y%m%d-%H%M%S))"
-git branch m0-05-macos-evidence-$(date +%Y%m%d)
-git push origin m0-05-macos-evidence-$(date +%Y%m%d)
+git push origin "$EVIDENCE_BRANCH"
 ```
 
-- Push **only** the evidence branch. Do not push the task branch `codex/m0-05-priority3`
-  and do not merge anything; the coordinator publishes reviewed updates.
+- Push **only** `$EVIDENCE_BRANCH`. Do not push `codex/m0-05-priority3` or merge anything;
+  the coordinator publishes reviewed updates.
 - Do not edit `board.json`, docs outside `docs/evidence/m0-05-macos/`, app source, or
   `tests/feasibility/`.
 - Keep the raw run dir complete: `environment.txt`, `primary-status-before.txt`,

@@ -81,14 +81,17 @@ This is host-specific: the macOS runbook must not inherit this override, and the
 adapter needs to treat "sandbox mode selected by host config" as a conformance variable
 (detect via a probe spawn, fall back to unelevated, and record which mode actually ran).
 
+One `danger-full-access` diagnostic was run once with only `echo SANDBOX_PROBE_OK`. It is
+preserved as diagnostic evidence and is not M0-05 acceptance evidence. Do not repeat it.
+
 ## Attempts (preserved separately)
 
 | Dir | Result | Why |
 |---|---|---|
 | `raw/attempt-1-failed-runner-bug/` | FAIL (runner) | First runner revision crashed before the codex call: PS 5.1 treated the native codex stderr line "Reading additional input from stdin..." as a terminating `NativeCommandError` under `$ErrorActionPreference='Stop'`. No demo data in this dir is valid. |
 | `raw/attempt-2-workspace-write-sandbox-rejected/` | FAIL (sandbox) | Runner fixed, but elevated sandbox rejected every helper spawn (1385). Codex reported "Unable to update TASK.txt: the execution environment rejected the write." JSONL is intact (10 lines, `turn.completed` present, exit 0) — a good example of why exit code alone must never be trusted. |
-| `raw/diag-sandbox-1/` | diagnostic | Three-mode spawn probe; isolated the 1385 to elevated-sandbox token creation. |
-| `raw/diag-sandbox-2/` | diagnostic | Unelevated-sandbox probe: the probe command `echo SANDBOX_PROBE_OK` executed; the agent replied with its exit code `0` (`unelevated-last.txt`) and codex itself exited 0 — sandboxed spawn works in this mode. |
+| `raw/diag-sandbox-1/` | diagnostic | Three-mode spawn probe (one-line `echo SANDBOX_PROBE_OK` task, i.e. no file write); isolated the 1385 to elevated-sandbox token creation. |
+| `raw/diag-sandbox-2/` | diagnostic | Unelevated-sandbox probe (`echo SANDBOX_PROBE_OK` only, no file write): the probe command `echo SANDBOX_PROBE_OK` executed; the agent replied with its exit code `0` (`unelevated-last.txt`) and codex itself exited 0 — sandboxed spawn works in this mode. |
 | `raw/run-20261107-143134/` | **PASS** | Full demo, run A. |
 | `raw/run-20261107-144044/` | **PASS** | Full demo, run B (after switching both runners to the shared prompt file). |
 

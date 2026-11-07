@@ -3,7 +3,7 @@
 # verifies every acceptance check. Preserves raw artifacts in -OutDir.
 #
 # Usage:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-05/run-m0-05.ps1 `
+#   pwsh -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-05/run-m0-05.ps1 `
 #     -CodexPath "C:\Users\jmckerra\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe" `
 #     -PrimaryCheckout "C:\Users\jmckerra\Code\agent-orch-m0-05-priority3" `
 #     -OutDir "docs\evidence\m0-05-windows\raw\run-<timestamp>"
@@ -17,6 +17,15 @@ param(
   [Parameter(Mandatory=$true)][string]$OutDir
 )
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion -lt [Version]"7.2") {
+  throw "This runner requires PowerShell 7.2 or later (pwsh); ProcessStartInfo.ArgumentList is required."
+}
+# Collision safety: never reuse or merge into an existing evidence directory.
+# Use a unique name (timestamp+GUID) per attempt.
+if (Test-Path $OutDir) {
+  Write-Error "OutDir already exists; refusing to reuse it: $OutDir"
+  exit 2
+}
 $repo = Join-Path $env:TEMP ("agent-orch-m0-05-task-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $repo | Out-Null
 # The single canonical M0-05 task, shared with the macOS runner.
@@ -27,6 +36,15 @@ function Save-File([string]$name, [string]$content) {
   Set-Content -Path (Join-Path $OutDir $name) -Value $content -Encoding utf8 -NoNewline
 }
 
+# Kill a process and its descendants (timeout cleanup). Called only on a
+# runner-side timeout of the codex run.
+function Kill-Tree([int]$rootPid) {
+  $p = Get-Process -Id $rootPid -ErrorAction SilentlyContinue
+  if ($p) { try { $p.Kill($true) } catch { } }
+  $kids = Get-CimInstance Win32_Process -Filter "ParentProcessId=$rootPid" -ErrorAction SilentlyContinue
+  foreach ($k in $kids) { Kill-Tree ([int]$k.ProcessId) }
+}
+
 # codex writes status text to stderr; PowerShell surfaces native stderr as
 # error records, which stop under $ErrorActionPreference="Stop".
 function Invoke-Capture([scriptblock]$cmd) {
@@ -35,7 +53,7 @@ function Invoke-Capture([scriptblock]$cmd) {
   try { $cmd.Invoke() -join " " } finally { $ErrorActionPreference = $prev }
 }
 
-New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+New-Item -ItemType Directory -Path $OutDir | Out-Null
 
 # Environment
 $envLines = @()
@@ -62,6 +80,9 @@ Save-File "primary-status-before.txt" ($primaryBefore -join "`n")
 # store and read bytes unchanged for the exact-byte checks.
 & git -C $repo config core.autocrlf false
 & git -C $repo config core.eol lf
+# Local identity so the init commit does not depend on host git config.
+& git -C $repo config user.name "M0-05 Demo"
+& git -C $repo config user.email "m0-05-demo@agent-orch.local"
 # WriteAllText: UTF-8 without BOM, LF line ending, no trailing newline added.
 [System.IO.File]::WriteAllText((Join-Path $repo "TASK.txt"), "M0_TASK_BEFORE`n")
 & git -C $repo add TASK.txt
@@ -84,21 +105,51 @@ $codexArgs = @(
 )
 # Empty piped stdin: codex would otherwise open the console and block.
 # Diagnostics go to stderr; treat them as text, not as terminating errors.
+# Bounded run: if codex does not finish within the deadline, kill its whole
+# process tree and record the timeout as evidence (never let a hung CLI hang
+# the runner). Exit evidence is preserved in exit.txt / timeout.txt.
+$TIMEOUT_SECONDS = 60
+$timedOut = $false
 $prevPref = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
+$stdoutPath = Join-Path $OutDir "stdout.jsonl"
+$stderrPath = Join-Path $OutDir "stderr.txt"
+$stdoutFile = [System.IO.File]::Create($stdoutPath)
+$stderrFile = [System.IO.File]::Create($stderrPath)
 try {
-  $null | & $CodexPath @codexArgs 2> (Join-Path $OutDir "stderr.txt") |
-    Out-File -FilePath (Join-Path $OutDir "stdout.jsonl") -Encoding utf8
-  $exitCode = $LASTEXITCODE
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $CodexPath
+  foreach ($a in $codexArgs) { $psi.ArgumentList.Add($a) }
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.UseShellExecute = $false
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo = $psi
+  if (-not $proc.Start()) { throw "Could not start Codex executable: $CodexPath" }
+  # Drain both pipes concurrently so a full pipe cannot block Codex or the
+  # timeout check. Copying bytes also preserves the raw JSONL and stderr.
+  $stdoutCopy = $proc.StandardOutput.BaseStream.CopyToAsync($stdoutFile)
+  $stderrCopy = $proc.StandardError.BaseStream.CopyToAsync($stderrFile)
+  $exited = $proc.WaitForExit($TIMEOUT_SECONDS * 1000)
+  if (-not $exited) {
+    $timedOut = $true
+    Kill-Tree $proc.Id
+    $exited = $proc.WaitForExit(15000)
+  }
+  if ($exited) {
+    $proc.WaitForExit()
+    $stdoutCopy.GetAwaiter().GetResult()
+    $stderrCopy.GetAwaiter().GetResult()
+    $exitCode = if ($timedOut) { 124 } else { $proc.ExitCode }
+  } else {
+    $exitCode = 124
+  }
 } finally {
+  $stdoutFile.Dispose()
+  $stderrFile.Dispose()
   $ErrorActionPreference = $prevPref
 }
-# Out-File utf8 adds a BOM; strict JSONL consumers must not see one.
-$sp = Join-Path $OutDir "stdout.jsonl"
-$sb = [System.IO.File]::ReadAllBytes($sp)
-if ($sb.Length -ge 3 -and $sb[0] -eq 0xEF -and $sb[1] -eq 0xBB -and $sb[2] -eq 0xBF) {
-  [System.IO.File]::WriteAllBytes($sp, $sb[3..($sb.Length - 1)])
-}
+Save-File "timeout.txt" "$timedOut`r`n"
 Save-File "exit.txt" "$exitCode`r`n"
 
 # Post-run state of the task repo
@@ -134,7 +185,9 @@ foreach ($l in $lines) {
   $i++
   try { $null = $l | ConvertFrom-Json } catch { $jsonOk = $false; $jsonErr = "line ${i}: $($_.Exception.Message)" }
 }
-Add-Check "jsonl-all-lines-parse" ($jsonOk -and $i -gt 0) "lines=$i" $jsonErr
+$jDetail = "lines=$i"
+if (-not $jsonOk) { $jDetail += "; $jsonErr" }
+Add-Check "jsonl-all-lines-parse" ($jsonOk -and $i -gt 0) $jDetail
 
 $parsed = foreach ($l in $lines) { if (-not [string]::IsNullOrWhiteSpace($l)) { $l | ConvertFrom-Json } }
 $turn = @($parsed | Where-Object { $_.type -eq "turn.completed" }).Count
@@ -153,18 +206,27 @@ Add-Check "task-file-exact" ($taskFileBytes.Length -eq $expectedAfter.Length -an
 $diffCheck = (& git -C $repo diff --check 2>&1)
 Add-Check "git-diff-check" (-not $diffCheck) ((($diffCheck -join " ") -replace "`r","").Trim())
 
-$trackedChanges = @((& git -C $repo status --porcelain=v1) | Where-Object { $_ -notmatch '^\?\?' })
-$paths = @($trackedChanges | ForEach-Object { $_.Substring(3) })
+$repoStatus = & git -C $repo status --porcelain=v1
+$paths = @($repoStatus | ForEach-Object { ($_ -split ' ', 3)[2] })
 Add-Check "only-task-txt-changed" ($paths.Count -eq 1 -and $paths[0] -eq "TASK.txt") ("changed=" + ($paths -join ","))
 
-# Isolation: no tracked-file changes in the primary checkout. Untracked
-# lines differ only by this run's own evidence artifacts under
-# docs/evidence/m0-05-windows/ and tests/feasibility/m0-05/.
+# Isolation: no tracked-file changes in the primary checkout. The sole
+# allowed untracked path is this run's own output directory, if it is inside
+# the checkout; every other untracked path must be identical before/after.
 $beforeTracked = @($primaryBefore | Where-Object { $_ -notmatch '^\?\?' -and $_ -notmatch '^##' })
 $afterTracked = @($primaryAfter | Where-Object { $_ -notmatch '^\?\?' -and $_ -notmatch '^##' })
-$afterNew = @($primaryAfter | Where-Object { $_ -match '^\?\?' } | Where-Object { $_ -notmatch 'm0-05' })
-$isoOk = ($beforeTracked -join "`n") -eq ($afterTracked -join "`n") -and $afterNew.Count -eq 0
-Add-Check "primary-checkout-isolated" $isoOk "tracked identical=$($beforeTracked -eq $afterTracked); new-non-m0-05-untracked=$($afterNew -join ',')"
+$primaryPath = (Resolve-Path $PrimaryCheckout).Path
+$outPath = (Resolve-Path $OutDir).Path
+$allowedOutput = [System.IO.Path]::GetRelativePath($primaryPath, $outPath).Replace('\', '/')
+if ($allowedOutput -eq '..' -or $allowedOutput.StartsWith('../')) { $allowedOutput = $null }
+$beforeUntracked = @($primaryBefore | Where-Object { $_ -match '^\?\?' } | ForEach-Object { $_.Substring(3).TrimEnd('/') })
+$afterUntracked = @($primaryAfter | Where-Object { $_ -match '^\?\?' } | ForEach-Object { $_.Substring(3).TrimEnd('/') })
+$beforeOther = @($beforeUntracked | Where-Object { $_ -ne $allowedOutput })
+$afterOther = @($afterUntracked | Where-Object { $_ -ne $allowedOutput })
+$isoTracked = ($beforeTracked -join "`n") -eq ($afterTracked -join "`n")
+$isoUntracked = ($beforeOther -join "`n") -eq ($afterOther -join "`n")
+$isoOk = $isoTracked -and $isoUntracked
+Add-Check "primary-checkout-isolated" $isoOk ("tracked identical=" + $isoTracked + "; other untracked identical=" + $isoUntracked)
 
 $allOk = (@($checks | Where-Object { $_ -match "FAIL" }).Count -eq 0)
 $result = "M0-05 WINDOWS RUN: " + $(if ($allOk) { "PASS" } else { "FAIL" })
