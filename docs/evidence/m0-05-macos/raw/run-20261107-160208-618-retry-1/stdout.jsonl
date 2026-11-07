@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1b840-6417-7891-bdc4-28bc19bc292c"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].codex_hooks` is deprecated. Use `[features].hooks` instead. (Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.)"}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf 'M0_TASK_AFTER\\\\n' > TASK.txt\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf 'M0_TASK_AFTER\\\\n' > TASK.txt\"","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"TASK_DEMO_OK"}}
+{"type":"turn.completed","usage":{"input_tokens":56448,"cached_input_tokens":28032,"cache_write_input_tokens":0,"output_tokens":46,"reasoning_output_tokens":0}}

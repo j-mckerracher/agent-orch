@@ -1,0 +1,4 @@
+Reading additional input from stdin...
+2026-11-07T23:03:11.064399Z  WARN codex_core_plugins::remote::remote_installed_plugin_sync: skipping remote installed plugin bundle download remote_plugin_id=plugin_connector_1p_689987207de08191979cf68eca2941c6 plugin=sites marketplace=openai-curated-remote error=backend did not return a download URL for remote plugin `plugin_connector_1p_689987207de08191979cf68eca2941c6`
+2026-11-07T23:03:11.369764Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/
+2026-11-07T23:03:11.369796Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/

@@ -1,0 +1,14 @@
+host=R5456230
+os=26.7.1 arm64
+codex_path=/opt/homebrew/bin/codex
+codex_version=WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)
+codex-cli 0.167.0
+git_version=git version 2.54.0 (Apple Git-157)
+bash=3.2.57(1)-release
+python3_version=Python 3.9.6
+primary_checkout=/private/tmp/m0-05-macos-20261107-160208-618
+task_repo=/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T//agent-orch-m0-05-task-SfilSO
+source_head=b1718b985deae5b5fb562738aa968f7688e0c9f0
+source_branch=HEAD
+login_status=WARNING: proceeding, even though we could not create PATH aliases: Operation not permitted (os error 1)
+Logged in using ChatGPT
