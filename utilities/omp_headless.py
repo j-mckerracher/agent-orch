@@ -19,7 +19,12 @@ import subprocess
 import sys
 
 
-AGENT_INSTRUCTIONS = """The code itself is the primary documentation for agents working on this project.
+AGENT_INSTRUCTIONS = """The orchestrating agent is exempt from worker model, thinking,
+oh-my-pstack, and Ponytail requirements. It may coordinate from any host using its
+available model and tools. It must verify these requirements for delegated workers
+as specified in orch-impl.md; its own host or model must not block worker dispatch.
+
+The code itself is the primary documentation for agents working on this project.
 Document important information alongside the code whenever you create or change it.
 Document API contracts, inputs and outputs, errors, side effects, invariants, ownership,
 concurrency and security assumptions, and non-obvious design decisions where applicable.
@@ -29,11 +34,11 @@ avoid repeating obvious implementation details. Whenever you create or change do
 include the date and time of the change in the documentation, including the time zone or UTC
 offset. Preserve existing conventions and user
 changes. Verify changes with appropriate checks, and report any unverified behavior or
-limitations. Every agent adding code MUST use Ponytail and follow the rules supplied by
+limitations. Every delegated worker adding code MUST use Ponytail and follow the rules supplied by
 the installed OMP Ponytail extension. Ensure Ponytail is active before adding code; if
 it is unavailable, stop and report the blocker rather than silently proceeding.
 
-Every agent, including delegated agents, MUST use the installed oh-my-pstack skills.
+Every delegated worker MUST use the installed oh-my-pstack skills.
 At the start of work, load poteto-mode through the host's skill mechanism and follow
 its applicable workflow, using pstack-pi for host and delegation mechanics. Follow
 the applicable instructions for the agent's assigned role and scope. If the required

@@ -1,14 +1,18 @@
 # Agent orchestrator implementation primer
 
+Updated: 2026-11-07T08:58:34-07:00.
+
 You are an orchestrating agent implementing [the technical implementation plan](docs/technical-implementation-plan.md). Read that plan, this primer, and [board.json](board.json) before selecting work. The plan describes the target architecture and its safety constraints. The board tracks the actual state of implementation; it is not proof that a feature works.
 
 ## Model and tools
 
-Every orchestrator and delegated agent must use **Purdue `qwen3.8:27b` with thinking set to `high`**. In OMP, the model selector is `purdue/qwen3.8:27b` and the thinking option is `--thinking high`. Confirm the actual model and thinking level for each session, including delegated sessions. Do not substitute another model or thinking level. If the host cannot set or verify either setting for an agent, stop that launch and report the blocker.
+The orchestrating agent is exempt from the worker model, thinking, pstack, and Ponytail requirements in this section. It may coordinate from Codex or another host using its available model and tools. Its host or model must not block worker dispatch. The coordinator remains responsible for verifying worker compliance, maintaining the board, and reviewing results.
 
-[utilities/omp_headless.py](utilities/omp_headless.py) launches OMP in one-shot text mode or persistent `--rpc` mode and adds the shared agent instructions. Pass `--provider purdue --model qwen3.8:27b --thinking high` for the required configuration. The thinking option is optional and defaults to OMP's configured setting when omitted, so the launcher does not enforce `high` by itself. Confirm the actual model and thinking level for each session; in RPC mode, OMP's `get_state` response exposes both. In RPC mode, the caller must handle OMP's JSON protocol and interactive requests, including questions and approvals. The pass-through does not provide an interactive interface by itself.
+Every delegated worker must use **Purdue `qwen3.8:27b` with thinking set to `high`**. In OMP, the model selector is `purdue/qwen3.8:27b` and the thinking option is `--thinking high`. Confirm the actual model and thinking level for each worker session. Do not substitute another model or thinking level for workers. If the host cannot set or verify either setting for a worker, stop that worker's launch and report the blocker.
 
-Every agent must load and follow the installed `oh-my-pstack` skills. Use `poteto-mode` to select the applicable workflow and `pstack-pi` for host-specific and delegation mechanics. Every agent adding code must use the installed Ponytail extension. Confirm the required skills and extension are available. If they are unavailable, stop the affected work and report the blocker. Pass these requirements and this primer to every delegated agent. A prompt is an instruction, not proof that a child loaded a skill or used the requested model.
+[utilities/omp_headless.py](utilities/omp_headless.py) launches OMP in one-shot text mode or persistent `--rpc` mode and adds the shared agent instructions. Pass `--provider purdue --model qwen3.8:27b --thinking high` for the required worker configuration. The thinking option is optional and defaults to OMP's configured setting when omitted, so the launcher does not enforce `high` by itself. Confirm the actual model and thinking level for each worker session; in RPC mode, OMP's `get_state` response exposes both. In RPC mode, the caller must handle OMP's JSON protocol and interactive requests, including questions and approvals. The pass-through does not provide an interactive interface by itself.
+
+Every delegated worker must load and follow the installed `oh-my-pstack` skills. Use `poteto-mode` to select the applicable workflow and `pstack-pi` for host-specific and delegation mechanics. Every worker adding code must use the installed Ponytail extension. Confirm the required skills and extension are available for each worker. If they are unavailable, stop the affected worker's work and report the blocker. Pass these requirements and this primer to every delegated worker. A prompt is an instruction, not proof that a child loaded a skill or used the requested model.
 
 ## Maintain the board
 
