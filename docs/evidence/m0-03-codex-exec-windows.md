@@ -141,6 +141,55 @@ Per task rules, macOS capability is not claimed. Reproduction on a native macOS 
    binary version (`codex --version`) because framing differs between CLI versions (0.20.0 vs
    0.167.0 shapes above).
 
+### Native macOS commands
+
+Run from a fresh checkout of branch `codex/m0-03-priority2`, or create a separate worktree from
+that remote branch. The branch can be cloned with:
+
+```
+git clone --branch codex/m0-03-priority2 \
+  https://github.com/j-mckerracher/agent-orch.git agent-orch-m0-03-macos
+cd agent-orch-m0-03-macos
+```
+
+Use Terminal (zsh or bash). The successful call requires the Codex CLI to be installed and
+authenticated. The commands below make a new timestamped evidence directory so they do not
+overwrite the Windows captures or an earlier Mac run:
+
+```
+EVIDENCE_DIR="tests/feasibility/m0-03/raw/macos-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$EVIDENCE_DIR"
+codex --version > "$EVIDENCE_DIR/version.txt" 2>&1
+codex login status > "$EVIDENCE_DIR/auth-status.txt" 2>&1
+
+set +e
+codex exec --json --skip-git-repo-check --sandbox read-only \
+  --output-last-message "$EVIDENCE_DIR/last-message.txt" \
+  "Reply exactly PONG" > "$EVIDENCE_DIR/stdout.jsonl" 2> "$EVIDENCE_DIR/stderr.txt"
+success_status=$?
+printf '%s\n' "$success_status" > "$EVIDENCE_DIR/exit.txt"
+
+codex exec --sandbox bogus x > "$EVIDENCE_DIR/invalid-stdout.txt" \
+  2> "$EVIDENCE_DIR/invalid-stderr.txt"
+invalid_status=$?
+printf '%s\n' "$invalid_status" > "$EVIDENCE_DIR/invalid-exit.txt"
+set -e
+
+printf 'EVIDENCE_DIR=%s\nsuccess_exit=%s\ninvalid_exit=%s\n' \
+  "$EVIDENCE_DIR" "$success_status" "$invalid_status"
+cat "$EVIDENCE_DIR/version.txt" "$EVIDENCE_DIR/auth-status.txt"
+cat "$EVIDENCE_DIR/stdout.jsonl"
+cat "$EVIDENCE_DIR/last-message.txt"
+cat "$EVIDENCE_DIR/stderr.txt"
+cat "$EVIDENCE_DIR/invalid-stderr.txt"
+```
+
+Please send the printed output, both exit codes, and the complete contents of the timestamped
+evidence directory. Expected on success: the one-shot exit is 0, the last-message file says
+`PONG`, stdout is parseable JSONL, and the invalid-argument exit is nonzero (Windows returned
+2). Record the actual Mac result and exact CLI version even if it differs; do not treat a
+particular event sequence as a pass without also confirming process exit.
+
 ## Limitations
 
 - Windows evidence only; macOS unverified (blocker above).
