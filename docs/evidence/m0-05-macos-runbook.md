@@ -35,9 +35,14 @@ From the Mac agent's Mac primary checkout of `agent-orch` (any path, e.g.
 ```
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 WORKTREE="/tmp/m0-05-macos-$RUN_ID"
+WINDOWS_RUNNER_SHA="cd0134bbc7ea38ebfed925b649b1c6df6e3cc11c"
 git fetch origin codex/m0-05-priority3
 TASK_BRANCH_SHA="$(git rev-parse FETCH_HEAD)"
 echo "task_branch_sha=$TASK_BRANCH_SHA"
+git merge-base --is-ancestor "$WINDOWS_RUNNER_SHA" "$TASK_BRANCH_SHA" || {
+  echo "candidate branch does not contain the Windows-tested runner commit" >&2
+  exit 2
+}
 test ! -e "$WORKTREE" || { echo "worktree path already exists: $WORKTREE" >&2; exit 2; }
 ```
 
@@ -51,8 +56,13 @@ cd "$WORKTREE"
 Verify the prompt file matches the canonical version committed on the branch:
 
 ```
-git rev-parse HEAD:tests/feasibility/m0-05/task-prompt.txt
-# record the blob SHA; it must match the one in the Windows report's commit
+WINDOWS_PROMPT_BLOB="adbda2a393170131f0e92c069f17b9bde7f36b63"
+PROMPT_BLOB="$(git rev-parse HEAD:tests/feasibility/m0-05/task-prompt.txt)"
+echo "task_prompt_blob=$PROMPT_BLOB"
+test "$PROMPT_BLOB" = "$WINDOWS_PROMPT_BLOB" || {
+  echo "task prompt differs from the Windows-tested prompt" >&2
+  exit 2
+}
 ```
 
 ## Step 2 — Locate and record the native Codex CLI
@@ -83,7 +93,6 @@ CODEX="$(command -v codex)"
 Before spending a real Codex run, verify the runner mechanics on the host:
 
 ```
-chmod +x tests/feasibility/m0-05/mock-codex.sh
 SELFTEST_OUT="docs/evidence/m0-05-macos/selftest-$RUN_ID"
 bash tests/feasibility/m0-05/run-m0-05.sh "$PWD/tests/feasibility/m0-05/mock-codex.sh" "$PWD" "$SELFTEST_OUT"
 ```
