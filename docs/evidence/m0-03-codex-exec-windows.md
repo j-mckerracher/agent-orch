@@ -1,6 +1,6 @@
 # M0-03 Evidence: Codex CLI one-shot execution on Windows
 
-Date: 2026-11-07 (UTC-08:00, America/Los_Angeles). Platform: Windows 10 22H2/11, x64, Git Bash.
+Recorded: 2026-11-07T11:04:00-07:00 (America/Denver). Platform: Windows 11 Education, build 26200, x64.
 Task: M0-03 "Verify Codex execution protocol" — one-shot execution and structured output.
 
 ## Verdict
@@ -17,11 +17,9 @@ scope).
 | `C:\Users\jmckerra\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe` (native desktop) | codex-cli 0.167.0-alpha.3.2 | `codex login status` = "Logged in using ChatGPT" | Success, exit 0, ~5 s |
 | `C:\Users\jmckerra\AppData\Roaming\npm\codex` / `codex.cmd` (PATH wrapper) | codex-cli 0.20.0 | same ChatGPT login | Fails: config-pinned model `gpt-6.1-terra` rejected by backend with HTTP 400; 5 retries, then `{"id":"1","msg":{"type":"error",...}}` |
 
-The old wrapper reads `~\.codex\config.toml`, which pins `model = "gpt-6.1-terra"`. The ChatGPT
-account does not cover that model, so every turn errors:
+The old wrapper reads `~\.codex\config.toml`, which pins `model = "gpt-6.1-terra"`. The observed attempt was rejected for that account and model:
 `"The 'gpt-6.1-terra' model is not supported when using Codex with a ChatGPT account."` (HTTP 400,
-`model_not_found`). This is an account/model-coverage condition, not a CLI defect. The 0.167.0
-native executable resolves its default model differently and succeeds with no `-m` override.
+`model_not_found`). The response identifies an account/model-coverage condition. The 0.167.0 native executable succeeded without a `-m` override; the cause of the difference was not established.
 
 ## Executed commands and results
 
@@ -98,12 +96,11 @@ Stdout (0.20.0 JSON shape, `raw/old-wrapper-stdout.jsonl` / `raw/old-wrapper2-st
 ```
 
 Exit code: NOT OBTAINED. Both runs hung. Timeline from the re-run (17:55:21 start): the final
-`{"id":"1","msg":{"type":"error",...}}` line landed at ~17:55:26 (~11 s in), after which the
+`{"id":"1","msg":{"type":"error",...}}` line landed at ~17:55:26 (about 5 s in), after which the
 process produced no further output and did not exit within 80 s. `timeout 80` killed it, giving
 shell exit 124 (the timeout's code, not Codex's). The first capture shows the same pattern with
 an external `^C`. Observed defect in 0.20.0: after emitting the terminal error event on this
-400-retry path the process does not terminate; a supervisor must treat "error event received"
-as terminal, and/or impose its own kill deadline. Exit 124 is therefore a timeout artifact and
+400-retry path the process does not terminate; a supervisor needs a bounded timeout and explicit protocol handling; an error event alone does not establish process exit. Exit 124 is therefore a timeout artifact and
 must not be cited as the CLI's own failure code.
 
 Note: 0.20.0 uses a *different* JSONL envelope (`{"id","msg":{...}}` with nested `msg.type`) than
