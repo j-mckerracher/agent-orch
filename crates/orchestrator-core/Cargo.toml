@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator-core"
+description = "Domain contracts for the agent orchestrator: task state, contracts, and transitions. No I/O dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

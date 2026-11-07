@@ -1,0 +1,24 @@
+[package]
+name = "agent-orch-desktop"
+description = "Tauri host for the agent orchestrator desktop app. Thin layer: window lifecycle and IPC forwarding to the engine; no orchestration logic lives here."
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately kept outside the root Cargo workspace so desktop tooling and
+# the engine never share a build graph (root Cargo.toml header explains the
+# design choice). The empty [workspace] table stops cargo from walking up to
+# the root workspace and rejecting this package as a non-member.
+[workspace]
+
+[dependencies]
+# Pinned 2026-11-07 against crates.io max stable versions.
+tauri = "=2.12.5"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+
+[build-dependencies]
+tauri-build = "=2.7.4"
+
+[lib]
+name = "agent_orch_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]

@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator-agents"
+description = "Capability-aware adapters for Codex, Claude Code, and Pi subprocess protocols. Implements the adapter contract defined by orchestrator-core; depends on nothing else in the workspace."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

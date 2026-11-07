@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator-daemon"
+description = "Long-lived orchestration daemon binary. Composes the workspace crates behind a local IPC server; launches on demand, never as a system service."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

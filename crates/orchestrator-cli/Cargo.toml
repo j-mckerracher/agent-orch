@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator-cli"
+description = "Standalone CLI client for the orchestration engine. Runs the engine in-process; no Tauri or desktop dependency."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

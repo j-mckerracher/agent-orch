@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator-store"
+description = "SQLite persistence (WAL) for tasks, sessions, and the atomic event journal. Migrations live under migrations/."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
