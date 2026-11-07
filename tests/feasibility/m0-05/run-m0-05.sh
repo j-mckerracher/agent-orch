@@ -189,7 +189,7 @@ check("primary-checkout-isolated", iso,
 report = ["M0-05 MACOS RUN: " + ("PASS" if all(c[1] for c in checks) else "FAIL"),
           "", "Run artifacts in the same directory as this file.", "Checks:", ""]
 for name, ok, detail in checks:
-    report.append(f"{name:<28} {'PASS' if ok else 'FAIL'}  {detail}")
+    report.append(f"{name:<28} {'PASS' if ok else 'FAIL'}  {detail}".rstrip())
 report += [
     "",
     f"Task repo (disposable, created by this run): {repo}",

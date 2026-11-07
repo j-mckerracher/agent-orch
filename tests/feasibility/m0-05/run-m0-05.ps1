@@ -138,8 +138,8 @@ try {
   }
   if ($exited) {
     $proc.WaitForExit()
-    $stdoutCopy.GetAwaiter().GetResult()
-    $stderrCopy.GetAwaiter().GetResult()
+    $stdoutCopy.GetAwaiter().GetResult() | Out-Null
+    $stderrCopy.GetAwaiter().GetResult() | Out-Null
     $exitCode = if ($timedOut) { 124 } else { $proc.ExitCode }
   } else {
     $exitCode = 124
@@ -167,7 +167,7 @@ Save-File "primary-status-after.txt" ($primaryAfter -join "`n")
 # Verification
 $checks = @()
 function Add-Check([string]$name, [bool]$ok, [string]$detail) {
-  $script:checks += ("{0,-34} {1}  {2}" -f $name, $(if ($ok) { "PASS" } else { "FAIL" }), $detail)
+  $script:checks += (("{0,-34} {1}  {2}" -f $name, $(if ($ok) { "PASS" } else { "FAIL" }), $detail).TrimEnd())
 }
 $expectedAfter = [System.Text.Encoding]::ASCII.GetBytes("M0_TASK_AFTER`n")
 $lastMsgRaw = if (Test-Path (Join-Path $OutDir "last-message.txt")) {
