@@ -87,7 +87,13 @@ npm --prefix apps/desktop run tauri dev
 On Windows, use `npm.cmd` instead of `npm` if the shell selects a Unix wrapper.
 
 The scaffold was verified on Windows with the three build commands above.
-The GUI window and the macOS build are unverified.
+On 2026-11-07, native macOS arm64 verification passed the engine build,
+frontend build, standalone Tauri build, and debug app bundling. The bundled
+app opened and rendered the Agent Orchestrator heading. The workspace test
+command passed, but there are no tests yet. Native subprocess launch, output
+capture and termination, and a response-only Codex JSON protocol probe also
+passed. See [the laptop verification plan and results](docs/laptop-verification-plan.md)
+for commands, environment, and limitations. The Windows GUI remains unverified.
 
 ## Dependencies
 
