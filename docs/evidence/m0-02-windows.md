@@ -34,9 +34,8 @@ exit code alone:
   then re-checks the grandchild pid via `tasklist` (Windows) / `kill -0`
   (Unix) until gone. Asserts both child and grandchild are dead.
 
-`kill-tree` kills the child's tree with `taskkill /F /T` on Windows. On
-Unix the fallback SIGKILLs the child directly and relies on the grandchild
-exiting on its own or being killed by the OS; see Limitations. This is a
+`kill-tree` kills the child's tree with `taskkill /F /T` on Windows. On Unix the probe attempts to create a separate process group and send SIGKILL
+to that group. That path has not been run on macOS; see Limitations. This is a
 feasibility probe, not production supervision: the plan defers Job Objects
 to the first production implementation and this probe only proves the
 primitive works here.
@@ -66,8 +65,7 @@ TEST=kill-tree PASS child pid=22460 grandchild pid=17648 both gone after tree ki
 RESULT ALL PASS
 ```
 
-Exit code 0. Pids vary per run; the lines above are from the final 2026-11-07T11:0x
-run on the candidate commit's binary.
+Exit code 0. Pids vary per run; the lines above are from the final 2026-11-07 Windows run before the candidate commit.
 
 ## Windows findings
 
@@ -122,8 +120,8 @@ which the macOS run must confirm:
 
 ## Limitations
 
-- Feasibility probe only. No Job Objects, no process-group creation, no
-  supervisor loop; production supervision is explicitly out of scope.
+- Feasibility probe only. No Job Objects or supervisor loop; Unix process-group
+  creation has not been verified on macOS; production supervision is explicitly out of scope.
 - Exit status of a killed child is not asserted (killed processes have
   platform-dependent statuses); liveness is asserted by pid re-check
   instead, per the plan's warning that process state must be verified, not
