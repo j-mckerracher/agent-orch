@@ -35,7 +35,7 @@ From the Mac agent's Mac primary checkout of `agent-orch` (any path, e.g.
 ```
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 WORKTREE="/tmp/m0-05-macos-$RUN_ID"
-WINDOWS_RUNNER_SHA="cd0134bbc7ea38ebfed925b649b1c6df6e3cc11c"
+WINDOWS_RUNNER_SHA="c69f0606b6eba3967e73fbe0848b6cf8c9b657b7"
 git fetch origin codex/m0-05-priority3
 TASK_BRANCH_SHA="$(git rev-parse FETCH_HEAD)"
 echo "task_branch_sha=$TASK_BRANCH_SHA"
