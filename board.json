@@ -1,0 +1,459 @@
+{
+  "name": "Agent Orchestrator implementation",
+  "source": "https://github.com/j-mckerracher/agent-orch/blob/main/docs/technical-implementation-plan.md",
+  "status_values": [
+    "todo",
+    "in_progress",
+    "blocked",
+    "done"
+  ],
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Architecture and feasibility",
+      "exit_criterion": "A single task runs successfully on macOS and Windows."
+    },
+    {
+      "id": "M1",
+      "title": "Single-agent CLI",
+      "exit_criterion": "The CLI executes a task without touching the primary checkout."
+    },
+    {
+      "id": "M2",
+      "title": "Persistence and concurrency",
+      "exit_criterion": "Two parallel tasks survive recoverable failures without lost changes."
+    },
+    {
+      "id": "M3",
+      "title": "Coordinator and approvals",
+      "exit_criterion": "A multi-task objective reaches a reviewed candidate without unapproved merging."
+    },
+    {
+      "id": "M4",
+      "title": "Multi-agent support",
+      "exit_criterion": "Each supported agent completes the same conformance workflow on both operating systems."
+    },
+    {
+      "id": "M5",
+      "title": "Tauri desktop UI",
+      "exit_criterion": "Closing and reopening the UI preserves running daemon tasks."
+    },
+    {
+      "id": "M6",
+      "title": "Release hardening",
+      "exit_criterion": "A clean-machine installation passes all release smoke tests."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "M0-01",
+      "milestone": "M0",
+      "title": "Initialize Rust workspace and Tauri scaffold",
+      "status": "todo",
+      "depends_on": [],
+      "details": "Establish the planned crate boundaries and pin dependencies. Keep the first execution slice independent of Tauri.",
+      "important_context": "",
+      "priority": 1
+    },
+    {
+      "id": "M0-02",
+      "milestone": "M0",
+      "title": "Prove cross-platform subprocess execution",
+      "status": "todo",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Exercise subprocess launch, output and termination on native macOS and Windows.",
+      "important_context": "",
+      "priority": 2
+    },
+    {
+      "id": "M0-03",
+      "milestone": "M0",
+      "title": "Verify Codex execution protocol",
+      "status": "todo",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Validate the installed CLI's one-shot execution and structured output on both platforms.",
+      "important_context": "",
+      "priority": 2
+    },
+    {
+      "id": "M0-04",
+      "milestone": "M0",
+      "title": "Define domain contracts and threat model",
+      "status": "todo",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Define task contracts, task and session separation, state transitions, trust boundaries and authorization invariants.",
+      "important_context": "",
+      "priority": 2
+    },
+    {
+      "id": "M0-05",
+      "milestone": "M0",
+      "title": "Demonstrate a single task on both platforms",
+      "status": "todo",
+      "depends_on": [
+        "M0-02",
+        "M0-03",
+        "M0-04"
+      ],
+      "details": "Record evidence that one task runs successfully on macOS and Windows.",
+      "important_context": "",
+      "priority": 3
+    },
+    {
+      "id": "M1-01",
+      "milestone": "M1",
+      "title": "Implement task lifecycle and local records",
+      "status": "todo",
+      "depends_on": [
+        "M0-04"
+      ],
+      "details": "Validate and persist contracts, states and execution attempts; keep task completion distinct from process exit.",
+      "important_context": "",
+      "priority": 3
+    },
+    {
+      "id": "M1-02",
+      "milestone": "M1",
+      "title": "Implement isolated Git worktree lifecycle",
+      "status": "todo",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Validate repositories, resolve base commits and create a unique branch and worktree per task without changing the primary checkout.",
+      "important_context": "",
+      "priority": 2
+    },
+    {
+      "id": "M1-03",
+      "milestone": "M1",
+      "title": "Implement Codex adapter and process supervision",
+      "status": "todo",
+      "depends_on": [
+        "M0-02",
+        "M0-03",
+        "M1-02"
+      ],
+      "details": "Launch Codex in the worktree, stream structured progress, capture output and exit status, and support cancellation and process cleanup.",
+      "important_context": "",
+      "priority": 3
+    },
+    {
+      "id": "M1-04",
+      "milestone": "M1",
+      "title": "Build the single-task CLI workflow",
+      "status": "todo",
+      "depends_on": [
+        "M1-01",
+        "M1-03"
+      ],
+      "details": "Implement run, tasks, inspect, cancel, diff and cleanup commands; preserve worktrees for inspection and report actionable errors.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M1-05",
+      "milestone": "M1",
+      "title": "Verify primary checkout isolation and safe cleanup",
+      "status": "todo",
+      "depends_on": [
+        "M1-04"
+      ],
+      "details": "Exercise dirty repositories, cancellation and worktree retention; never delete uncommitted or unlanded work.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-01",
+      "milestone": "M2",
+      "title": "Implement SQLite persistence and migrations",
+      "status": "todo",
+      "depends_on": [
+        "M1-01"
+      ],
+      "details": "Persist projects, contracts, dependencies, attempts, sessions, workspaces, approvals, verification runs, artifacts and an ordered event journal; use WAL and foreign keys.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M2-02",
+      "milestone": "M2",
+      "title": "Build dependency-aware bounded scheduler",
+      "status": "todo",
+      "depends_on": [
+        "M2-01"
+      ],
+      "details": "Reject dependency cycles; enforce authorization, global and per-project limits, fair scheduling and exclusive worktree ownership. Default to two workers.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-03",
+      "milestone": "M2",
+      "title": "Add bounded retries and execution attempt history",
+      "status": "todo",
+      "depends_on": [
+        "M2-02"
+      ],
+      "details": "Use backoff and create a separate durable attempt for each retry.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M2-04",
+      "milestone": "M2",
+      "title": "Implement process and workspace reconciliation",
+      "status": "todo",
+      "depends_on": [
+        "M2-01",
+        "M1-03"
+      ],
+      "details": "Lock the data directory, validate process identity, inspect worktrees and partial deliveries, and classify interrupted tasks before resuming scheduling. Address Windows process trees and macOS process groups.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-05",
+      "milestone": "M2",
+      "title": "Test concurrent execution and crash recovery",
+      "status": "todo",
+      "depends_on": [
+        "M2-03",
+        "M2-04"
+      ],
+      "details": "Inject process and runtime failures with two parallel tasks and verify no changes or audit events are silently lost.",
+      "important_context": "",
+      "priority": 7
+    },
+    {
+      "id": "M3-01",
+      "milestone": "M3",
+      "title": "Implement structured coordinator decomposition",
+      "status": "todo",
+      "depends_on": [
+        "M2-02"
+      ],
+      "details": "Validate coordinator proposals against a schema, assign canonical IDs and validate dependencies and task contracts. Keep lifecycle and authorization in the engine.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M3-02",
+      "milestone": "M3",
+      "title": "Enforce task policies and approval state",
+      "status": "todo",
+      "depends_on": [
+        "M2-01"
+      ],
+      "details": "Persist explicit approval decisions bound to the exact action, parameters and candidate commit; reject unauthorized policy changes and reapprove changed actions.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M3-03",
+      "milestone": "M3",
+      "title": "Implement independent verification",
+      "status": "todo",
+      "depends_on": [
+        "M1-02",
+        "M2-01"
+      ],
+      "details": "Verify worktree ownership, candidate commit, protected paths and configured validation commands; retain results and apply an explicit execution trust policy.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M3-04",
+      "milestone": "M3",
+      "title": "Implement report-only and local-review delivery",
+      "status": "todo",
+      "depends_on": [
+        "M3-02",
+        "M3-03"
+      ],
+      "details": "Require authorization before integration, serialize delivery to a destination, revalidate against current state and retain unsafe-to-delete worktrees.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M3-05",
+      "milestone": "M3",
+      "title": "Verify the reviewed multi-task workflow",
+      "status": "todo",
+      "depends_on": [
+        "M3-01",
+        "M3-04"
+      ],
+      "details": "Demonstrate dependency execution, independent verification and approval enforcement across restarts without unapproved merging.",
+      "important_context": "",
+      "priority": 7
+    },
+    {
+      "id": "M4-01",
+      "milestone": "M4",
+      "title": "Implement Pi RPC adapter",
+      "status": "todo",
+      "depends_on": [
+        "M1-03"
+      ],
+      "details": "Support persistent JSONL RPC, correlated responses and asynchronous events according to detected capabilities.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M4-02",
+      "milestone": "M4",
+      "title": "Implement Claude Code adapter",
+      "status": "todo",
+      "depends_on": [
+        "M1-03"
+      ],
+      "details": "Verify installed CLI flags, structured output and permission behavior before integration.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M4-03",
+      "milestone": "M4",
+      "title": "Implement capability detection and agent routing",
+      "status": "todo",
+      "depends_on": [
+        "M4-01",
+        "M4-02"
+      ],
+      "details": "Expose supported streaming, interactive input, cancellation, resumption, structured output, approvals and model selection without successful no-ops.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M4-04",
+      "milestone": "M4",
+      "title": "Run adapter conformance suite on both platforms",
+      "status": "todo",
+      "depends_on": [
+        "M4-03"
+      ],
+      "details": "Cover framing, launch, cancellation, errors, unexpected EOF, unsupported features, interruption and approvals for each adapter.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M5-01",
+      "milestone": "M5",
+      "title": "Build daemon and authenticated local IPC",
+      "status": "todo",
+      "depends_on": [
+        "M3-05"
+      ],
+      "details": "Move reliable scheduling to an on-demand daemon; implement versioned length-prefixed JSON-RPC over Unix sockets and Windows named pipes, authorization and capability negotiation.",
+      "important_context": "",
+      "priority": 8
+    },
+    {
+      "id": "M5-02",
+      "milestone": "M5",
+      "title": "Implement reconnectable event stream and clients",
+      "status": "todo",
+      "depends_on": [
+        "M5-01"
+      ],
+      "details": "Support event subscriptions, sequence-based replay, reconnect and the project, task, session, approval, workspace and delivery methods.",
+      "important_context": "",
+      "priority": 9
+    },
+    {
+      "id": "M5-03",
+      "milestone": "M5",
+      "title": "Build project, task and coordinator UI",
+      "status": "todo",
+      "depends_on": [
+        "M5-02"
+      ],
+      "details": "Provide project selection, agent detection, task submission, board, conversation, live events, cancellation and recovery status.",
+      "important_context": "",
+      "priority": 10
+    },
+    {
+      "id": "M5-04",
+      "milestone": "M5",
+      "title": "Build diff review and approval UI",
+      "status": "todo",
+      "depends_on": [
+        "M5-02",
+        "M3-04"
+      ],
+      "details": "Show the candidate and exact action to be approved, and submit approval decisions through the daemon.",
+      "important_context": "",
+      "priority": 10
+    },
+    {
+      "id": "M5-05",
+      "milestone": "M5",
+      "title": "Complete desktop lifecycle and initial packaging",
+      "status": "todo",
+      "depends_on": [
+        "M5-03",
+        "M5-04"
+      ],
+      "details": "Package the desktop app and verify closing and reopening it does not interrupt daemon-owned work.",
+      "important_context": "",
+      "priority": 11
+    },
+    {
+      "id": "M6-01",
+      "milestone": "M6",
+      "title": "Review threat model and dependency security",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Audit dependencies and plugins, environment allowlists, untrusted inputs, authorization and protected delivery boundaries.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-02",
+      "milestone": "M6",
+      "title": "Implement cross-platform release CI",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Run native macOS and Windows tests, dependency audits, signing and release builds.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-03",
+      "milestone": "M6",
+      "title": "Harden diagnostics and recovery usability",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Make failures and recovery actions observable without leaking credentials or silently discarding work.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-04",
+      "milestone": "M6",
+      "title": "Test signed installs and upgrades on clean machines",
+      "status": "todo",
+      "depends_on": [
+        "M6-01",
+        "M6-02",
+        "M6-03"
+      ],
+      "details": "Run release smoke tests, including installation, upgrade, approvals, cancellation and recovery on macOS and Windows.",
+      "important_context": "",
+      "priority": 13
+    }
+  ],
+  "priority_description": "Dependency depth: 1 is highest; tasks with the same value may run in parallel once their dependencies are done. Priority does not imply readiness."
+}
