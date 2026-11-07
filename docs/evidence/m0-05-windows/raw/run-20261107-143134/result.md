@@ -1,4 +1,4 @@
-﻿M0-05 WINDOWS RUN: PASS
+M0-05 WINDOWS RUN: PASS
 
 Run artifacts in the same directory as this file.
 
@@ -10,7 +10,7 @@ last-message-exact                 PASS  value='TASK_DEMO_OK'
 single-agent-message-exact         PASS  value='TASK_DEMO_OK'
 task-file-exact                    PASS  bytes='M0_TASK_AFTER
 '
-git-diff-check                     PASS  
+git-diff-check                     PASS
 only-task-txt-changed              PASS  changed=TASK.txt
 primary-checkout-isolated          PASS  tracked identical=; new-non-m0-05-untracked=
 

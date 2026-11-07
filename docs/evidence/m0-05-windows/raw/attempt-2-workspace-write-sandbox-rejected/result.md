@@ -1,4 +1,4 @@
-﻿M0-05 WINDOWS RUN: FAIL
+M0-05 WINDOWS RUN: FAIL
 
 Run artifacts in the same directory as this file.
 
@@ -10,7 +10,7 @@ last-message-exact                 FAIL  value='Unable to update TASK.txt: the e
 single-agent-message-exact         FAIL  value='Unable to update TASK.txt: the execution environment rejected the write.'
 task-file-exact                    FAIL  bytes='M0_TASK_BEFORE
 '
-git-diff-check                     PASS  
+git-diff-check                     PASS
 only-task-txt-changed              FAIL  changed=
 primary-checkout-isolated          PASS  tracked identical=; new-non-m0-05-untracked=
 
