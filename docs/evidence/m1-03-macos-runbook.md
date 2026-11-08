@@ -169,8 +169,9 @@ git -C "$SOURCE_DIR" status --short > "$EVIDENCE_DIR/source-status.txt"
 
 A passing Cargo test has `exit.txt` set to `0`, `timed_out.txt` set to
 `false`, and zero failed tests in `stdout.bin`. The Python supervisor exits
-successfully after recording the Cargo result; use the two result files, not
-the supervisor's exit status, to classify the run. The workspace includes adapter tests for the
+successfully after recording the Cargo result; use `exit.txt`, `timed_out.txt`,
+`group_killed.txt`, and the captured test output—not the supervisor's exit
+status—to classify the run. The workspace includes adapter tests for the
 captured Codex JSONL sequence, cancellation, descendants, bounded stdout and
 stderr lines, and stopping output events after process exit. On macOS these
 tests compile the Unix process-group code and exercise descendant cleanup.
