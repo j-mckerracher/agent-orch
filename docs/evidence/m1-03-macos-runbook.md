@@ -21,7 +21,7 @@ status.
 
 - Repository: `https://github.com/j-mckerracher/agent-orch.git`
 - Candidate branch: `codex/m1-03-priority3`
-- Exact source commit to test: `82023712efb9865e07586d6b6a3b0aa5860a725c`
+- Exact source commit to test: `649c137d7bcfcf2445d2a107162862cde0a1c0ed`
 - This runbook is at `docs/evidence/m1-03-macos-runbook.md` on the candidate
   branch.
 
@@ -37,7 +37,7 @@ set -eu
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 SOURCE_DIR="/private/tmp/agent-orch-m1-03-candidate-${RUN_ID}"
 EVIDENCE_DIR="/private/tmp/agent-orch-m1-03-output-${RUN_ID}"
-SOURCE_SHA="82023712efb9865e07586d6b6a3b0aa5860a725c"
+SOURCE_SHA="649c137d7bcfcf2445d2a107162862cde0a1c0ed"
 
 if [ -e "$SOURCE_DIR" ] || [ -e "$EVIDENCE_DIR" ]; then
   echo "Refusing to reuse an existing run path: $RUN_ID" >&2
@@ -197,7 +197,7 @@ Use this `result.md` format:
 - macOS version/build and architecture:
 - Rust version:
 - Cargo version:
-- Source commit: `82023712efb9865e07586d6b6a3b0aa5860a725c`
+- Source commit: `649c137d7bcfcf2445d2a107162862cde0a1c0ed`
 - Command: `cargo test --locked --workspace`
 - Result: PASS or FAIL
 - Cargo exit code:
