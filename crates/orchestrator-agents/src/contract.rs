@@ -19,6 +19,7 @@ pub type Result<T, E = AgentError> = std::result::Result<T, E>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentKind {
     Codex,
+    Pi,
 }
 
 /// A launch request. The caller owns the argument array; the adapter
