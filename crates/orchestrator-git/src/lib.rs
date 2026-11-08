@@ -16,6 +16,7 @@
 mod error;
 mod git;
 mod repository;
+pub mod verification;
 mod worktree;
 
 pub use error::Error;
