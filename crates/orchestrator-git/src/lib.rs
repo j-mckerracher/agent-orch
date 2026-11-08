@@ -17,6 +17,7 @@ mod error;
 mod git;
 mod repository;
 mod worktree;
+pub mod reconcile;
 
 pub use error::Error;
 pub use repository::Repository;
