@@ -1,17 +1,21 @@
 [package]
 name = "orchestrator-store"
-description = "Local durable task records (one JSON file per task) behind a small store API; replaced by SQLite in M2."
+description = "Local task persistence via SQLite WAL and JSON files behind a shared Store API."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 orchestrator-core = { path = "../orchestrator-core" }
-# serde/serde_json serialize the domain records; std::fs does the I/O.
-# No sqlx: M2 will add SQLite, and the Store trait is the replacement seam.
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-thiserror = "2.0.21"
+# serde/serde_json serialize domain records; std::fs handles FileStore I/O.
+# SQLx runs SQLite; a Tokio worker preserves synchronous Store signatures.
+# Updated: 2026-11-07T22:02:32-07:00.
+sqlx = { version = "=0.9.0", default-features = false, features = ["macros", "migrate", "runtime-tokio", "sqlite"] }
+tokio = { version = "=1.54.1", features = ["rt", "time"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
 
 [dev-dependencies]
-# None: tests use std::env::temp_dir for scratch data dirs.
+# tempfile isolates SQLite test databases and removes them on drop.
+tempfile = "=3.27.0"

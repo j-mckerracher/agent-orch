@@ -10,3 +10,6 @@ license.workspace = true
 # on-disk shape for orchestrator-store (M1 local records, M2 SQLite
 # contract_json). It pulls no runtime I/O.
 serde = { version = "=1.0.229", features = ["derive"] }
+# Project settings use JSON values; core adds no runtime I/O.
+# Updated: 2026-11-07T22:12:39-07:00.
+serde_json = "=1.0.154"
