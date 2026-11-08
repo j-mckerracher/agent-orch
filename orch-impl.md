@@ -14,6 +14,10 @@ Recorded by the coordinator on 2026-11-08 (America/Denver, -07:00). Add only lea
 - Three workers were blocked by briefs that asked for a write outside their writable scope: an evidence directory, a runtime manifest, and a stale-lock store change. Every path a brief asks a worker to write must be listed in its writable scope. Amend the scope and resume the same session rather than letting the worker stop.
 - Copy each item's `details` from board.json verbatim into its brief. One brief was written from plan text, not from the board, and omitted required scope (the data-directory lock and process identity). Check each brief against the board before dispatch.
 
+## Cross-machine handoffs
+
+- A worker or agent on another machine can read only what is in Git. A runbook kept in the coordinator's session folder is invisible to it, and the Windows agent ran a different procedure on an older commit instead. Publish every runbook as a file on a pushed branch, pin the source commit, and give the agent the exact branch and a direct blob URL. Require it to publish its evidence on its own branch, and verify that branch before counting any result.
+
 ## Integration and board edits
 
 - Parallel `edit` calls on board.json in one response can race. After a batch of edits, reparse the file and check every required key and every dependency reference. One edit once dropped the `id`, `milestone`, and `title` lines of an item.
