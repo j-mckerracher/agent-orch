@@ -183,7 +183,7 @@ pub(crate) fn authenticate(
         .ok_or(AuthError::UnsupportedVersion)?;
     let mut capabilities = Vec::new();
     for requested in &handshake.capabilities {
-        let Some(capability) = Capability::from_str(requested) else {
+        let Some(capability) = Capability::from_name(requested) else {
             return Err(AuthError::UnsupportedCapability);
         };
         if available.contains(&capability) && !capabilities.contains(&capability) {
