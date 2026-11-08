@@ -136,6 +136,10 @@ fn invalid_path_fixture() -> (TempDir, DaemonApi, PathBuf, PathBuf) {
     let outside = directory.path().join("outside");
     fs::create_dir_all(&worktree).unwrap();
     fs::create_dir_all(&outside).unwrap();
+    fs::write(worktree.join("absolute.txt"), "inside worktree").unwrap();
+    fs::create_dir(worktree.join("nested")).unwrap();
+    fs::write(worktree.join("inside.txt"), "inside worktree").unwrap();
+    fs::write(worktree.join("-argument.txt"), "inside worktree").unwrap();
     let api = DaemonApi::new(&directory.path().join("data")).unwrap();
     api.store
         .register_project(&Project {
@@ -192,9 +196,9 @@ fn workspace_diff_rejects_empty_path_before_git() {
 
 #[test]
 fn workspace_diff_rejects_absolute_path_before_git() {
-    let (_directory, api, _worktree, outside) = invalid_path_fixture();
+    let (_directory, api, worktree, _outside) = invalid_path_fixture();
     assert_eq!(
-        diff_error(&api, outside.join("file.txt").to_str().unwrap()),
+        diff_error(&api, worktree.join("absolute.txt").to_str().unwrap()),
         Err(RpcError::InvalidParams)
     );
 }
@@ -203,7 +207,7 @@ fn workspace_diff_rejects_absolute_path_before_git() {
 fn workspace_diff_rejects_parent_component_before_git() {
     let (_directory, api, _worktree, _outside) = invalid_path_fixture();
     assert_eq!(
-        diff_error(&api, "nested/../outside.txt"),
+        diff_error(&api, "nested/../inside.txt"),
         Err(RpcError::InvalidParams)
     );
 }
@@ -211,7 +215,10 @@ fn workspace_diff_rejects_parent_component_before_git() {
 #[test]
 fn workspace_diff_rejects_option_prefix_before_git() {
     let (_directory, api, _worktree, _outside) = invalid_path_fixture();
-    assert_eq!(diff_error(&api, "-option"), Err(RpcError::InvalidParams));
+    assert_eq!(
+        diff_error(&api, "-argument.txt"),
+        Err(RpcError::InvalidParams)
+    );
 }
 
 #[cfg(unix)]
