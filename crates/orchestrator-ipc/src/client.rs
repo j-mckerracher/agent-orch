@@ -119,17 +119,6 @@ fn read_token(data_dir: &Path) -> Result<String, IpcError> {
     read_token_contents(&mut file)
 }
 
-#[cfg(windows)]
-fn read_token(data_dir: &Path) -> Result<String, IpcError> {
-    let path = data_dir.join("daemon.token");
-    let metadata = fs::symlink_metadata(&path).map_err(|_| IpcError::Authentication)?;
-    if !metadata.is_file() {
-        return Err(IpcError::Authentication);
-    }
-    let mut file = File::open(&path).map_err(|_| IpcError::Authentication)?;
-    read_token_contents(&mut file)
-}
-
 fn read_token_contents(file: &mut File) -> Result<String, IpcError> {
     let mut token = String::new();
     file.read_to_string(&mut token)

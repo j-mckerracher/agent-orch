@@ -31,37 +31,32 @@
 //! for idle checks; it resets accepted streams to blocking before applying
 //! per-stream read and write timeouts.
 //!
-//! Windows clients use a named pipe derived from the data directory. The pipe
-//! rejects remote clients and uses the process default DACL. The token file
-//! inherits the data-directory ACL, and token authentication gates every
-//! connection. Named pipes are implemented. Other targets return typed
-//! `Unsupported`.
+//! Windows named pipes are deferred. Windows and other non-Unix targets use
+//! the typed `Unsupported` transport.
 //!
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 mod auth;
 mod protocol;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 mod session;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 mod transport;
 #[cfg(unix)]
 mod unix_transport;
-#[cfg(windows)]
-mod windows_transport;
 
 pub use protocol::{Capability, FrameError};
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 mod client;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 mod server;
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(unix))]
 mod unsupported;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 pub use client::Client;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 pub use server::{Server, ServerConfig};
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(unix))]
 pub use unsupported::{Client, Server, ServerConfig};
 
 #[cfg(all(test, unix))]

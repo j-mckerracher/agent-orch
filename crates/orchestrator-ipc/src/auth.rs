@@ -59,8 +59,6 @@ impl Secret {
         if metadata.uid() != directory.uid() {
             return Err(AuthError::UnsafeTokenFile);
         }
-        #[cfg(windows)]
-        let _ = &metadata;
         remove_stale_token(data_dir)?;
 
         let path = data_dir.join("daemon.token");
@@ -111,16 +109,6 @@ impl Secret {
                 let _ = fs::remove_file(&self.path);
             }
         }
-        #[cfg(windows)]
-        if let Ok(metadata) = fs::symlink_metadata(&self.path) {
-            if metadata.is_file()
-                && fs::read_to_string(&self.path)
-                    .ok()
-                    .is_some_and(|stored| self.matches(&stored))
-            {
-                let _ = fs::remove_file(&self.path);
-            }
-        }
     }
 }
 
@@ -163,28 +151,6 @@ fn remove_stale_token(data_dir: &Path) -> Result<(), AuthError> {
     if !after.file_type().is_file()
         || (before.dev(), before.ino(), before.uid()) != (after.dev(), after.ino(), after.uid())
     {
-        return Err(AuthError::UnsafeTokenFile);
-    }
-    fs::remove_file(path).map_err(|error| AuthError::Io(error.kind()))
-}
-
-#[cfg(windows)]
-fn remove_stale_token(data_dir: &Path) -> Result<(), AuthError> {
-    let path = data_dir.join("daemon.token");
-    let before = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(AuthError::Io(error.kind())),
-    };
-    if !before.file_type().is_file() {
-        return Err(AuthError::UnsafeTokenFile);
-    }
-    let stored = fs::read_to_string(&path).map_err(|error| AuthError::Io(error.kind()))?;
-    if decode(&stored).is_none() {
-        return Err(AuthError::UnsafeTokenFile);
-    }
-    let after = fs::symlink_metadata(&path).map_err(|error| AuthError::Io(error.kind()))?;
-    if !after.file_type().is_file() || before.len() != after.len() {
         return Err(AuthError::UnsafeTokenFile);
     }
     fs::remove_file(path).map_err(|error| AuthError::Io(error.kind()))
