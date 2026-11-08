@@ -1,7 +1,12 @@
-use crate::protocol::{self, Capability, Handshake, RpcId, RpcRequest, RpcResponse, Welcome};
+//! Synchronous JSON-RPC client with bounded event buffering and cursor tracking.
+//! Updated: 2026-11-08T17:11:32+00:00.
+use crate::protocol::{
+    self, Capability, Handshake, IncomingMessage, RpcId, RpcRequest, RpcResponse, Welcome,
+};
 use crate::transport::{connect as connect_local, IpcStream};
-use crate::{Health, IpcError};
-use serde_json::Value;
+use crate::{Health, IpcError, IpcEvent};
+use serde_json::{json, Value};
+use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::Read;
 #[cfg(unix)]
@@ -13,15 +18,27 @@ pub struct Client {
     stream: Box<dyn IpcStream>,
     negotiated: Vec<Capability>,
     next_id: u64,
+    subscription: Option<String>,
+    last_event_sequence: Option<i64>,
+    events: VecDeque<Result<IpcEvent, IpcError>>,
+    io_timeout: Duration,
 }
 
 impl Client {
     pub fn connect(data_dir: impl AsRef<Path>) -> Result<Self, IpcError> {
+        Self::connect_with_capabilities(data_dir, &Capability::ALL)
+    }
+
+    pub fn connect_with_capabilities(
+        data_dir: impl AsRef<Path>,
+        requested: &[Capability],
+    ) -> Result<Self, IpcError> {
         let data_dir = data_dir.as_ref();
         let token = read_token(data_dir)?;
         let mut stream = connect_local(data_dir).map_err(|_| IpcError::Operation)?;
+        let io_timeout = Duration::from_secs(2);
         stream
-            .set_timeouts(Duration::from_secs(2))
+            .set_timeouts(io_timeout)
             .map_err(|_| IpcError::Operation)?;
         let handshake = RpcRequest {
             jsonrpc: "2.0".into(),
@@ -30,7 +47,10 @@ impl Client {
             params: serde_json::to_value(Handshake {
                 token: Some(token),
                 versions: vec![1],
-                capabilities: vec!["health".into()],
+                capabilities: requested
+                    .iter()
+                    .map(|capability| capability.as_str().to_owned())
+                    .collect(),
             })
             .map_err(|_| IpcError::Operation)?,
         };
@@ -44,18 +64,22 @@ impl Client {
         }
         let welcome: Welcome = serde_json::from_value(response.result.ok_or(IpcError::Operation)?)
             .map_err(|_| IpcError::Operation)?;
-        if welcome.version != 1 {
+        if welcome.version != 1 || welcome.capabilities.iter().any(|cap| !requested.contains(cap)) {
             return Err(IpcError::UnsupportedVersion);
         }
         Ok(Self {
             stream,
             negotiated: welcome.capabilities,
             next_id: 2,
+            subscription: None,
+            last_event_sequence: None,
+            events: VecDeque::new(),
+            io_timeout,
         })
     }
 
     pub fn health(&mut self) -> Result<Health, IpcError> {
-        let result = self.call("health", Value::Null)?;
+        let result = self.call_feature(Capability::Health, "health", Value::Null)?;
         serde_json::from_value(result).map_err(|_| IpcError::Operation)
     }
 
@@ -77,9 +101,172 @@ impl Client {
         self.call("shutdown", Value::Null).map(|_| ())
     }
 
+
+    pub fn projects_list(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Projects, "projects.list", Value::Null)
+    }
+
+    pub fn tasks_submit(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Tasks, "tasks.submit", params)
+    }
+
+    pub fn tasks_list(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Tasks, "tasks.list", Value::Null)
+    }
+
+    pub fn tasks_get(&mut self, task_id: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Tasks,
+            "tasks.get",
+            json!({"task_id": task_id}),
+        )
+    }
+
+    pub fn tasks_cancel(
+        &mut self,
+        task_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Tasks,
+            "tasks.cancel",
+            json!({"task_id": task_id, "idempotency_key": idempotency_key}),
+        )
+    }
+
+    pub fn sessions_list(&mut self, task_id: Option<&str>) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Sessions,
+            "sessions.list",
+            json!({"task_id": task_id}),
+        )
+    }
+
+    pub fn sessions_get(
+        &mut self,
+        task_id: &str,
+        session_id: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Sessions,
+            "sessions.get",
+            json!({"task_id": task_id, "session_id": session_id}),
+        )
+    }
+
+    pub fn sessions_events(
+        &mut self,
+        task_id: &str,
+        session_id: &str,
+        after_sequence: Option<i64>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Sessions,
+            "sessions.events",
+            json!({
+                "task_id": task_id,
+                "session_id": session_id,
+                "after_sequence": after_sequence
+            }),
+        )
+    }
+
+    pub fn approvals_list(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Approvals, "approvals.list", Value::Null)
+    }
+
+    pub fn approvals_resolve(
+        &mut self,
+        approval_id: &str,
+        decision: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Approvals,
+            "approvals.resolve",
+            json!({
+                "approval_id": approval_id,
+                "decision": decision,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
+    pub fn workspaces_diff(
+        &mut self,
+        task_id: &str,
+        workspace_id: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Workspaces,
+            "workspaces.diff",
+            json!({"task_id": task_id, "workspace_id": workspace_id, "path": path}),
+        )
+    }
+
+    pub fn delivery_request(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Delivery, "delivery.request", params)
+    }
+
+    pub fn events_subscribe(&mut self, after_sequence: Option<i64>) -> Result<String, IpcError> {
+        if self.subscription.is_some() {
+            return Err(IpcError::Conflict);
+        }
+        if after_sequence.is_some_and(|sequence| sequence < 0) {
+            return Err(IpcError::InvalidParams);
+        }
+        let params = after_sequence
+            .map(|sequence| json!({"after_sequence": sequence}))
+            .unwrap_or_else(|| json!({}));
+        let result = self.call_feature(Capability::Events, "events.subscribe", params)?;
+        let subscription = result
+            .get("subscription_id")
+            .and_then(Value::as_str)
+            .ok_or(IpcError::Operation)?
+            .to_owned();
+        self.subscription = Some(subscription.clone());
+        self.last_event_sequence = Some(after_sequence.unwrap_or(0));
+        Ok(subscription)
+    }
+
+    pub fn next_event(&mut self) -> Result<IpcEvent, IpcError> {
+        if let Some(event) = self.events.pop_front() {
+            return self.accept_event(event?);
+        }
+        if self.subscription.is_none() {
+            return Err(IpcError::NoSubscription);
+        }
+        self.stream
+            .set_timeouts(Duration::from_secs(24 * 60 * 60))
+            .map_err(|_| IpcError::Operation)?;
+        let result = self.read_event();
+        let reset = self.stream.set_timeouts(self.io_timeout);
+        if reset.is_err() {
+            return Err(IpcError::Operation);
+        }
+        self.accept_event(result?)
+    }
+
+    pub fn last_event_sequence(&self) -> Option<i64> {
+        self.last_event_sequence
+    }
+
+    fn call_feature(
+        &mut self,
+        capability: Capability,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, IpcError> {
+        if !self.negotiated.contains(&capability) {
+            return Err(IpcError::UnsupportedCapability);
+        }
+        self.call(method, params)
+    }
+
     fn call(&mut self, method: &str, params: Value) -> Result<Value, IpcError> {
         let id = self.next_id;
-        self.next_id += 1;
+        self.next_id = self.next_id.checked_add(1).ok_or(IpcError::Operation)?;
         let rpc_id = RpcId::Number(id.into());
         protocol::write(
             &mut self.stream,
@@ -90,15 +277,105 @@ impl Client {
                 params,
             },
         )?;
-        let response = protocol::read::<RpcResponse>(&mut self.stream)?;
-        if response.jsonrpc != "2.0" || response.id != rpc_id {
+        loop {
+            match protocol::read::<IncomingMessage>(&mut self.stream)? {
+                IncomingMessage::Notification(notification) => {
+                    self.queue_notification(notification)?;
+                }
+                IncomingMessage::Response(response) => {
+                    if response.jsonrpc != "2.0" || response.id != rpc_id {
+                        return Err(IpcError::Operation);
+                    }
+                    if let Some(error) = response.error {
+                        return Err(map_remote(error.code));
+                    }
+                    return response.result.ok_or(IpcError::Operation);
+                }
+            }
+        }
+    }
+
+    fn read_event(&mut self) -> Result<IpcEvent, IpcError> {
+        loop {
+            if let Some(event) = self.events.pop_front() {
+                return event;
+            }
+            match protocol::read::<IncomingMessage>(&mut self.stream)? {
+                IncomingMessage::Notification(notification) => {
+                    self.queue_notification(notification)?;
+                }
+                IncomingMessage::Response(_) => return Err(IpcError::Operation),
+            }
+        }
+    }
+
+    fn queue_notification(
+        &mut self,
+        notification: crate::protocol::RpcNotification,
+    ) -> Result<(), IpcError> {
+        if notification.jsonrpc != "2.0" {
             return Err(IpcError::Operation);
         }
-        if let Some(error) = response.error {
-            return Err(map_remote(error.code));
+        let subscription = self.subscription.as_deref().ok_or(IpcError::NoSubscription)?;
+        match notification.method.as_str() {
+            "events.event" => {
+                let params: EventParams =
+                    serde_json::from_value(notification.params).map_err(|_| IpcError::Operation)?;
+                if params.subscription_id != subscription {
+                    return Err(IpcError::Operation);
+                }
+                if self.events.len() >= 256 {
+                    return Err(IpcError::SlowConsumer);
+                }
+                self.events.push_back(Ok(params.event));
+            }
+            "events.error" => {
+                let params: EventErrorParams =
+                    serde_json::from_value(notification.params).map_err(|_| IpcError::Operation)?;
+                if params.subscription_id != subscription {
+                    return Err(IpcError::Operation);
+                }
+                if self.events.len() >= 256 {
+                    return Err(IpcError::SlowConsumer);
+                }
+                self.subscription = None;
+                self.events.push_back(Err(map_remote(params.error.code)));
+            }
+            _ => return Err(IpcError::Operation),
         }
-        response.result.ok_or(IpcError::Operation)
+        Ok(())
     }
+
+    fn accept_event(&mut self, event: IpcEvent) -> Result<IpcEvent, IpcError> {
+        let expected = self
+            .last_event_sequence
+            .and_then(|sequence| sequence.checked_add(1))
+            .ok_or(IpcError::Operation)?;
+        if event.sequence != expected {
+            return Err(IpcError::Operation);
+        }
+        self.last_event_sequence = Some(event.sequence);
+        Ok(event)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct EventParams {
+    subscription_id: String,
+    event: IpcEvent,
+}
+
+#[derive(serde::Deserialize)]
+struct EventErrorParams {
+    subscription_id: String,
+    error: RemoteEventError,
+}
+
+#[derive(serde::Deserialize)]
+struct RemoteEventError {
+    code: i32,
+    #[serde(rename = "message")]
+    _message: String,
 }
 
 #[cfg(unix)]
@@ -138,6 +415,14 @@ fn map_remote(code: i32) -> IpcError {
         -32001 => IpcError::Authentication,
         -32002 | -32004 => IpcError::UnsupportedCapability,
         -32003 => IpcError::UnsupportedVersion,
+        -32602 => IpcError::InvalidParams,
+        -32010 => IpcError::NotFound,
+        -32011 => IpcError::Conflict,
+        -32012 => IpcError::Forbidden,
+        -32013 => IpcError::IdempotencyConflict,
+        -32014 => IpcError::IdempotencyInProgress,
+        -32015 => IpcError::SlowConsumer,
+        -32016 => IpcError::ResultTooLarge,
         _ => IpcError::Operation,
     }
 }

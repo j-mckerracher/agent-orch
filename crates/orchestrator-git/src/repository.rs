@@ -1,7 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 
 use crate::error::Error;
-use crate::git::git;
+use crate::git::{git, git_bytes};
 
 /// A validated Git repository. Operations never change the primary checkout:
 /// no branch switches, resets, or deletions of uncommitted work.
@@ -82,6 +83,67 @@ impl Repository {
         }
         Ok(sha)
     }
+    /// Reads a diff from `base_sha` to this repository, restricted to one
+    /// relative path when supplied. Absolute paths must remain under this
+    /// worktree; parent traversal and Git pathspec magic cannot escape scope.
+    /// Updated: 2026-11-08T17:01:05+00:00.
+    pub fn diff_from(
+        &self,
+        base_sha: &str,
+        path: Option<&Path>,
+    ) -> Result<String, Error> {
+        if !is_full_object_id(base_sha) || self.resolve_base_ref(base_sha)? != base_sha {
+            return Err(Error::InvalidDiffBase);
+        }
+        let path = path
+            .map(|path| self.diff_path(path))
+            .transpose()?
+            .flatten();
+        let mut args: Vec<OsString> = [
+            "--literal-pathspecs",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            base_sha,
+            "--",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        if let Some(path) = path {
+            args.push(path.into());
+        }
+        let output = git_bytes("read scoped worktree diff", &self.path, args)?;
+        Ok(String::from_utf8_lossy(&output).into_owned())
+    }
+
+    fn diff_path(&self, path: &Path) -> Result<Option<String>, Error> {
+        if path.as_os_str().is_empty() {
+            return Err(Error::InvalidDiffPath);
+        }
+        let relative = if path.is_absolute() {
+            path.strip_prefix(&self.path)
+                .map_err(|_| Error::DiffPathOutsideWorktree)?
+        } else {
+            path
+        };
+        if relative.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
+            return Err(Error::DiffPathOutsideWorktree);
+        }
+        let relative = relative.to_str().ok_or(Error::InvalidDiffPath)?;
+        if relative.is_empty() || relative == "." {
+            Ok(None)
+        } else {
+            Ok(Some(relative.to_owned()))
+        }
+    }
+
 
     /// Reject a worktrees root that lives inside any of this repository's
     /// work trees (the primary checkout or a linked worktree). Task
@@ -106,6 +168,13 @@ impl Repository {
         Ok(())
     }
 }
+fn is_full_object_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 
 /// Canonicalize `path`, or its deepest existing ancestor with the remaining
 /// components appended, so a not-yet-created root can still be validated.

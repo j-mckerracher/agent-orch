@@ -1,7 +1,7 @@
 //! SQLite persistence operations for orchestrator domain records.
 //!
 //! Task transitions use the core state table and commit state plus audit event
-//! in one transaction. Other records are append-only. Updated: 2026-11-07T22:15:45-07:00.
+//! in one transaction. Other records are append-only. Updated: 2026-11-08T16:51:19+00:00.
 
 use orchestrator_core::authorization::Approval;
 use orchestrator_core::contract::{validate as validate_contract, TaskContract};
@@ -16,6 +16,7 @@ use sqlx::sqlite::Sqlite;
 use sqlx::{Row, Transaction};
 
 use crate::{SqliteStore, Store, StoreError, TaskRecord};
+use crate::sqlite_events::append_durable_event;
 
 /// One task event in the database-wide append-only journal.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,20 +85,31 @@ impl SqliteStore {
         })
     }
 
-    /// Appends a workspace record for an existing task.
+    /// Appends a workspace record and a path-free event for its owning task.
     pub fn add_workspace(&self, workspace: &Workspace) -> Result<(), StoreError> {
         let workspace = workspace.clone();
         self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
             sqlx::query(
                 "INSERT INTO workspaces (id, task_id, path, branch, base_commit) VALUES (?, ?, ?, ?, ?)",
             )
-            .bind(workspace.id)
-            .bind(workspace.task_id)
-            .bind(workspace.path)
-            .bind(workspace.branch)
-            .bind(workspace.base_commit)
-            .execute(&pool)
+            .bind(&workspace.id)
+            .bind(&workspace.task_id)
+            .bind(&workspace.path)
+            .bind(&workspace.branch)
+            .bind(&workspace.base_commit)
+            .execute(&mut *transaction)
             .await?;
+            let payload = serde_json::json!({"workspace_id": workspace.id});
+            append_durable_event(
+                &mut transaction,
+                &workspace.task_id,
+                None,
+                "workspace.added",
+                &payload,
+            )
+            .await?;
+            transaction.commit().await?;
             Ok(())
         })
     }
@@ -308,6 +320,15 @@ impl Store for SqliteStore {
                 .execute(&mut *transaction)
                 .await?;
             }
+            let payload = serde_json::json!({"state": TaskState::Created});
+            append_durable_event(
+                &mut transaction,
+                &contract.id,
+                None,
+                "task.created",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })
@@ -362,6 +383,15 @@ impl Store for SqliteStore {
                 .bind(encode(&audit)?)
                 .execute(&mut *transaction)
                 .await?;
+            let payload = serde_json::json!({"audit": &audit, "state": &next});
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                "task.transition",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(audit)
         })
@@ -438,6 +468,19 @@ impl Store for SqliteStore {
             .execute(&mut *transaction)
             .await?;
             bump_task_version(&mut transaction, &task_id).await?;
+            let payload = serde_json::json!({
+                "attempt_id": &attempt.id,
+                "attempt_number": attempt.attempt_number,
+                "state": attempt.state,
+            });
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                "attempt.created",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })
@@ -479,6 +522,15 @@ impl Store for SqliteStore {
                 .execute(&mut *transaction)
                 .await?;
             bump_task_version(&mut transaction, &task_id).await?;
+            let payload = serde_json::json!({"attempt_id": &attempt_id, "state": state});
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                "attempt.state_changed",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })
@@ -526,14 +578,27 @@ impl Store for SqliteStore {
             sqlx::query(
                 "INSERT INTO sessions (id, task_id, attempt_id, adapter, state) VALUES (?, ?, ?, ?, ?)",
             )
-            .bind(session.id)
+            .bind(&session.id)
             .bind(&task_id)
-            .bind(session.attempt_id)
-            .bind(session.adapter)
+            .bind(&session.attempt_id)
+            .bind(&session.adapter)
             .bind(encode(&session.state)?)
             .execute(&mut *transaction)
             .await?;
             bump_task_version(&mut transaction, &task_id).await?;
+            let payload = serde_json::json!({
+                "session_id": &session.id,
+                "attempt_id": &session.attempt_id,
+                "state": session.state,
+            });
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                Some(&session.id),
+                "session.created",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })
@@ -575,6 +640,16 @@ impl Store for SqliteStore {
                 .execute(&mut *transaction)
                 .await?;
             bump_task_version(&mut transaction, &task_id).await?;
+            let payload =
+                serde_json::json!({"session_id": &session_id, "state": state});
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                Some(&session_id),
+                "session.state_changed",
+                &payload,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })

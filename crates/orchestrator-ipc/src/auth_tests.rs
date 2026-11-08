@@ -1,4 +1,4 @@
-use super::{authenticate, decode, AuthError, Handshake, Secret};
+use super::{authenticate, decode, AuthError, Capability, Handshake, Secret};
 use std::fs;
 use tempfile::TempDir;
 
@@ -12,13 +12,13 @@ fn chooses_highest_common_version_and_rejects_unknown_capability_safely() {
         versions: vec![3, 1, 2],
         capabilities: vec!["health".into()],
     };
-    assert_eq!(authenticate(&secret, &accepted).unwrap().0, 1);
+    assert_eq!(authenticate(&secret, &accepted, &Capability::ALL).unwrap().0, 1);
     let rejected = Handshake {
         token: Some(token.clone()),
         versions: vec![1],
         capabilities: vec!["attacker-controlled-capability".into()],
     };
-    let error = authenticate(&secret, &rejected).unwrap_err();
+    let error = authenticate(&secret, &rejected, &Capability::ALL).unwrap_err();
     assert!(matches!(&error, AuthError::UnsupportedCapability));
     assert!(!error.to_string().contains("attacker-controlled-capability"));
     assert!(!format!("{secret:?}").contains(&token));
@@ -35,7 +35,7 @@ fn absent_token_is_authentication_failure() {
         capabilities: vec![],
     };
     assert!(matches!(
-        authenticate(&secret, &handshake),
+        authenticate(&secret, &handshake, &Capability::ALL),
         Err(AuthError::Failed)
     ));
 }
@@ -70,7 +70,7 @@ fn reports_no_common_version() {
         capabilities: vec![],
     };
     assert!(matches!(
-        authenticate(&secret, &handshake),
+        authenticate(&secret, &handshake, &Capability::ALL),
         Err(AuthError::UnsupportedVersion)
     ));
 }

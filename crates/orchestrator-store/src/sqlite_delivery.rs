@@ -1,10 +1,10 @@
 //! SQLite persistence for report-only and local-review delivery.
 //!
-//! Each outcome row and its audit event commit in one transaction. Approval
-//! checks still use `SqliteStore::check_approval`; this module also rechecks
-//! that a persisted verifier run passed for the exact task and candidate.
+//! Each outcome row, its audit event, and its path-free global event commit
+//! together. Approval checks use `check_approval`; persisted verifier evidence
+//! must match the exact task and candidate.
 //!
-//! Updated: 2026-11-08T03:41:55-07:00.
+//! Updated: 2026-11-08T16:59:05+00:00.
 
 use std::io;
 
@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use sqlx::Row;
 
 use crate::{SqliteStore, StoreError};
+use crate::sqlite_events::append_durable_event;
 
 /// One final delivery result persisted with its audit event.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +107,7 @@ impl SqliteStore {
             "outcome": outcome,
             "detail": detail,
         }))?;
+        let stream_payload = json!({"step_id": &id, "outcome": outcome});
         self.call(move |pool| async move {
             let mut transaction = pool.begin().await?;
             sqlx::query(
@@ -129,11 +131,20 @@ impl SqliteStore {
             sqlx::query(
                 "INSERT INTO delivery_step_events (delivery_step_id, task_id, kind, payload) VALUES (?, ?, ?, ?)",
             )
-            .bind(id)
-            .bind(task_id)
+            .bind(&id)
+            .bind(&task_id)
             .bind(outcome)
             .bind(audit_payload)
             .execute(&mut *transaction)
+            .await?;
+            let stream_kind = format!("delivery.{outcome}");
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                &stream_kind,
+                &stream_payload,
+            )
             .await?;
             transaction.commit().await?;
             Ok(())

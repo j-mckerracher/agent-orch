@@ -31,6 +31,43 @@ impl From<io::Error> for FrameError {
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
     Health,
+    Projects,
+    Tasks,
+    Sessions,
+    Events,
+    Approvals,
+    Workspaces,
+    Delivery,
+}
+
+impl Capability {
+    pub const ALL: [Self; 8] = [
+        Self::Health,
+        Self::Projects,
+        Self::Tasks,
+        Self::Sessions,
+        Self::Events,
+        Self::Approvals,
+        Self::Workspaces,
+        Self::Delivery,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Health => "health",
+            Self::Projects => "projects",
+            Self::Tasks => "tasks",
+            Self::Sessions => "sessions",
+            Self::Events => "events",
+            Self::Approvals => "approvals",
+            Self::Workspaces => "workspaces",
+            Self::Delivery => "delivery",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|capability| capability.as_str() == value)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -60,6 +97,20 @@ pub(crate) struct RpcResponse {
 }
 
 #[derive(Deserialize, Serialize)]
+pub(crate) struct RpcNotification {
+    pub(crate) jsonrpc: String,
+    pub(crate) method: String,
+    pub(crate) params: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum IncomingMessage {
+    Response(RpcResponse),
+    Notification(RpcNotification),
+}
+
+#[derive(Deserialize, Serialize)]
 pub(crate) struct RpcFailure {
     pub(crate) code: i32,
     pub(crate) message: String,
@@ -81,6 +132,39 @@ pub(crate) struct Welcome {
 pub(crate) fn read<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<T, FrameError> {
     let mut header = [0u8; HEADER_LEN];
     read_part(stream, &mut header, "header")?;
+    read_body(stream, &header)
+}
+
+pub(crate) fn read_optional<T: for<'de> Deserialize<'de>>(
+    stream: &mut impl Read,
+) -> Result<Option<T>, FrameError> {
+    let mut first = [0u8; 1];
+    loop {
+        match stream.read(&mut first) {
+            Ok(0) => return Err(FrameError::Truncated { part: "header" }),
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(None)
+            }
+            Err(error) => return Err(FrameError::Io(error.kind())),
+        }
+    }
+    let mut header = [0u8; HEADER_LEN];
+    header[0] = first[0];
+    read_part(stream, &mut header[1..], "header")?;
+    read_body(stream, &header).map(Some)
+}
+
+fn read_body<T: for<'de> Deserialize<'de>>(
+    stream: &mut impl Read,
+    header: &[u8; HEADER_LEN],
+) -> Result<T, FrameError> {
     let version = u16::from_be_bytes([header[0], header[1]]);
     if version != VERSION {
         return Err(FrameError::WrongVersion {

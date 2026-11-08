@@ -1,12 +1,16 @@
-//! On-demand daemon entry point. Updated: 2026-11-08T13:36:11+00:00.
+//! On-demand daemon entry point for authenticated local task APIs. Updated: 2026-11-08T17:34:31+00:00.
 //! It accepts `--data-dir`. Its default is `$HOME/.local/share/agent-orch` on
 //! Unix and `%LOCALAPPDATA%/agent-orch` on Windows. If the platform variable is
 //! unset, it uses `<current-dir>/.agent-orch`. Acquire the data lock before
 //! creating IPC token or socket.
+mod api;
+mod idempotency;
 
+use api::DaemonApi;
 use orchestrator_ipc::{Server, ServerConfig};
 use orchestrator_store::DataDirectoryLock;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 fn main() {
     if let Err(error) = run() {
@@ -18,8 +22,12 @@ fn main() {
 fn run() -> Result<(), String> {
     let data_dir = data_dir()?;
     let _lock = acquire_lock(&data_dir)?;
-    Server::serve(ServerConfig::new(data_dir, env!("CARGO_PKG_VERSION")))
-        .map_err(|error| format!("daemon IPC failed: {error}"))
+    let handler = Arc::new(DaemonApi::new(&data_dir)?);
+    Server::serve_with_handler(
+        ServerConfig::new(data_dir, env!("CARGO_PKG_VERSION")),
+        handler,
+    )
+    .map_err(|error| format!("daemon IPC failed: {error}"))
 }
 
 fn acquire_lock(data_dir: &std::path::Path) -> Result<DataDirectoryLock, String> {

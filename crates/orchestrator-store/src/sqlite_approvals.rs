@@ -1,10 +1,10 @@
 //! SQLite persistence for the approval state machine.
 //!
-//! Approval state changes and their append-only events commit together. The
-//! task `events` table remains task-only because `Store::get` decodes each
-//! payload as a task audit event.
+//! Approval transitions append their state event and global stream event in
+//! the same transaction. The task `events` table remains task-only because
+//! `Store::get` decodes each payload as a task audit event.
 //!
-//! Updated: 2026-11-08T00:04:58-07:00.
+//! Updated: 2026-11-08T16:58:08+00:00.
 
 use std::fmt;
 use std::future::Future;
@@ -19,6 +19,7 @@ use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
 use sqlx::{Row, Transaction};
 
 use crate::SqliteStore;
+use crate::sqlite_events::append_durable_event;
 
 impl SqliteStore {
     /// Create a pending approval and supersede changed active actions for its task.
@@ -150,6 +151,20 @@ impl SqliteStore {
             decode_approval(row)
         })
     }
+    /// Lists all approvals that still await an allowlisted decision.
+    pub fn pending_approvals(&self) -> Result<Vec<Approval>, ApprovalError> {
+        approval_call(self, move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT id, task_id, action, status, granted_by FROM approvals \
+                 WHERE status = 'requested' ORDER BY id",
+            )
+            .fetch_all(&pool)
+            .await
+            .map_err(persistence)?;
+            rows.into_iter().map(decode_approval).collect()
+        })
+    }
+
 
     /// Check approval state and all bound action dimensions against a proposal.
     pub fn check_approval(&self, id: &str, proposed: &ApprovalAction) -> Result<(), ApprovalError> {
@@ -330,6 +345,11 @@ async fn insert_event(
     .execute(&mut **transaction)
     .await
     .map_err(persistence)?;
+    let kind = format!("approval.{}", event.kind());
+    let payload = serde_json::json!({"approval_id": approval_id, "event": event});
+    append_durable_event(transaction, task_id, None, &kind, &payload)
+        .await
+        .map_err(persistence)?;
     Ok(())
 }
 

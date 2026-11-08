@@ -1,7 +1,7 @@
 use crate::auth::Secret;
 use crate::session::{self, State};
 use crate::transport::{Listener, TransportError};
-use crate::IpcError;
+use crate::{IpcError, RpcHandler};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -40,6 +40,22 @@ impl ServerConfig {
 
 impl Server {
     pub fn serve(config: ServerConfig) -> Result<(), IpcError> {
+        Self::serve_inner(config, None)
+    }
+
+    /// Serves negotiated API methods through an authenticated local socket.
+    /// Updated: 2026-11-08T17:06:42+00:00.
+    pub fn serve_with_handler(
+        config: ServerConfig,
+        handler: Arc<dyn RpcHandler>,
+    ) -> Result<(), IpcError> {
+        Self::serve_inner(config, Some(handler))
+    }
+
+    fn serve_inner(
+        config: ServerConfig,
+        handler: Option<Arc<dyn RpcHandler>>,
+    ) -> Result<(), IpcError> {
         Listener::prepare(&config.data_dir).map_err(map_transport)?;
         let secret = Arc::new(Secret::create(&config.data_dir).map_err(|_| IpcError::Operation)?);
         let mut listener = Listener::bind(&config.data_dir).map_err(map_transport)?;
@@ -52,19 +68,31 @@ impl Server {
             config.package_version,
             config.idle_timeout,
             config.stream_timeout,
+            handler,
         ));
         let mut workers: Vec<JoinHandle<()>> = Vec::new();
         let mut failure = None;
         while !state.stopping.load(Ordering::Acquire) {
             reap_finished(&mut workers);
-            if state
+            let idle = state
                 .last_request
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .elapsed()
-                >= state.idle_timeout
-            {
-                break;
+                >= state.idle_timeout;
+            if idle {
+                if state
+                    .handler
+                    .as_ref()
+                    .is_some_and(|handler| handler.keep_alive())
+                {
+                    *state
+                        .last_request
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Instant::now();
+                } else {
+                    break;
+                }
             }
             match listener.accept() {
                 Ok(stream) => {

@@ -4,7 +4,7 @@
 //! SQLite tables, WAL, foreign keys, and embedded migrations. Both implement
 //! the synchronous [`Store`] trait. Existing `FileStore` data is not migrated.
 //!
-//! Updated: 2026-11-07T22:44:29-07:00.
+//! Updated: 2026-11-08T16:58:08+00:00.
 //!
 //! # Invariants
 //!
@@ -29,8 +29,8 @@
 //!   SQLite's five-second busy timeout serializes writers or returns a typed
 //!   database error.
 //! - Every connection enables foreign keys and WAL. Embedded versioned
-//!   migrations run before `SqliteStore::new` returns. The event journal uses
-//!   one database-wide auto-incrementing sequence.
+//!   migrations run before `SqliteStore::new` returns. `durable_events` assigns
+//!   one global sequence; the legacy `events` table remains task-transition-only.
 //! - Project, workspace, verification-log, and artifact paths are references.
 //!   The store does not open those files. Artifact contents remain outside
 //!   SQLite.
@@ -53,6 +53,8 @@ mod sqlite_approvals;
 mod sqlite_verification;
 mod sqlite_delivery;
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
+mod sqlite_events;
+pub use sqlite_events::{IdempotencyStart, StreamEvent};
 mod sqlite_reconcile;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::EventJournalEntry;
@@ -185,6 +187,18 @@ pub enum StoreError {
     /// An embedded SQLite migration failed while opening the store.
     #[error("database migration: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
+    /// Event cursor must be nonnegative.
+    #[error("event cursor must be nonnegative")]
+    InvalidEventCursor,
+    /// Event page size must be within its bounded range.
+    #[error("event page limit is invalid")]
+    InvalidEventLimit,
+    /// Idempotency key or fingerprint is malformed.
+    #[error("idempotency key is invalid")]
+    InvalidIdempotencyKey,
+    /// A key was already bound to a different request.
+    #[error("idempotency key conflicts with prior request")]
+    IdempotencyConflict,
     /// The SQLite worker stopped before responding to a request.
     #[error("SQLite worker stopped unexpectedly")]
     WorkerStopped,

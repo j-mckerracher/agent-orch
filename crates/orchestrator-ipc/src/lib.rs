@@ -1,6 +1,6 @@
 //! Authenticated local JSON-RPC control plane between daemon and clients.
 //!
-//! Updated: 2026-11-08T14:48:33+00:00. Each frame is `u16` protocol version
+//! Updated: 2026-11-08T17:19:10+00:00. Each frame is `u16` protocol version
 //! (big-endian), `u32` JSON byte length (big-endian), then exactly that many
 //! UTF-8 JSON bytes. Version 1 is current. Bodies over 1 MiB are rejected
 //! before allocation. Typed frame errors distinguish oversized, truncated,
@@ -9,10 +9,10 @@
 //! request on each stream. Request IDs accept strings and numbers. Its params
 //! have a lowercase 64-character hex token, supported versions, and requested
 //! capabilities. Server picks the highest common version and compares the
-//! token in constant time. It advertises only `health`;
-//! `capabilities` discovers the negotiated set. `health` returns package
-//! version, uptime seconds, and data directory. `shutdown` is lifecycle control
-//! and remains callable when no feature capability is negotiated. Unsupported
+//! token in constant time. It negotiates only implemented, requested
+//! capabilities; `capabilities` reports that set. `health` returns package
+//! version, uptime seconds, and data directory. `shutdown` remains lifecycle
+//! control even when no feature capability is negotiated. Unsupported
 //! capabilities fail with a typed, payload-free error. Tokens use fresh
 //! 32-byte OS randomness. On Unix, `daemon.token` has mode 0600, and the data
 //! directory is owner-owned and not group/other-writable. On Windows, the
@@ -26,10 +26,10 @@
 //! owner-matched socket whose connect probe returns `ConnectionRefused`, after
 //! rechecking identity. Any other probe result fails closed. Orderly shutdown
 //! removes owned token and socket. Acquire the daemon lock before creating
-//! server resources. Idle timer starts at daemon startup and resets on each
-//! authenticated request. Default is 60 seconds. The accept loop is nonblocking
-//! for idle checks; it resets accepted streams to blocking before applying
-//! per-stream read and write timeouts.
+//! server resources. Idle timer resets on authenticated requests and events.
+//! Active-work handlers can keep the daemon alive past the default 60 seconds.
+//! The accept loop is nonblocking for idle checks; accepted streams are reset
+//! to blocking before per-stream read and write timeouts are applied.
 //!
 //! Windows named pipes are deferred. Windows and other non-Unix targets use
 //! the typed `Unsupported` transport.
@@ -66,6 +66,99 @@ mod integration_tests;
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 
+/// One path-free durable event returned by the authenticated daemon stream.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct IpcEvent {
+    /// Monotonic database-wide sequence.
+    pub sequence: i64,
+    /// Owning task identifier.
+    pub task_id: String,
+    /// Session identifier for session-scoped events.
+    pub session_id: Option<String>,
+    /// Stable event type.
+    pub kind: String,
+    /// Event-specific, path-free payload.
+    pub payload: serde_json::Value,
+    /// Event creation time in UTC.
+    pub created_at: String,
+}
+
+/// Sanitized failure returned by a method handler.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RpcError {
+    InvalidParams,
+    NotFound,
+    Conflict,
+    Forbidden,
+    IdempotencyConflict,
+    IdempotencyInProgress,
+    SlowConsumer,
+    ResultTooLarge,
+    Internal,
+}
+
+impl RpcError {
+    pub(crate) const fn code(self) -> i32 {
+        match self {
+            Self::InvalidParams => -32602,
+            Self::NotFound => -32010,
+            Self::Conflict => -32011,
+            Self::Forbidden => -32012,
+            Self::IdempotencyConflict => -32013,
+            Self::IdempotencyInProgress => -32014,
+            Self::SlowConsumer => -32015,
+            Self::ResultTooLarge => -32016,
+            Self::Internal => -32603,
+        }
+    }
+
+    pub(crate) const fn message(self) -> &'static str {
+        match self {
+            Self::InvalidParams => "request parameters are invalid",
+            Self::NotFound => "resource was not found",
+            Self::Conflict => "operation conflicts with current state",
+            Self::Forbidden => "operation is not authorized",
+            Self::IdempotencyConflict => "idempotency key conflicts with prior request",
+            Self::IdempotencyInProgress => "idempotent operation is still in progress",
+            Self::SlowConsumer => "event subscriber fell behind",
+            Self::ResultTooLarge => "result exceeds size limit",
+            Self::Internal => "internal operation failed",
+        }
+    }
+}
+
+/// Daemon-owned API boundary used by the transport after authentication.
+pub trait RpcHandler: Send + Sync + 'static {
+    /// Returns only capabilities implemented by this handler.
+    fn capabilities(&self) -> Vec<Capability>;
+
+    /// Runs a negotiated method and returns a JSON result.
+    fn dispatch(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, RpcError>;
+
+    /// Loads a bounded, ordered page of durable events after a cursor.
+    fn events_after(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<IpcEvent>, RpcError>;
+    /// Returns the latest durable event cursor.
+    fn latest_event_sequence(&self) -> Result<i64, RpcError> {
+        Ok(i64::MAX)
+    }
+
+
+    /// Keeps the daemon alive while durable work remains active.
+    fn keep_alive(&self) -> bool {
+        false
+    }
+}
+
+
 #[derive(Debug, thiserror::Error)]
 pub enum IpcError {
     #[error(transparent)]
@@ -82,6 +175,24 @@ pub enum IpcError {
     AlreadyRunning,
     #[error("local IPC path has unsafe or ambiguous ownership")]
     UnsafePath,
+    #[error("invalid RPC parameters")]
+    InvalidParams,
+    #[error("RPC resource not found")]
+    NotFound,
+    #[error("RPC operation conflicts with current state")]
+    Conflict,
+    #[error("RPC operation is not authorized")]
+    Forbidden,
+    #[error("RPC idempotency key conflicts with prior request")]
+    IdempotencyConflict,
+    #[error("RPC idempotent operation is still in progress")]
+    IdempotencyInProgress,
+    #[error("RPC event subscriber fell behind")]
+    SlowConsumer,
+    #[error("RPC result exceeds size limit")]
+    ResultTooLarge,
+    #[error("event subscription is not active")]
+    NoSubscription,
     #[error("local IPC operation failed")]
     Operation,
 }

@@ -853,8 +853,15 @@ dependencies = [
 name = "orchestrator-daemon"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "orchestrator-core",
+ "orchestrator-git",
  "orchestrator-ipc",
+ "orchestrator-runtime",
  "orchestrator-store",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "tempfile",
 ]
 

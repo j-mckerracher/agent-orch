@@ -165,6 +165,7 @@ impl Drop for Secret {
 pub(crate) fn authenticate(
     secret: &Secret,
     handshake: &Handshake,
+    available: &[Capability],
 ) -> Result<(u16, Vec<Capability>), AuthError> {
     if !handshake
         .token
@@ -177,17 +178,16 @@ pub(crate) fn authenticate(
         .versions
         .iter()
         .copied()
-        .filter(|v| *v == 1)
+        .filter(|version| *version == 1)
         .max()
         .ok_or(AuthError::UnsupportedVersion)?;
     let mut capabilities = Vec::new();
     for requested in &handshake.capabilities {
-        if requested == "health" {
-            if !capabilities.contains(&Capability::Health) {
-                capabilities.push(Capability::Health);
-            }
-        } else {
+        let Some(capability) = Capability::from_str(requested) else {
             return Err(AuthError::UnsupportedCapability);
+        };
+        if available.contains(&capability) && !capabilities.contains(&capability) {
+            capabilities.push(capability);
         }
     }
     Ok((version, capabilities))

@@ -11,6 +11,19 @@ where
     I: IntoIterator<Item = A>,
     A: AsRef<OsStr>,
 {
+    let stdout = git_bytes(step, dir, args)?;
+    Ok(String::from_utf8_lossy(&stdout).trim().to_string())
+}
+
+pub(super) fn git_bytes<I, A>(
+    step: &'static str,
+    dir: &std::path::Path,
+    args: I,
+) -> Result<Vec<u8>, Error>
+where
+    I: IntoIterator<Item = A>,
+    A: AsRef<OsStr>,
+{
     let output = Command::new("git")
         .current_dir(dir)
         .args(args)
@@ -23,5 +36,5 @@ where
             stderr: super::error::first_line(&output.stderr),
         });
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(output.stdout)
 }
