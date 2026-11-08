@@ -46,6 +46,7 @@
 //! write may leave an ignored `<id>.<pid>.tmp` file.
 pub mod sqlite;
 mod sqlite_ops;
+mod sqlite_approvals;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::EventJournalEntry;
 
