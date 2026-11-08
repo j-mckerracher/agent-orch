@@ -98,7 +98,7 @@ fn git(repo: &Path, args: &[&str]) -> String {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    String::from_utf8_lossy(&output.stdout).trim_end().to_string()
 }
 
 fn task_worktree(fixture: &Fixture, task_id: &str) -> PathBuf {
@@ -108,20 +108,23 @@ fn task_worktree(fixture: &Fixture, task_id: &str) -> PathBuf {
 #[test]
 fn run_preserves_primary_checkout_and_records_candidate() {
     let fixture = fixture(successful_script());
+    let tracked = fixture.repo.join("sample.txt");
+    let untracked = fixture.repo.join("primary-untracked.txt");
+    fs::write(&tracked, b"primary tracked bytes\n").unwrap();
+    fs::write(&untracked, b"primary untracked bytes\n").unwrap();
     let base_head = git(&fixture.repo, &["rev-parse", "HEAD"]);
     let base_status = git(&fixture.repo, &["status", "--porcelain"]);
+    let base_tracked = fs::read(&tracked).unwrap();
+    let base_untracked = fs::read(&untracked).unwrap();
     let output = run_success(&fixture, "run-preserves-primary");
     assert!(String::from_utf8_lossy(&output.stdout).contains("status: Verifying"));
     assert_eq!(git(&fixture.repo, &["rev-parse", "HEAD"]), base_head);
     assert_eq!(git(&fixture.repo, &["status", "--porcelain"]), base_status);
+    assert_eq!(fs::read(&tracked).unwrap(), base_tracked);
+    assert_eq!(fs::read(&untracked).unwrap(), base_untracked);
     assert_eq!(
-        fs::read_to_string(fixture.repo.join("sample.txt")).unwrap(),
-        "base\n"
-    );
-    assert_eq!(
-        fs::read_to_string(task_worktree(&fixture, "run-preserves-primary").join("sample.txt"))
-            .unwrap(),
-        "candidate\n"
+        fs::read(task_worktree(&fixture, "run-preserves-primary").join("sample.txt")).unwrap(),
+        b"candidate\n"
     );
     let logs = fixture.data.join("cli/run-preserves-primary");
     let jsonl = fs::read_to_string(logs.join("codex.jsonl")).unwrap();
@@ -231,17 +234,39 @@ fn cleanup_preserves_dirty_and_unlanded_worktrees() {
     let fixture = fixture(successful_script());
     run_success(&fixture, "cleanup-guard");
     let worktree = task_worktree(&fixture, "cleanup-guard");
-
+    let unlanded_head = git(&worktree, &["rev-parse", "HEAD"]);
+    let unlanded_status = git(&worktree, &["status", "--porcelain"]);
+    let unlanded_bytes = fs::read(worktree.join("sample.txt")).unwrap();
     let unlanded = run_cli(&fixture, "cleanup", "cleanup-guard");
     assert!(!unlanded.status.success());
     assert!(String::from_utf8_lossy(&unlanded.stderr).contains("not reachable"));
     assert!(worktree.exists());
+    assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), unlanded_head);
+    assert_eq!(
+        git(&worktree, &["status", "--porcelain"]),
+        unlanded_status
+    );
+    assert_eq!(
+        fs::read(worktree.join("sample.txt")).unwrap(),
+        unlanded_bytes
+    );
 
-    fs::write(worktree.join("sample.txt"), "dirty\n").unwrap();
+    let tracked = worktree.join("sample.txt");
+    let untracked = worktree.join("untracked.txt");
+    fs::write(&tracked, b"dirty tracked bytes\n").unwrap();
+    fs::write(&untracked, b"dirty untracked bytes\n").unwrap();
+    let dirty_head = git(&worktree, &["rev-parse", "HEAD"]);
+    let dirty_status = git(&worktree, &["status", "--porcelain"]);
+    let dirty_tracked = fs::read(&tracked).unwrap();
+    let dirty_untracked = fs::read(&untracked).unwrap();
     let dirty = run_cli(&fixture, "cleanup", "cleanup-guard");
     assert!(!dirty.status.success());
     assert!(String::from_utf8_lossy(&dirty.stderr).contains("is dirty"));
     assert!(worktree.exists());
+    assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), dirty_head);
+    assert_eq!(git(&worktree, &["status", "--porcelain"]), dirty_status);
+    assert_eq!(fs::read(&tracked).unwrap(), dirty_tracked);
+    assert_eq!(fs::read(&untracked).unwrap(), dirty_untracked);
 }
 
 #[test]
