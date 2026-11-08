@@ -438,7 +438,7 @@
       "id": "M5-02b",
       "milestone": "M5",
       "title": "Run daemon-owned tasks through the scheduler",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M5-02"
       ],
@@ -450,7 +450,7 @@
       "id": "M5-03",
       "milestone": "M5",
       "title": "Build project, task and coordinator UI",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M5-02"
       ],
@@ -462,7 +462,7 @@
       "id": "M5-04",
       "milestone": "M5",
       "title": "Build diff review and approval UI",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M5-02",
         "M3-04"
