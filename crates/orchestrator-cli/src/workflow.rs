@@ -1,15 +1,17 @@
-//! Single-task orchestration and local Git operations. The store owns task
-//! lifecycle records; this module owns CLI-only worktree metadata, logs, and
-//! cancellation requests. The primary checkout is validated as read-only and
-//! all agent writes run in a separately registered worktree. Updated: 2026-11-07T22:42:08-07:00.
+//! CLI lifecycle state lives in `store.sqlite`; worktree metadata and logs
+//! remain sidecars. Run holds the data lock through setup and finish updates,
+//! then releases it during agent execution so cancel can acquire the lock and
+//! signal only an identity-matched process group. Existing JSON task records
+//! are not migrated. Updated: 2026-11-08T09:04:40+00:00.
 
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, Output, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use orchestrator_agents::{
     AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, CodexAdapter,
@@ -17,21 +19,33 @@ use orchestrator_agents::{
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::identity::{classify_identity, ProcessClassification, ProcessObservation};
+use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_git::{create_task_worktree, Repository};
-use orchestrator_runtime::is_process_running;
-use orchestrator_store::{FileStore, Store};
+use orchestrator_runtime::reconcile::{
+    capture_process_identity, observe_process, reconcile_processes, scheduling_may_resume,
+    ProcessAction, ProcessIdentity, ProcessSubject, ReconciliationResolution, RecordedProcess,
+};
+use orchestrator_store::{DataDirectoryLock, DataDirectoryLockError, SqliteStore, Store};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[cfg(windows)]
 const NULL_DEVICE: &str = "NUL";
 #[cfg(not(windows))]
 const NULL_DEVICE: &str = "/dev/null";
+const STORE_FILE_NAME: &str = "store.sqlite";
+const LOCK_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
+const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(50);
+#[cfg(unix)]
+#[link(name = "c")]
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
 
-/// CLI-owned metadata complements the store's lifecycle record with canonical
-/// repository/worktree paths, logs, and process ownership. The persisted PID
-/// is diagnostic only; cancellation is delivered through a request file to
-/// the live `AgentHandle`, which alone signals its owned process group.
+/// CLI sidecar metadata stores canonical repository/worktree paths and log
+/// locations. SQLite process identity, not the diagnostic PID, authorizes
+/// cancellation. Updated: 2026-11-08T09:04:40+00:00.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskMetadata {
     repository: PathBuf,
@@ -39,7 +53,6 @@ struct TaskMetadata {
     branch: String,
     base_ref: String,
     base_sha: String,
-    runner_pid: u32,
     agent_pid: Option<u32>,
     stdout_log: PathBuf,
     stderr_log: PathBuf,
@@ -55,7 +68,7 @@ struct Paths {
     metadata: PathBuf,
     stdout_log: PathBuf,
     stderr_log: PathBuf,
-    cancel_request: PathBuf,
+    session_log: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -133,12 +146,10 @@ pub async fn run_task(
         ));
     }
 
-    let store = FileStore::new(&data_target.path).map_err(|error| {
-        format!(
-            "cannot open task store in {}: {error}",
-            data_target.path.display()
-        )
-    })?;
+    let lock = acquire_data_directory_lock(&data_target.path)?;
+    let store = open_store(&data_target.path)?;
+    ensure_project_registered(&store, &repository)?;
+    reconcile_before_scheduling(&store)?;
     let contract = TaskContract {
         id: task_id.clone(),
         project_id: repository.path().display().to_string(),
@@ -174,6 +185,15 @@ pub async fn run_task(
         !worktree.path().starts_with(repository.path()),
         "orchestrator-git returned a worktree inside the primary checkout"
     );
+    store
+        .add_workspace(&Workspace {
+            id: format!("{task_id}-workspace-1"),
+            task_id: task_id.clone(),
+            path: worktree.path().display().to_string(),
+            branch: worktree.branch().to_string(),
+            base_commit: worktree.base_sha().to_string(),
+        })
+        .map_err(|error| format!("cannot record worktree for task {task_id}: {error}"))?;
     let task_paths = paths(&data_target.path, &task_id);
     fs::create_dir_all(&task_paths.task_dir).map_err(|error| {
         let _ = store.transition(&task_id, TaskEvent::CancelRequested);
@@ -190,7 +210,6 @@ pub async fn run_task(
         branch: worktree.branch().to_string(),
         base_ref: base_ref.to_string(),
         base_sha: worktree.base_sha().to_string(),
-        runner_pid: std::process::id(),
         agent_pid: None,
         stdout_log: task_paths.stdout_log.clone(),
         stderr_log: task_paths.stderr_log.clone(),
@@ -241,22 +260,6 @@ pub async fn run_task(
         )
         .map_err(|error| format!("cannot record session {session_id}: {error}"))?;
 
-    if task_paths.cancel_request.exists() {
-        finish_cancelled(
-            &store,
-            &mut metadata,
-            &task_paths,
-            &ids,
-            SessionState::Aborted,
-            None,
-        )?;
-        println!(
-            "task {task_id} cancelled before agent launch; worktree preserved at {}",
-            metadata.worktree.display()
-        );
-        return Ok(130);
-    }
-
     let wrapper = std::env::current_exe()
         .map_err(|error| format!("cannot locate CLI executable for Codex supervision: {error}"))?;
     let wrapper_args = capture_args(&agent_path, &task_paths, objective)?;
@@ -291,6 +294,44 @@ pub async fn run_task(
             task_paths.metadata.display()
         ));
     }
+    match capture_process_identity(agent_pid) {
+        Ok(identity) => {
+            if let Err(error) = store.record_session_identity(&task_id, &session_id, &identity) {
+                let mut handle = handle;
+                handle.cancel().await.map_err(|cancel_error| {
+                    format!(
+                        "cannot persist session identity; cancellation also failed: {cancel_error}"
+                    )
+                })?;
+                let _ = handle.wait().await;
+                fail_before_agent_exit(
+                    &store,
+                    &mut metadata,
+                    &task_paths,
+                    &ids,
+                    &error.to_string(),
+                )?;
+                return Err(format!(
+                    "cannot persist identity for session {session_id}: {error}"
+                ));
+            }
+        }
+        Err(error) => {
+            let message = format!("process identity unavailable for session {session_id}: {error}");
+            if let Err(log_error) = log_session_message(&task_paths.session_log, &message) {
+                let mut handle = handle;
+                handle.cancel().await.map_err(|cancel_error| {
+                    format!(
+                        "cannot record identity failure; cancellation also failed: {cancel_error}"
+                    )
+                })?;
+                let _ = handle.wait().await;
+                fail_before_agent_exit(&store, &mut metadata, &task_paths, &ids, &log_error)?;
+                return Err(log_error);
+            }
+            eprintln!("{message}");
+        }
+    }
     store
         .update_session_state(&task_id, &session_id, SessionState::Running)
         .map_err(|error| format!("cannot mark session {session_id} running: {error}"))?;
@@ -299,8 +340,40 @@ pub async fn run_task(
     println!("worktree: {}", metadata.worktree.display());
     println!("branch: {}", metadata.branch);
     println!("Codex JSONL: {}", metadata.stdout_log.display());
+    println!("session log: {}", task_paths.session_log.display());
 
-    let monitored = monitor_agent(handle, &task_paths.cancel_request).await;
+    drop(lock);
+    let monitored = monitor_agent(handle).await;
+    let _finish_lock = acquire_data_directory_lock(&data_target.path)?;
+    let current = store
+        .get(&task_id)
+        .map_err(|error| format!("cannot reload task {task_id} after agent exit: {error}"))?;
+    if current.state == TaskState::Cancelled {
+        if current
+            .sessions
+            .iter()
+            .any(|session| session.id == session_id && !session.state.is_terminal())
+        {
+            store
+                .update_session_state(&task_id, &session_id, SessionState::Exited)
+                .map_err(|error| {
+                    format!("cannot mark cancelled session {session_id} exited: {error}")
+                })?;
+        }
+        metadata.agent_outcome = Some("cancelled".to_string());
+        metadata.exit_code = match &monitored {
+            Ok(AgentExit::Cancelled { code, .. })
+            | Ok(AgentExit::Completed { code, .. })
+            | Ok(AgentExit::Failed { code, .. }) => *code,
+            Err(_) => None,
+        };
+        write_metadata(&task_paths.metadata, &metadata)?;
+        println!(
+            "task {task_id} cancelled; process {agent_pid} stopped; worktree preserved at {}",
+            metadata.worktree.display()
+        );
+        return Ok(130);
+    }
     let exit = match monitored {
         Ok(exit) => exit,
         Err(reason) => {
@@ -408,7 +481,7 @@ pub async fn run_task(
 }
 
 fn finish_cancelled(
-    store: &FileStore,
+    store: &SqliteStore,
     metadata: &mut TaskMetadata,
     task_paths: &Paths,
     ids: &LifecycleIds<'_>,
@@ -436,7 +509,7 @@ fn finish_cancelled(
 }
 
 fn fail_before_agent_exit(
-    store: &FileStore,
+    store: &SqliteStore,
     metadata: &mut TaskMetadata,
     task_paths: &Paths,
     ids: &LifecycleIds<'_>,
@@ -458,7 +531,7 @@ fn fail_before_agent_exit(
 }
 
 fn fail_after_agent_exit(
-    store: &FileStore,
+    store: &SqliteStore,
     metadata: &mut TaskMetadata,
     task_paths: &Paths,
     ids: &LifecycleIds<'_>,
@@ -481,46 +554,38 @@ fn fail_after_agent_exit(
     Ok(())
 }
 
-async fn monitor_agent(
-    mut handle: Box<dyn AgentHandle>,
-    cancel_request: &Path,
-) -> Result<AgentExit, String> {
-    let mut poll = tokio::time::interval(Duration::from_millis(100));
+async fn monitor_agent(mut handle: Box<dyn AgentHandle>) -> Result<AgentExit, String> {
     loop {
-        tokio::select! {
-            event = handle.next_event() => {
-                match event.map_err(|error| format!("agent event stream failed: {error}"))? {
-                    Some(AgentEvent::SessionExited { .. }) => {
-                        return handle.wait().await.map_err(|error| format!("agent wait failed: {error}"));
-                    }
-                    Some(AgentEvent::SessionStarted { session_id }) => println!("Codex session: {session_id}"),
-                    Some(AgentEvent::MessageDelta { text }) => println!("{text}"),
-                    Some(AgentEvent::ToolStarted { name, .. }) => println!("tool started: {name}"),
-                    Some(AgentEvent::ToolFinished { success, .. }) => println!("tool finished: {success}"),
-                    Some(AgentEvent::ApprovalRequested { description, .. }) => println!("approval requested: {description}"),
-                    Some(AgentEvent::TurnFinished { outcome }) => println!("turn: {outcome:?}"),
-                    Some(AgentEvent::ProtocolError { message }) => eprintln!("Codex protocol error: {message}"),
-                    None => return Err("agent event stream ended without a process exit event".to_string()),
-                }
+        match handle
+            .next_event()
+            .await
+            .map_err(|error| format!("agent event stream failed: {error}"))?
+        {
+            Some(AgentEvent::SessionExited { .. }) => {
+                return handle
+                    .wait()
+                    .await
+                    .map_err(|error| format!("agent wait failed: {error}"));
             }
-            _ = poll.tick() => {
-                let requested = cancel_request.try_exists().map_err(|error| {
-                    format!("cannot check cancellation request {}: {error}", cancel_request.display())
-                })?;
-                if requested {
-                    handle.cancel().await.map_err(|error| format!("agent cancellation failed: {error}"))?;
-                    return handle.wait().await.map_err(|error| format!("agent reap after cancellation failed: {error}"));
-                }
+            Some(AgentEvent::SessionStarted { session_id }) => {
+                println!("Codex session: {session_id}")
             }
+            Some(AgentEvent::MessageDelta { text }) => println!("{text}"),
+            Some(AgentEvent::ToolStarted { name, .. }) => println!("tool started: {name}"),
+            Some(AgentEvent::ToolFinished { success, .. }) => println!("tool finished: {success}"),
+            Some(AgentEvent::ApprovalRequested { description, .. }) => {
+                println!("approval requested: {description}")
+            }
+            Some(AgentEvent::TurnFinished { outcome }) => println!("turn: {outcome:?}"),
+            Some(AgentEvent::ProtocolError { message }) => {
+                eprintln!("Codex protocol error: {message}")
+            }
+            None => return Err("agent event stream ended without a process exit event".to_string()),
         }
     }
 }
 
 pub fn list_tasks(data_dir: &Path) -> Result<(), String> {
-    if !data_dir.join("tasks").exists() {
-        println!("no tasks");
-        return Ok(());
-    }
     let store = open_store(data_dir)?;
     let tasks = store
         .list()
@@ -537,13 +602,6 @@ pub fn list_tasks(data_dir: &Path) -> Result<(), String> {
 
 pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
-    let record_path = data_dir.join("tasks").join(format!("{task_id}.json"));
-    if !record_path.is_file() {
-        return Err(format!(
-            "task record {} does not exist",
-            record_path.display()
-        ));
-    }
     let store = open_store(data_dir)?;
     let task = store
         .get(task_id)
@@ -570,6 +628,22 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         println!("sessions:");
         for session in &task.sessions {
             println!("  {}\t{}\t{:?}", session.id, session.adapter, session.state);
+            let identity = store
+                .session_identity(task_id, &session.id)
+                .map_err(|error| {
+                    format!(
+                        "cannot inspect identity for session {}: {error}",
+                        session.id
+                    )
+                })?;
+            println!(
+                "    process identity: {}",
+                if identity.is_some() {
+                    "recorded"
+                } else {
+                    "unavailable"
+                }
+            );
         }
     }
     let metadata_path = paths(data_dir, task_id).metadata;
@@ -599,6 +673,10 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     );
     println!("Codex JSONL: {}", metadata.stdout_log.display());
     println!("Codex stderr: {}", metadata.stderr_log.display());
+    println!(
+        "session log: {}",
+        paths(data_dir, task_id).session_log.display()
+    );
     if let Some(failure) = metadata.failure {
         println!("failure: {failure}");
     }
@@ -608,72 +686,144 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Cancels only when stored process group and start time match a live process.
+/// Updated: 2026-11-08T09:04:40+00:00.
 pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
-    let record_path = data_dir.join("tasks").join(format!("{task_id}.json"));
-    if !record_path.is_file() {
-        return Err(format!(
-            "task record {} does not exist",
-            record_path.display()
-        ));
-    }
+    let _lock = acquire_data_directory_lock(data_dir)?;
     let store = open_store(data_dir)?;
     let task = store
         .get(task_id)
         .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
     if task.state != TaskState::Running {
         return Err(format!(
-            "task {task_id} is {:?}, not Running; no agent process group will be signalled",
+            "task {task_id} is {:?}, not Running; no process group was signalled",
             task.state
         ));
     }
-    let metadata = read_metadata(data_dir, task_id)?;
-    let repository = Repository::new(&metadata.repository).map_err(|error| {
-        format!(
-            "cannot validate repository {} for task {task_id}: {error}",
-            metadata.repository.display()
-        )
-    })?;
-    let data_target = canonical_target(data_dir)?;
-    ensure_outside_primary(&repository, &data_target)?;
-    let task_paths = paths(&data_target.path, task_id);
-    let Some(agent_pid) = metadata.agent_pid else {
-        return Err(format!(
-            "task {task_id} has no recorded agent process; inspect {}",
-            task_paths.metadata.display()
-        ));
+    let Some(session) = task
+        .sessions
+        .iter()
+        .rev()
+        .find(|session| !session.state.is_terminal())
+    else {
+        return Err(format!("task {task_id} has no unfinished session"));
     };
-    if !is_process_running(agent_pid) {
-        return Err(format!("agent process {agent_pid} for task {task_id} is no longer running; preserve worktree {} and inspect task state", metadata.worktree.display()));
+    let attempt = task
+        .attempts
+        .iter()
+        .find(|attempt| attempt.id == session.attempt_id)
+        .ok_or_else(|| {
+            format!(
+                "session {}/{} references missing attempt {}",
+                task_id, session.id, session.attempt_id
+            )
+        })?;
+    if attempt.state != AttemptState::Running {
+        return Err(format!(
+            "attempt {} is {:?}; refusing to signal its process",
+            attempt.id, attempt.state
+        ));
     }
-    if !is_process_running(metadata.runner_pid) {
-        return Err(format!("task runner process {} is no longer active; cannot deliver cancellation request for task {task_id}", metadata.runner_pid));
-    }
-    match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&task_paths.cancel_request)
+    let identity = store
+        .session_identity(task_id, &session.id)
+        .map_err(|error| {
+            format!(
+                "cannot load process identity for session {}: {error}",
+                session.id
+            )
+        })?
+        .ok_or_else(|| {
+            format!(
+                "session {}/{} has no process identity; refusing to signal",
+                task_id, session.id
+            )
+        })?;
+    #[cfg(unix)]
     {
-        Ok(mut file) => {
-            writeln!(file, "cancel task {task_id}").map_err(|error| {
-                format!(
-                    "cannot write cancellation request {}: {error}",
-                    task_paths.cancel_request.display()
-                )
-            })?;
+        const SIGTERM: i32 = 15;
+        const SIGKILL: i32 = 9;
+        signal_owned_process_group(identity, SIGTERM)?;
+        thread::sleep(Duration::from_millis(500));
+        if process_identity_matches(identity) {
+            if let Err(error) = signal_owned_process_group(identity, SIGKILL) {
+                eprintln!("could not force-stop verified process group: {error}");
+            }
         }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            return Err(format!("cancellation already requested for task {task_id}; runner will stop its owned process group"));
-        }
-        Err(error) => {
-            return Err(format!(
-                "cannot create cancellation request {}: {error}",
-                task_paths.cancel_request.display()
+    }
+    #[cfg(not(unix))]
+    signal_owned_process_group(identity, 15)?;
+    store
+        .update_attempt_state(task_id, &attempt.id, AttemptState::Cancelled)
+        .map_err(|error| format!("cannot cancel attempt {}: {error}", attempt.id))?;
+    store
+        .transition(task_id, TaskEvent::CancelRequested)
+        .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
+    println!(
+        "cancellation sent to process group {} for session {}",
+        identity.process_group.unwrap_or_default(),
+        session.id
+    );
+    Ok(())
+}
+
+fn process_identity_matches(identity: ProcessIdentity) -> bool {
+    if identity.start_time_micros.is_none()
+        || identity.process_group.filter(|group| *group > 0).is_none()
+    {
+        return false;
+    }
+    matches!(
+        observe_process(identity),
+        ProcessObservation::Alive(observed)
+            if classify_identity(identity, observed) == ProcessClassification::Alive
+                && observed.start_time_micros == identity.start_time_micros
+    )
+}
+
+fn signal_owned_process_group(identity: ProcessIdentity, signal: i32) -> Result<(), String> {
+    if identity.start_time_micros.is_none() {
+        return Err(format!(
+            "process {} has no recorded start time; refusing to signal",
+            identity.pid
+        ));
+    }
+    if identity.process_group != Some(identity.pid) {
+        return Err(format!(
+            "process {} does not own its process group; refusing to signal",
+            identity.pid
+        ));
+    }
+    if !process_identity_matches(identity) {
+        return Err(format!(
+            "process {} identity does not match a live start time; refusing to signal",
+            identity.pid
+        ));
+    }
+    let group = identity
+        .process_group
+        .filter(|group| *group > 0)
+        .ok_or_else(|| format!("process {} has no valid process group", identity.pid))?;
+    let group = i32::try_from(group)
+        .map_err(|_| format!("process group {group} exceeds platform range"))?;
+    #[cfg(unix)]
+    {
+        // SAFETY: identity check binds process-group leader to live PID and start time.
+        // Updated: 2026-11-08T09:54:41Z.
+        if unsafe { kill(-group, signal) } == 0 {
+            Ok(())
+        } else {
+            Err(format!(
+                "cannot signal verified process group {group}: {}",
+                io::Error::last_os_error()
             ))
         }
     }
-    println!("cancellation requested for task {task_id}; active runner will stop its owned agent process group");
-    Ok(())
+    #[cfg(not(unix))]
+    {
+        let _ = (group, signal);
+        Err("process-group cancellation is unsupported on this platform".to_string())
+    }
 }
 
 pub fn show_diff(data_dir: &Path, task_id: &str) -> Result<(), String> {
@@ -736,6 +886,12 @@ pub fn show_diff(data_dir: &Path, task_id: &str) -> Result<(), String> {
 }
 
 pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
+    validate_task_id(task_id)?;
+    let _lock = acquire_data_directory_lock(data_dir)?;
+    let store = open_store(data_dir)?;
+    let _task = store
+        .get(task_id)
+        .map_err(|error| format!("cannot clean up task {task_id}: {error}"))?;
     let metadata = validated_metadata(data_dir, task_id)?;
     let repository = Repository::new(&metadata.repository).map_err(|error| {
         format!(
@@ -934,14 +1090,209 @@ fn paths(data_dir: &Path, task_id: &str) -> Paths {
         metadata: task_dir.join("metadata.json"),
         stdout_log: task_dir.join("codex.jsonl"),
         stderr_log: task_dir.join("codex.stderr"),
-        cancel_request: task_dir.join("cancel.request"),
+        session_log: task_dir.join("session.log"),
         task_dir,
     }
 }
 
-fn open_store(data_dir: &Path) -> Result<FileStore, String> {
-    FileStore::new(data_dir)
+fn acquire_data_directory_lock(data_dir: &Path) -> Result<DataDirectoryLock, String> {
+    let deadline = Instant::now() + LOCK_WAIT_TIMEOUT;
+    loop {
+        match DataDirectoryLock::acquire(data_dir) {
+            Ok(lock) => return Ok(lock),
+            Err(DataDirectoryLockError::AlreadyHeld { .. }) if Instant::now() < deadline => {
+                thread::sleep(LOCK_RETRY_INTERVAL);
+            }
+            Err(DataDirectoryLockError::AlreadyHeld { holder_pid }) => {
+                return Err(format!(
+                    "data directory lock is busy; holder PID {holder_pid} did not release within {} seconds",
+                    LOCK_WAIT_TIMEOUT.as_secs()
+                ));
+            }
+            Err(error) => {
+                return Err(format!("cannot acquire data-directory lock: {error}"));
+            }
+        }
+    }
+}
+
+fn open_store(data_dir: &Path) -> Result<SqliteStore, String> {
+    SqliteStore::new(&data_dir.join(STORE_FILE_NAME))
         .map_err(|error| format!("cannot open task store in {}: {error}", data_dir.display()))
+}
+
+fn ensure_project_registered(store: &SqliteStore, repository: &Repository) -> Result<(), String> {
+    let project_id = repository.path().display().to_string();
+    let projects = store
+        .list_projects()
+        .map_err(|error| format!("cannot list registered projects: {error}"))?;
+    if let Some(project) = projects.iter().find(|project| project.id == project_id) {
+        if project.root_path == project_id {
+            return Ok(());
+        }
+        return Err(format!(
+            "registered project {project_id} has unexpected root {}",
+            project.root_path
+        ));
+    }
+    store
+        .register_project(&Project {
+            id: project_id.clone(),
+            root_path: project_id,
+            settings: serde_json::Value::Object(Default::default()),
+        })
+        .map_err(|error| format!("cannot register project: {error}"))
+}
+
+fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
+    let tasks = store
+        .list()
+        .map_err(|error| format!("cannot list tasks for reconciliation: {error}"))?;
+    let mut processes = Vec::new();
+    let mut owners = BTreeMap::new();
+    let mut other_records = Vec::new();
+    let mut blockers = Vec::new();
+
+    for task in &tasks {
+        let unfinished = task
+            .sessions
+            .iter()
+            .filter(|session| !session.state.is_terminal())
+            .collect::<Vec<_>>();
+        if task.state == TaskState::Running && unfinished.is_empty() {
+            other_records.push(ReconciliationResolution::Ambiguous);
+            blockers.push(format!(
+                "task {} is Running without an unfinished session",
+                task.contract.id
+            ));
+        }
+        for session in unfinished {
+            let subject = ProcessSubject::Session {
+                task_id: task.contract.id.clone(),
+                session_id: session.id.clone(),
+            };
+            let Some(attempt) = task
+                .attempts
+                .iter()
+                .find(|attempt| attempt.id == session.attempt_id)
+            else {
+                other_records.push(ReconciliationResolution::Ambiguous);
+                blockers.push(format!(
+                    "session {}/{} references missing attempt {}",
+                    task.contract.id, session.id, session.attempt_id
+                ));
+                continue;
+            };
+            match store
+                .session_identity(&task.contract.id, &session.id)
+                .map_err(|error| {
+                    format!(
+                        "cannot read identity for session {}/{}: {error}",
+                        task.contract.id, session.id
+                    )
+                })? {
+                Some(identity) => {
+                    owners.insert(
+                        subject.clone(),
+                        (attempt.id.clone(), task.state, attempt.state),
+                    );
+                    processes.push(RecordedProcess { subject, identity });
+                }
+                None => {
+                    other_records.push(ReconciliationResolution::Unresolved);
+                    blockers.push(format!(
+                        "session {}/{} has no recorded process identity",
+                        task.contract.id, session.id
+                    ));
+                }
+            }
+        }
+    }
+
+    let decisions = reconcile_processes(&processes);
+    for decision in &decisions {
+        let ProcessSubject::Session {
+            task_id,
+            session_id,
+        } = &decision.subject
+        else {
+            other_records.push(ReconciliationResolution::Ambiguous);
+            blockers.push(format!("unexpected process record {:?}", decision.subject));
+            continue;
+        };
+        let Some((attempt_id, task_state, attempt_state)) = owners.get(&decision.subject) else {
+            other_records.push(ReconciliationResolution::Ambiguous);
+            blockers.push(format!(
+                "session {task_id}/{session_id} has no owner record"
+            ));
+            continue;
+        };
+        match decision.action {
+            ProcessAction::LeaveRunning
+                if *task_state == TaskState::Running && *attempt_state == AttemptState::Running => {
+            }
+            ProcessAction::LeaveRunning => {
+                other_records.push(ReconciliationResolution::Ambiguous);
+                blockers.push(format!(
+                    "session {task_id}/{session_id} is alive while task is {task_state:?} and attempt is {attempt_state:?}"
+                ));
+            }
+            ProcessAction::MarkInterrupted => {
+                store
+                    .update_session_state(task_id, session_id, SessionState::Exited)
+                    .map_err(|error| {
+                        format!("cannot mark session {task_id}/{session_id} exited: {error}")
+                    })?;
+                match (*task_state, *attempt_state) {
+                    (TaskState::Running, AttemptState::Running) => {
+                        store
+                            .update_attempt_state(task_id, attempt_id, AttemptState::Failed)
+                            .map_err(|error| {
+                                format!("cannot interrupt attempt {attempt_id}: {error}")
+                            })?;
+                        store
+                            .transition(task_id, TaskEvent::ExecutionFailed)
+                            .map_err(|error| {
+                                format!("cannot fail interrupted task {task_id}: {error}")
+                            })?;
+                    }
+                    (TaskState::Running, AttemptState::Cancelled) => {
+                        store
+                            .transition(task_id, TaskEvent::CancelRequested)
+                            .map_err(|error| {
+                                format!("cannot finish cancellation for task {task_id}: {error}")
+                            })?;
+                    }
+                    (TaskState::Cancelled, AttemptState::Cancelled)
+                    | (TaskState::Failed, AttemptState::Failed) => {}
+                    _ => {
+                        other_records.push(ReconciliationResolution::Ambiguous);
+                        blockers.push(format!(
+                            "interrupted session {task_id}/{session_id} has task state {task_state:?} and attempt state {attempt_state:?}"
+                        ));
+                    }
+                }
+            }
+            ProcessAction::MarkNeedsReview => {
+                other_records.push(ReconciliationResolution::Unresolved);
+                blockers.push(format!(
+                    "session {task_id}/{session_id} needs review: {:?}",
+                    decision.classification
+                ));
+            }
+        }
+    }
+
+    if scheduling_may_resume(&decisions, &other_records) {
+        return Ok(());
+    }
+    for blocker in &blockers {
+        eprintln!("blocking record: {blocker}");
+    }
+    Err(format!(
+        "cannot schedule while reconciliation records are unresolved: {}",
+        blockers.join("; ")
+    ))
 }
 
 fn read_metadata(data_dir: &Path, task_id: &str) -> Result<TaskMetadata, String> {
@@ -966,6 +1317,15 @@ fn write_metadata(path: &Path, metadata: &TaskMetadata) -> Result<(), String> {
     })
 }
 
+fn log_session_message(path: &Path, message: &str) -> Result<(), String> {
+    let mut log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("cannot open session log {}: {error}", path.display()))?;
+    writeln!(log, "{message}")
+        .map_err(|error| format!("cannot write session log {}: {error}", path.display()))
+}
 fn validate_task_id(task_id: &str) -> Result<(), String> {
     let valid = !task_id.is_empty()
         && task_id
