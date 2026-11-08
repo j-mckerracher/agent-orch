@@ -402,19 +402,19 @@
       "id": "M5-01",
       "milestone": "M5",
       "title": "Build daemon and authenticated local IPC",
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [
         "M3-05"
       ],
       "details": "Move reliable scheduling to an on-demand daemon; implement versioned length-prefixed JSON-RPC over Unix sockets and Windows named pipes, authorization and capability negotiation.",
-      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-01-daemon-ipc, branch orch/m5-01-daemon-ipc, base 5fd2edc (orch/integration). Scope: crates/orchestrator-ipc and crates/orchestrator-daemon only. Scope decision 2026-11-08 (-07:00): Windows named pipes were in M5-01 scope, and the Windows code was written in crates/orchestrator-ipc/src/windows_transport.rs (commit e904746). Independent review of candidate f6c476fa121beb565493908e07fcbff9bd6958ef rejected that code: no SAFETY comment on any unsafe block, and the default named-pipe ACL lets local users connect. The Windows code is removed from this candidate and moves to M5-01b. Worker candidate f6c476f reported 316 passed and 1 ignored, clippy exit 0, and the ipc Windows target check exit 0. Its Mac verification passed (files/verify-m5-01/). The review (files/verify-m5-01-review/review.md) passed every Unix check.",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-01-daemon-ipc, branch orch/m5-01-daemon-ipc, base 5fd2edc (orch/integration). Scope: crates/orchestrator-ipc and crates/orchestrator-daemon only. Scope decision 2026-11-08 (-07:00): Windows named pipes were in M5-01 scope, and the Windows code was written in crates/orchestrator-ipc/src/windows_transport.rs (commit e904746). Independent review of candidate f6c476fa121beb565493908e07fcbff9bd6958ef rejected that code: no SAFETY comment on any unsafe block, and the default named-pipe ACL lets local users connect. The Windows code is removed from this candidate and moves to M5-01b. Worker candidate f6c476f reported 316 passed and 1 ignored, clippy exit 0, and the ipc Windows target check exit 0. Its Mac verification passed (files/verify-m5-01/). The review (files/verify-m5-01-review/review.md) passed every Unix check. Final candidate 4913654 passed independent verification (files/verify-m5-01-final/: 316 passed, 0 failed, 1 ignored; 0 clippy warnings; scope and security checks pass) and was fast-forwarded into orch/integration. M5-01 is done on macOS. Windows named-pipe runtime is tracked in M5-01b.",
       "priority": 8
     },
     {
       "id": "M5-01b",
       "milestone": "M5",
       "title": "Implement Windows named-pipe transport",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M5-01"
       ],
@@ -426,7 +426,7 @@
       "id": "M5-02",
       "milestone": "M5",
       "title": "Implement reconnectable event stream and clients",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M5-01"
       ],
