@@ -26,6 +26,7 @@ use crate::contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
     AgentLaunchRequest, Result, TurnOutcome,
 };
+use crate::routing::RoutableAdapter;
 
 const ALLOWED_TOOLS: &str = "Read,Edit,Write";
 
@@ -108,6 +109,20 @@ impl ClaudeCodeAdapter {
     }
 }
 
+impl RoutableAdapter for ClaudeCodeAdapter {
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities {
+            streaming: true, // ClaudeCodeHandle::next_event parses live stream-json (claude_code_adapter.rs:164-179).
+            interactive_input: false, // Print-mode stdin is null (docs/evidence/m4-02-claude-code-cli-verification.md:54).
+            structured_output: true, // StreamParser::feed parses JSON lines (claude_code_adapter.rs:283-302).
+            cancellation: true, // ClaudeCodeHandle::cancel calls ChildSupervisor::cancel (claude_code_adapter.rs:183-187).
+            session_resumption: false, // Resume flags are unused by this adapter (docs/evidence/m4-02-claude-code-cli-verification.md:85).
+            approvals: false, // Prompts are disabled and approval handling was not verified (docs/evidence/m4-02-claude-code-cli-verification.md:43-45).
+            model_selection: false, // `--model` is not used (docs/evidence/m4-02-claude-code-cli-verification.md:86).
+        }
+    }
+}
+
 #[async_trait]
 impl AgentAdapter for ClaudeCodeAdapter {
     fn kind(&self) -> AgentKind {
@@ -120,15 +135,7 @@ impl AgentAdapter for ClaudeCodeAdapter {
                 self.program().to_string_lossy().into_owned(),
             ));
         }
-        Ok(AgentCapabilities {
-            streaming: true,
-            interactive_input: false,
-            structured_output: true,
-            cancellation: true,
-            session_resumption: false,
-            approvals: false,
-            model_selection: false,
-        })
+        Ok(self.capabilities())
     }
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {

@@ -22,6 +22,7 @@ use crate::contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
     AgentLaunchRequest, Result, TurnOutcome,
 };
+use crate::routing::RoutableAdapter;
 
 /// Pi's RPC protocol facts verified by [`PiRpcAdapter::detect_protocol`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +176,20 @@ impl PiRpcAdapter {
     }
 }
 
+impl RoutableAdapter for PiRpcAdapter {
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities {
+            streaming: true, // PiRpcHandle::next_event parses JSONL events (pi_rpc_adapter.rs:384-399, 443-495).
+            interactive_input: true, // send_command writes prompt/follow_up RPCs and reads correlated replies (pi_rpc_adapter.rs:240-318).
+            structured_output: true, // parse_record decodes JSON responses and events (pi_rpc_adapter.rs:443-495).
+            cancellation: true, // PiRpcHandle::cancel closes stdin and cancels the supervisor (pi_rpc_adapter.rs:402-409).
+            session_resumption: false, // AgentHandle exposes no resume operation (contract.rs:116-126).
+            approvals: false, // event_from_record maps no approval event (pi_rpc_adapter.rs:466-495).
+            model_selection: false, // Detection verifies only get_state; no model-selection RPC is implemented (pi_rpc_adapter.rs:129-159).
+        }
+    }
+}
+
 #[async_trait]
 impl AgentAdapter for PiRpcAdapter {
     fn kind(&self) -> AgentKind {
@@ -183,15 +198,7 @@ impl AgentAdapter for PiRpcAdapter {
 
     async fn detect(&self) -> Result<AgentCapabilities> {
         self.detect_protocol().await?;
-        Ok(AgentCapabilities {
-            streaming: true,
-            interactive_input: true,
-            structured_output: true,
-            cancellation: true,
-            session_resumption: false,
-            approvals: false,
-            model_selection: false,
-        })
+        Ok(self.capabilities())
     }
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {
