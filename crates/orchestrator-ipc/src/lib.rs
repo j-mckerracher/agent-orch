@@ -15,9 +15,10 @@
 //! control even when no feature capability is negotiated. Unsupported
 //! capabilities fail with a typed, payload-free error. Tokens use fresh
 //! 32-byte OS randomness. On Unix, `daemon.token` has mode 0600, and the data
-//! directory is owner-owned and not group/other-writable. On Windows, the
-//! token file inherits the data-directory ACL. Startup removes only an owned,
-//! regular stale token file after locking and rechecking identity. Token bytes
+//! directory is owner-owned and not group/other-writable. On Windows, the token
+//! file is created with a protected DACL for the current process token SID before
+//! secret bytes are written, then published by temp-file rename. Unix startup
+//! removes stale token files only after owner and identity checks. Token bytes
 //! and attacker-supplied capability text never appear in errors or debug output.
 //!
 //! Unix socket lives at `data_dir/ipc/daemon.sock`. Its directory has mode
@@ -31,32 +32,38 @@
 //! The accept loop is nonblocking for idle checks; accepted streams are reset
 //! to blocking before per-stream read and write timeouts are applied.
 //!
-//! Windows named pipes are deferred. Windows and other non-Unix targets use
-//! the typed `Unsupported` transport.
+//! Windows transport contract updated: 2026-11-08T16:55:20Z. Named-pipe names
+//! derive only from canonical data-directory paths. Protected DACLs grant access
+//! only to the current process token SID. Pipes reject remote clients and cap
+//! instances at 16. Every accepted stream reaches the shared handshake and token
+//! check before method dispatch. Other targets use the typed `Unsupported`
+//! transport.
 //!
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod auth;
 mod protocol;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod session;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod transport;
 #[cfg(unix)]
 mod unix_transport;
+#[cfg(windows)]
+mod windows_transport;
 
 pub use protocol::{Capability, FrameError};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod client;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod server;
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 mod unsupported;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use client::Client;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub use unsupported::{Client, Server, ServerConfig};
 
 #[cfg(all(test, unix))]

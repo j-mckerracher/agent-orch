@@ -377,20 +377,31 @@ struct RemoteEventError {
     _message: String,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn read_token(data_dir: &Path) -> Result<String, IpcError> {
     let path = data_dir.join("daemon.token");
     let before = fs::symlink_metadata(&path).map_err(|_| IpcError::Authentication)?;
-    let owner = fs::metadata(data_dir)
-        .map_err(|_| IpcError::Authentication)?
-        .uid();
-    if !before.is_file() || before.uid() != owner || before.mode() & 0o777 != 0o600 {
+    #[cfg(unix)]
+    {
+        let owner = fs::metadata(data_dir)
+            .map_err(|_| IpcError::Authentication)?
+            .uid();
+        if !before.is_file() || before.uid() != owner || before.mode() & 0o777 != 0o600 {
+            return Err(IpcError::Authentication);
+        }
+    }
+    #[cfg(windows)]
+    if !before.is_file() {
         return Err(IpcError::Authentication);
     }
     let mut file = File::open(&path).map_err(|_| IpcError::Authentication)?;
-    let opened = file.metadata().map_err(|_| IpcError::Authentication)?;
-    if (before.dev(), before.ino(), before.uid()) != (opened.dev(), opened.ino(), opened.uid()) {
-        return Err(IpcError::Authentication);
+    #[cfg(unix)]
+    {
+        let opened = file.metadata().map_err(|_| IpcError::Authentication)?;
+        if (before.dev(), before.ino(), before.uid()) != (opened.dev(), opened.ino(), opened.uid())
+        {
+            return Err(IpcError::Authentication);
+        }
     }
     read_token_contents(&mut file)
 }

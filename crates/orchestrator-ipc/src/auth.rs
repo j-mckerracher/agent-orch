@@ -59,6 +59,9 @@ impl Secret {
         if metadata.uid() != directory.uid() {
             return Err(AuthError::UnsafeTokenFile);
         }
+        #[cfg(windows)]
+        let _ = &metadata;
+        #[cfg(unix)]
         remove_stale_token(data_dir)?;
 
         let path = data_dir.join("daemon.token");

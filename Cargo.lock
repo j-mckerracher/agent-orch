@@ -882,6 +882,7 @@ dependencies = [
  "subtle",
  "tempfile",
  "thiserror",
+ "windows-sys",
 ]
 
 [[package]]
