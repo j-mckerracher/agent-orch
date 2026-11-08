@@ -1,8 +1,9 @@
 //! CLI lifecycle state lives in `store.sqlite`; worktree metadata and logs
 //! remain sidecars. Run holds the data lock through setup and finish updates,
-//! then releases it during agent execution so cancel can acquire the lock and
-//! signal only an identity-matched process group. Existing JSON task records
-//! are not migrated. Stale lock recovery precedes reconciliation. Updated: 2026-11-08T11:24:15+00:00.
+//! then releases it during agent execution so a separate cancel command can
+//! enqueue a request for the run process that owns the live agent handle.
+//! Existing JSON task records are not migrated. Stale lock recovery precedes
+//! reconciliation.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -19,15 +20,17 @@ use orchestrator_agents::{
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
-use orchestrator_core::identity::{classify_identity, ProcessClassification, ProcessObservation};
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{
-    capture_process_identity, observe_process, reconcile_processes, scheduling_may_resume,
-    ProcessAction, ProcessIdentity, ProcessSubject, ReconciliationResolution, RecordedProcess,
+    capture_process_identity, reconcile_processes, scheduling_may_resume, ProcessAction,
+    ProcessSubject, ReconciliationResolution, RecordedProcess,
 };
-use orchestrator_store::{DataDirectoryLock, DataDirectoryLockError, SqliteStore, Store};
+use orchestrator_store::{
+    CancellationOwner, CancellationStatus, DataDirectoryLock, DataDirectoryLockError, SqliteStore,
+    Store,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[cfg(windows)]
@@ -37,7 +40,7 @@ const NULL_DEVICE: &str = "/dev/null";
 const STORE_FILE_NAME: &str = "store.sqlite";
 const LOCK_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(50);
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fault-injection"))]
 #[link(name = "c")]
 unsafe extern "C" {
     fn kill(pid: i32, signal: i32) -> i32;
@@ -48,7 +51,9 @@ unsafe extern "C" {
 /// value; the feature-off implementations below perform no work.
 /// Updated: 2026-11-08T10:33:52+00:00.
 mod fault_injection {
-    use super::{kill, Path, ProcessCommand};
+    #[cfg(unix)]
+    use super::kill;
+    use super::{Path, ProcessCommand};
     use std::ffi::OsStr;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -154,8 +159,8 @@ mod fault_injection {
 }
 
 /// CLI sidecar metadata stores canonical repository/worktree paths and log
-/// locations. SQLite process identity, not the diagnostic PID, authorizes
-/// cancellation. Updated: 2026-11-08T09:04:40+00:00.
+/// locations. The active owner generation in SQLite, not the diagnostic PID,
+/// authorizes cancellation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TaskMetadata {
     repository: PathBuf,
@@ -186,6 +191,14 @@ struct LifecycleIds<'a> {
     task: &'a str,
     attempt: &'a str,
     session: &'a str,
+}
+
+struct AgentMonitorOutcome {
+    exit: AgentExit,
+    cancellation_requested: bool,
+    cancellation_succeeded: bool,
+    cancellation_error: Option<String>,
+    supervision_error: Option<String>,
 }
 
 struct CanonicalTarget {
@@ -447,6 +460,50 @@ pub async fn run_task(
     store
         .update_session_state(&task_id, &session_id, SessionState::Running)
         .map_err(|error| format!("cannot mark session {session_id} running: {error}"))?;
+    let cancellation_owner = CancellationOwner::new(
+        task_id.clone(),
+        attempt_id.clone(),
+        session_id.clone(),
+        Uuid::new_v4().simple().to_string(),
+    )
+    .map_err(|error| format!("cannot create cancellation owner for {task_id}: {error}"))?;
+    if let Err(registration_error) = store.register_cancellation_owner(&cancellation_owner) {
+        let mut handle = handle;
+        let cancel_error = handle.cancel().await.err().map(|error| error.to_string());
+        let exit = match handle.wait().await {
+            Ok(exit) => exit,
+            Err(wait_error) => {
+                let reason = format!(
+                    "cannot register cancellation owner: {registration_error}; \
+                     cannot confirm agent termination: {wait_error}; \
+                     cancel error: {}",
+                    cancel_error.as_deref().unwrap_or("none")
+                );
+                metadata.agent_outcome = Some("supervision-failed".to_string());
+                metadata.failure = Some(reason.clone());
+                write_metadata(&task_paths.metadata, &metadata)?;
+                return Err(format!(
+                    "{reason}; task {task_id} remains Running and worktree {} is preserved",
+                    metadata.worktree.display()
+                ));
+            }
+        };
+        let code = match exit {
+            AgentExit::Cancelled { code, .. }
+            | AgentExit::Completed { code, .. }
+            | AgentExit::Failed { code, .. } => code,
+        };
+        let reason = format!(
+            "cannot register cancellation owner: {registration_error}; \
+             startup cleanup cancel error: {}",
+            cancel_error.as_deref().unwrap_or("none")
+        );
+        fail_after_agent_exit(&store, &mut metadata, &task_paths, &ids, code, &reason)?;
+        return Err(format!(
+            "{reason}; agent process was reaped and task {task_id} marked Failed; worktree {} is preserved",
+            metadata.worktree.display()
+        ));
+    }
 
     println!("task: {task_id}");
     println!("worktree: {}", metadata.worktree.display());
@@ -456,139 +513,203 @@ pub async fn run_task(
 
     drop(lock);
     fault_injection::after_lock_release(agent_pid)?;
-    let monitored = monitor_agent(handle).await;
+    let monitored = monitor_agent(handle, &store, &cancellation_owner).await;
     let _finish_lock = acquire_data_directory_lock(&data_target.path)?;
     let current = store
         .get(&task_id)
         .map_err(|error| format!("cannot reload task {task_id} after agent exit: {error}"))?;
     if current.state == TaskState::Cancelled {
-        if current
-            .sessions
-            .iter()
-            .any(|session| session.id == session_id && !session.state.is_terminal())
-        {
-            store
-                .update_session_state(&task_id, &session_id, SessionState::Exited)
-                .map_err(|error| {
-                    format!("cannot mark cancelled session {session_id} exited: {error}")
-                })?;
-        }
-        metadata.agent_outcome = Some("cancelled".to_string());
-        metadata.exit_code = match &monitored {
-            Ok(AgentExit::Cancelled { code, .. })
-            | Ok(AgentExit::Completed { code, .. })
-            | Ok(AgentExit::Failed { code, .. }) => *code,
-            Err(_) => None,
-        };
-        write_metadata(&task_paths.metadata, &metadata)?;
-        println!(
-            "task {task_id} cancelled; process {agent_pid} stopped; worktree preserved at {}",
+        return Err(format!(
+            "task {task_id} was marked Cancelled before this run owner confirmed cancellation; \
+             preserving worktree {} for inspection",
             metadata.worktree.display()
-        );
-        return Ok(130);
+        ));
     }
-    let exit = match monitored {
-        Ok(exit) => exit,
+    let monitored = match monitored {
+        Ok(outcome) => outcome,
         Err(reason) => {
             metadata.agent_outcome = Some("supervision-failed".to_string());
             metadata.failure = Some(reason.clone());
             metadata.exit_code = None;
             write_metadata(&task_paths.metadata, &metadata)?;
-            store
-                .update_session_state(&task_id, &session_id, SessionState::Aborted)
-                .map_err(|error| format!("cannot mark session {session_id} aborted: {error}"))?;
-            store
-                .update_attempt_state(&task_id, &attempt_id, AttemptState::Failed)
-                .map_err(|error| format!("cannot fail attempt {attempt_id}: {error}"))?;
-            store
-                .transition(&task_id, TaskEvent::ExecutionFailed)
-                .map_err(|error| format!("cannot fail task {task_id}: {error}"))?;
             return Err(format!(
-                "Codex supervision failed for task {task_id}: {reason}"
+                "Codex supervision failed for task {task_id}: {reason}; \
+                 process exit/reaping was not confirmed, task remains Running, \
+                 cancellation is not acknowledged, and worktree {} is preserved",
+                metadata.worktree.display()
             ));
         }
     };
 
-    match exit {
-        AgentExit::Cancelled { code, .. } => {
+    if let AgentExit::Cancelled { code, .. } = &monitored.exit {
+        if monitored.cancellation_requested && monitored.cancellation_succeeded {
             finish_cancelled(
                 &store,
                 &mut metadata,
                 &task_paths,
                 &ids,
-                SessionState::Exited,
-                code,
+                *code,
+                &cancellation_owner,
             )?;
             println!(
-                "task {task_id} cancelled; process {agent_pid} reaped; worktree preserved at {}",
+                "task {task_id} cancellation confirmed by owner after process {agent_pid} was reaped; worktree preserved at {}",
                 metadata.worktree.display()
             );
             Ok(130)
-        }
-        AgentExit::Completed { code: Some(0), .. } => {
-            store
-                .update_session_state(&task_id, &session_id, SessionState::Exited)
-                .map_err(|error| format!("cannot mark session {session_id} exited: {error}"))?;
-            let commit = match commit_candidate(&metadata, &task_id) {
-                Ok(commit) => commit,
-                Err(error) => {
-                    metadata.agent_outcome = Some("completed".to_string());
-                    metadata.exit_code = Some(0);
-                    metadata.failure = Some(error.clone());
-                    write_metadata(&task_paths.metadata, &metadata)?;
-                    store
-                        .update_attempt_state(&task_id, &attempt_id, AttemptState::Failed)
-                        .map_err(|store_error| {
-                            format!("cannot fail attempt {attempt_id}: {store_error}")
-                        })?;
-                    store
-                        .transition(&task_id, TaskEvent::ExecutionFailed)
-                        .map_err(|store_error| {
-                            format!("cannot fail task {task_id}: {store_error}")
-                        })?;
-                    return Err(format!(
-                        "could not record candidate commit for task {task_id}: {error}"
-                    ));
-                }
+        } else {
+            let reason = if monitored.cancellation_requested {
+                format!(
+                    "agent reported cancellation, but the owner did not receive a successful \
+                     cancel acknowledgement{}",
+                    monitored
+                        .cancellation_error
+                        .as_deref()
+                        .map(|error| format!(": {error}"))
+                        .unwrap_or_default()
+                )
+            } else {
+                "agent reported cancellation without a pending CLI cancellation request".to_string()
             };
-            metadata.agent_outcome = Some("completed".to_string());
-            metadata.exit_code = Some(0);
-            metadata.candidate_commit = Some(commit.clone());
-            write_metadata(&task_paths.metadata, &metadata)?;
+            fail_after_agent_exit(&store, &mut metadata, &task_paths, &ids, *code, &reason)?;
             store
-                .update_attempt_state(&task_id, &attempt_id, AttemptState::CandidateReady)
+                .finish_cancellation_owner(
+                    &cancellation_owner,
+                    if monitored.cancellation_requested {
+                        CancellationStatus::Failed
+                    } else {
+                        CancellationStatus::Rejected
+                    },
+                )
                 .map_err(|error| {
-                    format!("cannot mark attempt {attempt_id} candidate-ready: {error}")
+                    format!(
+                        "task {task_id} was marked Failed after an unconfirmed cancellation, \
+                         but the owner result could not be persisted: {error}"
+                    )
                 })?;
-            store
-                .transition(&task_id, TaskEvent::CandidateReady)
-                .map_err(|error| format!("cannot record candidate for task {task_id}: {error}"))?;
-            println!("candidate: {commit}");
-            println!("status: Verifying (candidate preserved for review)");
-            println!("exit code: 0");
-            Ok(0)
-        }
-        AgentExit::Completed { code, .. } => {
-            fail_after_agent_exit(
-                &store,
-                &mut metadata,
-                &task_paths,
-                &ids,
-                code,
-                "Codex completed the turn with a nonzero or unavailable exit code",
-            )?;
-            Err(format!("Codex returned exit code {code:?} for task {task_id}; inspect worktree {} and logs {} / {}", metadata.worktree.display(), metadata.stdout_log.display(), metadata.stderr_log.display()))
-        }
-        AgentExit::Failed { code, reason } => {
-            let detail =
-                reason.unwrap_or_else(|| "Codex exited without a completed turn".to_string());
-            fail_after_agent_exit(&store, &mut metadata, &task_paths, &ids, code, &detail)?;
             Err(format!(
+                "{reason}; task {task_id} was not marked Cancelled; worktree {} is preserved",
+                metadata.worktree.display()
+            ))
+        }
+    } else if let Some(reason) = monitored.supervision_error.as_deref() {
+        let code = agent_exit_code(&monitored.exit);
+        fail_after_agent_exit(&store, &mut metadata, &task_paths, &ids, code, reason)?;
+        store
+            .finish_cancellation_owner(
+                &cancellation_owner,
+                cancellation_owner_resolution(&monitored),
+            )
+            .map_err(|error| {
+                format!(
+                    "task {task_id} was marked Failed after a supervision error, \
+                     but the owner result could not be persisted: {error}"
+                )
+            })?;
+        Err(format!(
+            "Codex supervision failed for task {task_id}: {reason}; process was reaped, \
+             task marked Failed, and worktree {} is preserved",
+            metadata.worktree.display()
+        ))
+    } else {
+        let cancellation_resolution = cancellation_owner_resolution(&monitored);
+        match monitored.exit {
+            AgentExit::Completed { code: Some(0), .. } => {
+                store
+                    .update_session_state(&task_id, &session_id, SessionState::Exited)
+                    .map_err(|error| format!("cannot mark session {session_id} exited: {error}"))?;
+                let commit = match commit_candidate(&metadata, &task_id) {
+                    Ok(commit) => commit,
+                    Err(error) => {
+                        metadata.agent_outcome = Some("completed".to_string());
+                        metadata.exit_code = Some(0);
+                        metadata.failure = Some(error.clone());
+                        write_metadata(&task_paths.metadata, &metadata)?;
+                        store
+                            .update_attempt_state(&task_id, &attempt_id, AttemptState::Failed)
+                            .map_err(|store_error| {
+                                format!("cannot fail attempt {attempt_id}: {store_error}")
+                            })?;
+                        store
+                            .transition(&task_id, TaskEvent::ExecutionFailed)
+                            .map_err(|store_error| {
+                                format!("cannot fail task {task_id}: {store_error}")
+                            })?;
+                        store
+                            .finish_cancellation_owner(&cancellation_owner, cancellation_resolution)
+                            .map_err(|store_error| {
+                                format!(
+                                    "cannot close cancellation owner for failed task {task_id}: \
+                                 {store_error}"
+                                )
+                            })?;
+                        return Err(format!(
+                            "could not record candidate commit for task {task_id}: {error}"
+                        ));
+                    }
+                };
+                metadata.agent_outcome = Some("completed".to_string());
+                metadata.exit_code = Some(0);
+                metadata.candidate_commit = Some(commit.clone());
+                write_metadata(&task_paths.metadata, &metadata)?;
+                store
+                    .update_attempt_state(&task_id, &attempt_id, AttemptState::CandidateReady)
+                    .map_err(|error| {
+                        format!("cannot mark attempt {attempt_id} candidate-ready: {error}")
+                    })?;
+                store
+                    .transition(&task_id, TaskEvent::CandidateReady)
+                    .map_err(|error| {
+                        format!("cannot record candidate for task {task_id}: {error}")
+                    })?;
+                store
+                .finish_cancellation_owner(&cancellation_owner, cancellation_resolution)
+                .map_err(|error| {
+                    format!(
+                        "candidate was recorded, but cancellation owner could not be closed: {error}"
+                    )
+                })?;
+                println!("candidate: {commit}");
+                println!("status: Verifying (candidate preserved for review)");
+                println!("exit code: 0");
+                Ok(0)
+            }
+            AgentExit::Completed { code, .. } => {
+                fail_after_agent_exit(
+                    &store,
+                    &mut metadata,
+                    &task_paths,
+                    &ids,
+                    code,
+                    "Codex completed the turn with a nonzero or unavailable exit code",
+                )?;
+                store
+                .finish_cancellation_owner(&cancellation_owner, cancellation_resolution)
+                .map_err(|error| {
+                    format!(
+                        "task {task_id} was marked Failed, but cancellation owner could not be closed: {error}"
+                    )
+                })?;
+                Err(format!("Codex returned exit code {code:?} for task {task_id}; inspect worktree {} and logs {} / {}", metadata.worktree.display(), metadata.stdout_log.display(), metadata.stderr_log.display()))
+            }
+            AgentExit::Failed { code, reason } => {
+                let detail =
+                    reason.unwrap_or_else(|| "Codex exited without a completed turn".to_string());
+                fail_after_agent_exit(&store, &mut metadata, &task_paths, &ids, code, &detail)?;
+                store
+                .finish_cancellation_owner(&cancellation_owner, cancellation_resolution)
+                .map_err(|error| {
+                    format!(
+                        "task {task_id} was marked Failed, but cancellation owner could not be closed: {error}"
+                    )
+                })?;
+                Err(format!(
                 "Codex failed for task {task_id}: {detail}; inspect worktree {} and logs {} / {}",
                 metadata.worktree.display(),
                 metadata.stdout_log.display(),
                 metadata.stderr_log.display()
             ))
+            }
+            AgentExit::Cancelled { .. } => unreachable!("cancelled exit handled above"),
         }
     }
 }
@@ -598,26 +719,18 @@ fn finish_cancelled(
     metadata: &mut TaskMetadata,
     task_paths: &Paths,
     ids: &LifecycleIds<'_>,
-    session_state: SessionState,
     code: Option<i32>,
+    owner: &CancellationOwner,
 ) -> Result<(), String> {
     metadata.agent_outcome = Some("cancelled".to_string());
     metadata.exit_code = code;
     write_metadata(&task_paths.metadata, metadata)?;
-    store
-        .update_session_state(ids.task, ids.session, session_state)
-        .map_err(|error| {
-            format!(
-                "cannot mark session {} {:?} after cancellation: {error}",
-                ids.session, session_state
-            )
-        })?;
-    store
-        .update_attempt_state(ids.task, ids.attempt, AttemptState::Cancelled)
-        .map_err(|error| format!("cannot cancel attempt {}: {error}", ids.attempt))?;
-    store
-        .transition(ids.task, TaskEvent::CancelRequested)
-        .map_err(|error| format!("cannot cancel task {}: {error}", ids.task))?;
+    store.confirm_cancellation(owner).map_err(|error| {
+        format!(
+            "cannot confirm owner cancellation for task {}: {error}",
+            ids.task
+        )
+    })?;
     Ok(())
 }
 
@@ -667,35 +780,170 @@ fn fail_after_agent_exit(
     Ok(())
 }
 
-async fn monitor_agent(mut handle: Box<dyn AgentHandle>) -> Result<AgentExit, String> {
+fn agent_exit_code(exit: &AgentExit) -> Option<i32> {
+    match exit {
+        AgentExit::Cancelled { code, .. }
+        | AgentExit::Completed { code, .. }
+        | AgentExit::Failed { code, .. } => *code,
+    }
+}
+
+fn cancellation_owner_resolution(outcome: &AgentMonitorOutcome) -> CancellationStatus {
+    if outcome.cancellation_error.is_some() {
+        CancellationStatus::Failed
+    } else {
+        CancellationStatus::Rejected
+    }
+}
+
+async fn monitor_agent(
+    mut handle: Box<dyn AgentHandle>,
+    store: &SqliteStore,
+    owner: &CancellationOwner,
+) -> Result<AgentMonitorOutcome, String> {
+    let mut cancellation_requested = false;
+    let mut cancellation_attempted = false;
+    let mut cancellation_succeeded = false;
+    let mut cancellation_error = None;
+    let mut last_poll_error = None;
+    let mut supervision_error = None;
+
     loop {
-        match handle
-            .next_event()
-            .await
-            .map_err(|error| format!("agent event stream failed: {error}"))?
-        {
-            Some(AgentEvent::SessionExited { .. }) => {
-                return handle
+        if !cancellation_attempted {
+            match store.cancellation_request(owner) {
+                Ok(Some(CancellationStatus::Pending)) => {
+                    cancellation_requested = true;
+                    cancellation_attempted = true;
+                    match handle.cancel().await {
+                        Ok(()) => {
+                            cancellation_succeeded = true;
+                            let exit = handle.wait().await.map_err(|error| {
+                                format!(
+                                    "owner sent cancellation but could not confirm process \
+                                     termination/reaping: {error}"
+                                )
+                            })?;
+                            return Ok(AgentMonitorOutcome {
+                                exit,
+                                cancellation_requested,
+                                cancellation_succeeded,
+                                cancellation_error,
+                                supervision_error,
+                            });
+                        }
+                        Err(error) => {
+                            let error = error.to_string();
+                            eprintln!(
+                                "cancellation request for task {} could not be sent through \
+                                 its agent handle: {error}",
+                                owner.task_id
+                            );
+                            cancellation_error = Some(error);
+                        }
+                    }
+                }
+                Ok(Some(CancellationStatus::Confirmed)) => {
+                    cancellation_attempted = true;
+                    cancellation_requested = true;
+                    cancellation_error = Some(
+                        "request was confirmed before this owner could consume it".to_string(),
+                    );
+                }
+                Ok(Some(CancellationStatus::Rejected | CancellationStatus::Failed)) => {
+                    cancellation_attempted = true;
+                }
+                Ok(None) => last_poll_error = None,
+                Err(error) => {
+                    let error = error.to_string();
+                    if last_poll_error.as_deref() != Some(error.as_str()) {
+                        eprintln!(
+                            "cannot poll cancellation request for task {}: {error}",
+                            owner.task_id
+                        );
+                        last_poll_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        let event_result = tokio::select! {
+            result = handle.next_event() => Some(result),
+            _ = tokio::time::sleep(Duration::from_millis(100)) => None,
+        };
+        let Some(event_result) = event_result else {
+            continue;
+        };
+        match event_result {
+            Ok(Some(AgentEvent::SessionExited { .. })) => {
+                let exit = handle
                     .wait()
                     .await
-                    .map_err(|error| format!("agent wait failed: {error}"));
+                    .map_err(|error| format!("agent wait failed after exit event: {error}"))?;
+                return Ok(AgentMonitorOutcome {
+                    exit,
+                    cancellation_requested,
+                    cancellation_succeeded,
+                    cancellation_error,
+                    supervision_error,
+                });
             }
-            Some(AgentEvent::SessionStarted { session_id }) => {
+            Ok(Some(AgentEvent::SessionStarted { session_id })) => {
                 println!("Codex session: {session_id}")
             }
-            Some(AgentEvent::MessageDelta { text }) => println!("{text}"),
-            Some(AgentEvent::ToolStarted { name, .. }) => println!("tool started: {name}"),
-            Some(AgentEvent::ToolFinished { success, .. }) => println!("tool finished: {success}"),
-            Some(AgentEvent::ApprovalRequested { description, .. }) => {
+            Ok(Some(AgentEvent::MessageDelta { text })) => println!("{text}"),
+            Ok(Some(AgentEvent::ToolStarted { name, .. })) => println!("tool started: {name}"),
+            Ok(Some(AgentEvent::ToolFinished { success, .. })) => {
+                println!("tool finished: {success}")
+            }
+            Ok(Some(AgentEvent::ApprovalRequested { description, .. })) => {
                 println!("approval requested: {description}")
             }
-            Some(AgentEvent::TurnFinished { outcome }) => println!("turn: {outcome:?}"),
-            Some(AgentEvent::ProtocolError { message }) => {
+            Ok(Some(AgentEvent::TurnFinished { outcome })) => println!("turn: {outcome:?}"),
+            Ok(Some(AgentEvent::ProtocolError { message })) => {
                 eprintln!("Codex protocol error: {message}")
             }
-            None => return Err("agent event stream ended without a process exit event".to_string()),
+            Ok(None) => {
+                supervision_error =
+                    Some("agent event stream ended without a process exit event".to_string());
+                break;
+            }
+            Err(error) => {
+                supervision_error = Some(format!("agent event stream failed: {error}"));
+                break;
+            }
         }
     }
+
+    if !cancellation_requested {
+        if matches!(
+            store.cancellation_request(owner),
+            Ok(Some(CancellationStatus::Pending))
+        ) {
+            cancellation_requested = true;
+        }
+    }
+    match handle.cancel().await {
+        Ok(()) => cancellation_succeeded = true,
+        Err(error) if cancellation_error.is_none() => {
+            cancellation_error = Some(error.to_string());
+        }
+        Err(_) => {}
+    }
+    let exit = handle.wait().await.map_err(|error| {
+        format!(
+            "{}; process termination/reaping was not confirmed: {error}",
+            supervision_error
+                .as_deref()
+                .unwrap_or("agent event stream failed")
+        )
+    })?;
+    Ok(AgentMonitorOutcome {
+        exit,
+        cancellation_requested,
+        cancellation_succeeded,
+        cancellation_error,
+        supervision_error,
+    })
 }
 
 pub fn list_tasks(data_dir: &Path) -> Result<(), String> {
@@ -721,6 +969,19 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         .map_err(|error| format!("cannot inspect task {task_id}: {error}"))?;
     println!("task: {}", task.contract.id);
     println!("status: {:?}", task.state);
+    match store
+        .cancellation_status_for_task(task_id)
+        .map_err(|error| format!("cannot inspect cancellation status for {task_id}: {error}"))?
+    {
+        Some(status) => println!("cancellation request: {status:?}"),
+        None if task.state == TaskState::Running => {
+            println!("cancellation request: none or owner not registered")
+        }
+        None if task.state == TaskState::Cancelled && !task.sessions.is_empty() => {
+            println!("cancellation request: no run-owner confirmation recorded; needs review")
+        }
+        None => {}
+    }
     println!("agent: {}", task.contract.agent);
     println!("repository: {}", task.contract.project_id);
     println!("objective: {}", task.contract.objective);
@@ -799,8 +1060,8 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Cancels only when stored process group and start time match a live process.
-/// Updated: 2026-11-08T09:04:40+00:00.
+/// Requests cancellation from the run process that owns the live agent handle.
+/// The request remains pending until that owner cancels and reaps the process.
 pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
     let _lock = acquire_data_directory_lock(data_dir)?;
@@ -810,7 +1071,7 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
     if task.state != TaskState::Running {
         return Err(format!(
-            "task {task_id} is {:?}, not Running; no process group was signalled",
+            "task {task_id} is {:?}, not Running; no cancellation request was sent",
             task.state
         ));
     }
@@ -834,108 +1095,34 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         })?;
     if attempt.state != AttemptState::Running {
         return Err(format!(
-            "attempt {} is {:?}; refusing to signal its process",
+            "attempt {} is {:?}; refusing to request cancellation",
             attempt.id, attempt.state
         ));
     }
-    let identity = store
-        .session_identity(task_id, &session.id)
-        .map_err(|error| {
-            format!(
-                "cannot load process identity for session {}: {error}",
-                session.id
-            )
-        })?
-        .ok_or_else(|| {
-            format!(
-                "session {}/{} has no process identity; refusing to signal",
-                task_id, session.id
-            )
-        })?;
-    #[cfg(unix)]
+    match store
+        .request_cancellation_for_task(task_id)
+        .map_err(|error| format!("cannot request cancellation for task {task_id}: {error}"))?
     {
-        const SIGTERM: i32 = 15;
-        const SIGKILL: i32 = 9;
-        signal_owned_process_group(identity, SIGTERM)?;
-        thread::sleep(Duration::from_millis(500));
-        if process_identity_matches(identity) {
-            if let Err(error) = signal_owned_process_group(identity, SIGKILL) {
-                eprintln!("could not force-stop verified process group: {error}");
-            }
-        }
-    }
-    #[cfg(not(unix))]
-    signal_owned_process_group(identity, 15)?;
-    store
-        .update_attempt_state(task_id, &attempt.id, AttemptState::Cancelled)
-        .map_err(|error| format!("cannot cancel attempt {}: {error}", attempt.id))?;
-    store
-        .transition(task_id, TaskEvent::CancelRequested)
-        .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
-    println!(
-        "cancellation sent to process group {} for session {}",
-        identity.process_group.unwrap_or_default(),
-        session.id
-    );
-    Ok(())
-}
-
-fn process_identity_matches(identity: ProcessIdentity) -> bool {
-    if identity.start_time_micros.is_none()
-        || identity.process_group.filter(|group| *group > 0).is_none()
-    {
-        return false;
-    }
-    matches!(
-        observe_process(identity),
-        ProcessObservation::Alive(observed)
-            if classify_identity(identity, observed) == ProcessClassification::Alive
-                && observed.start_time_micros == identity.start_time_micros
-    )
-}
-
-fn signal_owned_process_group(identity: ProcessIdentity, signal: i32) -> Result<(), String> {
-    if identity.start_time_micros.is_none() {
-        return Err(format!(
-            "process {} has no recorded start time; refusing to signal",
-            identity.pid
-        ));
-    }
-    if identity.process_group != Some(identity.pid) {
-        return Err(format!(
-            "process {} does not own its process group; refusing to signal",
-            identity.pid
-        ));
-    }
-    if !process_identity_matches(identity) {
-        return Err(format!(
-            "process {} identity does not match a live start time; refusing to signal",
-            identity.pid
-        ));
-    }
-    let group = identity
-        .process_group
-        .filter(|group| *group > 0)
-        .ok_or_else(|| format!("process {} has no valid process group", identity.pid))?;
-    let group = i32::try_from(group)
-        .map_err(|_| format!("process group {group} exceeds platform range"))?;
-    #[cfg(unix)]
-    {
-        // SAFETY: identity check binds process-group leader to live PID and start time.
-        // Updated: 2026-11-08T09:54:41Z.
-        if unsafe { kill(-group, signal) } == 0 {
+        CancellationStatus::Pending => {
+            println!(
+                "cancellation pending for task {task_id}; the run owner has not confirmed \
+                 process termination, task remains Running, and worktree is preserved; \
+                 use `agent-orch inspect {task_id}` to check status"
+            );
             Ok(())
-        } else {
-            Err(format!(
-                "cannot signal verified process group {group}: {}",
-                io::Error::last_os_error()
-            ))
         }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (group, signal);
-        Err("process-group cancellation is unsupported on this platform".to_string())
+        CancellationStatus::Confirmed => {
+            println!("task {task_id} cancellation was already confirmed by its run owner");
+            Ok(())
+        }
+        CancellationStatus::Rejected => Err(format!(
+            "task {task_id} cancellation was not confirmed: the run owner reports that the \
+             agent exited without cancellation; inspect task state and preserved worktree"
+        )),
+        CancellationStatus::Failed => Err(format!(
+            "task {task_id} cancellation was not confirmed: the run owner could not cancel \
+             and reap the agent; task was not marked Cancelled and worktree is preserved"
+        )),
     }
 }
 
@@ -1280,6 +1467,29 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
             .iter()
             .filter(|session| !session.state.is_terminal())
             .collect::<Vec<_>>();
+        if task.state == TaskState::Cancelled
+            && unfinished.is_empty()
+            && task.sessions.iter().rev().any(|session| {
+                task.attempts.iter().any(|attempt| {
+                    attempt.id == session.attempt_id && attempt.state == AttemptState::Cancelled
+                })
+            })
+            && store
+                .cancellation_status_for_task(&task.contract.id)
+                .map_err(|error| {
+                    format!(
+                        "cannot verify cancellation for task {}: {error}",
+                        task.contract.id
+                    )
+                })?
+                != Some(CancellationStatus::Confirmed)
+        {
+            other_records.push(ReconciliationResolution::Ambiguous);
+            blockers.push(format!(
+                "task {} is terminal Cancelled without run-owner confirmation; needs review",
+                task.contract.id
+            ));
+        }
         if task.state == TaskState::Running && unfinished.is_empty() {
             other_records.push(ReconciliationResolution::Ambiguous);
             blockers.push(format!(
@@ -1378,14 +1588,31 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                             })?;
                     }
                     (TaskState::Running, AttemptState::Cancelled) => {
-                        store
-                            .transition(task_id, TaskEvent::CancelRequested)
-                            .map_err(|error| {
-                                format!("cannot finish cancellation for task {task_id}: {error}")
-                            })?;
+                        other_records.push(ReconciliationResolution::Ambiguous);
+                        blockers.push(format!(
+                            "task {task_id} has a cancelled attempt without run-owner \
+                             confirmation; refusing to promote it to Cancelled"
+                        ));
                     }
-                    (TaskState::Cancelled, AttemptState::Cancelled)
-                    | (TaskState::Failed, AttemptState::Failed) => {}
+                    (TaskState::Cancelled, AttemptState::Cancelled) => {
+                        let confirmed =
+                            store
+                                .cancellation_status_for_task(task_id)
+                                .map_err(|error| {
+                                    format!(
+                                        "cannot verify cancellation for task {task_id}: {error}"
+                                    )
+                                })?
+                                == Some(CancellationStatus::Confirmed);
+                        if !confirmed {
+                            other_records.push(ReconciliationResolution::Ambiguous);
+                            blockers.push(format!(
+                                "task {task_id} was marked Cancelled without run-owner \
+                                 confirmation; needs review"
+                            ));
+                        }
+                    }
+                    (TaskState::Failed, AttemptState::Failed) => {}
                     _ => {
                         other_records.push(ReconciliationResolution::Ambiguous);
                         blockers.push(format!(

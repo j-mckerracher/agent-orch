@@ -48,7 +48,7 @@ enum Commands {
         /// Task identifier.
         task_id: String,
     },
-    /// Request cancellation of a running task's owned agent process group.
+    /// Request owner-routed cancellation of a running task's agent.
     Cancel {
         /// Task identifier.
         task_id: String,

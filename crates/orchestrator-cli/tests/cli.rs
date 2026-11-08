@@ -109,7 +109,9 @@ fn git(repo: &Path, args: &[&str]) -> String {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8_lossy(&output.stdout).trim_end().to_string()
+    String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_string()
 }
 
 fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<ProcessIdentity>) {
@@ -518,10 +520,7 @@ fn cleanup_preserves_dirty_and_unlanded_worktrees() {
     assert!(String::from_utf8_lossy(&unlanded.stderr).contains("not reachable"));
     assert!(worktree.exists());
     assert_eq!(git(&worktree, &["rev-parse", "HEAD"]), unlanded_head);
-    assert_eq!(
-        git(&worktree, &["status", "--porcelain"]),
-        unlanded_status
-    );
+    assert_eq!(git(&worktree, &["status", "--porcelain"]), unlanded_status);
     assert_eq!(
         fs::read(worktree.join("sample.txt")).unwrap(),
         unlanded_bytes
@@ -564,7 +563,7 @@ fn cleanup_removes_only_clean_landed_worktree() {
 
 #[test]
 #[cfg(target_os = "macos")]
-fn cancel_refuses_identity_mismatch_without_changing_state() {
+fn cancel_refuses_missing_run_owner_without_signalling_or_changing_state() {
     let fixture = fixture(successful_script());
     let mut child = Command::new("sleep")
         .arg("60")
@@ -583,16 +582,66 @@ fn cancel_refuses_identity_mismatch_without_changing_state() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no active cancellation owner"), "{stderr}");
     assert!(
-        stderr.contains("identity does not match a live start time"),
-        "{stderr}"
+        remained_alive,
+        "cancel signalled a process without its run owner"
     );
-    assert!(remained_alive, "cancel signalled a mismatched process");
     let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
     let task = store.get("mismatch-cancel").unwrap();
     assert_eq!(task.state, TaskState::Running);
     assert_eq!(task.attempts[0].state, AttemptState::Running);
     assert_eq!(task.sessions[0].state, SessionState::Running);
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn reconciliation_does_not_promote_legacy_cancelled_attempt_without_owner_ack() {
+    let fixture = fixture(successful_script());
+    let mut child = Command::new("sleep")
+        .arg("60")
+        .process_group(0)
+        .spawn()
+        .expect("start process for a dead-session identity");
+    let identity = capture_process_identity(child.id()).unwrap();
+    let _ = child.kill();
+    let _ = child.wait();
+    seed_running_session(&fixture, "legacy-cancel", Some(identity));
+    let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
+    store
+        .update_attempt_state(
+            "legacy-cancel",
+            "legacy-cancel-attempt-1",
+            AttemptState::Cancelled,
+        )
+        .unwrap();
+
+    let output = Command::new(CLI)
+        .arg("--data-dir")
+        .arg(&fixture.data)
+        .arg("run")
+        .arg("--repo")
+        .arg(&fixture.repo)
+        .arg("--task-id")
+        .arg("blocked-task")
+        .arg("--objective")
+        .arg("must not start")
+        .arg("--agent-program")
+        .arg(&fixture.agent)
+        .output()
+        .expect("run CLI against legacy cancellation state");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cancelled attempt without run-owner confirmation"),
+        "{stderr}"
+    );
+    let task = store.get("legacy-cancel").unwrap();
+    assert_eq!(task.state, TaskState::Running);
+    assert_eq!(task.attempts[0].state, AttemptState::Cancelled);
+    assert_eq!(task.sessions[0].state, SessionState::Exited);
+    assert!(store.get("blocked-task").is_err());
 }
 
 #[cfg(target_os = "macos")]
@@ -650,6 +699,7 @@ fn cancel_reaps_owned_child_and_records_terminal_state() {
     assert!(inspect.status.success());
     let stdout = String::from_utf8_lossy(&inspect.stdout);
     assert!(stdout.contains("status: Cancelled"));
+    assert!(stdout.contains("cancellation request: Confirmed"));
     assert!(stdout.contains("Cancelled"));
     assert!(stdout.contains("Exited"));
 }

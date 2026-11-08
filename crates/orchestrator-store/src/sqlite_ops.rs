@@ -31,6 +31,61 @@ pub struct EventJournalEntry {
     pub created_at: String,
 }
 
+/// Identity of the process that owns a running session's [`AgentHandle`].
+///
+/// `generation` is a fresh UUID for each run. It is not a PID: requests are
+/// bound to this generation and the exact task/attempt/session, then consumed
+/// only by the owner that holds the live handle.
+#[derive(Clone, PartialEq, Eq)]
+pub struct CancellationOwner {
+    pub task_id: String,
+    pub attempt_id: String,
+    pub session_id: String,
+    generation: String,
+}
+
+impl CancellationOwner {
+    /// Creates an owner capability for one run generation.
+    pub fn new(
+        task_id: String,
+        attempt_id: String,
+        session_id: String,
+        generation: String,
+    ) -> Result<Self, StoreError> {
+        let owner = Self {
+            task_id,
+            attempt_id,
+            session_id,
+            generation,
+        };
+        validate_cancellation_owner(&owner)?;
+        Ok(owner)
+    }
+}
+
+/// Durable result of a cross-process cancellation request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CancellationStatus {
+    /// The request exists, but the owner has not acknowledged termination.
+    Pending,
+    /// The owner waited for its agent handle and confirmed cancellation.
+    Confirmed,
+    /// The agent exited without being cancelled.
+    Rejected,
+    /// The owner could not confirm cancellation.
+    Failed,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct CancellationReceipt {
+    task_id: String,
+    attempt_id: String,
+    session_id: String,
+    generation: String,
+    status: CancellationStatus,
+}
+
 impl SqliteStore {
     /// Registers a project. Duplicate identifiers return a typed database error.
     pub fn register_project(&self, project: &Project) -> Result<(), StoreError> {
@@ -289,6 +344,953 @@ impl SqliteStore {
     }
 }
 
+impl SqliteStore {
+    /// Finds the unique active owner for a running task. A stale owner row is
+    /// never surfaced for a task whose durable state is no longer `Running`.
+    fn active_cancellation_owner(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<CancellationOwner>, StoreError> {
+        validate_task_id(task_id)?;
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            if current_task_state(&mut transaction, &task_id).await? != TaskState::Running {
+                transaction.commit().await?;
+                return Ok(None);
+            }
+            let prefix = format!("cli.cancel.owner:{task_id}:");
+            let rows = sqlx::query(
+                "SELECT key, method, fingerprint FROM idempotency_records \
+                 WHERE substr(method, 1, ?) = ? AND result IS NULL ORDER BY key",
+            )
+            .bind(prefix.len() as i64)
+            .bind(&prefix)
+            .fetch_all(&mut *transaction)
+            .await?;
+            let mut owners = Vec::with_capacity(rows.len());
+            for row in rows {
+                owners.push(parse_cancellation_owner_record(
+                    &task_id,
+                    &row.try_get::<String, _>("key")?,
+                    &row.try_get::<String, _>("method")?,
+                    &row.try_get::<String, _>("fingerprint")?,
+                )?);
+            }
+            if owners.len() > 1 {
+                return Err(StoreError::CancellationConflict {
+                    task_id,
+                    detail: "multiple active owners are registered",
+                });
+            }
+            let owner = owners.pop();
+            if let Some(owner) = &owner {
+                require_running_owner_records(&mut transaction, owner).await?;
+            }
+            transaction.commit().await?;
+            Ok(owner)
+        })
+    }
+
+    /// Creates or reuses the cancellation request for a task without
+    /// disclosing the run owner's generation capability to the caller.
+    pub fn request_cancellation_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<CancellationStatus, StoreError> {
+        validate_task_id(task_id)?;
+        let Some(owner) = self.active_cancellation_owner(task_id)? else {
+            let session_id = self
+                .get(task_id)?
+                .sessions
+                .into_iter()
+                .rev()
+                .find(|session| !session.state.is_terminal())
+                .map(|session| session.id)
+                .unwrap_or_else(|| "unknown".to_string());
+            return Err(StoreError::NoActiveCancellationOwner {
+                task_id: task_id.to_owned(),
+                session_id,
+            });
+        };
+        self.request_cancellation(&owner)
+    }
+
+    /// Reads the active task owner's request state without exposing its
+    /// generation capability.
+    pub fn cancellation_status_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<CancellationStatus>, StoreError> {
+        validate_task_id(task_id)?;
+        let task = self.get(task_id)?;
+        if task.state == TaskState::Running {
+            if let Some(owner) = self.active_cancellation_owner(task_id)? {
+                if let Some(status) = self.cancellation_request(&owner)? {
+                    return Ok(Some(status));
+                }
+            }
+        }
+        let Some(session) = task.sessions.last() else {
+            return Ok(None);
+        };
+        let task_id = task_id.to_owned();
+        let attempt_id = session.attempt_id.clone();
+        let session_id = session.id.clone();
+        let method = format!("cli.cancel.request:{task_id}:{attempt_id}:{session_id}");
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            let rows = sqlx::query(
+                "SELECT key, fingerprint, result FROM idempotency_records WHERE method = ?",
+            )
+            .bind(&method)
+            .fetch_all(&mut *transaction)
+            .await?;
+            if rows.is_empty() {
+                transaction.commit().await?;
+                return Ok(None);
+            }
+            if rows.len() != 1 {
+                return Err(StoreError::CancellationConflict {
+                    task_id,
+                    detail: "multiple cancellation generations exist for one session",
+                });
+            }
+            let row = &rows[0];
+            let key: String = row.try_get("key")?;
+            let fingerprint: String = row.try_get("fingerprint")?;
+            let result: Option<String> = row.try_get("result")?;
+            let Some(generation) = key.strip_prefix("agent-orch-cancel-") else {
+                return Err(StoreError::IdempotencyConflict);
+            };
+            let owner = CancellationOwner::new(
+                task_id.clone(),
+                attempt_id,
+                session_id,
+                generation.to_owned(),
+            )?;
+            let expected_fingerprint = cancellation_fingerprint(&owner);
+            verify_cancellation_record(
+                &owner,
+                &method,
+                &expected_fingerprint,
+                &method,
+                &fingerprint,
+            )?;
+            let status = cancellation_status(&owner, result.as_deref())?;
+            if status != CancellationStatus::Pending {
+                let owner_key = cancellation_owner_key(&owner);
+                let owner_method = cancellation_owner_method(&owner);
+                let Some((stored_method, stored_fingerprint, owner_result)) =
+                    read_idempotency_record(&mut transaction, &owner_key).await?
+                else {
+                    return Err(StoreError::NoActiveCancellationOwner {
+                        task_id,
+                        session_id: owner.session_id,
+                    });
+                };
+                verify_cancellation_record(
+                    &owner,
+                    &owner_method,
+                    &expected_fingerprint,
+                    &stored_method,
+                    &stored_fingerprint,
+                )?;
+                if owner_result.as_deref()
+                    != Some(serde_json::json!({"status": "closed"}).to_string().as_str())
+                {
+                    return Err(StoreError::CancellationConflict {
+                        task_id: owner.task_id,
+                        detail: "terminal request has no closed owner record",
+                    });
+                }
+            }
+            transaction.commit().await?;
+            Ok(Some(status))
+        })
+    }
+
+    /// Registers the current run as owner of a live agent session.
+    ///
+    /// This uses the existing SQLite idempotency table as a durable local
+    /// mailbox. The owner row is namespaced separately from request rows and
+    /// stays pending while the run process owns the handle. No process id is
+    /// used as authority.
+    pub fn register_cancellation_owner(&self, owner: &CancellationOwner) -> Result<(), StoreError> {
+        validate_cancellation_owner(owner)?;
+        let owner = owner.clone();
+        let key = cancellation_owner_key(&owner);
+        let method = cancellation_owner_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            require_running_owner_records(&mut transaction, &owner).await?;
+            let inserted = sqlx::query(
+                "INSERT INTO idempotency_records (key, method, fingerprint) \
+                 VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
+            )
+            .bind(&key)
+            .bind(&method)
+            .bind(&fingerprint)
+            .execute(&mut *transaction)
+            .await?;
+            if inserted.rows_affected() != 1 {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "owner generation is already registered",
+                });
+            }
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Creates or reuses the one cancellation request bound to this owner.
+    ///
+    /// The task/session checks and request insertion share one transaction.
+    /// Concurrent cancel clients therefore receive the same pending or
+    /// completed result instead of creating independent kill attempts.
+    fn request_cancellation(
+        &self,
+        owner: &CancellationOwner,
+    ) -> Result<CancellationStatus, StoreError> {
+        validate_cancellation_owner(owner)?;
+        let owner = owner.clone();
+        let owner_key = cancellation_owner_key(&owner);
+        let request_key = cancellation_request_key(&owner);
+        let owner_method = cancellation_owner_method(&owner);
+        let request_method = cancellation_request_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            // Take SQLite's writer reservation before reading. In WAL mode,
+            // two deferred read transactions that both upgrade to a write
+            // can fail with SQLITE_BUSY_SNAPSHOT instead of serializing.
+            sqlx::query(
+                "INSERT INTO idempotency_records (key, method, fingerprint) \
+                 VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
+            )
+            .bind(&request_key)
+            .bind(&request_method)
+            .bind(&fingerprint)
+            .execute(&mut *transaction)
+            .await?;
+            let Some((stored_request_method, stored_request_fingerprint, result)) =
+                read_idempotency_record(&mut transaction, &request_key).await?
+            else {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "request was not persisted",
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &request_method,
+                &fingerprint,
+                &stored_request_method,
+                &stored_request_fingerprint,
+            )?;
+            let status = cancellation_status(&owner, result.as_deref())?;
+            if status != CancellationStatus::Pending {
+                transaction.commit().await?;
+                return Ok(status);
+            }
+
+            let Some((stored_method, stored_fingerprint, owner_result)) =
+                read_idempotency_record(&mut transaction, &owner_key).await?
+            else {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &owner_method,
+                &fingerprint,
+                &stored_method,
+                &stored_fingerprint,
+            )?;
+            if owner_result.is_some() {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            }
+            require_running_owner_records(&mut transaction, &owner).await?;
+            transaction.commit().await?;
+            Ok(status)
+        })
+    }
+
+    /// Returns the request result without creating a request.
+    pub fn cancellation_request(
+        &self,
+        owner: &CancellationOwner,
+    ) -> Result<Option<CancellationStatus>, StoreError> {
+        validate_cancellation_owner(owner)?;
+        let owner = owner.clone();
+        let key = cancellation_request_key(&owner);
+        let method = cancellation_request_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        self.call(move |pool| async move {
+            let Some((stored_method, stored_fingerprint, result)) = sqlx::query(
+                "SELECT method, fingerprint, result FROM idempotency_records WHERE key = ?",
+            )
+            .bind(&key)
+            .fetch_optional(&pool)
+            .await?
+            .map(|row| {
+                Ok::<_, StoreError>((
+                    row.try_get::<String, _>("method")?,
+                    row.try_get::<String, _>("fingerprint")?,
+                    row.try_get::<Option<String>, _>("result")?,
+                ))
+            })
+            .transpose()?
+            else {
+                return Ok(None);
+            };
+            verify_cancellation_record(
+                &owner,
+                &method,
+                &fingerprint,
+                &stored_method,
+                &stored_fingerprint,
+            )?;
+            Ok(Some(cancellation_status(&owner, result.as_deref())?))
+        })
+    }
+
+    /// Atomically records confirmed cancellation after the owner has waited
+    /// for the agent handle to report its terminal outcome.
+    ///
+    /// The task/session/attempt transitions, durable acknowledgement, and
+    /// owner closure commit together. A request is never acknowledged by the
+    /// separate CLI process or by a PID observation.
+    pub fn confirm_cancellation(&self, owner: &CancellationOwner) -> Result<(), StoreError> {
+        validate_cancellation_owner(owner)?;
+        let owner = owner.clone();
+        let owner_key = cancellation_owner_key(&owner);
+        let owner_method = cancellation_owner_method(&owner);
+        let request_key = cancellation_request_key(&owner);
+        let request_method = cancellation_request_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        let closed_result = serde_json::json!({"status": "closed"}).to_string();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            // Reserve the writer before reading state so duplicate requests
+            // cannot invalidate this transaction's WAL snapshot.
+            sqlx::query(
+                "UPDATE idempotency_records SET result = result WHERE key = ? \
+                 AND method = ? AND fingerprint = ?",
+            )
+            .bind(&owner_key)
+            .bind(&owner_method)
+            .bind(&fingerprint)
+            .execute(&mut *transaction)
+            .await?;
+            let Some((stored_method, stored_fingerprint, owner_result)) =
+                read_idempotency_record(&mut transaction, &owner_key).await?
+            else {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &owner_method,
+                &fingerprint,
+                &stored_method,
+                &stored_fingerprint,
+            )?;
+
+            let current = current_task_state(&mut transaction, &owner.task_id).await?;
+            if current == TaskState::Cancelled {
+                let attempt_state = attempt_state_in(&mut transaction, &owner).await?;
+                let session_state = session_state_in(&mut transaction, &owner).await?;
+                let request = read_idempotency_record(&mut transaction, &request_key).await?;
+                let request_confirmed = match request {
+                    Some((method, stored_fingerprint, result)) => {
+                        verify_cancellation_record(
+                            &owner,
+                            &request_method,
+                            &fingerprint,
+                            &method,
+                            &stored_fingerprint,
+                        )?;
+                        cancellation_status(&owner, result.as_deref())?
+                            == CancellationStatus::Confirmed
+                    }
+                    None => true,
+                };
+                if attempt_state == AttemptState::Cancelled
+                    && session_state == SessionState::Exited
+                    && owner_result.as_deref() == Some(closed_result.as_str())
+                    && request_confirmed
+                {
+                    transaction.commit().await?;
+                    return Ok(());
+                }
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "task is cancelled without this owner's confirmation",
+                });
+            }
+            if owner_result.is_some() {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            }
+            if current != TaskState::Running {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "task is no longer running",
+                });
+            }
+            let Some((request_stored_method, request_fingerprint, request_result)) =
+                read_idempotency_record(&mut transaction, &request_key).await?
+            else {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "there is no cancellation request to confirm",
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &request_method,
+                &fingerprint,
+                &request_stored_method,
+                &request_fingerprint,
+            )?;
+            if cancellation_status(&owner, request_result.as_deref())?
+                != CancellationStatus::Pending
+            {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "cancellation request is not pending",
+                });
+            }
+
+            let attempt_state = attempt_state_in(&mut transaction, &owner).await?;
+            let session_state = session_state_in(&mut transaction, &owner).await?;
+            if attempt_state != AttemptState::Running || session_state != SessionState::Running {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "attempt or session is no longer running",
+                });
+            }
+            attempt_transition(attempt_state, AttemptState::Cancelled)?;
+            session_transition(session_state, SessionState::Exited)?;
+            let (next, audit) = task_transition(current, TaskEvent::CancellationConfirmed)?;
+
+            sqlx::query("UPDATE sessions SET state = ? WHERE task_id = ? AND id = ? AND state = ?")
+                .bind(encode(&SessionState::Exited)?)
+                .bind(&owner.task_id)
+                .bind(&owner.session_id)
+                .bind(encode(&session_state)?)
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected()
+                .eq(&1)
+                .then_some(())
+                .ok_or_else(|| StoreError::CancellationConflict {
+                    task_id: owner.task_id.clone(),
+                    detail: "session changed before confirmation",
+                })?;
+            bump_task_version(&mut transaction, &owner.task_id).await?;
+            append_durable_event(
+                &mut transaction,
+                &owner.task_id,
+                Some(&owner.session_id),
+                "session.state_changed",
+                &serde_json::json!({
+                    "session_id": owner.session_id,
+                    "state": SessionState::Exited
+                }),
+            )
+            .await?;
+
+            sqlx::query("UPDATE attempts SET state = ? WHERE task_id = ? AND id = ? AND state = ?")
+                .bind(encode(&AttemptState::Cancelled)?)
+                .bind(&owner.task_id)
+                .bind(&owner.attempt_id)
+                .bind(encode(&attempt_state)?)
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected()
+                .eq(&1)
+                .then_some(())
+                .ok_or_else(|| StoreError::CancellationConflict {
+                    task_id: owner.task_id.clone(),
+                    detail: "attempt changed before confirmation",
+                })?;
+            bump_task_version(&mut transaction, &owner.task_id).await?;
+            append_durable_event(
+                &mut transaction,
+                &owner.task_id,
+                None,
+                "attempt.state_changed",
+                &serde_json::json!({
+                    "attempt_id": owner.attempt_id,
+                    "state": AttemptState::Cancelled
+                }),
+            )
+            .await?;
+
+            let updated = sqlx::query(
+                "UPDATE tasks SET state = ?, version = version + 1 WHERE id = ? AND state = ?",
+            )
+            .bind(encode(&next)?)
+            .bind(&owner.task_id)
+            .bind(encode(&current)?)
+            .execute(&mut *transaction)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id.clone(),
+                    detail: "task changed before confirmation",
+                });
+            }
+            sqlx::query("INSERT INTO events (task_id, kind, payload) VALUES (?, ?, ?)")
+                .bind(&owner.task_id)
+                .bind(format!("{audit:?}"))
+                .bind(encode(&audit)?)
+                .execute(&mut *transaction)
+                .await?;
+            append_durable_event(
+                &mut transaction,
+                &owner.task_id,
+                None,
+                "task.transition",
+                &serde_json::json!({"audit": audit, "state": next}),
+            )
+            .await?;
+
+            write_cancellation_receipt(
+                &mut transaction,
+                &owner,
+                &request_key,
+                &request_method,
+                &fingerprint,
+                CancellationStatus::Confirmed,
+            )
+            .await?;
+            close_cancellation_owner(
+                &mut transaction,
+                &owner,
+                &owner_key,
+                &owner_method,
+                &fingerprint,
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Resolves an unconfirmed request after the owner has finished monitoring
+    /// the agent. `Rejected` means the agent exited without cancellation;
+    /// `Failed` means the owner could not establish a confirmed cancellation.
+    pub fn finish_cancellation_owner(
+        &self,
+        owner: &CancellationOwner,
+        status: CancellationStatus,
+    ) -> Result<(), StoreError> {
+        validate_cancellation_owner(owner)?;
+        if !matches!(
+            status,
+            CancellationStatus::Rejected | CancellationStatus::Failed
+        ) {
+            return Err(StoreError::CancellationConflict {
+                task_id: owner.task_id.clone(),
+                detail: "non-cancelled owner must finish as rejected or failed",
+            });
+        }
+        let owner = owner.clone();
+        let owner_key = cancellation_owner_key(&owner);
+        let owner_method = cancellation_owner_method(&owner);
+        let request_key = cancellation_request_key(&owner);
+        let request_method = cancellation_request_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        let closed_result = serde_json::json!({"status": "closed"}).to_string();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            sqlx::query(
+                "UPDATE idempotency_records SET result = result WHERE key = ? \
+                 AND method = ? AND fingerprint = ?",
+            )
+            .bind(&owner_key)
+            .bind(&owner_method)
+            .bind(&fingerprint)
+            .execute(&mut *transaction)
+            .await?;
+            let Some((stored_method, stored_fingerprint, owner_result)) =
+                read_idempotency_record(&mut transaction, &owner_key).await?
+            else {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &owner_method,
+                &fingerprint,
+                &stored_method,
+                &stored_fingerprint,
+            )?;
+            let task_state = current_task_state(&mut transaction, &owner.task_id).await?;
+            if task_state == TaskState::Running || task_state == TaskState::Cancelled {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "task outcome is not ready to resolve cancellation",
+                });
+            }
+
+            let request = read_idempotency_record(&mut transaction, &request_key).await?;
+            if let Some((method, stored_fingerprint, result)) = request {
+                verify_cancellation_record(
+                    &owner,
+                    &request_method,
+                    &fingerprint,
+                    &method,
+                    &stored_fingerprint,
+                )?;
+                if let Some(result) = result {
+                    if cancellation_status(&owner, Some(&result))? != status {
+                        return Err(StoreError::CancellationConflict {
+                            task_id: owner.task_id,
+                            detail: "cancellation request already has a different result",
+                        });
+                    }
+                } else {
+                    write_cancellation_receipt(
+                        &mut transaction,
+                        &owner,
+                        &request_key,
+                        &request_method,
+                        &fingerprint,
+                        status,
+                    )
+                    .await?;
+                }
+            }
+
+            if let Some(result) = owner_result {
+                if result != closed_result {
+                    return Err(StoreError::CancellationConflict {
+                        task_id: owner.task_id,
+                        detail: "owner registration already has a different result",
+                    });
+                }
+            } else {
+                close_cancellation_owner(
+                    &mut transaction,
+                    &owner,
+                    &owner_key,
+                    &owner_method,
+                    &fingerprint,
+                )
+                .await?;
+            }
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+}
+
+async fn require_running_owner_records(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+) -> Result<(), StoreError> {
+    let task_state = current_task_state(transaction, &owner.task_id).await?;
+    if task_state != TaskState::Running {
+        return Err(StoreError::CancellationConflict {
+            task_id: owner.task_id.clone(),
+            detail: "task is not running",
+        });
+    }
+    if attempt_state_in(transaction, owner).await? != AttemptState::Running
+        || session_state_in(transaction, owner).await? != SessionState::Running
+    {
+        return Err(StoreError::CancellationConflict {
+            task_id: owner.task_id.clone(),
+            detail: "attempt or session is not running",
+        });
+    }
+    Ok(())
+}
+
+async fn attempt_state_in(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+) -> Result<AttemptState, StoreError> {
+    let row = sqlx::query("SELECT state FROM attempts WHERE task_id = ? AND id = ?")
+        .bind(&owner.task_id)
+        .bind(&owner.attempt_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| StoreError::NoAttempt {
+            task_id: owner.task_id.clone(),
+            attempt_id: owner.attempt_id.clone(),
+        })?;
+    decode(&row.try_get::<String, _>("state")?)
+}
+
+async fn session_state_in(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+) -> Result<SessionState, StoreError> {
+    let row = sqlx::query("SELECT state FROM sessions WHERE task_id = ? AND id = ?")
+        .bind(&owner.task_id)
+        .bind(&owner.session_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or_else(|| StoreError::NoSession {
+            task_id: owner.task_id.clone(),
+            session_id: owner.session_id.clone(),
+        })?;
+    decode(&row.try_get::<String, _>("state")?)
+}
+
+async fn read_idempotency_record(
+    transaction: &mut Transaction<'_, Sqlite>,
+    key: &str,
+) -> Result<Option<(String, String, Option<String>)>, StoreError> {
+    let row =
+        sqlx::query("SELECT method, fingerprint, result FROM idempotency_records WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&mut **transaction)
+            .await?;
+    row.map(|row| {
+        Ok((
+            row.try_get("method")?,
+            row.try_get("fingerprint")?,
+            row.try_get("result")?,
+        ))
+    })
+    .transpose()
+}
+
+fn validate_cancellation_owner(owner: &CancellationOwner) -> Result<(), StoreError> {
+    validate_task_id(&owner.task_id)?;
+    validate_task_id(&owner.attempt_id)?;
+    validate_task_id(&owner.session_id)?;
+    if owner.generation.len() != 32
+        || !owner
+            .generation
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(StoreError::InvalidCancellationOwner);
+    }
+    Ok(())
+}
+
+fn cancellation_owner_key(owner: &CancellationOwner) -> String {
+    format!("agent-orch-owner-{}", owner.generation)
+}
+
+fn parse_cancellation_owner_record(
+    task_id: &str,
+    key: &str,
+    method: &str,
+    fingerprint: &str,
+) -> Result<CancellationOwner, StoreError> {
+    let prefix = format!("cli.cancel.owner:{task_id}:");
+    let Some(identity) = method.strip_prefix(&prefix) else {
+        return Err(StoreError::IdempotencyConflict);
+    };
+    let Some((attempt_id, session_id)) = identity.split_once(':') else {
+        return Err(StoreError::IdempotencyConflict);
+    };
+    let Some(generation) = key.strip_prefix("agent-orch-owner-") else {
+        return Err(StoreError::IdempotencyConflict);
+    };
+    let owner = CancellationOwner {
+        task_id: task_id.to_owned(),
+        attempt_id: attempt_id.to_owned(),
+        session_id: session_id.to_owned(),
+        generation: generation.to_owned(),
+    };
+    validate_cancellation_owner(&owner)?;
+    if session_id.contains(':') || cancellation_fingerprint(&owner) != fingerprint {
+        return Err(StoreError::IdempotencyConflict);
+    }
+    Ok(owner)
+}
+
+fn cancellation_request_key(owner: &CancellationOwner) -> String {
+    format!("agent-orch-cancel-{}", owner.generation)
+}
+
+fn cancellation_owner_method(owner: &CancellationOwner) -> String {
+    format!(
+        "cli.cancel.owner:{}:{}:{}",
+        owner.task_id, owner.attempt_id, owner.session_id
+    )
+}
+
+fn cancellation_request_method(owner: &CancellationOwner) -> String {
+    format!(
+        "cli.cancel.request:{}:{}:{}",
+        owner.task_id, owner.attempt_id, owner.session_id
+    )
+}
+
+fn cancellation_fingerprint(owner: &CancellationOwner) -> String {
+    // The generation is random and immutable for this owner. Duplicating it
+    // fills the existing idempotency API's 64-hex fingerprint field; the
+    // task/attempt/session binding is independently checked in the method.
+    format!("{}{}", owner.generation, owner.generation)
+}
+
+fn verify_cancellation_record(
+    owner: &CancellationOwner,
+    expected_method: &str,
+    expected_fingerprint: &str,
+    stored_method: &str,
+    stored_fingerprint: &str,
+) -> Result<(), StoreError> {
+    let owner_method = cancellation_owner_method(owner);
+    let request_method = cancellation_request_method(owner);
+    if (expected_method != owner_method && expected_method != request_method)
+        || expected_fingerprint != cancellation_fingerprint(owner)
+        || stored_method != expected_method
+        || stored_fingerprint != expected_fingerprint
+    {
+        return Err(StoreError::IdempotencyConflict);
+    }
+    Ok(())
+}
+
+fn cancellation_status(
+    owner: &CancellationOwner,
+    result: Option<&str>,
+) -> Result<CancellationStatus, StoreError> {
+    let Some(result) = result else {
+        return Ok(CancellationStatus::Pending);
+    };
+    let receipt: CancellationReceipt = decode(result)?;
+    if receipt.task_id != owner.task_id
+        || receipt.attempt_id != owner.attempt_id
+        || receipt.session_id != owner.session_id
+        || receipt.generation != owner.generation
+    {
+        return Err(StoreError::IdempotencyConflict);
+    }
+    Ok(receipt.status)
+}
+
+async fn write_cancellation_receipt(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+    key: &str,
+    method: &str,
+    fingerprint: &str,
+    status: CancellationStatus,
+) -> Result<(), StoreError> {
+    if let Some((stored_method, stored_fingerprint, result)) =
+        read_idempotency_record(transaction, key).await?
+    {
+        verify_cancellation_record(
+            owner,
+            method,
+            fingerprint,
+            &stored_method,
+            &stored_fingerprint,
+        )?;
+        if let Some(result) = result {
+            if cancellation_status(owner, Some(&result))? == status {
+                return Ok(());
+            }
+            return Err(StoreError::CancellationConflict {
+                task_id: owner.task_id.clone(),
+                detail: "cancellation request already has a different result",
+            });
+        }
+        let receipt = CancellationReceipt {
+            task_id: owner.task_id.clone(),
+            attempt_id: owner.attempt_id.clone(),
+            session_id: owner.session_id.clone(),
+            generation: owner.generation.clone(),
+            status,
+        };
+        let result = encode(&receipt)?;
+        let updated = sqlx::query(
+            "UPDATE idempotency_records SET result = ? WHERE key = ? AND method = ? \
+             AND fingerprint = ? AND result IS NULL",
+        )
+        .bind(result)
+        .bind(key)
+        .bind(method)
+        .bind(fingerprint)
+        .execute(&mut **transaction)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(StoreError::CancellationConflict {
+                task_id: owner.task_id.clone(),
+                detail: "cancellation request changed before acknowledgement",
+            });
+        }
+    }
+    Ok(())
+}
+
+async fn close_cancellation_owner(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+    key: &str,
+    method: &str,
+    fingerprint: &str,
+) -> Result<(), StoreError> {
+    let Some((stored_method, stored_fingerprint, result)) =
+        read_idempotency_record(transaction, key).await?
+    else {
+        return Err(StoreError::NoActiveCancellationOwner {
+            task_id: owner.task_id.clone(),
+            session_id: owner.session_id.clone(),
+        });
+    };
+    verify_cancellation_record(
+        owner,
+        method,
+        fingerprint,
+        &stored_method,
+        &stored_fingerprint,
+    )?;
+    let closed = serde_json::json!({"status": "closed"}).to_string();
+    if result.as_deref() == Some(closed.as_str()) {
+        return Ok(());
+    }
+    if result.is_some() {
+        return Err(StoreError::CancellationConflict {
+            task_id: owner.task_id.clone(),
+            detail: "owner registration already has a result",
+        });
+    }
+    let updated = sqlx::query(
+        "UPDATE idempotency_records SET result = ? WHERE key = ? AND method = ? \
+         AND fingerprint = ? AND result IS NULL",
+    )
+    .bind(closed)
+    .bind(key)
+    .bind(method)
+    .bind(fingerprint)
+    .execute(&mut **transaction)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(StoreError::CancellationConflict {
+            task_id: owner.task_id.clone(),
+            detail: "owner registration changed before closure",
+        });
+    }
+    Ok(())
+}
+
 impl Store for SqliteStore {
     fn create(&self, contract: &TaskContract) -> Result<(), StoreError> {
         validate_contract(contract)?;
@@ -362,6 +1364,12 @@ impl Store for SqliteStore {
 
     fn transition(&self, task_id: &str, event: TaskEvent) -> Result<AuditEvent, StoreError> {
         validate_task_id(task_id)?;
+        if event == TaskEvent::CancellationConfirmed {
+            return Err(StoreError::CancellationConflict {
+                task_id: task_id.to_owned(),
+                detail: "confirmation requires the owner acknowledgement API",
+            });
+        }
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin().await?;

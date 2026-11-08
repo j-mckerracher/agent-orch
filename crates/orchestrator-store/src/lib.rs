@@ -57,7 +57,7 @@ mod sqlite_events;
 pub use sqlite_events::{IdempotencyStart, StreamEvent};
 mod sqlite_reconcile;
 pub use sqlite::SqliteStore;
-pub use sqlite_ops::EventJournalEntry;
+pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry};
 
 use std::path::Path;
 
@@ -217,6 +217,18 @@ pub enum StoreError {
     /// A key was already bound to a different request.
     #[error("idempotency key conflicts with prior request")]
     IdempotencyConflict,
+    /// Cancellation owner generation is not a lowercase 128-bit hex UUID.
+    #[error("cancellation owner identity is invalid")]
+    InvalidCancellationOwner,
+    /// No active run owner is registered for the task/session.
+    #[error("no active cancellation owner for task {task_id} session {session_id}")]
+    NoActiveCancellationOwner { task_id: String, session_id: String },
+    /// Cancellation protocol conflicts with the durable task/owner state.
+    #[error("cancellation for task {task_id} conflicts with its state: {detail}")]
+    CancellationConflict {
+        task_id: String,
+        detail: &'static str,
+    },
     /// The SQLite worker stopped before responding to a request.
     #[error("SQLite worker stopped unexpectedly")]
     WorkerStopped,
@@ -406,6 +418,12 @@ impl Store for FileStore {
     }
 
     fn transition(&self, task_id: &str, event: TaskEvent) -> Result<AuditEvent, StoreError> {
+        if event == TaskEvent::CancellationConfirmed {
+            return Err(StoreError::CancellationConflict {
+                task_id: task_id.to_owned(),
+                detail: "confirmation requires the owner acknowledgement API",
+            });
+        }
         // The next state and audit event are computed from the record
         // being mutated, inside the same locked read-modify-write, so the
         // state and its journal entry always come from the same state.
