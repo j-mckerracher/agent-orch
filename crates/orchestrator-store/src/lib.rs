@@ -44,6 +44,8 @@
 //! processes can overwrite each other's records and must not share a data
 //! directory. It does not sync the record file or parent directory. A failed
 //! write may leave an ignored `<id>.<pid>.tmp` file.
+mod data_lock;
+pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 pub mod sqlite;
 mod sqlite_ops;
 pub use sqlite::SqliteStore;
