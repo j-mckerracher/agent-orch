@@ -82,6 +82,18 @@ fn rejects_unknown_fields_at_proposal_and_contract_levels() {
         &[],
     )]))
     .unwrap();
+    value["tasks"][0]["extra"] = json!(true);
+    assert!(matches!(
+        validate_proposal(&value.to_string()),
+        Err(DecompositionError::Json(_))
+    ));
+    let mut value: Value = serde_json::from_str(&proposal(vec![task(
+        "Widget",
+        "local",
+        "Build widget",
+        &[],
+    )]))
+    .unwrap();
     value["tasks"][0]["contract"]["extra"] = json!(true);
     assert!(matches!(
         validate_proposal(&value.to_string()),
