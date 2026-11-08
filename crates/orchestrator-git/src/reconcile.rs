@@ -1,11 +1,12 @@
-//! Read-only reconciliation of recorded worktrees and partial ref updates.
+//! Read-only reconciliation of recorded task workspaces.
 //!
-//! Git observations return as plans. This module never changes refs, removes
+//! Git observations return plans. This module never changes refs, removes
 //! worktrees, or deletes paths. A workspace matches only while its recorded
 //! branch is checked out and its ref still points to the recorded base commit.
-//! Any branch movement remains visible for review.
+//! CLI and scheduler wiring is deferred to M2-06.
+//! Partial-delivery inspection is deferred to M3-06.
 //!
-//! Updated: 2026-11-08T06:56:30+00:00.
+//! Updated: 2026-11-08T07:32:49+00:00.
 
 use std::path::{Path, PathBuf};
 
@@ -204,67 +205,6 @@ fn classify_branch(
         return Ok(false);
     };
     Ok(head == branch_head && branch_head == expected_base_commit)
-}
-
-/// A ref update described by its current and intended object IDs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeliveryStep {
-    pub id: String,
-    /// Fully qualified Git ref name, such as `refs/heads/release`.
-    pub reference: String,
-    /// Current object ID, or `None` when ref does not exist.
-    pub expected_before: Option<String>,
-    /// Object ID the delivery step intends to write.
-    pub expected_after: String,
-}
-
-/// Result of comparing one delivery step with the current Git ref.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeliveryOutcome {
-    Confirmed,
-    NotApplied,
-    Ambiguous { actual: Option<String> },
-}
-
-/// One deterministic delivery decision.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeliveryDecision {
-    pub id: String,
-    pub reference: String,
-    pub outcome: DeliveryOutcome,
-}
-
-/// Checks partial delivery steps against current refs without mutating Git.
-pub fn reconcile_delivery_steps(
-    repository: &Repository,
-    steps: &[DeliveryStep],
-) -> Result<Vec<DeliveryDecision>, Error> {
-    let mut steps = steps.to_vec();
-    steps.sort_by(|left, right| {
-        left.reference
-            .cmp(&right.reference)
-            .then_with(|| left.id.cmp(&right.id))
-            .then_with(|| left.expected_before.cmp(&right.expected_before))
-            .then_with(|| left.expected_after.cmp(&right.expected_after))
-    });
-    steps
-        .iter()
-        .map(|step| {
-            let actual = read_ref(repository, &step.reference)?;
-            let outcome = if actual.as_deref() == Some(step.expected_after.as_str()) {
-                DeliveryOutcome::Confirmed
-            } else if actual == step.expected_before {
-                DeliveryOutcome::NotApplied
-            } else {
-                DeliveryOutcome::Ambiguous { actual }
-            };
-            Ok(DeliveryDecision {
-                id: step.id.clone(),
-                reference: step.reference.clone(),
-                outcome,
-            })
-        })
-        .collect()
 }
 
 fn read_ref(repository: &Repository, reference: &str) -> Result<Option<String>, Error> {

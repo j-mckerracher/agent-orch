@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use orchestrator_git::reconcile::{
-    reconcile_delivery_steps, reconcile_workspaces, DeliveryOutcome, DeliveryStep,
-    RecordedWorkspace, WorkspaceClassification,
+    reconcile_workspaces, RecordedWorkspace, WorkspaceClassification,
 };
 use orchestrator_git::{create_task_worktree, Repository};
 use tempfile::TempDir;
@@ -207,66 +206,4 @@ fn committed_worktree_branch_is_classified_branch_moved() {
         plan.workspaces[0].classification,
         WorkspaceClassification::BranchMoved
     );
-}
-
-#[test]
-fn partial_delivery_refs_are_confirmed_not_applied_or_ambiguous() {
-    let fixture = fixture();
-    let before = git(&fixture.repository_path, &["rev-parse", "HEAD"]);
-    fs::write(fixture.repository_path.join("target.txt"), "target\n").expect("write target");
-    git(&fixture.repository_path, &["add", "target.txt"]);
-    git(&fixture.repository_path, &["commit", "-m", "target"]);
-    let after = git(&fixture.repository_path, &["rev-parse", "HEAD"]);
-    git(
-        &fixture.repository_path,
-        &["branch", "not-applied", &before],
-    );
-    git(&fixture.repository_path, &["branch", "confirmed", &after]);
-    fs::write(fixture.repository_path.join("later.txt"), "later\n").expect("write later");
-    git(&fixture.repository_path, &["add", "later.txt"]);
-    git(&fixture.repository_path, &["commit", "-m", "later"]);
-    let later = git(&fixture.repository_path, &["rev-parse", "HEAD"]);
-    git(&fixture.repository_path, &["branch", "ambiguous", &later]);
-    let steps = [
-        DeliveryStep {
-            id: "d".into(),
-            reference: "refs/heads/not-created".into(),
-            expected_before: None,
-            expected_after: after.clone(),
-        },
-        DeliveryStep {
-            id: "a".into(),
-            reference: "refs/heads/not-applied".into(),
-            expected_before: Some(before.clone()),
-            expected_after: after.clone(),
-        },
-        DeliveryStep {
-            id: "b".into(),
-            reference: "refs/heads/confirmed".into(),
-            expected_before: Some(before.clone()),
-            expected_after: after.clone(),
-        },
-        DeliveryStep {
-            id: "c".into(),
-            reference: "refs/heads/ambiguous".into(),
-            expected_before: Some(before.clone()),
-            expected_after: after.clone(),
-        },
-    ];
-
-    let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("reconcile refs");
-
-    assert_eq!(plan[0].id, "c");
-    assert_eq!(
-        plan[0].outcome,
-        DeliveryOutcome::Ambiguous {
-            actual: Some(later)
-        }
-    );
-    assert_eq!(plan[1].id, "b");
-    assert_eq!(plan[1].outcome, DeliveryOutcome::Confirmed);
-    assert_eq!(plan[2].id, "a");
-    assert_eq!(plan[2].outcome, DeliveryOutcome::NotApplied);
-    assert_eq!(plan[3].id, "d");
-    assert_eq!(plan[3].outcome, DeliveryOutcome::NotApplied);
 }

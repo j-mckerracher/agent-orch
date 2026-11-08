@@ -6,8 +6,10 @@
 //! caller responsibilities. This module observes processes but never changes
 //! task state or terminates processes. An exit only yields `MarkInterrupted`;
 //! task success requires the separate verification flow.
+//! CLI and scheduler integration is deferred to M2-06. Delivery inspection
+//! remains deferred to M3-06.
 //!
-//! Updated: 2026-11-08T06:51:00+00:00.
+//! Updated: 2026-11-08T07:32:49+00:00.
 
 use std::io;
 
