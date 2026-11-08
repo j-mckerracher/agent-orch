@@ -120,9 +120,7 @@ impl Parser {
     }
 
     fn translate(&mut self, v: &Value) -> Result<Option<AgentEvent>, ProtocolViolation> {
-        let r = v
-            .as_object()
-            .ok_or(ProtocolViolation::BadField("type"))?;
+        let r = v.as_object().ok_or(ProtocolViolation::BadField("type"))?;
         let ty = r
             .get("type")
             .and_then(|t| t.as_str())
@@ -140,9 +138,7 @@ impl Parser {
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .ok_or(ProtocolViolation::BadField("thread_id"))?;
                 self.phase = Phase::AwaitingTurn;
-                Ok(Some(AgentEvent::SessionStarted {
-                    session_id: sid,
-                }))
+                Ok(Some(AgentEvent::SessionStarted { session_id: sid }))
             }
             "turn.started" => {
                 if self.phase != Phase::AwaitingTurn {
@@ -151,6 +147,21 @@ impl Parser {
                     ));
                 }
                 self.phase = Phase::InTurn;
+                Ok(None)
+            }
+            "item.started" => {
+                if self.phase != Phase::InTurn {
+                    return Err(ProtocolViolation::Ordering(
+                        "item.started outside a turn".into(),
+                    ));
+                }
+                let item = r
+                    .get("item")
+                    .and_then(|i| i.as_object())
+                    .ok_or(ProtocolViolation::BadField("item"))?;
+                item.get("type")
+                    .and_then(|t| t.as_str())
+                    .ok_or(ProtocolViolation::BadField("item.type"))?;
                 Ok(None)
             }
             "item.completed" => {
@@ -217,7 +228,8 @@ mod tests {
         format!(r#"{{"type":"thread.started","thread_id":"{SID}"}}"#)
     }
     const TURN_STARTED: &str = r#"{"type":"turn.started"}"#;
-    const MSG: &str = r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"PONG"}}"#;
+    const MSG: &str =
+        r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"PONG"}}"#;
     const TURN_DONE: &str = r#"{"type":"turn.completed","usage":{"input_tokens":1}}"#;
 
     #[test]
@@ -248,7 +260,8 @@ mod tests {
         p.feed(&thread()).unwrap().unwrap();
         assert_eq!(p.feed(TURN_STARTED), None);
         assert_eq!(p.feed(""), None);
-        let reasoning = r#"{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"hmm"}}"#;
+        let reasoning =
+            r#"{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"hmm"}}"#;
         assert_eq!(p.feed(reasoning), None);
         assert!(p.feed(TURN_DONE).unwrap().is_ok());
         assert_eq!(p.last_message(), None);
@@ -257,7 +270,12 @@ mod tests {
     #[test]
     fn malformed_json_faults() {
         let mut p = Parser::new();
-        assert_eq!(p.feed(&thread()).unwrap(), Ok(AgentEvent::SessionStarted { session_id: Uuid::parse_str(SID).unwrap() }));
+        assert_eq!(
+            p.feed(&thread()).unwrap(),
+            Ok(AgentEvent::SessionStarted {
+                session_id: Uuid::parse_str(SID).unwrap()
+            })
+        );
         assert_eq!(p.feed(TURN_STARTED), None);
         let err = p.feed("not json at all").unwrap().unwrap_err();
         assert!(matches!(err, ProtocolViolation::MalformedJson(_)));

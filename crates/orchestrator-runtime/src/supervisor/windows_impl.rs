@@ -1,38 +1,35 @@
-//! Windows process-tree cleanup.
-//!
-//! Primary: a Job Object created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
-//! The child (and everything it spawns — child processes inherit the job)
-//! belongs to the job; closing the handle terminates the whole tree.
-//! Fallback: a Toolhelp32 snapshot walk that terminates the target and
-//! every descendant by parent-PID chain (also serves to detect whether
-//! the job actually covered the tree).
+//! Windows process-tree ownership and liveness checks.
+
+use std::io;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectExtendedLimitInformation, SetInformationJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    GetExitCodeProcess, OpenProcess, OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED,
+    PROCESS_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
 };
 
-/// Create a kill-on-close job and assign `pid` to it. Returns the job
-/// handle, or `None` when creation or assignment failed (the snapshot
-/// fallback then covers cancellation).
-pub(super) fn assign_to_job(pid: u32) -> Option<HANDLE> {
+pub(super) const PROCESS_CREATION_FLAGS: u32 = CREATE_NO_WINDOW | CREATE_SUSPENDED;
+
+/// Assign the suspended child to a kill-on-close job, then resume its
+/// primary thread. The caller kills the child on error; closing the job
+/// also kills it if assignment already succeeded.
+pub(super) fn assign_suspended_to_job(pid: u32, process: HANDLE) -> io::Result<HANDLE> {
     let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if job.is_null() {
-        return None;
+        return Err(io::Error::last_os_error());
     }
+
     let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    let ok = unsafe {
+    let configured = unsafe {
         SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
@@ -40,89 +37,90 @@ pub(super) fn assign_to_job(pid: u32) -> Option<HANDLE> {
             std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
         )
     };
-    if ok == 0 {
+    if configured == 0 {
+        let error = io::Error::last_os_error();
         unsafe { CloseHandle(job) };
-        return None;
+        return Err(error);
     }
-    let proc = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SET_QUOTA, 0, pid) };
-    if proc.is_null() {
+
+    if unsafe { AssignProcessToJobObject(job, process) } == 0 {
+        let error = io::Error::last_os_error();
         unsafe { CloseHandle(job) };
-        return None;
+        return Err(error);
     }
-    let attached = unsafe { AssignProcessToJobObject(job, proc) };
-    unsafe { CloseHandle(proc) };
-    if attached == 0 {
+
+    if let Err(error) = resume_primary_thread(pid) {
         unsafe { CloseHandle(job) };
-        return None;
+        return Err(error);
     }
-    Some(job)
+
+    Ok(job)
 }
 
-/// Close the job handle; `KILL_ON_JOB_CLOSE` terminates the whole tree
-/// synchronously. If the process is still visible afterwards, the job
-/// did not cover it, so fall back to the snapshot tree kill.
-pub(super) fn kill_tree_via_job(pid: u32, job: HANDLE) {
-    unsafe { CloseHandle(job) };
-    if pid_running(pid) {
-        kill_tree(pid);
-    }
-}
-
-/// Snapshot the process table and terminate the target and every
-/// descendant of it (by parent-PID chain).
-pub(super) fn kill_tree(root_pid: u32) {
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+fn resume_primary_thread(pid: u32) -> io::Result<()> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
-        return;
+        return Err(io::Error::last_os_error());
     }
-    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-    // Fixpoint walk: the snapshot is a single point-in-time image, so
-    // grandchildren whose parent was scanned before it entered the tree
-    // are only found on a second pass. Repeat until no new descendants
-    // appear.
-    let mut tree: Vec<u32> = Vec::new();
-    loop {
-        let before = tree.len();
-        if unsafe { Process32FirstW(snapshot, &mut entry) } != 0 {
-            loop {
-                let p = entry.th32ProcessID;
-                let parent = entry.th32ParentProcessID;
-                if p != 0 && p != root_pid && !tree.contains(&p)
-                    && (parent == root_pid || tree.contains(&parent))
-                {
-                    tree.push(p);
-                }
-                if unsafe { Process32NextW(snapshot, &mut entry) } == 0 {
-                    break;
-                }
+
+    let mut entry = THREADENTRY32 {
+        dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    let mut thread_id = None;
+    if unsafe { Thread32First(snapshot, &mut entry) } != 0 {
+        loop {
+            if entry.th32OwnerProcessID == pid {
+                thread_id = Some(entry.th32ThreadID);
+                break;
             }
-        }
-        if tree.len() == before {
-            break;
+            if unsafe { Thread32Next(snapshot, &mut entry) } == 0 {
+                break;
+            }
         }
     }
     unsafe { CloseHandle(snapshot) };
-    for p in tree {
-        kill_pid(p);
+
+    let thread_id = thread_id.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "suspended process primary thread was not found",
+        )
+    })?;
+    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, thread_id) };
+    if thread.is_null() {
+        return Err(io::Error::last_os_error());
     }
-    kill_pid(root_pid);
+
+    let previous_suspend_count = unsafe { ResumeThread(thread) };
+    let error = match previous_suspend_count {
+        u32::MAX => Some(io::Error::last_os_error()),
+        1 => None,
+        count => Some(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("suspended primary thread had unexpected suspend count {count}"),
+        )),
+    };
+    unsafe { CloseHandle(thread) };
+    error.map_or(Ok(()), Err)
 }
 
-fn kill_pid(pid: u32) {
-    let h = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
-    if h.is_null() {
+/// Terminate all current job members and close the kill-on-close handle.
+/// The process ID is deliberately not checked after closing the job because
+/// that identifier may already belong to an unrelated process.
+pub(super) fn terminate_job(job: HANDLE) {
+    if job.is_null() {
         return;
     }
     unsafe {
-        TerminateProcess(h, 1);
-        CloseHandle(h);
+        TerminateJobObject(job, 1);
+        CloseHandle(job);
     }
 }
 
 /// True if a process with `pid` is still running. A terminated process
-/// lingers as a zombie until reaped (openable, but not running), so the
-/// exit code decides.
+/// lingers as a zombie until reaped (openable, but not running), so the exit
+/// code decides.
 pub(super) fn pid_running(pid: u32) -> bool {
     const STILL_ACTIVE: u32 = 259;
     let h = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };

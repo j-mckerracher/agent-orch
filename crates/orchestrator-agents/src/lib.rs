@@ -1,6 +1,6 @@
 //! Capability-aware adapters for Codex, Claude Code, and Pi subprocess
-//! protocols. Implements the adapter contract (plan section 5.4) on top of
-//! orchestrator-runtime's process supervisor.
+//! protocols. This crate defines the adapter contract in `contract` and
+//! implements it on top of orchestrator-runtime's process supervisor.
 //!
 //! The adapter owns provider-specific protocol translation; the runtime
 //! supervisor owns process handles and reconciles process exits. Nothing in
@@ -14,6 +14,6 @@ pub mod contract;
 pub use codex_adapter::CodexAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
-    AgentAdapter, AgentCapabilities, AgentEvent, AgentError, AgentExit, AgentHandle,
-    AgentKind, AgentLaunchRequest, Result, TurnOutcome,
+    AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, Result, TurnOutcome,
 };
