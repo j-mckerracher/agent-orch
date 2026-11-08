@@ -148,211 +148,266 @@
       "id": "M1-04",
       "milestone": "M1",
       "title": "Build the single-task CLI workflow",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M1-01",
+        "M1-02",
         "M1-03"
       ],
       "details": "Implement run, tasks, inspect, cancel, diff and cleanup commands; preserve worktrees for inspection and report actionable errors.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-07 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max, verified by RPC get_state (the provider ID is openai-codex; the codex/ prefix in orch-impl-m.md does not resolve). Driver: files/omp_rpc_worker.py in the coordinator session folder. Brief: files/brief-m1-04.md. Worktree ~/Code/agent-orch-worktrees/tasks/m1-04-cli-workflow, branch orch/m1-04-cli-workflow, base 973b7ff (main). M1-02 was missing from depends_on and was added; priority is unchanged at 4. An earlier uncommitted attempt at /private/tmp/agent-orch-m1-04-priority4-20261107 is preserved unreviewed and not adopted. Worker may not edit board.json, push, or merge. Coordinator verifies the candidate independently. Windows is unverified. Result: candidate 06422ca on orch/m1-04-cli-workflow (commits f12177e, 742ddbe, 06422ca on base 973b7ff; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 99 passed, 0 failed; cargo clippy --locked -p orchestrator-cli --all-targets --no-deps exit 0 with zero warnings; scope limited to crates/orchestrator-cli, Cargo.lock, and docs/evidence/m1-04-macos; no bypass flags (Codex runs with --approve-for-me). The e2e evidence (docs/evidence/m1-04-macos/run.md) shows one failed run caused by a Codex flag pair, then a successful run that appended one line to README.md. Cleanup and cancellation tests are in crates/orchestrator-cli/tests/cli.rs. Windows is unverified.",
       "priority": 4
     },
     {
       "id": "M1-05",
       "milestone": "M1",
       "title": "Verify primary checkout isolation and safe cleanup",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M1-04"
       ],
       "details": "Exercise dirty repositories, cancellation and worktree retention; never delete uncommitted or unlanded work.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m1-05.md. Worktree ~/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup, branch orch/m1-05-isolation-cleanup, base d043fa6 (orch/integration, which merges M4-00, M4-02, M2-01, and M1-04). Scope: crates/orchestrator-cli and docs/evidence/m1-05-macos. Windows is deferred by the user. Result: candidate 60ae3bf on orch/m1-05-isolation-cleanup (one commit on base d043fa6; not merged to main). Coordinator verified 2026-11-08 (-07:00): scope limited to crates/orchestrator-cli (tests only; no production src change) and docs/evidence/m1-05-macos; no bypass flags; cargo test --locked --workspace exit 0, 119 passed, 0 failed; cargo clippy --locked -p orchestrator-cli --all-targets --no-deps exit 0. Evidence (docs/evidence/m1-05-macos/codex-run-5c27yt83/): Codex 0.167.0 exit 0 edited only the task worktree's sample.txt; primary HEAD, git status, and file hashes are identical before and after.",
       "priority": 5
     },
     {
       "id": "M2-01",
       "milestone": "M2",
       "title": "Implement SQLite persistence and migrations",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M1-01"
       ],
       "details": "Persist projects, contracts, dependencies, attempts, sessions, workspaces, approvals, verification runs, artifacts and an ordered event journal; use WAL and foreign keys.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-07 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max, verified by RPC get_state. Brief: files/brief-m2-01.md in the coordinator session folder. Worktree ~/Code/agent-orch-worktrees/tasks/m2-01-sqlite-persistence, branch orch/m2-01-sqlite-persistence, base 973b7ff (main). Scope: crates/orchestrator-store only, keeping the Store trait and FileStore API unchanged because M1-04 uses them concurrently. An earlier attempt at /private/tmp/agent-orch-m2-01-priority4-20261107 contains only an untracked plan file and is not adopted. Worker may not edit board.json, push, or merge. Coordinator verifies the candidate independently. Power-loss durability is out of scope. Result: candidate b949a58 on orch/m2-01-sqlite-persistence (one commit on base 973b7ff; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 90 passed, 0 failed; cargo clippy --locked -p orchestrator-store -p orchestrator-core --all-targets --no-deps exit 0 with zero warnings; scope limited to crates/orchestrator-store, crates/orchestrator-core (additive), and Cargo.lock; the Store trait and FileStore public signatures are unchanged (checked by diff). SQLx pinned =0.9.0 with default features off. WAL, foreign keys, embedded migrations (migrations/0001_initial.sql), atomic transition+event, reopen, and concurrent-handle tests are included. Windows and power-loss durability are unverified.",
       "priority": 4
     },
     {
       "id": "M2-02",
       "milestone": "M2",
       "title": "Build dependency-aware bounded scheduler",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
+        "M1-02",
         "M2-01"
       ],
       "details": "Reject dependency cycles; enforce authorization, global and per-project limits, fair scheduling and exclusive worktree ownership. Default to two workers.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m2-02.md. Worktree ~/Code/agent-orch-worktrees/tasks/m2-02-scheduler, branch orch/m2-02-scheduler, base d043fa6. Scope: crates/orchestrator-core/src/scheduler.rs as a pure policy with no store writes. Result: candidate cf98ca8 on orch/m2-02-scheduler (one commit on base d043fa6; not merged to main). Coordinator verified 2026-11-08 (-07:00): scope limited to scheduler.rs, core lib.rs (one line), and tests/scheduler.rs; cargo test --locked --workspace exit 0, 136 passed, 0 failed; cargo clippy --locked -p orchestrator-core --all-targets --no-deps exit 0 with zero warnings. Tests cover named cycle rejection (self and multi-task), zero and unbounded limits rejected, default global limit 2, global and per-project limits, round-robin fairness, cursor rotation, exclusive worktree and branch claims, default-deny authorization, deny while capacity is free, and determinism under permutation. Windows is unverified.",
       "priority": 5
     },
     {
       "id": "M2-03",
       "milestone": "M2",
       "title": "Add bounded retries and execution attempt history",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M2-02"
       ],
       "details": "Use backoff and create a separate durable attempt for each retry.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m2-03.md. Worktree ~/Code/agent-orch-worktrees/tasks/m2-03-retries, branch orch/m2-03-retries, base 5091ab5 (orch/integration). Scope: core retry.rs and store sqlite_attempts.rs (no migration, no Store trait change). Windows is deferred by the user. Result: candidate e86539d on orch/m2-03-retries (two commits 64bb9d7 and e86539d on base 5091ab5; not merged to main). Coordinator verified 2026-11-08 (-07:00): scope limited to core retry.rs and lib.rs, store sqlite_attempts.rs and lib.rs (mod line), and two test files; cargo test --locked --workspace exit 0, 197 passed, 0 failed; cargo clippy --locked -p orchestrator-core -p orchestrator-store --all-targets --no-deps exit 0. Windows is unverified.",
       "priority": 6
     },
     {
       "id": "M2-04",
       "milestone": "M2",
       "title": "Implement process and workspace reconciliation",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
-        "M2-01",
-        "M1-03"
+        "M1-02",
+        "M1-03",
+        "M2-01"
       ],
       "details": "Lock the data directory, validate process identity, inspect worktrees and partial deliveries, and classify interrupted tasks before resuming scheduling. Address Windows process trees and macOS process groups.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m2-04.md (rewritten from the board text; an earlier brief omitted the data-directory lock and process identity, and that run was stopped before any edits). Worktree ~/Code/agent-orch-worktrees/tasks/m2-04-reconciliation, branch orch/m2-04-reconciliation, base d043fa6. Scope: a store data_lock module (one mod line in store lib.rs), runtime and git reconcile modules, and no edits to existing store code. Windows process trees are deferred by the user. Scope change 2026-11-08 (-07:00): this task covers the library layer only: the data-directory lock, process identity capture and persistence (SqliteStore, migration 0004), workspace listing, and the reconciliation planners and gate. Engine wiring (CLI on SqliteStore, lock acquisition at startup, the gate before scheduling) moved to M2-06. Partial-delivery inspection moved to M3-06 because delivery records do not exist until M3-04. Result: candidate 5091ab5 on orch/m2-04-reconciliation, which contains orch/integration (24a93b3). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 187 passed, 0 failed, 1 ignored helper; cargo clippy --locked for orchestrator-core, -store, -runtime, and -git --all-targets --no-deps exit 0 with zero warnings; git diff --check clean. One ProcessIdentity definition, in orchestrator-core/src/identity.rs. Cargo.lock adds only the orchestrator-runtime to orchestrator-core edge. SqliteStore identity tests pass, including the real-process case that asserts an exit is interrupted, not succeeded. Windows is unverified.",
       "priority": 5
     },
     {
       "id": "M2-05",
       "milestone": "M2",
       "title": "Test concurrent execution and crash recovery",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M2-03",
         "M2-04"
       ],
       "details": "Inject process and runtime failures with two parallel tasks and verify no changes or audit events are silently lost.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m2-05.md. Worktree ~/Code/agent-orch-worktrees/tasks/m2-05-recovery-tests, branch orch/m2-05-recovery-tests, base 66ffe06 (orch/integration). Scope: CLI tests and a fault-injection cargo feature only. Windows is deferred by the user. Result: candidate c5462fd on orch/m2-05-recovery-tests (base 66ffe06; merged into orch/integration at c1862e3). Scope was amended by the coordinator on 2026-11-08 (-07:00) to allow a stale-lock takeover in crates/orchestrator-store/src/data_lock.rs, its tests, and the CLI retry path, because a crashed holder left a lock that could never be reclaimed. Coordinator verified 2026-11-08 (-07:00): the takeover renames the stale lock into a private directory, verifies its inode and token before removal, and restores it when verification fails; cargo test --locked --workspace exit 0, 253 passed, 0 failed; cargo test --locked -p orchestrator-cli --features fault-injection exit 0, 28 passed; cargo clippy --locked -p orchestrator-cli -p orchestrator-store --all-targets --no-deps exit 0. Windows is unverified.",
       "priority": 7
     },
     {
       "id": "M3-01",
       "milestone": "M3",
       "title": "Implement structured coordinator decomposition",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M2-02"
       ],
       "details": "Validate coordinator proposals against a schema, assign canonical IDs and validate dependencies and task contracts. Keep lifecycle and authorization in the engine.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-01-decomposition, branch orch/m3-01-decomposition, base 5091ab5 (orch/integration). Scope: core decomposition.rs only. The validator must not start tasks or write anywhere. Windows is deferred by the user. Result: candidate 01614bf on orch/m3-01-decomposition (base 5091ab5; not merged to main). Coordinator verified 2026-11-08 (-07:00): scope limited to core decomposition.rs, lib.rs (one line), and tests/decomposition.rs; cargo test --locked --workspace exit 0, 199 passed, 0 failed; cargo clippy --locked -p orchestrator-core --all-targets --no-deps exit 0; no filesystem, process, or network calls in decomposition.rs; it reuses contract::validate and the scheduler cycle check. Windows is unverified.",
       "priority": 6
     },
     {
       "id": "M3-02",
       "milestone": "M3",
       "title": "Enforce task policies and approval state",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M2-01"
       ],
       "details": "Persist explicit approval decisions bound to the exact action, parameters and candidate commit; reject unauthorized policy changes and reapprove changed actions.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-02.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-02-approvals, branch orch/m3-02-approvals, base d043fa6. Scope: crates/orchestrator-core/src/approval.rs and store sqlite_approvals on the existing approvals table. Migration 0002 is reserved for this task. Windows is deferred by the user. Result: candidate 631fc4a on orch/m3-02-approvals (one commit on base d043fa6; merged into orch/integration). Coordinator verified 2026-11-08 (-07:00): scope limited to core approval.rs and lib.rs, store sqlite_approvals.rs, store lib.rs (mod line), migration 0002_approval_events.sql (needed because approvals.granted_by is NOT NULL and cannot hold a pending decision), and tests/approvals.rs; cargo test --locked --workspace exit 0 on the branch, 128 passed, 0 failed; cargo clippy --locked -p orchestrator-core -p orchestrator-store --all-targets --no-deps exit 0. Approvals bind action kind, a 32-byte SHA-256 parameter digest, the full candidate SHA, task ID, and actor. Agents can request but never approve or reject. Windows is unverified.",
       "priority": 5
     },
     {
       "id": "M3-03",
       "milestone": "M3",
       "title": "Implement independent verification",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M1-02",
         "M2-01"
       ],
       "details": "Verify worktree ownership, candidate commit, protected paths and configured validation commands; retain results and apply an explicit execution trust policy.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-03.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-03-verification, branch orch/m3-03-verification, base d043fa6. Scope: crates/orchestrator-git/src/verification.rs and store sqlite_verification on the existing verification_runs table. Migration 0003 is reserved for this task. Windows is deferred by the user. Result: candidate 7f9ac33 on orch/m3-03-verification (one commit on base d043fa6; merged into orch/integration). Coordinator verified 2026-11-08 (-07:00): scope limited to git verification.rs and lib.rs, store sqlite_verification.rs and lib.rs (mod line), migration 0003_verification_evidence.sql, and the store and git tests; cargo test --locked --workspace exit 0 on the branch, 131 passed, 0 failed; cargo clippy --locked -p orchestrator-git -p orchestrator-store --all-targets --no-deps exit 0. The worker's trust default is deny for repository-supplied validation commands. Windows is unverified.",
       "priority": 5
     },
     {
       "id": "M3-04",
       "milestone": "M3",
       "title": "Implement report-only and local-review delivery",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M3-02",
         "M3-03"
       ],
       "details": "Require authorization before integration, serialize delivery to a destination, revalidate against current state and retain unsafe-to-delete worktrees.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-04.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-04-delivery, branch orch/m3-04-delivery, base 5091ab5 (orch/integration). Scope: git delivery.rs, store sqlite_delivery.rs, and migration 0005_delivery_steps.sql (reserved for this task). Windows is deferred by the user. Result: candidate 2f45338 on orch/m3-04-delivery (base 5091ab5; merged into orch/integration at 66ffe06). Coordinator verified 2026-11-08 (-07:00): scope exact (git delivery.rs, lib.rs, tests; store sqlite_delivery.rs, lib.rs mod line, tests; migration 0005); cargo test --locked --workspace exit 0, 210 passed, 0 failed on the branch; cargo clippy --locked -p orchestrator-git -p orchestrator-store --all-targets --no-deps exit 0; the approval check and verification revalidation run before any write; local review writes only refs under refs/heads/orchestrator/review/; the lock removes only the lock file this process created. Windows is unverified.",
       "priority": 6
     },
     {
       "id": "M3-05",
       "milestone": "M3",
       "title": "Verify the reviewed multi-task workflow",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M3-01",
         "M3-04"
       ],
       "details": "Demonstrate dependency execution, independent verification and approval enforcement across restarts without unapproved merging.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-05.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-05-review-workflow, branch orch/m3-05-review-workflow, base 66ffe06 (orch/integration). Scope: CLI tests and docs/evidence/m3-05-macos only; no production change. Windows is deferred by the user. Result: candidate 5b85878 on orch/m3-05-review-workflow (base 66ffe06; merged into orch/integration at adb0fa3). Coordinator verified 2026-11-08 (-07:00): test-only change (crates/orchestrator-cli/tests/multi_task_review.rs and docs/evidence/m3-05-macos/workflow.md), zero production source changes; cargo test --locked --workspace exit 0, 255 passed, 0 failed on the branch; cargo clippy --locked -p orchestrator-cli --all-targets --no-deps exit 0. Six tests: decomposition ID replacement, dependency-ordered scheduling, verification blocking and protected paths, exact-approval delivery with reapproval after a candidate change, restart survival after each stage, and approved-only local review refs. Windows is unverified.",
       "priority": 7
+    },
+    {
+      "id": "M2-06",
+      "milestone": "M2",
+      "title": "Wire the data-directory lock, identity capture, and reconciliation gate into the CLI engine",
+      "status": "done",
+      "depends_on": [
+        "M1-04",
+        "M2-02",
+        "M2-04"
+      ],
+      "details": "Move the CLI engine from the JSON FileStore to SqliteStore for task execution, acquire the data-directory lock for mutating commands, persist session process identity at launch, run reconciliation before any new attempt is scheduled, and refuse to schedule while any record is unresolved or ambiguous. The existing JSON records are not migrated; say so in the docs.",
+      "important_context": "Added 2026-11-08 by the coordinator when M2-04 was narrowed to its library layer. The CLI runs on FileStore (crates/orchestrator-cli/src/workflow.rs), which does not persist workspaces or session process identity, so wiring needs the SqliteStore identity methods from M2-04 (migration 0004). Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m2-06.md. Worktree ~/Code/agent-orch-worktrees/tasks/m2-06-cli-wiring, branch orch/m2-06-cli-wiring, base 5091ab5 (orch/integration). Lock scope decision (2026-11-08 -07:00): the lock covers short state-mutation sections only, not the agent run; cancel validates ProcessIdentity before signaling. Result: candidate 30191da on orch/m2-06-cli-wiring (one commit on base 5091ab5; merged into orch/integration at a4ce985). Coordinator verified 2026-11-08 (-07:00): scope limited to the CLI crate, its Cargo.toml, and docs/evidence/m2-06-macos; cargo test --locked --workspace exit 0, 195 passed, 0 failed on the branch; cargo clippy --locked -p orchestrator-cli --all-targets --no-deps exit 0 with zero warnings; no bypass flags. One existing test was changed and gated to macOS, where start-time capture is implemented; it now also asserts the persisted identity matches the signaled PID. Existing JSON records are not migrated. Windows is unverified.",
+      "priority": 6
+    },
+    {
+      "id": "M3-06",
+      "milestone": "M3",
+      "title": "Reconcile partial delivery operations against Git state",
+      "status": "done",
+      "depends_on": [
+        "M3-04"
+      ],
+      "details": "Inspect persisted delivery steps and classify each as confirmed, not applied, or ambiguous against the actual Git ref. Preserve ambiguous results for review and never apply or remove a delivery during reconciliation. This is the partial-delivery part of M2-04, deferred because delivery records do not exist until M3-04.",
+      "important_context": "Added 2026-11-08 by the coordinator when M2-04 was narrowed. Depends on M3-04, which introduces delivery records. Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m3-06.md. Worktree ~/Code/agent-orch-worktrees/tasks/m3-06-delivery-reconcile, branch orch/m3-06-delivery-reconcile, base 66ffe06 (orch/integration). Scope: git delivery_reconcile.rs and additive read methods in store sqlite_delivery.rs only. Result: candidate 7f8d253 on orch/m3-06-delivery-reconcile (base 66ffe06; merged into orch/integration at 8354719). Coordinator verified 2026-11-08 (-07:00): scope exact; cargo test --locked --workspace exit 0, 257 passed, 0 failed; cargo clippy --locked -p orchestrator-git -p orchestrator-store --all-targets --no-deps exit 0; no writes in delivery_reconcile.rs. GAP, recorded on the board: the no-write test compares refs, worktree bytes, and a supplied record snapshot, not a live SqliteStore, because orchestrator-git has no store dependency and manifest edits were out of scope. The planner takes immutable snapshots, so it cannot write records by construction. Windows is unverified.",
+      "priority": 7
+    },
+    {
+      "id": "M4-00",
+      "milestone": "M4",
+      "title": "Add supervised stdin writer and orderly close to the runtime supervisor",
+      "status": "done",
+      "depends_on": [
+        "M1-03"
+      ],
+      "details": "Expose an owned, asynchronous stdin writer and an orderly close for supervised children, opt-in per launch. Keep stdout, stderr, exit reconciliation and cancellation semantics unchanged. Required by M4-01 because the Pi RPC protocol is driven over stdin.",
+      "important_context": "Added 2026-11-08 by the coordinator after M4-01 reported a blocker: ChildSupervisor launches children with Stdio::null (crates/orchestrator-runtime/src/supervisor.rs:114) and exposes no stdin writer or close. Dispatched as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m4-00.md in the coordinator session folder. Worktree ~/Code/agent-orch-worktrees/tasks/m4-00-runtime-stdin, branch orch/m4-00-runtime-stdin, base 973b7ff (main). The default Null launch must stay unchanged for the Codex adapter. Worker may not edit board.json, push, or merge. Coordinator verifies the candidate independently. Windows is unverified. Result: candidate dae6723 on orch/m4-00-runtime-stdin (one commit on base 973b7ff; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 88 passed, 0 failed; runtime-crate clippy exit 0 with one pre-existing while-let warning (tracked by M1-06); no unsafe or pre_exec. API: ChildSupervisor::launch_with_stdin(&LaunchRequest) returns (ChildSupervisor, StdinWriter); launch() keeps Stdio::null. StdinWriter offers async write_bytes and write_line with awaited flush, idempotent close(), and typed StdinClosed, ChildExited, and StdinWrite errors. Fast-forwarded into orch/m4-01-pi-rpc-adapter.",
+      "priority": 4
+    },
+    {
+      "id": "M1-06",
+      "milestone": "M1",
+      "title": "Clear pre-existing clippy findings across the engine workspace",
+      "status": "done",
+      "depends_on": [
+        "M1-03",
+        "M4-00"
+      ],
+      "details": "cargo clippy --locked --workspace --all-targets exits 101 on findings that predate the M4 work: codex_parser.rs:222, tests/codex_adapter.rs:397 (clippy::never_loop, a test that may hide a real bug), orchestrator-git (8 findings in repository.rs and worktree.rs), and supervisor.rs:308. Fix each without changing behavior, or justify a narrowly scoped allow in place.",
+      "important_context": "Added 2026-11-08 by the coordinator. Found while verifying M4-02 (candidate 82042af): every finding is in a file that commit does not touch, so it predates the M4 work. Depends on M4-00 because it touches the runtime supervisor, which M4-00 changes. Verify with cargo test --locked --workspace and cargo clippy --locked --workspace --all-targets, both judged by their own exit codes. Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m1-06.md. Worktree ~/Code/agent-orch-worktrees/tasks/m1-06-clippy-cleanup, branch orch/m1-06-clippy-cleanup, base d043fa6 (orch/integration). Scope: codex_parser.rs, tests/codex_adapter.rs, git repository.rs and worktree.rs, and runtime supervisor.rs (lint fixes only). Result: candidate 9028f4f on orch/m1-06-clippy-cleanup (one commit on base d043fa6; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 119 passed, 0 failed; cargo clippy --locked --workspace --all-targets exit 0 with zero warnings. Production changes are behavior-neutral (char and array forms, while-let equivalent to the original match). The test change: the garbage fixture now emits a valid thread.started before the garbage line, and the loop continues past non-protocol events until a ProtocolError. The exit-0 Failed assertion is kept. Garbage-first parsing remains covered by codex_parser.rs malformed_json_faults.",
+      "priority": 5
     },
     {
       "id": "M4-01",
       "milestone": "M4",
       "title": "Implement Pi RPC adapter",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
-        "M1-03"
+        "M1-03",
+        "M4-00"
       ],
       "details": "Support persistent JSONL RPC, correlated responses and asynchronous events according to detected capabilities.",
-      "important_context": "",
-      "priority": 4
+      "important_context": "Unblocked 2026-11-08 after M4-00 (dae6723) was verified and fast-forwarded into orch/m4-01-pi-rpc-adapter. The same OMP session is resumed with an amended scope (docs/evidence/m4-01-macos/** is writable). Previous blocker: the M4-01 worker (run files/runs/m4-01-a3-20261108T045500Z, session 01a1b973-b159-772a-8fda-80addf42c16e) stopped with no code change because ChildSupervisor had no stdin writer. Pi 1.5.0 at ~/.bun/bin/pi. Dispatched 2026-11-07 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max, verified by RPC get_state. Brief: files/brief-m4-01.md in the coordinator session folder. Worktree ~/Code/agent-orch-worktrees/tasks/m4-01-pi-rpc-adapter, branch orch/m4-01-pi-rpc-adapter, base 973b7ff (main). Shares AgentKind in contract.rs and lib.rs with M4-02; the coordinator merges additive edits. Pi CLI at ~/.bun/bin/pi. Result: candidate 52501cd on orch/m4-01-pi-rpc-adapter (commits dae6723 then 52501cd; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 98 passed, 0 failed, on the branch base dae6723; cargo clippy -p orchestrator-agents --all-targets --no-deps reports only the pre-existing codex_parser.rs:222 and tests/codex_adapter.rs:397 findings fixed by M1-06, none in the new files; scope limited to orchestrator-agents and docs/evidence/m4-01-macos; no unsafe and no shell-string launch. Live handshake (docs/evidence/m4-01-macos/pi-rpc-handshake.md): Pi 1.5.0, get_state exit 0, no model prompt. Windows is unverified. Worker may not edit board.json, push, or merge. Coordinator verifies the candidate independently. Windows is unverified.",
+      "priority": 5
     },
     {
       "id": "M4-02",
       "milestone": "M4",
       "title": "Implement Claude Code adapter",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M1-03"
       ],
       "details": "Verify installed CLI flags, structured output and permission behavior before integration.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-07 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max, verified by RPC get_state. Brief: files/brief-m4-02.md in the coordinator session folder. Worktree ~/Code/agent-orch-worktrees/tasks/m4-02-claude-code-adapter, branch orch/m4-02-claude-code-adapter, base 973b7ff (main). Shares AgentKind in contract.rs and lib.rs with M4-01; the coordinator merges additive edits. Claude CLI at /opt/homebrew/bin/claude (2.1.311 at planning). Worker may not edit board.json, push, or merge. Windows is unverified. Earlier resume attempts (files/runs/m4-02-a1-* and a2-*) failed on coordinator driver path bugs before any code change; the a3 resume produced this candidate. Result: candidate 82042af on orch/m4-02-claude-code-adapter (one commit on base 973b7ff; not merged to main). Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 94 passed, 0 failed. cargo clippy --locked --workspace --all-targets exits 101 on pre-existing findings in files this commit does not touch (codex_parser.rs:222, tests/codex_adapter.rs:397, orchestrator-git, supervisor.rs:308); tracked as a follow-up cleanup item. Flags confirmed in claude --help (restricted, permission-prompts, permission-mode, strict-mcp-config, tools, allowedTools, output-format). Evidence: docs/evidence/m4-02-claude-code-cli-verification.md and docs/evidence/m4-02-macos/. Permission behavior: dontAsk with Read/Edit/Write only; no bypass flag. Plugin-hook behavior unverified.",
       "priority": 4
     },
     {
       "id": "M4-03",
       "milestone": "M4",
       "title": "Implement capability detection and agent routing",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M4-01",
         "M4-02"
       ],
       "details": "Expose supported streaming, interactive input, cancellation, resumption, structured output, approvals and model selection without successful no-ops.",
-      "important_context": "",
-      "priority": 5
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m4-03.md. Worktree ~/Code/agent-orch-worktrees/tasks/m4-03-capability-routing, branch orch/m4-03-capability-routing, base 5091ab5 (orch/integration). Scope: agents routing.rs, adapter capability and unsupported-operation paths only. Windows is deferred by the user. Result: candidate ca31abf on orch/m4-03-capability-routing (base 5091ab5; not merged to main). Coordinator verified 2026-11-08 (-07:00): scope limited to the agents crate (routing.rs, lib.rs, the three adapters' capability reporting with code references, and tests); the adapters' launch and parse paths are unchanged; cargo test --locked --workspace exit 0, 196 passed, 0 failed; cargo clippy --locked -p orchestrator-agents --all-targets --no-deps exit 0 with zero warnings. Routing fails closed and rejects unavailable capabilities per adapter. Windows is unverified.",
+      "priority": 6
     },
     {
       "id": "M4-04",
       "milestone": "M4",
       "title": "Run adapter conformance suite on both platforms",
-      "status": "todo",
+      "status": "done",
       "depends_on": [
         "M4-03"
       ],
       "details": "Cover framing, launch, cancellation, errors, unexpected EOF, unsupported features, interruption and approvals for each adapter.",
-      "important_context": "",
-      "priority": 6
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m4-04.md. Worktree ~/Code/agent-orch-worktrees/tasks/m4-04-conformance, branch orch/m4-04-conformance, base 66ffe06 (orch/integration). Scope: agents conformance tests and docs/evidence/m4-04-macos. The macOS half runs now. The Windows run is pending until the user returns and stays unverified; the milestone M4 exit stays open until it is recorded. Result: candidate 518335c on orch/m4-04-conformance (commits 9ec4c16 and 518335c on base 66ffe06; merged into orch/integration at 5fd2edc). The first run found real defects: a completed turn followed by a non-zero exit (code 7) was reported as Completed for Codex and Claude Code, and a Pi malformed line on an exit-0 run was accepted silently. Fixed under a coordinator scope amendment in the three adapter source files. One existing assertion encoded the defect (a completed turn with exit 7 reported as Completed); it was replaced with a test that expects Failed, names code 7, and keeps the last message. Coordinator verified 2026-11-08 (-07:00): cargo test --locked --workspace exit 0, 277 passed on the branch; cargo clippy --locked -p orchestrator-agents --all-targets --no-deps exit 0. Evidence: docs/evidence/m4-04-macos/conformance-report.md.",
+      "priority": 7
     },
     {
       "id": "M5-01",
       "milestone": "M5",
       "title": "Build daemon and authenticated local IPC",
-      "status": "todo",
+      "status": "in_progress",
       "depends_on": [
         "M3-05"
       ],
       "details": "Move reliable scheduling to an on-demand daemon; implement versioned length-prefixed JSON-RPC over Unix sockets and Windows named pipes, authorization and capability negotiation.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-01-daemon-ipc, branch orch/m5-01-daemon-ipc, base 5fd2edc (orch/integration). Scope: crates/orchestrator-ipc and crates/orchestrator-daemon only. Windows named pipes are NOT implemented: they return a typed Unsupported error and are deferred to the Windows run because the user postponed Windows work.",
       "priority": 8
     },
     {
