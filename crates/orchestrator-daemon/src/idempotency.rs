@@ -2,7 +2,7 @@
 //!
 //! The database claim prevents duplicate execution across retries and restarts.
 //! A process-wide mutex serializes claims and effects within the daemon.
-//! Updated: 2026-11-08T17:21:16+00:00.
+//! Updated: 2026-11-08T18:09:45+00:00.
 
 use std::sync::Mutex;
 

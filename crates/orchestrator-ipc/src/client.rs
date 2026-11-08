@@ -1,5 +1,5 @@
 //! Synchronous JSON-RPC client with bounded event buffering and cursor tracking.
-//! Updated: 2026-11-08T17:11:32+00:00.
+//! Updated: 2026-11-08T18:09:45+00:00.
 use crate::protocol::{
     self, Capability, Handshake, IncomingMessage, RpcId, RpcRequest, RpcResponse, Welcome,
 };

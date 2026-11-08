@@ -1,7 +1,7 @@
 //! SQLite persistence operations for orchestrator domain records.
 //!
 //! Task transitions use the core state table and commit state plus audit event
-//! in one transaction. Other records are append-only. Updated: 2026-11-08T16:51:19+00:00.
+//! in one transaction. Other records are append-only. Updated: 2026-11-08T18:09:45+00:00.
 
 use orchestrator_core::authorization::Approval;
 use orchestrator_core::contract::{validate as validate_contract, TaskContract};
