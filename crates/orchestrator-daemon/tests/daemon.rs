@@ -173,8 +173,18 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
     let task_id = submitted["contract"]["id"].as_str().unwrap().to_owned();
     assert_eq!(client.tasks_get(&task_id).unwrap(), submitted);
     assert_eq!(client.tasks_list().unwrap().as_array().unwrap().len(), 1);
-    assert!(client.sessions_list(None).unwrap().as_array().unwrap().is_empty());
-    assert!(client.approvals_list().unwrap().as_array().unwrap().is_empty());
+    assert!(client
+        .sessions_list(None)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(client
+        .approvals_list()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(matches!(
         client.sessions_events(&task_id, "missing", None),
         Err(IpcError::NotFound)

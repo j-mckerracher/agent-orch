@@ -141,23 +141,17 @@ pub trait RpcHandler: Send + Sync + 'static {
     ) -> Result<serde_json::Value, RpcError>;
 
     /// Loads a bounded, ordered page of durable events after a cursor.
-    fn events_after(
-        &self,
-        after_sequence: i64,
-        limit: usize,
-    ) -> Result<Vec<IpcEvent>, RpcError>;
+    fn events_after(&self, after_sequence: i64, limit: usize) -> Result<Vec<IpcEvent>, RpcError>;
     /// Returns the latest durable event cursor.
     fn latest_event_sequence(&self) -> Result<i64, RpcError> {
         Ok(i64::MAX)
     }
-
 
     /// Keeps the daemon alive while durable work remains active.
     fn keep_alive(&self) -> bool {
         false
     }
 }
-
 
 #[derive(Debug, thiserror::Error)]
 pub enum IpcError {

@@ -66,7 +66,9 @@ impl Capability {
     }
 
     pub(crate) fn from_name(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|capability| capability.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|capability| capability.as_str() == value)
     }
 }
 

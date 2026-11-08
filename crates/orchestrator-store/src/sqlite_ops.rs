@@ -15,8 +15,8 @@ use serde::Serialize;
 use sqlx::sqlite::Sqlite;
 use sqlx::{Row, Transaction};
 
-use crate::{SqliteStore, Store, StoreError, TaskRecord};
 use crate::sqlite_events::append_durable_event;
+use crate::{SqliteStore, Store, StoreError, TaskRecord};
 
 /// One task event in the database-wide append-only journal.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -640,8 +640,7 @@ impl Store for SqliteStore {
                 .execute(&mut *transaction)
                 .await?;
             bump_task_version(&mut transaction, &task_id).await?;
-            let payload =
-                serde_json::json!({"session_id": &session_id, "state": state});
+            let payload = serde_json::json!({"session_id": &session_id, "state": state});
             append_durable_event(
                 &mut transaction,
                 &task_id,

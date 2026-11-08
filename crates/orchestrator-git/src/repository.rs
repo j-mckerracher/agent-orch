@@ -58,7 +58,12 @@ impl Repository {
         let sha = match git(
             "resolve base ref",
             &self.path,
-            ["rev-parse", "--verify", "--quiet", &format!("{refspec}^{{commit}}")],
+            [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{refspec}^{{commit}}"),
+            ],
         ) {
             Ok(sha) => sha,
             // `rev-parse --verify` exits non-zero (often with empty stderr)
@@ -87,18 +92,11 @@ impl Repository {
     /// relative path when supplied. Absolute paths must remain under this
     /// worktree; parent traversal and Git pathspec magic cannot escape scope.
     /// Updated: 2026-11-08T17:01:05+00:00.
-    pub fn diff_from(
-        &self,
-        base_sha: &str,
-        path: Option<&Path>,
-    ) -> Result<String, Error> {
+    pub fn diff_from(&self, base_sha: &str, path: Option<&Path>) -> Result<String, Error> {
         if !is_full_object_id(base_sha) || self.resolve_base_ref(base_sha)? != base_sha {
             return Err(Error::InvalidDiffBase);
         }
-        let path = path
-            .map(|path| self.diff_path(path))
-            .transpose()?
-            .flatten();
+        let path = path.map(|path| self.diff_path(path)).transpose()?.flatten();
         let mut args: Vec<OsString> = [
             "--literal-pathspecs",
             "diff",
@@ -144,14 +142,17 @@ impl Repository {
         }
     }
 
-
     /// Reject a worktrees root that lives inside any of this repository's
     /// work trees (the primary checkout or a linked worktree). Task
     /// worktrees must live outside every work tree (plan section 8) so they
     /// can never collide with or mask user files in the repository.
     pub fn worktrees_root_is_outside(&self, root: &Path) -> Result<(), Error> {
         let root = canonicalize_or_parent(root)?;
-        let listing = git("list worktrees", &self.path, ["worktree", "list", "--porcelain"])?;
+        let listing = git(
+            "list worktrees",
+            &self.path,
+            ["worktree", "list", "--porcelain"],
+        )?;
         for line in listing.lines() {
             let Some(path) = line.strip_prefix("worktree ") else {
                 continue;
@@ -174,7 +175,6 @@ fn is_full_object_id(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-
 
 /// Canonicalize `path`, or its deepest existing ancestor with the remaining
 /// components appended, so a not-yet-created root can still be validated.

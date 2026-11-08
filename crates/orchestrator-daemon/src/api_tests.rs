@@ -56,7 +56,11 @@ fn every_rpc_method_rejects_malformed_parameters() {
         ("delivery.request", json!({"task_id": "task-1"})),
     ];
     for (method, params) in invalid {
-        assert_eq!(api.dispatch(method, params), Err(RpcError::InvalidParams), "{method}");
+        assert_eq!(
+            api.dispatch(method, params),
+            Err(RpcError::InvalidParams),
+            "{method}"
+        );
     }
 }
 
@@ -75,7 +79,10 @@ fn task_submission_is_deduplicated_and_hides_project_path() {
     assert_eq!(api.store.list().unwrap().len(), 1);
     assert_eq!(api.store.stream_events_after(0, 20).unwrap().len(), 2);
     assert_eq!(
-        api.dispatch("tasks.submit", submit_params("request-1", "different objective")),
+        api.dispatch(
+            "tasks.submit",
+            submit_params("request-1", "different objective")
+        ),
         Err(RpcError::IdempotencyConflict)
     );
 
@@ -174,8 +181,12 @@ fn session_events_replay_task_and_only_selected_session_events() {
         .collect::<Vec<_>>();
     assert!(sequences.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(events.iter().any(|event| event["session_id"].is_null()));
-    assert!(events.iter().any(|event| event["session_id"] == "session-1"));
-    assert!(!events.iter().any(|event| event["session_id"] == "session-2"));
+    assert!(events
+        .iter()
+        .any(|event| event["session_id"] == "session-1"));
+    assert!(!events
+        .iter()
+        .any(|event| event["session_id"] == "session-2"));
     assert_eq!(
         api.dispatch("sessions.list", json!({}))
             .unwrap()
@@ -225,7 +236,11 @@ fn queued_task_cancellation_is_idempotent() {
     let cancelled = api.dispatch("tasks.cancel", params.clone()).unwrap();
     assert_eq!(cancelled["state"], "Cancelled");
     assert_eq!(api.dispatch("tasks.cancel", params).unwrap(), cancelled);
-    assert_eq!(api.dispatch("tasks.get", json!({"task_id": task_id})).unwrap(), cancelled);
+    assert_eq!(
+        api.dispatch("tasks.get", json!({"task_id": task_id}))
+            .unwrap(),
+        cancelled
+    );
     assert_eq!(
         api.dispatch("tasks.list", Value::Null)
             .unwrap()

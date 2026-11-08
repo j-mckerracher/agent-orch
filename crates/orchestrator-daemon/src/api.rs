@@ -9,20 +9,29 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orchestrator_core::approval::{Actor, Approval, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest};
+use orchestrator_core::approval::{
+    Actor, Approval, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
+};
+use orchestrator_core::authorization::ActionKind;
+use orchestrator_core::contract::{
+    self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+};
 use orchestrator_core::identity::{
     classify_identity, ProcessClassification, ProcessIdentity, ProcessObservation,
 };
-use orchestrator_core::authorization::ActionKind;
-use orchestrator_core::contract::{self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy};
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState};
-use orchestrator_git::delivery::{self, ApprovalCheck, CallbackError, DeliveryAction, DeliveryCallbacks, DeliveryOutcome, DeliveryRequest, DeliveryStep, VerificationCheck};
+use orchestrator_git::delivery::{
+    self, ApprovalCheck, CallbackError, DeliveryAction, DeliveryCallbacks, DeliveryOutcome,
+    DeliveryRequest, DeliveryStep, VerificationCheck,
+};
 use orchestrator_git::Repository;
-use orchestrator_runtime::reconcile::observe_process;
 use orchestrator_ipc::{Capability, IpcEvent, RpcError, RpcHandler};
-use orchestrator_store::{DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, StoreError};
+use orchestrator_runtime::reconcile::observe_process;
+use orchestrator_store::{
+    DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, StoreError,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -130,8 +139,9 @@ impl DaemonApi {
         let store = SqliteStore::new(&data_dir.join("store.sqlite"))
             .map_err(|_| "cannot open daemon store".to_owned())?;
         let approval_actor = Actor::User(LOCAL_USER.to_owned());
-        let approval_allowlist = ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
-            .map_err(|_| "cannot initialize local approval policy".to_owned())?;
+        let approval_allowlist =
+            ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
+                .map_err(|_| "cannot initialize local approval policy".to_owned())?;
         Ok(Self {
             store,
             idempotency_gate: Mutex::new(()),
@@ -237,10 +247,8 @@ impl DaemonApi {
                 self.store
                     .transition(&contract.id, TaskEvent::Admit)
                     .map_err(map_store_error)?;
-                serde_json::to_value(
-                    self.store.get(&contract.id).map_err(map_store_error)?,
-                )
-                .map_err(|_| RpcError::Internal)
+                serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
+                    .map_err(|_| RpcError::Internal)
             },
         )
     }
@@ -248,10 +256,7 @@ impl DaemonApi {
     fn validate_scheduler(&self, candidate: &TaskContract) -> Result<(), RpcError> {
         let existing = self.store.list().map_err(map_store_error)?;
         let workspaces = self.store.list_workspaces().map_err(map_store_error)?;
-        let mut contracts: Vec<_> = existing
-            .iter()
-            .map(|task| task.contract.clone())
-            .collect();
+        let mut contracts: Vec<_> = existing.iter().map(|task| task.contract.clone()).collect();
         contracts.push(candidate.clone());
         let snapshots: Vec<_> = contracts
             .iter()
@@ -261,9 +266,9 @@ impl DaemonApi {
                     .iter()
                     .find(|task| task.contract.id == contract.id)
                     .map_or(TaskState::Created, |task| task.state),
-                workspace: workspaces.iter().find(|workspace| {
-                    workspace.task_id == contract.id
-                }),
+                workspace: workspaces
+                    .iter()
+                    .find(|workspace| workspace.task_id == contract.id),
             })
             .collect();
         Scheduler::new(
@@ -302,12 +307,8 @@ impl DaemonApi {
             &params,
             || {
                 self.cancel_task_record(&request.task_id)?;
-                serde_json::to_value(
-                    self.store
-                        .get(&request.task_id)
-                        .map_err(map_store_error)?,
-                )
-                .map_err(|_| RpcError::Internal)
+                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
+                    .map_err(|_| RpcError::Internal)
             },
         )
     }
@@ -317,7 +318,11 @@ impl DaemonApi {
         match task.state {
             TaskState::Running => self.cancel_running_task(&task)?,
             TaskState::Created | TaskState::Queued | TaskState::Verifying => {
-                if task.sessions.iter().any(|session| !session.state.is_terminal()) {
+                if task
+                    .sessions
+                    .iter()
+                    .any(|session| !session.state.is_terminal())
+                {
                     return Err(RpcError::Conflict);
                 }
                 for attempt in task
@@ -338,10 +343,7 @@ impl DaemonApi {
         Ok(())
     }
 
-    fn cancel_running_task(
-        &self,
-        task: &orchestrator_store::TaskRecord,
-    ) -> Result<(), RpcError> {
+    fn cancel_running_task(&self, task: &orchestrator_store::TaskRecord) -> Result<(), RpcError> {
         let mut sessions = task
             .sessions
             .iter()
@@ -365,22 +367,13 @@ impl DaemonApi {
             .ok_or(RpcError::Forbidden)?;
         terminate_process_group(identity)?;
         self.store
-            .update_session_state(
-                &task.contract.id,
-                &session.id,
-                SessionState::Aborted,
-            )
+            .update_session_state(&task.contract.id, &session.id, SessionState::Aborted)
             .map_err(map_store_error)?;
         self.store
-            .update_attempt_state(
-                &task.contract.id,
-                &attempt.id,
-                AttemptState::Cancelled,
-            )
+            .update_attempt_state(&task.contract.id, &attempt.id, AttemptState::Cancelled)
             .map_err(map_store_error)?;
         Ok(())
     }
-
 
     fn list_sessions(&self, params: Value) -> Result<Value, RpcError> {
         let params: SessionsListParams = parse_params(params)?;
@@ -399,10 +392,7 @@ impl DaemonApi {
 
     fn get_session(&self, params: Value) -> Result<Value, RpcError> {
         let params: SessionParams = parse_params(params)?;
-        let task = self
-            .store
-            .get(&params.task_id)
-            .map_err(map_store_error)?;
+        let task = self.store.get(&params.task_id).map_err(map_store_error)?;
         let session = task
             .sessions
             .into_iter()
@@ -442,12 +432,8 @@ impl DaemonApi {
 
     fn list_approvals(&self, params: Value) -> Result<Value, RpcError> {
         require_empty_params(&params)?;
-        serde_json::to_value(
-            self.store
-                .pending_approvals()
-                .map_err(map_approval_error)?,
-        )
-        .map_err(|_| RpcError::Internal)
+        serde_json::to_value(self.store.pending_approvals().map_err(map_approval_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     fn resolve_approval(&self, params: Value) -> Result<Value, RpcError> {
@@ -535,10 +521,10 @@ fn task_repositories(
 ) -> Result<(Repository, Repository), RpcError> {
     let primary = Repository::new(Path::new(&project.root_path)).map_err(map_git_error)?;
     let worktree = Repository::new(Path::new(&workspace.path)).map_err(map_git_error)?;
-    let primary_common = std::fs::canonicalize(primary.git_common_dir())
-        .map_err(|_| RpcError::Internal)?;
-    let worktree_common = std::fs::canonicalize(worktree.git_common_dir())
-        .map_err(|_| RpcError::Internal)?;
+    let primary_common =
+        std::fs::canonicalize(primary.git_common_dir()).map_err(|_| RpcError::Internal)?;
+    let worktree_common =
+        std::fs::canonicalize(worktree.git_common_dir()).map_err(|_| RpcError::Internal)?;
     if primary.path() == worktree.path() || primary_common != worktree_common {
         return Err(RpcError::Forbidden);
     }
@@ -573,7 +559,8 @@ impl DaemonApi {
             }
             _ => return Err(RpcError::InvalidParams),
         };
-        let workspace = self.selected_workspace(&request.task_id, request.workspace_id.as_deref())?;
+        let workspace =
+            self.selected_workspace(&request.task_id, request.workspace_id.as_deref())?;
         let project = self
             .store
             .get_project(&task.contract.project_id)
@@ -591,12 +578,7 @@ impl DaemonApi {
             DeliveryAction::LocalReview => ActionKind::LocalReviewMerge,
         };
         let destination = primary.path().to_string_lossy().into_owned();
-        let digest = delivery_digest(
-            action,
-            &destination,
-            &workspace.base_commit,
-            target_ref,
-        )?;
+        let digest = delivery_digest(action, &destination, &workspace.base_commit, target_ref)?;
         let approval_action = ApprovalAction::new(
             ApprovalActionKind::Delivery(action_kind),
             ParameterDigest::from_sha256(digest),
@@ -662,11 +644,7 @@ impl DaemonApi {
         let check_verification = |check: &VerificationCheck<'_>| -> Result<(), CallbackError> {
             let verified = self
                 .store
-                .delivery_verification_matches(
-                    check.task_id,
-                    check.run_id,
-                    check.candidate_sha,
-                )
+                .delivery_verification_matches(check.task_id, check.run_id, check.candidate_sha)
                 .map_err(|_| callback_failure())?;
             if verified {
                 Ok(())

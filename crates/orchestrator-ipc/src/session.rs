@@ -72,22 +72,20 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
             return;
         }
     };
-    let (version, capabilities) =
-        match authenticate(&state.secret, &handshake, &state.capabilities) {
-            Ok(selected) => selected,
-            Err(error) => {
-                let (code, message) = match error {
-                    AuthError::Failed => (-32001, "authentication failed"),
-                    AuthError::UnsupportedCapability => {
-                        (-32002, "requested capability is unavailable")
-                    }
-                    AuthError::UnsupportedVersion => (-32003, "no common protocol version"),
-                    _ => (-32600, "invalid handshake"),
-                };
-                let _ = write_error(&mut stream, request.id, code, message);
-                return;
-            }
-        };
+    let (version, capabilities) = match authenticate(&state.secret, &handshake, &state.capabilities)
+    {
+        Ok(selected) => selected,
+        Err(error) => {
+            let (code, message) = match error {
+                AuthError::Failed => (-32001, "authentication failed"),
+                AuthError::UnsupportedCapability => (-32002, "requested capability is unavailable"),
+                AuthError::UnsupportedVersion => (-32003, "no common protocol version"),
+                _ => (-32600, "invalid handshake"),
+            };
+            let _ = write_error(&mut stream, request.id, code, message);
+            return;
+        }
+    };
     let welcome = json!({"version": version, "capabilities": &capabilities});
     if write_result(&mut stream, request.id, welcome).is_err() {
         return;
@@ -110,7 +108,13 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
                 .last_request
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = Instant::now();
-            if !handle_request(&mut stream, &state, &capabilities, request, &mut subscription) {
+            if !handle_request(
+                &mut stream,
+                &state,
+                &capabilities,
+                request,
+                &mut subscription,
+            ) {
                 break;
             }
         }
@@ -147,7 +151,10 @@ fn handle_request(
 ) -> bool {
     let method = request.method.as_str();
     if method == "capabilities" {
-        let names: Vec<_> = capabilities.iter().map(|capability| capability.as_str()).collect();
+        let names: Vec<_> = capabilities
+            .iter()
+            .map(|capability| capability.as_str())
+            .collect();
         return write_result(stream, request.id, json!({"capabilities": names})).is_ok();
     }
     if method == "health" {
@@ -228,9 +235,7 @@ fn handle_request(
 fn method_capability(method: &str) -> Option<Capability> {
     match method {
         "projects.list" => Some(Capability::Projects),
-        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" => {
-            Some(Capability::Tasks)
-        }
+        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" => Some(Capability::Tasks),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
@@ -307,7 +312,6 @@ fn write_event_error(
 fn write_rpc_error(stream: &mut Box<dyn IpcStream>, id: RpcId, error: RpcError) -> bool {
     write_error(stream, id, error.code(), error.message()).is_ok()
 }
-
 
 fn write_result(stream: &mut Box<dyn IpcStream>, id: RpcId, result: Value) -> Result<(), IpcError> {
     protocol::write(

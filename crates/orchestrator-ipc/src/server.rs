@@ -86,10 +86,7 @@ impl Server {
                     .as_ref()
                     .is_some_and(|handler| handler.keep_alive())
                 {
-                    *state
-                        .last_request
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner()) = Instant::now();
+                    *state.last_request.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
                 } else {
                     break;
                 }

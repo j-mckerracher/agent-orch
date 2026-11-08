@@ -42,7 +42,11 @@ pub enum Error {
     },
 
     #[error("worktree HEAD mismatch at {path}: expected {expected}, found {found}")]
-    HeadMismatch { path: PathBuf, expected: String, found: String },
+    HeadMismatch {
+        path: PathBuf,
+        expected: String,
+        found: String,
+    },
     #[error("diff base must be a full Git object id")]
     InvalidDiffBase,
 
@@ -51,7 +55,6 @@ pub enum Error {
 
     #[error("diff path is invalid")]
     InvalidDiffPath,
-
 
     #[error("failed to run git: {0}")]
     Io(#[from] std::io::Error),

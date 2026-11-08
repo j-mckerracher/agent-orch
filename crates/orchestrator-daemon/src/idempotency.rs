@@ -71,9 +71,9 @@ fn fingerprint(method: &str, params: &Value) -> Result<String, RpcError> {
 fn valid_key(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 128
-        && key.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
-        })
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
 fn decode_reply(value: Value) -> Result<Value, RpcError> {

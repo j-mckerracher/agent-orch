@@ -1,4 +1,4 @@
-use crate::{Capability, Client, IpcEvent, IpcError, RpcError, RpcHandler, Server, ServerConfig};
+use crate::{Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
@@ -291,7 +291,9 @@ fn methods_require_handshake_and_negotiated_capability() {
     ready(dir.path());
 
     let mut unopened = UnixStream::connect(dir.path().join("ipc/daemon.sock")).unwrap();
-    unopened.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    unopened
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
     crate::protocol::write(
         &mut unopened,
         &json!({"jsonrpc": "2.0", "id": 1, "method": "events.subscribe", "params": {}}),

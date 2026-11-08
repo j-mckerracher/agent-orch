@@ -47,11 +47,11 @@
 mod data_lock;
 pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 pub mod sqlite;
-mod sqlite_attempts;
-mod sqlite_ops;
 mod sqlite_approvals;
-mod sqlite_verification;
+mod sqlite_attempts;
 mod sqlite_delivery;
+mod sqlite_ops;
+mod sqlite_verification;
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 mod sqlite_events;
 pub use sqlite_events::{IdempotencyStart, StreamEvent};
@@ -135,7 +135,10 @@ pub enum StoreError {
     /// The session references an attempt this task has not recorded. A
     /// session belongs to exactly one attempt.
     #[error("session {session_id} references unknown attempt {attempt_id}")]
-    UnknownAttempt { session_id: String, attempt_id: String },
+    UnknownAttempt {
+        session_id: String,
+        attempt_id: String,
+    },
     /// An attempt already records this session id.
     #[error("session {session_id} already recorded for task {task_id}")]
     DuplicateSession { session_id: String, task_id: String },
@@ -147,10 +150,16 @@ pub enum StoreError {
     NoSession { session_id: String, task_id: String },
     /// A terminal attempt cannot be updated; the history is preserved.
     #[error("attempt {attempt_id} is terminal ({state:?}) and immutable")]
-    TerminalAttempt { attempt_id: String, state: AttemptState },
+    TerminalAttempt {
+        attempt_id: String,
+        state: AttemptState,
+    },
     /// A terminal session cannot be updated.
     #[error("session {session_id} is terminal ({state:?}) and immutable")]
-    TerminalSession { session_id: String, state: SessionState },
+    TerminalSession {
+        session_id: String,
+        state: SessionState,
+    },
     /// A new attempt can only be recorded while the task is `Queued`;
     /// `Created` tasks have not been admitted, `Succeeded`/`Cancelled`
     /// tasks are settled, and `Running`/`Verifying` already own an attempt.
@@ -161,14 +170,23 @@ pub enum StoreError {
     EmptyAttemptId { task_id: String },
     /// A new attempt must start `Pending`; a fresh row is not yet running.
     #[error("new attempt {attempt_id} must start Pending, got {state:?}")]
-    AttemptNotPending { attempt_id: String, state: AttemptState },
+    AttemptNotPending {
+        attempt_id: String,
+        state: AttemptState,
+    },
     /// A new session must start `Spawning`.
     #[error("new session {session_id} must start Spawning, got {state:?}")]
-    SessionNotSpawning { session_id: String, state: SessionState },
+    SessionNotSpawning {
+        session_id: String,
+        state: SessionState,
+    },
     /// The attempt a session names is recorded on this task but carries a
     /// different `task_id` — a malformed record that must not be linked.
     #[error("session {session_id} names attempt {attempt_id} with a foreign task_id")]
-    MalformedAttempt { session_id: String, attempt_id: String },
+    MalformedAttempt {
+        session_id: String,
+        attempt_id: String,
+    },
     /// The attempt or session state change is not a legal edge.
     #[error("lifecycle: {0}")]
     Lifecycle(#[from] LifecycleError),
@@ -570,10 +588,7 @@ mod tests {
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn new_dir() -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "orch-store-test-{}-{n}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("orch-store-test-{}-{n}", std::process::id()));
         FileStore::new(&dir).unwrap();
         dir
     }
@@ -687,12 +702,8 @@ mod tests {
             let store = FileStore::new(&dir).unwrap();
             store.create(&contract("t1")).unwrap();
             store.transition("t1", TaskEvent::Admit).unwrap();
-            store
-                .add_attempt("t1", &attempt("a1", "t1", 1))
-                .unwrap();
-            store
-                .add_session("t1", &session("s1", "a1"))
-                .unwrap();
+            store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+            store.add_session("t1", &session("s1", "a1")).unwrap();
             store
                 .update_session_state("t1", "s1", SessionState::Running)
                 .unwrap();
@@ -734,7 +745,13 @@ mod tests {
         ] {
             let err = store.transition("t1", event).unwrap_err();
             assert!(
-                matches!(err, StoreError::IllegalTransition(TransitionError::Illegal { from: TaskState::Created, .. })),
+                matches!(
+                    err,
+                    StoreError::IllegalTransition(TransitionError::Illegal {
+                        from: TaskState::Created,
+                        ..
+                    })
+                ),
                 "expected Illegal from Created, got {err:?}"
             );
         }
@@ -768,9 +785,7 @@ mod tests {
         // Walk every edge of the state table that leads to Succeeded and
         // verify the journal matches the state one-for-one, in order.
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .transition("t1", TaskEvent::ExecutionStarted)
-            .unwrap();
+        store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
         store.transition("t1", TaskEvent::CandidateReady).unwrap();
         store
             .transition("t1", TaskEvent::VerificationOutcome { passed: true })
@@ -794,9 +809,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         store
             .update_attempt_state("t1", "a1", AttemptState::Running)
             .unwrap();
@@ -810,9 +823,7 @@ mod tests {
         store.transition("t1", TaskEvent::RetryRequested).unwrap();
         assert_eq!(store.get("t1").unwrap().state, TaskState::Queued);
         // The retry creates attempt 2. Attempt 1 stays Failed, forever.
-        store
-            .add_attempt("t1", &attempt("a2", "t1", 2))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a2", "t1", 2)).unwrap();
         let rec = store.get("t1").unwrap();
         assert_eq!(rec.attempts.len(), 2);
         assert_eq!(rec.attempts[0].id, "a1");
@@ -843,12 +854,8 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
-        store
-            .add_session("t1", &session("s1", "a1"))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+        store.add_session("t1", &session("s1", "a1")).unwrap();
         store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
         // The agent process exits (cleanly, with whatever it thinks is
         // success). None of these may move the task: session facts report
@@ -915,8 +922,8 @@ mod tests {
         // Separators, traversal, Windows drive/alternate-stream syntax,
         // dots, NUL, and empty: none of these may reach the filesystem.
         for bad in [
-            "", ".", "..", "a/b", "a\\b", "C:evil", "C:/evil", "x.json",
-            "a:b", "a\0b", "a b", "a.b",
+            "", ".", "..", "a/b", "a\\b", "C:evil", "C:/evil", "x.json", "a:b", "a\0b", "a b",
+            "a.b",
         ] {
             match store.get(bad) {
                 Err(StoreError::InvalidTaskId(_)) => {}
@@ -933,7 +940,12 @@ mod tests {
         // Nothing escaped: no sibling of the data dir was created, and
         // the tasks dir gained no record.
         assert!(!dir.parent().unwrap().join("tasks..json").exists());
-        let ids = store.list().unwrap().into_iter().map(|r| r.contract.id).collect::<Vec<_>>();
+        let ids = store
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.contract.id)
+            .collect::<Vec<_>>();
         assert!(ids.is_empty());
     }
 
@@ -951,13 +963,21 @@ mod tests {
         // The first attempt must be number 1.
         assert!(matches!(
             store.add_attempt("t1", &attempt("a1", "t1", 2)),
-            Err(StoreError::BadAttemptNumber { expected: 1, got: 2, .. })
+            Err(StoreError::BadAttemptNumber {
+                expected: 1,
+                got: 2,
+                ..
+            })
         ));
         store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         // The next one must be 2, and the id must be fresh.
         assert!(matches!(
             store.add_attempt("t1", &attempt("a2", "t1", 1)),
-            Err(StoreError::BadAttemptNumber { expected: 2, got: 1, .. })
+            Err(StoreError::BadAttemptNumber {
+                expected: 2,
+                got: 1,
+                ..
+            })
         ));
         assert!(matches!(
             store.add_attempt("t1", &attempt("a1", "t1", 2)),
@@ -968,7 +988,10 @@ mod tests {
         store
             .update_attempt_state("t1", "a2", AttemptState::Running)
             .unwrap();
-        assert_eq!(store.get("t1").unwrap().attempts[1].state, AttemptState::Running);
+        assert_eq!(
+            store.get("t1").unwrap().attempts[1].state,
+            AttemptState::Running
+        );
     }
 
     #[test]
@@ -1017,7 +1040,11 @@ mod tests {
         let rec = store.get("t1").unwrap();
         assert!(!rec.attempts.is_empty());
         for (i, a) in rec.attempts.iter().enumerate() {
-            assert_eq!(a.attempt_number, i as u32 + 1, "sequence must stay contiguous");
+            assert_eq!(
+                a.attempt_number,
+                i as u32 + 1,
+                "sequence must stay contiguous"
+            );
         }
         assert!(ok.iter().any(|&b| b), "at least one attempt must land");
     }
@@ -1028,9 +1055,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         store
             .update_attempt_state("t1", "a1", AttemptState::Running)
             .unwrap();
@@ -1061,12 +1086,8 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
-        store
-            .add_session("t1", &session("s1", "a1"))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+        store.add_session("t1", &session("s1", "a1")).unwrap();
         store
             .update_session_state("t1", "s1", SessionState::Running)
             .unwrap();
@@ -1101,9 +1122,7 @@ mod tests {
         assert_eq!(store.get("t1").unwrap(), before, "version must not move");
         // Settled task: no attempt can resurrect it.
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         drive(&store, "t1", TaskState::Queued, TaskState::Succeeded);
         let before = store.get("t1").unwrap();
         assert!(matches!(
@@ -1144,9 +1163,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         let mut running = session("s1", "a1");
         running.state = SessionState::Running;
         assert!(matches!(
@@ -1170,20 +1187,12 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         let path = dir.join("tasks").join("t1.json");
-        let mut rec: TaskRecord = serde_json::from_str(
-            std::fs::read_to_string(&path).unwrap().as_str(),
-        )
-        .unwrap();
+        let mut rec: TaskRecord =
+            serde_json::from_str(std::fs::read_to_string(&path).unwrap().as_str()).unwrap();
         rec.attempts[0].task_id = "other".into();
-        std::fs::write(
-            &path,
-            serde_json::to_vec_pretty(&rec).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(&path, serde_json::to_vec_pretty(&rec).unwrap()).unwrap();
         // A fresh handle (the reopen) must refuse the malformed row.
         let store = FileStore::new(&dir).unwrap();
         assert!(matches!(

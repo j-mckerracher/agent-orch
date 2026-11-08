@@ -46,12 +46,7 @@ impl Client {
     pub fn sessions_get(&mut self, _: &str, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
-    pub fn sessions_events(
-        &mut self,
-        _: &str,
-        _: &str,
-        _: Option<i64>,
-    ) -> Result<Value, IpcError> {
+    pub fn sessions_events(&mut self, _: &str, _: &str, _: Option<i64>) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
     pub fn approvals_list(&mut self) -> Result<Value, IpcError> {
@@ -101,10 +96,7 @@ impl Server {
     pub fn serve(_: ServerConfig) -> Result<(), IpcError> {
         Err(IpcError::Unsupported)
     }
-    pub fn serve_with_handler(
-        _: ServerConfig,
-        _: Arc<dyn RpcHandler>,
-    ) -> Result<(), IpcError> {
+    pub fn serve_with_handler(_: ServerConfig, _: Arc<dyn RpcHandler>) -> Result<(), IpcError> {
         Err(IpcError::Unsupported)
     }
 }

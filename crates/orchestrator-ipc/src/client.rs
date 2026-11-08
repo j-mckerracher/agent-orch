@@ -64,7 +64,12 @@ impl Client {
         }
         let welcome: Welcome = serde_json::from_value(response.result.ok_or(IpcError::Operation)?)
             .map_err(|_| IpcError::Operation)?;
-        if welcome.version != 1 || welcome.capabilities.iter().any(|cap| !requested.contains(cap)) {
+        if welcome.version != 1
+            || welcome
+                .capabilities
+                .iter()
+                .any(|cap| !requested.contains(cap))
+        {
             return Err(IpcError::UnsupportedVersion);
         }
         Ok(Self {
@@ -101,7 +106,6 @@ impl Client {
         self.call("shutdown", Value::Null).map(|_| ())
     }
 
-
     pub fn projects_list(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Projects, "projects.list", Value::Null)
     }
@@ -115,11 +119,7 @@ impl Client {
     }
 
     pub fn tasks_get(&mut self, task_id: &str) -> Result<Value, IpcError> {
-        self.call_feature(
-            Capability::Tasks,
-            "tasks.get",
-            json!({"task_id": task_id}),
-        )
+        self.call_feature(Capability::Tasks, "tasks.get", json!({"task_id": task_id}))
     }
 
     pub fn tasks_cancel(
@@ -142,11 +142,7 @@ impl Client {
         )
     }
 
-    pub fn sessions_get(
-        &mut self,
-        task_id: &str,
-        session_id: &str,
-    ) -> Result<Value, IpcError> {
+    pub fn sessions_get(&mut self, task_id: &str, session_id: &str) -> Result<Value, IpcError> {
         self.call_feature(
             Capability::Sessions,
             "sessions.get",
@@ -316,7 +312,10 @@ impl Client {
         if notification.jsonrpc != "2.0" {
             return Err(IpcError::Operation);
         }
-        let subscription = self.subscription.as_deref().ok_or(IpcError::NoSubscription)?;
+        let subscription = self
+            .subscription
+            .as_deref()
+            .ok_or(IpcError::NoSubscription)?;
         match notification.method.as_str() {
             "events.event" => {
                 let params: EventParams =

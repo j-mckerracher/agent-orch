@@ -15,8 +15,8 @@ use orchestrator_core::authorization::ActionKind;
 use serde_json::{json, Value};
 use sqlx::Row;
 
-use crate::{SqliteStore, StoreError};
 use crate::sqlite_events::append_durable_event;
+use crate::{SqliteStore, StoreError};
 
 /// One final delivery result persisted with its audit event.
 #[derive(Debug, Clone, PartialEq, Eq)]

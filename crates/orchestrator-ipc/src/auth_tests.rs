@@ -12,7 +12,12 @@ fn chooses_highest_common_version_and_rejects_unknown_capability_safely() {
         versions: vec![3, 1, 2],
         capabilities: vec!["health".into()],
     };
-    assert_eq!(authenticate(&secret, &accepted, &Capability::ALL).unwrap().0, 1);
+    assert_eq!(
+        authenticate(&secret, &accepted, &Capability::ALL)
+            .unwrap()
+            .0,
+        1
+    );
     let rejected = Handshake {
         token: Some(token.clone()),
         versions: vec![1],

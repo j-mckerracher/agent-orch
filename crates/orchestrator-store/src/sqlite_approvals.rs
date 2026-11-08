@@ -18,8 +18,8 @@ use serde::Serialize;
 use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
 use sqlx::{Row, Transaction};
 
-use crate::SqliteStore;
 use crate::sqlite_events::append_durable_event;
+use crate::SqliteStore;
 
 impl SqliteStore {
     /// Create a pending approval and supersede changed active actions for its task.
@@ -164,7 +164,6 @@ impl SqliteStore {
             rows.into_iter().map(decode_approval).collect()
         })
     }
-
 
     /// Check approval state and all bound action dimensions against a proposal.
     pub fn check_approval(&self, id: &str, proposed: &ApprovalAction) -> Result<(), ApprovalError> {

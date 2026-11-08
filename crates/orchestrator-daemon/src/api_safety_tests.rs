@@ -33,8 +33,14 @@ fn fixture() -> Fixture {
     let repository_path = directory.path().join("repo");
     fs::create_dir_all(&repository_path).unwrap();
     git(&repository_path, &["init", "-b", "main"]);
-    git(&repository_path, &["config", "user.email", "test@example.invalid"]);
-    git(&repository_path, &["config", "user.name", "Daemon API Test"]);
+    git(
+        &repository_path,
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(
+        &repository_path,
+        &["config", "user.name", "Daemon API Test"],
+    );
     fs::write(repository_path.join("base.txt"), "base\n").unwrap();
     git(&repository_path, &["add", "base.txt"]);
     git(&repository_path, &["commit", "-m", "base"]);

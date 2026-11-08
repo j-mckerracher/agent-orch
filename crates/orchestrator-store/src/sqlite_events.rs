@@ -103,7 +103,6 @@ impl SqliteStore {
         })
     }
 
-
     /// Claims a key, or returns its completed result without repeating work.
     pub fn begin_idempotency(
         &self,
