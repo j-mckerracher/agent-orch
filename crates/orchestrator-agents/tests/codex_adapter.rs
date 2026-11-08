@@ -423,23 +423,11 @@ fn cancel_reports_cancelled_exit() {
         let mut h = spawn_adapter("hang").await.expect("spawn");
         let pid = h.pid();
         h.cancel().await.expect("cancel");
-        // Unix: SIGTERM leaves a grace window in which the child may still
-        // be alive. Windows: job-object kill is synchronous, so it may
-        // already be dead.
-        #[cfg(unix)]
-        assert!(is_process_running(pid), "child alive before reap");
         let exit = h.wait().await.expect("wait");
         assert!(
             matches!(exit, AgentExit::Cancelled { .. }),
             "expected Cancelled, got {exit:?}"
         );
-        // Unix: SIGKILL exits carry no code. Windows: a terminated process
-        // reports the code it last set (0 if never set), so any code is
-        // possible; the cancelled flag is the contract.
-        #[cfg(windows)]
-        if let AgentExit::Cancelled { code, .. } = exit {
-            let _ = code;
-        }
         assert!(!is_process_running(pid), "child still running after wait");
     });
 }

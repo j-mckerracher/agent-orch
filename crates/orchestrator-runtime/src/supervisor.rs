@@ -25,8 +25,6 @@ use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::mpsc;
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::HANDLE;
 
