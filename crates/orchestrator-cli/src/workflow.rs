@@ -2,7 +2,7 @@
 //! remain sidecars. Run holds the data lock through setup and finish updates,
 //! then releases it during agent execution so cancel can acquire the lock and
 //! signal only an identity-matched process group. Existing JSON task records
-//! are not migrated. Updated: 2026-11-08T09:04:40+00:00.
+//! are not migrated. Stale lock recovery precedes reconciliation. Updated: 2026-11-08T11:24:15+00:00.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -41,6 +41,116 @@ const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 #[link(name = "c")]
 unsafe extern "C" {
     fn kill(pid: i32, signal: i32) -> i32;
+}
+
+#[cfg(feature = "fault-injection")]
+/// Explicit test hooks. They require this feature and a matching environment
+/// value; the feature-off implementations below perform no work.
+/// Updated: 2026-11-08T10:33:52+00:00.
+mod fault_injection {
+    use super::{kill, Path, ProcessCommand};
+    use std::ffi::OsStr;
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    const MODE: &str = "AGENT_ORCH_FAULT_INJECTION";
+    const GATE: &str = "AGENT_ORCH_FAULT_GATE";
+
+    fn enabled(value: &str) -> bool {
+        std::env::var_os(MODE).as_deref() == Some(OsStr::new(value))
+    }
+
+    pub fn before_admit(data_dir: &Path, task_id: &str) -> Result<(), String> {
+        if !enabled("fail-event-insert") {
+            return Ok(());
+        }
+        let database = data_dir.join("store.sqlite");
+        let sql = format!(
+            "CREATE TRIGGER agent_orch_m2_05_reject_event BEFORE INSERT ON events \
+             WHEN NEW.task_id = '{task_id}' BEGIN \
+             SELECT RAISE(ABORT, 'M2-05 injected event write failure'); END;"
+        );
+        let output = ProcessCommand::new("sqlite3")
+            .arg("-batch")
+            .arg(database)
+            .arg(sql)
+            .output()
+            .map_err(|error| format!("cannot start sqlite3 fault injector: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot install SQLite fault trigger: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    pub fn before_agent_launch() {
+        if enabled("crash-before-agent-launch") {
+            crash_self();
+        }
+    }
+
+    #[cfg(not(unix))]
+    pub fn before_agent_launch() {}
+
+    #[cfg(unix)]
+    pub fn after_lock_release(agent_pid: u32) -> Result<(), String> {
+        if !enabled("kill-agent-group-and-cli") {
+            return Ok(());
+        }
+        let gate = std::env::var_os(GATE)
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("{GATE} is required for this fault"))?;
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !gate.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if !gate.exists() {
+            return Err(format!("fault gate {} did not appear", gate.display()));
+        }
+        let group = i32::try_from(agent_pid)
+            .map_err(|_| format!("agent PID {agent_pid} exceeds process-group range"))?;
+        // SAFETY: the supervisor launches this agent as leader of its owned group.
+        if unsafe { kill(-group, 9) } != 0 {
+            return Err(format!(
+                "cannot SIGKILL owned agent group {group}: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        crash_self();
+    }
+
+    #[cfg(not(unix))]
+    pub fn after_lock_release(_agent_pid: u32) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn crash_self() -> ! {
+        let process = i32::try_from(std::process::id()).expect("Unix PID fits i32");
+        // SAFETY: this signal targets only the CLI process running this hook.
+        unsafe {
+            kill(process, 9);
+        }
+        std::process::abort();
+    }
+}
+
+#[cfg(not(feature = "fault-injection"))]
+mod fault_injection {
+    use super::Path;
+
+    pub fn before_admit(_data_dir: &Path, _task_id: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn before_agent_launch() {}
+
+    pub fn after_lock_release(_agent_pid: u32) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// CLI sidecar metadata stores canonical repository/worktree paths and log
@@ -167,6 +277,7 @@ pub async fn run_task(
     store
         .create(&contract)
         .map_err(|error| format!("cannot record task {task_id}: {error}"))?;
+    fault_injection::before_admit(&data_target.path, &task_id)?;
     store
         .transition(&task_id, TaskEvent::Admit)
         .map_err(|error| format!("cannot admit task {task_id}: {error}"))?;
@@ -260,6 +371,7 @@ pub async fn run_task(
         )
         .map_err(|error| format!("cannot record session {session_id}: {error}"))?;
 
+    fault_injection::before_agent_launch();
     let wrapper = std::env::current_exe()
         .map_err(|error| format!("cannot locate CLI executable for Codex supervision: {error}"))?;
     let wrapper_args = capture_args(&agent_path, &task_paths, objective)?;
@@ -343,6 +455,7 @@ pub async fn run_task(
     println!("session log: {}", task_paths.session_log.display());
 
     drop(lock);
+    fault_injection::after_lock_release(agent_pid)?;
     let monitored = monitor_agent(handle).await;
     let _finish_lock = acquire_data_directory_lock(&data_target.path)?;
     let current = store
@@ -1100,13 +1213,21 @@ fn acquire_data_directory_lock(data_dir: &Path) -> Result<DataDirectoryLock, Str
     loop {
         match DataDirectoryLock::acquire(data_dir) {
             Ok(lock) => return Ok(lock),
-            Err(DataDirectoryLockError::AlreadyHeld { .. }) if Instant::now() < deadline => {
+            Err(
+                DataDirectoryLockError::AlreadyHeld { .. }
+                | DataDirectoryLockError::TakeoverRace { .. },
+            ) if Instant::now() < deadline => {
                 thread::sleep(LOCK_RETRY_INTERVAL);
             }
             Err(DataDirectoryLockError::AlreadyHeld { holder_pid }) => {
                 return Err(format!(
                     "data directory lock is busy; holder PID {holder_pid} did not release within {} seconds",
                     LOCK_WAIT_TIMEOUT.as_secs()
+                ));
+            }
+            Err(DataDirectoryLockError::TakeoverRace { holder_pid }) => {
+                return Err(format!(
+                    "data directory lock takeover remained contended; holder PID {holder_pid}"
                 ));
             }
             Err(error) => {
