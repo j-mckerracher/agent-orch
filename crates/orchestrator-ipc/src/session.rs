@@ -128,6 +128,7 @@ const MAX_BUFFERED_EVENTS: usize = 256;
 struct Subscription {
     id: String,
     cursor: i64,
+    ended: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -201,7 +202,11 @@ fn handle_request(
         {
             return false;
         }
-        *subscription = Some(Subscription { id, cursor });
+        *subscription = Some(Subscription {
+            id,
+            cursor,
+            ended: false,
+        });
         return true;
     }
 
@@ -239,6 +244,9 @@ fn send_pending_events(
     state: &State,
     subscription: &mut Subscription,
 ) -> bool {
+    if subscription.ended {
+        return true;
+    }
     let Some(handler) = &state.handler else {
         return false;
     };
@@ -277,10 +285,10 @@ fn send_pending_events(
 
 fn write_event_error(
     stream: &mut Box<dyn IpcStream>,
-    subscription: &Subscription,
+    subscription: &mut Subscription,
     error: RpcError,
 ) -> bool {
-    protocol::write(
+    let result = protocol::write(
         stream,
         &protocol::RpcNotification {
             jsonrpc: "2.0".into(),
@@ -291,7 +299,9 @@ fn write_event_error(
             }),
         },
     )
-    .is_ok()
+    .is_ok();
+    subscription.ended = true;
+    result
 }
 
 fn write_rpc_error(stream: &mut Box<dyn IpcStream>, id: RpcId, error: RpcError) -> bool {

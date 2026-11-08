@@ -278,6 +278,7 @@ fn slow_event_subscriber_receives_typed_lag_error() {
     let mut client = Client::connect(dir.path()).unwrap();
     client.events_subscribe(None).unwrap();
     assert!(matches!(client.next_event(), Err(IpcError::SlowConsumer)));
+    assert!(matches!(client.next_event(), Err(IpcError::NoSubscription)));
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }
