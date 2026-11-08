@@ -22,7 +22,7 @@ import sys
 AGENT_INSTRUCTIONS = """The orchestrating agent is exempt from worker model, thinking,
 oh-my-pstack, and Ponytail requirements. It may coordinate from any host using its
 available model and tools. It must verify these requirements for delegated workers
-as specified in orch-impl.md; its own host or model must not block worker dispatch.
+as specified in orch-impl-w.md; its own host or model must not block worker dispatch.
 
 The code itself is the primary documentation for agents working on this project.
 Document important information alongside the code whenever you create or change it.
