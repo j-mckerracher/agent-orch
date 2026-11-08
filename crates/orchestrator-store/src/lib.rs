@@ -1,61 +1,54 @@
-//! Local durable records for the task lifecycle (board M1-01; plan sections
-//! 5, 7, 9). One task = one JSON file under a data directory, rewritten
-//! atomically (temp file + rename) on every accepted mutation. M2-01
-//! replaces this file layout with SQLite; the [`Store`] trait is the
-//! replacement seam, and the invariants below hold for any backend.
+//! Durable task records for `orchestrator-core`.
 //!
-//! Updated: 2026-11-07T13:51:57-07:00 (M1-01 review: clarify power-loss durability).
+//! `FileStore` writes one JSON file per task. `SqliteStore` uses normalized
+//! SQLite tables, WAL, foreign keys, and embedded migrations. Both implement
+//! the synchronous [`Store`] trait. Existing `FileStore` data is not migrated.
 //!
-//! # Invariants enforced here (core owns the state tables, this crate owns
-//! their durability)
+//! Updated: 2026-11-07T22:44:29-07:00.
 //!
-//! - **Contract before state.** [`Store::create`] validates via
-//!   [`orchestrator_core::contract::validate`]; an invalid contract never
-//!   produces a record, and an admitted contract is stored verbatim and
-//!   never rewritten afterwards.
-//! - **State and audit event are one record.** [`Store::transition`]
-//!   validates via the single central table
-//!   [`orchestrator_core::task::transition`], appends the returned
-//!   [`orchestrator_core::task::AuditEvent`] to the record's ordered
-//!   journal, and persists both in one temp-file replacement. A failure
-//!   before rename leaves the previous record intact; a successful atomic
-//!   rename exposes the complete new record. This prevents an in-place
-//!   partial overwrite, but M1 does not `sync_all` the file or parent
-//!   directory and does not guarantee survival of power loss.
-//! - **Attempts and sessions are separate records of separate lifetimes.**
-//!   They are stored as their own collections with their own ids and
-//!   terminal-state rules; none of their methods touches
-//!   [`orchestrator_core::task::TaskState`]. A session exiting (even cleanly)
-//!   can never move a task to `Succeeded` — only the engine's
-//!   `VerificationOutcome { passed: true }` transition does that.
-//! - **Lifecycle edges are the core tables, applied at the store.** A new
-//!   attempt exists only while the task is `Queued` and starts `Pending`;
-//!   a new session starts `Spawning` and names an attempt this record
-//!   itself recorded with the matching `task_id`. State changes validate
-//!   against [`orchestrator_core::task::attempt_transition`] and
-//!   [`orchestrator_core::task::session_transition`]; terminal states are
-//!   immutable.
-//! - **History is append-only.** Failed attempts and terminal sessions are
-//!   immutable; retries append a new attempt and a new journal entry.
+//! # Invariants
 //!
-//! # Assumptions / limits
+//! - [`Store::create`] validates contracts through
+//!   [`orchestrator_core::contract::validate`]. An invalid contract never
+//!   produces a record. An admitted contract is stored verbatim.
+//! - [`Store::transition`] calls the central
+//!   [`orchestrator_core::task::transition`] table and records its audit event.
+//!   `FileStore` replaces one complete JSON file. `SqliteStore` commits the
+//!   state and event in one database transaction.
+//! - Attempts and sessions have separate identifiers and lifetimes. Neither
+//!   changes [`orchestrator_core::task::TaskState`]. Only a task transition can
+//!   make a task succeed.
+//! - Core state tables validate task, attempt, and session lifecycle edges.
+//!   Failed attempts and terminal sessions remain in history.
 //!
-//! - **One handle per data directory.** In-process callers on one
-//!   `FileStore` handle are serialized by its mutex, covering `create`
-//!   as well as every mutation: no shared temp path, no lost transition,
-//!   no duplicate-create race. Sequential close and reopen is supported
-//!   and tested for successful mutations. The file and parent directory
-//!   are not explicitly synced, so power-loss durability is not guaranteed.
-//!   Two separate handles over the same directory are *not* serialized
-//!   with each other in M1, and two processes writing the same directory
-//!   are last-writer-wins with no optimistic concurrency. Cross-process
-//!   locking and the WAL/journal schema are M2-01 (SQLite) scope.
-//! - `std::fs::rename` replaces the destination on both supported platforms
-//!   (Windows `MoveFileEx`, POSIX atomic rename). This is what makes the
-//!   rewrite atomic. A failed write may leave the temp file
-//!   (`<id>.<pid>.tmp`) behind: `list` skips any non-`.json` name, so a
-//!   leftover temp file is invisible to readers and harmless; the
-//!   previous record is untouched either way.
+//! # SQLite lifecycle
+//!
+//! - Each `SqliteStore` handle owns one Tokio worker and a one-connection
+//!   SQLx pool. The worker preserves the synchronous trait signatures. Calls
+//!   on one handle run in order. Separate handles use separate connections.
+//!   SQLite's five-second busy timeout serializes writers or returns a typed
+//!   database error.
+//! - Every connection enables foreign keys and WAL. Embedded versioned
+//!   migrations run before `SqliteStore::new` returns. The event journal uses
+//!   one database-wide auto-incrementing sequence.
+//! - Project, workspace, verification-log, and artifact paths are references.
+//!   The store does not open those files. Artifact contents remain outside
+//!   SQLite.
+//! - SQLite transactions protect against process interruption. This store
+//!   makes no power-loss durability guarantee. It uses SQLite's default
+//!   synchronous mode and does not explicitly sync parent-directory metadata.
+//!
+//! # FileStore limits
+//!
+//! `FileStore` serializes callers only within one handle. Separate handles or
+//! processes can overwrite each other's records and must not share a data
+//! directory. It does not sync the record file or parent directory. A failed
+//! write may leave an ignored `<id>.<pid>.tmp` file.
+pub mod sqlite;
+mod sqlite_ops;
+pub use sqlite::SqliteStore;
+pub use sqlite_ops::EventJournalEntry;
+
 use std::path::Path;
 
 use orchestrator_core::contract::{validate as validate_contract, ContractError, TaskContract};
@@ -89,10 +82,9 @@ pub struct TaskRecord {
     pub version: u64,
 }
 
-/// Failures of a store operation. Each variant names the invariant that
-/// failed so callers (and tests) can distinguish policy violations from
-/// I/O. Not `Clone`/`PartialEq`: the I/O and serde errors it wraps are
-/// neither.
+/// Failures of store operations. Variants distinguish policy violations,
+/// filesystem failures, serialization errors, and SQLite errors. The enum is
+/// not `Clone` or `PartialEq` because wrapped errors do not implement them.
 #[derive(Debug, Error)]
 pub enum StoreError {
     /// `create` for an id that already has a record.
@@ -101,6 +93,9 @@ pub enum StoreError {
     /// The id has no record.
     #[error("task {0} not found")]
     NotFound(String),
+    /// A typed non-task record has no matching row.
+    #[error("{entity} {id} not found")]
+    RecordNotFound { entity: &'static str, id: String },
     /// The id is not a plain file name, so no record path can be formed.
     #[error("invalid task id {0:?}")]
     InvalidTaskId(String),
@@ -170,22 +165,30 @@ pub enum StoreError {
     /// A stored file does not parse as a [`TaskRecord`].
     #[error("corrupt record for task {task_id}: {detail}")]
     Corrupt { task_id: String, detail: String },
-    /// (De)serialization failure while writing a record.
+    /// (De)serialization failed while reading or writing a durable value.
     #[error("serialization: {0}")]
     Serde(#[from] serde_json::Error),
-    /// Filesystem failure.
+    /// Operating-system I/O failure.
     #[error("i/o: {0}")]
     Io(#[from] std::io::Error),
+    /// SQLx reported a SQLite database or connection error.
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
+    /// An embedded SQLite migration failed while opening the store.
+    #[error("database migration: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+    /// The SQLite worker stopped before responding to a request.
+    #[error("SQLite worker stopped unexpectedly")]
+    WorkerStopped,
 }
 
-/// Durable store for task records. The single seam M2-01 will re-implement
-/// on SQLite (WAL, migrations, ordered journal table) without changing
-/// callers.
+/// Durable store for task records. `FileStore` and `SqliteStore` implement this
+/// unchanged synchronous interface.
 ///
-/// Implementations must guarantee, for each method that mutates, that the
-/// mutation (state change *and* its audit event, where applicable) is
-/// durable as one unit: a process crash may leave either the previous
-/// record or the new one, never a mix.
+/// Each successful mutation is atomic. A process interruption leaves either
+/// the prior state or the complete new state, including its audit event when
+/// the operation creates one. This contract does not promise power-loss
+/// durability.
 pub trait Store {
     /// Validate and persist a new contract as a `Created` task.
     fn create(&self, contract: &TaskContract) -> Result<(), StoreError>;
