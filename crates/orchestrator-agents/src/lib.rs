@@ -7,11 +7,13 @@
 //! this crate interprets a session or process exit as task success, and it
 //! holds no task policy or authorization.
 
+pub mod claude_code_adapter;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
 
 pub use codex_adapter::CodexAdapter;
+pub use claude_code_adapter::ClaudeCodeAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
