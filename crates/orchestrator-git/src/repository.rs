@@ -20,7 +20,7 @@ impl Repository {
         let toplevel = match git(
             "discover repository",
             path,
-            &["rev-parse", "--show-toplevel"],
+            ["rev-parse", "--show-toplevel"],
         ) {
             Ok(out) => out,
             Err(Error::Git { stderr, .. }) => {
@@ -32,7 +32,7 @@ impl Repository {
         let common = git(
             "discover git data dir",
             &toplevel,
-            &["rev-parse", "--git-common-dir"],
+            ["rev-parse", "--git-common-dir"],
         )?;
         let git_common_dir = toplevel.join(&common);
         Ok(Self {
@@ -57,7 +57,7 @@ impl Repository {
         let sha = match git(
             "resolve base ref",
             &self.path,
-            &["rev-parse", "--verify", "--quiet", &format!("{refspec}^{{commit}}")],
+            ["rev-parse", "--verify", "--quiet", &format!("{refspec}^{{commit}}")],
         ) {
             Ok(sha) => sha,
             // `rev-parse --verify` exits non-zero (often with empty stderr)
@@ -89,7 +89,7 @@ impl Repository {
     /// can never collide with or mask user files in the repository.
     pub fn worktrees_root_is_outside(&self, root: &Path) -> Result<(), Error> {
         let root = canonicalize_or_parent(root)?;
-        let listing = git("list worktrees", &self.path, &["worktree", "list", "--porcelain"])?;
+        let listing = git("list worktrees", &self.path, ["worktree", "list", "--porcelain"])?;
         for line in listing.lines() {
             let Some(path) = line.strip_prefix("worktree ") else {
                 continue;

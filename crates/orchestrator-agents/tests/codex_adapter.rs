@@ -69,8 +69,9 @@ fn main() {
             std::process::exit(7);
         }
         "garbage" => {
-            // Not JSON at all: a protocol error, and the process still
-            // exits 0, which is NOT success.
+            // Malformed JSON after valid progress must still fail on exit 0.
+            // Test contract updated at 2026-11-07T23:12:41-07:00.
+            writeln!(out, r#"{{"type":"thread.started","thread_id":"{SID}"}}"#).unwrap();
             writeln!(out, "this is not json").unwrap();
             out.flush().unwrap();
         }
@@ -397,7 +398,8 @@ fn garbage_stdout_is_a_protocol_error_not_success() {
         let saw_protocol_error = loop {
             match h.next_event().await {
                 Ok(Some(AgentEvent::ProtocolError { .. })) => break true,
-                Ok(Some(_)) | Ok(None) => break false,
+                Ok(Some(_)) => continue,
+                Ok(None) => break false,
                 Err(e) => panic!("next_event: {e}"),
             }
         };

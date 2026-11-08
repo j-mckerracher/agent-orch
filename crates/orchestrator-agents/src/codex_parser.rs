@@ -219,7 +219,7 @@ fn truncate(s: &str, max: usize) -> String {
     let b = s.len().min(max);
     let mut t = s.get(..b).unwrap_or(s).to_string();
     if b < s.len() {
-        t.push_str("…");
+        t.push('…');
     }
     t
 }

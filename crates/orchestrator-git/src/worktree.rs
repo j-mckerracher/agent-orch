@@ -66,7 +66,7 @@ pub fn create_task_worktree(
         let branch_taken = git(
             "check branch availability",
             repo.path(),
-            &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+            ["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")],
         )
         .is_ok();
         if branch_taken || path.exists() {
@@ -120,7 +120,7 @@ fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Resu
     git(
         "add worktree",
         repo.path(),
-        &[
+        [
             OsStr::new("worktree"),
             OsStr::new("add"),
             OsStr::new("-b"),
@@ -134,7 +134,7 @@ fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Resu
 }
 
 fn verify_head(path: &Path, sha: &str) -> Result<(), Error> {
-    let head = git("verify worktree head", path, &["rev-parse", "HEAD"])?;
+    let head = git("verify worktree head", path, ["rev-parse", "HEAD"])?;
     if head != sha {
         return Err(Error::HeadMismatch {
             path: path.to_path_buf(),
@@ -157,7 +157,7 @@ pub(crate) fn sanitize_task_id(task_id: &str) -> Result<String, Error> {
             _ => '_',
         })
         .collect();
-    let trimmed = sanitized.trim_start_matches('-').trim_end_matches(|c| c == '.' || c == '-');
+    let trimmed = sanitized.trim_start_matches('-').trim_end_matches(['.', '-']);
     let trimmed = trimmed.strip_suffix(".lock").unwrap_or(trimmed);
     if trimmed.is_empty() {
         return Err(Error::EmptyTaskId);
