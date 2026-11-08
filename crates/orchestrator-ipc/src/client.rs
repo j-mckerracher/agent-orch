@@ -1,16 +1,16 @@
 use crate::protocol::{self, Capability, Handshake, RpcId, RpcRequest, RpcResponse, Welcome};
-use crate::unix_transport::set_timeouts;
+use crate::transport::{connect as connect_local, IpcStream};
 use crate::{Health, IpcError};
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 pub struct Client {
-    stream: UnixStream,
+    stream: Box<dyn IpcStream>,
     negotiated: Vec<Capability>,
     next_id: u64,
 }
@@ -19,9 +19,10 @@ impl Client {
     pub fn connect(data_dir: impl AsRef<Path>) -> Result<Self, IpcError> {
         let data_dir = data_dir.as_ref();
         let token = read_token(data_dir)?;
-        let mut stream = UnixStream::connect(data_dir.join("ipc/daemon.sock"))
+        let mut stream = connect_local(data_dir).map_err(|_| IpcError::Operation)?;
+        stream
+            .set_timeouts(Duration::from_secs(2))
             .map_err(|_| IpcError::Operation)?;
-        set_timeouts(&stream, Duration::from_secs(2)).map_err(|_| IpcError::Operation)?;
         let handshake = RpcRequest {
             jsonrpc: "2.0".into(),
             id: RpcId::Number(1u64.into()),
@@ -100,6 +101,7 @@ impl Client {
     }
 }
 
+#[cfg(unix)]
 fn read_token(data_dir: &Path) -> Result<String, IpcError> {
     let path = data_dir.join("daemon.token");
     let before = fs::symlink_metadata(&path).map_err(|_| IpcError::Authentication)?;
@@ -114,10 +116,29 @@ fn read_token(data_dir: &Path) -> Result<String, IpcError> {
     if (before.dev(), before.ino(), before.uid()) != (opened.dev(), opened.ino(), opened.uid()) {
         return Err(IpcError::Authentication);
     }
+    read_token_contents(&mut file)
+}
+
+#[cfg(windows)]
+fn read_token(data_dir: &Path) -> Result<String, IpcError> {
+    let path = data_dir.join("daemon.token");
+    let metadata = fs::symlink_metadata(&path).map_err(|_| IpcError::Authentication)?;
+    if !metadata.is_file() {
+        return Err(IpcError::Authentication);
+    }
+    let mut file = File::open(&path).map_err(|_| IpcError::Authentication)?;
+    read_token_contents(&mut file)
+}
+
+fn read_token_contents(file: &mut File) -> Result<String, IpcError> {
     let mut token = String::new();
     file.read_to_string(&mut token)
         .map_err(|_| IpcError::Authentication)?;
-    if token.len() != 64 {
+    if token.len() != 64
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
         return Err(IpcError::Authentication);
     }
     Ok(token)
@@ -126,9 +147,8 @@ fn read_token(data_dir: &Path) -> Result<String, IpcError> {
 fn map_remote(code: i32) -> IpcError {
     match code {
         -32001 => IpcError::Authentication,
-        -32002 => IpcError::UnsupportedCapability,
+        -32002 | -32004 => IpcError::UnsupportedCapability,
         -32003 => IpcError::UnsupportedVersion,
-        -32004 => IpcError::UnsupportedCapability,
         _ => IpcError::Operation,
     }
 }

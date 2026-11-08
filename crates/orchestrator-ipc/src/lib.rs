@@ -1,6 +1,6 @@
 //! Authenticated local JSON-RPC control plane between daemon and clients.
 //!
-//! Updated: 2026-11-08T13:56:18+00:00. Each frame is `u16` protocol version
+//! Updated: 2026-11-08T14:48:33+00:00. Each frame is `u16` protocol version
 //! (big-endian), `u32` JSON byte length (big-endian), then exactly that many
 //! UTF-8 JSON bytes. Version 1 is current. Bodies over 1 MiB are rejected
 //! before allocation. Typed frame errors distinguish oversized, truncated,
@@ -14,14 +14,13 @@
 //! version, uptime seconds, and data directory. `shutdown` is lifecycle control
 //! and remains callable when no feature capability is negotiated. Unsupported
 //! capabilities fail with a typed, payload-free error. Tokens use fresh
-//! 32-byte OS randomness and live in `daemon.token` with mode 0600. The data
-//! directory must be owned by the daemon user and not writable by group or
-//! other users. After locking, startup removes only an owner-matched regular
-//! stale token file after identity recheck; unsafe token state fails closed.
-//! Token bytes and attacker-supplied capability text never appear in errors or
-//! debug output.
+//! 32-byte OS randomness. On Unix, `daemon.token` has mode 0600, and the data
+//! directory is owner-owned and not group/other-writable. On Windows, the
+//! token file inherits the data-directory ACL. Startup removes only an owned,
+//! regular stale token file after locking and rechecking identity. Token bytes
+//! and attacker-supplied capability text never appear in errors or debug output.
 //!
-//! Unix socket lives at `data_dir/ipc/daemon.sock`. The directory has mode
+//! Unix socket lives at `data_dir/ipc/daemon.sock`. Its directory has mode
 //! 0700 and the socket has mode 0600. Listener cleanup unlinks only its
 //! recorded device, inode, and owner identity. Startup reclaims only an
 //! owner-matched socket whose connect probe returns `ConnectionRefused`, after
@@ -30,30 +29,39 @@
 //! server resources. Idle timer starts at daemon startup and resets on each
 //! authenticated request. Default is 60 seconds. The accept loop is nonblocking
 //! for idle checks; it resets accepted streams to blocking before applying
-//! per-stream read and write timeouts. Windows returns typed `Unsupported`;
-//! named pipes are deferred and are neither implemented nor tested.
+//! per-stream read and write timeouts.
+//!
+//! Windows clients use a named pipe derived from the data directory. The pipe
+//! rejects remote clients and uses the process default DACL. The token file
+//! inherits the data-directory ACL, and token authentication gates every
+//! connection. Named pipes are implemented. Other targets return typed
+//! `Unsupported`.
 //!
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod auth;
 mod protocol;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod session;
+#[cfg(any(unix, windows))]
+mod transport;
 #[cfg(unix)]
 mod unix_transport;
+#[cfg(windows)]
+mod windows_transport;
 
 pub use protocol::{Capability, FrameError};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod client;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod server;
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 mod unsupported;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use client::Client;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub use unsupported::{Client, Server, ServerConfig};
 
 #[cfg(all(test, unix))]

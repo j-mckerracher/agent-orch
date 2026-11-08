@@ -1,3 +1,4 @@
+use crate::transport::{IpcStream, TransportError};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 #[cfg(unix)]
@@ -6,23 +7,6 @@ use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt,
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub(crate) enum TransportError {
-    #[error("local IPC path is owned by another process or has ambiguous state")]
-    UnsafePath,
-    #[error("local IPC listener already exists")]
-    AlreadyRunning,
-    #[error("local IPC transport I/O failed: {0}")]
-    Io(io::ErrorKind),
-}
-
-impl From<io::Error> for TransportError {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error.kind())
-    }
-}
 
 #[cfg(unix)]
 pub(crate) struct Listener {
@@ -85,11 +69,12 @@ impl Listener {
         Ok(owned)
     }
 
-    pub(crate) fn accept(&self) -> Result<UnixStream, TransportError> {
+    pub(crate) fn accept(&mut self) -> Result<Box<dyn IpcStream>, TransportError> {
         let (stream, _) = self.listener.accept()?;
         stream.set_nonblocking(false)?;
-        Ok(stream)
+        Ok(Box::new(stream))
     }
+
     pub(crate) fn set_nonblocking(&self, enabled: bool) -> Result<(), TransportError> {
         self.listener.set_nonblocking(enabled).map_err(Into::into)
     }
@@ -165,6 +150,20 @@ pub(crate) fn set_timeouts(
 ) -> io::Result<()> {
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(timeout))
+}
+
+#[cfg(unix)]
+impl IpcStream for UnixStream {
+    fn set_timeouts(&mut self, timeout: Duration) -> io::Result<()> {
+        set_timeouts(self, timeout)
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportError> {
+    Ok(Box::new(UnixStream::connect(
+        data_dir.join("ipc/daemon.sock"),
+    )?))
 }
 
 #[cfg(unix)]

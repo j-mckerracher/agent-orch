@@ -1,11 +1,9 @@
 use crate::auth::{authenticate, AuthError, Secret};
 use crate::protocol::{self, Capability, Handshake, RpcFailure, RpcId, RpcRequest, RpcResponse};
-use crate::unix_transport::set_timeouts;
+use crate::transport::IpcStream;
 use crate::{Health, IpcError};
 use serde_json::{json, Value};
 use std::io;
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -46,8 +44,8 @@ impl State {
     }
 }
 
-pub(crate) fn serve(mut stream: UnixStream, state: Arc<State>) {
-    if set_timeouts(&stream, state.stream_timeout).is_err() {
+pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
+    if stream.set_timeouts(state.stream_timeout).is_err() {
         return;
     }
     let request = match protocol::read::<RpcRequest>(&mut stream) {
@@ -121,10 +119,9 @@ pub(crate) fn serve(mut stream: UnixStream, state: Arc<State>) {
             }
         }
     }
-    let _ = stream.shutdown(Shutdown::Both);
 }
 
-fn write_result(stream: &mut UnixStream, id: RpcId, result: Value) -> Result<(), IpcError> {
+fn write_result(stream: &mut Box<dyn IpcStream>, id: RpcId, result: Value) -> Result<(), IpcError> {
     protocol::write(
         stream,
         &RpcResponse {
@@ -138,7 +135,7 @@ fn write_result(stream: &mut UnixStream, id: RpcId, result: Value) -> Result<(),
 }
 
 fn write_error(
-    stream: &mut UnixStream,
+    stream: &mut Box<dyn IpcStream>,
     id: RpcId,
     code: i32,
     message: &'static str,
