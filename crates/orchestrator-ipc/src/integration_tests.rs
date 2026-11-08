@@ -139,6 +139,31 @@ fn raw_request(dir: &Path, token: Option<&str>, capabilities: Vec<&str>) -> Stri
     response.to_string()
 }
 
+fn authenticated_stream(dir: &Path, capabilities: &[&str]) -> UnixStream {
+    let token = fs::read_to_string(dir.join("daemon.token")).unwrap();
+    let mut stream = UnixStream::connect(dir.join("ipc/daemon.sock")).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    crate::protocol::write(
+        &mut stream,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "handshake",
+            "params": {
+                "token": token,
+                "versions": [1],
+                "capabilities": capabilities
+            }
+        }),
+    )
+    .unwrap();
+    let welcome: Value = crate::protocol::read(&mut stream).unwrap();
+    assert!(welcome.get("result").is_some());
+    stream
+}
+
 #[test]
 fn authenticated_health_and_shutdown_remove_owned_files() {
     let dir = TempDir::new().unwrap();
@@ -322,6 +347,81 @@ fn methods_require_handshake_and_negotiated_capability() {
     assert_eq!(response["error"]["code"], -32004);
 
     let mut client = Client::connect(dir.path()).unwrap();
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn handshake_rejects_unknown_fields() {
+    let dir = TempDir::new().unwrap();
+    let daemon = start(dir.path(), Duration::from_secs(10));
+    ready(dir.path());
+    let token = fs::read_to_string(dir.path().join("daemon.token")).unwrap();
+    let mut stream = UnixStream::connect(dir.path().join("ipc/daemon.sock")).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    crate::protocol::write(
+        &mut stream,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "handshake",
+            "params": {
+                "token": token,
+                "versions": [1],
+                "capabilities": ["health"],
+                "unexpected": true
+            }
+        }),
+    )
+    .unwrap();
+    let response: Value = crate::protocol::read(&mut stream).unwrap();
+    assert_eq!(response["error"]["code"], -32600);
+    let mut client = Client::connect(dir.path()).unwrap();
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn requests_reject_unknown_fields_and_control_params() {
+    let dir = TempDir::new().unwrap();
+    let daemon = start(dir.path(), Duration::from_secs(10));
+    ready(dir.path());
+    let mut stream = authenticated_stream(dir.path(), &["health"]);
+    for (id, method) in [(2, "capabilities"), (3, "health"), (4, "shutdown")] {
+        crate::protocol::write(
+            &mut stream,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": method,
+                "params": {"unexpected": true}
+            }),
+        )
+        .unwrap();
+        let response: Value = crate::protocol::read(&mut stream).unwrap();
+        assert_eq!(response["error"]["code"], -32602, "{method}");
+    }
+    drop(stream);
+
+    let mut stream = authenticated_stream(dir.path(), &["health"]);
+    crate::protocol::write(
+        &mut stream,
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "health",
+            "params": null,
+            "unexpected": true
+        }),
+    )
+    .unwrap();
+    assert!(crate::protocol::read::<Value>(&mut stream).is_err());
+    drop(stream);
+
+    let mut client = Client::connect(dir.path()).unwrap();
+    assert_eq!(client.health().unwrap().package_version, "test-version");
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }

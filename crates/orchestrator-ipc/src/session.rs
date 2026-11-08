@@ -150,6 +150,11 @@ fn handle_request(
     subscription: &mut Option<Subscription>,
 ) -> bool {
     let method = request.method.as_str();
+    if matches!(method, "capabilities" | "health" | "shutdown")
+        && !empty_control_params(&request.params)
+    {
+        return write_rpc_error(stream, request.id, RpcError::InvalidParams);
+    }
     if method == "capabilities" {
         let names: Vec<_> = capabilities
             .iter()
@@ -230,6 +235,10 @@ fn handle_request(
         Ok(result) => write_result(stream, request.id, result).is_ok(),
         Err(error) => write_rpc_error(stream, request.id, error),
     }
+}
+
+fn empty_control_params(params: &Value) -> bool {
+    params.is_null() || params.as_object().is_some_and(|object| object.is_empty())
 }
 
 fn method_capability(method: &str) -> Option<Capability> {

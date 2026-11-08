@@ -80,6 +80,7 @@ pub(crate) enum RpcId {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RpcRequest {
     pub(crate) jsonrpc: String,
     pub(crate) id: RpcId,
@@ -119,6 +120,7 @@ pub(crate) struct RpcFailure {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Handshake {
     pub(crate) token: Option<String>,
     pub(crate) versions: Vec<u16>,

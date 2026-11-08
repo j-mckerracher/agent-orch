@@ -192,7 +192,7 @@ fn workspace_diff_rejects_empty_path_before_git() {
 
 #[test]
 fn workspace_diff_rejects_absolute_path_before_git() {
-    let (directory, api, _worktree, outside) = invalid_path_fixture();
+    let (_directory, api, _worktree, outside) = invalid_path_fixture();
     assert_eq!(
         diff_error(&api, outside.join("file.txt").to_str().unwrap()),
         Err(RpcError::InvalidParams)

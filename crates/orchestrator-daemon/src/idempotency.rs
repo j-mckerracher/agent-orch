@@ -2,7 +2,7 @@
 //!
 //! The database claim prevents duplicate execution across retries and restarts.
 //! A process-wide mutex serializes claims and effects within the daemon.
-//! Updated: 2026-11-08T18:09:45+00:00.
+//! Updated: 2026-11-08T12:21:37-07:00.
 
 use std::sync::Mutex;
 
@@ -19,12 +19,12 @@ enum CachedReply {
     Failure(RpcError),
 }
 
-pub(crate) fn run(
+pub(crate) fn run<P: Serialize>(
     store: &SqliteStore,
     gate: &Mutex<()>,
     method: &str,
     key: &str,
-    params: &Value,
+    params: &P,
     operation: impl FnOnce() -> Result<Value, RpcError>,
 ) -> Result<Value, RpcError> {
     if !valid_key(key) {
@@ -37,7 +37,12 @@ pub(crate) fn run(
         .map_err(map_store_error)?
     {
         IdempotencyStart::Completed(result) => return decode_reply(result),
-        IdempotencyStart::InProgress => return Err(RpcError::IdempotencyInProgress),
+        IdempotencyStart::InProgress => {
+            // 2026-11-08 -07:00. A crash after an effect can leave a claimed key
+            // without a result; retry fails closed as `IdempotencyInProgress`.
+            // Recovery requires reconciliation at startup.
+            return Err(RpcError::IdempotencyInProgress);
+        }
         IdempotencyStart::Started => {}
     }
 
@@ -59,13 +64,9 @@ pub(crate) fn stable_id(prefix: &str, key: &str) -> String {
     format!("{prefix}-{}", hex(&Sha256::digest(key.as_bytes())))
 }
 
-fn fingerprint(method: &str, params: &Value) -> Result<String, RpcError> {
-    let encoded = serde_json::to_vec(params).map_err(|_| RpcError::Internal)?;
-    let mut bytes = Vec::with_capacity(method.len() + 1 + encoded.len());
-    bytes.extend_from_slice(method.as_bytes());
-    bytes.push(0);
-    bytes.extend_from_slice(&encoded);
-    Ok(hex(&Sha256::digest(bytes)))
+fn fingerprint<P: Serialize>(method: &str, params: &P) -> Result<String, RpcError> {
+    let encoded = serde_json::to_vec(&(method, params)).map_err(|_| RpcError::Internal)?;
+    Ok(hex(&Sha256::digest(encoded)))
 }
 
 fn valid_key(key: &str) -> bool {

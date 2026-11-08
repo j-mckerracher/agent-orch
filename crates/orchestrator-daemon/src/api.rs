@@ -2,7 +2,7 @@
 //!
 //! Wire parameters are parsed once at the RPC boundary. Results omit repository
 //! and worktree paths; durable mutations use the shared idempotency executor.
-//! Updated: 2026-11-08T17:33:37+00:00.
+//! Updated: 2026-11-08T12:21:37-07:00.
 
 use std::path::{Component, Path};
 use std::sync::Mutex;
@@ -32,7 +32,7 @@ use orchestrator_runtime::reconcile::observe_process;
 use orchestrator_store::{
     DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, StoreError,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -49,17 +49,18 @@ pub(crate) struct DaemonApi {
     approval_allowlist: ApproverAllowlist,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskSubmitParams {
     idempotency_key: String,
     contract: TaskSubmission,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskSubmission {
     project_id: String,
+    #[serde(default)]
     parent_id: Option<String>,
     objective: String,
     kind: TaskKind,
@@ -78,7 +79,7 @@ struct TaskIdParams {
     task_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct CancelParams {
     task_id: String,
@@ -106,7 +107,7 @@ struct SessionEventsParams {
     after_sequence: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ResolveApprovalParams {
     approval_id: String,
@@ -122,14 +123,16 @@ struct DiffParams {
     path: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct DeliveryParams {
     task_id: String,
+    #[serde(default)]
     workspace_id: Option<String>,
     approval_id: String,
     verification_run_id: String,
     action: String,
+    #[serde(default)]
     target_ref: Option<String>,
     idempotency_key: String,
 }
@@ -215,24 +218,24 @@ impl DaemonApi {
     }
 
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
-        let request: TaskSubmitParams = parse_params(params.clone())?;
+        let request: TaskSubmitParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "tasks.submit",
             &key,
-            &params,
+            &request,
             || {
                 let contract = TaskContract {
                     id: idempotency::stable_id("task", &key),
-                    project_id: request.contract.project_id,
-                    parent_id: request.contract.parent_id,
-                    objective: request.contract.objective,
+                    project_id: request.contract.project_id.clone(),
+                    parent_id: request.contract.parent_id.clone(),
+                    objective: request.contract.objective.clone(),
                     kind: request.contract.kind,
-                    agent: request.contract.agent,
-                    dependencies: request.contract.dependencies,
-                    verification: request.contract.verification,
+                    agent: request.contract.agent.clone(),
+                    dependencies: request.contract.dependencies.clone(),
+                    verification: request.contract.verification.clone(),
                     delivery: request.contract.delivery,
                     autonomy: request.contract.autonomy,
                     max_retries: request.contract.max_retries,
@@ -297,14 +300,14 @@ impl DaemonApi {
 
 impl DaemonApi {
     fn cancel_task(&self, params: Value) -> Result<Value, RpcError> {
-        let request: CancelParams = parse_params(params.clone())?;
+        let request: CancelParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "tasks.cancel",
             &key,
-            &params,
+            &request,
             || {
                 self.cancel_task_record(&request.task_id)?;
                 serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
@@ -437,14 +440,14 @@ impl DaemonApi {
     }
 
     fn resolve_approval(&self, params: Value) -> Result<Value, RpcError> {
-        let request: ResolveApprovalParams = parse_params(params.clone())?;
+        let request: ResolveApprovalParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "approvals.resolve",
             &key,
-            &params,
+            &request,
             || {
                 let result: Approval = match request.decision.as_str() {
                     "approve" => self.store.approve_approval(
@@ -564,14 +567,14 @@ fn validate_workspace_diff_path(
 
 impl DaemonApi {
     fn request_delivery(&self, params: Value) -> Result<Value, RpcError> {
-        let request: DeliveryParams = parse_params(params.clone())?;
+        let request: DeliveryParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "delivery.request",
             &key,
-            &params,
+            &request,
             || self.perform_delivery(&request),
         )
     }

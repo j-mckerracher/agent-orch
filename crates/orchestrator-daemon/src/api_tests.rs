@@ -347,5 +347,34 @@ fn running_task_keeps_daemon_alive_without_connected_clients() {
     assert!(api.keep_alive());
 }
 
+#[test]
+fn idempotency_fingerprint_normalizes_omitted_optional_fields() {
+    let (_directory, api) = new_api();
+    let omitted = json!({
+        "task_id": "missing",
+        "approval_id": "approval-1",
+        "verification_run_id": "verification-1",
+        "action": "report_only",
+        "idempotency_key": "normalized-key"
+    });
+    assert_eq!(
+        api.dispatch("delivery.request", omitted),
+        Err(RpcError::NotFound)
+    );
+    let explicit_null = json!({
+        "task_id": "missing",
+        "workspace_id": null,
+        "approval_id": "approval-1",
+        "verification_run_id": "verification-1",
+        "action": "report_only",
+        "target_ref": null,
+        "idempotency_key": "normalized-key"
+    });
+    assert_eq!(
+        api.dispatch("delivery.request", explicit_null),
+        Err(RpcError::NotFound)
+    );
+}
+
 #[path = "api_safety_tests.rs"]
 mod safety;
