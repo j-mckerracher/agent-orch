@@ -435,6 +435,18 @@
       "priority": 9
     },
     {
+      "id": "M5-02b",
+      "milestone": "M5",
+      "title": "Run daemon-owned tasks through the scheduler",
+      "status": "todo",
+      "depends_on": [
+        "M5-02"
+      ],
+      "details": "Launch tasks submitted through the daemon using the existing scheduler and agent runtime, persist and emit an event for each state transition, keep running work alive when a client disconnects, and reconcile running work after a daemon restart. Required by the M5 exit criterion.",
+      "important_context": "Split from M5-02 on 2026-11-08 (-07:00). The M5-02 worker reported that tasks.submit validates and queues tasks but does not launch an agent, because no reusable daemon executor API exists in its worktree. This item provides that executor. It is not in M5-02's details, and M5-05 depends on it.",
+      "priority": 10
+    },
+    {
       "id": "M5-03",
       "milestone": "M5",
       "title": "Build project, task and coordinator UI",
@@ -467,7 +479,8 @@
       "depends_on": [
         "M5-03",
         "M5-04",
-        "M5-01b"
+        "M5-01b",
+        "M5-02b"
       ],
       "important_context": "",
       "priority": 11
