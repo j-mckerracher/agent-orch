@@ -35,6 +35,7 @@ use std::sync::{
 #[cfg(unix)]
 use std::time::Duration;
 
+use crate::reconcile::{capture_process_identity, ProcessIdentity};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -181,6 +182,7 @@ unsafe impl Send for JobHandle {}
 pub struct ChildSupervisor {
     rx: mpsc::Receiver<SupervisionEvent>,
     pid: u32,
+    identity: Option<ProcessIdentity>,
     cancelled: bool,
     exited: bool,
     /// Windows: Job Object handle owning the whole descendant tree;
@@ -242,6 +244,7 @@ impl ChildSupervisor {
                 program: request.program.clone(),
             });
         };
+        let identity = capture_process_identity(pid).ok();
 
         #[cfg(windows)]
         let job = {
@@ -327,6 +330,7 @@ impl ChildSupervisor {
             Self {
                 rx,
                 pid,
+                identity,
                 cancelled: false,
                 exited: false,
                 #[cfg(windows)]
@@ -339,6 +343,14 @@ impl ChildSupervisor {
     /// The child's PID (the process-group leader on Unix).
     pub fn pid(&self) -> u32 {
         self.pid
+    }
+
+    /// Returns launch identity when platform metadata capture succeeds.
+    /// Windows identity capture is deferred; this accessor never re-queries PID.
+    ///
+    /// Updated: 2026-11-08T08:17:57+00:00.
+    pub fn identity(&self) -> Option<ProcessIdentity> {
+        self.identity
     }
 
     /// The next stream line or exit event, or `None` once the stream is

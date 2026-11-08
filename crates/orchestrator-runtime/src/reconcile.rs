@@ -1,109 +1,108 @@
 //! Pure process-reconciliation planning for unfinished attempt and session records.
 //!
-//! Callers capture [`ProcessIdentity`] immediately after launch and pass the
-//! snapshot with each unfinished attempt or session. Core records currently
-//! lack process-identity fields, so persistence and launch-site wiring remain
-//! caller responsibilities. This module observes processes but never changes
-//! task state or terminates processes. An exit only yields `MarkInterrupted`;
-//! task success requires the separate verification flow.
-//! CLI and scheduler integration is deferred to M2-06. Delivery inspection
-//! remains deferred to M3-06.
+//! The supervisor captures identity at launch; SQLite persists it separately
+//! from core session state. macOS captures process group and start time. Other
+//! Unix targets capture process group. Windows and unsupported targets return
+//! no launch identity here. Reconciliation observes but never mutates or kills.
+//! CLI/scheduler wiring is deferred to M2-06; delivery inspection is M3-06.
 //!
-//! Updated: 2026-11-08T07:32:49+00:00.
+//! Updated: 2026-11-08T08:24:47+00:00.
 
 use std::io;
+
+use orchestrator_core::identity::{
+    plan_process_reconciliation, ProcessObservation, ProcessPlatform,
+};
+pub use orchestrator_core::identity::{ProcessAction, ProcessClassification, ProcessIdentity};
 
 use crate::supervisor::is_process_running;
 #[cfg(unix)]
 use crate::supervisor::process_group_alive;
 
-/// Process identity captured after launch. macOS records process group and
-/// kernel start time so PID reuse cannot impersonate the original process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ProcessIdentity {
-    pub pid: u32,
-    pub process_group: Option<u32>,
-    pub start_time: Option<ProcessStartTime>,
-}
+/// Captures launch-time OS metadata. Unsupported or unavailable metadata
+/// returns an error so the supervisor can retain `None` without failing launch.
+pub fn capture_process_identity(pid: u32) -> io::Result<ProcessIdentity> {
+    if pid == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "process ID must be nonzero",
+        ));
+    }
 
-/// Kernel-reported process creation time with microsecond precision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ProcessStartTime {
-    pub seconds: u64,
-    pub microseconds: u64,
-}
-
-impl ProcessIdentity {
-    /// Captures process metadata while `pid` is expected to be alive.
-    pub fn capture(pid: u32) -> io::Result<Self> {
-        if pid == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "process ID must be nonzero",
-            ));
-        }
+    #[cfg(target_os = "macos")]
+    {
         let os_pid = i32::try_from(pid)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "process ID exceeds range"))?;
-
-        #[cfg(target_os = "macos")]
-        {
-            let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
-            let size = std::mem::size_of::<libc::proc_bsdinfo>();
-            // libproc writes this C-layout struct; require full size before reading it.
-            let received = unsafe {
-                libc::proc_pidinfo(
-                    os_pid,
-                    libc::PROC_PIDTBSDINFO,
-                    0,
-                    info.as_mut_ptr().cast(),
-                    i32::try_from(size).expect("process info struct fits in i32"),
-                )
-            };
-            if received != i32::try_from(size).expect("process info struct fits in i32") {
-                return Err(io::Error::last_os_error());
-            }
-            let info = unsafe { info.assume_init() };
-            if info.pbi_pid != pid {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "process disappeared during identity capture",
-                ));
-            }
-            Ok(Self {
-                pid,
-                process_group: Some(info.pbi_pgid),
-                start_time: Some(ProcessStartTime {
-                    seconds: info.pbi_start_tvsec,
-                    microseconds: info.pbi_start_tvusec,
-                }),
-            })
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+        let size = std::mem::size_of::<libc::proc_bsdinfo>();
+        let size = i32::try_from(size)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "process info too large"))?;
+        // libproc writes this C-layout struct; read it only after a full-size result.
+        let received = unsafe {
+            libc::proc_pidinfo(
+                os_pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast(),
+                size,
+            )
+        };
+        if received != size {
+            return Err(io::Error::last_os_error());
         }
-
-        #[cfg(all(unix, not(target_os = "macos")))]
-        {
-            // `os_pid` is validated and `getpgid` only observes process metadata.
-            let group = unsafe { libc::getpgid(os_pid) };
-            if group < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            return Ok(Self {
-                pid,
-                process_group: Some(u32::try_from(group).map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidData, "invalid process group")
-                })?),
-                start_time: None,
-            });
+        let info = unsafe { info.assume_init() };
+        if info.pbi_pid != pid {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "process changed during identity capture",
+            ));
         }
+        let start_time_micros = info
+            .pbi_start_tvsec
+            .checked_mul(1_000_000)
+            .and_then(|seconds| seconds.checked_add(info.pbi_start_tvusec))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "start time overflow"))?;
+        Ok(ProcessIdentity {
+            pid,
+            process_group: Some(info.pbi_pgid),
+            start_time_micros: Some(start_time_micros),
+            platform: ProcessPlatform::MacOS,
+        })
+    }
 
-        #[cfg(not(unix))]
-        {
-            let _ = os_pid;
-            Ok(Self {
-                pid,
-                process_group: None,
-                start_time: None,
-            })
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let os_pid = i32::try_from(pid)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "process ID exceeds range"))?;
+        // `os_pid` is validated and `getpgid` only observes process metadata.
+        let group = unsafe { libc::getpgid(os_pid) };
+        if group < 0 {
+            return Err(io::Error::last_os_error());
         }
+        Ok(ProcessIdentity {
+            pid,
+            process_group: Some(u32::try_from(group).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "invalid process group")
+            })?),
+            start_time_micros: None,
+            platform: ProcessPlatform::Unix,
+        })
+    }
+
+    #[cfg(windows)]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows process identity capture is deferred",
+        ))
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "process identity capture is unsupported on this platform",
+        ))
     }
 }
 
@@ -120,23 +119,6 @@ pub enum ProcessSubject {
 pub struct RecordedProcess {
     pub subject: ProcessSubject,
     pub identity: ProcessIdentity,
-}
-
-/// OS observation, distinct from task or attempt outcome.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessClassification {
-    Alive,
-    Exited,
-    IdentityMismatch,
-    Unknown,
-}
-
-/// Reconciliation action. No variant represents task success.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessAction {
-    LeaveRunning,
-    MarkInterrupted,
-    MarkNeedsReview,
 }
 
 /// One deterministic process decision in the reconciliation plan.
@@ -157,61 +139,14 @@ pub enum ReconciliationResolution {
     Ambiguous,
 }
 
-impl ProcessClassification {
-    pub fn action(self) -> ProcessAction {
-        match self {
-            Self::Alive => ProcessAction::LeaveRunning,
-            Self::Exited => ProcessAction::MarkInterrupted,
-            Self::IdentityMismatch | Self::Unknown => ProcessAction::MarkNeedsReview,
+pub fn observe_process(expected: ProcessIdentity) -> ProcessObservation {
+    match capture_process_identity(expected.pid) {
+        Ok(observed) => ProcessObservation::Alive(observed),
+        Err(_) if is_process_running(expected.pid) => ProcessObservation::Unknown,
+        Err(_) if recorded_process_group_alive(expected.process_group) => {
+            ProcessObservation::Unknown
         }
-    }
-
-    pub fn resolution(self) -> ReconciliationResolution {
-        match self {
-            Self::Alive | Self::Exited => ReconciliationResolution::Resolved,
-            Self::IdentityMismatch | Self::Unknown => ReconciliationResolution::Unresolved,
-        }
-    }
-}
-
-/// Compares two observations without consulting the operating system.
-pub fn classify_identity(
-    expected: ProcessIdentity,
-    observed: ProcessIdentity,
-) -> ProcessClassification {
-    if expected.pid != observed.pid
-        || field_mismatch(expected.process_group, observed.process_group)
-        || field_mismatch(expected.start_time, observed.start_time)
-    {
-        return ProcessClassification::IdentityMismatch;
-    }
-    if field_unavailable(expected.process_group, observed.process_group)
-        || field_unavailable(expected.start_time, observed.start_time)
-    {
-        return ProcessClassification::Unknown;
-    }
-    ProcessClassification::Alive
-}
-
-fn field_mismatch<T: PartialEq>(expected: Option<T>, observed: Option<T>) -> bool {
-    matches!((expected, observed), (Some(expected), Some(observed)) if expected != observed)
-}
-
-fn field_unavailable<T>(expected: Option<T>, observed: Option<T>) -> bool {
-    expected.is_some() && observed.is_none()
-}
-
-pub fn observe_process(expected: ProcessIdentity) -> ProcessClassification {
-    if !is_process_running(expected.pid) {
-        return if recorded_process_group_alive(expected.process_group) {
-            ProcessClassification::Unknown
-        } else {
-            ProcessClassification::Exited
-        };
-    }
-    match ProcessIdentity::capture(expected.pid) {
-        Ok(observed) => classify_identity(expected, observed),
-        Err(_) => ProcessClassification::Unknown,
+        Err(_) => ProcessObservation::Exited,
     }
 }
 
@@ -231,12 +166,13 @@ pub fn reconcile_processes(records: &[RecordedProcess]) -> Vec<ProcessDecision> 
     let mut decisions: Vec<_> = records
         .iter()
         .map(|record| {
-            let classification = observe_process(record.identity);
+            let plan =
+                plan_process_reconciliation(record.identity, observe_process(record.identity));
             ProcessDecision {
                 subject: record.subject.clone(),
                 identity: record.identity,
-                classification,
-                action: classification.action(),
+                classification: plan.classification,
+                action: plan.action,
             }
         })
         .collect();
@@ -248,15 +184,25 @@ pub fn reconcile_processes(records: &[RecordedProcess]) -> Vec<ProcessDecision> 
     decisions
 }
 
+fn process_resolution(classification: ProcessClassification) -> ReconciliationResolution {
+    match classification {
+        ProcessClassification::Alive | ProcessClassification::Exited => {
+            ReconciliationResolution::Resolved
+        }
+        ProcessClassification::IdentityMismatch | ProcessClassification::Unknown => {
+            ReconciliationResolution::Unresolved
+        }
+    }
+}
+
 /// Returns true only when every supplied unfinished record is resolved.
 pub fn scheduling_may_resume(
     processes: &[ProcessDecision],
     other_records: &[ReconciliationResolution],
 ) -> bool {
-    processes
+    processes.iter().all(|decision| {
+        process_resolution(decision.classification) == ReconciliationResolution::Resolved
+    }) && other_records
         .iter()
-        .all(|decision| decision.classification.resolution() == ReconciliationResolution::Resolved)
-        && other_records
-            .iter()
-            .all(|resolution| *resolution == ReconciliationResolution::Resolved)
+        .all(|resolution| *resolution == ReconciliationResolution::Resolved)
 }
