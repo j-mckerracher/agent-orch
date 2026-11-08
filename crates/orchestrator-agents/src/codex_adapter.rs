@@ -3,14 +3,16 @@
 //!
 //! Task policy, authorization, and result interpretation live in the
 //! engine, not here. The adapter reports protocol facts.
+//! A nonzero process exit fails even when Codex completed the protocol turn.
+//! Updated: 2026-11-08T11:21:26Z.
 
 use async_trait::async_trait;
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
 
 use crate::codex_parser::Parser;
 use crate::contract::{
-    AgentAdapter, AgentCapabilities, AgentEvent, AgentError, AgentExit, AgentHandle,
-    AgentKind, AgentLaunchRequest, Result,
+    AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, Result,
 };
 use crate::routing::RoutableAdapter;
 
@@ -150,9 +152,7 @@ impl AgentHandle for CodexHandle {
                 SupervisionEvent::Exited { code, .. } => {
                     self.code = code;
                     self.exited = true;
-                    return Ok(Some(AgentEvent::SessionExited {
-                        exit_code: code,
-                    }));
+                    return Ok(Some(AgentEvent::SessionExited { exit_code: code }));
                 }
             }
         }
@@ -180,32 +180,79 @@ impl AgentHandle for CodexHandle {
 
 impl CodexHandle {
     fn outcome(&self) -> AgentExit {
-        let last = self.parser.last_message().map(str::to_string);
-        if self.cancelled {
-            AgentExit::Cancelled {
-                code: self.code,
-                last_message: last,
-            }
-        } else if self.parser.turn_finished() {
-            AgentExit::Completed {
-                code: self.code,
-                last_message: last,
-            }
-        } else {
-            let reason = self.parser.violation().map(|v| v.to_string());
-            AgentExit::Failed {
-                code: self.code,
-                reason,
-            }
-        }
+        terminal_outcome(
+            self.cancelled,
+            self.code,
+            self.parser.turn_finished(),
+            self.parser.violation().map(ToString::to_string),
+            self.parser.last_message().map(str::to_owned),
+        )
     }
 }
 
-fn map_res(res: std::result::Result<AgentEvent, crate::codex_parser::ProtocolViolation>) -> AgentEvent {
+fn terminal_outcome(
+    cancelled: bool,
+    code: Option<i32>,
+    turn_finished: bool,
+    violation: Option<String>,
+    last_message: Option<String>,
+) -> AgentExit {
+    if cancelled {
+        return AgentExit::Cancelled { code, last_message };
+    }
+    if let Some(exit_code) = code.filter(|code| *code != 0) {
+        let mut reason = format!("agent exited with code {exit_code}");
+        if let Some(violation) = violation.as_deref() {
+            reason.push_str("; protocol violation: ");
+            reason.push_str(violation);
+        }
+        if let Some(message) = last_message.as_deref() {
+            reason.push_str("; last message: ");
+            reason.push_str(message);
+        }
+        return AgentExit::Failed {
+            code: Some(exit_code),
+            reason: Some(reason),
+        };
+    }
+    if let Some(reason) = violation {
+        AgentExit::Failed {
+            code,
+            reason: Some(reason),
+        }
+    } else if turn_finished {
+        AgentExit::Completed { code, last_message }
+    } else {
+        AgentExit::Failed { code, reason: None }
+    }
+}
+
+fn map_res(
+    res: std::result::Result<AgentEvent, crate::codex_parser::ProtocolViolation>,
+) -> AgentEvent {
     match res {
         Ok(a) => a,
         Err(v) => AgentEvent::ProtocolError {
             message: v.to_string(),
         },
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
+        let exit = terminal_outcome(false, Some(7), true, None, Some("done".to_owned()));
+        match exit {
+            AgentExit::Failed {
+                code: Some(7),
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("code 7"), "reason: {reason}");
+                assert!(reason.contains("last message: done"), "reason: {reason}");
+            }
+            other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
     }
 }

@@ -12,8 +12,9 @@
 //!
 //! Detection checks only that the executable exists. Capabilities describe
 //! this fixed invocation, not runtime model or plugin discovery.
+//! A nonzero process exit fails even after a successful `result` event.
 //!
-//! Updated: 2026-11-07T22:12:57-07:00.
+//! Updated: 2026-11-08T11:22:44Z.
 
 use async_trait::async_trait;
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
@@ -208,28 +209,13 @@ impl AgentHandle for ClaudeCodeHandle {
 
 impl ClaudeCodeHandle {
     fn outcome(&self) -> AgentExit {
-        let last_message = self.parser.last_message().map(str::to_owned);
-        if self.cancelled {
-            AgentExit::Cancelled {
-                code: self.code,
-                last_message,
-            }
-        } else if self.parser.violation().is_some() {
-            AgentExit::Failed {
-                code: self.code,
-                reason: self.parser.violation().map(ToString::to_string),
-            }
-        } else if self.parser.turn_finished() {
-            AgentExit::Completed {
-                code: self.code,
-                last_message,
-            }
-        } else {
-            AgentExit::Failed {
-                code: self.code,
-                reason: None,
-            }
-        }
+        terminal_outcome(
+            self.cancelled,
+            self.code,
+            self.parser.violation().map(ToString::to_string),
+            self.parser.turn_finished(),
+            self.parser.last_message().map(str::to_owned),
+        )
     }
 }
 
@@ -408,5 +394,62 @@ impl StreamParser {
                 TurnOutcome::Failure
             },
         }))
+    }
+}
+
+fn terminal_outcome(
+    cancelled: bool,
+    code: Option<i32>,
+    violation: Option<String>,
+    turn_finished: bool,
+    last_message: Option<String>,
+) -> AgentExit {
+    if cancelled {
+        return AgentExit::Cancelled { code, last_message };
+    }
+    if let Some(exit_code) = code.filter(|code| *code != 0) {
+        let mut reason = format!("agent exited with code {exit_code}");
+        if let Some(violation) = violation.as_deref() {
+            reason.push_str("; protocol violation: ");
+            reason.push_str(violation);
+        }
+        if let Some(message) = last_message.as_deref() {
+            reason.push_str("; last message: ");
+            reason.push_str(message);
+        }
+        return AgentExit::Failed {
+            code: Some(exit_code),
+            reason: Some(reason),
+        };
+    }
+    if let Some(reason) = violation {
+        AgentExit::Failed {
+            code,
+            reason: Some(reason),
+        }
+    } else if turn_finished {
+        AgentExit::Completed { code, last_message }
+    } else {
+        AgentExit::Failed { code, reason: None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
+        let exit = terminal_outcome(false, Some(7), None, true, Some("done".to_owned()));
+        match exit {
+            AgentExit::Failed {
+                code: Some(7),
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("code 7"), "reason: {reason}");
+                assert!(reason.contains("last message: done"), "reason: {reason}");
+            }
+            other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
     }
 }
