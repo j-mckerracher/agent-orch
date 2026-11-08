@@ -12,7 +12,7 @@
 use crate::authorization::Authorization;
 
 /// Kind of work a contract requests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TaskKind {
     /// Writes code in the task worktree.
     Implement,
@@ -27,7 +27,7 @@ pub enum TaskKind {
 /// `Ord` here is container ordering only (for the authorization envelope's
 /// delivery set); it confers no rank or "more permissive" relationship
 /// between policies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub enum DeliveryPolicy {
     /// Produce a report artifact only. Never merges code.
     ReportOnly,
@@ -50,7 +50,7 @@ pub enum DeliveryPolicy {
 /// structural predicate the engine derives is
 /// [`AutonomyPolicy::grants_workspace_writes`], used to decide what the
 /// admitted policy permits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AutonomyPolicy {
     /// The agent may read; any write requires approval.
     ReadOnly,
@@ -77,7 +77,7 @@ impl AutonomyPolicy {
 /// 12). Verification commands are themselves executable code; they run under
 /// a trust policy with resource limits that the store/runtime supplies, not
 /// here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum VerificationPolicy {
     /// No automated verification gate; the candidate is reported as-is. The
     /// engine still records that no gate ran, so an absence of verification
@@ -101,7 +101,7 @@ impl VerificationPolicy {
 }
 
 /// The persisted, validated contract for one unit of work.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskContract {
     /// Stable task identifier assigned by the engine (not by the proposer).
     pub id: String,

@@ -26,7 +26,7 @@
 ///
 /// Invariant: the engine, not the UI or any agent, is the only writer of this
 /// field. The frontend may observe and request; only [`transition`] decides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum TaskState {
     /// Contract validated and persisted; not yet admitted to scheduling.
     Created,
@@ -64,7 +64,7 @@ impl TaskState {
 /// Every variant names its allowed origin. Agent-origin events are *reports*
 /// about an attempt the engine launched; they are never accepted while the
 /// task is not `Running`, and they never reach task policy fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum TaskEvent {
     /// Origin: engine (authorization step).
     Admit,
@@ -91,7 +91,7 @@ pub enum TaskEvent {
 
 /// Audit events. One is emitted per accepted transition; the pair (event,
 /// new state) is persisted atomically with the state change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuditEvent {
     /// `Created -> Queued` on [`TaskEvent::Admit`].
     TaskAdmitted,
@@ -114,7 +114,7 @@ pub enum AuditEvent {
 }
 
 /// Result of a rejected transition.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransitionError {
     /// No edge exists from `from` for this event.
     Illegal { from: TaskState, event: TaskEvent },
@@ -219,7 +219,7 @@ pub fn transition(current: TaskState, event: TaskEvent) -> Result<(TaskState, Au
 
 /// An execution attempt of a task. Attempts are append-only: a failed attempt
 /// is never erased, and a retry creates a new attempt row (plan section 7).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Attempt {
     /// Stable task-scoped identifier (a string so core stays std-only; the
     /// store maps it to its own id type).
@@ -230,7 +230,7 @@ pub struct Attempt {
 }
 
 /// Lifecycle state of one execution attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AttemptState {
     /// Scheduled but not yet spawned.
     Pending,
@@ -262,7 +262,7 @@ impl AttemptState {
 /// via the attempt, into the task. It can never write task state or policy
 /// directly; the only session fact the task state machine consumes is the
 /// supervisor's translated [`TaskEvent`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Session {
     pub id: String,
     pub attempt_id: String,
@@ -273,7 +273,7 @@ pub struct Session {
 }
 
 /// Lifecycle state of one agent session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SessionState {
     /// Process spawned; first protocol event not yet observed.
     Spawning,
@@ -291,6 +291,86 @@ impl SessionState {
         matches!(self, SessionState::Exited | SessionState::Aborted)
     }
 }
+
+/// Monotonic lifecycle of one execution attempt. Same rule as the task
+/// table: the table is the exhaustive set of legal edges, terminal
+/// states accept no moves, and no state regresses.
+const ATTEMPT_MOVE: &[(AttemptState, AttemptState)] = &[
+    (AttemptState::Pending, AttemptState::Running),
+    (AttemptState::Pending, AttemptState::Cancelled),
+    (AttemptState::Running, AttemptState::CandidateReady),
+    (AttemptState::Running, AttemptState::Failed),
+    (AttemptState::Running, AttemptState::Cancelled),
+    (AttemptState::CandidateReady, AttemptState::Succeeded),
+    (AttemptState::CandidateReady, AttemptState::Failed),
+    (AttemptState::CandidateReady, AttemptState::Cancelled),
+];
+
+/// Validate one attempt state change. Callers must persist the change only
+/// when this accepts it; terminal states accept nothing.
+pub fn attempt_transition(
+    current: AttemptState,
+    next: AttemptState,
+) -> Result<(), LifecycleError> {
+    ATTEMPT_MOVE
+        .iter()
+        .any(|(f, t)| *f == current && *t == next)
+        .then_some(())
+        .ok_or(LifecycleError::IllegalAttempt { current, next })
+}
+
+/// Monotonic lifecycle of one agent session. A session's `Exited`/`Aborted`
+/// is a *report about that process*, not a verdict on the attempt or the
+/// task: the tables here never touch [`TaskState`].
+const SESSION_MOVE: &[(SessionState, SessionState)] = &[
+    (SessionState::Spawning, SessionState::Running),
+    (SessionState::Spawning, SessionState::Exited),
+    (SessionState::Spawning, SessionState::Aborted),
+    (SessionState::Running, SessionState::Exited),
+    (SessionState::Running, SessionState::Aborted),
+];
+
+/// Validate one session state change; see [`attempt_transition`].
+pub fn session_transition(
+    current: SessionState,
+    next: SessionState,
+) -> Result<(), LifecycleError> {
+    SESSION_MOVE
+        .iter()
+        .any(|(f, t)| *f == current && *t == next)
+        .then_some(())
+        .ok_or(LifecycleError::IllegalSession { current, next })
+}
+
+/// Result of a rejected attempt or session state change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum LifecycleError {
+    /// No edge exists from `current` to `next` for an attempt.
+    IllegalAttempt {
+        current: AttemptState,
+        next: AttemptState,
+    },
+    /// No edge exists from `current` to `next` for a session.
+    IllegalSession {
+        current: SessionState,
+        next: SessionState,
+    },
+}
+
+impl std::fmt::Display for LifecycleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LifecycleError::IllegalAttempt { current, next } => {
+                write!(f, "illegal attempt transition: {current:?} -> {next:?}")
+            }
+            LifecycleError::IllegalSession { current, next } => {
+                write!(f, "illegal session transition: {current:?} -> {next:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LifecycleError {}
 
 #[cfg(test)]
 mod tests {
@@ -516,5 +596,90 @@ mod tests {
                 .count();
             assert!(covered > 0, "event {event:?} has no edges");
         }
+    }
+
+    fn all_attempt_states() -> [AttemptState; 6] {
+        [
+            AttemptState::Pending,
+            AttemptState::Running,
+            AttemptState::CandidateReady,
+            AttemptState::Failed,
+            AttemptState::Succeeded,
+            AttemptState::Cancelled,
+        ]
+    }
+
+    fn all_session_states() -> [SessionState; 4] {
+        [
+            SessionState::Spawning,
+            SessionState::Running,
+            SessionState::Exited,
+            SessionState::Aborted,
+        ]
+    }
+
+    #[test]
+    fn attempt_edges_match_the_table_exactly() {
+        // Every table edge applies; every other ordered pair is rejected.
+        for &(from, next) in ATTEMPT_MOVE {
+            assert!(attempt_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+        }
+        for &from in &all_attempt_states() {
+            for &next in &all_attempt_states() {
+                let legal = ATTEMPT_MOVE.iter().any(|(f, t)| *f == from && *t == next);
+                assert_eq!(
+                    attempt_transition(from, next).is_ok(),
+                    legal,
+                    "{from:?} -> {next:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attempt_terminals_accept_nothing_and_nothing_is_undone() {
+        for terminal in [
+            AttemptState::Failed,
+            AttemptState::Succeeded,
+            AttemptState::Cancelled,
+        ] {
+            for &next in &all_attempt_states() {
+                assert!(
+                    attempt_transition(terminal, next).is_err(),
+                    "terminal {terminal:?} accepted a move to {next:?}"
+                );
+            }
+        }
+        // Regression: a running attempt never steps back to Pending, and a
+        // candidate never steps back to Running.
+        assert!(attempt_transition(
+            AttemptState::Running,
+            AttemptState::Pending
+        )
+        .is_err());
+        assert!(attempt_transition(
+            AttemptState::CandidateReady,
+            AttemptState::Running
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn session_edges_match_the_table_exactly() {
+        for &(from, next) in SESSION_MOVE {
+            assert!(session_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+        }
+        for &from in &all_session_states() {
+            for &next in &all_session_states() {
+                let legal = SESSION_MOVE.iter().any(|(f, t)| *f == from && *t == next);
+                assert_eq!(
+                    session_transition(from, next).is_ok(),
+                    legal,
+                    "{from:?} -> {next:?}"
+                );
+            }
+        }
+        // Regression: no session state is ever undone.
+        assert!(session_transition(SessionState::Running, SessionState::Spawning).is_err());
     }
 }

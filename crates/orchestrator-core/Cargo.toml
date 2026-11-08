@@ -6,3 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# Serde is a data dependency, not I/O: it gives the domain types a canonical
+# on-disk shape for orchestrator-store (M1 local records, M2 SQLite
+# contract_json). It pulls no runtime I/O.
+serde = { version = "=1.0.229", features = ["derive"] }
