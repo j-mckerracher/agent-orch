@@ -12,7 +12,8 @@
 //! cancellation, and process-tree cleanup of descendants.
 
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentKind, AgentLaunchRequest, TurnOutcome,
+    AgentAdapter, AgentCapabilities, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, RoutableAdapter, TurnOutcome,
 };
 use orchestrator_runtime::{is_process_running, ChildSupervisor, LaunchRequest, SupervisionEvent};
 use std::path::PathBuf;
@@ -491,17 +492,25 @@ fn supervisor_cancel_kills_descendants() {
 #[test]
 fn detect_reports_capabilities_for_found_binary() {
     let adapter = orchestrator_agents::CodexAdapter::new().with_program(fake_exe());
-    let caps = with_runtime(adapter.detect()).expect("detect");
     assert_eq!(
         orchestrator_agents::CodexAdapter::new().kind(),
         AgentKind::Codex
     );
-    assert!(caps.streaming && caps.structured_output && caps.cancellation);
-    assert!(
-        !caps.interactive_input
-            && !caps.session_resumption
-            && !caps.approvals
-            && !caps.model_selection
+    assert_eq!(
+        adapter.capabilities(),
+        AgentCapabilities {
+            streaming: true,
+            interactive_input: false,
+            structured_output: true,
+            cancellation: true,
+            session_resumption: false,
+            approvals: false,
+            model_selection: false,
+        }
+    );
+    assert_eq!(
+        with_runtime(adapter.detect()).expect("detect"),
+        adapter.capabilities()
     );
 }
 

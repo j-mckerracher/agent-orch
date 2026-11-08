@@ -1,6 +1,7 @@
 use orchestrator_agents::pi_rpc_adapter::PiRpcAdapter;
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentKind, AgentLaunchRequest, TurnOutcome,
+    AgentAdapter, AgentCapabilities, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, RoutableAdapter, TurnOutcome,
 };
 use std::future::Future;
 use std::path::PathBuf;
@@ -431,13 +432,22 @@ fn detects_only_the_rpc_command_it_verified() {
         assert_eq!(info.cli_version, "1.5.0");
         assert_eq!(info.verified_commands, ["get_state"]);
 
-        let capabilities = adapter.detect().await.expect("detect capabilities");
-        assert!(capabilities.streaming);
-        assert!(capabilities.interactive_input);
-        assert!(capabilities.structured_output);
-        assert!(capabilities.cancellation);
-        assert!(!capabilities.session_resumption);
-        assert!(!capabilities.approvals);
-        assert!(!capabilities.model_selection);
+        let capabilities = adapter.capabilities();
+        assert_eq!(
+            capabilities,
+            AgentCapabilities {
+                streaming: true,
+                interactive_input: true,
+                structured_output: true,
+                cancellation: true,
+                session_resumption: false,
+                approvals: false,
+                model_selection: false,
+            }
+        );
+        assert_eq!(
+            adapter.detect().await.expect("detect capabilities"),
+            capabilities
+        );
     });
 }

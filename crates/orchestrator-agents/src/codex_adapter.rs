@@ -12,6 +12,7 @@ use crate::contract::{
     AgentAdapter, AgentCapabilities, AgentEvent, AgentError, AgentExit, AgentHandle,
     AgentKind, AgentLaunchRequest, Result,
 };
+use crate::routing::RoutableAdapter;
 
 /// The Codex adapter for `codex exec --json` one-shot execution.
 #[derive(Debug, Clone, Default)]
@@ -67,6 +68,20 @@ impl CodexAdapter {
     }
 }
 
+impl RoutableAdapter for CodexAdapter {
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities {
+            streaming: true,           // CodexHandle::next_event feeds stdout to Parser::feed.
+            interactive_input: false,  // AgentHandle exposes no input method (contract.rs:116-126).
+            structured_output: true, // Parser::feed parses JSONL records (codex_parser.rs:86-113).
+            cancellation: true, // CodexHandle::cancel calls ChildSupervisor::cancel (codex_adapter.rs:158-161).
+            session_resumption: false, // `codex exec --json` is one-shot (codex_adapter.rs:16).
+            approvals: false, // Parser::translate does not map approval events (codex_parser.rs:122-214).
+            model_selection: false, // No verified model-selection operation in this adapter.
+        }
+    }
+}
+
 #[async_trait]
 impl AgentAdapter for CodexAdapter {
     fn kind(&self) -> AgentKind {
@@ -79,19 +94,7 @@ impl AgentAdapter for CodexAdapter {
                 self.program().to_string_lossy().into_owned(),
             ));
         }
-        // `codex exec --json` is one-shot: NDJSON streamed live, no
-        // interactive input, no session resumption, no approvals, no model
-        // selection at this integration level. Cancellation is provided by
-        // the supervisor (process-tree kill).
-        Ok(AgentCapabilities {
-            streaming: true,
-            interactive_input: false,
-            structured_output: true,
-            cancellation: true,
-            session_resumption: false,
-            approvals: false,
-            model_selection: false,
-        })
+        Ok(self.capabilities())
     }
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {

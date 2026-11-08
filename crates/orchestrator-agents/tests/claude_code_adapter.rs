@@ -5,7 +5,7 @@
 use orchestrator_agents::claude_code_adapter::{ProtocolViolation, StreamParser};
 use orchestrator_agents::{
     AgentAdapter, AgentCapabilities, AgentEvent, AgentExit, AgentHandle, AgentKind,
-    AgentLaunchRequest, TurnOutcome,
+    AgentLaunchRequest, RoutableAdapter, TurnOutcome,
 };
 use orchestrator_runtime::is_process_running;
 use std::future::Future;
@@ -257,7 +257,7 @@ fn detection_reports_verified_capabilities() {
     let adapter = orchestrator_agents::ClaudeCodeAdapter::new().with_program(fake_executable());
     assert_eq!(adapter.kind(), AgentKind::ClaudeCode);
     assert_eq!(
-        with_runtime(adapter.detect()).expect("detect"),
+        adapter.capabilities(),
         AgentCapabilities {
             streaming: true,
             interactive_input: false,
@@ -267,5 +267,9 @@ fn detection_reports_verified_capabilities() {
             approvals: false,
             model_selection: false,
         }
+    );
+    assert_eq!(
+        with_runtime(adapter.detect()).expect("detect"),
+        adapter.capabilities()
     );
 }
