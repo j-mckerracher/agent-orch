@@ -430,14 +430,9 @@ fn spawn_line_reader<R: AsyncRead + Unpin + Send + 'static>(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut reader = BufReader::new(reader);
-        loop {
-            match read_bounded_line(&mut reader).await {
-                Ok(Some(line)) => {
-                    if tx.send(map(line)).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(None) | Err(_) => break,
+        while let Ok(Some(line)) = read_bounded_line(&mut reader).await {
+            if tx.send(map(line)).await.is_err() {
+                break;
             }
         }
     })

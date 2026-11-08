@@ -11,6 +11,7 @@ pub mod claude_code_adapter;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
+pub mod pi_rpc_adapter;
 
 pub use codex_adapter::CodexAdapter;
 pub use claude_code_adapter::ClaudeCodeAdapter;
@@ -19,3 +20,4 @@ pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
     AgentLaunchRequest, Result, TurnOutcome,
 };
+pub use pi_rpc_adapter::PiRpcAdapter;

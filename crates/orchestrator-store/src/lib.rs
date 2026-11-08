@@ -48,6 +48,8 @@ mod data_lock;
 pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 pub mod sqlite;
 mod sqlite_ops;
+mod sqlite_approvals;
+mod sqlite_verification;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::EventJournalEntry;
 
