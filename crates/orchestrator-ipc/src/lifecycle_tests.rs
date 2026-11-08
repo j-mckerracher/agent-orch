@@ -12,6 +12,18 @@ fn wait_for_socket(dir: &Path) {
         assert!(Instant::now() < deadline, "daemon socket not created");
         thread::sleep(Duration::from_millis(10));
     }
+    assert!(
+        dir.join("daemon.token").is_file(),
+        "socket appeared before authentication token"
+    );
+}
+
+fn wait_for_ready(dir: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !dir.join("daemon.token").exists() || !dir.join("ipc/daemon.sock").exists() {
+        assert!(Instant::now() < deadline, "daemon IPC resources not ready");
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
@@ -23,7 +35,7 @@ fn stale_socket_is_reclaimed_after_refused_probe() {
     let daemon_dir = dir.path().to_path_buf();
     let daemon =
         thread::spawn(move || Server::serve(ServerConfig::new(daemon_dir, "test")).unwrap());
-    wait_for_socket(dir.path());
+    wait_for_ready(dir.path());
     let mut client = Client::connect(dir.path()).unwrap();
     assert_eq!(client.health().unwrap().package_version, "test");
     client.shutdown().unwrap();

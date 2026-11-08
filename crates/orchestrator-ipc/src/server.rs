@@ -40,8 +40,9 @@ impl ServerConfig {
 
 impl Server {
     pub fn serve(config: ServerConfig) -> Result<(), IpcError> {
-        let listener = Listener::bind(&config.data_dir).map_err(map_transport)?;
+        Listener::prepare(&config.data_dir).map_err(map_transport)?;
         let secret = Arc::new(Secret::create(&config.data_dir).map_err(|_| IpcError::Operation)?);
+        let listener = Listener::bind(&config.data_dir).map_err(map_transport)?;
         listener
             .set_nonblocking(true)
             .map_err(|_| IpcError::Operation)?;

@@ -52,32 +52,12 @@ impl Identity {
 
 #[cfg(unix)]
 impl Listener {
+    pub(crate) fn prepare(data_dir: &Path) -> Result<(), TransportError> {
+        prepare_socket_path(data_dir).map(|_| ())
+    }
+
     pub(crate) fn bind(data_dir: &Path) -> Result<Self, TransportError> {
-        let owner = fs::metadata(data_dir)?.uid();
-        let dir = data_dir.join("ipc");
-        match fs::symlink_metadata(&dir) {
-            Ok(meta) if meta.file_type().is_dir() && meta.uid() == owner => {
-                fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-            }
-            Ok(_) => return Err(TransportError::UnsafePath),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let mut builder = fs::DirBuilder::new();
-                builder.mode(0o700).create(&dir)?;
-                fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-            }
-            Err(error) => return Err(error.into()),
-        }
-        let directory = fs::symlink_metadata(&dir)?;
-        if !directory.file_type().is_dir()
-            || directory.uid() != owner
-            || directory.mode() & 0o777 != 0o700
-        {
-            return Err(TransportError::UnsafePath);
-        }
-        let path = dir.join("daemon.sock");
-        if fs::symlink_metadata(&path).is_ok() {
-            reclaim_stale(&path, owner)?;
-        }
+        let (path, owner) = prepare_socket_path(data_dir)?;
         let listener = UnixListener::bind(&path).map_err(|error| {
             if error.kind() == io::ErrorKind::AddrInUse {
                 TransportError::AlreadyRunning
@@ -113,6 +93,36 @@ impl Listener {
     pub(crate) fn set_nonblocking(&self, enabled: bool) -> Result<(), TransportError> {
         self.listener.set_nonblocking(enabled).map_err(Into::into)
     }
+}
+
+#[cfg(unix)]
+fn prepare_socket_path(data_dir: &Path) -> Result<(PathBuf, u32), TransportError> {
+    let owner = fs::metadata(data_dir)?.uid();
+    let dir = data_dir.join("ipc");
+    match fs::symlink_metadata(&dir) {
+        Ok(meta) if meta.file_type().is_dir() && meta.uid() == owner => {
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(_) => return Err(TransportError::UnsafePath),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700).create(&dir)?;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    let directory = fs::symlink_metadata(&dir)?;
+    if !directory.file_type().is_dir()
+        || directory.uid() != owner
+        || directory.mode() & 0o777 != 0o700
+    {
+        return Err(TransportError::UnsafePath);
+    }
+    let path = dir.join("daemon.sock");
+    if fs::symlink_metadata(&path).is_ok() {
+        reclaim_stale(&path, owner)?;
+    }
+    Ok((path, owner))
 }
 
 #[cfg(unix)]
