@@ -1,0 +1,171 @@
+    Checking windows-link v0.2.1
+    Checking cfg-if v1.0.5
+    Checking memchr v2.8.3
+    Checking pin-project-lite v0.2.17
+    Checking serde_core v1.0.229
+    Checking once_cell v1.21.4
+   Compiling stable_deref_trait v1.2.1
+    Checking zmij v1.0.23
+    Checking itoa v1.0.18
+    Checking thiserror v2.0.21
+   Compiling zerofrom v0.1.8
+    Checking windows-sys v0.61.2
+    Checking bytes v1.12.1
+   Compiling yoke v0.8.4
+   Compiling litemap v0.8.3
+   Compiling utf_types v1.0.0
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+   Compiling futures-core v0.3.34
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+    Checking getrandom v0.4.3
+   Compiling utf8_iter v1.1.0
+    Checking fastrand v2.5.0
+   Compiling typenum v1.20.1
+   Compiling scopeguard v1.2.0
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling lock_api v0.4.14
+   Compiling futures-sink v0.3.34
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling equivalent v1.0.3
+    Checking serde v1.0.229
+    Checking serde_json v1.0.154
+    Checking socket2 v0.6.5
+    Checking mio v1.2.4
+    Checking tempfile v3.27.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling parking_lot_core v0.9.12
+    Checking tokio v1.54.1
+   Compiling percent-encoding v2.3.2
+   Compiling futures-io v0.3.34
+    Checking orchestrator-core v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-core)
+   Compiling slab v0.4.12
+   Compiling foldhash v0.2.0
+   Compiling futures-task v0.3.34
+   Compiling allocator-api2 v0.2.21
+    Checking icu_provider v2.4.0
+   Compiling tracing-core v0.1.36
+   Compiling hashbrown v0.16.1
+   Compiling futures-util v0.3.34
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling form_urlencoded v1.2.2
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling cpufeatures v0.2.17
+   Compiling parking v2.2.1
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling crc-catalog v2.5.0
+   Compiling tracing v0.1.44
+   Compiling crossbeam-queue v0.3.14
+   Compiling crc v3.4.0
+   Compiling event-listener v5.4.2
+   Compiling sha2 v0.10.9
+   Compiling futures-intrusive v0.5.0
+   Compiling hashlink v0.11.1
+   Compiling either v1.19.0
+    Checking idna_adapter v1.2.2
+   Compiling indexmap v2.14.2
+   Compiling spin v0.9.9
+   Compiling num-traits v0.2.19
+   Compiling idna v1.1.0
+   Compiling base64 v0.22.1
+   Compiling flume v0.12.0
+   Compiling futures-executor v0.3.34
+   Compiling atoi v2.0.0
+   Compiling futures-channel v0.3.34
+   Compiling url v2.5.8
+    Checking tokio-stream v0.1.19
+    Checking libsqlite3-sys v0.37.0
+    Checking getrandom v0.3.4
+    Checking orchestrator-runtime v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-runtime)
+    Checking anstyle v1.0.14
+    Checking uuid v1.18.1
+    Checking once_cell_polyfill v1.70.2
+    Checking utf8parse v0.2.2
+    Checking anstyle-query v1.1.5
+    Checking orchestrator-git v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-git)
+    Checking anstyle-parse v1.0.0
+    Checking colorchoice v1.0.5
+   Compiling sqlx-core v0.9.0
+    Checking anstyle-wincon v3.0.11
+    Checking is_terminal_polyfill v1.70.2
+warning: unused import: `ProcessPlatform`
+  --> crates\orchestrator-runtime\src\reconcile.rs:14:54
+   |
+14 |     plan_process_reconciliation, ProcessObservation, ProcessPlatform,
+   |                                                      ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+    Checking clap_lex v1.1.1
+    Checking strsim v0.11.1
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:401:9
+    |
+401 | /         match std::mem::take(&mut self.job.0) {
+402 | |             Some(job) => windows_impl::terminate_job(job),
+403 | |             None => {}
+404 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+    = note: `#[warn(clippy::single_match)]` on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:424:9
+    |
+424 | /         match std::mem::take(&mut self.job.0) {
+425 | |             Some(job) => windows_impl::terminate_job(job),
+426 | |             None => {}
+427 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:662:35
+    |
+662 |             let volume = metadata.volume_serial_number();
+    |                                   ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:663:34
+    |
+663 |             let index = metadata.file_index();
+    |                                  ^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+    Checking anstream v1.0.0
+warning: `orchestrator-runtime` (lib) generated 3 warnings (run `cargo clippy --fix --lib -p orchestrator-runtime -- ` to apply 3 suggestions)
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `orchestrator-git` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+warning: `orchestrator-runtime` (lib test) generated 3 warnings (3 duplicates)
+warning: unused import: `ProcessAction`
+ --> crates\orchestrator-runtime\tests\reconcile.rs:2:34
+  |
+2 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |                                  ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ChildSupervisor`, `LaunchRequest`, and `SupervisionEvent`
+ --> crates\orchestrator-runtime\tests\reconcile.rs:9:40
+  |
+9 | use orchestrator_runtime::supervisor::{ChildSupervisor, LaunchRequest, SupervisionEvent};
+  |                                        ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+warning: `orchestrator-runtime` (test "reconcile") generated 2 warnings (run `cargo clippy --fix --test "reconcile" -p orchestrator-runtime -- ` to apply 2 suggestions)

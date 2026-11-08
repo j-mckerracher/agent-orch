@@ -1,0 +1,29 @@
+   Compiling either v1.19.0
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-core v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-core)
+   Compiling uuid v1.18.1
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-git)
+   Compiling clap v4.6.7
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:662:35
+    |
+662 |             let volume = metadata.volume_serial_number();
+    |                                   ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:663:34
+    |
+663 |             let index = metadata.file_index();
+    |                                  ^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `orchestrator-git` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

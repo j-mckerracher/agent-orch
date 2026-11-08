@@ -1,0 +1,195 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded allocator-api2 v0.2.21
+  Downloaded block-buffer v0.12.1
+  Downloaded atoi v2.0.0
+  Downloaded futures-task v0.3.34
+  Downloaded sha1 v0.11.0
+  Downloaded whoami v2.1.3
+  Downloaded unicode-properties v0.1.5
+  Downloaded unicode-bidi v0.3.18
+  Downloaded hybrid-array v0.4.15
+  Downloaded futures-intrusive v0.5.0
+  Downloaded unicode-normalization v0.1.26
+  Downloaded sqlx-sqlite v0.9.0
+  Downloaded sqlx-postgres v0.9.0
+  Downloaded sqlx-core v0.9.0
+  Downloaded hkdf v0.13.0
+  Downloaded futures-util v0.3.34
+  Downloaded sqlx v0.9.0
+  Downloaded hashbrown v0.16.1
+  Downloaded sqlx-mysql v0.9.0
+  Downloaded rand v0.10.3
+  Downloaded flume v0.12.0
+  Downloaded base64 v0.22.1
+  Downloaded sqlx-macros-core v0.9.0
+  Downloaded spin v0.9.9
+  Downloaded slab v0.4.12
+  Downloaded hmac v0.13.0
+  Downloaded hashlink v0.11.1
+  Downloaded futures-channel v0.3.34
+  Downloaded event-listener v5.4.2
+  Downloaded ctutils v0.4.8
+  Downloaded tracing-attributes v0.1.31
+  Downloaded tokio-stream v0.1.19
+  Downloaded stringprep v0.1.5
+  Downloaded sqlx-macros v0.9.0
+  Downloaded sha2 v0.11.1
+  Downloaded rand_core v0.10.1
+  Downloaded md-5 v0.11.0
+  Downloaded generic-array v0.14.9
+  Downloaded futures-executor v0.3.34
+  Downloaded either v1.19.0
+  Downloaded dotenvy v0.15.7
+  Downloaded digest v0.11.3
+  Downloaded cpufeatures v0.3.1
+  Downloaded chacha20 v0.10.2
+  Downloaded futures-sink v0.3.34
+  Downloaded crossbeam-queue v0.3.14
+  Downloaded crc-catalog v2.5.0
+  Downloaded cmov v0.5.4
+  Downloaded parking v2.2.1
+  Downloaded futures-core v0.3.34
+  Downloaded crypto-common v0.1.6
+  Downloaded crc v3.4.0
+  Downloaded futures-io v0.3.34
+  Downloaded etcetera v0.11.0
+  Downloaded crypto-common v0.2.2
+  Downloaded libsqlite3-sys v0.37.0
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling windows-link v0.2.1
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling once_cell v1.21.4
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling thiserror v2.0.21
+   Compiling bytes v1.12.1
+   Compiling windows-sys v0.61.2
+   Compiling itoa v1.0.18
+   Compiling stable_deref_trait v1.2.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling generic-array v0.14.9
+   Compiling getrandom v0.4.3
+   Compiling futures-core v0.3.34
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling litemap v0.8.3
+   Compiling utf_types v1.0.0
+   Compiling fastrand v2.5.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling icu_properties_data v2.4.0
+   Compiling shlex v2.0.1
+   Compiling scopeguard v1.2.0
+   Compiling find-msvc-tools v0.1.15
+   Compiling futures-sink v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling pkg-config v0.3.34
+   Compiling parking_lot_core v0.9.12
+   Compiling vcpkg v0.2.15
+   Compiling crossbeam-utils v0.8.23
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling cc v1.11.1
+   Compiling tempfile v3.27.0
+   Compiling block-buffer v0.10.4
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling futures-io v0.3.34
+   Compiling cpufeatures v0.2.17
+   Compiling allocator-api2 v0.2.21
+   Compiling percent-encoding v2.3.2
+   Compiling autocfg v1.5.1
+   Compiling slab v0.4.12
+   Compiling futures-task v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling parking_lot v0.12.5
+   Compiling futures-util v0.3.34
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling crc-catalog v2.5.0
+   Compiling num-traits v0.2.19
+   Compiling hashbrown v0.17.1
+   Compiling log v0.4.35
+   Compiling parking v2.2.1
+   Compiling event-listener v5.4.2
+   Compiling crossbeam-queue v0.3.14
+   Compiling crc v3.4.0
+   Compiling futures-intrusive v0.5.0
+   Compiling indexmap v2.14.2
+   Compiling hashlink v0.11.1
+   Compiling crypto-common v0.1.6
+   Compiling base64 v0.22.1
+   Compiling digest v0.10.7
+   Compiling tokio v1.54.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling synstructure v0.14.0
+   Compiling spin v0.9.9
+   Compiling sha2 v0.10.9
+   Compiling futures-executor v0.3.34
+   Compiling flume v0.12.0
+   Compiling futures-channel v0.3.34
+   Compiling heck v0.5.0
+   Compiling dotenvy v0.15.7
+   Compiling hex v0.4.3
+   Compiling atoi v2.0.0
+   Compiling getrandom v0.3.4
+   Compiling anstyle v1.0.14
+   Compiling utf8parse v0.2.2
+   Compiling once_cell_polyfill v1.70.2
+   Compiling anstyle-query v1.1.5
+   Compiling anstyle-parse v1.0.0
+   Compiling colorchoice v1.0.5
+   Compiling tracing-attributes v0.1.31
+   Compiling async-trait v0.1.89
+   Compiling anstyle-wincon v3.0.11
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling clap_lex v1.1.1
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling tokio-macros v2.7.2
+   Compiling displaydoc v0.2.7
+   Compiling anstream v1.0.0
+   Compiling strsim v0.11.1
+   Compiling clap_derive v4.6.7
+   Compiling tracing v0.1.44
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-ipc)
+   Compiling zerofrom v0.1.8
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-daemon)
+   Compiling clap_builder v4.6.7
+   Compiling yoke v0.8.4
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-git)
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:662:35
+    |
+662 |             let volume = metadata.volume_serial_number();
+    |                                   ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:663:34
+    |
+663 |             let index = metadata.file_index();
+    |                                  ^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `orchestrator-git` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `orchestrator-git` (lib test) due to 2 previous errors

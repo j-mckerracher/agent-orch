@@ -1,0 +1,29 @@
+
+running 24 tests
+test claude_code_approvals ... ok
+test claude_code_unsupported_features ... ok
+test codex_approvals ... ok
+test claude_code_cancellation ... ok
+test codex_cancellation ... ok
+test codex_errors ... ok
+test claude_code_framing ... ok
+test claude_code_unexpected_eof ... ok
+test claude_code_errors ... ok
+test codex_framing ... ok
+test claude_code_interruption ... ok
+test codex_unsupported_features ... ok
+test claude_code_launch ... ok
+test pi_rpc_approvals ... ok
+test codex_unexpected_eof ... ok
+test codex_launch ... ok
+test codex_interruption ... ok
+test pi_rpc_cancellation ... ok
+test pi_rpc_unsupported_features ... ok
+test pi_rpc_launch ... ok
+test pi_rpc_unexpected_eof ... ok
+test pi_rpc_errors ... ok
+test pi_rpc_framing ... ok
+test pi_rpc_interruption ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.09s
+

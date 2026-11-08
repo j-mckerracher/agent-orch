@@ -1,0 +1,3 @@
+C:\Users\jmckerra\AppData\Roaming\npm\codex
+C:\Users\jmckerra\AppData\Roaming\npm\codex.cmd
+C:\Users\jmckerra\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe

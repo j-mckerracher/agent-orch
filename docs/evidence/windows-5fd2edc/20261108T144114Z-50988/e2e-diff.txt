@@ -1,0 +1,32 @@
+   Compiling idna_adapter v1.2.2
+warning: unused import: `ProcessPlatform`
+  --> crates\orchestrator-runtime\src\reconcile.rs:14:54
+   |
+14 |     plan_process_reconciliation, ProcessObservation, ProcessPlatform,
+   |                                                      ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\orch-win-20261108T144114Z-50988\crates\orchestrator-git)
+warning: `orchestrator-runtime` (lib) generated 1 warning (run `cargo fix --lib -p orchestrator-runtime` to apply 1 suggestion)
+   Compiling idna v1.1.0
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:662:35
+    |
+662 |             let volume = metadata.volume_serial_number();
+    |                                   ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+error[E0658]: use of unstable library feature `windows_by_handle`
+   --> crates\orchestrator-git\src\delivery.rs:663:34
+    |
+663 |             let index = metadata.file_index();
+    |                                  ^^^^^^^^^^
+    |
+    = note: see issue #63010 <https://github.com/rust-lang/rust/issues/63010> for more information
+
+   Compiling url v2.5.8
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `orchestrator-git` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

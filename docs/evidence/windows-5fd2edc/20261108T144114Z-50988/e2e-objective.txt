@@ -1,0 +1,1 @@
+Append exactly one line, "M1-04 smoke test passed.", to README.md. Do not modify any other file.

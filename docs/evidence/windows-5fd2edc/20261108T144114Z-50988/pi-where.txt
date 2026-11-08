@@ -1,0 +1,2 @@
+C:\Users\jmckerra\AppData\Roaming\npm\pi
+C:\Users\jmckerra\AppData\Roaming\npm\pi.cmd

@@ -1,0 +1,2 @@
+C:\Users\jmckerra\AppData\Roaming\npm\claude
+C:\Users\jmckerra\AppData\Roaming\npm\claude.cmd
