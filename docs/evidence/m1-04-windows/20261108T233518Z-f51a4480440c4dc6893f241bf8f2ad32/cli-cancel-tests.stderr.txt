@@ -1,0 +1,39 @@
+   Compiling windows-sys v0.61.2
+   Compiling crypto-common v0.1.6
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling sqlx-core v0.9.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling anstyle-wincon v3.0.11
+   Compiling anstyle-query v1.1.5
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-git)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling tokio v1.54.1
+   Compiling clap_builder v4.6.7
+   Compiling sqlx-sqlite v0.9.0
+   Compiling clap v4.6.7
+   Compiling sqlx-macros-core v0.9.0
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-runtime)
+   Compiling sqlx-macros v0.9.0
+warning: unused import: `ProcessPlatform`
+  --> crates\orchestrator-runtime\src\reconcile.rs:14:54
+   |
+14 |     plan_process_reconciliation, ProcessObservation, ProcessPlatform,
+   |                                                      ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling orchestrator-agents v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-agents)
+warning: `orchestrator-runtime` (lib) generated 1 warning (run `cargo fix --lib -p orchestrator-runtime` to apply 1 suggestion)
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-store)
+   Compiling orchestrator-cli v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 06s
+     Running unittests src\lib.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\orchestrator_cli-c37875c203fe0bff.exe)
+     Running unittests src\main.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\orchestrator_cli-ad9378d336dcdca6.exe)
+     Running tests\cli.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\cli-b08fa578519a250f.exe)
+     Running tests\multi_task_review.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\multi_task_review-f6d5ee17c84f6075.exe)
+     Running tests\recovery.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\recovery-7cf203171061a4b5.exe)

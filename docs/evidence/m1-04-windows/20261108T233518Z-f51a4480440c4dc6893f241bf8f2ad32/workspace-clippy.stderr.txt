@@ -1,0 +1,224 @@
+    Checking windows-link v0.2.1
+    Checking cfg-if v1.0.5
+    Checking memchr v2.8.3
+    Checking once_cell v1.21.4
+    Checking windows-sys v0.61.2
+    Checking pin-project-lite v0.2.17
+    Checking serde_core v1.0.229
+    Checking zmij v1.0.23
+   Compiling stable_deref_trait v1.2.1
+    Checking itoa v1.0.18
+    Checking thiserror v2.0.21
+   Compiling zerofrom v0.1.8
+    Checking bytes v1.12.1
+   Compiling smallvec v1.16.5
+   Compiling litemap v0.8.3
+   Compiling utf_types v1.0.0
+   Compiling writeable v0.6.4
+    Checking getrandom v0.4.3
+    Checking fastrand v2.5.0
+   Compiling yoke v0.8.4
+   Compiling futures-core v0.3.34
+   Compiling utf8_iter v1.1.0
+   Compiling scopeguard v1.2.0
+   Compiling typenum v1.20.1
+   Compiling lock_api v0.4.14
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling futures-sink v0.3.34
+   Compiling equivalent v1.0.3
+    Checking serde v1.0.229
+    Checking serde_json v1.0.154
+   Compiling generic-array v0.14.9
+   Compiling parking_lot_core v0.9.12
+    Checking tinystr v0.8.5
+    Checking potential_utf v0.1.6
+    Checking orchestrator-core v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-core)
+   Compiling crypto-common v0.1.6
+    Checking icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling block-buffer v0.10.4
+   Compiling percent-encoding v2.3.2
+   Compiling slab v0.4.12
+    Checking tempfile v3.27.0
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+    Checking tokio v1.54.1
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-util v0.3.34
+   Compiling digest v0.10.7
+   Compiling parking_lot v0.12.5
+    Checking icu_provider v2.4.0
+   Compiling hashbrown v0.16.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling cpufeatures v0.2.17
+   Compiling crc-catalog v2.5.0
+   Compiling icu_normalizer v2.4.0
+   Compiling parking v2.2.1
+   Compiling crc v3.4.0
+   Compiling event-listener v5.4.2
+   Compiling hashlink v0.11.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling indexmap v2.14.2
+   Compiling sha2 v0.10.9
+   Compiling icu_properties v2.4.0
+   Compiling tracing v0.1.44
+   Compiling futures-intrusive v0.5.0
+   Compiling either v1.19.0
+   Compiling spin v0.9.9
+   Compiling num-traits v0.2.19
+   Compiling base64 v0.22.1
+   Compiling flume v0.12.0
+   Compiling futures-channel v0.3.34
+   Compiling atoi v2.0.0
+   Compiling idna_adapter v1.2.2
+   Compiling tokio-stream v0.1.19
+   Compiling idna v1.1.0
+    Checking url v2.5.8
+    Checking libsqlite3-sys v0.37.0
+    Checking orchestrator-runtime v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-runtime)
+    Checking getrandom v0.3.4
+    Checking orchestrator-git v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-git)
+    Checking futures-executor v0.3.34
+    Checking sqlx-core v0.9.0
+    Checking once_cell_polyfill v1.70.2
+    Checking anstyle v1.0.14
+warning: unused import: `ProcessPlatform`
+  --> crates\orchestrator-runtime\src\reconcile.rs:14:54
+   |
+14 |     plan_process_reconciliation, ProcessObservation, ProcessPlatform,
+   |                                                      ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:401:9
+    |
+401 | /         match std::mem::take(&mut self.job.0) {
+402 | |             Some(job) => windows_impl::terminate_job(job),
+403 | |             None => {}
+404 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+    = note: `#[warn(clippy::single_match)]` on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:424:9
+    |
+424 | /         match std::mem::take(&mut self.job.0) {
+425 | |             Some(job) => windows_impl::terminate_job(job),
+426 | |             None => {}
+427 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+
+    Checking utf8parse v0.2.2
+    Checking uuid v1.18.1
+    Checking anstyle-query v1.1.5
+    Checking colorchoice v1.0.5
+    Checking is_terminal_polyfill v1.70.2
+warning: `orchestrator-runtime` (lib) generated 3 warnings (run `cargo clippy --fix --lib -p orchestrator-runtime -- ` to apply 3 suggestions)
+    Checking strsim v0.11.1
+    Checking anstyle-wincon v3.0.11
+    Checking anstyle-parse v1.0.0
+    Checking clap_lex v1.1.1
+    Checking subtle v2.6.1
+    Checking libc v0.2.191
+    Checking orchestrator-agents v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-agents)
+    Checking anstream v1.0.0
+warning: unused import: `ProcessAction`
+ --> crates\orchestrator-runtime\tests\reconcile.rs:2:34
+  |
+2 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |                                  ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ChildSupervisor`, `LaunchRequest`, and `SupervisionEvent`
+ --> crates\orchestrator-runtime\tests\reconcile.rs:9:40
+  |
+9 | use orchestrator_runtime::supervisor::{ChildSupervisor, LaunchRequest, SupervisionEvent};
+  |                                        ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^
+
+    Checking orchestrator-ipc v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-ipc)
+warning: `orchestrator-runtime` (test "reconcile") generated 2 warnings (run `cargo clippy --fix --test "reconcile" -p orchestrator-runtime -- ` to apply 2 suggestions)
+warning: `orchestrator-runtime` (lib test) generated 3 warnings (3 duplicates)
+    Checking clap_builder v4.6.7
+warning: manually reimplementing `div_ceil`
+   --> crates\orchestrator-ipc\src\windows_transport.rs:336:9
+    |
+336 |         (required as usize + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.div_ceil()`: `(required as usize).div_ceil(std::mem::size_of::<usize>())`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#manual_div_ceil
+    = note: `#[warn(clippy::manual_div_ceil)]` on by default
+
+warning: `orchestrator-ipc` (lib) generated 1 warning (run `cargo clippy --fix --lib -p orchestrator-ipc -- ` to apply 1 suggestion)
+warning: `orchestrator-ipc` (lib test) generated 1 warning (1 duplicate)
+    Checking sqlx-sqlite v0.9.0
+    Checking clap v4.6.7
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-store)
+    Checking orchestrator-cli v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-cli)
+    Checking orchestrator-daemon v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-daemon)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:92:4
+   |
+92 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo clippy --fix --test "sqlite_reconcile" -p orchestrator-store -- ` to apply 1 suggestion)
+warning: unused import: `std::thread`
+ --> crates\orchestrator-daemon\src\api.rs:9:5
+  |
+9 | use std::thread;
+  |     ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Duration` and `Instant`
+  --> crates\orchestrator-daemon\src\api.rs:10:17
+   |
+10 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^  ^^^^^^^
+
+warning: unused imports: `ProcessClassification`, `ProcessObservation`, and `classify_identity`
+  --> crates\orchestrator-daemon\src\api.rs:20:5
+   |
+20 |     classify_identity, ProcessClassification, ProcessIdentity, ProcessObservation,
+   |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^                   ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `orchestrator_runtime::reconcile::observe_process`
+  --> crates\orchestrator-daemon\src\api.rs:31:5
+   |
+31 | use orchestrator_runtime::reconcile::observe_process;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `orchestrator-daemon` (bin "orchestrator-daemon" test) generated 4 warnings (run `cargo clippy --fix --bin "orchestrator-daemon" -p orchestrator-daemon --tests -- ` to apply 4 suggestions)
+warning: `orchestrator-daemon` (bin "orchestrator-daemon") generated 4 warnings (4 duplicates)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 13s

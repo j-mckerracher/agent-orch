@@ -1,0 +1,1 @@
+HEAD is now at 03d6b13 docs(store,git): add SAFETY comments for file identity calls

@@ -1,0 +1,9 @@
+{
+  "command": "cargo clippy --locked --workspace --all-targets",
+  "source_commit": "03d6b1394a91bdb51f2213dc5be47edad62548c7",
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

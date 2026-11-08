@@ -1,0 +1,1 @@
+Setup stopped before clone because Get-Command git.exe returned two application paths as a combined string. No source checkout or test command ran. Preserved this unique attempt directory.\n

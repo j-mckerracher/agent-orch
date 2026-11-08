@@ -1,0 +1,56 @@
+
+running 13 tests
+test stale_destination_lock_is_reported_and_preserved ... ok
+test dirty_worktree_is_unsafe_and_survives_safety_check ... FAILED
+test local_review_refuses_changed_approved_candidate_sha ... ok
+test local_review_refuses_when_worktree_candidate_sha_changed ... ok
+test local_review_refuses_changed_parameter_digest ... ok
+test local_review_refuses_missing_approval ... ok
+test local_review_refuses_stale_verification_run ... ok
+test local_review_refuses_existing_ref_with_different_commit ... ok
+test destination_lock_refuses_second_concurrent_holder ... ok
+test local_review_accepts_existing_ref_with_same_candidate ... ok
+test report_only_preserves_refs_worktrees_and_repository_files ... FAILED
+test local_review_creates_only_review_ref ... FAILED
+test unlanded_worktree_is_unsafe_and_survives_safety_check ... FAILED
+
+failures:
+
+---- dirty_worktree_is_unsafe_and_survives_safety_check stdout ----
+
+thread 'dirty_worktree_is_unsafe_and_survives_safety_check' (50832) panicked at crates\orchestrator-git\tests\delivery.rs:548:5:
+assertion `left == right` failed
+  left: "?? uncommitted.txt"
+ right: "M base.txt\n?? uncommitted.txt"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- report_only_preserves_refs_worktrees_and_repository_files stdout ----
+
+thread 'report_only_preserves_refs_worktrees_and_repository_files' (13964) panicked at crates\orchestrator-git\tests\delivery.rs:149:5:
+assertion `left == right` failed
+  left: ""
+ right: "M base.txt"
+
+---- local_review_creates_only_review_ref stdout ----
+
+thread 'local_review_creates_only_review_ref' (16652) panicked at crates\orchestrator-git\tests\delivery.rs:226:5:
+assertion `left == right` failed
+  left: ""
+ right: "M base.txt"
+
+---- unlanded_worktree_is_unsafe_and_survives_safety_check stdout ----
+
+thread 'unlanded_worktree_is_unsafe_and_survives_safety_check' (14248) panicked at crates\orchestrator-git\tests\delivery.rs:585:5:
+assertion `left == right` failed
+  left: ""
+ right: "M base.txt"
+
+
+failures:
+    dirty_worktree_is_unsafe_and_survives_safety_check
+    local_review_creates_only_review_ref
+    report_only_preserves_refs_worktrees_and_repository_files
+    unlanded_worktree_is_unsafe_and_survives_safety_check
+
+test result: FAILED. 9 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.54s
+

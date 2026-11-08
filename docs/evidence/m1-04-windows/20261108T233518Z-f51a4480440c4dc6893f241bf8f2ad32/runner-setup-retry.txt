@@ -1,0 +1,1 @@
+The first runner launch in this run did not start PowerShell because Get-Command pwsh.exe returned multiple application paths as one string. No Cargo command ran during that launch. The runner then started with the first pwsh.exe path explicitly selected; all eight Cargo checks ran once.

@@ -1,0 +1,1 @@
+Runbook requested a separate GitHub Copilot subagent configured for gpt-6-luna/max. This environment did not provide a verifiable GitHub Copilot subagent session. I used the available Codex runtime (configured model gpt-6-luna); its reasoning-effort setting was not independently observable. No OMP worker was started.

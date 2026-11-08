@@ -1,0 +1,37 @@
+
+running 8 tests
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test foreign_non_lock_file_is_never_removed ... ok
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test separate_process_cannot_acquire_a_live_lock ... ok
+test live_pid_with_different_start_identity_is_taken_over ... FAILED
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... FAILED
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... FAILED
+
+failures:
+
+---- live_pid_with_different_start_identity_is_taken_over stdout ----
+
+thread 'live_pid_with_different_start_identity_is_taken_over' (51356) panicked at crates\orchestrator-store\tests\data_lock.rs:96:61:
+take over reused PID: TakeoverRace { holder_pid: 38096 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- concurrent_takeovers_have_one_holder_and_one_named_conflict stdout ----
+
+thread 'concurrent_takeovers_have_one_holder_and_one_named_conflict' (27432) panicked at crates\orchestrator-store\tests\data_lock.rs:158:27:
+unexpected takeover result: data-directory lock I/O failed: The process cannot access the file because another process has locked a portion of the file. (os error 33)
+
+---- dead_pid_lock_is_taken_over_and_new_holder_is_recorded stdout ----
+
+thread 'dead_pid_lock_is_taken_over_and_new_holder_is_recorded' (51772) panicked at crates\orchestrator-store\tests\data_lock.rs:53:61:
+take over dead lock: TakeoverRace { holder_pid: 2147483647 }
+
+
+failures:
+    concurrent_takeovers_have_one_holder_and_one_named_conflict
+    dead_pid_lock_is_taken_over_and_new_holder_is_recorded
+    live_pid_with_different_start_identity_is_taken_over
+
+test result: FAILED. 4 passed; 3 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.71s
+

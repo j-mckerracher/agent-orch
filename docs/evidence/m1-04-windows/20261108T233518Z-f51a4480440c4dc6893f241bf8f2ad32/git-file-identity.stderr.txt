@@ -1,0 +1,3 @@
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\source\crates\orchestrator-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.91s
+     Running unittests src\lib.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32\cargo-target\debug\deps\orchestrator_git-4a1ff5d2331e70c7.exe)

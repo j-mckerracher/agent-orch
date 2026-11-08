@@ -1,0 +1,21 @@
+# M1-04 Windows verification
+
+- Run ID: 20261108T233518Z-f51a4480440c4dc6893f241bf8f2ad32
+- UTC date: 2026-11-08
+- Windows version and architecture: Microsoft Windows 10.0.26200.8655, X64
+- PowerShell, Git, Rust, and Cargo versions: PowerShell 7.5.4; Git 2.46.2.windows.1; rustc 1.96.0 (ac68faa20 2026-05-25); cargo 1.96.0 (30a34c682 2026-05-25)
+- Source branch: `orch/m1-04-windows-candidate-03d6b139`
+- Source commit: `03d6b1394a91bdb51f2213dc5be47edad62548c7`
+- Overall result: INCONCLUSIVE. Several required checks failed, and the Windows CLI cancellation filter ran zero matching tests.
+- Workspace test exit, timeout, and test totals: exit 101; timed out false; 188 passed, 3 failed, 0 ignored. Three verification tests failed because commands returned `SpawnFailed` or `Failed` instead of the expected timeout/pass/fail outcome.
+- CLI cancellation test exit, timeout, and test totals: exit 0; timed out false; 0 passed, 0 failed, 0 ignored; 5 tests filtered out. No Windows CLI cancellation test executed.
+- Store data-lock test exit, timeout, and test totals: exit 101; timed out false; 4 passed, 3 failed, 1 ignored. `dead_pid_lock_is_taken_over_and_new_holder_is_recorded`, `live_pid_with_different_start_identity_is_taken_over`, and `concurrent_takeovers_have_one_holder_and_one_named_conflict` failed with takeover-race or Windows file-lock errors.
+- Store file-identity test exit, timeout, and test totals: exit 0; timed out false; 1 passed, 0 failed, 0 ignored (25 filtered out). This checks hard-link identity equality and distinction between different files.
+- Git delivery test exit, timeout, and test totals: exit 101; timed out false; 9 passed, 4 failed, 0 ignored. Four status assertions did not report the expected tracked `M base.txt` modification on Windows.
+- Git file-identity test exit, timeout, and test totals: exit 0; timed out false; 1 passed, 0 failed, 0 ignored (19 filtered out). This checks hard-link identity equality and distinction between different files.
+- Agent conformance test exit, timeout, and test totals: exit 0; timed out false; 24 passed, 0 failed, 0 ignored.
+- Clippy exit and timeout: exit 0; timed out false. Warnings are preserved in `workspace-clippy.stderr.txt`.
+- Windows cancellation and descendant-cleanup coverage: the requested CLI filter matched no Windows tests. Adapter conformance cancellation cases passed, but they do not exercise Windows CLI cancellation or owner descendant cleanup.
+- Windows lock identity error coverage: store lock tests cover live, legacy, stale/dead-PID, reused-PID/start-identity, and concurrent takeover outcomes. The live-holder and legacy-lock refusal tests passed; the dead-PID, reused-PID, and concurrent takeover tests failed. Destination-lock concurrent-holder and stale-lock tests passed in the delivery suite. The two file-identity tests passed but do not exercise identity lookup error handling. No test directly covers Windows file-identity lookup errors.
+- Source status before and after: both empty. `git diff --check` exit 0.
+- Failures, missing coverage, and other limitations: Full failure details are preserved in each command's stdout and stderr files. No source files were changed. The runbook requested a separate GitHub Copilot subagent at gpt-6-luna/max; that session could not be verified in this environment. I used the available Codex runtime configured as gpt-6-luna; its reasoning effort was not independently observable. No OMP worker was started. Two setup-resolution attempts failed before any Cargo command started and are recorded separately.
