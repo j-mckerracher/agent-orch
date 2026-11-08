@@ -334,7 +334,10 @@ fn running_task_keeps_daemon_alive_without_connected_clients() {
     let (_directory, api) = new_api();
     register_project(&api);
     let queued = api
-        .dispatch("tasks.submit", submit_params("lifecycle-key", "Keep running"))
+        .dispatch(
+            "tasks.submit",
+            submit_params("lifecycle-key", "Keep running"),
+        )
         .unwrap();
     assert!(!api.keep_alive());
     let task_id = queued["contract"]["id"].as_str().unwrap();
