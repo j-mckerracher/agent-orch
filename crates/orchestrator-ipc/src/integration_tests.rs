@@ -2,7 +2,7 @@ use crate::{Client, Server, ServerConfig};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
@@ -23,10 +23,34 @@ fn start(dir: &Path, idle: Duration) -> JoinHandle<()> {
 
 fn ready(dir: &Path) {
     let deadline = Instant::now() + Duration::from_secs(3);
-    while !dir.join("daemon.token").exists() || !dir.join("ipc/daemon.sock").exists() {
+    let token_path = dir.join("daemon.token");
+    let socket_path = dir.join("ipc/daemon.sock");
+    while !socket_path.exists() {
         assert!(
             Instant::now() < deadline,
-            "daemon did not create IPC resources"
+            "daemon did not create IPC socket"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        fs::symlink_metadata(&token_path).is_ok_and(|metadata| metadata.file_type().is_file()),
+        "socket appeared before authentication token"
+    );
+    loop {
+        let token_ready = fs::symlink_metadata(&token_path).is_ok_and(|metadata| {
+            metadata.file_type().is_file() && metadata.permissions().mode() & 0o777 == 0o600
+        });
+        let directory_ready = fs::metadata(dir.join("ipc"))
+            .is_ok_and(|metadata| metadata.permissions().mode() & 0o777 == 0o700);
+        let socket_ready = fs::symlink_metadata(&socket_path).is_ok_and(|metadata| {
+            metadata.file_type().is_socket() && metadata.permissions().mode() & 0o777 == 0o600
+        });
+        if token_ready && directory_ready && socket_ready {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "daemon IPC permissions timed out"
         );
         thread::sleep(Duration::from_millis(10));
     }
