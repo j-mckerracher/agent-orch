@@ -419,7 +419,7 @@
         "M5-01"
       ],
       "details": "Implement the Windows named-pipe transport for daemon IPC with a pipe security descriptor and token file restricted to the current user, an explicit instance limit, the authenticated handshake on every connection, and a SAFETY comment on every unsafe block. Verify natively on Windows; a Mac cross-check of orchestrator-ipc is compile-only.",
-      "important_context": "Split from M5-01 on 2026-11-08 (-07:00) after independent review of candidate f6c476f rejected the Windows code: no SAFETY comment on any unsafe block; the default named-pipe ACL grants read access to Everyone and the anonymous account (Microsoft documents this for NULL security attributes); Windows token-file confidentiality relied on inherited parent ACLs. Earlier Windows code is preserved in commit e904746 on orch/m5-01-daemon-ipc for reference. The daemon's Windows cross-check cannot run on macOS because libsqlite3-sys needs Windows C headers.",
+      "important_context": "Split from M5-01 on 2026-11-08 (-07:00) after independent review of candidate f6c476f rejected the Windows code: no SAFETY comment on any unsafe block; the default named-pipe ACL grants read access to Everyone and the anonymous account (Microsoft documents this for NULL security attributes); Windows token-file confidentiality relied on inherited parent ACLs. Earlier Windows code is preserved in commit e904746 on orch/m5-01-daemon-ipc for reference. The daemon's Windows cross-check cannot run on macOS because libsqlite3-sys needs Windows C headers. Dispatched 2026-11-08 (-07:00): gpt-6-luna at thinking max, brief files/brief-m5-01b.md, worktree ~/Code/agent-orch-worktrees/tasks/m5-01b-windows-transport, branch orch/m5-01b-windows-transport, base 4913654. The first run committed nothing and stopped on a valid blocker: lib.rs gates the transport with cfg(unix). Scope was amended (lib.rs gates; cfg-only edits to auth.rs, session.rs, server.rs, client.rs) and the same session was resumed (run files/runs/m5-01b-b2-20261108T260000Z, deadline 45 minutes). Not done until verified and merged.",
       "priority": 9
     },
     {
@@ -431,7 +431,7 @@
         "M5-01"
       ],
       "details": "Support event subscriptions, sequence-based replay, reconnect and the project, task, session, approval, workspace and delivery methods.",
-      "important_context": "",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-02.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-02-events, branch orch/m5-02-events, base 4913654 (orch/integration, verified M5-01). Run files/runs/m5-02-b1-20261108T251000Z; deadline 120 minutes. Earlier attempt stopped during a long read-only phase; the worktree was clean. Not done until verified and merged.",
       "priority": 9
     },
     {

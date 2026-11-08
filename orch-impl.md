@@ -8,6 +8,13 @@ Recorded by the coordinator on 2026-11-08 (America/Denver, -07:00). Add only lea
 - The RPC driver must pass absolute paths for `--session-dir` and `--resume`. OMP runs with its working directory set to the worktree, so a relative path fails with "Session not found" and exit 4. A resumed session keeps its original sessions directory, so resume from the first run's `sessions/` folder.
 - Interactive requests are the only extension UI frames that need a reply (select, confirm, input, editor). Presentation frames such as the caveman `setStatus` spinner arrive several times a second and grew event logs to hundreds of megabytes. Log only the interactive methods.
 - A worker can stall inside one very large generation: no bytes and no events for more than 20 minutes. Sample `events.log` byte growth over 60 seconds to tell a stall from progress. Recover by stopping the driver, keeping the worktree, and resuming the same session with a note that asks for writes of about 150 lines or fewer per call.
+- Driver stop: a background job started with `&` from a non-interactive shell ignores SIGINT. Stop the driver with SIGTERM, then confirm its OMP child exited. Better, start drivers as attached async jobs so they can be stopped and monitored. Use absolute paths; in `cd X && cmd &` the `cd` runs in a subshell and the next command starts in the wrong directory.
+- Always pass `--deadline-minutes` explicitly and record it in the board. The driver's default is 240 minutes, which is not a box. A stalled run with a 180-minute deadline kept writing uncommitted code for over an hour.
+- A worker that spends 30 minutes or more on reads with no writes needs intervention. The M5-02 worker made about 250 read calls before its first write. Stop it, keep the session, and resume with a write-first instruction.
+
+- Verification briefs must not halt on the first environment-class failure. The M5-01 verifier stopped at a Windows C cross-build failure and skipped the code review. Tell verifiers to classify an environment failure, record it, and continue with every independent step.
+- Windows cross-checks on macOS cannot compile crates that link C code. The daemon depends on libsqlite3-sys, and `cargo check --target x86_64-pc-windows-msvc` fails on macOS for lack of Windows C headers. Verify that crate on the Windows machine. The ipc crate's cross-check is valid on macOS.
+- Cross-platform modules gated with `cfg(unix)` hide the Windows implementation. In crates/orchestrator-ipc/src/lib.rs, the transport, session, server, auth, and client modules are `cfg(unix)`. Adding a Windows transport requires changing those gates to `any(unix, windows)`, so plan that scope up front.
 
 ## Briefs and scope
 
