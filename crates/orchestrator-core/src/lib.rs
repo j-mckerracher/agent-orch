@@ -17,6 +17,7 @@
 pub mod authorization;
 pub mod contract;
 pub mod records;
+pub mod scheduler;
 pub mod task;
 
 pub use records::{Artifact, Project, VerificationRun, Workspace};
