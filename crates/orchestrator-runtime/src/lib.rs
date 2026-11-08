@@ -5,6 +5,7 @@
 //! process-tree cleanup. It reports process facts; it never interprets
 //! them as task success.
 pub mod supervisor;
+pub mod reconcile;
 
 pub use supervisor::{
     is_process_running, ChildSupervisor, LaunchRequest, StdinWriter, SupervisionEvent,
