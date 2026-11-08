@@ -425,6 +425,10 @@ impl FileIdentity {
         };
 
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: `file.as_raw_handle()` comes from this live `File`, borrowed
+        // through the call. `information` is zero-initialized by `Default`;
+        // read its fields only after checking the returned `BOOL`.
+        // Updated: 2026-11-08T15:11:03-07:00.
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
             return None;
         }
