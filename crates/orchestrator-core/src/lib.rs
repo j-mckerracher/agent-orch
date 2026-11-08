@@ -17,11 +17,13 @@
 pub mod authorization;
 pub mod approval;
 pub mod contract;
+pub mod identity;
 pub mod records;
 pub mod scheduler;
 pub mod task;
 
 pub use records::{Artifact, Project, VerificationRun, Workspace};
+pub use identity::ProcessIdentity;
 
 pub use contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, TaskProposal, Validation,

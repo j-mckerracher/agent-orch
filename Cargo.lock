@@ -870,6 +870,7 @@ name = "orchestrator-runtime"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "orchestrator-core",
  "tempfile",
  "thiserror",
  "tokio",
