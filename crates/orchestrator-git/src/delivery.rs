@@ -545,7 +545,7 @@ impl DestinationLock {
         let identity = file
             .metadata()
             .ok()
-            .and_then(|metadata| FileIdentity::from_metadata(&metadata));
+            .and_then(|metadata| FileIdentity::from_file(&file, &metadata));
         if let Err(error) = file
             .write_all(owner_contents.as_bytes())
             .and_then(|()| file.sync_all())
@@ -574,7 +574,7 @@ impl Drop for DestinationLock {
             return;
         };
         if !metadata.file_type().is_file()
-            || FileIdentity::from_metadata(&metadata) != Some(*identity)
+            || FileIdentity::from_path(&self.path, &metadata) != Some(*identity)
             || contents != self.owner_contents
         {
             return;
@@ -641,33 +641,74 @@ struct FileIdentity {
     #[cfg(unix)]
     inode: u64,
     #[cfg(windows)]
-    volume: Option<u32>,
+    volume: u32,
     #[cfg(windows)]
-    index: Option<u64>,
+    index: u64,
 }
 
 impl FileIdentity {
-    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+    fn from_file(file: &File, metadata: &fs::Metadata) -> Option<Self> {
         #[cfg(unix)]
         {
-            use std::os::unix::fs::MetadataExt;
-            Some(Self {
-                device: metadata.dev(),
-                inode: metadata.ino(),
-            })
+            let _ = file;
+            Self::from_metadata(metadata)
         }
         #[cfg(windows)]
         {
-            use std::os::windows::fs::MetadataExt;
-            let volume = metadata.volume_serial_number();
-            let index = metadata.file_index();
-            (volume.is_some() && index.is_some()).then_some(Self { volume, index })
+            let _ = metadata;
+            Self::from_windows_file(file)
         }
         #[cfg(not(any(unix, windows)))]
         {
-            let _ = metadata;
+            let _ = (file, metadata);
             None
         }
+    }
+
+    fn from_path(path: &Path, metadata: &fs::Metadata) -> Option<Self> {
+        #[cfg(unix)]
+        {
+            let _ = path;
+            Self::from_metadata(metadata)
+        }
+        #[cfg(windows)]
+        {
+            let _ = metadata;
+            let file = File::open(path).ok()?;
+            Self::from_windows_file(&file)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (path, metadata);
+            None
+        }
+    }
+
+    #[cfg(unix)]
+    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        Some(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+
+    #[cfg(windows)]
+    fn from_windows_file(file: &File) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+            return None;
+        }
+        Some(Self {
+            volume: information.dwVolumeSerialNumber,
+            index: (u64::from(information.nFileIndexHigh) << 32)
+                | u64::from(information.nFileIndexLow),
+        })
     }
 }
 
@@ -675,7 +716,8 @@ fn remove_if_same_file(path: &Path, identity: Option<&FileIdentity>) {
     let (Some(identity), Ok(metadata)) = (identity, fs::symlink_metadata(path)) else {
         return;
     };
-    if metadata.file_type().is_file() && FileIdentity::from_metadata(&metadata) == Some(*identity) {
+    if metadata.file_type().is_file() && FileIdentity::from_path(path, &metadata) == Some(*identity)
+    {
         let _ = fs::remove_file(path);
     }
 }
@@ -749,4 +791,28 @@ fn process_is_alive(_pid: u32) -> io::Result<bool> {
         io::ErrorKind::Unsupported,
         "process liveness is unsupported on this platform",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fs, FileIdentity};
+    use std::path::Path;
+
+    #[test]
+    fn identity_matches_hard_links_and_distinguishes_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original");
+        let alias = directory.path().join("alias");
+        let distinct = directory.path().join("distinct");
+        fs::write(&original, b"same").unwrap();
+        fs::hard_link(&original, &alias).unwrap();
+        fs::write(&distinct, b"same").unwrap();
+
+        let identity = |path: &Path| {
+            let metadata = fs::symlink_metadata(path).unwrap();
+            FileIdentity::from_path(path, &metadata).unwrap()
+        };
+        assert_eq!(identity(&original), identity(&alias));
+        assert_ne!(identity(&original), identity(&distinct));
+    }
 }

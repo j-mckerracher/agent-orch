@@ -69,7 +69,7 @@ fn create_lock(path: &Path, contents: &str) -> io::Result<DataDirectoryLock> {
     let identity = file
         .metadata()
         .ok()
-        .and_then(|metadata| FileIdentity::from_metadata(&metadata));
+        .and_then(|metadata| FileIdentity::from_file(&file, &metadata));
     if let Err(error) = file
         .write_all(contents.as_bytes())
         .and_then(|()| file.sync_all())
@@ -106,7 +106,10 @@ impl Drop for DataDirectoryLock {
 
 impl DataDirectoryLock {
     fn owns_file(&self, metadata: &fs::Metadata) -> bool {
-        match (&self.identity, FileIdentity::from_metadata(metadata)) {
+        match (
+            &self.identity,
+            FileIdentity::from_path(&self.path, metadata),
+        ) {
             (Some(expected), Some(actual)) => *expected == actual,
             _ => fs::read_to_string(&self.path)
                 .map(|contents| contents == self.owner_contents)
@@ -205,7 +208,7 @@ fn path_matches_file(path: &Path, identity: Option<FileIdentity>) -> bool {
     };
     metadata.file_type().is_file()
         && identity.is_some()
-        && FileIdentity::from_metadata(&metadata) == identity
+        && FileIdentity::from_path(path, &metadata) == identity
 }
 
 fn take_over_existing(
@@ -232,8 +235,10 @@ fn take_over_existing(
         }
         Err(error) => return Err(error.into()),
     };
-    let identity = FileIdentity::from_metadata(&file.metadata()?);
-    if identity.is_none() || FileIdentity::from_metadata(&path_metadata) != identity {
+    let file_metadata = file.metadata()?;
+    let identity = FileIdentity::from_file(&file, &file_metadata);
+    let path_identity = FileIdentity::from_path(path, &path_metadata);
+    if identity.is_none() || path_identity != identity {
         return Ok(TakeoverOutcome::Retry {
             holder_pid: owner_pid,
         });
@@ -297,7 +302,8 @@ fn take_over_existing(
         .ok()
         .and_then(|contents| parse_lock_record(&contents));
     let verified = moved_metadata.is_ok_and(|metadata| {
-        metadata.file_type().is_file() && FileIdentity::from_metadata(&metadata) == identity
+        metadata.file_type().is_file()
+            && FileIdentity::from_path(&moved_path, &metadata) == identity
     }) && moved_record
         .as_ref()
         .is_some_and(|record| record.token.as_deref() == Some(token));
@@ -359,33 +365,74 @@ struct FileIdentity {
     #[cfg(unix)]
     inode: u64,
     #[cfg(windows)]
-    volume: Option<u32>,
+    volume: u32,
     #[cfg(windows)]
-    index: Option<u64>,
+    index: u64,
 }
 
 impl FileIdentity {
-    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+    fn from_file(file: &File, metadata: &fs::Metadata) -> Option<Self> {
         #[cfg(unix)]
         {
-            use std::os::unix::fs::MetadataExt;
-            Some(Self {
-                device: metadata.dev(),
-                inode: metadata.ino(),
-            })
+            let _ = file;
+            Self::from_metadata(metadata)
         }
         #[cfg(windows)]
         {
-            use std::os::windows::fs::MetadataExt;
-            let volume = metadata.volume_serial_number();
-            let index = metadata.file_index();
-            (volume.is_some() && index.is_some()).then_some(Self { volume, index })
+            let _ = metadata;
+            Self::from_windows_file(file)
         }
         #[cfg(not(any(unix, windows)))]
         {
-            let _ = metadata;
+            let _ = (file, metadata);
             None
         }
+    }
+
+    fn from_path(path: &Path, metadata: &fs::Metadata) -> Option<Self> {
+        #[cfg(unix)]
+        {
+            let _ = path;
+            Self::from_metadata(metadata)
+        }
+        #[cfg(windows)]
+        {
+            let _ = metadata;
+            let file = File::open(path).ok()?;
+            Self::from_windows_file(&file)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (path, metadata);
+            None
+        }
+    }
+
+    #[cfg(unix)]
+    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        Some(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+
+    #[cfg(windows)]
+    fn from_windows_file(file: &File) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+
+        let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+            return None;
+        }
+        Some(Self {
+            volume: information.dwVolumeSerialNumber,
+            index: (u64::from(information.nFileIndexHigh) << 32)
+                | u64::from(information.nFileIndexLow),
+        })
     }
 }
 
@@ -393,7 +440,8 @@ fn remove_if_same_file(path: &Path, identity: Option<&FileIdentity>) {
     let (Some(identity), Ok(metadata)) = (identity, fs::symlink_metadata(path)) else {
         return;
     };
-    if metadata.file_type().is_file() && FileIdentity::from_metadata(&metadata) == Some(*identity) {
+    if metadata.file_type().is_file() && FileIdentity::from_path(path, &metadata) == Some(*identity)
+    {
         let _ = fs::remove_file(path);
     }
 }
@@ -672,5 +720,23 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "pid=1\n");
         let contender = File::open(&path).unwrap();
         assert!(!try_lock_file(&contender).unwrap());
+    }
+
+    #[test]
+    fn identity_matches_hard_links_and_distinguishes_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("original");
+        let alias = directory.path().join("alias");
+        let distinct = directory.path().join("distinct");
+        fs::write(&original, b"same").unwrap();
+        fs::hard_link(&original, &alias).unwrap();
+        fs::write(&distinct, b"same").unwrap();
+
+        let identity = |path: &Path| {
+            let metadata = fs::symlink_metadata(path).unwrap();
+            FileIdentity::from_path(path, &metadata).unwrap()
+        };
+        assert_eq!(identity(&original), identity(&alias));
+        assert_ne!(identity(&original), identity(&distinct));
     }
 }
