@@ -1,0 +1,2 @@
+cargo test --locked --workspace
+timeout_seconds=900

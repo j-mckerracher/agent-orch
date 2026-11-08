@@ -1,0 +1,8 @@
+Run date UTC: 2026-11-08T14:07:18Z
+OS: Microsoft Windows 10.0.26200
+Architecture: X64
+Rust: rustc 1.96.0 (ac68faa20 2026-05-25)
+Cargo: cargo 1.96.0 (30a34c682 2026-05-25)
+Python: Python 3.10.1
+Source commit: 649c137d7bcfcf2445d2a107162862cde0a1c0ed
+Source status before run: (empty)
