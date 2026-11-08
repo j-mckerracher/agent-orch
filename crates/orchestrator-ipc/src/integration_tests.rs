@@ -1,4 +1,4 @@
-use crate::{Client, Server, ServerConfig};
+use crate::{Capability, Client, IpcEvent, IpcError, RpcError, RpcHandler, Server, ServerConfig};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
@@ -16,6 +16,72 @@ fn start(dir: &Path, idle: Duration) -> JoinHandle<()> {
             ServerConfig::new(dir, "test-version")
                 .with_idle_timeout(idle)
                 .with_stream_timeout(Duration::from_millis(250)),
+        )
+        .unwrap();
+    })
+}
+
+#[derive(Default)]
+struct EventHandler {
+    events: std::sync::Mutex<Vec<IpcEvent>>,
+}
+
+impl EventHandler {
+    fn push(&self, sequence: i64) {
+        self.events.lock().unwrap().push(IpcEvent {
+            sequence,
+            task_id: "task-1".into(),
+            session_id: None,
+            kind: "task.transition".into(),
+            payload: json!({"sequence": sequence}),
+            created_at: "2026-11-08T00:00:00Z".into(),
+        });
+    }
+}
+
+impl RpcHandler for EventHandler {
+    fn capabilities(&self) -> Vec<Capability> {
+        vec![Capability::Events]
+    }
+
+    fn dispatch(&self, _: &str, _: Value) -> Result<Value, RpcError> {
+        Err(RpcError::InvalidParams)
+    }
+
+    fn events_after(&self, after: i64, limit: usize) -> Result<Vec<IpcEvent>, RpcError> {
+        Ok(self
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.sequence > after)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    fn latest_event_sequence(&self) -> Result<i64, RpcError> {
+        Ok(self
+            .events
+            .lock()
+            .unwrap()
+            .last()
+            .map_or(0, |event| event.sequence))
+    }
+
+    fn keep_alive(&self) -> bool {
+        true
+    }
+}
+
+fn start_with_handler(dir: &Path, handler: std::sync::Arc<dyn RpcHandler>) -> JoinHandle<()> {
+    let dir = dir.to_path_buf();
+    thread::spawn(move || {
+        Server::serve_with_handler(
+            ServerConfig::new(dir, "event-test")
+                .with_idle_timeout(Duration::from_secs(10))
+                .with_stream_timeout(Duration::from_millis(50)),
+            handler,
         )
         .unwrap();
     })
@@ -166,6 +232,93 @@ fn stalled_and_garbage_connections_do_not_block_health() {
     garbage.write_all(&[0, 2, 0, 0, 0, 0]).unwrap();
     let mut client = Client::connect(dir.path()).unwrap();
     assert_eq!(client.health().unwrap().package_version, "test-version");
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn subscription_replays_then_streams_and_reconnects_from_observed_cursor() {
+    let dir = TempDir::new().unwrap();
+    let handler = std::sync::Arc::new(EventHandler::default());
+    handler.push(1);
+    handler.push(2);
+    let daemon = start_with_handler(dir.path(), handler.clone());
+    ready(dir.path());
+
+    let mut client = Client::connect(dir.path()).unwrap();
+    let subscription = client.events_subscribe(None).unwrap();
+    assert!(!subscription.is_empty());
+    assert_eq!(client.next_event().unwrap().sequence, 1);
+    handler.push(3);
+    assert_eq!(client.next_event().unwrap().sequence, 2);
+    assert_eq!(client.next_event().unwrap().sequence, 3);
+    assert_eq!(client.last_event_sequence(), Some(3));
+    drop(client);
+
+    handler.push(4);
+    handler.push(5);
+    let mut reconnected = Client::connect(dir.path()).unwrap();
+    reconnected.events_subscribe(Some(3)).unwrap();
+    assert_eq!(reconnected.next_event().unwrap().sequence, 4);
+    assert_eq!(reconnected.next_event().unwrap().sequence, 5);
+    assert_eq!(reconnected.last_event_sequence(), Some(5));
+    reconnected.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn slow_event_subscriber_receives_typed_lag_error() {
+    let dir = TempDir::new().unwrap();
+    let handler = std::sync::Arc::new(EventHandler::default());
+    for sequence in 1..=257 {
+        handler.push(sequence);
+    }
+    let daemon = start_with_handler(dir.path(), handler);
+    ready(dir.path());
+    let mut client = Client::connect(dir.path()).unwrap();
+    client.events_subscribe(None).unwrap();
+    assert!(matches!(client.next_event(), Err(IpcError::SlowConsumer)));
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn methods_require_handshake_and_negotiated_capability() {
+    let dir = TempDir::new().unwrap();
+    let handler = std::sync::Arc::new(EventHandler::default());
+    let daemon = start_with_handler(dir.path(), handler);
+    ready(dir.path());
+
+    let mut unopened = UnixStream::connect(dir.path().join("ipc/daemon.sock")).unwrap();
+    unopened.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    crate::protocol::write(
+        &mut unopened,
+        &json!({"jsonrpc": "2.0", "id": 1, "method": "events.subscribe", "params": {}}),
+    )
+    .unwrap();
+    assert!(crate::protocol::read::<Value>(&mut unopened).is_err());
+    drop(unopened);
+
+    let token = fs::read_to_string(dir.path().join("daemon.token")).unwrap();
+    let mut stream = UnixStream::connect(dir.path().join("ipc/daemon.sock")).unwrap();
+    crate::protocol::write(
+        &mut stream,
+        &json!({
+            "jsonrpc": "2.0", "id": 1, "method": "handshake",
+            "params": {"token": token, "versions": [1], "capabilities": ["health"]}
+        }),
+    )
+    .unwrap();
+    let _: Value = crate::protocol::read(&mut stream).unwrap();
+    crate::protocol::write(
+        &mut stream,
+        &json!({"jsonrpc": "2.0", "id": 2, "method": "events.subscribe", "params": {}}),
+    )
+    .unwrap();
+    let response: Value = crate::protocol::read(&mut stream).unwrap();
+    assert_eq!(response["error"]["code"], -32004);
+
+    let mut client = Client::connect(dir.path()).unwrap();
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }
