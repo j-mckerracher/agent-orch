@@ -339,3 +339,60 @@ fn delivery_refuses_changed_action_kind() {
         Err(ApprovalError::ActionMismatch(ActionMismatch::Kind))
     );
 }
+#[test]
+fn all_delivery_steps_survive_reopen() {
+    let (directory, store) = new_store();
+    record_success(
+        &store,
+        "delivery-1",
+        &action(ActionKind::LocalReviewMerge, 7, CANDIDATE),
+    );
+    store
+        .create(&TaskContract {
+            id: "task-2".into(),
+            project_id: "project-1".into(),
+            parent_id: None,
+            objective: "deliver second candidate".into(),
+            kind: TaskKind::Implement,
+            agent: "test-agent".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+        })
+        .expect("create second task");
+    let second_action = ApprovalAction::new(
+        ApprovalActionKind::Delivery(ActionKind::LocalReviewMerge),
+        ParameterDigest::from_sha256([11; 32]),
+        CANDIDATE,
+        "task-2",
+    )
+    .expect("valid second delivery action");
+    store
+        .record_delivery_step(&DeliveryStepRecord {
+            id: "delivery-2",
+            approval_id: "approval-2",
+            verification_run_id: "verification-2",
+            action: &second_action,
+            destination: "/repo",
+            target_ref: Some("refs/heads/orchestrator/review/task-2"),
+            outcome: DeliveryOutcome::ReviewRefCreated,
+            diff_summary: None,
+        })
+        .expect("persist second delivery step");
+    drop(store);
+
+    let reopened =
+        SqliteStore::new(&directory.path().join("store.sqlite")).expect("reopen SQLite store");
+    let steps = reopened
+        .all_delivery_steps()
+        .expect("read delivery steps for every task");
+
+    assert_eq!(steps.len(), 2);
+    assert_eq!(steps[0]["id"], "delivery-1");
+    assert_eq!(steps[0]["task_id"], "task-1");
+    assert_eq!(steps[1]["id"], "delivery-2");
+    assert_eq!(steps[1]["task_id"], "task-2");
+}

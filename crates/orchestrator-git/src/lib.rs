@@ -19,6 +19,7 @@ pub mod verification;
 mod worktree;
 pub mod reconcile;
 pub mod delivery;
+pub mod delivery_reconcile;
 
 pub use error::Error;
 pub use repository::Repository;
