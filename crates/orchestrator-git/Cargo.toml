@@ -1,8 +1,12 @@
 [package]
 name = "orchestrator-git"
-description = "System-git-based repository validation, task worktree lifecycle, diff capture, and local delivery. Keeps the primary checkout read-only."
+description = "System-git-based repository validation and task worktree creation. Keeps the primary checkout read-only; never deletes anything."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+thiserror = "=2.0.21"
+
+[dev-dependencies]
+tempfile = "=3.27.0"

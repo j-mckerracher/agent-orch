@@ -1,5 +1,19 @@
-//! Capability-aware adapters for Codex, Claude Code, and Pi subprocess protocols. Implements the adapter contract defined by orchestrator-core.
+//! Capability-aware adapters for Codex, Claude Code, and Pi subprocess
+//! protocols. This crate defines the adapter contract in `contract` and
+//! implements it on top of orchestrator-runtime's process supervisor.
 //!
-//! Boundary placeholder: no public API yet. Do not add dependencies here
-//! beyond what its future modules actually use; the workspace dependency
-//! direction (see the root Cargo.toml header) is checked in code review.
+//! The adapter owns provider-specific protocol translation; the runtime
+//! supervisor owns process handles and reconciles process exits. Nothing in
+//! this crate interprets a session or process exit as task success, and it
+//! holds no task policy or authorization.
+
+pub mod codex_adapter;
+pub mod codex_parser;
+pub mod contract;
+
+pub use codex_adapter::CodexAdapter;
+pub use codex_parser::{Parser, ProtocolViolation};
+pub use contract::{
+    AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, Result, TurnOutcome,
+};
