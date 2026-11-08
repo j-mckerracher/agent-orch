@@ -3,7 +3,7 @@
 //! Codex output is untrusted input. The parser accepts the known envelope
 //! shapes recorded in `docs/evidence/m0-03-codex-exec-windows.md` and rejects
 //! malformed lines, unknown top-level `type`s, and required protocol
-//! violations (thread before turn, items outside a turn, missing
+//! violations (thread before turn, non-error completed items outside a turn, missing
 //! `turn.completed`) as errors. It never interprets an exit as success; the
 //! caller maps `TurnOutcome` and the process exit code itself.
 //!
@@ -165,11 +165,6 @@ impl Parser {
                 Ok(None)
             }
             "item.completed" => {
-                if self.phase != Phase::InTurn {
-                    return Err(ProtocolViolation::Ordering(
-                        "item.completed outside a turn".into(),
-                    ));
-                }
                 let item = r
                     .get("item")
                     .and_then(|i| i.as_object())
@@ -178,6 +173,17 @@ impl Parser {
                     .get("type")
                     .and_then(|t| t.as_str())
                     .ok_or(ProtocolViolation::BadField("item.type"))?;
+                if self.phase == Phase::AwaitingTurn && item_type == "error" {
+                    item.get("message")
+                        .and_then(|message| message.as_str())
+                        .ok_or(ProtocolViolation::BadField("item.message"))?;
+                    return Ok(None);
+                }
+                if self.phase != Phase::InTurn {
+                    return Err(ProtocolViolation::Ordering(
+                        "item.completed outside a turn".into(),
+                    ));
+                }
                 if item_type == "agent_message" {
                     let text = item
                         .get("text")
@@ -231,6 +237,50 @@ mod tests {
     const MSG: &str =
         r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"PONG"}}"#;
     const TURN_DONE: &str = r#"{"type":"turn.completed","usage":{"input_tokens":1}}"#;
+
+    #[test]
+    fn pre_turn_error_item_is_ignored_but_other_items_fault() {
+        const WARNING: &str = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].codex_hooks` is deprecated. Use `[features].hooks` instead. (Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.)"}}"#;
+
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        assert_eq!(p.feed(WARNING), None);
+        assert_eq!(p.violation(), None);
+        assert_eq!(p.feed(TURN_STARTED), None);
+        assert!(
+            matches!(p.feed(MSG), Some(Ok(AgentEvent::MessageDelta { text })) if text == "PONG")
+        );
+        assert!(matches!(
+            p.feed(TURN_DONE),
+            Some(Ok(AgentEvent::TurnFinished { .. }))
+        ));
+
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        let malformed_error = r#"{"type":"item.completed","item":{"id":"item_0","type":"error"}}"#;
+        assert!(matches!(
+            p.feed(malformed_error),
+            Some(Err(ProtocolViolation::BadField("item.message")))
+        ));
+
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        let reasoning =
+            r#"{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"hmm"}}"#;
+        assert!(matches!(
+            p.feed(reasoning),
+            Some(Err(ProtocolViolation::Ordering(message))) if message == "item.completed outside a turn"
+        ));
+
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        let command =
+            r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution"}}"#;
+        assert!(matches!(
+            p.feed(command),
+            Some(Err(ProtocolViolation::Ordering(message))) if message == "item.started outside a turn"
+        ));
+    }
 
     #[test]
     fn full_happy_sequence() {

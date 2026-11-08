@@ -47,8 +47,8 @@ fn main() {
             const AGENT_MESSAGE: &str = r#"{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"TASK_DEMO_OK"}}"#;
 
             writeln!(out, r#"{{"type":"thread.started","thread_id":"{SID}"}}"#).unwrap();
-            writeln!(out, r#"{{"type":"turn.started"}}"#).unwrap();
             writeln!(out, "{WARNING}").unwrap();
+            writeln!(out, r#"{{"type":"turn.started"}}"#).unwrap();
             writeln!(out, "{COMMAND_STARTED}").unwrap();
             writeln!(out, "{COMMAND_COMPLETED}").unwrap();
             writeln!(out, "{AGENT_MESSAGE}").unwrap();
