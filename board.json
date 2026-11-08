@@ -407,8 +407,20 @@
         "M3-05"
       ],
       "details": "Move reliable scheduling to an on-demand daemon; implement versioned length-prefixed JSON-RPC over Unix sockets and Windows named pipes, authorization and capability negotiation.",
-      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-01-daemon-ipc, branch orch/m5-01-daemon-ipc, base 5fd2edc (orch/integration). Scope: crates/orchestrator-ipc and crates/orchestrator-daemon only. Windows named pipes are NOT implemented: they return a typed Unsupported error and are deferred to the Windows run because the user postponed Windows work.",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-01.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-01-daemon-ipc, branch orch/m5-01-daemon-ipc, base 5fd2edc (orch/integration). Scope: crates/orchestrator-ipc and crates/orchestrator-daemon only. Scope decision 2026-11-08 (-07:00): Windows named pipes were in M5-01 scope, and the Windows code was written in crates/orchestrator-ipc/src/windows_transport.rs (commit e904746). Independent review of candidate f6c476fa121beb565493908e07fcbff9bd6958ef rejected that code: no SAFETY comment on any unsafe block, and the default named-pipe ACL lets local users connect. The Windows code is removed from this candidate and moves to M5-01b. Worker candidate f6c476f reported 316 passed and 1 ignored, clippy exit 0, and the ipc Windows target check exit 0. Its Mac verification passed (files/verify-m5-01/). The review (files/verify-m5-01-review/review.md) passed every Unix check.",
       "priority": 8
+    },
+    {
+      "id": "M5-01b",
+      "milestone": "M5",
+      "title": "Implement Windows named-pipe transport",
+      "status": "todo",
+      "depends_on": [
+        "M5-01"
+      ],
+      "details": "Implement the Windows named-pipe transport for daemon IPC with a pipe security descriptor and token file restricted to the current user, an explicit instance limit, the authenticated handshake on every connection, and a SAFETY comment on every unsafe block. Verify natively on Windows; a Mac cross-check of orchestrator-ipc is compile-only.",
+      "important_context": "Split from M5-01 on 2026-11-08 (-07:00) after independent review of candidate f6c476f rejected the Windows code: no SAFETY comment on any unsafe block; the default named-pipe ACL grants read access to Everyone and the anonymous account (Microsoft documents this for NULL security attributes); Windows token-file confidentiality relied on inherited parent ACLs. Earlier Windows code is preserved in commit e904746 on orch/m5-01-daemon-ipc for reference. The daemon's Windows cross-check cannot run on macOS because libsqlite3-sys needs Windows C headers.",
+      "priority": 9
     },
     {
       "id": "M5-02",
@@ -454,9 +466,9 @@
       "status": "todo",
       "depends_on": [
         "M5-03",
-        "M5-04"
+        "M5-04",
+        "M5-01b"
       ],
-      "details": "Package the desktop app and verify closing and reopening it does not interrupt daemon-owned work.",
       "important_context": "",
       "priority": 11
     },
