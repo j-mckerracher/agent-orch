@@ -327,5 +327,22 @@ fn approval_resolution_uses_allowlisted_actor_and_is_idempotent() {
     );
 }
 
+#[test]
+fn running_task_keeps_daemon_alive_without_connected_clients() {
+    use orchestrator_core::task::TaskEvent;
+
+    let (_directory, api) = new_api();
+    register_project(&api);
+    let queued = api
+        .dispatch("tasks.submit", submit_params("lifecycle-key", "Keep running"))
+        .unwrap();
+    assert!(!api.keep_alive());
+    let task_id = queued["contract"]["id"].as_str().unwrap();
+    api.store
+        .transition(task_id, TaskEvent::ExecutionStarted)
+        .unwrap();
+    assert!(api.keep_alive());
+}
+
 #[path = "api_safety_tests.rs"]
 mod safety;
