@@ -6,4 +6,7 @@
 //! them as task success.
 pub mod supervisor;
 
-pub use supervisor::{is_process_running, ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
+pub use supervisor::{
+    is_process_running, ChildSupervisor, LaunchRequest, StdinWriter, SupervisionEvent,
+    SupervisorError,
+};
