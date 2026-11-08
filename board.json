@@ -426,12 +426,12 @@
       "id": "M5-02",
       "milestone": "M5",
       "title": "Implement reconnectable event stream and clients",
-      "status": "in_progress",
+      "status": "done",
       "depends_on": [
         "M5-01"
       ],
       "details": "Support event subscriptions, sequence-based replay, reconnect and the project, task, session, approval, workspace and delivery methods.",
-      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-02.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-02-events, branch orch/m5-02-events, base 4913654 (orch/integration, verified M5-01). Run files/runs/m5-02-b1-20261108T251000Z; deadline 120 minutes. Earlier attempt stopped during a long read-only phase; the worktree was clean. A second run resumed the same session (files/runs/m5-02-b2-20261108T270000Z) after about 70 minutes with 24 uncommitted files and no commit; the resume requires a WIP commit first. Before merging back, merge orch/integration (28eb840, which changed lib.rs and Cargo.lock) into orch/m5-02-events and re-verify. Not done until verified and merged.",
+      "important_context": "Dispatched 2026-11-08 (-07:00) as one OMP worker: openai-codex/gpt-6-luna at thinking max. Brief: files/brief-m5-02.md. Worktree ~/Code/agent-orch-worktrees/tasks/m5-02-events, branch orch/m5-02-events, base 4913654 (orch/integration, verified M5-01). Run files/runs/m5-02-b1-20261108T251000Z; deadline 120 minutes. Earlier attempt stopped during a long read-only phase; the worktree was clean. A second run resumed the same session (files/runs/m5-02-b2-20261108T270000Z) after about 70 minutes with 24 uncommitted files and no commit; the resume requires a WIP commit first.       before merging back, merge orch/integration (28eb840, which changed lib.rs and Cargo.lock) into orch/m5-02-events and re-verify. Merged into orch/integration at 9e21124 after three review cycles. Review history: 0b6436c was rejected for path validation after Git ran and for unknown-field parsing; fec98f4 fixed both, and the reviewer then rejected the lexical-guard tests for not failing when their guard was removed; 9e21124 added mutation-proving tests. Final verification found one redundant guard: the explicit is_absolute() check overlaps the RootDir check, so removing it alone does not fail any test. Accepted as a note, not a blocker, because the RootDir guard still rejects absolute paths before any Git call. Cleanup is assigned in M5-02b. Known limit: tasks.submit queues work but does not launch it; M5-02b provides the executor.",
       "priority": 9
     },
     {
