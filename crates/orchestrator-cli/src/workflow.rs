@@ -1,7 +1,7 @@
 //! Single-task orchestration and local Git operations. The store owns task
 //! lifecycle records; this module owns CLI-only worktree metadata, logs, and
 //! cancellation requests. The primary checkout is validated as read-only and
-//! all agent writes run in a separately registered worktree. Updated: 2026-11-07T22:31:40-07:00.
+//! all agent writes run in a separately registered worktree. Updated: 2026-11-07T22:42:08-07:00.
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
@@ -997,6 +997,7 @@ fn resolve_program(program: &Path) -> Result<PathBuf, String> {
     }
 }
 
+// Codex rejects `--sandbox` with `--approve-for-me`; approval mode already uses workspace-write.
 fn capture_args(
     agent_program: &Path,
     task_paths: &Paths,
@@ -1010,8 +1011,6 @@ fn capture_args(
         "--".to_string(),
         "exec".to_string(),
         "--json".to_string(),
-        "--sandbox".to_string(),
-        "workspace-write".to_string(),
         "--approve-for-me".to_string(),
         "--".to_string(),
         objective.to_string(),
