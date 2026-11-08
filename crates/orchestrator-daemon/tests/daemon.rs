@@ -1,6 +1,9 @@
 #![cfg(unix)]
 
-use orchestrator_ipc::Client;
+use orchestrator_core::records::Project;
+use orchestrator_ipc::{Client, IpcError};
+use orchestrator_store::SqliteStore;
+use serde_json::json;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -126,4 +129,76 @@ fn second_daemon_reports_holder_and_shutdown_removes_resources() {
     assert!(output.status.success());
     assert!(!dir.path().join("daemon.token").exists());
     assert!(!dir.path().join("ipc/daemon.sock").exists());
+}
+
+#[test]
+fn daemon_clients_submit_cancel_and_resume_durable_events() {
+    let dir = TempDir::new().unwrap();
+    let store = SqliteStore::new(&dir.path().join("store.sqlite")).unwrap();
+    store
+        .register_project(&Project {
+            id: "project-1".into(),
+            root_path: "/private/project-root".into(),
+            settings: json!({}),
+        })
+        .unwrap();
+    drop(store);
+
+    let mut daemon = Daemon::start(dir.path());
+    wait_for_ipc(dir.path(), &mut daemon);
+    let mut client = Client::connect(dir.path()).unwrap();
+    assert_eq!(
+        client.projects_list().unwrap(),
+        json!([{"id": "project-1"}])
+    );
+    client.events_subscribe(None).unwrap();
+    let params = json!({
+        "idempotency_key": "client-submit-1",
+        "contract": {
+            "project_id": "project-1",
+            "parent_id": null,
+            "objective": "Persist this task across reconnects",
+            "kind": "Implement",
+            "agent": "codex",
+            "dependencies": [],
+            "verification": "None",
+            "delivery": "ReportOnly",
+            "autonomy": "WorkspaceWrites",
+            "max_retries": 0,
+            "max_repairs": 0
+        }
+    });
+    let submitted = client.tasks_submit(params.clone()).unwrap();
+    assert_eq!(client.tasks_submit(params).unwrap(), submitted);
+    let task_id = submitted["contract"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(client.tasks_get(&task_id).unwrap(), submitted);
+    assert_eq!(client.tasks_list().unwrap().as_array().unwrap().len(), 1);
+    assert!(client.sessions_list(None).unwrap().as_array().unwrap().is_empty());
+    assert!(client.approvals_list().unwrap().as_array().unwrap().is_empty());
+    assert!(matches!(
+        client.sessions_events(&task_id, "missing", None),
+        Err(IpcError::NotFound)
+    ));
+    assert!(matches!(
+        client.workspaces_diff(&task_id, None, None),
+        Err(IpcError::NotFound)
+    ));
+    assert!(matches!(
+        client.approvals_resolve("missing", "invalid", "client-approval-1"),
+        Err(IpcError::InvalidParams)
+    ));
+    assert!(matches!(
+        client.delivery_request(serde_json::Value::Null),
+        Err(IpcError::InvalidParams)
+    ));
+
+    assert_eq!(client.next_event().unwrap().sequence, 1);
+    assert_eq!(client.next_event().unwrap().sequence, 2);
+    assert_eq!(
+        client.tasks_cancel(&task_id, "client-cancel-1").unwrap()["state"],
+        "Cancelled"
+    );
+    assert_eq!(client.next_event().unwrap().sequence, 3);
+    client.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
 }
