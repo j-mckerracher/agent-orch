@@ -11,7 +11,7 @@ use std::{
 use orchestrator_agents::{
     select_adapter, AdapterCapabilityGap, AgentAdapter, AgentCapabilities, AgentError, AgentEvent,
     AgentExit, AgentHandle, AgentKind, AgentLaunchRequest, Capability, ClaudeCodeAdapter,
-    CodexAdapter, PiRpcAdapter, RoutableAdapter, RoutingError,
+    CodexAdapter, PiRpcAdapter, RoutableAdapter, RoutingError, TurnOutcome,
 };
 use orchestrator_runtime::is_process_running;
 use tempfile::TempDir;
@@ -388,17 +388,37 @@ async fn errors(adapter: Adapter, child: &FakeChild) {
 
     let nonzero_failed = matches!(&nonzero_exit, AgentExit::Failed { code: Some(7), .. });
     let protocol_failed = matches!(&protocol_exit, AgentExit::Failed { code: Some(0), .. });
-    let protocol_event = protocol_events
+    let protocol_error_surfaced = protocol_events
         .iter()
         .any(|event| matches!(event, AgentEvent::ProtocolError { .. }));
-    let protocol_event_expected = !matches!(adapter, Adapter::PiRpc);
-    let error_contract_met =
-        nonzero_failed && protocol_failed && (!protocol_event_expected || protocol_event);
+    let pi_turn_failed = !matches!(adapter, Adapter::PiRpc)
+        || protocol_events.iter().any(|event| {
+            matches!(
+                event,
+                AgentEvent::TurnFinished {
+                    outcome: TurnOutcome::Failure
+                }
+            )
+        });
+    let pi_protocol_reason = !matches!(adapter, Adapter::PiRpc)
+        || matches!(
+            &protocol_exit,
+            AgentExit::Failed {
+                reason: Some(reason),
+                ..
+            } if reason.contains("protocol violation")
+        );
+    let error_contract_met = nonzero_failed
+        && protocol_failed
+        && protocol_error_surfaced
+        && pi_turn_failed
+        && pi_protocol_reason;
     assert!(
         error_contract_met,
         "nonzero exit failed={nonzero_failed}, exit-0 protocol error failed={protocol_failed}, \
-         protocol event expected={protocol_event_expected}, surfaced={protocol_event}; \
-         outcomes: {nonzero_exit:?}, {protocol_exit:?}; events: {protocol_events:?}"
+         protocol error surfaced={protocol_error_surfaced}, Pi turn failed={pi_turn_failed}, \
+         Pi protocol reason={pi_protocol_reason}; outcomes: {nonzero_exit:?}, \
+         {protocol_exit:?}; events: {protocol_events:?}"
     );
 }
 

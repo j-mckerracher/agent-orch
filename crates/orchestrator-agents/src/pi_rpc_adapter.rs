@@ -2,13 +2,14 @@
 //!
 //! The handle owns the child's sole stdin writer and the supervisor. It sends
 //! one flushed JSON command per line, correlates responses by ID, and queues
-//! session events encountered while waiting for responses. Malformed records,
-//! unknown event types, and stderr diagnostics are ignored. Process exits remain
-//! transport facts; they never establish task success.
+//! session events encountered while waiting for responses. Malformed JSON
+//! lines surface as recoverable protocol-error events and fail their turn.
+//! Unknown event types and stderr diagnostics remain ignored. Process exits
+//! remain transport facts; they never establish task success.
 //!
 //! `detect_protocol` checks the CLI version and a read-only `get_state` RPC
 //! command. Pi does not expose a separate wire-protocol version in its records.
-//! Updated: 2026-11-07T23:19:41-07:00.
+//! Updated: 2026-11-08T11:24:12Z.
 
 use async_trait::async_trait;
 use orchestrator_runtime::{
@@ -219,6 +220,7 @@ pub struct PiRpcHandle {
     responses: HashMap<String, PiRpcResponse>,
     events: VecDeque<AgentEvent>,
     turn_outcome: Option<TurnOutcome>,
+    protocol_error: Option<String>,
     cancelled: bool,
     exited: bool,
     code: Option<i32>,
@@ -234,6 +236,7 @@ impl PiRpcHandle {
             responses: HashMap::new(),
             events: VecDeque::new(),
             turn_outcome: None,
+            protocol_error: None,
             cancelled: false,
             exited: false,
             code: None,
@@ -282,6 +285,7 @@ impl PiRpcHandle {
         }
         if matches!(command_type.as_str(), "prompt" | "follow_up") {
             self.turn_outcome = None;
+            self.protocol_error = None;
         }
         let line = serde_json::to_string(&command).map_err(|error| {
             AgentError::Protocol(format!("could not encode Pi RPC command: {error}"))
@@ -314,6 +318,10 @@ impl PiRpcHandle {
                 }
                 Some(RpcRecord::Response(response)) => self.store_response(response),
                 Some(RpcRecord::Event(event)) => self.queue_event(event),
+                Some(RpcRecord::ProtocolError(message)) => {
+                    let event = self.record_protocol_error(message);
+                    self.events.push_back(event);
+                }
                 Some(RpcRecord::Exited) => {
                     self.in_flight.remove(id);
                     return Err(AgentError::Protocol(format!(
@@ -332,12 +340,8 @@ impl PiRpcHandle {
     }
 
     fn queue_event(&mut self, event: AgentEvent) {
-        if let AgentEvent::TurnFinished { outcome } = event {
-            self.turn_outcome = Some(outcome);
-            self.events.push_back(AgentEvent::TurnFinished { outcome });
-        } else {
-            self.events.push_back(event);
-        }
+        let event = self.record_event(event);
+        self.events.push_back(event);
     }
 
     async fn next_record(&mut self) -> Result<Option<RpcRecord>> {
@@ -363,21 +367,55 @@ impl PiRpcHandle {
     }
 
     fn outcome(&self) -> AgentExit {
-        if self.cancelled {
-            AgentExit::Cancelled {
-                code: self.code,
-                last_message: None,
-            }
-        } else if self.turn_outcome.is_some() {
-            AgentExit::Completed {
-                code: self.code,
-                last_message: None,
-            }
+        terminal_outcome(
+            self.cancelled,
+            self.code,
+            self.turn_outcome,
+            self.protocol_error.as_deref(),
+        )
+    }
+}
+
+fn terminal_outcome(
+    cancelled: bool,
+    code: Option<i32>,
+    turn_outcome: Option<TurnOutcome>,
+    protocol_error: Option<&str>,
+) -> AgentExit {
+    if cancelled {
+        AgentExit::Cancelled {
+            code,
+            last_message: None,
+        }
+    } else if let Some(exit_code) = code.filter(|code| *code != 0) {
+        let reason = if turn_outcome.is_none() && protocol_error.is_none() {
+            "Pi RPC process exited before agent_settled".to_owned()
         } else {
-            AgentExit::Failed {
-                code: self.code,
-                reason: Some("Pi RPC process exited before agent_settled".to_owned()),
+            let mut reason = format!("Pi RPC exited with code {exit_code}");
+            if let Some(protocol_error) = protocol_error {
+                reason.push_str("; protocol violation: ");
+                reason.push_str(protocol_error);
             }
+            reason
+        };
+        AgentExit::Failed {
+            code: Some(exit_code),
+            reason: Some(reason),
+        }
+    } else if let Some(protocol_error) = protocol_error {
+        AgentExit::Failed {
+            code,
+            reason: Some(format!("Pi RPC protocol violation: {protocol_error}")),
+        }
+    } else if turn_outcome.is_some() {
+        AgentExit::Completed {
+            code,
+            last_message: None,
+        }
+    } else {
+        AgentExit::Failed {
+            code,
+            reason: Some("Pi RPC process exited before agent_settled".to_owned()),
         }
     }
 }
@@ -396,6 +434,9 @@ impl AgentHandle for PiRpcHandle {
             match self.next_record().await? {
                 Some(RpcRecord::Response(response)) => self.store_response(response),
                 Some(RpcRecord::Event(event)) => return Ok(Some(self.record_event(event))),
+                Some(RpcRecord::ProtocolError(message)) => {
+                    return Ok(Some(self.record_protocol_error(message)));
+                }
                 Some(RpcRecord::Exited) => {
                     return Ok(Some(AgentEvent::SessionExited {
                         exit_code: self.code,
@@ -433,22 +474,40 @@ impl AgentHandle for PiRpcHandle {
 impl PiRpcHandle {
     fn record_event(&mut self, event: AgentEvent) -> AgentEvent {
         if let AgentEvent::TurnFinished { outcome } = event {
+            let outcome = if self.protocol_error.is_some() {
+                TurnOutcome::Failure
+            } else {
+                outcome
+            };
             self.turn_outcome = Some(outcome);
             AgentEvent::TurnFinished { outcome }
         } else {
             event
         }
     }
+
+    fn record_protocol_error(&mut self, message: String) -> AgentEvent {
+        if self.protocol_error.is_none() {
+            self.protocol_error = Some(message.clone());
+        }
+        AgentEvent::ProtocolError { message }
+    }
 }
 
 enum RpcRecord {
     Response(PiRpcResponse),
     Event(AgentEvent),
+    ProtocolError(String),
     Exited,
 }
 
 fn parse_record(line: &str) -> Option<RpcRecord> {
-    let value: Value = serde_json::from_str(line).ok()?;
+    let value: Value = match serde_json::from_str(line) {
+        Ok(value) => value,
+        Err(error) => {
+            return Some(RpcRecord::ProtocolError(format!("malformed JSON: {error}")));
+        }
+    };
     let object = value.as_object()?;
     let record_type = object.get("type")?.as_str()?;
     if record_type == "response" {
@@ -565,4 +624,43 @@ async fn read_cli_version(program: &Path, working_dir: &Path) -> Result<String> 
         )));
     }
     version.ok_or_else(|| AgentError::Protocol("Pi --version returned no version".to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_json_is_recoverable_and_fails_settled_turn() {
+        let Some(RpcRecord::ProtocolError(message)) = parse_record("not JSON") else {
+            panic!("malformed JSON must produce a recoverable protocol-error record");
+        };
+        assert!(message.contains("malformed JSON"), "message: {message}");
+
+        let exit = terminal_outcome(false, Some(0), Some(TurnOutcome::Success), Some(&message));
+        match exit {
+            AgentExit::Failed {
+                code: Some(0),
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("protocol violation"), "reason: {reason}");
+                assert!(reason.contains("malformed JSON"), "reason: {reason}");
+            }
+            other => panic!("expected protocol failure after settlement, got {other:?}"),
+        }
+    }
+    #[test]
+    fn nonzero_exit_after_settled_turn_fails() {
+        let exit = terminal_outcome(false, Some(7), Some(TurnOutcome::Success), None);
+        assert!(
+            matches!(
+                &exit,
+                AgentExit::Failed {
+                    code: Some(7),
+                    reason: Some(reason)
+                } if reason.contains("code 7")
+            ),
+            "exit: {exit:?}"
+        );
+    }
 }

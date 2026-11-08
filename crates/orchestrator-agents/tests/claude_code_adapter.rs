@@ -207,16 +207,20 @@ fn eof_mid_turn_is_not_reported_as_completion() {
 }
 
 #[test]
-fn protocol_completion_and_process_exit_remain_separate() {
+fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
     with_runtime(async {
         let mut handle = spawn_fake("complete-exit-7").await.expect("spawn");
-        assert!(matches!(
-            handle.wait().await.expect("wait"),
-            AgentExit::Completed {
+        let exit = handle.wait().await.expect("wait");
+        match exit {
+            AgentExit::Failed {
                 code: Some(7),
-                last_message: Some(message)
-            } if message == "done"
-        ));
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("code 7"), "reason: {reason}");
+                assert!(reason.contains("last message: done"), "reason: {reason}");
+            }
+            other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
     });
 }
 

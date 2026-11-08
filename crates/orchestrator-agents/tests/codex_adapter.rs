@@ -381,11 +381,11 @@ fn stderr_is_diagnostics_and_nonzero_exit_fails() {
         let exit = h.wait().await.expect("wait");
         assert!(
             matches!(
-                exit,
+                &exit,
                 AgentExit::Failed {
                     code: Some(7),
-                    reason: None
-                }
+                    reason: Some(reason),
+                } if reason.contains("code 7")
             ),
             "exit: {exit:?}"
         );
