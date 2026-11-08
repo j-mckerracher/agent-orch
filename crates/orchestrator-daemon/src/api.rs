@@ -4,7 +4,7 @@
 //! and worktree paths; durable mutations use the shared idempotency executor.
 //! Updated: 2026-11-08T17:33:37+00:00.
 
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -471,6 +471,8 @@ impl DaemonApi {
         let params: DiffParams = parse_params(params)?;
         let task = self.store.get(&params.task_id).map_err(map_store_error)?;
         let workspace = self.selected_workspace(&params.task_id, params.workspace_id.as_deref())?;
+        let scoped_path =
+            validate_workspace_diff_path(Path::new(&workspace.path), params.path.as_deref())?;
         let project = self
             .store
             .get_project(&task.contract.project_id)
@@ -479,7 +481,7 @@ impl DaemonApi {
         let diff = worktree
             .diff_from(
                 &workspace.base_commit,
-                params.path.as_deref().map(Path::new),
+                scoped_path.as_deref().map(Path::new),
             )
             .map_err(map_git_error)?;
         if diff.len() > MAX_DIFF_BYTES {
@@ -529,6 +531,35 @@ fn task_repositories(
         return Err(RpcError::Forbidden);
     }
     Ok((primary, worktree))
+}
+
+fn validate_workspace_diff_path(
+    worktree_root: &Path,
+    path: Option<&str>,
+) -> Result<Option<String>, RpcError> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let path_components = Path::new(path);
+    if path.is_empty()
+        || path.starts_with('-')
+        || path_components.is_absolute()
+        || path_components.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(RpcError::InvalidParams);
+    }
+    let canonical_root = std::fs::canonicalize(worktree_root).map_err(|_| RpcError::NotFound)?;
+    let canonical_path = std::fs::canonicalize(canonical_root.join(path_components))
+        .map_err(|_| RpcError::InvalidParams)?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(RpcError::InvalidParams);
+    }
+    Ok(Some(path.to_owned()))
 }
 
 impl DaemonApi {

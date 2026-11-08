@@ -114,7 +114,7 @@ fn fixture() -> Fixture {
 }
 
 #[test]
-fn workspace_diff_rejects_paths_outside_task_worktree() {
+fn workspace_diff_accepts_candidate_path_inside_task_worktree() {
     let fixture = fixture();
     let diff = fixture
         .api
@@ -128,14 +128,98 @@ fn workspace_diff_rejects_paths_outside_task_worktree() {
         )
         .unwrap();
     assert!(diff["diff"].as_str().unwrap().contains("+candidate"));
-    let outside = fixture._directory.path().join("outside.txt");
+}
+
+fn invalid_path_fixture() -> (TempDir, DaemonApi, PathBuf, PathBuf) {
+    let directory = tempfile::tempdir().unwrap();
+    let worktree = directory.path().join("not-a-repository-worktree");
+    let outside = directory.path().join("outside");
+    fs::create_dir_all(&worktree).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let api = DaemonApi::new(&directory.path().join("data")).unwrap();
+    api.store
+        .register_project(&Project {
+            id: "project-1".into(),
+            root_path: directory
+                .path()
+                .join("not-a-repository-project")
+                .to_string_lossy()
+                .into_owned(),
+            settings: json!({}),
+        })
+        .unwrap();
+    api.store
+        .create(&TaskContract {
+            id: "task-1".into(),
+            project_id: "project-1".into(),
+            parent_id: None,
+            objective: "Reject unsafe diff paths".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+        })
+        .unwrap();
+    api.store.transition("task-1", TaskEvent::Admit).unwrap();
+    api.store
+        .add_workspace(&Workspace {
+            id: "workspace-1".into(),
+            task_id: "task-1".into(),
+            path: worktree.to_string_lossy().into_owned(),
+            branch: "not-a-branch".into(),
+            base_commit: "a".repeat(40),
+        })
+        .unwrap();
+    (directory, api, worktree, outside)
+}
+
+fn diff_error(api: &DaemonApi, path: &str) -> Result<Value, RpcError> {
+    api.dispatch(
+        "workspaces.diff",
+        json!({"task_id": "task-1", "workspace_id": "workspace-1", "path": path}),
+    )
+}
+
+#[test]
+fn workspace_diff_rejects_empty_path_before_git() {
+    let (_directory, api, _worktree, _outside) = invalid_path_fixture();
+    assert_eq!(diff_error(&api, ""), Err(RpcError::InvalidParams));
+}
+
+#[test]
+fn workspace_diff_rejects_absolute_path_before_git() {
+    let (directory, api, _worktree, outside) = invalid_path_fixture();
     assert_eq!(
-        fixture.api.dispatch(
-            "workspaces.diff",
-            json!({"task_id": "task-1", "workspace_id": "workspace-1", "path": outside}),
-        ),
-        Err(RpcError::Forbidden)
+        diff_error(&api, outside.join("file.txt").to_str().unwrap()),
+        Err(RpcError::InvalidParams)
     );
+}
+
+#[test]
+fn workspace_diff_rejects_parent_component_before_git() {
+    let (_directory, api, _worktree, _outside) = invalid_path_fixture();
+    assert_eq!(
+        diff_error(&api, "nested/../outside.txt"),
+        Err(RpcError::InvalidParams)
+    );
+}
+
+#[test]
+fn workspace_diff_rejects_option_prefix_before_git() {
+    let (_directory, api, _worktree, _outside) = invalid_path_fixture();
+    assert_eq!(diff_error(&api, "-option"), Err(RpcError::InvalidParams));
+}
+
+#[cfg(unix)]
+#[test]
+fn workspace_diff_rejects_symlink_escape_before_git() {
+    let (_directory, api, worktree, outside) = invalid_path_fixture();
+    std::os::unix::fs::symlink(outside, worktree.join("escape")).unwrap();
+    assert_eq!(diff_error(&api, "escape"), Err(RpcError::InvalidParams));
 }
 
 #[test]
