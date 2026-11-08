@@ -1,5 +1,91 @@
-//! JSON-RPC protocol plus server and client for the authenticated local IPC between the daemon and its clients (CLI, desktop, mobile).
+//! Authenticated local JSON-RPC control plane between daemon and clients.
 //!
-//! Boundary placeholder: no public API yet. Do not add dependencies here
-//! beyond what its future modules actually use; the workspace dependency
-//! direction (see the root Cargo.toml header) is checked in code review.
+//! Updated: 2026-11-08T13:56:18+00:00. Each frame is `u16` protocol version
+//! (big-endian), `u32` JSON byte length (big-endian), then exactly that many
+//! UTF-8 JSON bytes. Version 1 is current. Bodies over 1 MiB are rejected
+//! before allocation. Typed frame errors distinguish oversized, truncated,
+//! wrong-version, malformed-JSON, and I/O failures. Malformed-JSON errors carry
+//! no parser detail or input text. JSON-RPC 2.0 `handshake` is the first
+//! request on each stream. Request IDs accept strings and numbers. Its params
+//! have a lowercase 64-character hex token, supported versions, and requested
+//! capabilities. Server picks the highest common version and compares the
+//! token in constant time. It advertises only `health`;
+//! `capabilities` discovers the negotiated set. `health` returns package
+//! version, uptime seconds, and data directory. `shutdown` is lifecycle control
+//! and remains callable when no feature capability is negotiated. Unsupported
+//! capabilities fail with a typed, payload-free error. Tokens use fresh
+//! 32-byte OS randomness and live in `daemon.token` with mode 0600. The data
+//! directory must be owned by the daemon user and not writable by group or
+//! other users. After locking, startup removes only an owner-matched regular
+//! stale token file after identity recheck; unsafe token state fails closed.
+//! Token bytes and attacker-supplied capability text never appear in errors or
+//! debug output.
+//!
+//! Unix socket lives at `data_dir/ipc/daemon.sock`. The directory has mode
+//! 0700 and the socket has mode 0600. Listener cleanup unlinks only its
+//! recorded device, inode, and owner identity. Startup reclaims only an
+//! owner-matched socket whose connect probe returns `ConnectionRefused`, after
+//! rechecking identity. Any other probe result fails closed. Orderly shutdown
+//! removes owned token and socket. Acquire the daemon lock before creating
+//! server resources. Idle timer starts at daemon startup and resets on each
+//! authenticated request. Default is 60 seconds. The accept loop is nonblocking
+//! for idle checks; it resets accepted streams to blocking before applying
+//! per-stream read and write timeouts. Windows returns typed `Unsupported`;
+//! named pipes are deferred and are neither implemented nor tested.
+//!
+
+#[cfg(unix)]
+mod auth;
+mod protocol;
+#[cfg(unix)]
+mod session;
+#[cfg(unix)]
+mod unix_transport;
+
+pub use protocol::{Capability, FrameError};
+#[cfg(unix)]
+mod client;
+#[cfg(unix)]
+mod server;
+#[cfg(not(unix))]
+mod unsupported;
+#[cfg(unix)]
+pub use client::Client;
+#[cfg(unix)]
+pub use server::{Server, ServerConfig};
+#[cfg(not(unix))]
+pub use unsupported::{Client, Server, ServerConfig};
+
+#[cfg(all(test, unix))]
+#[path = "integration_tests.rs"]
+mod integration_tests;
+#[cfg(all(test, unix))]
+#[path = "lifecycle_tests.rs"]
+mod lifecycle_tests;
+
+#[derive(Debug, thiserror::Error)]
+pub enum IpcError {
+    #[error(transparent)]
+    Frame(#[from] FrameError),
+    #[error("local IPC authentication failed")]
+    Authentication,
+    #[error("requested capability is unavailable")]
+    UnsupportedCapability,
+    #[error("no common IPC protocol version")]
+    UnsupportedVersion,
+    #[error("local IPC transport is unsupported on this platform")]
+    Unsupported,
+    #[error("local IPC listener already exists")]
+    AlreadyRunning,
+    #[error("local IPC path has unsafe or ambiguous ownership")]
+    UnsafePath,
+    #[error("local IPC operation failed")]
+    Operation,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct Health {
+    pub package_version: String,
+    pub uptime_seconds: u64,
+    pub data_directory: std::path::PathBuf,
+}
