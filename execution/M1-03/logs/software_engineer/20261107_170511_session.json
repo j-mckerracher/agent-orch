@@ -230,5 +230,15 @@
     "preserved_failed_evidence_commit": "1e218446c9a01bd28bf9e2e4b5b8052c5eb0bcc6",
     "board_status": "done",
     "priority_4_started": false
+  },
+  "integration": {
+    "main_branch": "main",
+    "implementation_merge_commit": "569a920",
+    "evidence_merge_commit": "aeebec7",
+    "candidate_branch_tip": "6fe9d3617520c0424380de169613bb9888db6716",
+    "candidate_source_commit": "649c137d7bcfcf2445d2a107162862cde0a1c0ed",
+    "macos_evidence_commit": "29be290bb779517886144ab774ddd28fd78b746c",
+    "status": "merged into local main; push pending",
+    "priority_4_started": false
   }
 }
