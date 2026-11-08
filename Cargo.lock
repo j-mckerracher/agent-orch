@@ -871,6 +871,7 @@ version = "0.1.0"
 dependencies = [
  "tempfile",
  "thiserror",
+ "windows-sys",
 ]
 
 [[package]]
@@ -908,6 +909,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "windows-sys",
 ]
 
 [[package]]
