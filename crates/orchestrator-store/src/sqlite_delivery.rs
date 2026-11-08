@@ -4,7 +4,7 @@
 //! checks still use `SqliteStore::check_approval`; this module also rechecks
 //! that a persisted verifier run passed for the exact task and candidate.
 //!
-//! Updated: 2026-11-08T09:52:29Z.
+//! Updated: 2026-11-08T03:41:55-07:00.
 
 use std::io;
 
@@ -176,6 +176,61 @@ impl SqliteStore {
                     let parameter_digest: String = row.try_get("parameter_digest")?;
                     let candidate_sha: String = row.try_get("candidate_sha")?;
                     if stored_task_id != task_id
+                        || stored_action_kind != delivery_mode
+                        || parameter_digest != hex_digest(action.parameter_digest().as_bytes())
+                        || candidate_sha != action.candidate_commit().as_str()
+                    {
+                        return Err(invalid_delivery_record(
+                            "stored delivery action columns do not match action payload",
+                        ));
+                    }
+                    let approval_id: String = row.try_get("approval_id")?;
+                    let verification_run_id: String = row.try_get("verification_run_id")?;
+                    let destination: String = row.try_get("destination")?;
+                    let target_ref: Option<String> = row.try_get("target_ref")?;
+                    let outcome: String = row.try_get("outcome")?;
+                    let detail: Option<String> = row.try_get("detail")?;
+                    let diff_summary: Option<String> = row.try_get("diff_summary")?;
+                    Ok(json!({
+                        "id": id,
+                        "task_id": stored_task_id,
+                        "delivery_mode": delivery_mode,
+                        "action_kind": action_name,
+                        "action": action,
+                        "parameter_digest": parameter_digest,
+                        "candidate_sha": candidate_sha,
+                        "approval_id": approval_id,
+                        "verification_run_id": verification_run_id,
+                        "destination": destination,
+                        "target_ref": target_ref,
+                        "outcome": outcome,
+                        "detail": detail,
+                        "diff_summary": diff_summary,
+                    }))
+                })
+                .collect()
+        })
+    }
+
+    /// Loads every delivery step in stable creation order.
+    pub fn all_delivery_steps(&self) -> Result<Vec<Value>, StoreError> {
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT id, task_id, action_kind, action, parameter_digest, candidate_sha, approval_id, verification_run_id, destination, target_ref, outcome, detail, diff_summary FROM delivery_steps ORDER BY created_at, id",
+            )
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    let id: String = row.try_get("id")?;
+                    let stored_task_id: String = row.try_get("task_id")?;
+                    let stored_action_kind: String = row.try_get("action_kind")?;
+                    let action_json: String = row.try_get("action")?;
+                    let action: ApprovalAction = serde_json::from_str(&action_json)?;
+                    let (delivery_mode, action_name) = delivery_action(action.kind())?;
+                    let parameter_digest: String = row.try_get("parameter_digest")?;
+                    let candidate_sha: String = row.try_get("candidate_sha")?;
+                    if stored_task_id != action.task_id()
                         || stored_action_kind != delivery_mode
                         || parameter_digest != hex_digest(action.parameter_digest().as_bytes())
                         || candidate_sha != action.candidate_commit().as_str()
