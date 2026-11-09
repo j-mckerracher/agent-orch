@@ -516,3 +516,73 @@ fn deletion_safety_follows_current_repository_state_and_never_deletes() {
     );
     assert!(nested.exists() && fixture.repository_path.join("base.txt").exists());
 }
+
+#[test]
+fn every_callback_runs_under_the_destination_lock_and_a_persistence_failure_keeps_the_written_ref()
+{
+    let fixture = fixture();
+    let lock = lock_path(&fixture);
+    let held = RefCell::new(Vec::new());
+    let approval = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+        held.borrow_mut().push(("approval", lock.exists()));
+        Ok(())
+    };
+    let verification = |_: &VerificationCheck<'_>| -> Result<(), CallbackError> {
+        held.borrow_mut().push(("verification", lock.exists()));
+        Ok(())
+    };
+    let failing = |_: &DeliveryStep| -> Result<(), CallbackError> {
+        held.borrow_mut().push(("persist", lock.exists()));
+        Err("store unavailable".into())
+    };
+    let callbacks = DeliveryCallbacks {
+        check_approval: &approval,
+        check_verification: &verification,
+        persist_step: &failing,
+    };
+
+    let error = delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-persist-fails"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect_err("an unrecorded delivery must be surfaced");
+
+    assert_eq!(
+        review_refs(&fixture),
+        format!("{REVIEW_REF} {}", fixture.candidate_sha),
+        "the already written review ref is retained, never rolled back"
+    );
+    assert!(!lock.exists(), "the lock is released after the failure");
+    assert_eq!(
+        *held.borrow(),
+        [
+            ("verification", true),
+            ("approval", true),
+            ("persist", true)
+        ]
+    );
+    assert!(matches!(error, DeliveryError::Persistence(_)));
+
+    // Report-only has the same contract and still writes no ref.
+    let refs_before = all_refs(&fixture);
+    held.borrow_mut().clear();
+    let error = delivery::report_only(
+        &fixture.repository,
+        request(&fixture, "delivery-report-persist-fails"),
+        &callbacks,
+    )
+    .expect_err("an unrecorded report must be surfaced");
+    assert_eq!(all_refs(&fixture), refs_before);
+    assert!(!lock.exists());
+    assert_eq!(
+        *held.borrow(),
+        [
+            ("verification", true),
+            ("approval", true),
+            ("persist", true)
+        ]
+    );
+    assert!(matches!(error, DeliveryError::Persistence(_)));
+}
