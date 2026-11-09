@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DaemonError } from "../daemon/errors";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../test/fakeDaemon";
@@ -88,6 +88,7 @@ describe("S3 task list", () => {
     expect(await screen.findByRole("heading", { name: "Task preview" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Simulate launch" }));
     expect(await screen.findByTestId("simulated-receipt")).toHaveTextContent("SIMULATED");
+    expect(screen.getByTestId("simulated-receipt")).toHaveTextContent("PLACEHOLDER DATA");
     await user.click(screen.getByRole("button", { name: "Simulate cancel" }));
     await waitFor(() => expect(screen.getAllByTestId("simulated-receipt")).toHaveLength(2));
     const mutating = fake.calls.filter((c) => /^(tasks\.(submit|cancel)|sessions\.)/.test(c.method));
@@ -176,6 +177,9 @@ describe("S4 task and session detail", () => {
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled\. This is not proof that any process has stopped\./)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
+    expect((fake.callsTo("tasks.cancel")[0]!.params as { idempotency_key?: string }).idempotency_key).toEqual(
+      expect.any(String),
+    );
   });
 
   it("shows the daemon's reason when cancel fails", async () => {
@@ -211,18 +215,27 @@ describe("S4 task and session detail", () => {
     expect(await screen.findByText(/Loading task failed/)).toBeInTheDocument();
   });
 
-  it("labels retry, outcome and recovery panels as placeholder data and previews retry as simulated", async () => {
-    const { user } = await mount(seeded(), { route: taskRoute("t-b") });
+  it("labels retry, outcome and recovery panels as placeholder data", async () => {
+    await mount(seeded(), { route: taskRoute("t-b") });
     await screen.findByTestId("task-state");
     for (const id of ["D2", "D3", "D4"]) {
       await waitFor(() => expect(screen.getAllByTestId(`badge-${id}`).length).toBeGreaterThan(0));
     }
     expect(screen.getByRole("region", { name: "Recovery classification (placeholder)" })).toBeInTheDocument();
-    const retry = await screen.findByRole("button", { name: "Preview retry" });
-    if (!retry.hasAttribute("disabled")) {
-      await user.click(retry);
-      expect(await screen.findByTestId("simulated-receipt")).toHaveTextContent("SIMULATED");
-    }
+  });
+
+  it("previews a retry of a failed task as a simulated receipt that creates nothing", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-f", REPO, { state: "Failed" }));
+    const { user } = await mount(fake, { route: taskRoute("t-f") });
+    await screen.findByTestId("task-state");
+    await user.click(await screen.findByRole("button", { name: "Preview retry" }));
+    const receipt = await screen.findByTestId("simulated-receipt");
+    expect(receipt).toHaveTextContent("SIMULATED");
+    expect(receipt).toHaveTextContent("PLACEHOLDER DATA");
+    expect(receipt).toHaveTextContent("Simulated retry of t-f. No new attempt was created.");
+    expect(receipt).toHaveTextContent("(new attempt fixture:attempt-simulated)");
+    expect(fake.callsTo("tasks.submit")).toHaveLength(0);
   });
 
   it("renders a D2 unavailable state without hiding the real task", async () => {
@@ -251,8 +264,27 @@ describe("S5 coordinator", () => {
     await user.click(screen.getByRole("button", { name: "Preview reply" }));
     await user.click(screen.getByRole("button", { name: "Preview proposed tasks" }));
     await waitFor(() => expect(screen.getAllByTestId("simulated-receipt")).toHaveLength(2));
-    for (const receipt of screen.getAllByTestId("simulated-receipt")) expect(receipt).toHaveTextContent("SIMULATED");
+    for (const receipt of screen.getAllByTestId("simulated-receipt")) {
+      expect(receipt).toHaveTextContent("SIMULATED");
+      expect(receipt).toHaveTextContent("PLACEHOLDER DATA");
+    }
     expect(fake.callsTo("tasks.submit")).toHaveLength(0);
+  });
+
+  it("renders repeated previews without duplicate React keys", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { user } = await mount(seeded(), { route });
+      await user.type(await screen.findByLabelText("Draft objective"), "Refactor settings");
+      for (let i = 0; i < 2; i++) {
+        await user.click(screen.getByRole("button", { name: "Preview reply" }));
+        await user.click(screen.getByRole("button", { name: "Preview proposed tasks" }));
+      }
+      await waitFor(() => expect(screen.getAllByTestId("simulated-receipt")).toHaveLength(4));
+      expect(errors.mock.calls.some((call) => /same key/.test(String(call[0])))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("lists related real tasks and pending decisions and navigates to them", async () => {

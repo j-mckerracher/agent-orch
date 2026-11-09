@@ -24,6 +24,8 @@ describe("C1 connection strip", () => {
     await waitFor(() => expect(screen.getByTestId("last-sequence")).toHaveTextContent("Last durable sequence: 2"));
     const continuity = screen.getByTestId("journal-continuity");
     await waitFor(() => expect(continuity).toHaveTextContent("never proof that history is complete"));
+    expect(continuity).toHaveTextContent(/: unknown \(never proof that history is complete\)/);
+    expect(continuity).not.toHaveTextContent("same");
     expect(within(continuity).getByTestId("badge-D6")).toHaveTextContent("PLACEHOLDER DATA");
   });
 

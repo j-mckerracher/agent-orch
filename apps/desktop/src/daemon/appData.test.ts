@@ -93,6 +93,26 @@ describe("ConnectionManager", () => {
     await until(() => connection.getSnapshot().lastSequence === 3);
   });
 
+  it("keeps the saved cursor on a manual reconnect and drops it only for a fresh one", async () => {
+    const fake = new FakeDaemon();
+    fake.events = [mkEvent(1, "t", null), mkEvent(2, "t", null)];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => connection.getSnapshot().lastSequence === 2);
+
+    let generation = connection.getSnapshot().generation;
+    connection.reconnect();
+    await until(() => connection.getSnapshot().generation > generation && status(connection) === "connected");
+    expect(connection.getSnapshot().resumedFrom).toBe(2);
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 2 });
+
+    generation = connection.getSnapshot().generation;
+    connection.reconnect({ fresh: true });
+    await until(() => connection.getSnapshot().generation > generation && status(connection) === "connected");
+    expect(connection.getSnapshot().resumedFrom).toBeNull();
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({});
+  });
+
   it("backs off, then stops auto-retry after repeated failures and offers a manual reconnect", async () => {
     const fake = new FakeDaemon();
     fake.openError = new DaemonError("disconnected", "down");
@@ -164,6 +184,17 @@ describe("AppData", () => {
     await until(() => data.getSnapshot().tasks.data?.length === 1);
   });
 
+  it("issues a new tasks.list refresh when a live event arrives", async () => {
+    const fake = new FakeDaemon();
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => data.getSnapshot().tasks.status === "ready");
+    await new Promise((r) => setTimeout(r, 40));
+    const before = fake.callsTo("tasks.list").length;
+    fake.emit(mkEvent(1, "t", null));
+    await until(() => fake.callsTo("tasks.list").length > before);
+  });
+
   it("coalesces a burst of events into few refreshes", async () => {
     const fake = new FakeDaemon();
     const { connection, data } = setup(fake);
@@ -228,6 +259,23 @@ describe("AppData", () => {
     expect(keys()[2]).not.toBe(keys()[3]);
   });
 
+  it("scopes the submit idempotency key per project", async () => {
+    const fake = new FakeDaemon();
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    const keys = () => fake.callsTo("tasks.submit").map((c) => (c.params as { idempotency_key: string }).idempotency_key);
+
+    fake.failNext("tasks.submit", "hang");
+    expect((await data.submitTask({ ...submission, project_id: "/a" })).ok).toBe(false);
+    expect(data.tracker.pending("submit:/a")).toBe(true);
+    expect((await data.submitTask({ ...submission, project_id: "/b" })).ok).toBe(true);
+    expect(data.tracker.pending("submit:/a")).toBe(true);
+    expect((await data.submitTask({ ...submission, project_id: "/a" })).ok).toBe(true);
+    expect(keys()[2]).toBe(keys()[0]);
+    expect(keys()[1]).not.toBe(keys()[0]);
+  });
+
   it("reports a failed mutation while disconnected without throwing", async () => {
     const { data } = setup(new FakeDaemon());
     const result = await data.submitTask(submission);
@@ -244,6 +292,9 @@ describe("AppData", () => {
     const result = await data.cancelTask("task-1");
     expect(result.ok && result.value.state).toBe("Cancelled");
     expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ task_id: "task-1" });
+    expect((fake.callsTo("tasks.cancel")[0]!.params as { idempotency_key?: string }).idempotency_key).toEqual(
+      expect.any(String),
+    );
     await until(() => data.getSnapshot().tasks.data?.[0]?.state === "Cancelled");
   });
 
@@ -300,6 +351,34 @@ describe("AppData", () => {
       await data.loadTimeline("t1", "s1", "reset");
       fake.emit(mkEvent(6, "t1", "s1"));
       await until(() => data.getSnapshot().timelines[timelineKey("t1", "s1")]!.events.length === 6);
+    });
+
+    it("drops sequences the daemon returns again in an overlapping page", async () => {
+      const fake = seeded();
+      fake.ignoreAfterSequence = true;
+      const { connection, data } = setup(fake);
+      connection.start();
+      await until(() => status(connection) === "connected");
+      await data.loadTimeline("t1", "s1", "reset");
+      await data.loadTimeline("t1", "s1", "more");
+      const timeline = data.getSnapshot().timelines[timelineKey("t1", "s1")]!;
+      expect(timeline.events.map((e) => e.sequence)).toEqual([1, 2]);
+    });
+
+    it("discards the result of a superseded load", async () => {
+      const fake = seeded();
+      const { connection, data } = setup(fake);
+      connection.start();
+      await until(() => status(connection) === "connected");
+      await data.loadTimeline("t1", "s1", "reset");
+
+      fake.delayNext("sessions.events", 60);
+      const slow = data.loadTimeline("t1", "s1", "more");
+      fake.events = [mkEvent(7, "t1", "s1"), mkEvent(8, "t1", "s1")];
+      await data.loadTimeline("t1", "s1", "reset");
+      await slow;
+      const timeline = data.getSnapshot().timelines[timelineKey("t1", "s1")]!;
+      expect(timeline.events.map((e) => e.sequence)).toEqual([7, 8]);
     });
 
     it("records a load error without losing already loaded events", async () => {

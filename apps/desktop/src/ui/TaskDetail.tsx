@@ -2,11 +2,11 @@
 import { useEffect, useState } from "react";
 import { timelineKey } from "../daemon/appData";
 import type { DaemonError } from "../daemon/errors";
-import type { TaskRef } from "../sources/types";
+import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { TERMINAL_STATES, basename, pendingApprovals } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { ErrorNotice, LoadableRegion, SourceSection } from "./widgets";
+import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
   const { sources } = useServices();
@@ -14,8 +14,8 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
   const outcome = useSource(() => sources.execution.outcomeFor(taskRef), `outcome:${refKey}`);
   const recovery = useSource(() => sources.recovery.recoveryFor(taskRef), `recovery:${refKey}`);
   const retry = useSource(() => sources.retry.retryFor(taskRef), `retry:${refKey}`);
-  const [receipts, setReceipts] = useState<string[]>([]);
-  const note = (text: string) => setReceipts((list) => [...list, text]);
+  const [receipts, setReceipts] = useState<SimulatedReceipt[]>([]);
+  const note = (receipt: SimulatedReceipt) => setReceipts((list) => [...list, receipt]);
   const ownId = taskRef.origin === "real" ? taskRef.taskId : taskRef.id;
 
   return (
@@ -35,7 +35,9 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
               type="button"
               disabled={!info.available}
               onClick={() =>
-                void sources.retry.simulateRetry(taskRef).then((r) => note(`${r.notice} (new attempt ${r.newAttemptId})`))
+                void sources.retry
+                  .simulateRetry(taskRef)
+                  .then((r) => note({ ...r, notice: `${r.notice} (new attempt ${r.newAttemptId})` }))
               }
             >
               Preview retry
@@ -57,10 +59,10 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
             </p>
             {previewId && (
               <p>
-                <button type="button" onClick={() => void sources.execution.simulateLaunch(previewId).then((r) => note(r.notice))}>
+                <button type="button" onClick={() => void sources.execution.simulateLaunch(previewId).then(note)}>
                   Simulate launch
                 </button>{" "}
-                <button type="button" onClick={() => void sources.execution.simulateCancel(previewId).then((r) => note(r.notice))}>
+                <button type="button" onClick={() => void sources.execution.simulateCancel(previewId).then(note)}>
                   Simulate cancel
                 </button>
               </p>
@@ -87,15 +89,7 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
           </div>
         )}
       </SourceSection>
-      {receipts.length > 0 && (
-        <ul aria-label={`Simulated receipts for ${ownId}`}>
-          {receipts.map((text, index) => (
-            <li key={index} data-testid="simulated-receipt">
-              <span className="badge badge-fixture">SIMULATED</span> {text}
-            </li>
-          ))}
-        </ul>
-      )}
+      {receipts.length > 0 && <SimulatedReceipts label={`Simulated receipts for ${ownId}`} receipts={receipts} />}
     </div>
   );
 }

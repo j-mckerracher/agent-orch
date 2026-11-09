@@ -5,8 +5,8 @@
   "scenarios": {
     "success": {
       "data": {
-        "storeIdentity": "fixture:store-epoch-1",
-        "cursorRelationship": "same"
+        "storeIdentity": null,
+        "cursorRelationship": "unknown"
       }
     },
     "empty": {

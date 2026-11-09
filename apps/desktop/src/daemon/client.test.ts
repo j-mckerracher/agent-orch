@@ -58,7 +58,8 @@ describe("DaemonSession", () => {
     fake.events = [mkEvent(1, "t", "s"), mkEvent(2, "t", "s")];
     const session = await open(fake);
     const seen: number[] = [];
-    await session.subscribe(0, { event: (e) => seen.push(e.sequence), error: () => undefined });
+    const errors: DaemonError[] = [];
+    await session.subscribe(0, { event: (e) => seen.push(e.sequence), error: (e) => errors.push(e) });
     await until(() => seen.length === 2);
     fake.emit(mkEvent(3, "t", "s"));
     const channel = fake.live[0]!;
@@ -68,7 +69,10 @@ describe("DaemonSession", () => {
       params: { subscription_id: channel.subscriptionId, event: mkEvent(3, "t", "s") },
     });
     await until(() => seen.length === 3);
-    expect(seen).toEqual([1, 2, 3]);
+    fake.emit(mkEvent(4, "t", "s"));
+    await until(() => seen.length === 4);
+    expect(seen).toEqual([1, 2, 3, 4]);
+    expect(errors).toEqual([]);
   });
 
   it("resumes after the given cursor", async () => {

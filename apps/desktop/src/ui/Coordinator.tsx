@@ -1,10 +1,10 @@
 /** S5: coordinator view. The conversation is D5 placeholder data; related tasks and approvals are real. */
 import { useState } from "react";
-import type { CoordinatorMessage, ProposedTask } from "../sources/types";
+import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { basename, pendingApprovals } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { LoadableRegion, SourceSection } from "./widgets";
+import { LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
 
 export function Coordinator({ projectId }: { projectId: string }) {
   const { data, router, drafts, sources } = useServices();
@@ -14,7 +14,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
   const conversation = useSource(() => sources.coordinator.conversation(projectId), `conversation:${projectId}`);
   const [replies, setReplies] = useState<CoordinatorMessage[]>([]);
   const [proposals, setProposals] = useState<ProposedTask[]>([]);
-  const [receipts, setReceipts] = useState<string[]>([]);
+  const [receipts, setReceipts] = useState<SimulatedReceipt[]>([]);
 
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
   const ownIds = new Set(own.map((task) => task.contract.id));
@@ -40,16 +40,16 @@ export function Coordinator({ projectId }: { projectId: string }) {
         {(convo) => (
           <div>
             <ul aria-label="Messages">
-              {[...convo.messages, ...replies].map((message) => (
-                <li key={message.id}>
+              {[...convo.messages, ...replies].map((message, index) => (
+                <li key={`${index}:${message.id}`}>
                   <strong>{message.role}</strong>: {message.text}
                 </li>
               ))}
             </ul>
             <h4>Structured proposals</h4>
             <ul aria-label="Proposals">
-              {[...convo.proposals, ...proposals].map((proposal) => (
-                <li key={proposal.id}>
+              {[...convo.proposals, ...proposals].map((proposal, index) => (
+                <li key={`${index}:${proposal.id}`}>
                   {proposal.objective} — validation {proposal.validation}
                   {proposal.validationErrors.length > 0 && `: ${proposal.validationErrors.join("; ")}`}
                   {proposal.dependencies.length > 0 && ` (depends on ${proposal.dependencies.join(", ")})`}; suggested
@@ -77,7 +77,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
           onClick={() =>
             void sources.coordinator.previewReply(projectId, draft).then((r) => {
               setReplies((list) => [...list, r.message]);
-              setReceipts((list) => [...list, r.notice]);
+              setReceipts((list) => [...list, r]);
             })
           }
         >
@@ -88,19 +88,13 @@ export function Coordinator({ projectId }: { projectId: string }) {
           onClick={() =>
             void sources.coordinator.previewProposal(projectId, draft).then((r) => {
               setProposals((list) => [...list, r.proposal]);
-              setReceipts((list) => [...list, r.notice]);
+              setReceipts((list) => [...list, r]);
             })
           }
         >
           Preview proposed tasks
         </button>
-        <ul aria-label="Simulated receipts">
-          {receipts.map((text, index) => (
-            <li key={index} data-testid="simulated-receipt">
-              <span className="badge badge-fixture">SIMULATED</span> {text}
-            </li>
-          ))}
-        </ul>
+        <SimulatedReceipts label="Simulated receipts" receipts={receipts} />
       </section>
 
       <section aria-label="Related live work">

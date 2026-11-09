@@ -46,7 +46,12 @@ export function formatRoute(route: Route): string {
 }
 
 export function parseRoute(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  } catch {
+    return { name: "projects" };
+  }
   if (parts[0] !== "project" || !parts[1]) return { name: "projects" };
   const projectId = parts[1];
   switch (parts[2]) {

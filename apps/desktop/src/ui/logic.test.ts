@@ -92,6 +92,11 @@ describe("router", () => {
     expect(parseRoute("")).toEqual({ name: "projects" });
   });
 
+  it("falls back to the project list for a malformed percent-escape instead of throwing", () => {
+    expect(parseRoute("#/project/%E0%A4%A")).toEqual({ name: "projects" });
+    expect(parseRoute("#/project/%E0%A4%A/tasks/all")).toEqual({ name: "projects" });
+  });
+
   it("navigation only changes local state", () => {
     const router = new RouterStore();
     let notified = 0;

@@ -179,7 +179,7 @@ describe("real M5-02 daemon: event stream", () => {
 });
 
 describe("real M5-02 daemon: ConnectionManager and AppData", () => {
-  it("connects, loads snapshots, reflects a submit through live events, and reconnects after a drop", async () => {
+  it("connects, loads snapshots, reflects a submit through live events, and reconnects after a drop (asserts PRE-EPOCH resume; flips with M5-02b)", async () => {
     const manager = new ConnectionManager({ connector, backoffMs: [50], requestTimeoutMs: 5000 });
     const data = new AppData(manager, { coalesceMs: 20 });
     const statuses: ConnectionStatus[] = [];
@@ -206,6 +206,9 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     connector.opened[connector.opened.length - 1]!.sever();
     await until(() => manager.getSnapshot().generation > generation, "reconnected");
     expect(manager.getSnapshot().status).toBe("connected");
+    // PRE-EPOCH BEHAVIOUR (M5-02 D3): the in-memory cursor is resumed silently because M5-02
+    // has no store epoch. Against M5-02b (EpochMismatch -32018, commit 27181dbb) this must
+    // flip at integration: a changed epoch has to force a fresh baseline and history.incomplete.
     expect(manager.getSnapshot().resumedFrom).toBe(sequenceBefore);
     expect(statuses).toContain("reconnecting");
 

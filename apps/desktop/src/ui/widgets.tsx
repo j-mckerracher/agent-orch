@@ -72,6 +72,26 @@ export function PlaceholderBadge({ provenance }: { provenance: Provenance }) {
   );
 }
 
+/** Receipts of simulated DUMMY actions: always labelled SIMULATED and with the source's PLACEHOLDER DATA badge. */
+export function SimulatedReceipts({
+  label,
+  receipts,
+}: {
+  label: string;
+  receipts: Array<{ provenance: Provenance; notice: string }>;
+}) {
+  return (
+    <ul aria-label={label}>
+      {receipts.map((receipt, index) => (
+        <li key={index} data-testid="simulated-receipt">
+          <span className="badge badge-fixture">SIMULATED</span> <PlaceholderBadge provenance={receipt.provenance} />{" "}
+          {receipt.notice}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Inline error: reason, affected action, safe next step. */
 export function ErrorNotice({ error, action }: { error: DaemonError; action: string }) {
   const { reason, nextStep } = presentError(error);

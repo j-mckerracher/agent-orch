@@ -74,6 +74,7 @@ export class AppData extends Store<AppDataSnapshot> {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly detach: Array<() => void> = [];
   private readonly watched = new Map<string, () => Promise<void>>();
+  private readonly timelineLoads = new Map<string, number>();
 
   constructor(
     private readonly connection: ConnectionManager,
@@ -195,12 +196,19 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
-  /** `reset` fetches from the start; `more` continues from the saved cursor. */
+  /**
+   * `reset` fetches from the start; `more` continues from the saved cursor.
+   * Only the latest load for a timeline may write, so an overlapping reset
+   * and "more" cannot overwrite each other with a stale base.
+   */
   async loadTimeline(taskId: string, sessionId: string, mode: "reset" | "more" = "reset"): Promise<void> {
     const key = timelineKey(taskId, sessionId);
     const current = this.getSnapshot().timelines[key];
     const continuing = mode === "more" && current !== undefined && current.status !== "loading";
     if (mode === "more" && current?.loadingMore) return;
+    const generation = (this.timelineLoads.get(key) ?? 0) + 1;
+    this.timelineLoads.set(key, generation);
+    const stale = () => this.timelineLoads.get(key) !== generation;
     const base: Timeline = continuing
       ? { ...current, loadingMore: true, error: null }
       : { taskId, sessionId, status: "loading", events: [], more: false, next: 0, loadingMore: false, error: null };
@@ -208,6 +216,7 @@ export class AppData extends Store<AppDataSnapshot> {
     try {
       const after = continuing ? current.next : undefined;
       const page = await this.connection.api().sessionsEvents(taskId, sessionId, after);
+      if (stale()) return;
       const seen = new Set(base.events.map((event) => event.sequence));
       const fresh = page.events.filter((event) => !seen.has(event.sequence));
       this.setTimeline(key, {
@@ -221,6 +230,7 @@ export class AppData extends Store<AppDataSnapshot> {
         error: null,
       });
     } catch (error) {
+      if (stale()) return;
       this.setTimeline(key, {
         ...base,
         status: base.events.length > 0 || continuing ? "ready" : "error",
@@ -250,7 +260,7 @@ export class AppData extends Store<AppDataSnapshot> {
   }
 
   async submitTask(submission: TaskSubmission): Promise<MutationResult<TaskRecord>> {
-    const scope = "submit";
+    const scope = `submit:${submission.project_id}`;
     const key = this.tracker.keyFor(scope, JSON.stringify(submission));
     try {
       const value = await this.connection.api().tasksSubmit(key, submission);

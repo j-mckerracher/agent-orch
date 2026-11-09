@@ -116,12 +116,15 @@ export class FakeDaemon implements DaemonConnector {
   events: DaemonEvent[] = [];
   approvals: Approval[] = [];
   pageSize = 256;
+  /** Makes `sessions.events` ignore `after_sequence`, as an overlapping page would. */
+  ignoreAfterSequence = false;
   capabilitiesOverride: Capability[] | null = null;
   openFailures: DaemonError[] = [];
   openError: DaemonError | null = null;
   calls: Array<{ method: string; params: unknown }> = [];
   channels: FakeChannel[] = [];
   private failures = new Map<string, Failure[]>();
+  private delays = new Map<string, number[]>();
   private submitted = new Map<string, TaskRecord>();
   private nextSub = 1;
   private nextTask = 1;
@@ -130,6 +133,13 @@ export class FakeDaemon implements DaemonConnector {
     const list = this.failures.get(method) ?? [];
     for (let i = 0; i < times; i++) list.push(failure);
     this.failures.set(method, list);
+  }
+
+  /** Replies to the next calls of a method are computed immediately but delivered after `ms`. */
+  delayNext(method: string, ms: number, times = 1): void {
+    const list = this.delays.get(method) ?? [];
+    for (let i = 0; i < times; i++) list.push(ms);
+    this.delays.set(method, list);
   }
 
   callsTo(method: string): Array<{ method: string; params: unknown }> {
@@ -186,14 +196,19 @@ export class FakeDaemon implements DaemonConnector {
     this.calls.push({ method: message.method, params: message.params });
     const failure = this.failures.get(message.method)?.shift();
     if (failure === "hang") return;
-    const reply = (result: unknown) => channel.deliver({ jsonrpc: "2.0", id: message.id, result });
+    const delay = this.delays.get(message.method)?.shift() ?? 0;
+    const send = (frame: unknown) => {
+      if (delay > 0) setTimeout(() => channel.deliver(frame), delay);
+      else channel.deliver(frame);
+    };
+    const reply = (result: unknown) => send({ jsonrpc: "2.0", id: message.id, result });
     if (failure) {
-      channel.deliver({ jsonrpc: "2.0", id: message.id, error: failure });
+      send({ jsonrpc: "2.0", id: message.id, error: failure });
       return;
     }
     const params = (message.params ?? {}) as Record<string, unknown>;
     const fail = (code: number, text: string) =>
-      channel.deliver({ jsonrpc: "2.0", id: message.id, error: { code, message: text } });
+      send({ jsonrpc: "2.0", id: message.id, error: { code, message: text } });
     switch (message.method) {
       case "health":
         return reply({ package_version: "0.0.0-fake", uptime_seconds: 1, data_directory: "/fake" });
@@ -243,7 +258,7 @@ export class FakeDaemon implements DaemonConnector {
         return task && session ? reply({ task_id: task.contract.id, session }) : fail(-32010, "session not found");
       }
       case "sessions.events": {
-        const after = typeof params.after_sequence === "number" ? params.after_sequence : 0;
+        const after = !this.ignoreAfterSequence && typeof params.after_sequence === "number" ? params.after_sequence : 0;
         const all = this.events.filter(
           (e) => e.task_id === params.task_id && e.session_id === params.session_id && e.sequence > after,
         );
