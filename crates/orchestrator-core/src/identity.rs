@@ -195,7 +195,13 @@ pub fn classify_exact_process_identity(
     {
         return ProcessClassification::Unknown;
     }
-    classify_identity(expected.identity, observed.identity)
+    // Exact owner identity is PID plus start time. A live process may move
+    // between groups, so a group change must not look like an owner exit.
+    let mut observed = observed.identity;
+    if observed.process_group.is_some() {
+        observed.process_group = expected.identity.process_group;
+    }
+    classify_identity(expected.identity, observed)
 }
 
 fn differs<T: PartialEq>(expected: Option<T>, observed: Option<T>) -> bool {
@@ -246,6 +252,57 @@ mod tests {
         assert_eq!(
             classify_exact_process_identity(expected, reused_pid),
             ProcessClassification::IdentityMismatch
+        );
+    }
+
+    #[test]
+    fn exact_owner_identity_ignores_process_group_changes() {
+        let expected = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                pid: 42,
+                process_group: Some(42),
+                start_time_micros: Some(100),
+                platform: ProcessPlatform::Unix,
+            },
+            windows_creation_time_100ns_since_unix_epoch: None,
+        };
+        let moved = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                process_group: Some(7),
+                ..expected.identity
+            },
+            ..expected
+        };
+        let reused = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                start_time_micros: Some(101),
+                ..moved.identity
+            },
+            ..expected
+        };
+        let no_group = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                process_group: None,
+                ..expected.identity
+            },
+            ..expected
+        };
+
+        assert_eq!(
+            classify_exact_process_identity(expected, moved),
+            ProcessClassification::Alive
+        );
+        assert_eq!(
+            classify_exact_process_identity(expected, reused),
+            ProcessClassification::IdentityMismatch
+        );
+        assert_eq!(
+            classify_exact_process_identity(expected, no_group),
+            ProcessClassification::Unknown
+        );
+        assert_eq!(
+            classify_exact_process_identity(no_group, moved),
+            ProcessClassification::Unknown
         );
     }
 

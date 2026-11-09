@@ -4,7 +4,9 @@ use std::thread;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
-use orchestrator_core::identity::{ExactProcessIdentity, ProcessIdentity, ProcessPlatform};
+use orchestrator_core::identity::{
+    ExactProcessIdentity, ProcessClassification, ProcessIdentity, ProcessPlatform,
+};
 use orchestrator_core::records::Project;
 use orchestrator_core::task::{
     Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent, TaskState,
@@ -515,10 +517,15 @@ fn manual_owner_recovery_is_auditable_and_preserves_lifecycle() {
     )
     .unwrap();
     assert!(store
-        .manually_resolve_cancellation_owner(&wrong_generation, true, "confirmed processes exited")
+        .manually_resolve_cancellation_owner(
+            &wrong_generation,
+            true,
+            None,
+            "confirmed processes exited"
+        )
         .is_err());
     assert!(store
-        .manually_resolve_cancellation_owner(&owner, false, "confirmed processes exited")
+        .manually_resolve_cancellation_owner(&owner, false, None, "confirmed processes exited")
         .is_err());
     assert_eq!(
         store.cancellation_request(&owner).unwrap(),
@@ -530,6 +537,7 @@ fn manual_owner_recovery_is_auditable_and_preserves_lifecycle() {
         .manually_resolve_cancellation_owner(
             &owner,
             true,
+            Some(ProcessClassification::Exited),
             "confirmed owner and managed process tree exited",
         )
         .unwrap();
@@ -557,6 +565,7 @@ fn manual_owner_recovery_is_auditable_and_preserves_lifecycle() {
         "confirmed owner and managed process tree exited"
     );
     assert_eq!(event.payload["process_exit_confirmed_by_operator"], true);
+    assert_eq!(event.payload["session_process_classification"], "Exited");
     assert_eq!(event.payload["request_status"], "failed");
 }
 
@@ -573,6 +582,7 @@ fn manual_owner_recovery_requires_terminal_target_lifecycle() {
         store.manually_resolve_cancellation_owner(
             &owner,
             true,
+            None,
             "confirmed owner and managed process tree exited"
         ),
         Err(StoreError::CancellationConflict { .. })
@@ -604,6 +614,7 @@ fn manual_recovery_releases_only_stale_generation_before_successor() {
         .manually_resolve_cancellation_owner(
             &first_owner,
             true,
+            None,
             "confirmed first generation and its managed process tree exited",
         )
         .unwrap();

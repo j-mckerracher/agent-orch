@@ -248,6 +248,28 @@ fn owner_observation_classifies_alive_and_reused_pid_by_creation_time() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn live_owner_with_changed_process_group_is_not_exited() {
+    let identity =
+        capture_exact_process_identity(std::process::id()).expect("capture current process");
+    assert!(identity.identity.start_time_micros.is_some());
+    let recorded_group = identity.identity.process_group.expect("unix process group");
+    let moved_group = ExactProcessIdentity {
+        identity: ProcessIdentity {
+            process_group: Some(recorded_group.wrapping_add(1)),
+            ..identity.identity
+        },
+        ..identity
+    };
+
+    assert_eq!(
+        observe_owner_process(moved_group),
+        ProcessClassification::Alive,
+        "same pid and start time is the same live owner regardless of group"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_owner_observation_uses_creation_time_not_only_pid() {

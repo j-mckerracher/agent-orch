@@ -1239,21 +1239,31 @@ pub fn recover_cancellation_owner(
             "cancellation owner generation {generation} is still alive; refusing manual recovery"
         ));
     }
-    if let Some(identity) = store
+    let session_classification = store
         .session_identity(task_id, session_id)
         .map_err(|error| format!("cannot inspect session identity for {session_id}: {error}"))?
-    {
-        let session_classification =
-            plan_process_reconciliation(identity, observe_process(identity)).classification;
-        if session_classification == ProcessClassification::Alive {
+        .map(|identity| {
+            plan_process_reconciliation(identity, observe_process(identity)).classification
+        });
+    // Fail closed: only a proven-gone session process (lead PID and recorded
+    // group) may be released. Unknown includes a live group whose lead exited.
+    if let Some(classification) = session_classification {
+        if classification != ProcessClassification::Exited {
             return Err(format!(
-                "session process for {task_id}/{session_id} is still alive; refusing manual recovery"
+                "session process for {task_id}/{session_id} is {classification:?}, not proven \
+                 exited (a live process group with an exited lead is Unknown); refusing manual \
+                 recovery"
             ));
         }
     }
 
     store
-        .manually_resolve_cancellation_owner(&owner, processes_confirmed_exited, reason)
+        .manually_resolve_cancellation_owner(
+            &owner,
+            processes_confirmed_exited,
+            session_classification,
+            reason,
+        )
         .map_err(|error| {
             format!("cannot manually recover owner generation {generation}: {error}")
         })?;
@@ -2272,6 +2282,167 @@ mod tests {
             store.cancellation_request(&owner).unwrap(),
             Some(CancellationStatus::Failed)
         );
+    }
+
+    #[cfg(unix)]
+    fn legacy_windows_owner_identity() -> ProcessIdentity {
+        ProcessIdentity {
+            pid: std::process::id(),
+            process_group: None,
+            start_time_micros: Some(1_700_000_000_123_456),
+            platform: ProcessPlatform::Windows,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recover_owner_refuses_live_session_group_after_lead_exits() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path();
+        let store = open_store(data_dir).unwrap();
+        let owner = register_test_owner(
+            &store,
+            "task-live-session-group",
+            Some(legacy_windows_owner_identity()),
+        );
+        store.request_cancellation_for_task(&owner.task_id).unwrap();
+
+        // The lead shell exits at once; its background child keeps the group alive.
+        let mut lead = Command::new("/bin/sh")
+            .args(["-c", "/bin/sleep 30 &"])
+            .process_group(0)
+            .spawn()
+            .expect("spawn group leader");
+        let identity = capture_process_identity(lead.id()).expect("capture leader identity");
+        store
+            .record_session_identity(&owner.task_id, &owner.session_id, &identity)
+            .unwrap();
+        lead.wait().expect("reap leader");
+        let group = identity.process_group.expect("leader has a group");
+        assert_eq!(
+            observe_process(identity),
+            orchestrator_core::identity::ProcessObservation::Unknown
+        );
+
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(&owner.task_id, &owner.attempt_id, AttemptState::Failed)
+            .unwrap();
+        store
+            .transition(&owner.task_id, TaskEvent::ExecutionFailed)
+            .unwrap();
+
+        let recover = || {
+            recover_cancellation_owner(
+                data_dir,
+                &owner.task_id,
+                &owner.attempt_id,
+                &owner.session_id,
+                owner.generation(),
+                true,
+                "operator verified the owner and managed process tree exited",
+            )
+        };
+        let refused = recover();
+        let released_while_alive = store.open_cancellation_owners().unwrap().is_empty();
+        let release_events = || {
+            store
+                .stream_events_after(0, 100)
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == "cancellation.owner_manually_released")
+                .collect::<Vec<_>>()
+        };
+        let events_while_alive = release_events().len();
+        // Always reap the group before asserting so a failure cannot leak it.
+        Command::new("/bin/sh")
+            .args(["-c", &format!("kill -KILL -- -{group}")])
+            .status()
+            .expect("kill process group");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while observe_process(identity) != orchestrator_core::identity::ProcessObservation::Exited
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        assert!(refused.unwrap_err().contains("not proven exited"));
+        assert!(!released_while_alive);
+        assert_eq!(events_while_alive, 0);
+        assert_eq!(
+            store.cancellation_request(&owner).unwrap(),
+            Some(CancellationStatus::Pending)
+        );
+
+        recover().unwrap();
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        let events = release_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].payload["session_process_classification"],
+            "Exited"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn running_task_with_dead_identityless_owner_reaches_audited_manual_recovery() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path();
+        let store = open_store(data_dir).unwrap();
+        // A legacy/Windows owner without an exact creation time is Unknown.
+        let owner = register_test_owner(
+            &store,
+            "task-running-dead-owner",
+            Some(legacy_windows_owner_identity()),
+        );
+        let mut child = Command::new("/bin/sleep")
+            .arg("0.05")
+            .process_group(0)
+            .spawn()
+            .expect("spawn short-lived session process");
+        let identity = capture_process_identity(child.id()).expect("capture session identity");
+        store
+            .record_session_identity(&owner.task_id, &owner.session_id, &identity)
+            .unwrap();
+        child.wait().expect("reap session process");
+        assert_eq!(store.get(&owner.task_id).unwrap().state, TaskState::Running);
+
+        // Scheduling blocks on the owner, but the dead session is reconciled first.
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(error.contains("recover-owner"), "{error}");
+        let record = store.get(&owner.task_id).unwrap();
+        assert_eq!(record.state, TaskState::Failed);
+        assert_eq!(record.attempts[0].state, AttemptState::Failed);
+        assert_eq!(record.sessions[0].state, SessionState::Exited);
+
+        // The documented recover-owner command is now accepted.
+        recover_cancellation_owner(
+            data_dir,
+            &owner.task_id,
+            &owner.attempt_id,
+            &owner.session_id,
+            owner.generation(),
+            true,
+            "operator verified the owner and managed process tree exited",
+        )
+        .unwrap();
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        let events = store.stream_events_after(0, 100).unwrap();
+        let released = events
+            .iter()
+            .find(|event| event.kind == "cancellation.owner_manually_released")
+            .expect("audited release");
+        assert_eq!(released.payload["session_process_classification"], "Exited");
+        reconcile_before_scheduling(&store).unwrap();
     }
 
     #[test]

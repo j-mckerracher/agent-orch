@@ -5,7 +5,7 @@
 
 use orchestrator_core::authorization::Approval;
 use orchestrator_core::contract::{validate as validate_contract, TaskContract};
-use orchestrator_core::identity::{ExactProcessIdentity, ProcessIdentity};
+use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification, ProcessIdentity};
 use orchestrator_core::records::{Artifact, Project, VerificationRun, Workspace};
 use orchestrator_core::task::{
     attempt_transition, session_transition, transition as task_transition, Attempt, AttemptState,
@@ -703,11 +703,14 @@ impl SqliteStore {
     /// Manually closes one owner generation after an operator confirms that
     /// its process tree has exited. The target attempt and session must
     /// already be terminal; this never changes task lifecycle or marks a task
-    /// cancelled.
+    /// cancelled. `session_process` is the caller's observation of the target
+    /// session's recorded process (`None` when no identity was recorded); it
+    /// is audited but not interpreted here.
     pub fn manually_resolve_cancellation_owner(
         &self,
         owner: &CancellationOwner,
         processes_confirmed_exited: bool,
+        session_process: Option<ProcessClassification>,
         reason: &str,
     ) -> Result<(), StoreError> {
         validate_cancellation_owner(owner)?;
@@ -828,6 +831,8 @@ impl SqliteStore {
                     "generation": owner.generation,
                     "reason": reason,
                     "process_exit_confirmed_by_operator": true,
+                    "session_process_classification":
+                        session_process.map(|classification| format!("{classification:?}")),
                     "request_status": request_status,
                 }),
             )
