@@ -532,6 +532,13 @@ struct DestinationLock {
 
 impl DestinationLock {
     fn acquire(git_common_dir: &Path) -> Result<Self, DestinationLockError> {
+        Self::acquire_with(git_common_dir, FileIdentity::from_file)
+    }
+
+    fn acquire_with(
+        git_common_dir: &Path,
+        identity_of: FileIdentityFn,
+    ) -> Result<Self, DestinationLockError> {
         let path = fs::canonicalize(git_common_dir)?.join(DELIVERY_LOCK_NAME);
         let pid = std::process::id();
         let owner_contents = format!("pid={pid}\nowner={}\n", next_owner_id(pid));
@@ -542,10 +549,17 @@ impl DestinationLock {
             }
             Err(error) => return Err(error.into()),
         };
-        let identity = file
+        // The just-created lock file is unverified if its identity cannot be
+        // read: fail acquisition with the real OS error and leave the file in
+        // place for inspection rather than returning a guard that cannot
+        // clean up (and would strand the lock).
+        let identity = match file
             .metadata()
-            .ok()
-            .and_then(|metadata| FileIdentity::from_file(&file, &metadata));
+            .and_then(|metadata| identity_of(&file, &metadata))
+        {
+            Ok(identity) => identity,
+            Err(source) => return Err(DestinationLockError::IdentityUnverified { path, source }),
+        };
         if let Err(error) = file
             .write_all(owner_contents.as_bytes())
             .and_then(|()| file.sync_all())
@@ -566,17 +580,17 @@ impl DestinationLock {
 impl Drop for DestinationLock {
     fn drop(&mut self) {
         drop(self.file.take());
-        let (Some(identity), Ok(metadata)) = (&self.identity, fs::symlink_metadata(&self.path))
-        else {
+        let Ok(metadata) = fs::symlink_metadata(&self.path) else {
             return;
         };
         let Ok(contents) = fs::read_to_string(&self.path) else {
             return;
         };
-        if !metadata.file_type().is_file()
-            || FileIdentity::from_path(&self.path, &metadata) != Some(*identity)
-            || contents != self.owner_contents
-        {
+        // Platforms without file identity fall back to exact-contents ownership.
+        let same_file = self.identity.as_ref().is_none_or(|identity| {
+            FileIdentity::from_path(&self.path, &metadata) == Some(*identity)
+        });
+        if !metadata.file_type().is_file() || !same_file || contents != self.owner_contents {
             return;
         }
         let _ = fs::remove_file(&self.path);
@@ -600,7 +614,20 @@ pub enum DestinationLockError {
     },
     #[error("destination lock I/O failed: {0}")]
     Io(#[from] io::Error),
+    #[error(
+        "cannot verify identity of newly created destination lock {}; file left in place for inspection: {source}",
+        path.display()
+    )]
+    IdentityUnverified {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
+
+/// Reads a held file's identity. `Err` is a real OS failure; `Ok(None)` means
+/// the platform has no file identity.
+type FileIdentityFn = fn(&File, &fs::Metadata) -> io::Result<Option<FileIdentity>>;
 
 fn existing_lock_error(path: &Path) -> DestinationLockError {
     let contents = match fs::read_to_string(path) {
@@ -647,11 +674,11 @@ struct FileIdentity {
 }
 
 impl FileIdentity {
-    fn from_file(file: &File, metadata: &fs::Metadata) -> Option<Self> {
+    fn from_file(file: &File, metadata: &fs::Metadata) -> io::Result<Option<Self>> {
         #[cfg(unix)]
         {
             let _ = file;
-            Self::from_metadata(metadata)
+            Ok(Self::from_metadata(metadata))
         }
         #[cfg(windows)]
         {
@@ -661,10 +688,11 @@ impl FileIdentity {
         #[cfg(not(any(unix, windows)))]
         {
             let _ = (file, metadata);
-            None
+            Ok(None)
         }
     }
 
+    /// Comparison-only lookup: an unreadable path is "not the same file".
     fn from_path(path: &Path, metadata: &fs::Metadata) -> Option<Self> {
         #[cfg(unix)]
         {
@@ -675,7 +703,7 @@ impl FileIdentity {
         {
             let _ = metadata;
             let file = File::open(path).ok()?;
-            Self::from_windows_file(&file)
+            Self::from_windows_file(&file).ok().flatten()
         }
         #[cfg(not(any(unix, windows)))]
         {
@@ -694,7 +722,7 @@ impl FileIdentity {
     }
 
     #[cfg(windows)]
-    fn from_windows_file(file: &File) -> Option<Self> {
+    fn from_windows_file(file: &File) -> io::Result<Option<Self>> {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::Storage::FileSystem::{
             GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -706,13 +734,13 @@ impl FileIdentity {
         // read its fields only after checking the returned `BOOL`.
         // Updated: 2026-11-08T15:11:03-07:00.
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
-            return None;
+            return Err(io::Error::last_os_error());
         }
-        Some(Self {
+        Ok(Some(Self {
             volume: information.dwVolumeSerialNumber,
             index: (u64::from(information.nFileIndexHigh) << 32)
                 | u64::from(information.nFileIndexLow),
-        })
+        }))
     }
 }
 
@@ -799,8 +827,42 @@ fn process_is_alive(_pid: u32) -> io::Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{fs, FileIdentity};
+    use super::{fs, DestinationLock, DestinationLockError, FileIdentity, DELIVERY_LOCK_NAME};
     use std::path::Path;
+
+    #[test]
+    fn identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact() {
+        let directory = tempfile::tempdir().unwrap();
+        let result = DestinationLock::acquire_with(directory.path(), |_, _| {
+            Err(std::io::Error::other("injected identity failure"))
+        });
+        let lock_path = fs::canonicalize(directory.path())
+            .unwrap()
+            .join(DELIVERY_LOCK_NAME);
+        match result {
+            Err(DestinationLockError::IdentityUnverified { path, source }) => {
+                assert_eq!(path, lock_path);
+                assert!(source.to_string().contains("injected"));
+            }
+            other => panic!("expected IdentityUnverified, got {:?}", other.err()),
+        }
+        assert!(lock_path.exists(), "unverified artifact must be preserved");
+    }
+
+    #[test]
+    fn missing_platform_identity_still_cleans_up_by_owner_contents() {
+        let directory = tempfile::tempdir().unwrap();
+        let lock_path = fs::canonicalize(directory.path())
+            .unwrap()
+            .join(DELIVERY_LOCK_NAME);
+        let lock = DestinationLock::acquire_with(directory.path(), |_, _| Ok(None)).unwrap();
+        assert!(lock_path.exists());
+        drop(lock);
+        assert!(
+            !lock_path.exists(),
+            "guard without identity must not strand the lock"
+        );
+    }
 
     #[test]
     fn identity_matches_hard_links_and_distinguishes_files() {

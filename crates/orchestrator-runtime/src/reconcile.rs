@@ -17,6 +17,9 @@ pub use orchestrator_core::identity::{
     ExactProcessIdentity, ProcessAction, ProcessClassification, ProcessIdentity,
 };
 use orchestrator_core::task::{AttemptState, TaskState};
+use orchestrator_git::delivery::{UnsafeToDeleteReason, WorktreeDeletionSafety};
+use orchestrator_git::delivery_reconcile::{DeliveryClassification, DeliveryStepDecision};
+use orchestrator_git::reconcile::{WorkspaceClassification, WorkspaceDecision};
 
 #[cfg(unix)]
 use crate::supervisor::process_group_alive;
@@ -426,9 +429,8 @@ pub fn scheduling_may_resume(
         .all(|resolution| *resolution == ReconciliationResolution::Resolved)
 }
 
-/// Observed workspace state for one interrupted task. Callers derive it from
-/// the Git crate's `WorkspaceClassification` plus `check_worktree_safe_to_delete`
-/// (`Dirty`); `Unknown` means inspection itself failed.
+/// Observed workspace state for one interrupted task, derived by
+/// [`workspace_evidence`]; `Unknown` means inspection was missing or failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceEvidence {
     Matching,
@@ -439,8 +441,8 @@ pub enum WorkspaceEvidence {
     Unknown,
 }
 
-/// Observed partial-delivery state, summarised from the Git crate's
-/// `DeliveryReconciliationPlan`: `Confirmed` = every step landed, `NotApplied` =
+/// Observed partial-delivery state, summarised by [`delivery_evidence`] from the
+/// Git crate's delivery reconciliation steps: `Confirmed` = every step landed, `NotApplied` =
 /// none landed, `Partial` = a mix, `Ambiguous` = any step unprovable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryEvidence {
@@ -512,5 +514,55 @@ pub fn classify_interrupted_task(evidence: TaskEvidence) -> TaskRecovery {
             Recoverable
         }
         _ => RequiresInspection,
+    }
+}
+
+/// Maps Git's workspace decision and worktree safety check to classifier input.
+///
+/// `safety` is `check_worktree_safe_to_delete` for a present worktree; a
+/// present worktree with no safety result (not inspected, or inspection failed)
+/// is `Unknown`. Dirty state is never treated as safe to discard.
+pub fn workspace_evidence(
+    decision: Option<&WorkspaceDecision>,
+    safety: Option<&WorktreeDeletionSafety>,
+) -> WorkspaceEvidence {
+    let Some(decision) = decision else {
+        return WorkspaceEvidence::Unknown;
+    };
+    let base = match decision.classification {
+        WorkspaceClassification::Missing => return WorkspaceEvidence::Missing,
+        WorkspaceClassification::Foreign => return WorkspaceEvidence::Foreign,
+        WorkspaceClassification::PresentAndMatching => WorkspaceEvidence::Matching,
+        WorkspaceClassification::BranchMoved => WorkspaceEvidence::BranchMoved,
+    };
+    match safety {
+        None => WorkspaceEvidence::Unknown,
+        Some(WorktreeDeletionSafety::SafeToDelete) => base,
+        Some(WorktreeDeletionSafety::Unsafe(UnsafeToDeleteReason::Dirty(_))) => {
+            WorkspaceEvidence::Dirty
+        }
+        Some(WorktreeDeletionSafety::Unsafe(UnsafeToDeleteReason::PrimaryCheckout)) => {
+            WorkspaceEvidence::Foreign
+        }
+        Some(WorktreeDeletionSafety::Unsafe(_)) => WorkspaceEvidence::BranchMoved,
+    }
+}
+
+/// Summarises one task's delivery steps: empty is `None`, any ambiguous step is
+/// `Ambiguous`, a mix of landed and unlanded steps is `Partial`.
+pub fn delivery_evidence(steps: &[DeliveryStepDecision]) -> DeliveryEvidence {
+    let confirmed = steps
+        .iter()
+        .filter(|step| step.classification == DeliveryClassification::Confirmed)
+        .count();
+    let ambiguous = steps
+        .iter()
+        .any(|step| step.classification == DeliveryClassification::Ambiguous);
+    match (steps.len(), confirmed, ambiguous) {
+        (0, _, _) => DeliveryEvidence::None,
+        (_, _, true) => DeliveryEvidence::Ambiguous,
+        (total, landed, _) if landed == total => DeliveryEvidence::Confirmed,
+        (_, 0, _) => DeliveryEvidence::NotApplied,
+        _ => DeliveryEvidence::Partial,
     }
 }

@@ -47,7 +47,8 @@ impl DataDirectoryLock {
             match create_lock(&path, &owner_contents) {
                 Ok(lock) => return Ok(lock),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    match take_over_existing(&path, &owner_contents, pid)? {
+                    match take_over_existing(&path, &owner_contents, pid, FileIdentity::from_file)?
+                    {
                         TakeoverOutcome::Acquired(lock) => return Ok(lock),
                         TakeoverOutcome::Retry { holder_pid } => {
                             last_holder_pid = holder_pid;
@@ -66,10 +67,13 @@ impl DataDirectoryLock {
 
 fn create_lock(path: &Path, contents: &str) -> io::Result<DataDirectoryLock> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    // A missing identity here is fail-closed: `owns_file` and Drop fall back
+    // to comparing the exact owner contents, so cleanup never removes a
+    // foreign file.
     let identity = file
         .metadata()
         .ok()
-        .and_then(|metadata| FileIdentity::from_file(&file, &metadata));
+        .and_then(|metadata| FileIdentity::from_file(&file, &metadata).ok().flatten());
     if let Err(error) = file
         .write_all(contents.as_bytes())
         .and_then(|()| file.sync_all())
@@ -211,10 +215,15 @@ fn path_matches_file(path: &Path, identity: Option<FileIdentity>) -> bool {
         && FileIdentity::from_path(path, &metadata) == identity
 }
 
+/// Reads a held file's identity. `Err` is a real OS failure and must surface;
+/// `Ok(None)` means the platform has no identity.
+type FileIdentityFn = fn(&File, &fs::Metadata) -> io::Result<Option<FileIdentity>>;
+
 fn take_over_existing(
     path: &Path,
     owner_contents: &str,
     owner_pid: u32,
+    identity_of: FileIdentityFn,
 ) -> Result<TakeoverOutcome, DataDirectoryLockError> {
     let path_metadata = match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_file() => metadata,
@@ -236,8 +245,23 @@ fn take_over_existing(
         Err(error) => return Err(error.into()),
     };
     let file_metadata = file.metadata()?;
-    let identity = FileIdentity::from_file(&file, &file_metadata);
-    let path_identity = FileIdentity::from_path(path, &path_metadata);
+    let identity = identity_of(&file, &file_metadata)?;
+    let path_identity = match FileIdentity::try_from_path(path, &path_metadata) {
+        Ok(identity) => identity,
+        // The path vanished or is mid-delete (Windows reports delete-pending
+        // as access denied): another takeover is in flight, so retry.
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            return Ok(TakeoverOutcome::Retry {
+                holder_pid: owner_pid,
+            });
+        }
+        Err(error) => return Err(error.into()),
+    };
     if identity.is_none() || path_identity != identity {
         return Ok(TakeoverOutcome::Retry {
             holder_pid: owner_pid,
@@ -371,11 +395,11 @@ struct FileIdentity {
 }
 
 impl FileIdentity {
-    fn from_file(file: &File, metadata: &fs::Metadata) -> Option<Self> {
+    fn from_file(file: &File, metadata: &fs::Metadata) -> io::Result<Option<Self>> {
         #[cfg(unix)]
         {
             let _ = file;
-            Self::from_metadata(metadata)
+            Ok(Self::from_metadata(metadata))
         }
         #[cfg(windows)]
         {
@@ -385,26 +409,31 @@ impl FileIdentity {
         #[cfg(not(any(unix, windows)))]
         {
             let _ = (file, metadata);
-            None
+            Ok(None)
         }
     }
 
+    /// Comparison-only lookup: an unreadable path is simply "not the same file".
     fn from_path(path: &Path, metadata: &fs::Metadata) -> Option<Self> {
+        Self::try_from_path(path, metadata).ok().flatten()
+    }
+
+    fn try_from_path(path: &Path, metadata: &fs::Metadata) -> io::Result<Option<Self>> {
         #[cfg(unix)]
         {
             let _ = path;
-            Self::from_metadata(metadata)
+            Ok(Self::from_metadata(metadata))
         }
         #[cfg(windows)]
         {
             let _ = metadata;
-            let file = File::open(path).ok()?;
+            let file = File::open(path)?;
             Self::from_windows_file(&file)
         }
         #[cfg(not(any(unix, windows)))]
         {
             let _ = (path, metadata);
-            None
+            Ok(None)
         }
     }
 
@@ -418,7 +447,7 @@ impl FileIdentity {
     }
 
     #[cfg(windows)]
-    fn from_windows_file(file: &File) -> Option<Self> {
+    fn from_windows_file(file: &File) -> io::Result<Option<Self>> {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::Storage::FileSystem::{
             GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -430,13 +459,13 @@ impl FileIdentity {
         // read its fields only after checking the returned `BOOL`.
         // Updated: 2026-11-08T15:11:03-07:00.
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
-            return None;
+            return Err(io::Error::last_os_error());
         }
-        Some(Self {
+        Ok(Some(Self {
             volume: information.dwVolumeSerialNumber,
             index: (u64::from(information.nFileIndexHigh) << 32)
                 | u64::from(information.nFileIndexLow),
-        })
+        }))
     }
 }
 
@@ -724,6 +753,42 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "pid=1\n");
         let contender = File::open(&path).unwrap();
         assert!(!try_lock_file(&contender).unwrap());
+    }
+
+    fn failing_identity(_: &File, _: &fs::Metadata) -> io::Result<Option<FileIdentity>> {
+        Err(io::Error::other("injected identity failure"))
+    }
+
+    fn stale_lock(directory: &Path) -> (PathBuf, &'static str) {
+        let path = directory.join(LOCK_FILE_NAME);
+        let record = "pid=4294967295\nstart=x\ntoken=t\n";
+        fs::write(&path, record).unwrap();
+        (path, record)
+    }
+
+    #[test]
+    fn identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let (path, record) = stale_lock(directory.path());
+        let result = take_over_existing(&path, "pid=1\n", 1, failing_identity);
+        assert!(
+            matches!(result, Err(DataDirectoryLockError::Io(ref error)) if error.to_string().contains("injected")),
+            "{:?}",
+            result.err()
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), record);
+    }
+
+    #[test]
+    fn platform_without_identity_still_retries_and_preserves_the_lock() {
+        fn none(_: &File, _: &fs::Metadata) -> io::Result<Option<FileIdentity>> {
+            Ok(None)
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let (path, record) = stale_lock(directory.path());
+        let result = take_over_existing(&path, "pid=1\n", 1, none);
+        assert!(matches!(result, Ok(TakeoverOutcome::Retry { .. })));
+        assert_eq!(fs::read_to_string(&path).unwrap(), record);
     }
 
     #[test]

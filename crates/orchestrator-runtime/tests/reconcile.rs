@@ -521,3 +521,115 @@ mod task_classification {
         assert_eq!(classify_interrupted_task(e), R::Blocked);
     }
 }
+
+mod git_evidence {
+    use orchestrator_git::delivery::{
+        UnsafeToDeleteReason as UnsafeReason, WorktreeDeletionSafety as Safety,
+    };
+    use orchestrator_git::delivery_reconcile::{
+        DeliveryClassification as C, DeliveryStepDecision, RecordedDeliveryStep,
+    };
+    use orchestrator_git::reconcile::{WorkspaceClassification as G, WorkspaceDecision};
+    use orchestrator_runtime::reconcile::{
+        delivery_evidence, workspace_evidence, DeliveryEvidence as D, WorkspaceEvidence as W,
+    };
+
+    fn workspace(classification: G) -> WorkspaceDecision {
+        WorkspaceDecision {
+            id: "w".into(),
+            path: "/tmp/w".into(),
+            branch: "b".into(),
+            base_commit: "c".into(),
+            classification,
+        }
+    }
+
+    fn step(classification: C) -> DeliveryStepDecision {
+        DeliveryStepDecision {
+            record: RecordedDeliveryStep {
+                id: "s".into(),
+                task_id: None,
+                action: None,
+                candidate_sha: None,
+                destination: None,
+                target_ref: None,
+            },
+            classification,
+            observed_ref: None,
+        }
+    }
+
+    #[test]
+    fn workspace_classification_maps_one_to_one_when_clean() {
+        let clean = Safety::SafeToDelete;
+        for (git, expected) in [
+            (G::PresentAndMatching, W::Matching),
+            (G::BranchMoved, W::BranchMoved),
+            (G::Foreign, W::Foreign),
+            (G::Missing, W::Missing),
+        ] {
+            assert_eq!(
+                workspace_evidence(Some(&workspace(git)), Some(&clean)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn missing_workspace_needs_no_safety_inspection() {
+        assert_eq!(
+            workspace_evidence(Some(&workspace(G::Missing)), None),
+            W::Missing
+        );
+    }
+
+    #[test]
+    fn uninspected_or_unrecorded_workspace_fails_closed() {
+        assert_eq!(workspace_evidence(None, None), W::Unknown);
+        for git in [G::PresentAndMatching, G::BranchMoved] {
+            assert_eq!(workspace_evidence(Some(&workspace(git)), None), W::Unknown);
+        }
+    }
+
+    #[test]
+    fn dirty_or_primary_checkout_overrides_a_matching_workspace() {
+        let dirty = Safety::Unsafe(UnsafeReason::Dirty(" M f".into()));
+        let primary = Safety::Unsafe(UnsafeReason::PrimaryCheckout);
+        let matching = workspace(G::PresentAndMatching);
+        assert_eq!(workspace_evidence(Some(&matching), Some(&dirty)), W::Dirty);
+        assert_eq!(
+            workspace_evidence(Some(&matching), Some(&primary)),
+            W::Foreign
+        );
+    }
+
+    #[test]
+    fn unlanded_head_on_a_matching_workspace_is_branch_moved() {
+        let unlanded = Safety::Unsafe(UnsafeReason::NotReachable {
+            head: "h".into(),
+            base_ref: "main".into(),
+        });
+        assert_eq!(
+            workspace_evidence(Some(&workspace(G::PresentAndMatching)), Some(&unlanded)),
+            W::BranchMoved
+        );
+    }
+
+    #[test]
+    fn delivery_steps_summarise_conservatively() {
+        assert_eq!(delivery_evidence(&[]), D::None);
+        assert_eq!(delivery_evidence(&[step(C::NotApplied)]), D::NotApplied);
+        assert_eq!(
+            delivery_evidence(&[step(C::Confirmed), step(C::Confirmed)]),
+            D::Confirmed
+        );
+        assert_eq!(
+            delivery_evidence(&[step(C::Confirmed), step(C::NotApplied)]),
+            D::Partial
+        );
+        assert_eq!(
+            delivery_evidence(&[step(C::Confirmed), step(C::Ambiguous)]),
+            D::Ambiguous
+        );
+    }
+}
