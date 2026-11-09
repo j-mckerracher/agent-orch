@@ -1354,7 +1354,9 @@ mod tests {
 
         assert_eq!(result.status, VerificationStatus::Failed);
         assert_eq!(result.commands[0].status, CommandStatus::TimedOut);
-        assert_eq!(result.commands[0].exit_code, None);
+        // Windows `Child::kill` is `TerminateProcess(handle, 1)`; Unix reports a signal.
+        let expected_exit = if cfg!(windows) { Some(1) } else { None };
+        assert_eq!(result.commands[0].exit_code, expected_exit);
         assert!(result.commands[0].duration_ms < 2_000);
     }
 }
