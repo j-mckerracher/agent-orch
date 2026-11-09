@@ -17,6 +17,8 @@ Workspace and delivery evidence (`classify_interrupted_task`, `workspace_evidenc
 
 ## Results (all exit codes are cargo's own, taken from the producer)
 
+Limitation: these four runs were read from live console output and their raw stdout and stderr were not saved. Treat them as a preliminary owner observation, not durable evidence. They will be repeated on the final integrated candidate with per-attempt artifacts stored outside the checkout.
+
 | Command | Exit | Counts |
 |---|---|---|
 | `cargo test --locked -p orchestrator-cli --lib` | 0 | 22 passed |
