@@ -33,7 +33,7 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 | `cleanup_safety::cleanup_refuses_running_task_that_never_registered_a_run_owner` (QA, c89c1eb, feature fault-injection) | FAIL on 8f63da4b (QA) | ok |
 | `cleanup_safety::cleanup_follows_existing_contract_for_provably_exited_run_owner` (QA, 11d3e29) | ok | ok |
 | `cleanup_safety::cleanup_refuses_exited_run_owner_while_its_agent_tree_is_alive` (QA, 5816c9b, unix) | FAIL on 24de6136 (QA) | ok |
-| `workflow::tests::cleanup_refuses_exited_owner_while_its_session_process_is_alive` (unix) | FAIL (removed, by construction: no session check) | ok |
+| `workflow::tests::cleanup_refuses_exited_owner_while_its_session_process_is_alive` (unix) | FAIL (session check disabled) | ok |
 | `cleanup_safety::cleanup_refuses_clean_worktree_while_run_owner_is_live` (QA, f96832d) | FAIL | ok |
 | `cleanup_safety::cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree` (QA) | ok | ok |
 
