@@ -1,0 +1,109 @@
+
+running 22 tests
+test consistent_delivery_journals_do_not_block_scheduling ... FAILED
+test confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling ... FAILED
+test interrupted_task_whose_project_cannot_be_inspected_refuses_scheduling ... ok
+test interrupted_task_with_partial_delivery_refuses_scheduling_and_keeps_evidence ... ok
+test interrupted_task_without_a_recorded_workspace_refuses_scheduling ... ok
+test live_owner_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test live_owner_with_partial_delivery_journal_refuses_scheduling ... ok
+test live_owner_with_consistent_not_applied_journal_does_not_block_scheduling ... FAILED
+test interrupted_foreign_workspace_refuses_scheduling_and_keeps_all_evidence ... ok
+test live_owner_with_confirmed_delivery_while_running_refuses_scheduling ... ok
+test pending_attempt_without_any_session_refuses_scheduling ... ok
+test planned_and_admitted_tasks_without_attempts_do_not_block_scheduling ... ok
+test running_task_without_an_unfinished_session_refuses_scheduling ... ok
+test run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated ... ok
+test settled_task_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test held_data_directory_lock_refuses_mutating_commands_and_leaves_readers_alone ... ok
+test live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock ... ok
+test settled_task_with_partial_delivery_journal_refuses_scheduling ... ok
+test settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+test unidentified_running_session_refuses_scheduling_and_preserves_records ... ok
+test settled_failed_task_with_dirty_worktree_does_not_block_scheduling ... ok
+test interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evidence ... ok
+
+failures:
+
+---- consistent_delivery_journals_do_not_block_scheduling stdout ----
+
+thread 'consistent_delivery_journals_do_not_block_scheduling' (12852) panicked at crates\orchestrator-cli\tests\engine_reconciliation_gate.rs:175:5:
+run beside consistent delivery journals failed: ExitStatus(ExitStatus(1))
+stdout: 
+stderr: blocking record: task journal-confirmed has Ambiguous delivery evidence while Succeeded; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect journal-confirmed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+blocking record: task journal-not-applied has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect journal-not-applied` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+agent-orch: cannot schedule while reconciliation records are unresolved: task journal-confirmed has Ambiguous delivery evidence while Succeeded; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect journal-confirmed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree; task journal-not-applied has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect journal-not-applied` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: engine_reconciliation_gate::assert_success
+             at .\tests\engine_reconciliation_gate.rs:175
+   3: engine_reconciliation_gate::consistent_delivery_journals_do_not_block_scheduling
+             at .\tests\engine_reconciliation_gate.rs:1266
+   4: engine_reconciliation_gate::consistent_delivery_journals_do_not_block_scheduling::closure$0
+             at .\tests\engine_reconciliation_gate.rs:1245
+   5: core::ops::function::FnOnce::call_once<engine_reconciliation_gate::consistent_delivery_journals_do_not_block_scheduling::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling stdout ----
+
+thread 'confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling' (11308) panicked at crates\orchestrator-cli\tests\engine_reconciliation_gate.rs:603:5:
+refusal must cite confirmed evidence: blocking record: task settled-contradiction has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect settled-contradiction` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+agent-orch: cannot schedule while reconciliation records are unresolved: task settled-contradiction has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect settled-contradiction` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: engine_reconciliation_gate::assert_refusal_cites
+             at .\tests\engine_reconciliation_gate.rs:603
+   3: engine_reconciliation_gate::confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling
+             at .\tests\engine_reconciliation_gate.rs:1241
+   4: engine_reconciliation_gate::confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling::closure$0
+             at .\tests\engine_reconciliation_gate.rs:1232
+   5: core::ops::function::FnOnce::call_once<engine_reconciliation_gate::confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- live_owner_with_consistent_not_applied_journal_does_not_block_scheduling stdout ----
+
+thread 'live_owner_with_consistent_not_applied_journal_does_not_block_scheduling' (56576) panicked at crates\orchestrator-cli\tests\engine_reconciliation_gate.rs:175:5:
+run beside a live owner with a consistent journal failed: ExitStatus(ExitStatus(1))
+stdout: 
+stderr: blocking record: task live-consistent has Ambiguous delivery evidence while Running; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect live-consistent` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+agent-orch: cannot schedule while reconciliation records are unresolved: task live-consistent has Ambiguous delivery evidence while Running; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect live-consistent` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: engine_reconciliation_gate::assert_success
+             at .\tests\engine_reconciliation_gate.rs:175
+   3: engine_reconciliation_gate::live_owner_with_consistent_not_applied_journal_does_not_block_scheduling
+             at .\tests\engine_reconciliation_gate.rs:1422
+   4: engine_reconciliation_gate::live_owner_with_consistent_not_applied_journal_does_not_block_scheduling::closure$0
+             at .\tests\engine_reconciliation_gate.rs:1410
+   5: core::ops::function::FnOnce::call_once<engine_reconciliation_gate::live_owner_with_consistent_not_applied_journal_does_not_block_scheduling::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling
+    consistent_delivery_journals_do_not_block_scheduling
+    live_owner_with_consistent_not_applied_journal_does_not_block_scheduling
+
+test result: FAILED. 19 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.94s
+

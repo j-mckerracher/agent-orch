@@ -1,0 +1,11 @@
+
+running 6 tests
+test foreign_lock_without_an_owner_pid_blocks_delivery_and_is_preserved ... ok
+test deletion_safety_follows_current_repository_state_and_never_deletes ... ok
+test approval_and_verification_receive_exactly_the_requested_binding_for_each_action ... ok
+test every_callback_runs_under_the_destination_lock_and_a_persistence_failure_keeps_the_written_ref ... ok
+test contender_is_refused_and_recorded_while_owner_lock_and_destination_stay_intact ... ok
+test review_ref_created_by_another_writer_during_approval_is_revalidated_not_overwritten ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.92s
+

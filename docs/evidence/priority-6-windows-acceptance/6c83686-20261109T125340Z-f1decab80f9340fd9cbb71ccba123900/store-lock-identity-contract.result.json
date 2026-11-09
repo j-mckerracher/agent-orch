@@ -1,0 +1,25 @@
+{
+  "name": "store-lock-identity-contract",
+  "command": "cargo.exe test --locked -p orchestrator-store --test lock_identity_contract -- --nocapture",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\source",
+  "source_commit": "6c83686c3c3cedf07f8fab50f4764d88f643a2c6",
+  "started_utc": "2026-11-09T13:01:15.9196413Z",
+  "duration_seconds": 2.703,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 287,
+  "stdout_sha256": "4675debdd4f3fa5a482f12c7ed074006fd5c3d984f0e240d648824faea378130",
+  "stderr_bytes": 620,
+  "stderr_sha256": "0a72fdfb6fb62c82a1c3df6fb74db1c3690b59dca227b81c4eaf99a4b09ae186",
+  "error": null
+}

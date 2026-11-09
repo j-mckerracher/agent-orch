@@ -1,0 +1,4 @@
+   Compiling orchestrator-cli v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\source\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.02s
+     Running tests\engine_reconciliation_gate.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\cargo-target\debug\deps\engine_reconciliation_gate-3f0250a877c04da2.exe)
+error: test failed, to rerun pass `-p orchestrator-cli --test engine_reconciliation_gate`

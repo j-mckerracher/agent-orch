@@ -1,0 +1,2 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\cargo-target\debug\deps\orchestrator_cli-e2c70dac184523bf.exe)

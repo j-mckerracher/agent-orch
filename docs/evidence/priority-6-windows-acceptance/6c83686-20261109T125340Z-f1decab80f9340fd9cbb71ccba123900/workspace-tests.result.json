@@ -1,0 +1,25 @@
+{
+  "name": "workspace-tests",
+  "command": "cargo.exe test --locked --workspace --no-fail-fast",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\source",
+  "source_commit": "6c83686c3c3cedf07f8fab50f4764d88f643a2c6",
+  "started_utc": "2026-11-09T12:53:46.3030738Z",
+  "duration_seconds": 316.628,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 48690,
+  "stdout_sha256": "40b1ffcb3f2b2a34228d62fac3d85b67e7debe0c8949495a96ff4d999a1aaf51",
+  "stderr_bytes": 15524,
+  "stderr_sha256": "4dca9fe53a97b66394ef16ae8d3b379969bfa7890de3ee1e8dbff1f4125dd8bd",
+  "error": null
+}

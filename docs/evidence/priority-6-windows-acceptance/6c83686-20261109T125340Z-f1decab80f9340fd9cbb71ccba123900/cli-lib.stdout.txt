@@ -1,0 +1,73 @@
+
+running 17 tests
+test workflow::tests::recovery_classification_refuses_reused_lead_with_live_foreign_group ... ok
+test workflow::tests::delivery_blocks_only_partial_ambiguous_or_confirmed_on_unsucceeded_task ... ok
+test workflow::tests::session_gone_guard_refuses_missing_alive_and_unknown_classifications ... ok
+test cli::tests::rejects_run_without_repository_or_objective ... ok
+test workflow::tests::task_ids_reject_path_syntax_before_store_access ... ok
+test workflow::tests::canonical_target_resolves_symlinked_ancestors_and_missing_suffixes ... ok
+test cli::tests::parses_every_command_and_global_data_directory ... ok
+test workflow::tests::capture_stream_copies_raw_bytes_to_both_outputs ... ok
+test workflow::tests::unresolved_legacy_windows_owner_has_audited_manual_recovery_path ... ok
+test workflow::tests::pending_attempt_without_a_session_blocks_but_a_planned_task_does_not ... ok
+test workflow::tests::settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner ... ok
+test workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything ... FAILED
+test workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block ... FAILED
+test workflow::tests::ambiguous_delivery_blocks_scheduling_and_is_not_rewritten ... ok
+test workflow::tests::cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner ... ok
+
+failures:
+
+---- workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything stdout ----
+blocking record: task task-confirmed-failed has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-confirmed-failed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+
+thread 'workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything' (10040) panicked at crates\orchestrator-cli\src\workflow.rs:3472:9:
+cannot schedule while reconciliation records are unresolved: task task-confirmed-failed has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-confirmed-failed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_cli::workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything
+             at .\src\workflow.rs:3472
+   3: orchestrator_cli::workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything::closure$0
+             at .\src\workflow.rs:3456
+   4: core::ops::function::FnOnce::call_once<orchestrator_cli::workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   5: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block stdout ----
+blocking record: task task-settled-ok has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-settled-ok` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree
+
+thread 'workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block' (28144) panicked at crates\orchestrator-cli\src\workflow.rs:3448:45:
+settled record must not block: "cannot schedule while reconciliation records are unresolved: task task-settled-ok has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-settled-ok` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree"
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<tuple$<>,alloc::string::String> >::expect<tuple$<>,alloc::string::String>
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1185
+   4: orchestrator_cli::workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block
+             at .\src\workflow.rs:3448
+   5: orchestrator_cli::workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block::closure$0
+             at .\src\workflow.rs:3433
+   6: core::ops::function::FnOnce::call_once<orchestrator_cli::workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything
+    workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block
+
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.43s
+

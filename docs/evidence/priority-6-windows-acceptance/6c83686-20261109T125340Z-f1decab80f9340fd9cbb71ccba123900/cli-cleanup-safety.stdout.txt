@@ -1,0 +1,8 @@
+
+running 3 tests
+test cleanup_refuses_clean_worktree_while_run_owner_is_live ... ok
+test cleanup_follows_existing_contract_for_provably_exited_run_owner ... ok
+test cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.59s
+

@@ -1,0 +1,8 @@
+
+running 3 tests
+test directory_at_the_lock_path_is_never_removed ... ok
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test malformed_records_are_never_taken_over ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

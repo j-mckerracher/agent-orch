@@ -1,0 +1,1 @@
+HEAD is now at 6c83686 test(m3-04): pin callbacks under the destination lock and retained ref on persist failure

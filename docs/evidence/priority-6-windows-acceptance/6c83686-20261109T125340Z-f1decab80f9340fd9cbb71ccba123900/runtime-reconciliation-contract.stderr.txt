@@ -1,0 +1,18 @@
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling windows-sys v0.61.2
+   Compiling syn v3.0.9
+   Compiling mio v1.2.4
+   Compiling tempfile v3.27.0
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling tokio-macros v2.7.2
+   Compiling tokio v1.54.1
+   Compiling thiserror v2.0.21
+   Compiling orchestrator-git v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\source\crates\orchestrator-git)
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-core v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\source\crates\orchestrator-core)
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\source\crates\orchestrator-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.13s
+     Running tests\reconciliation_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\cargo-target\debug\deps\reconciliation_contract-471da9666a52bd21.exe)

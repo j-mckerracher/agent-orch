@@ -1,0 +1,25 @@
+{
+  "name": "cli-session-gone-guard",
+  "command": "cargo.exe test --locked -p orchestrator-cli --lib session_gone_guard_refuses_missing_alive_and_unknown_classifications",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\source",
+  "source_commit": "6c83686c3c3cedf07f8fab50f4764d88f643a2c6",
+  "started_utc": "2026-11-09T13:02:50.4116148Z",
+  "duration_seconds": 0.606,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 211,
+  "stdout_sha256": "349b836552834234d7aaf1311523156a331e013805cf4b10c16dcd77e3fc92da",
+  "stderr_bytes": 276,
+  "stderr_sha256": "fc3329621a780499107f2d919db6016a332b078b3a6fc2ae3da8b58c01a084e9",
+  "error": null
+}

@@ -1,0 +1,9 @@
+README.md
+crates/orchestrator-cli/src/workflow.rs
+crates/orchestrator-cli/tests/cli.rs
+crates/orchestrator-cli/tests/engine_reconciliation_gate.rs
+crates/orchestrator-git/tests/delivery.rs
+crates/orchestrator-git/tests/delivery_acceptance_contract.rs
+crates/orchestrator-store/tests/delivery_acceptance_contract.rs
+docs/evidence/m2-06-gate-wiring-macos.md
+docs/evidence/m2-06-reverify-693-macos.md

@@ -1,0 +1,25 @@
+{
+  "name": "git-delivery-acceptance-contract",
+  "command": "cargo.exe test --locked -p orchestrator-git --test delivery_acceptance_contract",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\source",
+  "source_commit": "6c83686c3c3cedf07f8fab50f4764d88f643a2c6",
+  "started_utc": "2026-11-09T13:03:26.3184508Z",
+  "duration_seconds": 10.299,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T125340Z-f1decab80f9340fd9cbb71ccba123900\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 657,
+  "stdout_sha256": "2d1a6151bf06c1954b1bf6457c58abc9ff00273ad5c8c41bad36fb4b185fd533",
+  "stderr_bytes": 305,
+  "stderr_sha256": "2447c4512deca16f23b85f1aed8305110b64a13a8169ff8d55ba2b72df5d470f",
+  "error": null
+}
