@@ -1,0 +1,3 @@
+runbook file: docs/evidence/m1-04-windows-acceptance-46497ac-runbook.md
+runbook commit (operator-declared): ff8a2d3a5a7a8fa7d16cde7849ccb0bd6d9a303e
+source commit: 46497ac98fd8d053b80b5d9b730d2fd2110c56f7

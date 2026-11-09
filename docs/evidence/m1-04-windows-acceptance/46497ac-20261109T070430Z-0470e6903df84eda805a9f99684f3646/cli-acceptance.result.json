@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-cli --test portable_acceptance",
+  "source_commit": "46497ac98fd8d053b80b5d9b730d2fd2110c56f7",
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}
