@@ -1398,9 +1398,31 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
     let _lock = acquire_data_directory_lock(data_dir)?;
     let store = open_store(data_dir)?;
-    let _task = store
+    store
         .get(task_id)
         .map_err(|error| format!("cannot clean up task {task_id}: {error}"))?;
+    // The run owner finishes without the data lock and closes its cancellation
+    // owner last, so an open owner that is not provably exited may still use
+    // the worktree. Read-only: no owner is retired and no process is signalled.
+    for owner in store
+        .open_cancellation_owners()
+        .map_err(|error| format!("cannot list cancellation owners for cleanup: {error}"))?
+        .into_iter()
+        .filter(|owner| owner.task_id == task_id)
+    {
+        let classification = owner.exact_process_identity().map(observe_owner_process);
+        if classification != Some(ProcessClassification::Exited) {
+            return Err(format!(
+                "refusing cleanup: run owner for task {task_id} session {} generation {} is \
+                 not provably exited (exact owner process: {classification:?}); the worktree \
+                 is preserved. Wait for the run to finish or use `agent-orch cancel \
+                 {task_id}`; if the owner is gone, `agent-orch inspect {task_id}` shows the \
+                 ids for `agent-orch recover-owner`",
+                owner.session_id,
+                owner.generation()
+            ));
+        }
+    }
     let metadata = validated_metadata(data_dir, task_id)?;
     let repository = Repository::new(&metadata.repository).map_err(|error| {
         format!(
@@ -2305,6 +2327,103 @@ mod tests {
         }
         store.register_cancellation_owner(&owner).unwrap();
         owner
+    }
+
+    fn git_in(cwd: &Path, args: &[&str]) {
+        git_text(cwd, args).unwrap();
+    }
+
+    /// A clean worktree at its base commit with a registered run owner: every
+    /// Git-only check (clean, HEAD reachable from base) passes, so only the
+    /// owner check decides whether cleanup may proceed.
+    fn owned_clean_worktree(
+        task_id: &str,
+        owner_identity: Option<ProcessIdentity>,
+    ) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let data_dir = root.path().join("data");
+        fs::create_dir_all(&repo).unwrap();
+        git_in(&repo, &["init", "-q", "-b", "main"]);
+        git_in(&repo, &["config", "user.email", "t@example.invalid"]);
+        git_in(&repo, &["config", "user.name", "t"]);
+        git_in(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        let repository = Repository::new(&repo).unwrap();
+        let worktree = data_dir.join("worktrees").join(task_id);
+        fs::create_dir_all(worktree.parent().unwrap()).unwrap();
+        let branch = format!("task/{task_id}");
+        git_in(
+            repository.path(),
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                &branch,
+                worktree.to_str().unwrap(),
+                "main",
+            ],
+        );
+        let worktree = fs::canonicalize(&worktree).unwrap();
+        let store = open_store(&data_dir).unwrap();
+        register_test_owner(&store, task_id, owner_identity);
+        let task_paths = paths(&data_dir, task_id);
+        fs::create_dir_all(&task_paths.task_dir).unwrap();
+        write_metadata(
+            &task_paths.metadata,
+            &TaskMetadata {
+                repository: repository.path().to_path_buf(),
+                worktree: worktree.clone(),
+                branch,
+                base_ref: "main".into(),
+                base_sha: git_text(&repo, &["rev-parse", "main"]).unwrap(),
+                agent_pid: None,
+                stdout_log: task_paths.stdout_log,
+                stderr_log: task_paths.stderr_log,
+                exit_code: None,
+                agent_outcome: None,
+                candidate_commit: None,
+                failure: None,
+            },
+        )
+        .unwrap();
+        (root, data_dir, worktree)
+    }
+
+    #[test]
+    fn cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable() {
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-unproven-clean", None);
+        let error = cleanup_task(&data_dir, "task-unproven-clean").unwrap_err();
+        assert!(error.contains("not provably exited"), "{error}");
+        assert!(error.contains("recover-owner"), "{error}");
+        assert!(
+            worktree.exists(),
+            "cleanup removed an unprovable owner's worktree"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_refuses_clean_worktree_while_owner_is_alive() {
+        let identity = capture_process_identity(std::process::id()).expect("own identity");
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-live-clean", Some(identity));
+        let error = cleanup_task(&data_dir, "task-live-clean").unwrap_err();
+        assert!(error.contains("Some(Alive)"), "{error}");
+        assert!(worktree.exists(), "cleanup removed a live owner's worktree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_follows_existing_contract_for_demonstrably_exited_owner() {
+        let mut identity = capture_process_identity(std::process::id()).expect("own identity");
+        // Same PID with a different start time proves the recorded owner exited.
+        identity.start_time_micros = identity.start_time_micros.map(|micros| micros + 1);
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-dead-clean", Some(identity));
+        cleanup_task(&data_dir, "task-dead-clean").unwrap();
+        assert!(!worktree.exists());
+        // Cleanup never retires or rewrites the owner record.
+        let store = open_store(&data_dir).unwrap();
+        assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
     }
 
     #[test]
