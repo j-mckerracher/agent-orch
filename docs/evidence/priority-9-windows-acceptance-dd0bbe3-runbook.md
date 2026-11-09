@@ -53,11 +53,17 @@ cherry-picks. The runbook proves the integrated tree only.
 - Runbook branch (the coordinator publishes it): `docs/priority-9-windows-acceptance-dd0bbe3`
 - Evidence branch (you create it): `evidence/priority-9-windows-acceptance-dd0bbe3-<RunId>`
 - Runbook: file `docs/evidence/priority-9-windows-acceptance-dd0bbe3-runbook.md`. The coordinator
-  gives the branch, the full runbook commit, and the URL in the dispatch message. The runbook commit
-  has the source commit as its **only parent** and changes only this file. The declared runbook commit
-  is operator-declared. Step 1 fetches it, checks its shape, and records the SHA-256 of the exact
-  runbook bytes. That pins the bytes in evidence. It still does not prove that the commands you pasted
-  match them.
+  gives the branch, the full runbook commit, and the URL in the dispatch message. The runbook is read
+  from the **tip of the docs branch**. The source under test stays `dd0bbe33`. The docs branch is a
+  chain of docs-only commits above the source: the first revision (`8b0f3e92…`) has the source commit
+  as its only parent, and a later revision of this file (a fix on top of the reviewed revision)
+  has `8b0f3e92…` as its only parent. A runbook text cannot contain its own commit id, so the
+  coordinator gives the tip commit in the dispatch message. Step 1 requires every commit between the
+  source and the declared runbook commit to be a single linear docs commit (at most two, no merge, the
+  first one `8b0f3e92…`) and requires the whole difference from the source to be this one file. The
+  declared runbook commit is operator-declared. Step 1 fetches it, checks its shape, and records the
+  SHA-256 of the exact runbook bytes. That pins the bytes in evidence. It still does not prove that the
+  commands you pasted match them. Nothing in the docs chain is part of the source under test.
 - If the source branch tip is later than the source commit, test the pinned commit and report the tip.
 
 Test only the exact source commit. Before any other command, `HEAD` must equal the full source
@@ -279,13 +285,33 @@ a pipe handle or a token value.
 | `probe-pipe-dacl` | The SDDL of the live pipe, read through a `READ_CONTROL` handle. | `D:P(A;;<mask>;;;<current user SID>)`: protected, exactly one ACE. | Any other DACL. | The SDDL cannot be read. |
 | `probe-token-acl` | `icacls daemon.token` and `Get-Acl` of the live token file. | Exactly one ACE, no `(I)` inherited entry, and its principal resolves to the current user SID. | Any other ACE or an inherited entry. | The ACL cannot be read or parsed. |
 | `probe-instance-limit` | 16 simultaneous clients connect; the 17th does not. | 16 clients open; the 17th gets `ERROR_PIPE_BUSY` (231) at 0 ms and at 250 ms. | The 17th opens. | Fewer than 16 open, or another error. |
-| `probe-remote-client` | Open `\\localhost\pipe\<name>` (the SMB loopback path, a remote client). | Access denied (5): the remote client is rejected. | The open succeeds. | The loopback path is unavailable (for example no Server service): **UNPROVEN**. |
+| `probe-remote-client` | Open `\\localhost\pipe\<name>` (the SMB loopback path, a remote client). Each round first opens a **control pipe** (`agent-orch-probe-control-<guid>`, created by .NET with a current-user-only DACL) through the same `\\localhost\pipe\` path. | Access denied (5) for the daemon pipe **and** the control pipe opens by the same path. Only then is the denial attributed to the daemon's remote-client rejection. | The open of the daemon pipe succeeds. | **UNPROVEN (capped, not a PASS)** when the daemon pipe is denied (5) but the control pipe does not open: SMB loopback, policy, or token filtering may cause the denial, and the row cannot show that `PIPE_REJECT_REMOTE_CLIENTS` is the cause. Also UNPROVEN when the loopback path is unavailable (for example no Server service). Any other error is INCONCLUSIVE. |
 | `probe-anonymous-denial` | Open the pipe while impersonating the anonymous token on this thread. | Access denied (5). | The open succeeds. | Impersonation fails or another error. |
 | `probe-second-user` | Open the pipe as a second, non-admin user. | n/a | n/a | **Always UNPROVEN.** The runbook has no credentials for a second account and never asks for any. |
 | `probe-large-frame` | After a handshake, send a 512 KiB frame (8 times the 64 KiB pipe buffer) in 16 KiB chunks with 50 ms pauses, then read the reply, then run `health`. | All bytes accepted, a well-formed reply with the same id, and `health` still works, with no `ERROR_BROKEN_PIPE` (109) or `ERROR_NO_DATA` (232) on the write. | A write error, a closed connection, or no reply within 10 s. | The handshake cannot be completed. |
 | `probe-connect-close` | 20 clients connect and close at once; the name must stay bound. | The pipe stays listed and answers `WaitNamedPipe`, and a fresh authenticated `health` still works. | The pipe name disappears or `health` fails. | The check cannot run. |
 | `probe-second-daemon` | A second `orchestrator-daemon.exe` on the same data directory. | Exits non-zero within 15 s with a diagnostic on stderr, and the first daemon still answers `WaitNamedPipe`. | The second daemon exits 0 or keeps running. | The diagnostic text is not recognized. |
 | `probe-daemon-exit` | The `shutdown` RPC, then process exit. | The reply arrives, the process exits 0 within 10 s, and `daemon.token` is removed. | The daemon exits non-zero, or has to be killed. | The shutdown reply or the token removal is not observed. |
+
+`probe-remote-client` states its limit plainly. A PASS needs the control pipe to open through the same SMB
+loopback path. The control pipe is made by .NET, and the row assumes that .NET does not request
+`PIPE_REJECT_REMOTE_CLIENTS` for it (this runbook author has not verified that on Windows). If the control
+pipe is also denied, or the control cannot be created, the row is capped at **UNPROVEN** and the report says
+so. A loopback open is never a genuinely remote client, so even a PASS here is not a claim about a remote
+host.
+
+`probe-pipe-dacl` compares the SDDL as an exact string. A FAIL there needs the recorded SDDL read first:
+an equivalent but differently written descriptor is a harness question to report, not yet a product defect.
+
+`probe-large-frame` sends `health` with non-empty parameters in the large frame, so a well-formed reply
+that carries an `InvalidParams` error is expected and is not a fault. Only a missing reply, a closed
+connection, a write error, or a failed follow-up `health` is a FAIL.
+
+If a probe round stops early (for example the daemon dies before its pipe appears), every row that round
+did not finish is recorded as **FAIL** (not INCONCLUSIVE, and not a blocked publish), and the round writes
+explicit "not run" stub files for any missing `probe-daemon-r<N>.*` and `probe-second-daemon-r<N>.*`
+evidence. The evidence then still publishes, and the stubs record why. Run the probe with no other
+agent-orch daemon running on the host: a second new `agent-orch-*` pipe makes the pipe discovery throw.
 
 `probe-second-daemon` reports what the daemon prints. The data-directory lock is taken before the pipe is
 bound, so a second daemon is normally refused by the lock (`cannot acquire data-directory lock`). The
@@ -303,7 +329,8 @@ this in its evidence file and does not claim it.
   tests (26 and 20); the 8 named-pipe tests; a Windows **test-profile** compile and a **dev-profile**
   build of both crates; a link of the daemon binary; a clippy pass; and the live probe rows above.
 - **Not covered, and no claim is made:** the named pipe against a **second, different user** (UNPROVEN, see
-  `probe-second-user`); a **genuinely remote** client (only SMB loopback is tried, and it can be UNPROVEN);
+  `probe-second-user`); a **genuinely remote** client (only SMB loopback is tried, and without a working
+  control pipe the row is capped at UNPROVEN);
   server identity verification by the client (the client opens the pipe without `SECURITY_SQOS_PRESENT`
   and does not verify the server SID, deferred to the M6 threat review); the data-directory ACL and the
   token owner (not validated on Windows); a server-to-client write larger than the pipe buffer to a slow
@@ -368,8 +395,10 @@ session. Keep the session open for all steps.
 3. Set `$RunbookCommit` in the first block to that full commit. The block stops when it is empty. The
    value is recorded in `runbook-identity.txt` as **operator-declared**. It is not proof of the bytes
    that you ran; step 2 above is what keeps the bytes honest. The block also fetches that commit,
-   checks that its only parent is the source commit and that it changes only the runbook file, and
-   records the Git blob id, byte length, and SHA-256 of the exact runbook bytes.
+   checks that it sits on the source commit through the linear docs chain described in "Candidate"
+   (the commits above the source are docs commits, at most two, with no merge, and the first one is
+   `8b0f3e92…`) and that the whole difference from the source is the runbook file, and records the
+   Git blob id, byte length, and SHA-256 of the exact runbook bytes.
 4. The starting revision of the test checkout is the source commit that the first block pins and
    checks, not the runbook commit.
 
@@ -391,6 +420,9 @@ $SourceSha = 'dd0bbe33f5e64843f5eef9ab7e52937ac26eda58'
 $SourceTree = '961aadde0c7a2cd0a23d1af729a6773b42ccddbd'
 # The runbook file path in the runbook commit (see Candidate).
 $RunbookPath = 'docs/evidence/priority-9-windows-acceptance-dd0bbe3-runbook.md'
+# The first, reviewed revision of this runbook. It is the only commit that the docs chain may
+# contain below the declared runbook commit. It is not the declared runbook commit.
+$PriorRunbookRevision = '8b0f3e927114768aab5648c4284e5c3f59b03ed8'
 # The accepted baseline: the Priority 8 candidate. Its native evidence proves only itself.
 $BaseSha = '5f6f3a117089fe6c08936bc2b21c5d76b83cdb39'
 $ExpectedRangeCount = 4
@@ -421,7 +453,7 @@ $RunbookCommit = ''
 if ($RunbookCommit -cnotmatch '^[0-9a-f]{40}$') {
     throw 'Set RunbookCommit to the full lowercase 40-character commit from the dispatch message.'
 }
-foreach ($Sha in (@($SourceSha, $BaseSha, $SourceTree) + $ExpectedRangeCommits)) {
+foreach ($Sha in (@($SourceSha, $BaseSha, $SourceTree, $PriorRunbookRevision) + $ExpectedRangeCommits)) {
     if ($Sha -cnotmatch '^[0-9a-f]{40}$') {
         throw 'A pinned object id is not a full lowercase 40-character SHA.'
     }
@@ -707,10 +739,28 @@ $Run = Invoke-Git 'runbook-type' @('cat-file', '-t', $RunbookCommit)
 if ($Run.Code -ne 0 -or $Run.Out.Count -ne 1 -or $Run.Out[0] -cne 'commit') {
     throw 'The declared runbook commit is not a commit.'
 }
-$Run = Invoke-Git 'runbook-parent' @('rev-list', '--parents', '-n', '1', $RunbookCommit)
-if ($Run.Code -ne 0 -or $Run.Out.Count -ne 1 -or $Run.Out[0] -cne "$RunbookCommit $SourceSha") {
-    throw 'The runbook commit does not have the source commit as its only parent.'
+# The docs chain above the source: one or two linear commits, no merge. The first is the
+# reviewed first revision when there are two. The last is the declared runbook commit.
+$Run = Invoke-Git 'runbook-parent' @('rev-list', '--parents', '--reverse', "$SourceSha..$RunbookCommit")
+$ChainOk = ($Run.Code -eq 0 -and $Run.Out.Count -ge 1 -and $Run.Out.Count -le 2)
+if ($ChainOk) {
+    $Expected = $SourceSha
+    foreach ($Line in $Run.Out) {
+        if ($Line -cnotmatch '^[0-9a-f]{40} [0-9a-f]{40}$' -or $Line.Substring(41) -cne $Expected) {
+            $ChainOk = $false; break
+        }
+        $Expected = $Line.Substring(0, 40)
+    }
+    if ($ChainOk -and $Expected -cne $RunbookCommit) { $ChainOk = $false }
+    if ($ChainOk -and $Run.Out.Count -eq 2 -and $Run.Out[0].Substring(0, 40) -cne $PriorRunbookRevision) {
+        $ChainOk = $false
+    }
 }
+if (-not $ChainOk) {
+    throw 'The runbook commit is not a linear docs chain of at most two commits on the source commit.'
+}
+$RunbookParent = $Run.Out[-1].Substring(41)
+$RunbookChainLength = $Run.Out.Count
 $Run = Invoke-Git 'runbook-files' @('diff', '--name-only', $SourceSha, $RunbookCommit)
 if ($Run.Code -ne 0 -or $Run.Out.Count -ne 1 -or $Run.Out[0] -cne $RunbookPath) {
     throw 'The runbook commit does not change exactly the runbook file.'
@@ -782,7 +832,8 @@ $Autocrlf = Invoke-Git 'git-autocrlf' @('config', '--show-origin', '--get-all', 
 [IO.File]::WriteAllText((Join-Path $EvidenceDir 'runbook-identity.txt'),
     "runbook file: $RunbookPath`n" +
     "runbook commit (operator-declared, not byte proof): $RunbookCommit`n" +
-    "runbook commit parent (verified): $SourceSha`n" +
+    "runbook commit parent (verified): $RunbookParent`n" +
+    "runbook docs commits above the source (verified): $RunbookChainLength`n" +
     "runbook blob id: $RunbookBlob`n" +
     "runbook bytes: $RunbookBytes`n" +
     "runbook sha256: $RunbookSha256`n" +
@@ -992,6 +1043,20 @@ function Get-CheckVerdict($Check, $Result) {
             }
             if ($Warnings -gt 0 -and $Diags.Count -eq 0) {
                 & $Raise 'INCONCLUSIVE' "$Warnings warning line(s) were seen but none could be classified."
+            }
+            # Reconcile the per-crate summary lines with the classified diagnostics. Cargo prints
+            # one summary per crate and target, so the declared sum counts a repeated warning
+            # once per target. The distinct count can be lower, but never higher, than the sum.
+            $Declared = 0
+            foreach ($S in [regex]::Matches($Err, '(?m)^warning: `[^`\r\n]+` \([^)\r\n]*\) generated (\d+) warnings?\b')) {
+                $Declared += [int]$S.Groups[1].Value
+            }
+            $Distinct = @($Diags | Where-Object { $_.Level -ceq 'warning' }).Count
+            $Report.Add("RECONCILIATION: summary lines declare $Declared warning(s) in total; $Distinct distinct warning diagnostic(s) were classified; $BaselineSeen baseline; $Unexpected unexpected.")
+            [IO.File]::WriteAllLines((Join-Path $EvidenceDir "$($Check.Name).diagnostics.txt"),
+                [string[]]@($Report))
+            if ($Declared -gt 0 -and ($Distinct -eq 0 -or $Distinct -gt $Declared)) {
+                & $Raise 'INCONCLUSIVE' "The summary lines declare $Declared warning(s) but $Distinct distinct warning diagnostic(s) were classified."
             }
             $State.Notes.Add("$BaselineSeen baseline diagnostic(s) noted (supervisor.rs single_match in orchestrator-runtime, a dependency of the daemon). They are not counted.")
         } elseif ($Warnings -gt 0) {
@@ -1326,6 +1391,45 @@ function Test-ErrorOpen([long] $Handle, [int] $Code, [int[]] $Unproven) {
     @{ Status = 'INCONCLUSIVE'; Note = "Unexpected error $Code." }
 }
 
+# The remote-client row. A denial (5) over the SMB loopback is attributed to the daemon pipe's
+# remote-client rejection only when a control pipe has the same current-user-only DACL and was
+# opened through the same path. Without that control the row is capped at UNPROVEN.
+function Test-RemoteClient([long] $Handle, [int] $Code, [int[]] $Unproven,
+                           [long] $ControlHandle, [int] $ControlCode) {
+    if ($Handle -ne -1) { return @{ Status = 'FAIL'; Note = 'The remote open of the daemon pipe succeeded.' } }
+    if ($Code -eq 5) {
+        if ($ControlHandle -ne -1) {
+            return @{ Status = 'PASS'; Note = 'The daemon pipe denied the loopback open (5). A control pipe with the same current-user-only DACL opened through the same path, so the denial is not caused by SMB loopback, policy, or token filtering. This assumes that .NET does not request remote-client rejection for the control pipe.' }
+        }
+        return @{ Status = 'UNPROVEN'; Note = "Capped: the daemon pipe denied the loopback open (5), but the control pipe did not open by the same path (error $ControlCode). The denial may come from SMB loopback, policy, or token filtering and not from PIPE_REJECT_REMOTE_CLIENTS. This is not a PASS." }
+    }
+    if ($Unproven -contains $Code) {
+        return @{ Status = 'UNPROVEN'; Note = "The path could not be exercised on this host (error $Code)." }
+    }
+    @{ Status = 'INCONCLUSIVE'; Note = "Unexpected error $Code." }
+}
+
+# Writes explicit not-run files for any per-round output file that the round did not produce,
+# so the publish step's completeness check never blocks the evidence of an early failure.
+function Write-ProbeStubs([int] $Round, [string] $Why) {
+    $Reason = Protect-Principal "not run: round $Round stopped before this step: $Why"
+    $Plain = [Text.UTF8Encoding]::new($false)
+    $Wanted = @{
+        "probe-daemon-r$Round" = @('stdout.txt', 'stderr.txt', 'result.json')
+        "probe-second-daemon-r$Round" = @('stdout.txt', 'stderr.txt', 'exit.txt', 'result.json')
+    }
+    foreach ($Base in $Wanted.Keys) {
+        foreach ($Suffix in $Wanted[$Base]) {
+            $Path = Join-Path $EvidenceDir "$Base.$Suffix"
+            if (Test-Path -LiteralPath $Path -PathType Leaf) { continue }
+            $Text = if ($Suffix -ceq 'result.json') {
+                ([ordered]@{ name = $Base; not_run = $true; reason = $Reason } | ConvertTo-Json -Depth 3) + "`n"
+            } else { "$Reason`n" }
+            [IO.File]::WriteAllText($Path, $Text, $Plain)
+        }
+    }
+}
+
 function Test-SecondDaemon($Code, [bool] $TimedOut, [string] $Stderr) {
     if ($TimedOut) { return @{ Status = 'FAIL'; Note = 'The second daemon kept running past 15 seconds.' } }
     if ($null -eq $Code) { return @{ Status = 'INCONCLUSIVE'; Note = 'No exit code was observed.' } }
@@ -1508,6 +1612,7 @@ foreach ($Round in 1..$ProbeRounds) {
     $TokenPath = Join-Path $DataDir 'daemon.token'
     $Before = @(Get-PipeNames)
     $Daemon = $null
+    $Why = $null
     try {
         $Daemon = Start-ProbeDaemon $Round $DataDir
 
@@ -1555,7 +1660,7 @@ foreach ($Round in 1..$ProbeRounds) {
         $Aces = @()
         foreach ($Line in $IcaclsLines) {
             $Entry = ($Line -ireplace ('^' + [regex]::Escape($TokenPath)), '').Trim()
-            if ($Entry -and $Entry -notmatch '^(Successfully processed|Failed processing)') { $Aces += $Entry }
+            if ($Entry -and $Entry -cmatch ':(\([^()]*\))+$') { $Aces += $Entry }
         }
         $AclSddl = (Get-Acl -LiteralPath $TokenPath).GetSecurityDescriptorSddlForm('Access')
         $V = Test-TokenAcl $Aces $IcaclsExit $AclSddl $MySid {
@@ -1612,11 +1717,25 @@ foreach ($Round in 1..$ProbeRounds) {
             }
         }
 
-        # 5. A remote client: the SMB loopback path to the same pipe.
+        # 5. A remote client: the SMB loopback path to the same pipe, with a control pipe that has
+        #    the same current-user-only DACL and no remote-client rejection (see Test-RemoteClient).
+        $CtrlLeaf = 'agent-orch-probe-control-' + [Guid]::NewGuid().ToString('N')
+        $Control = $null
+        $CtrlHandle = -1L; $CtrlErr = 0
+        try {
+            $Control = [IO.Pipes.NamedPipeServerStream]::new($CtrlLeaf, [IO.Pipes.PipeDirection]::InOut, 1,
+                [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::CurrentUserOnly)
+            $CtrlHandle = [Probe.Pipe]::Open("\\localhost\pipe\$CtrlLeaf", [uint32]3221225472, [ref]$CtrlErr)
+            if ($CtrlHandle -ne -1) { [Probe.Pipe]::Close($CtrlHandle) }
+        } catch {
+            $CtrlErr = -1
+        } finally {
+            if ($Control) { $Control.Dispose() }
+        }
         $Err = 0
         $RemoteHandle = [Probe.Pipe]::Open("\\localhost\pipe\$PipeLeaf", [uint32]3221225472, [ref]$Err)
         if ($RemoteHandle -ne -1) { [Probe.Pipe]::Close($RemoteHandle) }
-        $V = Test-ErrorOpen $RemoteHandle $Err @(2, 53, 64, 67, 121, 1203, 1231)
+        $V = Test-RemoteClient $RemoteHandle $Err @(2, 53, 64, 67, 121, 1203, 1231) $CtrlHandle $CtrlErr
         Add-Probe 'probe-remote-client' $Round $V.Status $V.Note
 
         # 6. The anonymous token.
@@ -1696,12 +1815,13 @@ foreach ($Round in 1..$ProbeRounds) {
         $Why = $_.Exception.Message
         foreach ($Name in $ProbeNames) {
             if ($Name -ceq 'probe-second-user' -or $ProbeDone.ContainsKey("$Name|$Round")) { continue }
-            Add-Probe $Name $Round 'INCONCLUSIVE' "The round stopped before this row: $Why"
+            Add-Probe $Name $Round 'FAIL' "The round stopped before this row: $Why"
         }
     } finally {
         if ($Daemon) {
             if (-not (Stop-ProbeDaemon $Daemon $Round)) { $ProbeStopped = $false }
         }
+        Write-ProbeStubs $Round $(if ($Why) { $Why } else { 'the round ended before these files were written' })
     }
 }
 $ProbeClock.Stop()
@@ -1780,8 +1900,9 @@ Status rules for each command:
   DACL that grants another principal, a 17th client that connects, a remote or anonymous open that
   succeeds, a daemon that must be killed, or a survivor). It is `INCONCLUSIVE` when it cannot observe
   the outcome that it needs. It is `UNPROVEN` when the path cannot be exercised on this host (no
-  second account, no SMB loopback). `UNPROVEN` never changes the overall verdict, and the report lists
-  every `UNPROVEN` row.
+  second account, no SMB loopback) or when the remote-client denial has no working control pipe. A
+  probe round that stops early makes the rows it did not finish `FAIL`. `UNPROVEN` never changes the
+  overall verdict, and the report lists every `UNPROVEN` row.
 - `PASS`: exit code zero, every required line and test present, zero tests failed, no survivor, and
   the counts match the derived counts.
 
@@ -1897,7 +2018,8 @@ $Summaries
   timeout_tests.rs, tests/daemon.rs, three daemon cancellation unit tests, and the daemon symlink
   test. Their macOS results are separate and are not Windows evidence.
 - UNPROVEN, whatever the overall result: denial of a second, different local user; rejection of a
-  genuinely remote client (at most SMB loopback is tried, and it can be UNPROVEN); and a single
+  genuinely remote client (at most SMB loopback is tried, and a remote-client denial without a working
+  control pipe is capped at UNPROVEN, not PASS); and a single
   daemon-to-client write above 64 KiB to a slow reader.
 - Server identity verification by the client, the data-directory ACL, and the token owner are not
   validated on Windows. The pipe-level AlreadyRunning path is covered only by the cargo test
@@ -2054,7 +2176,7 @@ foreach ($Path in $Staged) {
     }
 }
 & $Git -C $EvidenceWorktree commit `
-    -m "evidence: record Priority 9 Windows run of $Short ($Overall)" `
+    -m "evidence: record Priority 9 Windows run of $Short ($Overall; UNPROVEN: $(($UnprovenRows | ForEach-Object { $_ -replace '^probe-', '' }) -join ', '))" `
     -m 'Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>'
 if ($LASTEXITCODE -ne 0) { throw 'Evidence commit failed. If Git needs a user identity, report BLOCKED. Do not change credentials.' }
 $EvidenceSha = & $Git -C $EvidenceWorktree rev-parse HEAD
@@ -2177,7 +2299,8 @@ Known limits of this runbook:
 - The daemon `tests\daemon.rs` binary is `cfg(unix)` and reports `running 0 tests` on Windows. Do not
   read that as a missing gate.
 - The probe covers one host, one account, and the recorded elevation state. Second-user denial, a
-  truly remote client, and an outbound write above 64 KiB to a slow reader stay `UNPROVEN` or
+  truly remote client (a loopback denial without a working control pipe is capped at `UNPROVEN`), and
+  an outbound write above 64 KiB to a slow reader stay `UNPROVEN` or
   unreported unless the host allows them. Run the probe elevated and not elevated as separate runs if
   both are available.
 - The 16/17 instance probe depends on timing. The 17th open happens within 1800 ms of the first
@@ -2191,3 +2314,34 @@ Known limits of this runbook:
   the Windows expectation.
 - The declared runbook commit and the source pin are separate. The byte pin makes the runbook bytes
   comparable after the run. It is not an execution proof.
+- The runbook is read from the **tip of the docs branch**. The source under test is always `dd0bbe33`.
+  The docs chain is `dd0bbe33` -> `8b0f3e92` (reviewed first revision) -> the tip (revision 2). Step 1
+  accepts the declared runbook commit only when it is that docs-only chain (or the first revision itself
+  on its own) and records which one it found in `runbook-identity.txt`.
+
+## What changed in revision 2 (review of `8b0f3e92`: PASS with advisories)
+
+This revision is one docs-only commit on top of `8b0f3e92`. The source under test is unchanged.
+
+- **M1.** `probe-remote-client` now has a positive control: a .NET control pipe with a current-user-only
+  DACL, opened through the same `\\localhost\pipe\` path. PASS needs the daemon pipe denied (5) and the
+  control opened. A denial without a control opening is capped at `UNPROVEN` and is stated as not a
+  PASS. The assumption that .NET does not request remote-client rejection for the control pipe is
+  stated and is not verified on Windows.
+- **M2.** A probe round that stops early marks every unfinished row `FAIL` (it was `INCONCLUSIVE`) and
+  writes explicit "not run" stub files for any missing `probe-daemon-r<N>.*` and
+  `probe-second-daemon-r<N>.*` evidence. The publish step's completeness check no longer blocks the
+  evidence of an early failure.
+- **Docs chain.** `runbook-parent` now accepts the docs chain `dd0bbe33` -> `8b0f3e92` -> tip, in
+  addition to a single commit on `dd0bbe33`. `runbook-files` still requires the whole difference from
+  the source to be this one file.
+- **L1 (icacls).** The ACE filter keeps lines that end in a parenthesized permission group, so it no
+  longer depends on the English trailer text of `icacls`.
+- **L2, L3.** Notes: a pipe-SDDL FAIL needs the recorded SDDL read first; an `InvalidParams` reply to the
+  large frame is expected.
+- **L4.** The evidence commit subject lists the `UNPROVEN` rows.
+- **L5.** The clippy diagnostics file ends with a reconciliation line (declared warnings, distinct
+  classified warnings, baseline, unexpected). A declared count with no, or fewer, distinct diagnostics is
+  `INCONCLUSIVE`.
+- **L6.** Note: run the probe with no other agent-orch daemon running.
+- Not changed: N1 (equal `duration_seconds` on every probe row).
