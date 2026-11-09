@@ -282,10 +282,17 @@ mod tests {
         let (_tmp, wts, repo) = fixture();
         std::fs::create_dir_all(&wts).unwrap();
         let verbatim = std::fs::canonicalize(&wts).unwrap();
-        assert!(verbatim.to_string_lossy().starts_with(r"\\?\"), "{verbatim:?}");
+        assert!(
+            verbatim.to_string_lossy().starts_with(r"\\?\"),
+            "{verbatim:?}"
+        );
         let wt = create_task_worktree(&repo, "accept-run", "HEAD", &verbatim).unwrap();
         assert!(wt.path().join("base.txt").exists());
-        assert!(!wt.path().to_string_lossy().starts_with(r"\\?\"), "{:?}", wt.path());
+        assert!(
+            !wt.path().to_string_lossy().starts_with(r"\\?\"),
+            "{:?}",
+            wt.path()
+        );
     }
 
     #[test]
