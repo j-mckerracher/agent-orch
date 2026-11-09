@@ -404,13 +404,11 @@ impl DaemonApi {
         if let Some(program) = &self.config.claude_program {
             claude = claude.with_program(program);
         }
-        let (codex, claude, pi) = runtime.block_on(async {
-            (
-                codex.detect().await,
-                claude.detect().await,
-                PiRpcAdapter::new().detect().await,
-            )
-        });
+        // Probes run real agent binaries, so run them together to keep the
+        // reply within the client's I/O timeout.
+        let pi = PiRpcAdapter::new();
+        let (codex, claude, pi) =
+            runtime.block_on(async { tokio::join!(codex.detect(), claude.detect(), pi.detect()) });
         Ok(json!([
             agent_entry("codex", true, codex),
             agent_entry("claude-code", true, claude),
