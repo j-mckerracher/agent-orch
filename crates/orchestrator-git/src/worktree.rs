@@ -1,7 +1,7 @@
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use crate::error::Error;
+use crate::error::{stderr_detail, Error};
 use crate::git::git;
 use crate::repository::Repository;
 
@@ -86,7 +86,7 @@ pub fn create_task_worktree(
                 // git's "already exists" means retry with the next name;
                 // anything else leaves the partial state for inspection.
                 let race = matches!(&err, Error::Git { stderr, .. }
-                    if stderr.contains("already exists"));
+                    if is_name_collision(stderr));
                 last_err = Some(Box::new(err));
                 if !race {
                     return Err(Error::CreationFailed {
@@ -116,21 +116,40 @@ fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Resu
         return Err(Error::Io(e));
     }
     // `--` guards the (sanitized, never leading-dash) worktree path against
-    // option injection, and keeps every argument a literal value.
-    git(
-        "add worktree",
-        repo.path(),
-        [
-            OsStr::new("worktree"),
-            OsStr::new("add"),
-            OsStr::new("-b"),
-            OsStr::new(branch),
-            OsStr::new("--"),
-            path.as_os_str(),
-            OsStr::new(sha),
-        ],
-    )
-    .map(|_| ())
+    // option injection, and keeps every argument a literal value. `LC_ALL=C`
+    // (on this child only) fixes git's message wording so `is_name_collision`
+    // and the reported cause do not depend on the user's locale.
+    let output = Command::new("git")
+        .current_dir(repo.path())
+        .env("LC_ALL", "C")
+        .args(["worktree", "add", "-b"])
+        .arg(branch)
+        .arg("--")
+        .arg(path)
+        .arg(sha)
+        .output()?;
+    if !output.status.success() {
+        return Err(Error::Git {
+            step: "add worktree",
+            status: output.status,
+            stderr: stderr_detail(&output.stderr),
+        });
+    }
+    Ok(())
+}
+
+/// True when git reports that the branch or worktree path already exists,
+/// i.e. a concurrent creator took the name. `stderr` is `stderr_detail`
+/// output (lines joined by `; `). Matches git's own whole `fatal:` line, not
+/// the phrase anywhere, so an unrelated failure whose path contains
+/// "already exists" is not retried.
+fn is_name_collision(stderr: &str) -> bool {
+    stderr.split("; ").any(|line| {
+        line.strip_prefix("fatal: ").is_some_and(|message| {
+            (message.starts_with("a branch named '") || message.starts_with('\''))
+                && message.ends_with("' already exists")
+        })
+    })
 }
 
 fn verify_head(path: &Path, sha: &str) -> Result<(), Error> {
@@ -376,6 +395,10 @@ mod tests {
     /// uncreatable (ref directory/file conflict). Git prints a progress line
     /// before its `fatal:` line; the reported error must carry the `fatal:`
     /// cause, not just the progress line, and must keep the original source.
+    /// The full ref name appears only on the `fatal:` line, so asserting it
+    /// proves the cause survived without depending on Git's message wording.
+    const CAUSE_REF: &str = "refs/heads/orchestrator/cause-test";
+
     #[test]
     fn git_add_failure_reports_git_stderr_cause() {
         let (tmp, wts, repo) = fixture();
@@ -384,17 +407,92 @@ mod tests {
         let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts).unwrap_err();
         let shown = err.to_string();
         assert!(shown.contains("worktree creation failed at"), "{shown}");
-        assert!(shown.contains("cannot lock ref"), "git's cause is lost: {shown}");
+        assert!(shown.contains(CAUSE_REF), "git's cause is lost: {shown}");
         match &err {
             Error::CreationFailed { source, .. } => match &**source {
                 Error::Git { step, status, stderr } => {
                     assert_eq!(*step, "add worktree");
                     assert!(!status.success());
-                    assert!(stderr.contains("cannot lock ref"), "{stderr}");
+                    assert!(stderr.contains(CAUSE_REF), "{stderr}");
                 }
                 other => panic!("expected Git source, got {other:?}"),
             },
             other => panic!("expected CreationFailed, got {other:?}"),
         }
+    }
+
+    /// A non-collision Git failure whose message merely contains a path with
+    /// the phrase "already exists" must fail at once with Git's cause, not be
+    /// retried as a name race until the names run out.
+    #[cfg(unix)]
+    #[test]
+    fn non_collision_failure_with_already_exists_in_path_is_not_retried() {
+        use std::os::unix::fs::PermissionsExt;
+        let (tmp, _wts, repo) = fixture();
+        let wts = tmp.path().join("already exists");
+        std::fs::create_dir(&wts).unwrap();
+        std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let writable = std::fs::File::create(wts.join("probe")).is_ok();
+        let started = std::time::Instant::now();
+        let r = create_task_worktree(&repo, "ro-root", "HEAD", &wts);
+        std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if writable {
+            return; // permission bits are not enforced (e.g. running as root)
+        }
+        match r {
+            Err(Error::CreationFailed { path, source, .. }) => {
+                assert_eq!(path, wts.join("ro-root"));
+                match *source {
+                    Error::Git { stderr, .. } => {
+                        assert!(stderr.contains(&*wts.to_string_lossy()), "{stderr}")
+                    }
+                    other => panic!("expected Git source, got {other:?}"),
+                }
+            }
+            other => panic!("expected CreationFailed, got {other:?}"),
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "retried");
+    }
+
+    /// A real name collision (git's own "already exists") still retries.
+    #[cfg(unix)]
+    #[test]
+    fn path_name_collision_retries_the_next_name() {
+        let (_tmp, wts, repo) = fixture();
+        std::fs::create_dir_all(&wts).unwrap();
+        // A dangling symlink: `path.exists()` is false, git says "already exists".
+        std::os::unix::fs::symlink(wts.join("missing-target"), wts.join("race")).unwrap();
+        let wt = create_task_worktree(&repo, "race", "HEAD", &wts).unwrap();
+        assert_eq!(wt.path(), wts.join("race-1"));
+        assert_eq!(wt.branch(), "orchestrator/race-1");
+    }
+
+    #[test]
+    fn name_collision_is_recognized_only_for_gits_own_conflict_lines() {
+        let branch = "a branch named 'orchestrator/t' already exists";
+        assert!(is_name_collision(&format!("Preparing worktree; fatal: {branch}")));
+        assert!(is_name_collision("fatal: '/w/t' already exists"));
+        assert!(!is_name_collision(
+            "fatal: could not create leading directories of '/already exists/t/.git': denied"
+        ));
+        assert!(!is_name_collision("fatal: failed in /tmp/already exists"));
+        assert!(!is_name_collision("already exists"));
+    }
+
+    #[test]
+    fn long_stderr_keeps_the_final_cause_within_the_bound() {
+        let noise = "é".repeat(2000);
+        let stderr = format!("Preparing worktree\n{noise}\nfatal: the real cause\n");
+        let shown = crate::error::stderr_detail(stderr.as_bytes());
+        assert!(shown.chars().count() <= 1024, "{}", shown.chars().count());
+        assert!(shown.ends_with("fatal: the real cause"), "{shown}");
+        assert!(shown.starts_with("..."), "truncation must be visible: {shown}");
+    }
+
+    #[test]
+    fn stderr_detail_neutralizes_terminal_control_characters() {
+        let shown = crate::error::stderr_detail(b"fatal: a\x1b[31mb\x07\x00c\r\nsecond\tline\n");
+        assert!(!shown.chars().any(char::is_control), "{shown:?}");
+        assert!(shown.contains("fatal: a") && shown.contains("second"), "{shown:?}");
     }
 }

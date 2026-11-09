@@ -278,7 +278,13 @@ fn run_reports_git_cause_when_worktree_creation_fails() {
         "{stderr}"
     );
     assert!(stderr.contains("worktree creation failed"), "{stderr}");
-    assert!(stderr.contains("cannot lock ref"), "git's cause is lost: {stderr}");
+    // The full ref name appears only on git's `fatal:` line, not its
+    // progress line, so this proves the cause reached the CLI without
+    // depending on git's (localizable) wording.
+    assert!(
+        stderr.contains("refs/heads/orchestrator/cause-visible"),
+        "git's cause is lost: {stderr}"
+    );
 }
 
 #[test]

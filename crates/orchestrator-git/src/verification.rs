@@ -77,7 +77,7 @@ impl CommandSpec {
             return Err(Error::Git {
                 step: "hash validation command",
                 status: output.status,
-                stderr: crate::error::stderr_detail(&output.stderr),
+                stderr: crate::error::first_line(&output.stderr),
             });
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
@@ -915,7 +915,7 @@ fn run_git(directory: &Path, args: &[&str], step: &'static str) -> Result<Output
         return Err(Error::Git {
             step,
             status: output.status,
-            stderr: crate::error::stderr_detail(&output.stderr),
+            stderr: crate::error::first_line(&output.stderr),
         });
     }
     Ok(output)

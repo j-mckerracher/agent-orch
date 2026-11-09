@@ -60,23 +60,46 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-/// Summarize git's stderr on one line: every non-empty line, in order, joined
-/// by `; ` and capped at `MAX_STDERR_CHARS`. Git often prints a progress line
-/// (for example `Preparing worktree ...`) before the `fatal:` line that holds
-/// the cause, so keeping only the first line hides the cause.
+/// Collapse git's stderr to its first line; git's fatal lines are single-line.
+pub(super) fn first_line(stderr: &[u8]) -> String {
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+/// Summarize the whole of git's stderr on one line for `git worktree add`,
+/// whose first line is a progress message and whose `fatal:` cause comes
+/// last. Non-empty lines are joined by `; `; control characters (terminal
+/// escapes) become `?`. Over 1024 characters, the tail is kept behind a
+/// visible `...` because the cause is last. No secrets are redacted: this
+/// is git's own output for local paths and refs, shown as received.
 pub(super) fn stderr_detail(stderr: &[u8]) -> String {
-    const MAX_STDERR_CHARS: usize = 1024;
+    const MAX_CHARS: usize = 1024;
+    const MARK: &str = "...";
     let text = String::from_utf8_lossy(stderr);
     let joined = text
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
+        .map(|line| {
+            line.chars()
+                .map(|c| if c.is_control() { '?' } else { c })
+                .collect::<String>()
+        })
         .collect::<Vec<_>>()
         .join("; ");
-    match joined.char_indices().nth(MAX_STDERR_CHARS) {
-        Some((end, _)) => format!("{}...", &joined[..end]),
-        None => joined,
+    let len = joined.chars().count();
+    if len <= MAX_CHARS {
+        return joined;
     }
+    let start = joined
+        .char_indices()
+        .nth(len - (MAX_CHARS - MARK.len()))
+        .map_or(joined.len(), |(index, _)| index);
+    format!("{MARK}{}", &joined[start..])
 }
 
 impl Error {
