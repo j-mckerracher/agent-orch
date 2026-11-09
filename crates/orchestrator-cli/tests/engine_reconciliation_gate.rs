@@ -295,11 +295,12 @@ fn start_live_run(fixture: &Fixture, task_id: &str, guard: &mut OwnedProcesses) 
     }
 }
 
+/// The project id the CLI registers and the destination a delivery step must record:
+/// Git's own toplevel, exactly what `Repository::new(..).path()` reports. Not
+/// `fs::canonicalize`, which on Windows yields a `\\?\C:\...` form that never equals
+/// Git's `C:/...` and would make every seeded journal look destination-mismatched.
 fn project_id(fixture: &Fixture) -> String {
-    fs::canonicalize(&fixture.repo)
-        .unwrap()
-        .display()
-        .to_string()
+    git(&fixture.repo, &["rev-parse", "--show-toplevel"])
 }
 
 /// Seeds a Running task/attempt/session like a run owner that was interrupted
