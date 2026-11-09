@@ -1265,8 +1265,8 @@ mod tests {
         let (repository, worktree) = setup_worktree(&temp, "task-a");
         let candidate = git(worktree.path(), &["rev-parse", "HEAD"]);
         let command = CommandSpec {
-            program: "/bin/sh".into(),
-            args: vec!["-c".into(), "printf verified".into()],
+            program: "git".into(),
+            args: vec!["--version".into()],
         };
         let mut execution_trust = ExecutionTrustPolicy::default();
         execution_trust
@@ -1287,7 +1287,7 @@ mod tests {
         assert_eq!(result.commands[0].trust, TrustDecision::Trusted);
         assert_eq!(result.commands[0].status, CommandStatus::Passed);
         assert_eq!(result.commands[0].exit_code, Some(0));
-        assert_eq!(result.commands[0].stdout, "verified");
+        assert!(result.commands[0].stdout.starts_with("git version"));
     }
 
     #[test]
@@ -1296,8 +1296,10 @@ mod tests {
         let (repository, worktree) = setup_worktree(&temp, "task-a");
         let candidate = git(worktree.path(), &["rev-parse", "HEAD"]);
         let command = CommandSpec {
-            program: "/bin/sh".into(),
-            args: vec!["-c".into(), "printf rejected; exit 7".into()],
+            program: "git".into(),
+            args: ["rev-parse", "--verify", "--quiet", "refs/heads/missing"]
+                .map(Into::into)
+                .into(),
         };
         let mut execution_trust = ExecutionTrustPolicy::default();
         execution_trust
@@ -1316,8 +1318,7 @@ mod tests {
 
         assert_eq!(result.status, VerificationStatus::Failed);
         assert_eq!(result.commands[0].status, CommandStatus::Failed);
-        assert_eq!(result.commands[0].exit_code, Some(7));
-        assert_eq!(result.commands[0].stdout, "rejected");
+        assert_eq!(result.commands[0].exit_code, Some(1));
     }
 
     #[test]
@@ -1325,9 +1326,16 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let (repository, worktree) = setup_worktree(&temp, "task-a");
         let candidate = git(worktree.path(), &["rev-parse", "HEAD"]);
-        let command = CommandSpec {
-            program: "/bin/sleep".into(),
-            args: vec!["5".into()],
+        let command = if cfg!(windows) {
+            CommandSpec {
+                program: "ping".into(),
+                args: ["-n", "6", "127.0.0.1"].map(Into::into).into(),
+            }
+        } else {
+            CommandSpec {
+                program: "/bin/sleep".into(),
+                args: vec!["5".into()],
+            }
         };
         let mut execution_trust = ExecutionTrustPolicy::default();
         execution_trust

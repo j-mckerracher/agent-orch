@@ -38,6 +38,10 @@ fn fixture() -> Fixture {
         &["config", "user.email", "test@example.invalid"],
     );
     git(&repository_path, &["config", "user.name", "Delivery Test"]);
+    // The task worktree is created by production Git, which reads the machine
+    // config (Git for Windows defaults to autocrlf=true and checks out CRLF),
+    // while `git()` pins that config away. Pin it for both so they agree.
+    git(&repository_path, &["config", "core.autocrlf", "false"]);
     fs::write(repository_path.join("base.txt"), "base\n").expect("write base file");
     git(&repository_path, &["add", "base.txt"]);
     git(&repository_path, &["commit", "-m", "initial"]);
