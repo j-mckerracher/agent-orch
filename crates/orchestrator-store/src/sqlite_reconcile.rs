@@ -1,8 +1,8 @@
 //! SQLite persistence and queries used during reconciliation.
 //!
 //! Process identity is stored separately from the core session lifecycle.
-//! Workspace paths remain opaque. CLI/scheduler wiring is deferred to M2-06;
-//! partial-delivery inspection is deferred to M3-06.
+//! Workspace paths remain opaque; CLI recovery consumes these persisted
+//! snapshots without treating them as task outcomes.
 //!
 //! Updated: 2026-11-08T08:14:55+00:00.
 
@@ -134,6 +134,8 @@ fn decode_identity(row: SqliteRow) -> Result<ProcessIdentity, StoreError> {
     let process_group: Option<i64> = row.try_get("process_group")?;
     let start_time_micros: Option<i64> = row.try_get("start_time_micros")?;
     let platform: String = row.try_get("platform")?;
+    let platform = ProcessPlatform::from_tag(&platform)
+        .ok_or_else(|| invalid_identity("invalid stored platform tag"))?;
     let pid = u32::try_from(pid).map_err(|_| invalid_identity("invalid stored PID"))?;
     let process_group = process_group
         .map(|group| u32::try_from(group).map_err(|_| invalid_identity("invalid process group")))
@@ -151,8 +153,7 @@ fn decode_identity(row: SqliteRow) -> Result<ProcessIdentity, StoreError> {
                 u64::try_from(time).map_err(|_| invalid_identity("invalid process start time"))
             })
             .transpose()?,
-        platform: ProcessPlatform::from_tag(&platform)
-            .ok_or_else(|| invalid_identity("invalid stored platform tag"))?,
+        platform,
     })
 }
 fn invalid_identity(message: &str) -> StoreError {

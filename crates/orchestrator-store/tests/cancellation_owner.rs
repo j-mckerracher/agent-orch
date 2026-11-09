@@ -4,7 +4,7 @@ use std::thread;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
-use orchestrator_core::identity::{ProcessIdentity, ProcessPlatform};
+use orchestrator_core::identity::{ExactProcessIdentity, ProcessIdentity, ProcessPlatform};
 use orchestrator_core::records::Project;
 use orchestrator_core::task::{
     Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent, TaskState,
@@ -100,6 +100,37 @@ fn process_identity(pid: u32, start_time_micros: u64) -> ProcessIdentity {
         start_time_micros: Some(start_time_micros),
         platform: ProcessPlatform::MacOS,
     }
+}
+
+#[test]
+fn windows_owner_creation_time_precision_survives_reopen() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("store.sqlite");
+    let identity = ProcessIdentity {
+        pid: 101,
+        process_group: None,
+        start_time_micros: Some(1_700_000_000_123_456),
+        platform: ProcessPlatform::Windows,
+    };
+    let exact_identity = ExactProcessIdentity {
+        identity,
+        windows_creation_time_100ns_since_unix_epoch: Some(1_700_000_000_123_456_u64 * 10 + 7),
+    };
+    let owner = {
+        let store = SqliteStore::new(&database).unwrap();
+        let owner = running_task(&store, "cancel-windows-identity", false)
+            .with_exact_process_identity(exact_identity);
+        store.register_cancellation_owner(&owner).unwrap();
+        owner
+    };
+
+    let reopened = SqliteStore::new(&database).unwrap();
+    assert_eq!(
+        reopened.open_cancellation_owners().unwrap()[0].exact_process_identity(),
+        Some(exact_identity)
+    );
+    assert_eq!(owner.process_identity(), Some(identity));
+    assert_eq!(owner.exact_process_identity(), Some(exact_identity));
 }
 
 fn fail_running_owner_task(store: &SqliteStore, owner: &CancellationOwner) {
@@ -463,4 +494,139 @@ fn non_cancelled_owner_exit_resolves_request_without_cancelling_task() {
         store.cancellation_request(&owner).unwrap(),
         Some(CancellationStatus::Rejected)
     );
+}
+
+#[test]
+fn manual_owner_recovery_is_auditable_and_preserves_lifecycle() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let owner = running_task(&store, "cancel-manual-recovery", false);
+    store.register_cancellation_owner(&owner).unwrap();
+    store
+        .request_cancellation_for_task("cancel-manual-recovery")
+        .unwrap();
+    fail_running_owner_task(&store, &owner);
+
+    let wrong_generation = CancellationOwner::new(
+        owner.task_id.clone(),
+        owner.attempt_id.clone(),
+        owner.session_id.clone(),
+        "fedcba9876543210fedcba9876543210".into(),
+    )
+    .unwrap();
+    assert!(store
+        .manually_resolve_cancellation_owner(&wrong_generation, true, "confirmed processes exited")
+        .is_err());
+    assert!(store
+        .manually_resolve_cancellation_owner(&owner, false, "confirmed processes exited")
+        .is_err());
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Pending)
+    );
+    assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+
+    store
+        .manually_resolve_cancellation_owner(
+            &owner,
+            true,
+            "confirmed owner and managed process tree exited",
+        )
+        .unwrap();
+
+    let record = store.get("cancel-manual-recovery").unwrap();
+    assert_eq!(record.state, TaskState::Failed);
+    assert_eq!(record.attempts[0].state, AttemptState::Failed);
+    assert_eq!(record.sessions[0].state, SessionState::Exited);
+    assert!(!record.events.contains(&AuditEvent::TaskCancelled));
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert!(store.open_cancellation_owners().unwrap().is_empty());
+
+    let event = store
+        .stream_events_after(0, 100)
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "cancellation.owner_manually_released")
+        .expect("manual recovery audit event");
+    assert_eq!(event.payload["generation"], owner.generation());
+    assert_eq!(
+        event.payload["reason"],
+        "confirmed owner and managed process tree exited"
+    );
+    assert_eq!(event.payload["process_exit_confirmed_by_operator"], true);
+    assert_eq!(event.payload["request_status"], "failed");
+}
+
+#[test]
+fn manual_owner_recovery_requires_terminal_target_lifecycle() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let owner = running_task(&store, "cancel-manual-active", true);
+    store
+        .request_cancellation_for_task("cancel-manual-active")
+        .unwrap();
+
+    assert!(matches!(
+        store.manually_resolve_cancellation_owner(
+            &owner,
+            true,
+            "confirmed owner and managed process tree exited"
+        ),
+        Err(StoreError::CancellationConflict { .. })
+    ));
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Pending)
+    );
+    assert_running(&store, "cancel-manual-active");
+    assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+}
+
+#[test]
+fn manual_recovery_releases_only_stale_generation_before_successor() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let first_owner = running_task(&store, "cancel-manual-retry", false);
+    store.register_cancellation_owner(&first_owner).unwrap();
+    store
+        .request_cancellation_for_task("cancel-manual-retry")
+        .unwrap();
+    fail_running_owner_task(&store, &first_owner);
+
+    let second_identity = process_identity(402, 40_000);
+    let second_owner = retry_owner(&store, "cancel-manual-retry", second_identity);
+    assert!(store.register_cancellation_owner(&second_owner).is_err());
+
+    store
+        .manually_resolve_cancellation_owner(
+            &first_owner,
+            true,
+            "confirmed first generation and its managed process tree exited",
+        )
+        .unwrap();
+    store.register_cancellation_owner(&second_owner).unwrap();
+
+    assert_eq!(
+        store.cancellation_request(&first_owner).unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert_eq!(
+        store
+            .request_cancellation_for_task("cancel-manual-retry")
+            .unwrap(),
+        CancellationStatus::Pending
+    );
+    let record = store.get("cancel-manual-retry").unwrap();
+    assert_eq!(record.state, TaskState::Running);
+    assert_eq!(record.attempts[0].state, AttemptState::Failed);
+    assert_eq!(record.attempts[1].state, AttemptState::Running);
+    assert_eq!(record.sessions[0].state, SessionState::Exited);
+    assert_eq!(record.sessions[1].state, SessionState::Running);
+    assert!(!record.events.contains(&AuditEvent::TaskCancelled));
+    let owners = store.open_cancellation_owners().unwrap();
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].generation(), second_owner.generation());
 }

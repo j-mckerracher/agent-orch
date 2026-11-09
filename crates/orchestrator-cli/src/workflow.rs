@@ -25,8 +25,9 @@ use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{
-    capture_process_identity, observe_process, reconcile_processes, scheduling_may_resume,
-    ProcessAction, ProcessSubject, ReconciliationResolution, RecordedProcess,
+    capture_exact_process_identity, capture_process_identity, observe_owner_process,
+    observe_process, reconcile_processes, scheduling_may_resume, ProcessAction, ProcessSubject,
+    ReconciliationResolution, RecordedProcess,
 };
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, DataDirectoryLock, DataDirectoryLockError, SqliteStore,
@@ -468,8 +469,8 @@ pub async fn run_task(
         Uuid::new_v4().simple().to_string(),
     )
     .map_err(|error| format!("cannot create cancellation owner for {task_id}: {error}"))?;
-    let cancellation_owner = match capture_process_identity(std::process::id()) {
-        Ok(identity) => cancellation_owner.with_process_identity(identity),
+    let cancellation_owner = match capture_exact_process_identity(std::process::id()) {
+        Ok(identity) => cancellation_owner.with_exact_process_identity(identity),
         Err(error) => {
             eprintln!(
                 "process identity unavailable for cancellation owner of task {task_id}: {error}"
@@ -979,6 +980,36 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         .map_err(|error| format!("cannot inspect task {task_id}: {error}"))?;
     println!("task: {}", task.contract.id);
     println!("status: {:?}", task.state);
+    for owner in store
+        .open_cancellation_owners()
+        .map_err(|error| format!("cannot inspect cancellation owners for {task_id}: {error}"))?
+        .into_iter()
+        .filter(|owner| owner.task_id == task_id)
+    {
+        let owner_status = owner
+            .exact_process_identity()
+            .map(observe_owner_process)
+            .unwrap_or(ProcessClassification::Unknown);
+        println!(
+            "cancellation owner: attempt {} session {} generation {} (exact owner process: {:?})",
+            owner.attempt_id,
+            owner.session_id,
+            owner.generation(),
+            owner_status
+        );
+        if owner_status == ProcessClassification::Unknown {
+            println!(
+                "  manual recovery: automatic identity is unavailable or inconclusive; after \
+                 confirming the owner and managed process tree have exited and this attempt \
+                 and session are terminal, run `agent-orch recover-owner {task_id} --attempt-id \
+                 {} --session-id {} --generation {} --confirm-processes-exited --reason \
+                 \"<reason>\"`",
+                owner.attempt_id,
+                owner.session_id,
+                owner.generation()
+            );
+        }
+    }
     match store
         .cancellation_status_for_task(task_id)
         .map_err(|error| format!("cannot inspect cancellation status for {task_id}: {error}"))?
@@ -1076,7 +1107,7 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
     let _lock = acquire_data_directory_lock(data_dir)?;
     let store = open_store(data_dir)?;
-    let _unresolved_owners = reconcile_cancellation_owners(&store)?;
+    let mut owner_blockers = reconcile_cancellation_owners(&store)?;
     let task = store
         .get(task_id)
         .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
@@ -1110,11 +1141,22 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
             attempt.id, attempt.state
         ));
     }
+    let task_owner_prefix = format!("cancellation owner for task {task_id} ");
+    let initial_recovery_blocker = owner_blockers
+        .iter()
+        .find(|blocker| blocker.starts_with(&task_owner_prefix))
+        .cloned();
     let status = store
         .request_cancellation_for_task(task_id)
-        .map_err(|error| format!("cannot request cancellation for task {task_id}: {error}"))?;
+        .map_err(|error| {
+            let recovery_hint = initial_recovery_blocker
+                .as_deref()
+                .map(|blocker| format!("; recovery blocker: {blocker}"))
+                .unwrap_or_default();
+            format!("cannot request cancellation for task {task_id}: {error}{recovery_hint}")
+        })?;
     let status = if status == CancellationStatus::Pending {
-        let _unresolved_owners = reconcile_cancellation_owners(&store)?;
+        owner_blockers.extend(reconcile_cancellation_owners(&store)?);
         store
             .cancellation_status_for_task(task_id)
             .map_err(|error| format!("cannot recheck cancellation for task {task_id}: {error}"))?
@@ -1124,10 +1166,15 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     };
     match status {
         CancellationStatus::Pending => {
+            let recovery_hint = owner_blockers
+                .iter()
+                .find(|blocker| blocker.starts_with(&task_owner_prefix))
+                .map(|blocker| format!("; unresolved owner: {blocker}"))
+                .unwrap_or_default();
             println!(
                 "cancellation pending for task {task_id}; the run owner has not confirmed \
                  process termination, task remains Running, and worktree is preserved; \
-                 use `agent-orch inspect {task_id}` to check status"
+                 use `agent-orch inspect {task_id}` to check status{recovery_hint}"
             );
             Ok(())
         }
@@ -1144,6 +1191,77 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
              and reap the agent; task was not marked Cancelled and worktree is preserved"
         )),
     }
+}
+
+pub fn recover_cancellation_owner(
+    data_dir: &Path,
+    task_id: &str,
+    attempt_id: &str,
+    session_id: &str,
+    generation: &str,
+    processes_confirmed_exited: bool,
+    reason: &str,
+) -> Result<(), String> {
+    validate_task_id(task_id)?;
+    validate_task_id(attempt_id)?;
+    validate_task_id(session_id)?;
+    if !processes_confirmed_exited {
+        return Err(
+            "manual recovery requires --confirm-processes-exited after verifying the owner and \
+             managed process tree are stopped"
+                .to_string(),
+        );
+    }
+
+    let _lock = acquire_data_directory_lock(data_dir)?;
+    let store = open_store(data_dir)?;
+    let owner = store
+        .open_cancellation_owners()
+        .map_err(|error| format!("cannot list cancellation owners for recovery: {error}"))?
+        .into_iter()
+        .find(|owner| {
+            owner.task_id == task_id
+                && owner.attempt_id == attempt_id
+                && owner.session_id == session_id
+                && owner.generation() == generation
+        })
+        .ok_or_else(|| {
+            format!(
+                "no open cancellation owner matches task {task_id}, attempt {attempt_id}, \
+                 session {session_id}, generation {generation}"
+            )
+        })?;
+
+    if owner.exact_process_identity().map(observe_owner_process)
+        == Some(ProcessClassification::Alive)
+    {
+        return Err(format!(
+            "cancellation owner generation {generation} is still alive; refusing manual recovery"
+        ));
+    }
+    if let Some(identity) = store
+        .session_identity(task_id, session_id)
+        .map_err(|error| format!("cannot inspect session identity for {session_id}: {error}"))?
+    {
+        let session_classification =
+            plan_process_reconciliation(identity, observe_process(identity)).classification;
+        if session_classification == ProcessClassification::Alive {
+            return Err(format!(
+                "session process for {task_id}/{session_id} is still alive; refusing manual recovery"
+            ));
+        }
+    }
+
+    store
+        .manually_resolve_cancellation_owner(&owner, processes_confirmed_exited, reason)
+        .map_err(|error| {
+            format!("cannot manually recover owner generation {generation}: {error}")
+        })?;
+    println!(
+        "owner generation {generation} was manually released; a pending cancellation request \
+         was marked Failed, task lifecycle was not changed, and a durable audit event was recorded"
+    );
+    Ok(())
 }
 
 pub fn show_diff(data_dir: &Path, task_id: &str) -> Result<(), String> {
@@ -1680,10 +1798,8 @@ fn reconcile_cancellation_owners(store: &SqliteStore) -> Result<Vec<String>, Str
                 owner.task_id
             )
         })?;
-        let identity = owner.process_identity();
-        let classification = identity.map(|identity| {
-            plan_process_reconciliation(identity, observe_process(identity)).classification
-        });
+        let identity = owner.exact_process_identity();
+        let classification = identity.map(observe_owner_process);
         match classification {
             Some(ProcessClassification::Exited) => store
                 .retire_stale_cancellation_owner(&owner)
@@ -1695,18 +1811,30 @@ fn reconcile_cancellation_owners(store: &SqliteStore) -> Result<Vec<String>, Str
                 })?,
             Some(ProcessClassification::Alive) if task.state != TaskState::Running => {
                 blockers.push(format!(
-                    "cancellation owner for task {} session {} is still alive while task is {:?}",
-                    owner.task_id, owner.session_id, task.state
+                    "cancellation owner for task {} session {} generation {} is still alive \
+                         while task is {:?}; manual recovery is not safe until the owner exits",
+                    owner.task_id,
+                    owner.session_id,
+                    owner.generation(),
+                    task.state
                 ));
             }
             Some(ProcessClassification::IdentityMismatch | ProcessClassification::Unknown)
-            | None
-                if task.state != TaskState::Running =>
-            {
+            | None => {
                 blockers.push(format!(
-                    "cancellation owner for task {} session {} has unresolved process identity; \
-                     refusing to retry or replace the owner",
-                    owner.task_id, owner.session_id
+                    "cancellation owner for task {} session {} generation {} has unresolved \
+                         exact process identity ({classification:?}); automatic recovery is \
+                         fail-closed. After confirming the owner and managed process tree have \
+                         exited and the target attempt/session are terminal, run `agent-orch \
+                         recover-owner {} --attempt-id {} --session-id {} --generation {} \
+                         --confirm-processes-exited --reason \"<reason>\"`",
+                    owner.task_id,
+                    owner.session_id,
+                    owner.generation(),
+                    owner.task_id,
+                    owner.attempt_id,
+                    owner.session_id,
+                    owner.generation()
                 ));
             }
             _ => {}
@@ -2005,6 +2133,88 @@ fn capture_stream<R: Read, W: Write>(mut input: R, mut output: W, mut log: File)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchestrator_core::identity::{ProcessIdentity, ProcessPlatform};
+
+    fn register_test_owner(
+        store: &SqliteStore,
+        task_id: &str,
+        process_identity: Option<ProcessIdentity>,
+    ) -> CancellationOwner {
+        let project_id = format!("project-{task_id}");
+        store
+            .register_project(&Project {
+                id: project_id.clone(),
+                root_path: "/repo".into(),
+                settings: serde_json::json!({}),
+            })
+            .unwrap();
+        store
+            .create(&TaskContract {
+                id: task_id.into(),
+                project_id,
+                parent_id: None,
+                objective: "test cancellation recovery".into(),
+                kind: TaskKind::Implement,
+                agent: "codex".into(),
+                dependencies: Vec::new(),
+                verification: VerificationPolicy::Commands {
+                    commands: vec![vec!["true".into()]],
+                },
+                delivery: DeliveryPolicy::LocalReview,
+                autonomy: AutonomyPolicy::WorkspaceWrites,
+                max_retries: 0,
+                max_repairs: 0,
+            })
+            .unwrap();
+        store.transition(task_id, TaskEvent::Admit).unwrap();
+
+        let attempt_id = format!("{task_id}-attempt-1");
+        let session_id = format!("{task_id}-session-1");
+        store
+            .add_attempt(
+                task_id,
+                &Attempt {
+                    id: attempt_id.clone(),
+                    task_id: task_id.into(),
+                    attempt_number: 1,
+                    state: AttemptState::Pending,
+                },
+            )
+            .unwrap();
+        store
+            .transition(task_id, TaskEvent::ExecutionStarted)
+            .unwrap();
+        store
+            .update_attempt_state(task_id, &attempt_id, AttemptState::Running)
+            .unwrap();
+        store
+            .add_session(
+                task_id,
+                &Session {
+                    id: session_id.clone(),
+                    attempt_id: attempt_id.clone(),
+                    adapter: "codex".into(),
+                    state: SessionState::Spawning,
+                },
+            )
+            .unwrap();
+        store
+            .update_session_state(task_id, &session_id, SessionState::Running)
+            .unwrap();
+
+        let mut owner = CancellationOwner::new(
+            task_id.into(),
+            attempt_id,
+            session_id,
+            "0123456789abcdef0123456789abcdef".into(),
+        )
+        .unwrap();
+        if let Some(identity) = process_identity {
+            owner = owner.with_process_identity(identity);
+        }
+        store.register_cancellation_owner(&owner).unwrap();
+        owner
+    }
 
     #[test]
     fn canonical_target_resolves_symlinked_ancestors_and_missing_suffixes() {
@@ -2031,5 +2241,114 @@ mod tests {
         capture_stream(&b"{\"type\":\"turn.completed\"}\n"[..], &mut output, log).unwrap();
         assert_eq!(output, b"{\"type\":\"turn.completed\"}\n");
         assert_eq!(fs::read(log_path).unwrap(), output);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellation_owner_reconciliation_ignores_live_inherited_group_parent() {
+        use std::process::Command;
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = open_store(directory.path()).unwrap();
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn child in inherited process group");
+        let identity = capture_process_identity(child.id()).expect("capture child identity");
+        let owner = register_test_owner(&store, "task-live-group-parent", Some(identity));
+        store.request_cancellation_for_task(&owner.task_id).unwrap();
+
+        child.kill().expect("kill owner child");
+        let status = child.wait().expect("reap owner child");
+        assert!(!status.success());
+        assert_eq!(
+            observe_process(identity),
+            orchestrator_core::identity::ProcessObservation::Unknown
+        );
+
+        assert!(reconcile_cancellation_owners(&store).unwrap().is_empty());
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        assert_eq!(
+            store.cancellation_request(&owner).unwrap(),
+            Some(CancellationStatus::Failed)
+        );
+    }
+
+    #[test]
+    fn unresolved_legacy_windows_owner_has_audited_manual_recovery_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path();
+        let store = open_store(data_dir).unwrap();
+        let legacy_identity = ProcessIdentity {
+            pid: std::process::id(),
+            process_group: None,
+            start_time_micros: Some(1_700_000_000_123_456),
+            platform: ProcessPlatform::Windows,
+        };
+        let owner = register_test_owner(&store, "task-legacy-windows-owner", Some(legacy_identity));
+        store.request_cancellation_for_task(&owner.task_id).unwrap();
+
+        let blockers = reconcile_cancellation_owners(&store).unwrap();
+        assert_eq!(blockers.len(), 1);
+        assert!(blockers[0].contains(owner.generation()));
+        assert!(blockers[0].contains("recover-owner"));
+        assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+        assert_eq!(
+            store.cancellation_request(&owner).unwrap(),
+            Some(CancellationStatus::Pending)
+        );
+
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(&owner.task_id, &owner.attempt_id, AttemptState::Failed)
+            .unwrap();
+        store
+            .transition(&owner.task_id, TaskEvent::ExecutionFailed)
+            .unwrap();
+
+        assert!(recover_cancellation_owner(
+            data_dir,
+            &owner.task_id,
+            &owner.attempt_id,
+            &owner.session_id,
+            owner.generation(),
+            false,
+            "operator verified the process tree exited",
+        )
+        .is_err());
+        assert_eq!(
+            store.cancellation_request(&owner).unwrap(),
+            Some(CancellationStatus::Pending)
+        );
+
+        recover_cancellation_owner(
+            data_dir,
+            &owner.task_id,
+            &owner.attempt_id,
+            &owner.session_id,
+            owner.generation(),
+            true,
+            "operator verified the owner and managed process tree exited",
+        )
+        .unwrap();
+        let record = store.get(&owner.task_id).unwrap();
+        assert_eq!(record.state, TaskState::Failed);
+        assert_eq!(record.attempts[0].state, AttemptState::Failed);
+        assert_eq!(record.sessions[0].state, SessionState::Exited);
+        assert!(!record
+            .events
+            .contains(&orchestrator_core::task::AuditEvent::TaskCancelled));
+        assert_eq!(
+            store.cancellation_request(&owner).unwrap(),
+            Some(CancellationStatus::Failed)
+        );
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        assert!(store
+            .stream_events_after(0, 100)
+            .unwrap()
+            .iter()
+            .any(|event| event.kind == "cancellation.owner_manually_released"));
     }
 }

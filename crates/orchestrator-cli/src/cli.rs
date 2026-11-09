@@ -53,6 +53,26 @@ enum Commands {
         /// Task identifier.
         task_id: String,
     },
+    /// Manually release one unresolved owner after confirming its process tree exited.
+    RecoverOwner {
+        /// Task identifier.
+        task_id: String,
+        /// Exact attempt identifier shown by `inspect`.
+        #[arg(long)]
+        attempt_id: String,
+        /// Exact session identifier shown by `inspect`.
+        #[arg(long)]
+        session_id: String,
+        /// Exact owner generation shown by `inspect`.
+        #[arg(long)]
+        generation: String,
+        /// Confirm that both the run owner and its managed process tree have exited.
+        #[arg(long)]
+        confirm_processes_exited: bool,
+        /// Reason for the operator's process-exit confirmation.
+        #[arg(long)]
+        reason: String,
+    },
     /// Show candidate changes relative to the task's base commit.
     Diff {
         /// Task identifier.
@@ -97,6 +117,25 @@ pub async fn execute(cli: Cli) -> Result<i32, String> {
             workflow::cancel_task(&data_dir, &task_id)?;
             Ok(0)
         }
+        Commands::RecoverOwner {
+            task_id,
+            attempt_id,
+            session_id,
+            generation,
+            confirm_processes_exited,
+            reason,
+        } => {
+            workflow::recover_cancellation_owner(
+                &data_dir,
+                &task_id,
+                &attempt_id,
+                &session_id,
+                &generation,
+                confirm_processes_exited,
+                &reason,
+            )?;
+            Ok(0)
+        }
         Commands::Diff { task_id } => {
             workflow::show_diff(&data_dir, &task_id)?;
             Ok(0)
@@ -119,6 +158,19 @@ mod tests {
             vec!["tasks"],
             vec!["inspect", "task-1"],
             vec!["cancel", "task-1"],
+            vec![
+                "recover-owner",
+                "task-1",
+                "--attempt-id",
+                "attempt-1",
+                "--session-id",
+                "session-1",
+                "--generation",
+                "0123456789abcdef0123456789abcdef",
+                "--confirm-processes-exited",
+                "--reason",
+                "verified process tree exited",
+            ],
             vec!["diff", "task-1"],
             vec!["cleanup", "task-1"],
         ];

@@ -1,8 +1,8 @@
 //! OS process identity and pure reconciliation outcomes.
 //!
 //! Runtime captures OS fields, and persistence stores this value separately
-//! from the core session lifecycle. CLI/scheduler wiring is deferred to M2-06;
-//! delivery inspection is deferred to M3-06.
+//! from the core session lifecycle. The CLI uses these identities for
+//! fail-closed reconciliation and stale-owner recovery.
 //!
 //! Updated: 2026-11-08T08:00:58+00:00.
 
@@ -52,6 +52,21 @@ pub struct ProcessIdentity {
     /// OS process start time in microseconds since Unix epoch, when available.
     pub start_time_micros: Option<u64>,
     pub platform: ProcessPlatform,
+}
+
+/// Exact identity used for cancellation-owner recovery.
+///
+/// Windows stores the exact creation timestamp at 100-ns precision since the
+/// Unix epoch. Existing process identities remain unchanged; legacy Windows
+/// records without this value cannot prove liveness.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub struct ExactProcessIdentity {
+    #[serde(flatten)]
+    pub identity: ProcessIdentity,
+    #[serde(default)]
+    pub windows_creation_time_100ns_since_unix_epoch: Option<u64>,
 }
 
 /// OS observation supplied to the pure process planner.
@@ -132,10 +147,122 @@ pub fn classify_identity(
     ProcessClassification::Alive
 }
 
+/// Compares cancellation-owner identities without consulting the operating
+/// system. Legacy Windows records without exact creation time remain unknown.
+pub fn classify_exact_process_identity(
+    expected: ExactProcessIdentity,
+    observed: ExactProcessIdentity,
+) -> ProcessClassification {
+    if expected.identity.pid != observed.identity.pid
+        || expected.identity.platform != observed.identity.platform
+    {
+        return ProcessClassification::IdentityMismatch;
+    }
+
+    if expected.identity.platform == ProcessPlatform::Windows {
+        let (Some(expected_creation_time), Some(observed_creation_time)) = (
+            expected.windows_creation_time_100ns_since_unix_epoch,
+            observed.windows_creation_time_100ns_since_unix_epoch,
+        ) else {
+            return ProcessClassification::Unknown;
+        };
+        let (Some(expected_start_time), Some(observed_start_time)) = (
+            expected.identity.start_time_micros,
+            observed.identity.start_time_micros,
+        ) else {
+            return ProcessClassification::Unknown;
+        };
+        if expected_creation_time / 10 != expected_start_time
+            || observed_creation_time / 10 != observed_start_time
+        {
+            return ProcessClassification::Unknown;
+        }
+        return if expected_creation_time == observed_creation_time {
+            ProcessClassification::Alive
+        } else {
+            ProcessClassification::IdentityMismatch
+        };
+    }
+
+    if expected
+        .windows_creation_time_100ns_since_unix_epoch
+        .is_some()
+        || observed
+            .windows_creation_time_100ns_since_unix_epoch
+            .is_some()
+        || expected.identity.start_time_micros.is_none()
+        || observed.identity.start_time_micros.is_none()
+    {
+        return ProcessClassification::Unknown;
+    }
+    classify_identity(expected.identity, observed.identity)
+}
+
 fn differs<T: PartialEq>(expected: Option<T>, observed: Option<T>) -> bool {
     matches!((expected, observed), (Some(expected), Some(observed)) if expected != observed)
 }
 
 fn unavailable<T>(expected: Option<T>, observed: Option<T>) -> bool {
     expected.is_some() && observed.is_none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_windows_identity_without_exact_creation_time_is_unresolved() {
+        let legacy: ExactProcessIdentity = serde_json::from_str(
+            r#"{"pid":42,"process_group":null,"start_time_micros":1700000000123456,"platform":"windows"}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.windows_creation_time_100ns_since_unix_epoch, None);
+        assert_eq!(
+            classify_exact_process_identity(legacy, legacy),
+            ProcessClassification::Unknown
+        );
+    }
+
+    #[test]
+    fn windows_creation_time_difference_is_not_pid_liveness() {
+        let expected = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                pid: 42,
+                process_group: None,
+                start_time_micros: Some(1700000000123456),
+                platform: ProcessPlatform::Windows,
+            },
+            windows_creation_time_100ns_since_unix_epoch: Some(17000000001234567),
+        };
+        let reused_pid = ExactProcessIdentity {
+            windows_creation_time_100ns_since_unix_epoch: Some(17000000001234568),
+            ..expected
+        };
+
+        assert_eq!(
+            classify_exact_process_identity(expected, expected),
+            ProcessClassification::Alive
+        );
+        assert_eq!(
+            classify_exact_process_identity(expected, reused_pid),
+            ProcessClassification::IdentityMismatch
+        );
+    }
+
+    #[test]
+    fn process_group_without_start_time_does_not_prove_exact_identity() {
+        let identity = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                pid: 42,
+                process_group: Some(42),
+                start_time_micros: None,
+                platform: ProcessPlatform::Unix,
+            },
+            windows_creation_time_100ns_since_unix_epoch: None,
+        };
+        assert_eq!(
+            classify_exact_process_identity(identity, identity),
+            ProcessClassification::Unknown
+        );
+    }
 }
