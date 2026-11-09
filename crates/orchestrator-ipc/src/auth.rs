@@ -32,8 +32,7 @@ pub(crate) enum AuthError {
 pub(crate) struct Secret {
     bytes: [u8; 32],
     path: PathBuf,
-    #[cfg(unix)]
-    identity: (u64, u64, u32),
+    identity: FileId,
 }
 impl fmt::Debug for Secret {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -59,9 +58,7 @@ impl Secret {
         if metadata.uid() != directory.uid() {
             return Err(AuthError::UnsafeTokenFile);
         }
-        #[cfg(windows)]
-        let _ = &metadata;
-        #[cfg(unix)]
+        let identity = file_id_from_file(&file, &metadata).ok_or(AuthError::UnsafeTokenFile)?;
         remove_stale_token(data_dir)?;
 
         let path = data_dir.join("daemon.token");
@@ -74,23 +71,20 @@ impl Secret {
         drop(file);
         fs::rename(&temporary_path, &path).map_err(|error| AuthError::Io(error.kind()))?;
 
-        #[cfg(unix)]
-        let identity = (metadata.dev(), metadata.ino(), metadata.uid());
         let secret = Self {
             bytes,
             path,
-            #[cfg(unix)]
             identity,
         };
         let installed =
             fs::symlink_metadata(&secret.path).map_err(|error| AuthError::Io(error.kind()))?;
-        if !installed.file_type().is_file() {
+        if !is_regular_file(&installed)
+            || file_id_from_path(&secret.path, &installed) != Some(identity)
+        {
             return Err(AuthError::UnsafeTokenFile);
         }
         #[cfg(unix)]
-        if (installed.dev(), installed.ino(), installed.uid()) != identity
-            || installed.mode() & 0o777 != 0o600
-        {
+        if installed.mode() & 0o777 != 0o600 {
             return Err(AuthError::UnsafeTokenFile);
         }
         Ok(secret)
@@ -104,10 +98,9 @@ impl Secret {
     }
 
     pub(crate) fn remove_owned(&self) {
-        #[cfg(unix)]
         if let Ok(metadata) = fs::symlink_metadata(&self.path) {
-            if metadata.is_file()
-                && (metadata.dev(), metadata.ino(), metadata.uid()) == self.identity
+            if is_regular_file(&metadata)
+                && file_id_from_path(&self.path, &metadata) == Some(self.identity)
             {
                 let _ = fs::remove_file(&self.path);
             }
@@ -136,7 +129,6 @@ impl Drop for PendingFile {
     }
 }
 
-#[cfg(unix)]
 fn remove_stale_token(data_dir: &Path) -> Result<(), AuthError> {
     let path = data_dir.join("daemon.token");
     let before = match fs::symlink_metadata(&path) {
@@ -144,19 +136,94 @@ fn remove_stale_token(data_dir: &Path) -> Result<(), AuthError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(AuthError::Io(error.kind())),
     };
-    let owner = fs::metadata(data_dir)
-        .map_err(|error| AuthError::Io(error.kind()))?
-        .uid();
-    if !before.file_type().is_file() || before.uid() != owner {
+    if !is_regular_file(&before) {
         return Err(AuthError::UnsafeTokenFile);
     }
+    #[cfg(unix)]
+    if before.uid()
+        != fs::metadata(data_dir)
+            .map_err(|error| AuthError::Io(error.kind()))?
+            .uid()
+    {
+        return Err(AuthError::UnsafeTokenFile);
+    }
+    let before_id = file_id_from_path(&path, &before);
     let after = fs::symlink_metadata(&path).map_err(|error| AuthError::Io(error.kind()))?;
-    if !after.file_type().is_file()
-        || (before.dev(), before.ino(), before.uid()) != (after.dev(), after.ino(), after.uid())
+    if before_id.is_none()
+        || !is_regular_file(&after)
+        || file_id_from_path(&path, &after) != before_id
     {
         return Err(AuthError::UnsafeTokenFile);
     }
     fs::remove_file(path).map_err(|error| AuthError::Io(error.kind()))
+}
+
+/// Stable file identity used to remove only the token this process installed.
+///
+/// Unix: (device, inode, owner uid). Windows has no uid in file metadata, so it
+/// uses (volume serial, file index) from `GetFileInformationByHandle`; the
+/// token's protected DACL and the data directory ACL provide the ownership
+/// boundary, and the OS refuses deletes the current user may not perform.
+#[cfg(unix)]
+pub(crate) type FileId = (u64, u64, u32);
+#[cfg(windows)]
+pub(crate) type FileId = (u32, u64);
+
+/// Accepts only a plain file. Directories, symlinks, and every other reparse
+/// point on Windows are refused, so cleanup never follows or deletes a redirect.
+pub(crate) fn is_regular_file(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
+    metadata.file_type().is_file()
+}
+
+#[cfg(unix)]
+pub(crate) fn file_id_from_file(_file: &File, metadata: &fs::Metadata) -> Option<FileId> {
+    Some((metadata.dev(), metadata.ino(), metadata.uid()))
+}
+
+#[cfg(unix)]
+pub(crate) fn file_id_from_path(_path: &Path, metadata: &fs::Metadata) -> Option<FileId> {
+    Some((metadata.dev(), metadata.ino(), metadata.uid()))
+}
+
+#[cfg(windows)]
+pub(crate) fn file_id_from_file(file: &File, _metadata: &fs::Metadata) -> Option<FileId> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle comes from a live `File` borrowed for the call, and
+    // `information` is a valid out-pointer read only after a nonzero return.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut information) } == 0 {
+        return None;
+    }
+    Some((
+        information.dwVolumeSerialNumber,
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    ))
+}
+
+/// Opens the path itself (not a reparse target) so the identity is the entry's own.
+#[cfg(windows)]
+pub(crate) fn file_id_from_path(path: &Path, metadata: &fs::Metadata) -> Option<FileId> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .ok()?;
+    file_id_from_file(&file, metadata)
 }
 
 impl Drop for Secret {

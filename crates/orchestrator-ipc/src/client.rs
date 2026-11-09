@@ -391,7 +391,7 @@ fn read_token(data_dir: &Path) -> Result<String, IpcError> {
         }
     }
     #[cfg(windows)]
-    if !before.is_file() {
+    if !crate::auth::is_regular_file(&before) {
         return Err(IpcError::Authentication);
     }
     let mut file = File::open(&path).map_err(|_| IpcError::Authentication)?;
@@ -400,6 +400,15 @@ fn read_token(data_dir: &Path) -> Result<String, IpcError> {
         let opened = file.metadata().map_err(|_| IpcError::Authentication)?;
         if (before.dev(), before.ino(), before.uid()) != (opened.dev(), opened.ino(), opened.uid())
         {
+            return Err(IpcError::Authentication);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use crate::auth::{file_id_from_file, file_id_from_path};
+        let opened = file.metadata().map_err(|_| IpcError::Authentication)?;
+        let expected = file_id_from_path(&path, &before);
+        if expected.is_none() || file_id_from_file(&file, &opened) != expected {
             return Err(IpcError::Authentication);
         }
     }
