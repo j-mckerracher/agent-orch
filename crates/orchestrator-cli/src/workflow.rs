@@ -1398,18 +1398,36 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
     let _lock = acquire_data_directory_lock(data_dir)?;
     let store = open_store(data_dir)?;
-    store
+    let task = store
         .get(task_id)
         .map_err(|error| format!("cannot clean up task {task_id}: {error}"))?;
     // The run owner finishes without the data lock and closes its cancellation
     // owner last, so an open owner that is not provably exited may still use
     // the worktree. Read-only: no owner is retired and no process is signalled.
-    for owner in store
+    let owners: Vec<_> = store
         .open_cancellation_owners()
         .map_err(|error| format!("cannot list cancellation owners for cleanup: {error}"))?
         .into_iter()
         .filter(|owner| owner.task_id == task_id)
+        .collect();
+    // A run publishes its owner only after the worktree exists and the agent is
+    // spawned, but admission (under the data lock) already left the task
+    // non-terminal. With no owner, an unsettled task is a starting or crashed
+    // run whose liveness is unprovable: refuse rather than guess.
+    if owners.is_empty()
+        && matches!(
+            task.state,
+            TaskState::Created | TaskState::Queued | TaskState::Running
+        )
     {
+        return Err(format!(
+            "refusing cleanup: task {task_id} is {:?}, not settled, and has no published run \
+             owner, so a run may be starting or may have crashed; the worktree is preserved. \
+             Wait for the run to finish or use `agent-orch inspect {task_id}`",
+            task.state
+        ));
+    }
+    for owner in owners {
         let classification = owner.exact_process_identity().map(observe_owner_process);
         if classification != Some(ProcessClassification::Exited) {
             return Err(format!(
@@ -2253,6 +2271,24 @@ mod tests {
         task_id: &str,
         process_identity: Option<ProcessIdentity>,
     ) -> CancellationOwner {
+        let (attempt_id, session_id) = start_test_run(store, task_id);
+        let mut owner = CancellationOwner::new(
+            task_id.into(),
+            attempt_id,
+            session_id,
+            "0123456789abcdef0123456789abcdef".into(),
+        )
+        .unwrap();
+        if let Some(identity) = process_identity {
+            owner = owner.with_process_identity(identity);
+        }
+        store.register_cancellation_owner(&owner).unwrap();
+        owner
+    }
+
+    /// A Running task with a running attempt and session, before any owner is
+    /// published. Returns the attempt and session ids.
+    fn start_test_run(store: &SqliteStore, task_id: &str) -> (String, String) {
         let project_id = format!("project-{task_id}");
         store
             .register_project(&Project {
@@ -2315,18 +2351,7 @@ mod tests {
             .update_session_state(task_id, &session_id, SessionState::Running)
             .unwrap();
 
-        let mut owner = CancellationOwner::new(
-            task_id.into(),
-            attempt_id,
-            session_id,
-            "0123456789abcdef0123456789abcdef".into(),
-        )
-        .unwrap();
-        if let Some(identity) = process_identity {
-            owner = owner.with_process_identity(identity);
-        }
-        store.register_cancellation_owner(&owner).unwrap();
-        owner
+        (attempt_id, session_id)
     }
 
     fn git_in(cwd: &Path, args: &[&str]) {
@@ -2338,7 +2363,7 @@ mod tests {
     /// owner check decides whether cleanup may proceed.
     fn owned_clean_worktree(
         task_id: &str,
-        owner_identity: Option<ProcessIdentity>,
+        owner: Option<Option<ProcessIdentity>>,
     ) -> (tempfile::TempDir, PathBuf, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
@@ -2366,7 +2391,14 @@ mod tests {
         );
         let worktree = fs::canonicalize(&worktree).unwrap();
         let store = open_store(&data_dir).unwrap();
-        register_test_owner(&store, task_id, owner_identity);
+        match owner {
+            Some(identity) => {
+                register_test_owner(&store, task_id, identity);
+            }
+            None => {
+                start_test_run(&store, task_id);
+            }
+        }
         let task_paths = paths(&data_dir, task_id);
         fs::create_dir_all(&task_paths.task_dir).unwrap();
         write_metadata(
@@ -2390,9 +2422,47 @@ mod tests {
         (root, data_dir, worktree)
     }
 
+    /// Reproduces the startup window: the task is Running with an attempt and
+    /// session but the run has not published an owner yet.
+    #[test]
+    fn cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner() {
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-starting", None);
+        let store = open_store(&data_dir).unwrap();
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        assert_eq!(
+            store.get("task-starting").unwrap().state,
+            TaskState::Running
+        );
+        let error = cleanup_task(&data_dir, "task-starting").unwrap_err();
+        assert!(error.contains("not settled"), "{error}");
+        assert!(
+            worktree.exists(),
+            "cleanup removed a starting run's worktree"
+        );
+    }
+
+    #[test]
+    fn cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner() {
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-settled", None);
+        let store = open_store(&data_dir).unwrap();
+        let task = store.get("task-settled").unwrap();
+        let (attempt, session) = (&task.attempts[0].id, &task.sessions[0].id);
+        store
+            .update_session_state("task-settled", session, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state("task-settled", attempt, AttemptState::CandidateReady)
+            .unwrap();
+        store
+            .transition("task-settled", TaskEvent::CandidateReady)
+            .unwrap();
+        cleanup_task(&data_dir, "task-settled").unwrap();
+        assert!(!worktree.exists());
+    }
+
     #[test]
     fn cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable() {
-        let (_root, data_dir, worktree) = owned_clean_worktree("task-unproven-clean", None);
+        let (_root, data_dir, worktree) = owned_clean_worktree("task-unproven-clean", Some(None));
         let error = cleanup_task(&data_dir, "task-unproven-clean").unwrap_err();
         assert!(error.contains("not provably exited"), "{error}");
         assert!(error.contains("recover-owner"), "{error}");
@@ -2406,7 +2476,8 @@ mod tests {
     #[test]
     fn cleanup_refuses_clean_worktree_while_owner_is_alive() {
         let identity = capture_process_identity(std::process::id()).expect("own identity");
-        let (_root, data_dir, worktree) = owned_clean_worktree("task-live-clean", Some(identity));
+        let (_root, data_dir, worktree) =
+            owned_clean_worktree("task-live-clean", Some(Some(identity)));
         let error = cleanup_task(&data_dir, "task-live-clean").unwrap_err();
         assert!(error.contains("Some(Alive)"), "{error}");
         assert!(worktree.exists(), "cleanup removed a live owner's worktree");
@@ -2418,7 +2489,8 @@ mod tests {
         let mut identity = capture_process_identity(std::process::id()).expect("own identity");
         // Same PID with a different start time proves the recorded owner exited.
         identity.start_time_micros = identity.start_time_micros.map(|micros| micros + 1);
-        let (_root, data_dir, worktree) = owned_clean_worktree("task-dead-clean", Some(identity));
+        let (_root, data_dir, worktree) =
+            owned_clean_worktree("task-dead-clean", Some(Some(identity)));
         cleanup_task(&data_dir, "task-dead-clean").unwrap();
         assert!(!worktree.exists());
         // Cleanup never retires or rewrites the owner record.
