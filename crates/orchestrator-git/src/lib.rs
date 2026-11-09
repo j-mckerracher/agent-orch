@@ -14,6 +14,7 @@
 
 mod error;
 mod git;
+mod git_path;
 mod repository;
 pub mod verification;
 mod worktree;

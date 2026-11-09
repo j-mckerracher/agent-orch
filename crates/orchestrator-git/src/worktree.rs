@@ -3,6 +3,7 @@ use std::process::Command;
 
 use crate::error::{stderr_detail, Error};
 use crate::git::git;
+use crate::git_path;
 use crate::repository::Repository;
 
 /// A task-owned branch and worktree, created from a resolved base commit.
@@ -52,6 +53,9 @@ pub fn create_task_worktree(
     worktrees_root: &Path,
 ) -> Result<TaskWorktree, Error> {
     repo.worktrees_root_is_outside(worktrees_root)?;
+    // The caller may pass a verbatim `\\?\C:\..` path (from `canonicalize`),
+    // which Git for Windows cannot create directories under.
+    let worktrees_root = &git_path::for_git(worktrees_root);
     let slug = sanitize_task_id(task_id)?;
     let sha = repo.resolve_base_ref(base_ref)?;
 
@@ -266,6 +270,22 @@ mod tests {
             status.lines().all(|l| l.contains(".git/worktrees")),
             "primary checkout must stay clean apart from worktree metadata: {status}"
         );
+    }
+
+    /// The CLI canonicalizes the worktrees root, which on Windows yields a
+    /// verbatim `\\?\C:\..` path that Git for Windows rejects with
+    /// `could not create leading directories ... Invalid argument`.
+    /// Not runnable off Windows (there `canonicalize` is already plain).
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_worktrees_root_creates_a_worktree() {
+        let (_tmp, wts, repo) = fixture();
+        std::fs::create_dir_all(&wts).unwrap();
+        let verbatim = std::fs::canonicalize(&wts).unwrap();
+        assert!(verbatim.to_string_lossy().starts_with(r"\\?\"), "{verbatim:?}");
+        let wt = create_task_worktree(&repo, "accept-run", "HEAD", &verbatim).unwrap();
+        assert!(wt.path().join("base.txt").exists());
+        assert!(!wt.path().to_string_lossy().starts_with(r"\\?\"), "{:?}", wt.path());
     }
 
     #[test]
