@@ -69,6 +69,40 @@ impl Client {
     pub fn delivery_request(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn coordinator_send_message(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn coordinator_propose(&mut self, _: &str, _: &str, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn coordinator_get(&mut self, _: &str, _: Option<i64>) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn review_request_approval(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn review_evidence(
+        &mut self,
+        _: &str,
+        _: Option<&str>,
+        _: Option<&str>,
+    ) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn review_request_changes(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn events_subscribe(&mut self, _: Option<i64>) -> Result<String, IpcError> {
         Err(IpcError::Unsupported)
     }

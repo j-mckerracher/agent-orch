@@ -250,6 +250,84 @@ impl Client {
         self.call_feature(Capability::Delivery, "delivery.request", params)
     }
 
+    pub fn coordinator_send_message(
+        &mut self,
+        project_id: &str,
+        text: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Coordinator,
+            "coordinator.send_message",
+            json!({"project_id": project_id, "text": text, "idempotency_key": idempotency_key}),
+        )
+    }
+
+    pub fn coordinator_propose(
+        &mut self,
+        project_id: &str,
+        proposal: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Coordinator,
+            "coordinator.propose",
+            json!({
+                "project_id": project_id,
+                "proposal": proposal,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
+    pub fn coordinator_get(
+        &mut self,
+        project_id: &str,
+        after_sequence: Option<i64>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Coordinator,
+            "coordinator.get",
+            json!({"project_id": project_id, "after_sequence": after_sequence}),
+        )
+    }
+
+    pub fn review_request_approval(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Review, "review.request_approval", params)
+    }
+
+    pub fn review_evidence(
+        &mut self,
+        task_id: &str,
+        approval_id: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Review,
+            "review.evidence",
+            json!({"task_id": task_id, "approval_id": approval_id, "path": path}),
+        )
+    }
+
+    pub fn review_request_changes(
+        &mut self,
+        approval_id: &str,
+        candidate_commit: &str,
+        feedback: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Review,
+            "review.request_changes",
+            json!({
+                "approval_id": approval_id,
+                "candidate_commit": candidate_commit,
+                "feedback": feedback,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
     pub fn events_subscribe(&mut self, after_sequence: Option<i64>) -> Result<String, IpcError> {
         self.events_subscribe_in_epoch(after_sequence, None)
     }

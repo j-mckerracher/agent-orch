@@ -280,6 +280,12 @@ fn method_capability(method: &str) -> Option<Capability> {
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
         "delivery.request" => Some(Capability::Delivery),
+        "coordinator.send_message" | "coordinator.propose" | "coordinator.get" => {
+            Some(Capability::Coordinator)
+        }
+        "review.request_approval" | "review.evidence" | "review.request_changes" => {
+            Some(Capability::Review)
+        }
         _ => None,
     }
 }

@@ -50,6 +50,9 @@ pub enum Error {
     #[error("diff base must be a full Git object id")]
     InvalidDiffBase,
 
+    #[error("diff candidate must be a full Git commit id")]
+    InvalidDiffCandidate,
+
     #[error("diff path is outside the task worktree")]
     DiffPathOutsideWorktree,
 

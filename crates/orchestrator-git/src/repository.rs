@@ -116,6 +116,84 @@ impl Repository {
         Ok(String::from_utf8_lossy(&output).into_owned())
     }
 
+    /// Lists files changed between two commits, in Git's byte order.
+    ///
+    /// Both ids must be full object ids that resolve to those exact commits.
+    /// The result reads committed objects only and never the work tree.
+    pub fn changed_files_between(
+        &self,
+        base_sha: &str,
+        candidate_sha: &str,
+    ) -> Result<Vec<String>, Error> {
+        self.require_commit_pair(base_sha, candidate_sha)?;
+        let output = git_bytes(
+            "list candidate files",
+            &self.path,
+            [
+                "--literal-pathspecs",
+                "diff",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "--no-ext-diff",
+                "--no-textconv",
+                base_sha,
+                candidate_sha,
+                "--",
+            ],
+        )?;
+        Ok(output
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+            .map(|name| String::from_utf8_lossy(name).into_owned())
+            .collect())
+    }
+
+    /// Reads a diff between two commits, restricted to one relative path.
+    ///
+    /// The diff is pinned to the named commits, so later work-tree edits or new
+    /// commits cannot change it. Path rules match [`Repository::diff_from`].
+    pub fn diff_between(
+        &self,
+        base_sha: &str,
+        candidate_sha: &str,
+        path: Option<&Path>,
+    ) -> Result<String, Error> {
+        self.require_commit_pair(base_sha, candidate_sha)?;
+        let path = path.map(|path| self.diff_path(path)).transpose()?.flatten();
+        let mut args: Vec<OsString> = [
+            "--literal-pathspecs",
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--no-renames",
+            base_sha,
+            candidate_sha,
+            "--",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        if let Some(path) = path {
+            args.push(path.into());
+        }
+        let output = git_bytes("read candidate diff", &self.path, args)?;
+        Ok(String::from_utf8_lossy(&output).into_owned())
+    }
+
+    fn require_commit_pair(&self, base_sha: &str, candidate_sha: &str) -> Result<(), Error> {
+        if !is_full_object_id(base_sha) || self.resolve_base_ref(base_sha)? != base_sha {
+            return Err(Error::InvalidDiffBase);
+        }
+        if !is_full_object_id(candidate_sha)
+            || self.resolve_base_ref(candidate_sha)? != candidate_sha
+        {
+            return Err(Error::InvalidDiffCandidate);
+        }
+        Ok(())
+    }
+
     fn diff_path(&self, path: &Path) -> Result<Option<String>, Error> {
         if path.as_os_str().is_empty() {
             return Err(Error::InvalidDiffPath);

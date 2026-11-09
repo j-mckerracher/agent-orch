@@ -71,6 +71,9 @@ pub use server::{Server, ServerConfig};
 pub use unsupported::{Client, Server, ServerConfig};
 
 #[cfg(all(test, any(unix, windows)))]
+#[path = "coordinator_review_tests.rs"]
+mod coordinator_review_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "event_stream_tests.rs"]
 mod event_stream_tests;
 #[cfg(all(test, unix))]

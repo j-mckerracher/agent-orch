@@ -34,6 +34,33 @@ impl SqliteStore {
         requested_by: &Actor,
         allowlist: &ApproverAllowlist,
     ) -> Result<Approval, ApprovalError> {
+        self.request_approval_inner(id, action, requested_by, allowlist, None)
+    }
+
+    /// Create a pending approval and store the readable parameters its digest covers.
+    ///
+    /// The parameters commit in the same transaction as the request, so a
+    /// reviewer can never see an approval whose digest has no readable form.
+    pub fn request_approval_with_parameters(
+        &self,
+        id: &str,
+        action: &ApprovalAction,
+        requested_by: &Actor,
+        allowlist: &ApproverAllowlist,
+        parameters: &serde_json::Value,
+    ) -> Result<Approval, ApprovalError> {
+        let parameters = encode(parameters)?;
+        self.request_approval_inner(id, action, requested_by, allowlist, Some(parameters))
+    }
+
+    fn request_approval_inner(
+        &self,
+        id: &str,
+        action: &ApprovalAction,
+        requested_by: &Actor,
+        allowlist: &ApproverAllowlist,
+        parameters: Option<String>,
+    ) -> Result<Approval, ApprovalError> {
         validate_approval_id(id)?;
         validate_actor(requested_by)?;
         if action.kind() == ApprovalActionKind::PolicyChange && !allowlist.allows(requested_by) {
@@ -83,6 +110,16 @@ impl SqliteStore {
             .execute(&mut *transaction)
             .await
             .map_err(persistence)?;
+            if let Some(parameters) = &parameters {
+                sqlx::query(
+                    "INSERT INTO approval_parameters (approval_id, parameters) VALUES (?, ?)",
+                )
+                .bind(&id)
+                .bind(parameters)
+                .execute(&mut *transaction)
+                .await
+                .map_err(persistence)?;
+            }
             insert_event(&mut transaction, &id, action.task_id(), &event).await?;
             transaction.commit().await.map_err(persistence)?;
 
@@ -220,7 +257,10 @@ impl SqliteStore {
     }
 }
 
-fn approval_call<T, F, Fut>(store: &SqliteStore, operation: F) -> Result<T, ApprovalError>
+pub(crate) fn approval_call<T, F, Fut>(
+    store: &SqliteStore,
+    operation: F,
+) -> Result<T, ApprovalError>
 where
     T: Send + 'static,
     F: FnOnce(SqlitePool) -> Fut + Send + 'static,
@@ -231,7 +271,7 @@ where
         .map_err(persistence)?
 }
 
-fn validate_approval_id(id: &str) -> Result<(), ApprovalError> {
+pub(crate) fn validate_approval_id(id: &str) -> Result<(), ApprovalError> {
     if id.is_empty() {
         Err(ApprovalError::InvalidApprovalId)
     } else {
@@ -239,7 +279,7 @@ fn validate_approval_id(id: &str) -> Result<(), ApprovalError> {
     }
 }
 
-fn validate_actor(actor: &Actor) -> Result<(), ApprovalError> {
+pub(crate) fn validate_actor(actor: &Actor) -> Result<(), ApprovalError> {
     if actor.id().is_empty() {
         Err(ApprovalError::InvalidActor)
     } else {
@@ -247,7 +287,10 @@ fn validate_actor(actor: &Actor) -> Result<(), ApprovalError> {
     }
 }
 
-fn authorize_decision(actor: &Actor, allowlist: &ApproverAllowlist) -> Result<(), ApprovalError> {
+pub(crate) fn authorize_decision(
+    actor: &Actor,
+    allowlist: &ApproverAllowlist,
+) -> Result<(), ApprovalError> {
     if !allowlist.allows(actor) {
         return Err(ApprovalError::UnauthorizedActor {
             actor_id: actor.id().to_owned(),
@@ -256,7 +299,7 @@ fn authorize_decision(actor: &Actor, allowlist: &ApproverAllowlist) -> Result<()
     Ok(())
 }
 
-async fn load_approval(
+pub(crate) async fn load_approval(
     transaction: &mut Transaction<'_, Sqlite>,
     id: &str,
 ) -> Result<Approval, ApprovalError> {
@@ -272,7 +315,7 @@ async fn load_approval(
     decode_approval(row)
 }
 
-fn decode_approval(row: SqliteRow) -> Result<Approval, ApprovalError> {
+pub(crate) fn decode_approval(row: SqliteRow) -> Result<Approval, ApprovalError> {
     let id: String = row.try_get("id").map_err(persistence)?;
     let task_id: String = row.try_get("task_id").map_err(persistence)?;
     let action_json: String = row.try_get("action").map_err(persistence)?;
@@ -308,7 +351,7 @@ fn decode_approval(row: SqliteRow) -> Result<Approval, ApprovalError> {
     Ok(Approval { id, action, state })
 }
 
-async fn update_approval(
+pub(crate) async fn update_approval(
     transaction: &mut Transaction<'_, Sqlite>,
     current: &Approval,
     event: &ApprovalEvent,
@@ -391,14 +434,14 @@ fn event_kind(event: &ApprovalEvent) -> ApprovalEventKind {
     }
 }
 
-fn encode<T: Serialize>(value: &T) -> Result<String, ApprovalError> {
+pub(crate) fn encode<T: Serialize>(value: &T) -> Result<String, ApprovalError> {
     serde_json::to_string(value).map_err(persistence)
 }
 
-fn decode<T: DeserializeOwned>(value: &str) -> Result<T, ApprovalError> {
+pub(crate) fn decode<T: DeserializeOwned>(value: &str) -> Result<T, ApprovalError> {
     serde_json::from_str(value).map_err(persistence)
 }
 
-fn persistence(error: impl fmt::Display) -> ApprovalError {
+pub(crate) fn persistence(error: impl fmt::Display) -> ApprovalError {
     ApprovalError::Persistence(error.to_string())
 }

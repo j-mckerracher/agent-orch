@@ -212,6 +212,8 @@ impl RpcHandler for DaemonApi {
             Capability::Workspaces,
             Capability::Delivery,
             Capability::Agents,
+            Capability::Coordinator,
+            Capability::Review,
         ]
     }
 
@@ -232,6 +234,12 @@ impl RpcHandler for DaemonApi {
             "approvals.resolve" => self.resolve_approval(params),
             "workspaces.diff" => self.workspace_diff(params),
             "delivery.request" => self.request_delivery(params),
+            "coordinator.send_message" => self.coordinator_send_message(params),
+            "coordinator.propose" => self.coordinator_propose(params),
+            "coordinator.get" => self.coordinator_get(params),
+            "review.request_approval" => self.review_request_approval(params),
+            "review.evidence" => self.review_evidence(params),
+            "review.request_changes" => self.review_request_changes(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -665,19 +673,24 @@ impl DaemonApi {
             &request,
             || {
                 let result: Approval = match request.decision.as_str() {
-                    "approve" => self.store.approve_approval(
-                        &request.approval_id,
-                        &self.approval_actor,
-                        &self.approval_allowlist,
-                    ),
-                    "reject" => self.store.reject_approval(
-                        &request.approval_id,
-                        &self.approval_actor,
-                        &self.approval_allowlist,
-                    ),
+                    "approve" => self
+                        .store
+                        .approve_reviewed_approval(
+                            &request.approval_id,
+                            &self.approval_actor,
+                            &self.approval_allowlist,
+                        )
+                        .map_err(map_review_error)?,
+                    "reject" => self
+                        .store
+                        .reject_approval(
+                            &request.approval_id,
+                            &self.approval_actor,
+                            &self.approval_allowlist,
+                        )
+                        .map_err(map_approval_error)?,
                     _ => return Err(RpcError::InvalidParams),
-                }
-                .map_err(map_approval_error)?;
+                };
                 serde_json::to_value(result).map_err(|_| RpcError::Internal)
             },
         )
@@ -1096,6 +1109,16 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
         _ => RpcError::Internal,
     }
 }
+
+#[path = "api_coordinator.rs"]
+mod coordinator;
+#[path = "api_review.rs"]
+mod review;
+use review::map_review_error;
+
+#[cfg(test)]
+#[path = "api_review_tests.rs"]
+mod review_tests;
 
 #[cfg(test)]
 #[path = "api_tests.rs"]
