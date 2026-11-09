@@ -532,16 +532,18 @@ struct GitSnapshot {
 
 #[derive(Debug, PartialEq)]
 struct CheckoutSnapshot {
-    head: String,
-    status: String,
-    tracked_dirty: Vec<u8>,
-    untracked: Vec<u8>,
+    head: (Option<i32>, String),
+    status: (Option<i32>, String),
+    tracked_dirty: Option<Vec<u8>>,
+    untracked: Option<Vec<u8>>,
 }
 
+/// Tolerant of a missing checkout, so a removed worktree is a snapshot
+/// difference instead of a panic.
 fn checkout_snapshot(dir: &Path, tracked: &str, untracked: &str) -> CheckoutSnapshot {
     CheckoutSnapshot {
-        head: git(dir, &["rev-parse", "HEAD"]),
-        status: git(
+        head: git_raw(dir, &["rev-parse", "HEAD"]),
+        status: git_raw(
             dir,
             &[
                 "--no-optional-locks",
@@ -550,8 +552,8 @@ fn checkout_snapshot(dir: &Path, tracked: &str, untracked: &str) -> CheckoutSnap
                 "--untracked-files=all",
             ],
         ),
-        tracked_dirty: fs::read(dir.join(tracked)).unwrap(),
-        untracked: fs::read(dir.join(untracked)).unwrap(),
+        tracked_dirty: fs::read(dir.join(tracked)).ok(),
+        untracked: fs::read(dir.join(untracked)).ok(),
     }
 }
 
@@ -599,6 +601,20 @@ fn git_snapshot(fixture: &Fixture) -> GitSnapshot {
 struct Snapshot {
     store: StoreSnapshot,
     git: GitSnapshot,
+}
+
+/// The tolerant snapshot must not let an identical baseline failure pass
+/// vacuously: every Git producer succeeded and every dirty byte file was read.
+fn assert_baseline_sound(snapshot: &Snapshot) {
+    for (name, checkout) in [
+        ("primary", &snapshot.git.primary),
+        ("task worktree", &snapshot.git.task_worktree),
+    ] {
+        assert_eq!(checkout.head.0, Some(0), "{name} HEAD producer");
+        assert_eq!(checkout.status.0, Some(0), "{name} status producer");
+        assert!(checkout.tracked_dirty.is_some(), "{name} tracked bytes");
+        assert!(checkout.untracked.is_some(), "{name} untracked bytes");
+    }
 }
 
 fn snapshot(fixture: &Fixture, store: &SqliteStore) -> Snapshot {
@@ -659,6 +675,7 @@ fn reconciliation_leaves_live_store_git_and_worktrees_unchanged_including_after_
     let (before, after, reopened, decisions) = run_proof(&fixture, |_, _| {});
 
     // Sanity: the snapshot is not vacuous.
+    assert_baseline_sound(&before);
     assert_eq!(before.store.steps.len(), expected.len());
     assert!(before
         .store
@@ -828,6 +845,7 @@ fn store_row_json_maps_to_the_classifier_record() {
 fn assert_detected(label: &str, between: impl FnOnce(&Fixture, &SqliteStore)) {
     let (fixture, _) = fixture();
     let (before, after, _, _) = run_proof(&fixture, between);
+    assert_baseline_sound(&before);
     assert_ne!(after, before, "mutation not detected: {label}");
 }
 
