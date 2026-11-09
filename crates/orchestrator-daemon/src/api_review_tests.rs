@@ -65,6 +65,12 @@ fn fixture() -> Fixture {
         &["config", "user.email", "test@example.invalid"],
     );
     git(&repository_path, &["config", "user.name", "Review Test"]);
+    // The `git()` helper ignores global and system config, but the code under
+    // test does not. Git for Windows ships `core.autocrlf=true` in its system
+    // config, so without this the task worktree would check `base.txt` out
+    // with CRLF endings and a later `git add -A` here would commit it as a
+    // modification.
+    git(&repository_path, &["config", "core.autocrlf", "false"]);
     fs::write(repository_path.join("base.txt"), "base\n").unwrap();
     git(&repository_path, &["add", "base.txt"]);
     git(&repository_path, &["commit", "-m", "base"]);
@@ -1028,21 +1034,66 @@ fn evidence_snapshot_lists_at_most_one_thousand_files() {
             )
             .unwrap();
         }
-        git(&fixture.worktree_path, &["add", "-A"]);
+        // Stage only the generated files so no other work-tree difference can
+        // join the commit.
+        git(&fixture.worktree_path, &["add", "--", "many-*.txt"]);
         git(&fixture.worktree_path, &["commit", "-m", "many files"]);
+    };
+    // Counts what the fixture really committed, independently of the code
+    // under test, and names any path the fixture did not intend to commit.
+    let assert_committed = |expected: usize| {
+        let names = git(
+            &fixture.worktree_path,
+            &[
+                "diff",
+                "--name-only",
+                "--no-renames",
+                &fixture.base_sha,
+                "HEAD",
+            ],
+        );
+        let stray: Vec<&str> = names
+            .lines()
+            .filter(|name| *name != "candidate.txt" && !name.starts_with("many-"))
+            .collect();
+        assert!(
+            stray.is_empty(),
+            "fixture committed unexpected paths: {stray:?}"
+        );
+        assert_eq!(
+            names.lines().count(),
+            expected,
+            "fixture committed path count"
+        );
+    };
+    let summary = |snapshot: &Value| {
+        format!(
+            "files.len()={} files_truncated={}",
+            snapshot["files"].as_array().map_or(0, Vec::len),
+            snapshot["files_truncated"],
+        )
     };
 
     // candidate.txt plus 999 files is exactly the cap.
     write_files(0..999);
+    assert_committed(1000);
     let at_cap = evidence(&fixture);
-    assert_eq!(at_cap["snapshot"]["files"].as_array().unwrap().len(), 1000);
-    assert_eq!(at_cap["snapshot"]["files_truncated"], false);
-    assert_eq!(at_cap["snapshot"]["diff_state"], "complete");
+    let snapshot = &at_cap["snapshot"];
+    assert_eq!(
+        snapshot["files"].as_array().unwrap().len(),
+        1000,
+        "{}",
+        summary(snapshot)
+    );
+    assert_eq!(snapshot["files_truncated"], false, "{}", summary(snapshot));
+    assert_eq!(snapshot["diff_state"], "complete", "{}", summary(snapshot));
 
     write_files(999..1001);
+    assert_committed(1002);
     let over_cap = evidence(&fixture);
-    let files = over_cap["snapshot"]["files"].as_array().unwrap();
-    assert_eq!(files.len(), 1000);
-    assert_eq!(over_cap["snapshot"]["files_truncated"], true);
+    let snapshot = &over_cap["snapshot"];
+    let files = snapshot["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1000, "{}", summary(snapshot));
+    assert_eq!(snapshot["files_truncated"], true, "{}", summary(snapshot));
     assert_eq!(files[0], "candidate.txt", "Git byte order is kept");
 }
