@@ -277,8 +277,81 @@ fn owner_observation_classifies_alive_and_reused_pid_by_creation_time() {
             .windows_creation_time_100ns_since_unix_epoch
             .map(|time| time + 10),
     };
+    // Windows creation time is immutable, so a mismatch proves PID reuse. On
+    // Unix the recorded group is still alive here, so a start-time change is
+    // wall-clock drift and must stay unproven (see the drift tests below).
+    #[cfg(windows)]
     assert_eq!(
         observe_owner_process(reused_pid),
+        ProcessClassification::Exited
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        observe_owner_process(reused_pid),
+        ProcessClassification::Unknown
+    );
+}
+
+#[cfg(unix)]
+fn owner_with_shifted_start(process_group: Option<u32>) -> ExactProcessIdentity {
+    let identity =
+        capture_exact_process_identity(std::process::id()).expect("capture current process");
+    ExactProcessIdentity {
+        identity: ProcessIdentity {
+            process_group,
+            start_time_micros: identity
+                .identity
+                .start_time_micros
+                .map(|time| time + 1_000_000),
+            ..identity.identity
+        },
+        ..identity
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn wall_clock_start_drift_with_live_recorded_group_is_not_exited() {
+    let live_group = capture_exact_process_identity(std::process::id())
+        .expect("capture current process")
+        .identity
+        .process_group;
+    assert!(live_group.is_some());
+    assert_eq!(
+        observe_owner_process(owner_with_shifted_start(live_group)),
+        ProcessClassification::Unknown,
+        "a live recorded group means the start-time change is not proof of PID reuse"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn start_mismatch_without_a_recorded_group_is_not_exited() {
+    assert_eq!(
+        observe_owner_process(owner_with_shifted_start(None)),
+        ProcessClassification::Unknown,
+        "no recorded group means death cannot be proven"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn start_mismatch_with_provably_dead_recorded_group_is_exited() {
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+
+    let mut child = Command::new("/bin/sleep")
+        .arg("0.1")
+        .process_group(0)
+        .spawn()
+        .expect("spawn group leader");
+    let dead_group = child.id();
+    child.wait().expect("reap group leader");
+    assert!(!orchestrator_runtime::supervisor::process_group_alive(
+        dead_group
+    ));
+    assert_eq!(
+        observe_owner_process(owner_with_shifted_start(Some(dead_group))),
         ProcessClassification::Exited
     );
 }
@@ -351,4 +424,100 @@ fn windows_owner_observation_uses_creation_time_not_only_pid() {
         observe_owner_process(invalid_pid),
         ProcessClassification::Unknown
     );
+}
+
+mod task_classification {
+    use orchestrator_core::identity::ProcessClassification as P;
+    use orchestrator_core::task::{AttemptState, TaskState};
+    use orchestrator_runtime::reconcile::{
+        classify_interrupted_task, DeliveryEvidence as D, ReconciliationResolution, TaskEvidence,
+        TaskRecovery as R, WorkspaceEvidence as W,
+    };
+
+    fn evidence(process: P, workspace: W, delivery: D) -> TaskEvidence {
+        TaskEvidence {
+            task: TaskState::Running,
+            attempt: AttemptState::Running,
+            process,
+            workspace,
+            delivery,
+        }
+    }
+
+    #[test]
+    fn exited_owner_with_matching_workspace_and_no_delivery_is_recoverable() {
+        let e = evidence(P::Exited, W::Matching, D::NotApplied);
+        assert_eq!(classify_interrupted_task(e), R::Recoverable);
+        assert_eq!(
+            R::Recoverable.resolution(),
+            ReconciliationResolution::Resolved
+        );
+    }
+
+    #[test]
+    fn live_owner_blocks_the_task_without_blocking_scheduling() {
+        let e = evidence(P::Alive, W::Matching, D::NotApplied);
+        assert_eq!(classify_interrupted_task(e), R::Blocked);
+        assert_eq!(R::Blocked.resolution(), ReconciliationResolution::Resolved);
+    }
+
+    #[test]
+    fn unproven_owner_requires_inspection_and_blocks_scheduling() {
+        for process in [P::Unknown, P::IdentityMismatch] {
+            let e = evidence(process, W::Matching, D::NotApplied);
+            assert_eq!(classify_interrupted_task(e), R::RequiresInspection);
+        }
+        assert_eq!(
+            R::RequiresInspection.resolution(),
+            ReconciliationResolution::Unresolved
+        );
+    }
+
+    #[test]
+    fn exit_without_recorded_success_or_confirmed_delivery_is_never_completed() {
+        let e = evidence(P::Exited, W::Matching, D::NotApplied);
+        assert_ne!(classify_interrupted_task(e), R::Completed);
+    }
+
+    #[test]
+    fn confirmed_delivery_or_recorded_success_is_completed() {
+        let delivered = evidence(P::Exited, W::Matching, D::Confirmed);
+        assert_eq!(classify_interrupted_task(delivered), R::Completed);
+        let mut succeeded = evidence(P::Exited, W::Matching, D::None);
+        succeeded.task = TaskState::Succeeded;
+        succeeded.attempt = AttemptState::Succeeded;
+        assert_eq!(classify_interrupted_task(succeeded), R::Completed);
+    }
+
+    #[test]
+    fn partial_or_ambiguous_delivery_requires_inspection() {
+        for delivery in [D::Partial, D::Ambiguous] {
+            let e = evidence(P::Exited, W::Matching, delivery);
+            assert_eq!(classify_interrupted_task(e), R::RequiresInspection);
+        }
+    }
+
+    #[test]
+    fn uncommitted_or_unlanded_work_is_preserved_for_inspection() {
+        for workspace in [W::Dirty, W::Foreign, W::Unknown] {
+            let e = evidence(P::Exited, workspace, D::NotApplied);
+            assert_eq!(classify_interrupted_task(e), R::RequiresInspection);
+        }
+        let moved = evidence(P::Exited, W::BranchMoved, D::NotApplied);
+        assert_eq!(classify_interrupted_task(moved), R::RequiresInspection);
+    }
+
+    #[test]
+    fn candidate_commit_on_moved_branch_is_recoverable_for_verification() {
+        let mut e = evidence(P::Exited, W::BranchMoved, D::NotApplied);
+        e.task = TaskState::Verifying;
+        e.attempt = AttemptState::CandidateReady;
+        assert_eq!(classify_interrupted_task(e), R::Recoverable);
+    }
+
+    #[test]
+    fn missing_workspace_blocks_the_task() {
+        let e = evidence(P::Exited, W::Missing, D::NotApplied);
+        assert_eq!(classify_interrupted_task(e), R::Blocked);
+    }
 }

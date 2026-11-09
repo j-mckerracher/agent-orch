@@ -16,6 +16,7 @@ use orchestrator_core::identity::{
 pub use orchestrator_core::identity::{
     ExactProcessIdentity, ProcessAction, ProcessClassification, ProcessIdentity,
 };
+use orchestrator_core::task::{AttemptState, TaskState};
 
 #[cfg(unix)]
 use crate::supervisor::process_group_alive;
@@ -189,9 +190,11 @@ pub fn observe_process(expected: ProcessIdentity) -> ProcessObservation {
 
 /// Observes the exact recorded process for cancellation-owner recovery.
 ///
-/// Unlike [`observe_process`], this ignores process-group membership. A
-/// missing start time or inconclusive OS query remains Unknown; a changed
-/// start time for the same PID proves the recorded process has exited.
+/// Unlike [`observe_process`], this ignores process-group membership for live
+/// processes. A missing start time or inconclusive OS query remains Unknown.
+/// A changed start time proves PID reuse on Windows (immutable creation time).
+/// On Unix it may be wall-clock drift, so it counts as exited only when the
+/// recorded process group is provably gone; otherwise it stays Unknown.
 pub fn observe_owner_process(expected: ExactProcessIdentity) -> ProcessClassification {
     if expected.identity.pid == 0 {
         return ProcessClassification::Unknown;
@@ -205,7 +208,15 @@ pub fn observe_owner_process(expected: ExactProcessIdentity) -> ProcessClassific
             ProcessClassification::Unknown
         }
         Ok(observed) => match classify_exact_process_identity(expected, observed) {
-            ProcessClassification::IdentityMismatch => ProcessClassification::Exited,
+            ProcessClassification::IdentityMismatch => {
+                match (expected.identity.platform, expected.identity.process_group) {
+                    (ProcessPlatform::Windows, _) => ProcessClassification::Exited,
+                    (_, Some(group)) if !recorded_process_group_alive(Some(group)) => {
+                        ProcessClassification::Exited
+                    }
+                    _ => ProcessClassification::Unknown,
+                }
+            }
             classification => classification,
         },
         Err(error) if process_is_absent(&error) => ProcessClassification::Exited,
@@ -413,4 +424,93 @@ pub fn scheduling_may_resume(
     }) && other_records
         .iter()
         .all(|resolution| *resolution == ReconciliationResolution::Resolved)
+}
+
+/// Observed workspace state for one interrupted task. Callers derive it from
+/// the Git crate's `WorkspaceClassification` plus `check_worktree_safe_to_delete`
+/// (`Dirty`); `Unknown` means inspection itself failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceEvidence {
+    Matching,
+    Missing,
+    BranchMoved,
+    Foreign,
+    Dirty,
+    Unknown,
+}
+
+/// Observed partial-delivery state, summarised from the Git crate's
+/// `DeliveryReconciliationPlan`: `Confirmed` = every step landed, `NotApplied` =
+/// none landed, `Partial` = a mix, `Ambiguous` = any step unprovable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryEvidence {
+    None,
+    NotApplied,
+    Partial,
+    Confirmed,
+    Ambiguous,
+}
+
+/// Recorded task facts plus observed process, workspace and delivery state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskEvidence {
+    pub task: TaskState,
+    pub attempt: AttemptState,
+    pub process: ProcessClassification,
+    pub workspace: WorkspaceEvidence,
+    pub delivery: DeliveryEvidence,
+}
+
+/// Recovery class of an interrupted task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskRecovery {
+    /// Safe to resume or re-verify from the preserved workspace.
+    Recoverable,
+    /// Not resumable now (live owner, missing workspace, terminal failure);
+    /// nothing is deleted or released.
+    Blocked,
+    /// Completion is recorded or proven by Git, never inferred from exit code.
+    Completed,
+    /// Ownership, workspace or delivery state is unproven; a human decides.
+    RequiresInspection,
+}
+
+impl TaskRecovery {
+    /// Feed into [`scheduling_may_resume`]'s `other_records`.
+    pub fn resolution(self) -> ReconciliationResolution {
+        match self {
+            Self::RequiresInspection => ReconciliationResolution::Unresolved,
+            _ => ReconciliationResolution::Resolved,
+        }
+    }
+}
+
+/// Conservatively classifies one interrupted task. Unproven ownership,
+/// uncommitted or unlanded work, and partial or ambiguous delivery all fail
+/// closed to `RequiresInspection`.
+pub fn classify_interrupted_task(evidence: TaskEvidence) -> TaskRecovery {
+    use TaskRecovery::*;
+    match evidence.process {
+        ProcessClassification::Alive => return Blocked,
+        ProcessClassification::Exited => {}
+        _ => return RequiresInspection,
+    }
+    match evidence.delivery {
+        DeliveryEvidence::Partial | DeliveryEvidence::Ambiguous => return RequiresInspection,
+        DeliveryEvidence::Confirmed => return Completed,
+        DeliveryEvidence::None | DeliveryEvidence::NotApplied => {}
+    }
+    match evidence.task {
+        TaskState::Succeeded => return Completed,
+        TaskState::Failed | TaskState::VerificationFailed | TaskState::Cancelled => return Blocked,
+        _ => {}
+    }
+    match evidence.workspace {
+        WorkspaceEvidence::Matching => Recoverable,
+        WorkspaceEvidence::Missing => Blocked,
+        WorkspaceEvidence::BranchMoved if evidence.attempt == AttemptState::CandidateReady => {
+            Recoverable
+        }
+        _ => RequiresInspection,
+    }
 }
