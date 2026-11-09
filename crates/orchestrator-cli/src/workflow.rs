@@ -1856,6 +1856,25 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                 "task {} is Running without an unfinished session",
                 task.contract.id
             ));
+        } else {
+            // An attempt that never finished (Pending or Running) must have an
+            // unfinished session; otherwise nobody owns it and its owner cannot
+            // be proven gone. A CandidateReady attempt is a settled candidate
+            // awaiting review, and a task with no attempt is just planned.
+            for attempt in task.attempts.iter().filter(|attempt| {
+                matches!(attempt.state, AttemptState::Pending | AttemptState::Running)
+                    && !unfinished
+                        .iter()
+                        .any(|session| session.attempt_id == attempt.id)
+            }) {
+                other_records.push(ReconciliationResolution::Ambiguous);
+                blockers.push(format!(
+                    "attempt {}/{} is {:?} but has no unfinished session, so no owner or process \
+                     identity can be proven gone; the task, worktree and history are preserved. \
+                     Next step: run `agent-orch inspect {0}`; no override exists",
+                    task.contract.id, attempt.id, attempt.state
+                ));
+            }
         }
         for session in unfinished {
             let subject = ProcessSubject::Session {
@@ -3601,6 +3620,84 @@ mod tests {
         let task = store.get("task-interrupted-confirmed").unwrap();
         assert_eq!(task.state, TaskState::Running);
         assert_eq!(task.sessions[0].state, SessionState::Running);
+    }
+
+    /// Registers the repository and a Queued (admitted) task with no attempt yet.
+    fn admitted_task(store: &SqliteStore, repo: &Path, task_id: &str) {
+        let project_id = repo.display().to_string();
+        // The second task of a test reuses the already registered project.
+        let _ = store.register_project(&Project {
+            id: project_id.clone(),
+            root_path: project_id.clone(),
+            settings: serde_json::json!({}),
+        });
+        store
+            .create(&TaskContract {
+                id: task_id.into(),
+                project_id,
+                parent_id: None,
+                objective: "unowned attempt".into(),
+                kind: TaskKind::Implement,
+                agent: "codex".into(),
+                dependencies: Vec::new(),
+                verification: VerificationPolicy::None,
+                delivery: DeliveryPolicy::LocalReview,
+                autonomy: AutonomyPolicy::WorkspaceWrites,
+                max_retries: 0,
+                max_repairs: 0,
+            })
+            .unwrap();
+        store.transition(task_id, TaskEvent::Admit).unwrap();
+    }
+
+    #[test]
+    fn pending_attempt_without_a_session_blocks_but_a_planned_task_does_not() {
+        let (_root, repo, store) = gate_repo();
+        admitted_task(&store, &repo, "task-planned");
+        reconcile_before_scheduling(&store).expect("a Queued task with no attempt is planned");
+
+        admitted_task(&store, &repo, "task-unowned");
+        store
+            .add_attempt(
+                "task-unowned",
+                &Attempt {
+                    id: "task-unowned-attempt-1".into(),
+                    task_id: "task-unowned".into(),
+                    attempt_number: 1,
+                    state: AttemptState::Pending,
+                },
+            )
+            .unwrap();
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(
+            error.contains("task-unowned-attempt-1") && error.contains("no unfinished session"),
+            "{error}"
+        );
+        assert!(!error.contains("task-planned"), "{error}");
+        let task = store.get("task-unowned").unwrap();
+        assert_eq!(task.state, TaskState::Queued);
+        assert_eq!(task.attempts[0].state, AttemptState::Pending);
+    }
+
+    #[test]
+    fn settled_candidate_ready_attempt_does_not_block_scheduling() {
+        let (_root, repo, _worktree, store) = gate_fixture("task-candidate");
+        let task = store.get("task-candidate").unwrap();
+        store
+            .update_session_state("task-candidate", &task.sessions[0].id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(
+                "task-candidate",
+                &task.attempts[0].id,
+                AttemptState::CandidateReady,
+            )
+            .unwrap();
+        store
+            .transition("task-candidate", TaskEvent::CandidateReady)
+            .unwrap();
+        let _ = repo;
+        reconcile_before_scheduling(&store).expect("a preserved candidate is settled");
     }
 
     #[test]
