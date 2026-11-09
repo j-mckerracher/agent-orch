@@ -1,0 +1,74 @@
+
+running 38 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test coordinator_review_tests::capability_set_names_are_unique_and_round_trip ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test auth::tests::reports_no_common_version ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test coordinator_review_tests::methods_are_unavailable_without_the_negotiated_capability ... ok
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test coordinator_review_tests::client_wrappers_send_the_documented_methods_and_parameters ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test coordinator_review_tests::a_handler_without_review_never_exposes_review_methods ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... ok
+test event_stream_tests::reconnect_still_requires_the_current_token ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... ok
+test coordinator_review_tests::server_gates_each_method_on_its_own_capability ... FAILED
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test event_stream_tests::resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe ... ok
+test event_stream_tests::replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+
+failures:
+
+---- coordinator_review_tests::server_gates_each_method_on_its_own_capability stdout ----
+
+thread 'coordinator_review_tests::server_gates_each_method_on_its_own_capability' (50788) panicked at crates\orchestrator-ipc\src\coordinator_review_tests.rs:256:5:
+assertion `left == right` failed
+  left: ["coordinator.send_message", "coordinator.propose", "coordinator.get"]
+ right: ["coordinator.send_message", "coordinator.propose", "coordinator.get", "review.request_approval", "review.evidence", "review.request_changes"]
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::panicking::assert_failed_inner
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:439
+   3: core::panicking::assert_failed<alloc::vec::Vec<alloc::string::String,alloc::alloc::Global>,alloc::vec::Vec<alloc::string::String,alloc::alloc::Global> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\panicking.rs:394
+   4: orchestrator_ipc::coordinator_review_tests::server_gates_each_method_on_its_own_capability
+             at .\src\coordinator_review_tests.rs:256
+   5: orchestrator_ipc::coordinator_review_tests::server_gates_each_method_on_its_own_capability::closure$0
+             at .\src\coordinator_review_tests.rs:197
+   6: core::ops::function::FnOnce::call_once<orchestrator_ipc::coordinator_review_tests::server_gates_each_method_on_its_own_capability::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    coordinator_review_tests::server_gates_each_method_on_its_own_capability
+
+test result: FAILED. 37 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.44s
+

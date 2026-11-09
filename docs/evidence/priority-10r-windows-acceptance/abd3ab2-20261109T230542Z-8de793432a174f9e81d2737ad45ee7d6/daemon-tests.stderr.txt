@@ -1,0 +1,6 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10r-acc-20261109T230542Z-8de793432a174f9e81d2737ad45ee7d6\source\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.88s
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10r-acc-20261109T230542Z-8de793432a174f9e81d2737ad45ee7d6\cargo-target\debug\deps\orchestrator_daemon-fa3ebc8fd7f64b8d.exe)
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10r-acc-20261109T230542Z-8de793432a174f9e81d2737ad45ee7d6\cargo-target\debug\deps\coordinator_review-45c0c5fb4a74ac4c.exe)
+     Running tests\daemon.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10r-acc-20261109T230542Z-8de793432a174f9e81d2737ad45ee7d6\cargo-target\debug\deps\daemon-796fe7cb5e15b5c8.exe)

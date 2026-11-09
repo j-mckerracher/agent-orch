@@ -1,0 +1,10 @@
+runbook file: docs/evidence/priority-10r-windows-acceptance-abd3ab2-runbook.md
+runbook commit (operator-declared, not byte proof): 674e40b8ce78a7e1322433918e227ce8aef78182
+runbook commit parent (verified): abd3ab25ee96a6ca1c0face830a83af25835b253
+runbook docs commits above the source (verified): 1
+runbook blob id: a61de4762165901707de4dd8bce3431b4fd5c1fe
+runbook bytes: 137193
+runbook sha256: e9bd740d53b76dc1a0d8c54351c69c82b9974c1db4d65a81a19867a3d660f29d
+pasted commands vs these bytes: not verified
+source commit: abd3ab25ee96a6ca1c0face830a83af25835b253
+source tree (verified): 6b46c8b779957176ff85bceb596146e1b828cbac

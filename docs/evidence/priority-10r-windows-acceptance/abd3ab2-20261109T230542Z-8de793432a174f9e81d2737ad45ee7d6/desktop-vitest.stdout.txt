@@ -1,0 +1,13 @@
+
+ RUN  v5.1.0 C:/Users/<user>/AppData/Local/Temp/agent-orch-p10r-acc-20261109T230542Z-8de793432a174f9e81d2737ad45ee7d6/source/apps/desktop
+
+
+ Test Files  14 passed (14)
+      Tests  268 passed (268)
+   Start at  16:12:02
+   Duration  26.30s (environment 61%, setup 18%, tests 15%, import 3%, transform 2%)
+
+Environment  jsdom was created 14 times · 112.01s total, 61% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: <url-redacted>
+

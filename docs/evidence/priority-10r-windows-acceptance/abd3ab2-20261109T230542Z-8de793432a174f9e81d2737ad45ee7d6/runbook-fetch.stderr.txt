@@ -1,0 +1,2 @@
+From <url-redacted>
+ * branch            674e40b8ce78a7e1322433918e227ce8aef78182 -> FETCH_HEAD
