@@ -178,9 +178,10 @@ any reports `running 0 tests`, its status is `INCONCLUSIVE`.
 - Never stop a process by name or by a bare PID. If `cli-acceptance` leaves a
   process, report its PID, path, and command line. Do not stop it.
 - Do not publish credentials, agent memory, session files, or unrelated files.
-- Do not record remote URLs in any evidence file. The `Invoke-Native` helper
-  below replaces every URL in captured Git output with `<url-redacted>`.
-  Never print `git remote -v`, `git config --list`, or a clone URL.
+- Do not record remote URLs or the Windows profile name in any evidence file.
+  The `Protect-Text` helper below replaces every URL with `<url-redacted>` and
+  the directory name after a `Users` path segment with `<user>`. Never print
+  `git remote -v`, `git config --list`, or a clone URL.
 
 ## 1. Prepare the checkout
 
@@ -236,9 +237,44 @@ $env:CARGO_TARGET_DIR = $BuildDir
 $env:CARGO_TERM_COLOR = 'never'
 $env:RUST_BACKTRACE = '1'
 
+# Redacts remote URLs and the profile directory name that follows a Users path
+# segment. The segment may be separated by one backslash, a slash, or a doubled
+# backslash (JSON). Only that one component is replaced, never a bare word.
 function Protect-Text([string] $Text) {
     $Text = [regex]::Replace($Text, '[A-Za-z][A-Za-z0-9+.-]*://\S+', '<url-redacted>')
-    return [regex]::Replace($Text, '[\w.-]+@[\w.-]+:\S+', '<url-redacted>')
+    $Text = [regex]::Replace($Text, '[\w.-]+@[\w.-]+:\S+', '<url-redacted>')
+    return [regex]::Replace($Text,
+        '(?i)(?<=[\\/]Users(?:\\\\|[\\/]))[^\\/"''<>|:*?\r\n]+', '<user>')
+}
+
+# What must not survive in any published file: a Users segment that is not
+# followed by <user> (the atomic group stops the doubled-separator form
+# \\Users\\<user> from backtracking into a false hit), and the account name,
+# the profile directory name, and its 8.3 alias as whole words.
+$ProfileLeaf = Split-Path -Leaf $env:USERPROFILE
+$ProfileShort = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:USERPROFILE).ShortName
+$ProfileNames = @($env:USERNAME, $ProfileLeaf, $ProfileShort) |
+    Where-Object { $_ } | Sort-Object -Unique
+if ($ProfileNames.Count -eq 0) { throw 'Cannot determine the profile names.' }
+$ProfileLeakPatterns = @('(?i)[\\/]Users(?>[\\/]+)(?!<user>)') +
+    @($ProfileNames | ForEach-Object {
+        '(?i)(?<![A-Za-z0-9_])' + [regex]::Escape($_) + '(?![A-Za-z0-9_])' })
+
+# First-step self-check with this host's real TEMP and profile, in the long,
+# slash, doubled-backslash (JSON), and 8.3 forms. Any surviving profile name
+# stops the run before anything is built or published.
+$FsoTemp = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:TEMP).ShortPath
+$Samples = @($env:TEMP, $env:USERPROFILE, $FsoTemp, ($env:TEMP -replace '\\', '/'),
+    ($env:TEMP -replace '\\', '\\'), ('\\?\' + $env:TEMP))
+$Redacted = @($Samples | ForEach-Object { Protect-Text $_ })
+[IO.File]::WriteAllLines((Join-Path $EvidenceDir 'protect-text-selfcheck.txt'),
+    [string[]]$Redacted)
+foreach ($Line in $Redacted) {
+    foreach ($Pattern in $ProfileLeakPatterns) {
+        if ([regex]::IsMatch($Line, $Pattern)) {
+            throw 'Protect-Text left a profile name in a sample. Do not continue. Report BLOCKED.'
+        }
+    }
 }
 
 # Runs a native command. Writes <Name>.stdout.txt, <Name>.stderr.txt, and
@@ -331,7 +367,8 @@ Get-CimInstance Win32_Processor |
     $PSVersionTable.PSVersion.ToString()
 )
 [IO.File]::WriteAllLines(
-    (Join-Path $EvidenceDir 'tool-paths.txt'), [string[]]@($Git, $Cargo, $Rustc)
+    (Join-Path $EvidenceDir 'tool-paths.txt'),
+    [string[]]@($Git, $Cargo, $Rustc | ForEach-Object { Protect-Text $_ })
 )
 $GitVersion = Invoke-Native -Exe $Git -Name 'git-version' -Arguments @('--version')
 $RustcVersion = Invoke-Native -Exe $Rustc -Name 'rustc-version' -Arguments @('-Vv') -Directory $SourceDir
@@ -613,8 +650,11 @@ foreach ($Check in $Checks) {
         # Read-only listing of this run's processes only. No process is stopped.
         $Survivors = @(Find-OwnedSurvivors (Get-CimInstance Win32_Process) `
             (Get-PathAliases $TestTmp) (Get-PathAliases $RunRoot))
-        $Survivors | Format-List | Out-File -LiteralPath `
-            (Join-Path $EvidenceDir "$($Check.Name).survivors.txt") -Encoding utf8
+        # Out-String -Width stops line wrapping from splitting a path across
+        # lines, where the redaction could not see it.
+        [IO.File]::WriteAllText(
+            (Join-Path $EvidenceDir "$($Check.Name).survivors.txt"),
+            (Protect-Text ($Survivors | Format-List | Out-String -Width 32768)))
         if ($Survivors.Count -ne 0) {
             $Verdict.status = 'FAIL'
             $Verdict.notes = ($Verdict.notes + " $($Survivors.Count) process(es) of this run survived the cancel scenario; see $($Check.Name).survivors.txt.").Trim()
@@ -627,7 +667,8 @@ Assert-Head 'after the checks'
 $HeadAfter = Invoke-Git 'source-head-after' @('rev-parse', 'HEAD')
 if ($HeadAfter.Code -ne 0 -or $HeadAfter.Out.Count -ne 1 -or $HeadAfter.Out[0] -cne $SourceSha) {
     throw "Recorded HEAD after the checks is not the source commit. Preserve $RunRoot and report it."
-}$After = Invoke-Git 'source-status-after' @('status', '--porcelain=v1', '--untracked-files=all')
+}
+$After = Invoke-Git 'source-status-after' @('status', '--porcelain=v1', '--untracked-files=all')
 $DiffCheck = Invoke-Git 'diff-check' @('diff', '--check')
 ```
 
@@ -650,6 +691,13 @@ Status rules for each command:
 - `PASS`: exit code zero, every required test reports `ok`, zero tests
   failed, and the counts match the expected result in the Checks table.
 
+A timeout stays `FAIL`, as above. The first check compiles everything into a new
+target directory, so a cold build can exceed a limit. In your report, say whether the
+preserved stdout of a timed-out check ends in `Compiling` or `Finished` output with no
+`running N tests` line (the build was still running: an environment or resource
+limit) or shows tests that had started (a product or test hang). That label is
+a note only. Do not change the verdict, retry in the same evidence directory, or
+raise a limit.
 ## 4. Write the result
 
 ```powershell
@@ -775,25 +823,28 @@ $SecretPattern = 'ghp_[A-Za-z0-9]{20,}|github_pat_|gho_[A-Za-z0-9]{20,}|AKIA[0-9
 $UrlPattern = '://[^/\s@]*@|git@|ssh://'
 $Hits = @(Select-String -Path (Join-Path $EvidenceDir '*') -Pattern $SecretPattern) +
     @(Select-String -Path (Join-Path $EvidenceDir '*') -Pattern $UrlPattern) +
-    @(Select-String -Path (Join-Path $EvidenceDir '*') -SimpleMatch 'j-mckerracher/agent-orch')
+    @(Select-String -Path (Join-Path $EvidenceDir '*') -SimpleMatch 'j-mckerracher/agent-orch') +
+    @(Select-String -Path (Join-Path $EvidenceDir '*') -Pattern $ProfileLeakPatterns)
 if ($Hits.Count -ne 0) {
     $Hits | Select-Object Path, LineNumber | Format-Table | Out-String | Write-Output
-    throw 'Possible secret or remote URL found. Do not push. Keep the raw files and report it.'
+    throw 'Possible secret, remote URL, or profile name found. Do not push. Keep the raw files and report it.'
 }
 ```
 
 The pattern scan is a backstop. Also read every file before you publish. If a
-file holds a secret or a remote URL, do not push it. Keep the raw file and
-report the blocker.
+file holds a secret, a remote URL, or a profile name, do not push it. Keep the
+raw file and report the blocker.
 
-Known limit: the scan looks for secrets and remote URLs only. It does not look
-for local paths. Test and Git messages (and the CLI error that this candidate
-now expands) can contain absolute paths under `$env:TEMP`, which include the
-Windows profile directory name. The b3e5776 evidence has the same property. Do
-not edit the files to remove it. List which files contain such paths in your
-report. Treat any credential, token, or personal data other than that path
-component as a blocker.
-
+The scan also fails closed on the profile name. `Protect-Text` already replaced
+the directory name after each `Users` path segment with `<user>`. The scan below
+blocks any `Users` segment that is not followed by `<user>` (in single-backslash,
+slash, and doubled-backslash JSON forms) and any whole-word occurrence of the
+account name, the profile directory name, or its 8.3 alias. A user account whose
+name is an ordinary word that appears elsewhere in the evidence is also blocked.
+Report that as BLOCKED. Do not edit the files to get past it. The scan prints
+file names and line numbers only, never the matching text. The exact Git
+`fatal:` text and the test verdict lines carry no profile name and are not
+changed by the redaction.
 ```powershell
 if (Test-Path -LiteralPath $EvidenceWorktree) { throw "Worktree path exists: $EvidenceWorktree" }
 # Main holds long paths. Windows needs core.longpaths and a short worktree path.
@@ -865,7 +916,10 @@ non-zero exit code if you run the block as a script. Report to the coordinator:
   Git or I/O cause that was missing in the b3e5776 evidence. State that the
   cause is as reported by the tool and not yet analysed
 - the measured `workspace-tests` and `git-package` totals next to the calculated 327 passed and 1
-  ignored, and 51 passed, and the files that hold local paths (see the known limit above)
+  ignored, and 51 passed
+- for any timed-out check, the cold-build label from the status rules (build still
+  running, or tests had started), as a note beside the unchanged `FAIL`
+- that `protect-text-selfcheck.txt` and the publication scan passed
 - any setting that you could not observe, including whether your agent runtime
   could run Sonnet 5.5 with high reasoning
 
