@@ -103,6 +103,19 @@ impl SqliteStore {
         })
     }
 
+    /// Returns the identifier of this database's journal. It is created with
+    /// the database and changes when the database file is replaced, so a resume
+    /// cursor issued by another journal can be detected.
+    pub fn store_epoch(&self) -> Result<String, StoreError> {
+        self.call(|pool| async move {
+            Ok(
+                sqlx::query_scalar::<_, String>("SELECT epoch FROM store_identity WHERE id = 1")
+                    .fetch_one(&pool)
+                    .await?,
+            )
+        })
+    }
+
     /// Claims a key, or returns its completed result without repeating work.
     pub fn begin_idempotency(
         &self,

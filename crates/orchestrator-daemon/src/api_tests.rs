@@ -143,6 +143,10 @@ fn every_rpc_method_rejects_malformed_parameters() {
         ("tasks.list", json!({"extra": true})),
         ("tasks.get", json!({"task_id": 4})),
         ("tasks.cancel", json!({"task_id": "task-1"})),
+        ("tasks.retry", json!({"task_id": "task-1"})),
+        ("tasks.retry", json!({"idempotency_key": "k"})),
+        ("tasks.retry", json!({"task_id": 4, "idempotency_key": "k"})),
+        ("agents.capabilities", json!({"extra": true})),
         ("sessions.list", json!({"task_id": 4})),
         ("sessions.get", json!({"task_id": "task-1"})),
         ("sessions.events", json!({"task_id": "task-1"})),
@@ -893,5 +897,22 @@ fn session_events_page_and_report_a_cursor_beyond_the_journal() {
             json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": -1}),
         ),
         Err(RpcError::InvalidParams)
+    );
+
+    let epoch = at_head["epoch"].as_str().unwrap().to_owned();
+    assert_eq!(api.store.store_epoch().unwrap(), epoch);
+    assert_eq!(api.journal_epoch().unwrap(), Some(epoch.clone()));
+    assert!(api
+        .dispatch(
+            "sessions.events",
+            json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": 0, "epoch": epoch}),
+        )
+        .is_ok());
+    assert_eq!(
+        api.dispatch(
+            "sessions.events",
+            json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": 0, "epoch": "0".repeat(32)}),
+        ),
+        Err(RpcError::EpochMismatch)
     );
 }

@@ -4,9 +4,11 @@
 //! unset, it uses `<current-dir>/.agent-orch`. Acquire the data lock before
 //! creating IPC token or socket.
 mod api;
+mod executor;
 mod idempotency;
 
 use api::DaemonApi;
+use executor::ExecutorConfig;
 use orchestrator_ipc::{Server, ServerConfig};
 use orchestrator_store::DataDirectoryLock;
 use std::path::PathBuf;
@@ -22,12 +24,15 @@ fn main() {
 fn run() -> Result<(), String> {
     let data_dir = data_dir()?;
     let _lock = acquire_lock(&data_dir)?;
-    let handler = Arc::new(DaemonApi::new(&data_dir)?);
-    Server::serve_with_handler(
+    let config = ExecutorConfig::for_data_dir(&data_dir);
+    let handler = Arc::new(DaemonApi::with_executor(&data_dir, config)?);
+    let served = Server::serve_with_handler(
         ServerConfig::new(data_dir, env!("CARGO_PKG_VERSION")),
-        handler,
+        handler.clone(),
     )
-    .map_err(|error| format!("daemon IPC failed: {error}"))
+    .map_err(|error| format!("daemon IPC failed: {error}"));
+    handler.shutdown();
+    served
 }
 
 fn acquire_lock(data_dir: &std::path::Path) -> Result<DataDirectoryLock, String> {

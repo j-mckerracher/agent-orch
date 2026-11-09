@@ -5,8 +5,9 @@
 //! Updated: 2026-11-08T12:21:37-07:00.
 
 use std::path::{Component, Path};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use orchestrator_agents::{AgentAdapter, ClaudeCodeAdapter, CodexAdapter, PiRpcAdapter};
 use orchestrator_core::approval::{
     Actor, Approval, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
 };
@@ -33,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::executor::{Executor, ExecutorConfig};
 use crate::idempotency;
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
@@ -40,7 +42,11 @@ const EVENT_PAGE_SIZE: usize = 256;
 const LOCAL_USER: &str = "local-user";
 
 pub(crate) struct DaemonApi {
-    store: SqliteStore,
+    store: Arc<SqliteStore>,
+    /// Launch settings, also used to detect agents for `agents.capabilities`.
+    config: ExecutorConfig,
+    /// Absent for API-only use (tests); `main` always starts one.
+    executor: Option<Executor>,
     idempotency_gate: Mutex<()>,
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
@@ -89,6 +95,13 @@ struct CancelParams {
     idempotency_key: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RetryParams {
+    task_id: String,
+    idempotency_key: String,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SessionsListParams {
@@ -108,6 +121,7 @@ struct SessionEventsParams {
     task_id: String,
     session_id: String,
     after_sequence: Option<i64>,
+    epoch: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -141,19 +155,49 @@ struct DeliveryParams {
 }
 
 impl DaemonApi {
+    /// Opens the store without launching anything.
+    #[cfg(test)]
     pub(crate) fn new(data_dir: &Path) -> Result<Self, String> {
-        let store = SqliteStore::new(&data_dir.join("store.sqlite"))
-            .map_err(|_| "cannot open daemon store".to_owned())?;
+        Self::with_config(data_dir, ExecutorConfig::for_data_dir(data_dir))
+    }
+
+    fn with_config(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
+        let store = Arc::new(
+            SqliteStore::new(&data_dir.join("store.sqlite"))
+                .map_err(|_| "cannot open daemon store".to_owned())?,
+        );
         let approval_actor = Actor::User(LOCAL_USER.to_owned());
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
                 .map_err(|_| "cannot initialize local approval policy".to_owned())?;
         Ok(Self {
             store,
+            config,
+            executor: None,
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
         })
+    }
+
+    /// Opens the store and starts the executor, which reconciles the store
+    /// with the OS before it launches anything.
+    pub(crate) fn with_executor(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
+        let mut api = Self::with_config(data_dir, config.clone())?;
+        api.executor = Some(Executor::start(api.store.clone(), config)?);
+        Ok(api)
+    }
+
+    pub(crate) fn shutdown(&self) {
+        if let Some(executor) = &self.executor {
+            executor.shutdown();
+        }
+    }
+
+    fn wake_executor(&self) {
+        if let Some(executor) = &self.executor {
+            executor.wake();
+        }
     }
 }
 
@@ -167,6 +211,7 @@ impl RpcHandler for DaemonApi {
             Capability::Approvals,
             Capability::Workspaces,
             Capability::Delivery,
+            Capability::Agents,
         ]
     }
 
@@ -178,6 +223,8 @@ impl RpcHandler for DaemonApi {
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
             "tasks.cancel" => self.cancel_task(params),
+            "tasks.retry" => self.retry_task(params),
+            "agents.capabilities" => self.agent_capabilities(params),
             "sessions.list" => self.list_sessions(params),
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
@@ -200,7 +247,18 @@ impl RpcHandler for DaemonApi {
         self.store.latest_event_sequence().map_err(map_store_error)
     }
 
+    fn journal_epoch(&self) -> Result<Option<String>, RpcError> {
+        self.store.store_epoch().map(Some).map_err(map_store_error)
+    }
+
     fn keep_alive(&self) -> bool {
+        if self
+            .executor
+            .as_ref()
+            .is_some_and(|executor| executor.has_pending_pass())
+        {
+            return true;
+        }
         self.store.list().map_or(true, |tasks| {
             tasks
                 .iter()
@@ -288,10 +346,77 @@ impl DaemonApi {
                 self.store
                     .transition(&contract.id, TaskEvent::Admit)
                     .map_err(map_store_error)?;
+                self.wake_executor();
                 serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
                     .map_err(|_| RpcError::Internal)
             },
         )
+    }
+
+    /// Queues a new attempt for a `Failed` or `VerificationFailed` task. The
+    /// failed attempt stays on record; the executor appends the next attempt
+    /// when it launches the task. The contract bounds how many attempts a task
+    /// may have: `max_retries` for a failed run, `max_repairs` after failed
+    /// verification. Exhausting the bound is a `Conflict`.
+    fn retry_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: RetryParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.retry",
+            &key,
+            &request,
+            || {
+                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
+                let bound = match task.state {
+                    TaskState::Failed => task.contract.max_retries,
+                    TaskState::VerificationFailed => task.contract.max_repairs,
+                    _ => return Err(RpcError::Conflict),
+                };
+                if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
+                    return Err(RpcError::Conflict);
+                }
+                self.store
+                    .transition(&request.task_id, TaskEvent::RetryRequested)
+                    .map_err(map_store_error)?;
+                self.wake_executor();
+                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
+                    .map_err(|_| RpcError::Internal)
+            },
+        )
+    }
+
+    /// Reports each known agent family: whether its executable is installed
+    /// and what it supports, plus whether the daemon can launch it. Results
+    /// carry no executable paths.
+    fn agent_capabilities(&self, params: Value) -> Result<Value, RpcError> {
+        require_empty_params(&params)?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| RpcError::Internal)?;
+        let mut codex = CodexAdapter::new();
+        if let Some(program) = &self.config.codex_program {
+            codex = codex.with_program(program);
+        }
+        let mut claude = ClaudeCodeAdapter::new();
+        if let Some(program) = &self.config.claude_program {
+            claude = claude.with_program(program);
+        }
+        let (codex, claude, pi) = runtime.block_on(async {
+            (
+                codex.detect().await,
+                claude.detect().await,
+                PiRpcAdapter::new().detect().await,
+            )
+        });
+        Ok(json!([
+            agent_entry("codex", true, codex),
+            agent_entry("claude-code", true, claude),
+            // The daemon has no stdin RPC launcher for Pi yet.
+            agent_entry("pi", false, pi),
+        ]))
     }
 
     fn validate_scheduler(&self, candidate: &TaskContract) -> Result<(), RpcError> {
@@ -476,6 +601,10 @@ impl DaemonApi {
 
     fn session_events(&self, params: Value) -> Result<Value, RpcError> {
         let params: SessionEventsParams = parse_params(params)?;
+        let epoch = self.store.store_epoch().map_err(map_store_error)?;
+        if params.epoch.as_ref().is_some_and(|given| *given != epoch) {
+            return Err(RpcError::EpochMismatch);
+        }
         let cursor = params.after_sequence.unwrap_or(0);
         let latest = self
             .store
@@ -504,7 +633,8 @@ impl DaemonApi {
             "session_id": params.session_id,
             "events": events.into_iter().map(stream_event).collect::<Vec<_>>(),
             "more": more,
-            "next_after_sequence": next_after_sequence
+            "next_after_sequence": next_after_sequence,
+            "epoch": epoch
         }))
     }
 
@@ -847,6 +977,35 @@ fn delivery_digest(
 
 fn callback_failure() -> CallbackError {
     Box::new(std::io::Error::other("delivery policy check failed"))
+}
+
+fn agent_entry(
+    agent: &str,
+    launchable: bool,
+    detected: orchestrator_agents::Result<orchestrator_agents::AgentCapabilities>,
+) -> Value {
+    match detected {
+        Ok(caps) => json!({
+            "agent": agent,
+            "installed": true,
+            "launchable": launchable,
+            "capabilities": {
+                "streaming": caps.streaming,
+                "interactive_input": caps.interactive_input,
+                "structured_output": caps.structured_output,
+                "cancellation": caps.cancellation,
+                "session_resumption": caps.session_resumption,
+                "approvals": caps.approvals,
+                "model_selection": caps.model_selection,
+            },
+        }),
+        Err(_) => json!({
+            "agent": agent,
+            "installed": false,
+            "launchable": launchable,
+            "capabilities": Value::Null,
+        }),
+    }
 }
 
 fn map_store_error(error: StoreError) -> RpcError {

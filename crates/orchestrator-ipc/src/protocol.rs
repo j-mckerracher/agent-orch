@@ -38,10 +38,11 @@ pub enum Capability {
     Approvals,
     Workspaces,
     Delivery,
+    Agents,
 }
 
 impl Capability {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -50,6 +51,7 @@ impl Capability {
         Self::Approvals,
         Self::Workspaces,
         Self::Delivery,
+        Self::Agents,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -62,6 +64,7 @@ impl Capability {
             Self::Approvals => "approvals",
             Self::Workspaces => "workspaces",
             Self::Delivery => "delivery",
+            Self::Agents => "agents",
         }
     }
 
@@ -131,6 +134,8 @@ pub(crate) struct Handshake {
 pub(crate) struct Welcome {
     pub(crate) version: u16,
     pub(crate) capabilities: Vec<Capability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) journal_epoch: Option<String>,
 }
 
 pub(crate) fn read<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<T, FrameError> {

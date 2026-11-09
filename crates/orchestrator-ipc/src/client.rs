@@ -24,6 +24,8 @@ pub struct Client {
     next_id: u64,
     subscription: Option<String>,
     last_event_sequence: Option<i64>,
+    journal_epoch: Option<String>,
+    cursor_epoch: Option<String>,
     events: VecDeque<Result<IpcEvent, IpcError>>,
     io_timeout: Duration,
 }
@@ -84,6 +86,8 @@ impl Client {
             next_id: 2,
             subscription: None,
             last_event_sequence: None,
+            journal_epoch: welcome.journal_epoch,
+            cursor_epoch: None,
             events: VecDeque::new(),
             io_timeout,
         })
@@ -171,13 +175,27 @@ impl Client {
         session_id: &str,
         after_sequence: Option<i64>,
     ) -> Result<Value, IpcError> {
+        self.sessions_events_in_epoch(task_id, session_id, after_sequence, None)
+    }
+
+    /// Like `sessions_events`, but fails with `IpcError::EpochMismatch` when
+    /// the cursor was issued under another journal than the daemon's. Pass the
+    /// `epoch` field of an earlier result to resume a page safely.
+    pub fn sessions_events_in_epoch(
+        &mut self,
+        task_id: &str,
+        session_id: &str,
+        after_sequence: Option<i64>,
+        epoch: Option<&str>,
+    ) -> Result<Value, IpcError> {
         self.call_feature(
             Capability::Sessions,
             "sessions.events",
             json!({
                 "task_id": task_id,
                 "session_id": session_id,
-                "after_sequence": after_sequence
+                "after_sequence": after_sequence,
+                "epoch": epoch
             }),
         )
     }
@@ -203,6 +221,18 @@ impl Client {
         )
     }
 
+    pub fn tasks_retry(&mut self, task_id: &str, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Tasks,
+            "tasks.retry",
+            json!({"task_id": task_id, "idempotency_key": idempotency_key}),
+        )
+    }
+
+    pub fn agents_capabilities(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Agents, "agents.capabilities", Value::Null)
+    }
+
     pub fn workspaces_diff(
         &mut self,
         task_id: &str,
@@ -221,15 +251,30 @@ impl Client {
     }
 
     pub fn events_subscribe(&mut self, after_sequence: Option<i64>) -> Result<String, IpcError> {
+        self.events_subscribe_in_epoch(after_sequence, None)
+    }
+
+    /// Subscribes after a cursor that was issued under `epoch` (see
+    /// `cursor_epoch`). A daemon whose journal has another epoch refuses with
+    /// `IpcError::EpochMismatch` rather than replaying unrelated events.
+    pub fn events_subscribe_in_epoch(
+        &mut self,
+        after_sequence: Option<i64>,
+        epoch: Option<&str>,
+    ) -> Result<String, IpcError> {
         if self.subscription.is_some() {
             return Err(IpcError::Conflict);
         }
         if after_sequence.is_some_and(|sequence| sequence < 0) {
             return Err(IpcError::InvalidParams);
         }
-        let params = after_sequence
-            .map(|sequence| json!({"after_sequence": sequence}))
-            .unwrap_or_else(|| json!({}));
+        let mut params = json!({});
+        if let Some(sequence) = after_sequence {
+            params["after_sequence"] = json!(sequence);
+        }
+        if let Some(epoch) = epoch {
+            params["epoch"] = json!(epoch);
+        }
         let result = self.call_feature(Capability::Events, "events.subscribe", params)?;
         let subscription = result
             .get("subscription_id")
@@ -238,6 +283,10 @@ impl Client {
             .to_owned();
         self.subscription = Some(subscription.clone());
         self.last_event_sequence = Some(after_sequence.unwrap_or(0));
+        self.cursor_epoch = result
+            .get("epoch")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         Ok(subscription)
     }
 
@@ -267,19 +316,37 @@ impl Client {
     /// The cursor is kept until a resume succeeds, so calling `reconnect()`
     /// again after any failure retries the same resume and never returns `Ok`
     /// without a subscription. `IpcError::ReplayGap` is terminal for that
-    /// cursor: the daemon journal is behind it. Refresh state with the list
-    /// methods, then call `events_subscribe(None)` (or with a known sequence)
-    /// to start a new stream.
+    /// cursor: the daemon journal is behind it. `IpcError::EpochMismatch` is
+    /// terminal for it too: the journal was replaced, so the cursor names
+    /// events of another journal. The cursor and its epoch stay recorded, so a
+    /// repeated `reconnect()` fails the same way instead of resuming silently.
+    /// For either error, refresh state with the list methods, then call
+    /// `events_subscribe(None)` to start a new stream on the current journal.
     pub fn reconnect(&mut self) -> Result<(), IpcError> {
         let cursor = self.last_event_sequence;
+        let cursor_epoch = self.cursor_epoch.clone();
         let mut fresh = Self::connect_with_capabilities(&self.data_dir, &self.requested)?;
         let resumed = match cursor {
-            Some(cursor) => fresh.events_subscribe(Some(cursor)).map(|_| ()),
+            Some(cursor) => fresh
+                .events_subscribe_in_epoch(Some(cursor), cursor_epoch.as_deref())
+                .map(|_| ()),
             None => Ok(()),
         };
         fresh.last_event_sequence = cursor;
+        fresh.cursor_epoch = cursor_epoch;
         *self = fresh;
         resumed
+    }
+
+    /// Journal epoch announced by the daemon this connection reached, when the
+    /// daemon provides one.
+    pub fn journal_epoch(&self) -> Option<&str> {
+        self.journal_epoch.as_deref()
+    }
+
+    /// Journal epoch the current event cursor was issued under.
+    pub fn cursor_epoch(&self) -> Option<&str> {
+        self.cursor_epoch.as_deref()
     }
 
     pub fn last_event_sequence(&self) -> Option<i64> {
@@ -475,6 +542,7 @@ fn map_remote(code: i32) -> IpcError {
         -32015 => IpcError::SlowConsumer,
         -32016 => IpcError::ResultTooLarge,
         -32017 => IpcError::ReplayGap,
+        -32018 => IpcError::EpochMismatch,
         _ => IpcError::Operation,
     }
 }

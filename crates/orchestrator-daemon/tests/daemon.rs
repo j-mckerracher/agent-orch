@@ -1,8 +1,11 @@
 #![cfg(unix)]
 
+use orchestrator_core::contract::{
+    AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+};
 use orchestrator_core::records::Project;
 use orchestrator_ipc::{Client, IpcError};
-use orchestrator_store::SqliteStore;
+use orchestrator_store::{SqliteStore, Store};
 use serde_json::json;
 use std::fs;
 use std::io::{Read, Write};
@@ -175,6 +178,82 @@ fn daemon_survives_accept_descriptor_exhaustion() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("accept failed"));
 }
 
+fn blocker_contract() -> TaskContract {
+    TaskContract {
+        id: "blocker".into(),
+        project_id: "project-1".into(),
+        parent_id: None,
+        objective: "Never finishes, so dependents stay queued".into(),
+        kind: TaskKind::Implement,
+        agent: "codex".into(),
+        dependencies: Vec::new(),
+        verification: VerificationPolicy::None,
+        delivery: DeliveryPolicy::ReportOnly,
+        autonomy: AutonomyPolicy::WorkspaceWrites,
+        max_retries: 0,
+        max_repairs: 0,
+    }
+}
+
+#[test]
+fn daemon_refuses_to_resume_a_cursor_against_a_replaced_journal() {
+    let dir = TempDir::new().unwrap();
+    let seed = |tasks: &[&str]| {
+        let store = SqliteStore::new(&dir.path().join("store.sqlite")).unwrap();
+        store
+            .register_project(&Project {
+                id: "project-1".into(),
+                root_path: "/private/project-root".into(),
+                settings: json!({}),
+            })
+            .unwrap();
+        for id in tasks {
+            let mut contract = blocker_contract();
+            contract.id = (*id).into();
+            store.create(&contract).unwrap();
+        }
+        store.store_epoch().unwrap()
+    };
+    let first_epoch = seed(&["old-1"]);
+
+    let mut daemon = Daemon::start(dir.path());
+    wait_for_ipc(dir.path(), &mut daemon);
+    let mut client = Client::connect(dir.path()).unwrap();
+    assert_eq!(client.journal_epoch(), Some(first_epoch.as_str()));
+    client.events_subscribe(None).unwrap();
+    assert_eq!(client.next_event().unwrap().task_id, "old-1");
+    let cursor = client.last_event_sequence().unwrap();
+    client.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+
+    // Swap in a different database whose journal is longer than the cursor.
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = fs::remove_file(dir.path().join(format!("store.sqlite{suffix}")));
+    }
+    let second_epoch = seed(&["new-1", "new-2", "new-3"]);
+    assert_ne!(first_epoch, second_epoch);
+
+    let mut daemon = Daemon::start(dir.path());
+    wait_for_ipc(dir.path(), &mut daemon);
+    let mut stale = connect_when_ready(dir.path());
+    // Rebuild the stale client state the way a surviving client has it.
+    assert_eq!(stale.journal_epoch(), Some(second_epoch.as_str()));
+    assert!(matches!(
+        stale.events_subscribe_in_epoch(Some(cursor), Some(&first_epoch)),
+        Err(IpcError::EpochMismatch)
+    ));
+    assert!(matches!(
+        stale.sessions_events_in_epoch("new-1", "none", Some(cursor), Some(&first_epoch)),
+        Err(IpcError::EpochMismatch)
+    ));
+    stale
+        .events_subscribe_in_epoch(Some(cursor), Some(&second_epoch))
+        .unwrap();
+    assert_eq!(stale.cursor_epoch(), Some(second_epoch.as_str()));
+    stale.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+}
+
 #[test]
 fn daemon_clients_submit_cancel_and_resume_durable_events() {
     let dir = TempDir::new().unwrap();
@@ -186,6 +265,9 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
             settings: json!({}),
         })
         .unwrap();
+    // The daemon launches every runnable task. A task that depends on one
+    // that never finishes stays Queued, so the cancel is not racing a launch.
+    store.create(&blocker_contract()).unwrap();
     drop(store);
 
     let mut daemon = Daemon::start(dir.path());
@@ -204,7 +286,7 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
             "objective": "Persist this task across reconnects",
             "kind": "Implement",
             "agent": "codex",
-            "dependencies": [],
+            "dependencies": ["blocker"],
             "verification": "None",
             "delivery": "ReportOnly",
             "autonomy": "WorkspaceWrites",
@@ -216,7 +298,7 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
     assert_eq!(client.tasks_submit(params).unwrap(), submitted);
     let task_id = submitted["contract"]["id"].as_str().unwrap().to_owned();
     assert_eq!(client.tasks_get(&task_id).unwrap(), submitted);
-    assert_eq!(client.tasks_list().unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(client.tasks_list().unwrap().as_array().unwrap().len(), 2);
     assert!(client
         .sessions_list(None)
         .unwrap()
@@ -248,11 +330,12 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
 
     assert_eq!(client.next_event().unwrap().sequence, 1);
     assert_eq!(client.next_event().unwrap().sequence, 2);
+    assert_eq!(client.next_event().unwrap().sequence, 3);
     assert_eq!(
         client.tasks_cancel(&task_id, "client-cancel-1").unwrap()["state"],
         "Cancelled"
     );
-    assert_eq!(client.next_event().unwrap().sequence, 3);
+    assert_eq!(client.next_event().unwrap().sequence, 4);
     client.shutdown().unwrap();
     assert!(daemon.finish().status.success());
 }
@@ -406,6 +489,253 @@ fn daemon_cancel_reaches_cancelled_through_real_run_owner() {
         Some(orchestrator_store::CancellationStatus::Confirmed)
     );
 
+    client.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+}
+
+/// A repository, a registered project and a fake `codex` that records its pid
+/// and then sleeps, so tests can observe a launched agent from outside.
+struct RunningAgentFixture {
+    root: TempDir,
+    data: PathBuf,
+    repo: PathBuf,
+    pid_file: PathBuf,
+    agent: PathBuf,
+}
+
+impl RunningAgentFixture {
+    fn new() -> Self {
+        let root = TempDir::new().unwrap();
+        let base = fs::canonicalize(root.path()).unwrap();
+        let repo = base.join("repo");
+        let data = base.join("data");
+        fs::create_dir_all(&repo).unwrap();
+        fs::create_dir_all(&data).unwrap();
+        git(&repo, &["init", "--initial-branch=main"]);
+        git(&repo, &["config", "user.name", "daemon test"]);
+        git(
+            &repo,
+            &["config", "user.email", "daemon-test@example.invalid"],
+        );
+        fs::write(repo.join("sample.txt"), "base\n").unwrap();
+        git(&repo, &["add", "sample.txt"]);
+        git(&repo, &["commit", "-m", "initial"]);
+        let pid_file = base.join("agent.pid");
+        let agent = base.join("fake-codex");
+        fs::write(
+            &agent,
+            format!(
+                "#!/bin/sh\nprintf '{{\"type\":\"thread.started\",\"thread_id\":\"01a1b721-1f91-7393-ae1d-6aace8e4646a\"}}\\n'\nprintf '{{\"type\":\"turn.started\"}}\\n'\necho $$ > '{}'\nexec sleep 60\n",
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&agent, fs::Permissions::from_mode(0o755)).unwrap();
+        let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+        store
+            .register_project(&Project {
+                id: repo.display().to_string(),
+                root_path: repo.display().to_string(),
+                settings: json!({}),
+            })
+            .unwrap();
+        Self {
+            root,
+            data,
+            repo,
+            pid_file,
+            agent,
+        }
+    }
+
+    fn start_daemon(&self) -> Daemon {
+        Daemon(Some(
+            Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
+                .arg("--data-dir")
+                .arg(&self.data)
+                .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        ))
+    }
+
+    fn submit(&self, client: &mut Client, key: &str, max_retries: u32) -> String {
+        let task = client
+            .tasks_submit(json!({
+                "idempotency_key": key,
+                "contract": {
+                    "project_id": self.repo.display().to_string(),
+                    "parent_id": null,
+                    "objective": "run until cancelled",
+                    "kind": "Implement",
+                    "agent": "codex",
+                    "dependencies": [],
+                    "verification": "None",
+                    "delivery": "ReportOnly",
+                    "autonomy": "WorkspaceWrites",
+                    "max_retries": max_retries,
+                    "max_repairs": 0
+                }
+            }))
+            .unwrap();
+        task["contract"]["id"].as_str().unwrap().to_owned()
+    }
+
+    fn wait_for_agent(&self) -> u32 {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(pid) = fs::read_to_string(&self.pid_file)
+                .ok()
+                .and_then(|text| text.trim().parse::<u32>().ok())
+            {
+                return pid;
+            }
+            assert!(Instant::now() < deadline, "agent never started");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+fn connect_when_ready(data: &Path) -> Client {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match Client::connect(data) {
+            Ok(client) => return client,
+            Err(error) => {
+                assert!(
+                    Instant::now() < deadline,
+                    "daemon never accepted: {error:?}"
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+fn wait_for_task_state(client: &mut Client, task_id: &str, state: &str) -> serde_json::Value {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let task = client.tasks_get(task_id).unwrap();
+        if task["state"] == state {
+            return task;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "task {task_id} stuck in {} waiting for {state}",
+            task["state"]
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn wait_for_process_exit(pid: u32) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while orchestrator_runtime::is_process_running(pid) {
+        assert!(Instant::now() < deadline, "process {pid} did not exit");
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn daemon_launches_submitted_work_and_a_client_disconnect_does_not_stop_it() {
+    let fixture = RunningAgentFixture::new();
+    let mut daemon = fixture.start_daemon();
+    wait_for_ipc(&fixture.data, &mut daemon);
+    let mut client = connect_when_ready(&fixture.data);
+    let task_id = fixture.submit(&mut client, "disconnect-1", 0);
+    let agent_pid = fixture.wait_for_agent();
+    wait_for_task_state(&mut client, &task_id, "Running");
+
+    drop(client);
+    thread::sleep(Duration::from_millis(500));
+    assert!(orchestrator_runtime::is_process_running(agent_pid));
+    let mut reconnected = connect_when_ready(&fixture.data);
+    let task = reconnected.tasks_get(&task_id).unwrap();
+    assert_eq!(task["state"], "Running");
+    assert_eq!(task["attempts"][0]["state"], "Running");
+
+    // The daemon, not the submitting client, owns the run: it can cancel it.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while reconnected
+        .tasks_cancel(&task_id, "disconnect-cancel")
+        .is_err()
+    {
+        assert!(Instant::now() < deadline, "cancel never accepted");
+        thread::sleep(Duration::from_millis(25));
+    }
+    wait_for_task_state(&mut reconnected, &task_id, "Cancelled");
+    wait_for_process_exit(agent_pid);
+    reconnected.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+    drop(fixture.root);
+}
+
+#[test]
+fn daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches() {
+    let fixture = RunningAgentFixture::new();
+    let mut daemon = fixture.start_daemon();
+    wait_for_ipc(&fixture.data, &mut daemon);
+    let mut client = connect_when_ready(&fixture.data);
+    let task_id = fixture.submit(&mut client, "crash-1", 1);
+    let first_agent = fixture.wait_for_agent();
+    wait_for_task_state(&mut client, &task_id, "Running");
+    drop(client);
+
+    // SIGKILL leaves the agent running with nobody to supervise it.
+    daemon.child().kill().unwrap();
+    daemon.child().wait().unwrap();
+    assert!(orchestrator_runtime::is_process_running(first_agent));
+    fs::remove_file(&fixture.pid_file).unwrap();
+
+    let restarted = fixture.start_daemon();
+    let mut client = connect_when_ready(&fixture.data);
+    wait_for_process_exit(first_agent);
+    let failed = wait_for_task_state(&mut client, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["state"], "Failed");
+    assert!(
+        !fixture.pid_file.exists(),
+        "the interrupted task must not be relaunched without a retry"
+    );
+
+    let retried = client.tasks_retry(&task_id, "crash-retry-1").unwrap();
+    assert!(retried["state"] == "Queued" || retried["state"] == "Running");
+    let second_agent = fixture.wait_for_agent();
+    assert_ne!(first_agent, second_agent);
+    let task = wait_for_task_state(&mut client, &task_id, "Running");
+    assert_eq!(task["attempts"].as_array().unwrap().len(), 2);
+    assert_eq!(task["attempts"][0]["state"], "Failed");
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while client.tasks_cancel(&task_id, "crash-cancel").is_err() {
+        assert!(Instant::now() < deadline, "cancel never accepted");
+        thread::sleep(Duration::from_millis(25));
+    }
+    wait_for_task_state(&mut client, &task_id, "Cancelled");
+    wait_for_process_exit(second_agent);
+    client.shutdown().unwrap();
+    assert!(restarted.finish().status.success());
+}
+
+#[test]
+fn daemon_reports_agent_capabilities_without_paths() {
+    let fixture = RunningAgentFixture::new();
+    let mut daemon = fixture.start_daemon();
+    wait_for_ipc(&fixture.data, &mut daemon);
+    let mut client = connect_when_ready(&fixture.data);
+    let report = client.agents_capabilities().unwrap();
+    let codex = report
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["agent"] == "codex")
+        .unwrap();
+    assert_eq!(codex["installed"], true);
+    assert_eq!(codex["launchable"], true);
+    assert!(!report
+        .to_string()
+        .contains(&fixture.data.display().to_string()));
     client.shutdown().unwrap();
     assert!(daemon.finish().status.success());
 }

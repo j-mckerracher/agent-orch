@@ -31,6 +31,8 @@
 //! - Every connection enables foreign keys and WAL. Embedded versioned
 //!   migrations run before `SqliteStore::new` returns. `durable_events` assigns
 //!   one global sequence; the legacy `events` table remains task-transition-only.
+//!   `store_epoch()` names the database (migration 0007); a replaced file has a
+//!   new epoch, so a cursor from another journal can be detected.
 //! - Project, workspace, verification-log, and artifact paths are references.
 //!   The store does not open those files. Artifact contents remain outside
 //!   SQLite.

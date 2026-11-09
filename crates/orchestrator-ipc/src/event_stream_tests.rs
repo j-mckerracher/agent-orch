@@ -13,6 +13,7 @@ use tempfile::TempDir;
 #[derive(Default)]
 struct Journal {
     events: Mutex<Vec<IpcEvent>>,
+    epoch: Mutex<Option<String>>,
 }
 
 impl Journal {
@@ -32,6 +33,12 @@ impl Journal {
 
     fn reset(&self) {
         self.events.lock().unwrap().clear();
+    }
+
+    /// Models a database file that was swapped for another one.
+    fn replace(&self, epoch: &str) {
+        self.reset();
+        *self.epoch.lock().unwrap() = Some(epoch.to_owned());
     }
 }
 
@@ -63,6 +70,10 @@ impl RpcHandler for Journal {
             .unwrap()
             .last()
             .map_or(0, |event| event.sequence))
+    }
+
+    fn journal_epoch(&self) -> Result<Option<String>, RpcError> {
+        Ok(self.epoch.lock().unwrap().clone())
     }
 
     fn keep_alive(&self) -> bool {
@@ -173,6 +184,71 @@ fn failed_resume_keeps_the_cursor_until_a_resume_succeeds() {
     journal.push_range(3..=6);
     client.reconnect().unwrap();
     read_through(&mut client, 6);
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume() {
+    let dir = TempDir::new().unwrap();
+    let journal = Arc::new(Journal::default());
+    journal.replace("epoch-a");
+    journal.push_range(1..=5);
+    let daemon = serve(dir.path(), &journal);
+
+    let mut client = connect(dir.path());
+    assert_eq!(client.journal_epoch(), Some("epoch-a"));
+    client.events_subscribe(None).unwrap();
+    assert_eq!(client.cursor_epoch(), Some("epoch-a"));
+    read_through(&mut client, 5);
+
+    // The replacement is longer than the cursor, so only the epoch can tell
+    // that events 6..=9 belong to a different journal.
+    journal.replace("epoch-b");
+    journal.push_range(1..=9);
+    for _ in 0..2 {
+        assert!(matches!(client.reconnect(), Err(IpcError::EpochMismatch)));
+        assert_eq!(client.last_event_sequence(), Some(5));
+        assert_eq!(client.cursor_epoch(), Some("epoch-a"));
+        assert_eq!(client.journal_epoch(), Some("epoch-b"));
+        assert!(matches!(client.next_event(), Err(IpcError::NoSubscription)));
+    }
+
+    client.events_subscribe(None).unwrap();
+    assert_eq!(client.cursor_epoch(), Some("epoch-b"));
+    read_through(&mut client, 9);
+    client.reconnect().unwrap();
+    journal.push_range(10..=10);
+    read_through(&mut client, 10);
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe() {
+    let dir = TempDir::new().unwrap();
+    let journal = Arc::new(Journal::default());
+    journal.replace("epoch-a");
+    journal.push_range(1..=3);
+    let daemon = serve(dir.path(), &journal);
+
+    let mut client = connect(dir.path());
+    client.events_subscribe(None).unwrap();
+    read_through(&mut client, 3);
+    journal.push_range(4..=5);
+    client.reconnect().unwrap();
+    read_through(&mut client, 5);
+
+    let mut other = connect(dir.path());
+    assert!(matches!(
+        other.events_subscribe_in_epoch(Some(2), Some("epoch-z")),
+        Err(IpcError::EpochMismatch)
+    ));
+    assert_eq!(other.last_event_sequence(), None);
+    other
+        .events_subscribe_in_epoch(Some(2), Some("epoch-a"))
+        .unwrap();
+    read_through(&mut other, 5);
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }

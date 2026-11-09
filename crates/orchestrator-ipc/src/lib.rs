@@ -13,7 +13,11 @@
 //! capabilities; `capabilities` reports that set. `health` returns package
 //! version, uptime seconds, and data directory. `shutdown` remains lifecycle
 //! control even when no feature capability is negotiated. Unsupported
-//! capabilities fail with a typed, payload-free error. Tokens use fresh
+//! capabilities fail with a typed, payload-free error. Handlers may
+//! name their journal with `journal_epoch`. The welcome carries it as an
+//! optional `journal_epoch`, `events.subscribe` returns it as `epoch` and
+//! accepts an `epoch` that must match (else typed `epoch_mismatch`, code
+//! -32018). Both are additive, so protocol version 1 is unchanged. Tokens use fresh
 //! 32-byte OS randomness. On Unix, `daemon.token` has mode 0600, and the data
 //! directory is owner-owned and not group/other-writable. On Windows, the token
 //! file is created with a protected DACL for the current process token SID before
@@ -106,6 +110,7 @@ pub enum RpcError {
     SlowConsumer,
     ResultTooLarge,
     ReplayGap,
+    EpochMismatch,
     Internal,
 }
 
@@ -121,6 +126,7 @@ impl RpcError {
             Self::SlowConsumer => -32015,
             Self::ResultTooLarge => -32016,
             Self::ReplayGap => -32017,
+            Self::EpochMismatch => -32018,
             Self::Internal => -32603,
         }
     }
@@ -136,6 +142,7 @@ impl RpcError {
             Self::SlowConsumer => "event subscriber fell behind",
             Self::ResultTooLarge => "result exceeds size limit",
             Self::ReplayGap => "event cursor is ahead of the durable journal",
+            Self::EpochMismatch => "event cursor belongs to a different durable journal",
             Self::Internal => "internal operation failed",
         }
     }
@@ -158,6 +165,12 @@ pub trait RpcHandler: Send + Sync + 'static {
     /// Returns the latest durable event cursor.
     fn latest_event_sequence(&self) -> Result<i64, RpcError> {
         Ok(i64::MAX)
+    }
+    /// Names the durable journal behind the cursors this handler issues. A
+    /// handler that returns one lets clients detect a replaced journal; `None`
+    /// means cursors cannot be tied to a journal.
+    fn journal_epoch(&self) -> Result<Option<String>, RpcError> {
+        Ok(None)
     }
 
     /// Keeps the daemon alive while durable work remains active.
@@ -200,6 +213,8 @@ pub enum IpcError {
     ResultTooLarge,
     #[error("event cursor is ahead of the durable journal")]
     ReplayGap,
+    #[error("event cursor belongs to a different durable journal")]
+    EpochMismatch,
     #[error("event subscription is not active")]
     NoSubscription,
     #[error("local IPC operation failed")]

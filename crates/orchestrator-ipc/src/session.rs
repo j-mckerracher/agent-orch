@@ -86,7 +86,22 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
             return;
         }
     };
-    let welcome = json!({"version": version, "capabilities": &capabilities});
+    let journal_epoch = match state
+        .handler
+        .as_ref()
+        .map(|handler| handler.journal_epoch())
+    {
+        Some(Ok(epoch)) => epoch,
+        Some(Err(error)) => {
+            let _ = write_rpc_error(&mut stream, request.id, error);
+            return;
+        }
+        None => None,
+    };
+    let mut welcome = json!({"version": version, "capabilities": &capabilities});
+    if let Some(epoch) = journal_epoch {
+        welcome["journal_epoch"] = json!(epoch);
+    }
     if write_result(&mut stream, request.id, welcome).is_err() {
         return;
     }
@@ -143,6 +158,10 @@ struct Subscription {
 struct SubscribeParams {
     #[serde(default)]
     after_sequence: Option<i64>,
+    /// Journal epoch the cursor was issued under. A different journal fails
+    /// with `EpochMismatch` instead of replaying unrelated events.
+    #[serde(default)]
+    epoch: Option<String>,
 }
 
 fn handle_request(
@@ -199,6 +218,13 @@ fn handle_request(
         let Some(handler) = &state.handler else {
             return write_error(stream, request.id, -32601, "method unavailable").is_ok();
         };
+        let epoch = match handler.journal_epoch() {
+            Ok(epoch) => epoch,
+            Err(error) => return write_rpc_error(stream, request.id, error),
+        };
+        if params.epoch.is_some() && params.epoch != epoch {
+            return write_rpc_error(stream, request.id, RpcError::EpochMismatch);
+        }
         let replay_until = match handler.latest_event_sequence() {
             Ok(latest) if cursor <= latest => latest,
             Ok(_) => return write_rpc_error(stream, request.id, RpcError::ReplayGap),
@@ -208,13 +234,11 @@ fn handle_request(
             "subscription-{}",
             NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed)
         );
-        if write_result(
-            stream,
-            request.id,
-            json!({"subscription_id": id, "after_sequence": cursor}),
-        )
-        .is_err()
-        {
+        let mut result = json!({"subscription_id": id, "after_sequence": cursor});
+        if let Some(epoch) = epoch {
+            result["epoch"] = json!(epoch);
+        }
+        if write_result(stream, request.id, result).is_err() {
             return false;
         }
         *subscription = Some(Subscription {
@@ -248,7 +272,10 @@ fn empty_control_params(params: &Value) -> bool {
 fn method_capability(method: &str) -> Option<Capability> {
     match method {
         "projects.list" | "projects.register" => Some(Capability::Projects),
-        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" => Some(Capability::Tasks),
+        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
+            Some(Capability::Tasks)
+        }
+        "agents.capabilities" => Some(Capability::Agents),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),

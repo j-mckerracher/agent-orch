@@ -139,3 +139,23 @@ fn idempotency_result_and_parameter_binding_survive_reopen() {
         Err(StoreError::IdempotencyConflict)
     ));
 }
+
+#[test]
+fn store_epoch_is_stable_across_reopen_and_unique_per_database() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let first = SqliteStore::new(&path).unwrap();
+    let epoch = first.store_epoch().unwrap();
+    assert_eq!(epoch.len(), 32);
+    assert!(epoch.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    add_session_history(&first);
+    assert_eq!(first.store_epoch().unwrap(), epoch);
+    drop(first);
+    assert_eq!(
+        SqliteStore::new(&path).unwrap().store_epoch().unwrap(),
+        epoch
+    );
+
+    let other = SqliteStore::new(&directory.path().join("replacement.sqlite")).unwrap();
+    assert_ne!(other.store_epoch().unwrap(), epoch);
+}
