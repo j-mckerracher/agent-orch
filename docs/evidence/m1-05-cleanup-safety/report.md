@@ -11,6 +11,11 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
   names the owner and points to `cancel` / `inspect` / `recover-owner`.
 - No owner, or only demonstrably exited owners: existing contract (registered, clean incl.
   untracked, HEAD reachable from base ref, `git worktree remove` without `--force`).
+- No open owner and task Created/Queued/Running (run starting or crashed before publishing its
+  owner; `run_task` holds the data lock until the owner is registered, so a live run cannot
+  interleave, but a crashed startup leaves exactly this state): refuse, worktree kept. Settled
+  tasks (Verifying/Succeeded/Failed/VerificationFailed/Cancelled) with no owner follow the
+  existing contract.
 - Read-only: no owner retired, no process signalled, no new stale-owner deletion path.
 
 ## Red / green
@@ -19,12 +24,16 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 | `workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable` | FAIL (removed) | ok |
 | `workflow::tests::cleanup_refuses_clean_worktree_while_owner_is_alive` (unix) | FAIL (check disabled) | ok |
 | `workflow::tests::cleanup_follows_existing_contract_for_demonstrably_exited_owner` (unix) | ok | ok |
+| `workflow::tests::cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner` | FAIL (removed) | ok |
+| `workflow::tests::cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner` | ok | ok |
+| `cleanup_safety::cleanup_refuses_running_task_that_never_registered_a_run_owner` (QA, c89c1eb, feature fault-injection) | FAIL on 8f63da4b (QA) | ok |
+| `cleanup_safety::cleanup_follows_existing_contract_for_provably_exited_run_owner` (QA, 11d3e29) | ok | ok |
 | `cleanup_safety::cleanup_refuses_clean_worktree_while_run_owner_is_live` (QA, f96832d) | FAIL | ok |
 | `cleanup_safety::cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree` (QA) | ok | ok |
 
 ## Gates (macOS, `--locked`, unique target dir)
-- `cargo test -p orchestrator-cli`: lib 17, cli 20, multi_task_review 6, portable_acceptance 2,
-  recovery 1, all pass; with QA commit: cleanup_safety 2 pass.
+- `cargo test -p orchestrator-cli --features fault-injection` at the final commit: lib 19,
+  cleanup_safety 4, cli 20, multi_task_review 6, portable_acceptance 2, recovery 7, all pass.
 - `rustfmt --check` on `workflow.rs`: clean.
 - `cargo clippy -p orchestrator-cli --all-targets -D warnings`: one error,
   `collapsible_if` at workflow.rs:928 (`cancel_task`), untouched pre-existing code under the
