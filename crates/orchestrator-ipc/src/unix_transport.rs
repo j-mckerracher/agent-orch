@@ -70,7 +70,7 @@ impl Listener {
     }
 
     pub(crate) fn accept(&mut self) -> Result<Box<dyn IpcStream>, TransportError> {
-        let (stream, _) = self.listener.accept()?;
+        let (stream, _) = self.listener.accept().map_err(report_transient)?;
         stream.set_nonblocking(false)?;
         Ok(Box::new(stream))
     }
@@ -78,6 +78,34 @@ impl Listener {
     pub(crate) fn set_nonblocking(&self, enabled: bool) -> Result<(), TransportError> {
         self.listener.set_nonblocking(enabled).map_err(Into::into)
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const ENOBUFS: i32 = 105;
+#[cfg(target_os = "macos")]
+const ENOBUFS: i32 = 55;
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+const ENOBUFS: i32 = -1; // unknown errno on this target: stays fatal
+
+/// Accept failures that describe the connection or a momentary resource
+/// shortage, not the listener. EMFILE/ENFILE/ENOBUFS have no stable
+/// `ErrorKind`, so they are matched by errno. Anything else (EBADF, EINVAL,
+/// ENOTSOCK, ...) means the listener is unusable and stays fatal.
+#[cfg(unix)]
+fn report_transient(error: io::Error) -> TransportError {
+    const ENFILE: i32 = 23;
+    const EMFILE: i32 = 24;
+    let transient = matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionAborted | io::ErrorKind::Interrupted | io::ErrorKind::OutOfMemory
+    ) || matches!(error.raw_os_error(), Some(ENFILE | EMFILE | ENOBUFS));
+    if !transient {
+        return error.into();
+    }
+    eprintln!("orchestrator-ipc: accept failed, retrying: {error}");
+    // The server polls on WouldBlock with a short sleep, which also keeps a
+    // still-queued connection from spinning the loop while descriptors are out.
+    TransportError::Io(io::ErrorKind::WouldBlock)
 }
 
 #[cfg(unix)]

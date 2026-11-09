@@ -94,10 +94,13 @@ impl Server {
             match listener.accept() {
                 Ok(stream) => {
                     let state = state.clone();
-                    if let Ok(worker) =
-                        thread::Builder::new().spawn(move || session::serve(stream, state))
-                    {
-                        workers.push(worker);
+                    match thread::Builder::new().spawn(move || session::serve(stream, state)) {
+                        Ok(worker) => workers.push(worker),
+                        // The stream moved into the closure is dropped, which
+                        // closes this one connection; the server keeps running.
+                        Err(error) => {
+                            eprintln!("orchestrator-ipc: connection thread spawn failed: {error}")
+                        }
                     }
                 }
                 Err(TransportError::Io(std::io::ErrorKind::WouldBlock)) => {

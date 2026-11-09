@@ -133,6 +133,48 @@ fn second_daemon_reports_holder_and_shutdown_removes_resources() {
     assert!(!dir.path().join("ipc/daemon.sock").exists());
 }
 
+/// Descriptor exhaustion is transient: `accept` fails with EMFILE while the
+/// connections that caused it are still open. The daemon must report it and
+/// keep serving once descriptors are free, not exit.
+#[test]
+fn daemon_survives_accept_descriptor_exhaustion() {
+    let dir = TempDir::new().unwrap();
+    // `ulimit` lowers the limit for this child only; `exec` keeps its pid.
+    let child = Command::new("sh")
+        .args(["-c", "ulimit -n 32 && exec \"$0\" \"$@\""])
+        .arg(env!("CARGO_BIN_EXE_orchestrator-daemon"))
+        .arg("--data-dir")
+        .arg(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut daemon = Daemon(Some(child));
+    wait_for_ipc(dir.path(), &mut daemon);
+
+    let idle: Vec<_> = (0..64)
+        .filter_map(|_| UnixStream::connect(dir.path().join("ipc/daemon.sock")).ok())
+        .collect();
+    assert!(
+        idle.len() > 24,
+        "not enough idle connections: {}",
+        idle.len()
+    );
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        daemon.child().try_wait().unwrap().is_none(),
+        "daemon exited while out of descriptors"
+    );
+    drop(idle);
+
+    let mut client = Client::connect(dir.path()).unwrap();
+    client.health().unwrap();
+    client.shutdown().unwrap();
+    let output = daemon.finish();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("accept failed"));
+}
+
 #[test]
 fn daemon_clients_submit_cancel_and_resume_durable_events() {
     let dir = TempDir::new().unwrap();
