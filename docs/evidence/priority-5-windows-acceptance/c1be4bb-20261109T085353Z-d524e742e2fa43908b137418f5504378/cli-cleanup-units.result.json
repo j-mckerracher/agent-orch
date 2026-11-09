@@ -1,0 +1,25 @@
+{
+  "name": "cli-cleanup-units",
+  "command": "cargo.exe test --locked -p orchestrator-cli --lib cleanup",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\source",
+  "source_commit": "c1be4bba27e819bf03427576b4c652b26067f4e1",
+  "started_utc": "2026-11-09T09:03:29.6233541Z",
+  "duration_seconds": 3.259,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 411,
+  "stdout_sha256": "b0a8172f9a4b1e3b20a5db6fc3a7a600394e0090e913cc583085fb9776110800",
+  "stderr_bytes": 276,
+  "stderr_sha256": "f194891814240b0789e1bde14179ac5acbbb4458402c78cb2e9690d9b6da2540",
+  "error": null
+}

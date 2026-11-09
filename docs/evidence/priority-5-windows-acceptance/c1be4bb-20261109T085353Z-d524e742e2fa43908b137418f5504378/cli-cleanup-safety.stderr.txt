@@ -1,0 +1,3 @@
+   Compiling orchestrator-cli v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\source\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.89s
+     Running tests\cleanup_safety.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\cargo-target\debug\deps\cleanup_safety-c7aee870dd0991a2.exe)

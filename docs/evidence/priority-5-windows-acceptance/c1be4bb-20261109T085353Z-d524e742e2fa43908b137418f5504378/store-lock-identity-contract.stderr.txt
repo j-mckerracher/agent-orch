@@ -1,0 +1,4 @@
+   Compiling orchestrator-store v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\source\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.50s
+     Running tests\lock_identity_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\cargo-target\debug\deps\lock_identity_contract-ea3b09fbe1ff1982.exe)
+error: test failed, to rerun pass `-p orchestrator-store --test lock_identity_contract`

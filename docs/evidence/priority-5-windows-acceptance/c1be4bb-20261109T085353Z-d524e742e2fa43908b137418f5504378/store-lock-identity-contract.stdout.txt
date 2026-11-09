@@ -1,0 +1,36 @@
+
+running 3 tests
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test malformed_records_are_never_taken_over ... ok
+test directory_at_the_lock_path_is_never_removed ... FAILED
+
+failures:
+
+---- directory_at_the_lock_path_is_never_removed stdout ----
+
+thread 'directory_at_the_lock_path_is_never_removed' (31456) panicked at crates\orchestrator-store\tests\lock_identity_contract.rs:100:5:
+assertion failed: matches!(DataDirectoryLock::acquire(directory.path()),
+    Err(DataDirectoryLockError::HolderUnknown))
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::panicking::panic
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:150
+   3: lock_identity_contract::directory_at_the_lock_path_is_never_removed
+             at .\tests\lock_identity_contract.rs:100
+   4: lock_identity_contract::directory_at_the_lock_path_is_never_removed::closure$0
+             at .\tests\lock_identity_contract.rs:93
+   5: core::ops::function::FnOnce::call_once<lock_identity_contract::directory_at_the_lock_path_is_never_removed::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    directory_at_the_lock_path_is_never_removed
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

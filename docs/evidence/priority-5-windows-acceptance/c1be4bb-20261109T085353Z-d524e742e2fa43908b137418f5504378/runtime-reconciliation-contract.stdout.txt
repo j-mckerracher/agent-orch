@@ -1,0 +1,19 @@
+
+running 14 tests
+test forged_start_time_needs_review_and_blocks_the_gate ... ok
+test git_state::named_matrix_anchor_cases_hold ... ok
+test git_state::process_uncertainty_outranks_every_workspace_and_delivery_state ... ok
+test live_process_is_left_running_and_does_not_block_the_gate ... ok
+test git_state::only_git_confirmed_delivery_is_completed_and_unlanded_delivery_is_not ... ok
+test git_state::removed_worktree_blocks_the_task_without_blocking_other_scheduling ... ok
+test git_state::ambiguous_delivery_step_is_never_summarised_as_landed ... ok
+test git_state::partially_landed_delivery_requires_inspection_and_leaves_git_untouched ... ok
+test git_state::uninspected_or_unrecorded_workspace_requires_inspection ... ok
+test git_state::clean_matching_worktree_is_recoverable_and_dirty_work_is_preserved ... ok
+test git_state::committed_unlanded_work_is_never_treated_as_matching_or_discardable ... ok
+test git_state::unsafe_workspace_requires_inspection_even_when_task_succeeded ... ok
+test git_state::unsafe_workspace_requires_inspection_even_when_delivery_is_confirmed ... ok
+test git_state::real_git_evidence_matrix_matches_the_approved_precedence ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.15s
+

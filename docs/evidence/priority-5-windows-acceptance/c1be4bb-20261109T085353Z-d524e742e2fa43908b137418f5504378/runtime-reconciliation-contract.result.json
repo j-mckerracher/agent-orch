@@ -1,0 +1,25 @@
+{
+  "name": "runtime-reconciliation-contract",
+  "command": "cargo.exe test --locked -p orchestrator-runtime --test reconciliation_contract",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\source",
+  "source_commit": "c1be4bba27e819bf03427576b4c652b26067f4e1",
+  "started_utc": "2026-11-09T09:02:06.4997168Z",
+  "duration_seconds": 31.491,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1260,
+  "stdout_sha256": "592aa3637ed8e5b997bd20a58994ba300fae1f99295bcd77b143bd56c6123bd4",
+  "stderr_bytes": 1225,
+  "stderr_sha256": "d93701f35dfb9d2ce0c3e5971bfcaaeeed38ccf2eb727accc4f6af93b15ec84e",
+  "error": null
+}

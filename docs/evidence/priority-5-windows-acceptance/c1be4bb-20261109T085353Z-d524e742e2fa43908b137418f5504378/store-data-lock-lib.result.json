@@ -1,0 +1,25 @@
+{
+  "name": "store-data-lock-lib",
+  "command": "cargo.exe test --locked -p orchestrator-store --lib data_lock",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\source",
+  "source_commit": "c1be4bba27e819bf03427576b4c652b26067f4e1",
+  "started_utc": "2026-11-09T09:01:52.2459000Z",
+  "duration_seconds": 10.021,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 763,
+  "stdout_sha256": "bc99572d4064c6d870575c0419b2ff933028efa77c30339243733cc81f53191f",
+  "stderr_bytes": 457,
+  "stderr_sha256": "e54778b75b60998238c96149ce72b5f2f07b4a42ac04a25ce56f9195b529cde8",
+  "error": null
+}

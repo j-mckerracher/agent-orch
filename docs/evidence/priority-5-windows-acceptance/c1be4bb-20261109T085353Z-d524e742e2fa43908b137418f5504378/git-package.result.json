@@ -1,0 +1,25 @@
+{
+  "name": "git-package",
+  "command": "cargo.exe test --locked -p orchestrator-git",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\source",
+  "source_commit": "c1be4bba27e819bf03427576b4c652b26067f4e1",
+  "started_utc": "2026-11-09T08:59:52.5671513Z",
+  "duration_seconds": 73.301,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T085353Z-d524e742e2fa43908b137418f5504378\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 4793,
+  "stdout_sha256": "e203ca87b6b691d7b1cacda0121e2d5ec102e568712f1627679afa3ebc2871e5",
+  "stderr_bytes": 1463,
+  "stderr_sha256": "5763f36d8ddd7c2f4da51531ab1d43299d024e42ddfc4a1da00398234e365cc8",
+  "error": null
+}

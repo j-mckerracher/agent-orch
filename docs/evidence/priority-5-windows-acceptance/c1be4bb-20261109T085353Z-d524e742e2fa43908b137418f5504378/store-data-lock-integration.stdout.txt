@@ -1,0 +1,13 @@
+
+running 8 tests
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test foreign_non_lock_file_is_never_removed ... ok
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... ok
+test live_pid_with_different_start_identity_is_taken_over ... ok
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test separate_process_cannot_acquire_a_live_lock ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

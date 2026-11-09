@@ -1,0 +1,1 @@
+HEAD is now at c1be4bb test(m2-04): F1 decision-matrix contract over real Git evidence (RED on base)
