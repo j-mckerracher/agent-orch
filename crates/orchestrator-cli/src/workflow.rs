@@ -3395,13 +3395,21 @@ mod tests {
             task_id,
         )
         .unwrap();
+        // Production records `Repository::path()` (Git's `--show-toplevel`),
+        // never a `fs::canonicalize` result, which is `\\?\C:\..` on Windows
+        // and would not match the destination `classify_step` compares against.
+        let destination = Repository::new(repo)
+            .unwrap()
+            .path()
+            .display()
+            .to_string();
         store
             .record_delivery_step(&DeliveryStepRecord {
                 id: step_id,
                 approval_id: "approval-1",
                 verification_run_id: "run-1",
                 action: &action,
-                destination: &repo.display().to_string(),
+                destination: &destination,
                 target_ref: Some(review_ref),
                 outcome: DeliveryOutcome::ReviewRefCreated,
                 diff_summary: None,
