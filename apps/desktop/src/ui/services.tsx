@@ -16,7 +16,7 @@ export interface Services {
   /** False when the host has not supplied a daemon connector (M5-05 bridge). */
   bridgeBound: boolean;
   /** S6 is owned by M5-04; it plugs in here and receives the same services. */
-  renderReview?: (props: { projectId: string; taskId: string | null }) => ReactNode;
+  renderReview?: (props: { projectId: string; taskId: string | null; query?: string }) => ReactNode;
 }
 
 const ServicesContext = createContext<Services | null>(null);

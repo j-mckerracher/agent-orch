@@ -2,7 +2,8 @@
  * Minimal in-house router. Route state is local UI state; navigation never
  * issues a daemon request. The hash form lets a reload return to a screen.
  *
- * `review` (S6) is owned by M5-04; this route only carries the identifiers.
+ * `review` (S6) is owned by M5-04; this route carries the identifiers and an
+ * optional query (`fixture=1&evidence=…&changes=…`) that selects explicit demo mode.
  */
 import { Store } from "../daemon/store";
 
@@ -22,7 +23,7 @@ export type Route =
   | { name: "task"; projectId: string; taskId: string }
   | { name: "fixture-task"; projectId: string; id: string }
   | { name: "coordinator"; projectId: string }
-  | { name: "review"; projectId: string; taskId: string | null };
+  | { name: "review"; projectId: string; taskId: string | null; query?: string };
 
 const enc = encodeURIComponent;
 
@@ -41,14 +42,16 @@ export function formatRoute(route: Route): string {
     case "coordinator":
       return `#/project/${enc(route.projectId)}/coordinator`;
     case "review":
-      return `#/project/${enc(route.projectId)}/review/${enc(route.taskId ?? "")}`;
+      return `#/project/${enc(route.projectId)}/review/${enc(route.taskId ?? "")}${route.query ? `?${route.query}` : ""}`;
   }
 }
 
 export function parseRoute(hash: string): Route {
   let parts: string[];
+  const queryAt = hash.indexOf("?");
+  const query = queryAt >= 0 ? hash.slice(queryAt + 1) : "";
   try {
-    parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+    parts = (queryAt >= 0 ? hash.slice(0, queryAt) : hash).replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   } catch {
     return { name: "projects" };
   }
@@ -64,7 +67,9 @@ export function parseRoute(hash: string): Route {
     case "coordinator":
       return { name: "coordinator", projectId };
     case "review":
-      return { name: "review", projectId, taskId: parts[3] || null };
+      return query
+        ? { name: "review", projectId, taskId: parts[3] || null, query }
+        : { name: "review", projectId, taskId: parts[3] || null };
     default:
       return { name: "project", projectId };
   }

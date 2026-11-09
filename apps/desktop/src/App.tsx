@@ -25,7 +25,7 @@ function Screen() {
       return <Coordinator projectId={route.projectId} />;
     case "review":
       return renderReview ? (
-        <>{renderReview({ projectId: route.projectId, taskId: route.taskId })}</>
+        <>{renderReview({ projectId: route.projectId, taskId: route.taskId, query: route.query })}</>
       ) : (
         <main>
           <h1>Review</h1>

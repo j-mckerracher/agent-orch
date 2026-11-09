@@ -10,11 +10,16 @@ import type { DaemonSession } from "./session";
 import type {
   Approval,
   DaemonHealth,
+  DeliveryRequest,
+  DeliveryResult,
   ProjectRow,
+  ResolveDecision,
   SessionEntry,
   SessionEventsPage,
   TaskRecord,
   TaskSubmission,
+  WorkspaceDiff,
+  WorkspaceDiffRequest,
 } from "./types";
 
 export const FIXTURE_ID_PREFIX = "fixture:";
@@ -96,5 +101,34 @@ export class DaemonApi {
 
   approvalsList(): Promise<Approval[]> {
     return this.session.request("approvals.list");
+  }
+
+  /** Only approve/reject exist; there is no request-changes decision. */
+  async approvalsResolve(approvalId: string, decision: ResolveDecision, idempotencyKey: string): Promise<Approval> {
+    return this.session.request("approvals.resolve", {
+      approval_id: realId(approvalId),
+      decision,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workspacesDiff(request: WorkspaceDiffRequest): Promise<WorkspaceDiff> {
+    return this.session.request("workspaces.diff", {
+      ...request,
+      task_id: realId(request.task_id),
+      ...(request.workspace_id === undefined ? {} : { workspace_id: realId(request.workspace_id) }),
+    });
+  }
+
+  /** Approval alone never delivers; this is the separate delivery request. */
+  async deliveryRequest(request: DeliveryRequest, idempotencyKey: string): Promise<DeliveryResult> {
+    return this.session.request("delivery.request", {
+      ...request,
+      task_id: realId(request.task_id),
+      approval_id: realId(request.approval_id),
+      verification_run_id: realId(request.verification_run_id),
+      ...(request.workspace_id === undefined ? {} : { workspace_id: realId(request.workspace_id) }),
+      idempotency_key: idempotencyKey,
+    });
   }
 }

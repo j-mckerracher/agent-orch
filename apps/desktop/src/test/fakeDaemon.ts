@@ -104,10 +104,15 @@ export const mkEvent = (sequence: number, taskId: string, sessionId: string | nu
   created_at: `2026-01-01T00:00:${String(sequence).padStart(2, "0")}Z`,
 });
 
-export const mkApproval = (id: string, taskId: string, state = "requested"): Approval => ({
+export const mkApproval = (id: string, taskId: string, state: "requested" | "rejected" | "approved" = "requested"): Approval => ({
   id,
-  action: { kind: "Merge", parameter_digest: "digest", candidate_commit: "abc123", task_id: taskId },
-  state: { state },
+  action: {
+    kind: { type: "delivery", kind: "LocalReviewMerge" },
+    parameter_digest: new Array<number>(32).fill(7),
+    candidate_commit: "abc123",
+    task_id: taskId,
+  },
+  state: state === "approved" ? { state, by: { kind: "user", id: "u1" } } : { state },
 });
 
 export class FakeDaemon implements DaemonConnector {

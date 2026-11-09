@@ -28,7 +28,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "delivery",
 ];
 
-/** The capabilities M5-03 screens request; M5-04 requests the review ones. */
+/** The capabilities the UI requests: M5-03 screens plus the S6 review ones (workspaces, delivery). */
 export const M5_03_CAPABILITIES: readonly Capability[] = [
   "health",
   "projects",
@@ -36,6 +36,8 @@ export const M5_03_CAPABILITIES: readonly Capability[] = [
   "sessions",
   "events",
   "approvals",
+  "workspaces",
+  "delivery",
 ];
 
 export interface Welcome {
@@ -135,15 +137,69 @@ export interface SessionEventsPage {
   next_after_sequence: number;
 }
 
+/** `Actor` serializes as `{kind, id}`. */
+export interface Actor {
+  kind: "user" | "agent" | "approved";
+  id: string;
+}
+
+/** `ApprovalState` is tagged by `state`. */
+export type ApprovalState =
+  | { state: "requested" }
+  | { state: "approved"; by: Actor }
+  | { state: "rejected" }
+  | { state: "superseded"; approved_by: Actor | null };
+
+/** `ApprovalActionKind`; the delivery kind is the Rust `ActionKind` variant name. */
+export type ApprovalActionKind =
+  | { type: "delivery"; kind: "LocalReviewMerge" | "PullRequestCreate" | "ReportPublish" }
+  | { type: "policy_change" };
+
+export interface ApprovalAction {
+  kind: ApprovalActionKind;
+  /** `ParameterDigest` is `#[serde(transparent)]` over `[u8; 32]`: 32 numbers, not hex. */
+  parameter_digest: number[];
+  candidate_commit: string;
+  task_id: string;
+}
+
 export interface Approval {
   id: string;
-  action: {
-    kind: unknown;
-    parameter_digest: unknown;
-    candidate_commit: string;
-    task_id: string;
-  };
-  state: { state: string } & Record<string, unknown>;
+  action: ApprovalAction;
+  state: ApprovalState;
+}
+
+export type ResolveDecision = "approve" | "reject";
+
+/** `workspaces.diff` params; `path` plus `workspace_id` scopes the diff to one file. */
+export interface WorkspaceDiffRequest {
+  task_id: string;
+  workspace_id?: string;
+  path?: string;
+}
+
+export interface WorkspaceDiff {
+  task_id: string;
+  workspace_id: string;
+  diff: string;
+}
+
+export type DeliveryActionName = "report_only" | "local_review";
+
+/** `delivery.request` params (the idempotency key is passed separately). */
+export interface DeliveryRequest {
+  task_id: string;
+  workspace_id?: string;
+  approval_id: string;
+  verification_run_id: string;
+  action: DeliveryActionName;
+  target_ref?: string;
+}
+
+export interface DeliveryResult {
+  task_id: string;
+  step_id: string;
+  outcome: string;
 }
 
 export interface DaemonHealth {

@@ -1,0 +1,12 @@
+.review-screen { font-family: system-ui, sans-serif; padding: 12px; max-width: 1200px; }
+.review-screen header { display: flex; gap: 12px; align-items: center; }
+.review-screen .panel { border: 1px solid #bbb; border-radius: 4px; padding: 8px 12px; margin: 10px 0; }
+.review-screen .placeholder-tag {
+  background: #fff3b0; color: #5a4a00; border: 1px dashed #b08900; padding: 0 4px; font-weight: 600; font-size: 0.8em;
+}
+.review-screen .blockers { background: #f6f6f6; padding: 6px 10px; margin-top: 8px; }
+.review-screen .diff-region { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 12px; }
+.review-screen .diff-text { overflow: auto; max-height: 480px; background: #fafafa; border: 1px solid #ddd; padding: 6px; }
+.review-screen .diff-text .add { color: #0a6b2a; }
+.review-screen .diff-text .del { color: #a3141c; }
+.review-screen dt { font-weight: 600; }
