@@ -312,6 +312,7 @@ fn take_over_existing(
         }
     }
 
+    drop(file);
     fs::remove_file(&moved_path)?;
     let _ = fs::remove_dir(&temporary_directory);
     match create_lock(path, owner_contents) {
@@ -425,6 +426,12 @@ fn try_lock_file(file: &File) -> io::Result<bool> {
     use std::ffi::c_void;
     use std::os::windows::io::AsRawHandle;
     const ERROR_LOCK_VIOLATION: i32 = 33;
+    // Windows byte-range locks are mandatory: while one handle locks bytes, every
+    // other handle's read of them fails with `ERROR_LOCK_VIOLATION`. Takeover
+    // reads the record through other handles (a contender, the renamed file), so
+    // lock a one-byte range far beyond the record's end (4 GiB); locking past
+    // EOF is allowed. Unix `flock` is advisory and needs no such range.
+    const LOCK_OFFSET_HIGH: u32 = 1;
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -439,7 +446,7 @@ fn try_lock_file(file: &File) -> io::Result<bool> {
     }
 
     // SAFETY: `file` owns this handle and the byte range is valid for its lock.
-    if unsafe { lock_file(file.as_raw_handle().cast(), 0, 0, 1, 0) } != 0 {
+    if unsafe { lock_file(file.as_raw_handle().cast(), 0, LOCK_OFFSET_HIGH, 1, 0) } != 0 {
         return Ok(true);
     }
     let error = io::Error::last_os_error();
@@ -649,4 +656,21 @@ fn process_start_identity(_pid: u32) -> io::Result<Option<String>> {
         io::ErrorKind::Unsupported,
         "process start identity is unsupported on this platform",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn range_lock_does_not_block_other_handles_reading_the_record() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(LOCK_FILE_NAME);
+        fs::write(&path, "pid=1\n").unwrap();
+        let locked = File::open(&path).unwrap();
+        assert!(try_lock_file(&locked).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "pid=1\n");
+        let contender = File::open(&path).unwrap();
+        assert!(!try_lock_file(&contender).unwrap());
+    }
 }
