@@ -115,7 +115,7 @@ impl SqliteStore {
         let method = method.to_owned();
         let fingerprint = fingerprint.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let inserted = sqlx::query(
                 "INSERT INTO idempotency_records (key, method, fingerprint) \
                  VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",

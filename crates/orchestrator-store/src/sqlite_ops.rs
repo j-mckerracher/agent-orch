@@ -177,7 +177,7 @@ impl SqliteStore {
     pub fn add_workspace(&self, workspace: &Workspace) -> Result<(), StoreError> {
         let workspace = workspace.clone();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             sqlx::query(
                 "INSERT INTO workspaces (id, task_id, path, branch, base_commit) VALUES (?, ?, ?, ?, ?)",
             )
@@ -383,7 +383,7 @@ impl SqliteStore {
     /// whose exact process identity has been observed as exited.
     pub fn open_cancellation_owners(&self) -> Result<Vec<CancellationOwner>, StoreError> {
         self.call(|pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let owners = read_open_cancellation_owners(&mut transaction, None).await?;
             transaction.commit().await?;
             Ok(owners)
@@ -399,7 +399,7 @@ impl SqliteStore {
         validate_task_id(task_id)?;
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             if current_task_state(&mut transaction, &task_id).await? != TaskState::Running {
                 transaction.commit().await?;
                 return Ok(None);
@@ -468,7 +468,7 @@ impl SqliteStore {
         let session_id = session.id.clone();
         let method = format!("cli.cancel.request:{task_id}:{attempt_id}:{session_id}");
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let rows = sqlx::query(
                 "SELECT key, fingerprint, result FROM idempotency_records WHERE method = ?",
             )
@@ -559,7 +559,7 @@ impl SqliteStore {
             .map(|identity| encode(&identity))
             .transpose()?;
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             require_running_owner_records(&mut transaction, &owner).await?;
             if !read_open_cancellation_owners(&mut transaction, Some(&owner.task_id))
                 .await?
@@ -629,7 +629,7 @@ impl SqliteStore {
         let fingerprint = cancellation_fingerprint(&owner);
         let closed_result = serde_json::json!({"status": "closed"}).to_string();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             sqlx::query(
                 "UPDATE idempotency_records SET result = result WHERE key = ? \
                  AND method = ? AND fingerprint = ?",
@@ -730,7 +730,7 @@ impl SqliteStore {
         let fingerprint = cancellation_fingerprint(&owner);
         let closed_result = serde_json::json!({"status": "closed"}).to_string();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             sqlx::query(
                 "UPDATE idempotency_records SET result = result WHERE key = ? \
                  AND method = ? AND fingerprint = ?",
@@ -867,7 +867,7 @@ impl SqliteStore {
         let request_method = cancellation_request_method(&owner);
         let fingerprint = cancellation_fingerprint(&owner);
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             // Take SQLite's writer reservation before reading. In WAL mode,
             // two deferred read transactions that both upgrade to a write
             // can fail with SQLITE_BUSY_SNAPSHOT instead of serializing.
@@ -983,7 +983,7 @@ impl SqliteStore {
         let fingerprint = cancellation_fingerprint(&owner);
         let closed_result = serde_json::json!({"status": "closed"}).to_string();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             // Reserve the writer before reading state so duplicate requests
             // cannot invalidate this transaction's WAL snapshot.
             sqlx::query(
@@ -1222,7 +1222,7 @@ impl SqliteStore {
         let fingerprint = cancellation_fingerprint(&owner);
         let closed_result = serde_json::json!({"status": "closed"}).to_string();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             sqlx::query(
                 "UPDATE idempotency_records SET result = result WHERE key = ? \
                  AND method = ? AND fingerprint = ?",
@@ -1707,7 +1707,7 @@ impl Store for SqliteStore {
         validate_task_id(&contract.id)?;
         let contract = contract.clone();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let state = encode(&TaskState::Created)?;
             let contract_json = encode(&contract)?;
             let inserted = sqlx::query(
@@ -1750,7 +1750,7 @@ impl Store for SqliteStore {
         validate_task_id(task_id)?;
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let record = load_record(&mut transaction, &task_id).await?;
             transaction.commit().await?;
             Ok(record)
@@ -1759,7 +1759,7 @@ impl Store for SqliteStore {
 
     fn list(&self) -> Result<Vec<TaskRecord>, StoreError> {
         self.call(|pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let task_ids = sqlx::query_scalar::<_, String>("SELECT id FROM tasks ORDER BY id")
                 .fetch_all(&mut *transaction)
                 .await?;
@@ -1782,7 +1782,7 @@ impl Store for SqliteStore {
         }
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let current = current_task_state(&mut transaction, &task_id).await?;
             let (next, audit) = task_transition(current, event)?;
             let state = encode(&next)?;
@@ -1820,7 +1820,7 @@ impl Store for SqliteStore {
         let task_id = task_id.to_owned();
         let attempt = attempt.clone();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let task_state = current_task_state(&mut transaction, &task_id).await?;
             let duplicate = sqlx::query_scalar::<_, i64>(
                 "SELECT EXISTS (SELECT 1 FROM attempts WHERE task_id = ? AND id = ?)",
@@ -1914,7 +1914,7 @@ impl Store for SqliteStore {
         let task_id = task_id.to_owned();
         let attempt_id = attempt_id.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             current_task_state(&mut transaction, &task_id).await?;
             let row = sqlx::query("SELECT state FROM attempts WHERE task_id = ? AND id = ?")
                 .bind(&task_id)
@@ -1959,7 +1959,7 @@ impl Store for SqliteStore {
         let task_id = task_id.to_owned();
         let session = session.clone();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             current_task_state(&mut transaction, &task_id).await?;
             let duplicate = sqlx::query_scalar::<_, i64>(
                 "SELECT EXISTS (SELECT 1 FROM sessions WHERE task_id = ? AND id = ?)",
@@ -2032,7 +2032,7 @@ impl Store for SqliteStore {
         let task_id = task_id.to_owned();
         let session_id = session_id.to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             current_task_state(&mut transaction, &task_id).await?;
             let row = sqlx::query("SELECT state FROM sessions WHERE task_id = ? AND id = ?")
                 .bind(&task_id)

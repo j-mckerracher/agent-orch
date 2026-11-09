@@ -58,7 +58,7 @@ impl SqliteStore {
             .map_err(|_| invalid_identity("start time exceeds SQLite integer range"))?;
         let platform = identity.platform.tag().to_owned();
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let session_exists = sqlx::query_scalar::<_, i64>(
                 "SELECT EXISTS (SELECT 1 FROM sessions WHERE task_id = ? AND id = ?)",
             )

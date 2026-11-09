@@ -109,7 +109,7 @@ impl SqliteStore {
         }))?;
         let stream_payload = json!({"step_id": &id, "outcome": outcome});
         self.call(move |pool| async move {
-            let mut transaction = pool.begin().await?;
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             sqlx::query(
                 "INSERT INTO delivery_steps (id, task_id, action_kind, action, parameter_digest, candidate_sha, approval_id, verification_run_id, destination, target_ref, outcome, detail, diff_summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )

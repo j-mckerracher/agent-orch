@@ -46,7 +46,10 @@ impl SqliteStore {
         let action = action.clone();
         let requested_by = requested_by.clone();
         approval_call(self, move |pool| async move {
-            let mut transaction = pool.begin().await.map_err(persistence)?;
+            let mut transaction = pool
+                .begin_with("BEGIN IMMEDIATE")
+                .await
+                .map_err(persistence)?;
             let active = sqlx::query(
                 "SELECT id, task_id, action, status, granted_by FROM approvals \
                  WHERE task_id = ? AND status IN ('requested', 'approved') ORDER BY id",
@@ -100,7 +103,10 @@ impl SqliteStore {
         let id = id.to_owned();
         let actor = actor.clone();
         approval_call(self, move |pool| async move {
-            let mut transaction = pool.begin().await.map_err(persistence)?;
+            let mut transaction = pool
+                .begin_with("BEGIN IMMEDIATE")
+                .await
+                .map_err(persistence)?;
             let current = load_approval(&mut transaction, &id).await?;
             let event = ApprovalEvent::Approved { by: actor };
             let next = approval::transition(Some(&current.state), &event)?;
@@ -123,7 +129,10 @@ impl SqliteStore {
         let id = id.to_owned();
         let actor = actor.clone();
         approval_call(self, move |pool| async move {
-            let mut transaction = pool.begin().await.map_err(persistence)?;
+            let mut transaction = pool
+                .begin_with("BEGIN IMMEDIATE")
+                .await
+                .map_err(persistence)?;
             let current = load_approval(&mut transaction, &id).await?;
             let event = ApprovalEvent::Rejected { by: actor };
             let next = approval::transition(Some(&current.state), &event)?;
