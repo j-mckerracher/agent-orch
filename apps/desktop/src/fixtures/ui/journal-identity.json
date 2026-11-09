@@ -1,0 +1,22 @@
+{
+  "fixture": "D6",
+  "description": "Journal reset and restart identity (JournalIdentitySource); replaced by M5-02b store identity.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "storeIdentity": "fixture:store-epoch-1",
+        "cursorRelationship": "same"
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "M5-02 has no store epoch, so journal identity cannot be verified."
+    },
+    "error": {
+      "error": "Fixture journal identity failed (simulated)."
+    }
+  }
+}

@@ -1,0 +1,19 @@
+body { font-family: system-ui, sans-serif; margin: 0 1rem 2rem; line-height: 1.4; }
+label { display: block; margin: 0.4rem 0; }
+label input, label select, label textarea { display: block; min-width: 20rem; }
+code, pre { font-family: ui-monospace, monospace; font-size: 0.85em; }
+pre { max-height: 10rem; overflow: auto; margin: 0; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+.strip { position: sticky; top: 0; background: #f6f6f6; border-bottom: 1px solid #ccc; padding: 0.5rem; }
+.strip p { margin: 0.2rem 0; }
+.pill { padding: 0.1rem 0.5rem; border-radius: 1rem; background: #ddd; }
+.pill-connected { background: #bde5b8; }
+.pill-reconnecting, .pill-connecting { background: #f5e1a4; }
+.pill-disconnected, .pill-idle, .pill-auth-failed, .pill-incompatible { background: #f2b8b5; }
+.muted { color: #666; }
+.notice { padding: 0.3rem 0.5rem; background: #fff6d6; }
+.notice-error { background: #fde0de; }
+.placeholder { border: 2px dashed #b58900; padding: 0.5rem 0.75rem; margin: 0.75rem 0; background: #fffdf0; }
+.badge { font-size: 0.75em; padding: 0.1rem 0.4rem; border-radius: 0.3rem; background: #b58900; color: #fff; }
+.crumbs { margin: 0.5rem 0; }
