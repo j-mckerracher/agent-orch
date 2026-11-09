@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-store --test data_lock",
+  "source_commit": "b3e5776122b1a40e85c145169a17faf2270161a4",
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

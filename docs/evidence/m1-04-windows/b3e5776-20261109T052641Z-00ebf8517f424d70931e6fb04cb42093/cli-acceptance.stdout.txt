@@ -1,0 +1,61 @@
+
+running 2 tests
+test cancel_terminates_agent_and_descendant ... FAILED
+test run_produces_isolated_diff_and_cleanup_preserves_primary ... FAILED
+
+failures:
+
+---- cancel_terminates_agent_and_descendant stdout ----
+
+thread 'cancel_terminates_agent_and_descendant' (45540) panicked at crates\orchestrator-cli\tests\portable_acceptance.rs:317:13:
+run exited early with exit code: 1
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: portable_acceptance::cancel_terminates_agent_and_descendant::closure$0
+             at .\tests\portable_acceptance.rs:317
+   3: portable_acceptance::wait_until<u32,portable_acceptance::cancel_terminates_agent_and_descendant::closure_env$0>
+             at .\tests\portable_acceptance.rs:173
+   4: portable_acceptance::cancel_terminates_agent_and_descendant
+             at .\tests\portable_acceptance.rs:315
+   5: portable_acceptance::cancel_terminates_agent_and_descendant::closure$0
+             at .\tests\portable_acceptance.rs:299
+   6: core::ops::function::FnOnce::call_once<portable_acceptance::cancel_terminates_agent_and_descendant::closure_env$0,tuple$<> >
+             at C:\Users\jmckerra\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- run_produces_isolated_diff_and_cleanup_preserves_primary stdout ----
+
+thread 'run_produces_isolated_diff_and_cleanup_preserves_primary' (24616) panicked at crates\orchestrator-cli\tests\portable_acceptance.rs:153:5:
+run failed: ExitStatus(ExitStatus(1))
+stdout: 
+stderr: agent-orch: cannot create worktree for task accept-run: worktree creation failed at \\?\C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T052641Z-00ebf8517f424d70931e6fb04cb42093\test-tmp\.tmpVIQ5g4\data\worktrees\accept-run on branch orchestrator/accept-run; the partially created state was left in place for inspection
+
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: portable_acceptance::assert_success
+             at .\tests\portable_acceptance.rs:153
+   3: portable_acceptance::run_produces_isolated_diff_and_cleanup_preserves_primary
+             at .\tests\portable_acceptance.rs:200
+   4: portable_acceptance::run_produces_isolated_diff_and_cleanup_preserves_primary::closure$0
+             at .\tests\portable_acceptance.rs:193
+   5: core::ops::function::FnOnce::call_once<portable_acceptance::run_produces_isolated_diff_and_cleanup_preserves_primary::closure_env$0,tuple$<> >
+             at C:\Users\jmckerra\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    cancel_terminates_agent_and_descendant
+    run_produces_isolated_diff_and_cleanup_preserves_primary
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.39s
+
