@@ -4,7 +4,9 @@
 //! The agent is a std-only program compiled with `rustc` (must be on PATH), so no
 //! shell, `sleep`, or POSIX permission bits are involved.
 
+use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
 use orchestrator_runtime::is_process_running;
+use orchestrator_runtime::reconcile::{capture_exact_process_identity, observe_owner_process};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -42,6 +44,7 @@ fn fixture() -> Fixture {
         &["config", "user.email", "acceptance@example.invalid"],
     );
     git(&repo, &["config", "core.autocrlf", "false"]);
+    git(&repo, &["config", "commit.gpgsign", "false"]);
     fs::write(repo.join("sample.txt"), "base\n").unwrap();
     fs::write(repo.join("other.txt"), "other base\n").unwrap();
     git(&repo, &["add", "sample.txt", "other.txt"]);
@@ -75,8 +78,18 @@ fn fixture() -> Fixture {
     }
 }
 
+/// Pins global and system Git config away (as the other crates' tests do) so a
+/// user's `commit.gpgsign`, hooks path, or autocrlf cannot change the result.
+/// Child processes of the CLI inherit it, so production Git calls are pinned too.
+fn pin_git(command: &mut Command) -> &mut Command {
+    command
+        .env("GIT_CONFIG_GLOBAL", "/nonexistent-git-global")
+        .env("GIT_CONFIG_SYSTEM", "/nonexistent-git-system")
+}
+
 fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    let output = pin_git(&mut command)
         .arg("-C")
         .arg(repo)
         .args(args)
@@ -103,7 +116,7 @@ fn snapshot(repo: &Path) -> PrimarySnapshot {
 
 fn run_command(fixture: &Fixture, task_id: &str, scenario: &str) -> Command {
     let mut command = Command::new(CLI);
-    command
+    pin_git(&mut command)
         .arg("--data-dir")
         .arg(&fixture.data)
         .arg("run")
@@ -122,7 +135,8 @@ fn run_command(fixture: &Fixture, task_id: &str, scenario: &str) -> Command {
 }
 
 fn cli(fixture: &Fixture, command: &str, task_id: &str) -> Output {
-    Command::new(CLI)
+    let mut cli = Command::new(CLI);
+    pin_git(&mut cli)
         .arg("--data-dir")
         .arg(&fixture.data)
         .arg(command)
@@ -214,7 +228,8 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
     );
     assert!(!fixture.repo.join("new-file.txt").exists());
 
-    let tasks = Command::new(CLI)
+    let mut tasks = Command::new(CLI);
+    let tasks = pin_git(&mut tasks)
         .arg("--data-dir")
         .arg(&fixture.data)
         .arg("tasks")
@@ -237,8 +252,13 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
     assert_success(&diff, "diff");
     let diff_out = stdout(&diff);
     assert!(
-        diff_out.contains("sample.txt") && diff_out.contains("+candidate"),
+        diff_out.contains("diff --git a/sample.txt b/sample.txt")
+            && diff_out.contains("+candidate"),
         "{diff_out}"
+    );
+    assert!(
+        diff_out.contains("new-file.txt") && diff_out.contains("+untracked candidate"),
+        "diff must include the agent's new file: {diff_out}"
     );
     assert!(!diff_out.contains("primary-untracked.txt"), "{diff_out}");
 
@@ -253,6 +273,11 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
         String::from_utf8_lossy(&refused.stderr)
     );
     assert!(worktree.exists(), "refused cleanup must keep the worktree");
+    assert_eq!(
+        snapshot(&fixture.repo),
+        before,
+        "refused cleanup changed the primary"
+    );
 
     // Land the candidate; the operator's dirty files do not overlap it.
     git(&fixture.repo, &["merge", "--ff-only", &branch]);
@@ -282,7 +307,9 @@ fn cancel_terminates_agent_and_descendant() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("start CLI run");
-    let mut guard = KillOnDrop(vec![run.id()]);
+    let mut guard = OwnedProcesses::default();
+    // The run owner is our unreaped child, so its PID cannot have been reused.
+    guard.track("run owner", run.id());
 
     let metadata = fixture.data.join("cli/accept-cancel/metadata.json");
     let wrapper_pid = wait_until("wrapper PID in metadata", || {
@@ -291,29 +318,33 @@ fn cancel_terminates_agent_and_descendant() {
         }
         read_json_pid(&metadata)
     });
+    guard.track("wrapper", wrapper_pid);
     let (agent_pid, descendant_pid) = wait_until("agent and descendant PIDs", || {
         if let Some(status) = run.try_wait().expect("poll run") {
             panic!("run exited early with {status}");
         }
         read_pidfile(&pidfile)
     });
-    guard.0.extend([wrapper_pid, agent_pid, descendant_pid]);
-    for pid in [wrapper_pid, agent_pid, descendant_pid] {
+    guard.track("agent", agent_pid);
+    guard.track("descendant", descendant_pid);
+    let tree = [wrapper_pid, agent_pid, descendant_pid];
+    assert!(
+        tree[0] != tree[1] && tree[0] != tree[2] && tree[1] != tree[2],
+        "expected three distinct processes: {tree:?}"
+    );
+    for pid in tree {
         assert!(
             is_process_running(pid),
             "PID {pid} must be running before cancel"
         );
     }
-    assert!(
-        wrapper_pid != agent_pid && agent_pid != descendant_pid,
-        "expected three distinct processes"
-    );
 
     let cancel = cli(&fixture, "cancel", "accept-cancel");
     assert_success(&cancel, "cancel");
     let status = wait_until("run to exit after cancel", || {
         run.try_wait().expect("poll run")
     });
+    guard.forget(run.id());
     assert_eq!(status.code(), Some(130), "run exit after cancel");
     let _ = run.wait_with_output();
 
@@ -325,8 +356,8 @@ fn cancel_terminates_agent_and_descendant() {
         wait_until(&format!("{name} PID {pid} to exit"), || {
             (!is_process_running(pid)).then_some(())
         });
+        guard.forget(pid);
     }
-    guard.0.clear();
 
     let inspect = cli(&fixture, "inspect", "accept-cancel");
     assert_success(&inspect, "inspect");
@@ -336,7 +367,16 @@ fn cancel_terminates_agent_and_descendant() {
         inspect_out.contains("cancellation request: Confirmed"),
         "{inspect_out}"
     );
-    assert!(inspect_out.contains("Exited"), "{inspect_out}");
+    assert_eq!(
+        listed_states(&inspect_out, "attempts:"),
+        ["Cancelled"],
+        "{inspect_out}"
+    );
+    assert_eq!(
+        listed_states(&inspect_out, "sessions:"),
+        ["Exited"],
+        "{inspect_out}"
+    );
     let worktree = fixture.data.join("worktrees/accept-cancel");
     assert!(worktree.exists(), "cancel must preserve the worktree");
     assert_eq!(
@@ -346,20 +386,50 @@ fn cancel_terminates_agent_and_descendant() {
     );
 }
 
-/// Last-resort cleanup by exact PID if an assertion fails while owned processes live.
-struct KillOnDrop(Vec<u32>);
+/// States from the tab-separated rows (two-space indent, state last) that
+/// `inspect` prints under `header`.
+fn listed_states(inspect: &str, header: &str) -> Vec<String> {
+    inspect
+        .lines()
+        .skip_while(|line| *line != header)
+        .skip(1)
+        .take_while(|line| line.starts_with("  "))
+        .filter(|line| !line.starts_with("    "))
+        .map(|line| line.rsplit('\t').next().unwrap().to_string())
+        .collect()
+}
 
-impl Drop for KillOnDrop {
+/// Failure-path cleanup for processes this test started. A process is signalled
+/// only if the OS still reports the exact identity (PID plus start time, plus the
+/// Windows creation time) captured when it was first seen. A dead, replaced, or
+/// unreadable process is never signalled, and untracked processes never are.
+#[derive(Default)]
+struct OwnedProcesses(Vec<(u32, ExactProcessIdentity)>);
+
+impl OwnedProcesses {
+    fn track(&mut self, what: &str, pid: u32) {
+        let identity = capture_exact_process_identity(pid)
+            .unwrap_or_else(|error| panic!("cannot capture identity of {what} PID {pid}: {error}"));
+        self.0.push((pid, identity));
+    }
+
+    fn forget(&mut self, pid: u32) {
+        self.0.retain(|(tracked, _)| *tracked != pid);
+    }
+}
+
+impl Drop for OwnedProcesses {
     fn drop(&mut self) {
-        for pid in &self.0 {
-            if is_process_running(*pid) {
-                #[cfg(windows)]
-                let _ = Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .output();
-                #[cfg(unix)]
-                let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+        for (pid, identity) in &self.0 {
+            if observe_owner_process(*identity) != ProcessClassification::Alive {
+                continue;
             }
+            #[cfg(windows)]
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .output();
+            #[cfg(unix)]
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
     }
 }
