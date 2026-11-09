@@ -3344,7 +3344,10 @@ mod tests {
         git_in(&repo, &["config", "user.email", "t@example.invalid"]);
         git_in(&repo, &["config", "user.name", "t"]);
         git_in(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
-        let repo = fs::canonicalize(&repo).unwrap();
+        // Same form production registers as `project_id` and records as the
+        // delivery destination: Git's `--show-toplevel`, not `fs::canonicalize`
+        // (`\\?\C:\..` on Windows). Identical on macOS.
+        let repo = Repository::new(&repo).unwrap().path().to_path_buf();
         let store = open_store(&base.join("data")).unwrap();
         (root, repo, store)
     }
