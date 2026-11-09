@@ -11,9 +11,9 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
   names the owner and points to `cancel` / `inspect` / `recover-owner`.
 - No owner, or only demonstrably exited owners: existing contract (registered, clean incl.
   untracked, HEAD reachable from base ref, `git worktree remove` without `--force`).
-- No open owner and task Created/Queued/Running (run starting or crashed before publishing its
-  owner; `run_task` holds the data lock until the owner is registered, so a live run cannot
-  interleave, but a crashed startup leaves exactly this state): refuse, worktree kept. Settled
+- No open owner and task Created/Queued/Running (a startup that crashed or failed before publishing
+  its owner; `run_task` holds the data lock through owner registration, so no live-run
+  interleaving race is claimed or demonstrated; the lock protocol is unchanged): refuse, worktree kept. Settled
   tasks (Verifying/Succeeded/Failed/VerificationFailed/Cancelled) with no owner follow the
   existing contract.
 - Read-only: no owner retired, no process signalled, no new stale-owner deletion path.

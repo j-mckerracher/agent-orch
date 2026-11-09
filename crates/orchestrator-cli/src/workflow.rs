@@ -1410,10 +1410,10 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         .into_iter()
         .filter(|owner| owner.task_id == task_id)
         .collect();
-    // A run publishes its owner only after the worktree exists and the agent is
-    // spawned, but admission (under the data lock) already left the task
-    // non-terminal. With no owner, an unsettled task is a starting or crashed
-    // run whose liveness is unprovable: refuse rather than guess.
+    // `run_task` holds the data lock through owner registration, so a live run
+    // cannot interleave here. A non-terminal task with no owner is therefore an
+    // inconsistent state left by a startup that crashed or failed before the
+    // owner was published: preserve it for inspection/recovery, never clean up.
     if owners.is_empty()
         && matches!(
             task.state,
@@ -1422,8 +1422,8 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     {
         return Err(format!(
             "refusing cleanup: task {task_id} is {:?}, not settled, and has no published run \
-             owner, so a run may be starting or may have crashed; the worktree is preserved. \
-             Wait for the run to finish or use `agent-orch inspect {task_id}`",
+             owner, which indicates a run that crashed or failed during startup; the worktree \
+             is preserved pending inspection. Use `agent-orch inspect {task_id}`",
             task.state
         ));
     }
@@ -2422,8 +2422,7 @@ mod tests {
         (root, data_dir, worktree)
     }
 
-    /// Reproduces the startup window: the task is Running with an attempt and
-    /// session but the run has not published an owner yet.
+    /// Crashed-startup state: Running with an attempt and session but no owner.
     #[test]
     fn cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner() {
         let (_root, data_dir, worktree) = owned_clean_worktree("task-starting", None);
