@@ -126,7 +126,8 @@ impl Executor {
     }
 
     /// The restart-gate refusal currently blocking all launches, if any.
-    #[cfg(test)]
+    /// Only the Unix-only executor tests read it.
+    #[cfg(all(test, unix))]
     pub(crate) fn blocked_reason(&self) -> Option<String> {
         lock(&self.inner.blocked).clone()
     }
