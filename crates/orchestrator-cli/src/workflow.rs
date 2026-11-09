@@ -1791,17 +1791,13 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
     let mut blockers = Vec::new();
 
     for task in &tasks {
-        // A run owner finishes without the data lock, so its session, attempt
-        // and task writes land one at a time. While its exact process is
-        // observed Alive, those intermediate states are not corruption and the
-        // owner, not this reconciliation, will complete them.
-        if finishing.contains(&task.contract.id) {
-            continue;
-        }
-        // A persisted delivery journal is read for every task, settled or not.
-        // Partial or ambiguous delivery, or a confirmed delivery on a task that
-        // is not Succeeded, blocks scheduling. Nothing here applies, removes or
-        // repairs a delivery. Consistent Confirmed/NotApplied does not block.
+        // A persisted delivery journal is read for every task, settled, live
+        // owned or not. Partial or ambiguous delivery, or a confirmed delivery
+        // on a task that is not Succeeded, blocks scheduling. Nothing here
+        // applies, removes or repairs a delivery. Consistent Confirmed/
+        // NotApplied does not block. This runs before the live-owner skip below
+        // because that exemption covers only the process, attempt and workspace
+        // checks, not unresolved delivery.
         if let Some(steps) = delivery_steps.get(&task.contract.id) {
             let (evidence, detail) = match inspect_task_delivery(&task.contract.project_id, steps) {
                 Ok(evidence) => (evidence, String::new()),
@@ -1821,6 +1817,13 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                     task.contract.id, task.state
                 ));
             }
+        }
+        // A run owner finishes without the data lock, so its session, attempt
+        // and task writes land one at a time. While its exact process is
+        // observed Alive, those intermediate states are not corruption and the
+        // owner, not this reconciliation, will complete them.
+        if finishing.contains(&task.contract.id) {
+            continue;
         }
         let unfinished = task
             .sessions

@@ -123,9 +123,11 @@ The gate also inspects the recorded worktree and any persisted delivery steps
   reported on stderr with the advisory classification, and takes the existing
   Failed transition. This is a gate policy for unrelated new tasks, not a
   success inference, a cleanup authorization or a classifier override.
-- For any task, Partial or Ambiguous delivery evidence, or Confirmed delivery
-  on a task that is not Succeeded, refuses scheduling. Settled terminal tasks
-  never block because their retained worktree is dirty or gone.
+- For any task, including one whose run owner is still alive, Partial or
+  Ambiguous delivery evidence, or Confirmed delivery on a task that is not
+  Succeeded, refuses scheduling. A live owner is exempt only from the process,
+  attempt and workspace checks. Settled terminal tasks never block because
+  their retained worktree is dirty or gone.
 - A Pending or Running attempt with no unfinished session of its own (so no
   owner or process identity can be proven gone) refuses scheduling. A task
   with no attempt yet, and a preserved CandidateReady attempt, do not.
