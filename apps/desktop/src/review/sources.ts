@@ -66,8 +66,17 @@ export interface ChangeRequestInput {
   feedback: string;
 }
 
+/** User-facing wording the adapter owns, so a real adapter never shows fixture claims. */
+export interface ChangeRequestLabels {
+  description: string;
+  submitAction: string;
+  /** Appended to a submit receipt, e.g. "No daemon call was made." Empty for a real adapter. */
+  receiptNote: string;
+}
+
 export interface ChangeRequestSource {
   readonly provenance: Provenance;
+  readonly labels: ChangeRequestLabels;
   loadHistory(taskId: string): Promise<ChangeRequestHistory>;
   /** Rejects with Error when the contract is unavailable. */
   submit(input: ChangeRequestInput): Promise<ChangeRequestReceipt>;
@@ -128,6 +137,12 @@ export function createFixtureChangeRequestSource(
   const submitted: ChangeRequestReceipt[] = [];
   return {
     provenance: "fixture",
+    labels: {
+      description:
+        "Preview only: no change-request endpoint exists, nothing is sent to the daemon, and this is not a Reject.",
+      submitAction: "Send feedback (simulated)",
+      receiptNote: "No daemon call was made.",
+    },
     async loadHistory(taskId) {
       if (entry.historyError) return { state: "error", reason: entry.historyError };
       const items: ChangeRequestReceipt[] = [

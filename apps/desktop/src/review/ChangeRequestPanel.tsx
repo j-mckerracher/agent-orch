@@ -59,11 +59,7 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
       <h3>
         Request changes <PlaceholderTag show={fixture} />
       </h3>
-      <p>
-        {fixture
-          ? "Preview only: no change-request endpoint exists, nothing is sent to the daemon, and this is not a Reject."
-          : "Request changes and feedback."}
-      </p>
+      <p>{source.labels.description}</p>
       <button type="button" disabled={!approval || busy} onClick={() => setOpen((o) => !o)}>
         Request changes
       </button>
@@ -74,7 +70,7 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
             <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3} />
           </label>
           <button type="button" disabled={busy || feedback.trim() === ""} onClick={() => void submit()}>
-            Send feedback (simulated)
+            {source.labels.submitAction}
           </button>
         </div>
       )}
@@ -85,7 +81,7 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
       )}
       {receipt && (
         <p role="status">
-          Receipt {receipt.requestId}: {receipt.resultingState}. No daemon call was made. <PlaceholderTag show={receipt.provenance === "fixture"} />
+          Receipt {receipt.requestId}: {receipt.resultingState}. {source.labels.receiptNote} <PlaceholderTag show={receipt.provenance === "fixture"} />
         </p>
       )}
       {history?.state === "available" && (

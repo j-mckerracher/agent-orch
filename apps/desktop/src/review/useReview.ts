@@ -4,7 +4,7 @@
 // failed live request surfaces as an error; nothing falls back to fixtures.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { asDaemonError, type DaemonErrorKind } from "../daemon/errors";
-import type { Approval, DeliveryResult, ResolveDecision, TaskRecord, WorkspaceDiff } from "../daemon/types";
+import type { Approval, DaemonEvent, DeliveryResult, ResolveDecision, TaskRecord, WorkspaceDiff } from "../daemon/types";
 import type { ReviewClient } from "./client";
 import {
   acceptBlockers,
@@ -47,6 +47,27 @@ export interface UseReviewOptions {
   newKey?: () => string;
 }
 
+const selfEventKey = (approvalId: string, kind: string) => `${kind}|${approvalId}`;
+
+function releaseSelfEvent(expected: Map<string, number>, key: string) {
+  const count = expected.get(key) ?? 0;
+  if (count > 1) expected.set(key, count - 1);
+  else expected.delete(key);
+}
+
+/** Matches M5-02's durable event `approval.<approved|rejected>` with payload `{approval_id, event}`. */
+function consumeSelfEvent(expected: Map<string, number>, event: DaemonEvent): boolean {
+  if (event.kind !== "approval.approved" && event.kind !== "approval.rejected") return false;
+  const payload = event.payload;
+  if (typeof payload !== "object" || payload === null) return false;
+  const approvalId = (payload as { approval_id?: unknown }).approval_id;
+  if (typeof approvalId !== "string") return false;
+  const key = selfEventKey(approvalId, event.kind);
+  if (!expected.has(key)) return false;
+  releaseSelfEvent(expected, key);
+  return true;
+}
+
 const defaultNewKey = () => crypto.randomUUID();
 
 export function useReview({ client, evidenceSource, scope, newKey = defaultNewKey }: UseReviewOptions) {
@@ -79,6 +100,8 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
   const [mutations, setMutations] = useState<Record<string, Mutations>>({});
 
   const keys = useRef(new Map<string, string>());
+  const expectedSelfEvents = useRef(new Map<string, number>());
+  const inFlight = useRef(false);
   const loadSeq = useRef(0);
   const loading = useRef(false);
   const dirtyDuringLoad = useRef(false);
@@ -241,9 +264,13 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
     void refreshRef.current(null);
   }, [client, evidenceSource, scope.projectId, scope.taskId]);
 
-  // Any event for the reviewed task, or a reconnect, makes the preview stale.
+  // Any event for the reviewed task, or a reconnect, makes the preview stale,
+  // except the single `approval.<decision>` event (payload.approval_id) that
+  // the daemon appends for a decision this client just submitted: that change is
+  // already reflected by the receipt and the refresh that follows it.
   useEffect(() => {
     return client.subscribe((n) => {
+      if (n.type === "event" && consumeSelfEvent(expectedSelfEvents.current, n.event)) return;
       if (n.type === "event" && n.event.task_id === selectedTaskId.current) {
         if (loading.current) dirtyDuringLoad.current = true;
         else setStale(true);
@@ -388,12 +415,22 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
       const current = ctxRef.current.decisionCtx;
       const target = current.approval;
       const blockers = decision === "approve" ? acceptBlockers(current) : rejectBlockers(current);
-      if (!target || blockers.length > 0) return;
+      if (!target || blockers.length > 0 || inFlight.current) return;
       const fingerprint = `resolve|${target.id}|${decision}|${target.action.candidate_commit}|${digestHex(target.action.parameter_digest)}`;
       const key = stableKey(fingerprint);
-      const receipt = await track(target.id, "decision", () =>
-        client.call<Approval>("approvals.resolve", { approval_id: target.id, decision, idempotency_key: key }),
-      );
+      const eventKey = selfEventKey(target.id, decision === "approve" ? "approval.approved" : "approval.rejected");
+      inFlight.current = true;
+      expectedSelfEvents.current.set(eventKey, (expectedSelfEvents.current.get(eventKey) ?? 0) + 1);
+      let receipt: Approval | undefined;
+      try {
+        receipt = await track(target.id, "decision", () =>
+          client.call<Approval>("approvals.resolve", { approval_id: target.id, decision, idempotency_key: key }),
+        );
+      } finally {
+        inFlight.current = false;
+      }
+      // A failed (or indeterminate) request may still emit an event; treat it as external.
+      if (!receipt) releaseSelfEvent(expectedSelfEvents.current, eventKey);
       if (receipt) {
         resolvedRef.current = { ...resolvedRef.current, [target.id]: receipt };
         setResolvedState(resolvedRef.current);
@@ -405,12 +442,18 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
 
   const requestDelivery = useCallback(async () => {
     const plan = deliveryPlan(ctxRef.current.deliveryCtx);
-    if (!plan.request) return;
+    if (!plan.request || inFlight.current) return;
     const request = plan.request;
     const key = stableKey(`delivery|${JSON.stringify(request)}|${ctxRef.current.deliveryCtx.approval?.action.candidate_commit}`);
-    const receipt = await track(request.approval_id, "delivery", () =>
-      client.call<DeliveryResult>("delivery.request", { ...request, idempotency_key: key }),
-    );
+    inFlight.current = true;
+    let receipt: DeliveryResult | undefined;
+    try {
+      receipt = await track(request.approval_id, "delivery", () =>
+        client.call<DeliveryResult>("delivery.request", { ...request, idempotency_key: key }),
+      );
+    } finally {
+      inFlight.current = false;
+    }
     if (receipt) await refreshRef.current(request.approval_id);
   }, [client, stableKey, track]);
 

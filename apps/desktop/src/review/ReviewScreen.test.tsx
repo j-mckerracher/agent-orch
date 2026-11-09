@@ -1,6 +1,5 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createServices } from "../ui/createServices";
 import { createReviewClient } from "./client";
@@ -58,7 +57,7 @@ function setup(opts: { approvals?: Approval[]; scope?: { projectId?: string; tas
       newKey={() => `key-${++n}`}
     />,
   );
-  return { client, approvals, onBack, changeSource, evidence, ...utils } satisfies Setup & Record<string, unknown>;
+  return { client, state, approvals, onBack, changeSource, evidence, ...utils } satisfies Setup & Record<string, unknown>;
 }
 
 const accept = () => screen.getByRole("button", { name: "Accept" }) as HTMLButtonElement;
@@ -393,9 +392,10 @@ describe("Request changes (D8)", () => {
 });
 
 describe("D7/D8 swappability", () => {
-  it("renders a daemon-provenance stub adapter through the same interfaces with no UI change", async () => {
+  it("renders a daemon-provenance stub adapter, including submit, with no fixture wording", async () => {
     const stub: ChangeRequestSource = {
       provenance: "daemon",
+      labels: { description: "Ask for changes.", submitAction: "Send request", receiptNote: "" },
       loadHistory: async () => ({ state: "available", items: [] }),
       submit: async (input) => ({
         provenance: "daemon",
@@ -411,8 +411,153 @@ describe("D7/D8 swappability", () => {
     await ready();
     const panel = screen.getByRole("region", { name: "Request changes" });
     expect(within(panel).queryByText("PLACEHOLDER DATA")).toBeNull();
+    expect(within(panel).getByText("Ask for changes.")).toBeTruthy();
     // Daemon-provenance evidence enabled Accept; fixture evidence cannot.
     expect(accept().disabled).toBe(false);
+    await userEvent.click(within(panel).getByRole("button", { name: "Request changes" }));
+    await userEvent.type(within(panel).getByLabelText(/Feedback/), "Please add tests");
+    await userEvent.click(within(panel).getByRole("button", { name: "Send request" }));
+    await within(panel).findByText(/Receipt real-1: changes_requested/);
+    expect(panel.textContent).not.toMatch(/simulated|No daemon call|Preview only|PLACEHOLDER/i);
+  });
+});
+
+const approvalEvent = (id: string, kind = "approval.approved", taskId = "task-1") => ({
+  type: "event" as const,
+  event: { sequence: 7, task_id: taskId, session_id: null, kind, payload: { approval_id: id, event: { Approved: {} } }, created_at: "now" },
+});
+
+describe("self-originated approval events (M5-02 `approval.<decision>` durable events)", () => {
+  it("arriving after the receipt do not mark the review stale", async () => {
+    const { client } = setup();
+    await ready();
+    await userEvent.click(accept());
+    await screen.findByText(/receipt from daemon/);
+    act(() => client.emit(approvalEvent("approval-1")));
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    expect(screen.queryByText(/Stale review/)).toBeNull();
+  });
+
+  it("arriving before the receipt (same transaction) do not mark the review stale", async () => {
+    const { client, state } = setup();
+    await ready();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    client.setHandler("approvals.resolve", async (p) => {
+      // The daemon appends the event inside the same transaction, so it can arrive before the receipt.
+      act(() => client.emit(approvalEvent(String(p.approval_id))));
+      await gate;
+      const approved: Approval = { ...approval(), state: { state: "approved", by: { kind: "user", id: "u" } } };
+      state.list = [approved];
+      return approved;
+    });
+    await userEvent.click(accept());
+    release();
+    await screen.findByText(/receipt from daemon/);
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    expect(screen.queryByText(/Stale review/)).toBeNull();
+    // Only one event is expected per submitted decision; a second one is external.
+    act(() => client.emit(approvalEvent("approval-1")));
+    await screen.findByText(/Stale review/);
+  });
+
+  it("only suppress the one event for that approval and decision", async () => {
+    const { client } = setup();
+    await ready();
+    await userEvent.click(accept());
+    await screen.findByText(/receipt from daemon/);
+    act(() => client.emit(approvalEvent("other-approval")));
+    await screen.findByText(/Stale review/);
+  });
+
+  it("still mark the review stale for other kinds of task events after approve", async () => {
+    const { client } = setup();
+    await ready();
+    await userEvent.click(accept());
+    await screen.findByText(/receipt from daemon/);
+    act(() => client.emit(approvalEvent("approval-1", "task.transition")));
+    await screen.findByText(/Stale review/);
+    expect(deliver().disabled).toBe(true);
+  });
+
+  it("are not suppressed when the decision was not ours (no submitted request)", async () => {
+    const { client } = setup();
+    await ready();
+    act(() => client.emit(approvalEvent("approval-1", "approval.rejected")));
+    await screen.findByText(/Stale review/);
+  });
+
+  it("are not suppressed when our request failed", async () => {
+    const { client } = setup();
+    await ready();
+    client.setHandler("approvals.resolve", () => fail("timeout"));
+    await userEvent.click(accept());
+    await screen.findByText(/Decision failed \(timeout\)/);
+    act(() => client.emit(approvalEvent("approval-1")));
+    await screen.findByText(/Stale review/);
+  });
+});
+
+describe("request integrity", () => {
+  it("rejects a diff the daemon returns for a different task", async () => {
+    const { client } = setup();
+    client.setHandler("workspaces.diff", () => ({ task_id: "task-other", workspace_id: "ws-1", diff: DIFF }));
+    await userEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    await screen.findByText(/different task/);
+    expect(accept().disabled).toBe(true);
+    expect(screen.queryByLabelText("Diff content")).toBeNull();
+  });
+
+  it("rejects a scoped diff for a different workspace and marks the review stale", async () => {
+    const { client } = setup();
+    await ready();
+    client.setHandler("workspaces.diff", (p) => ({ task_id: p.task_id, workspace_id: "ws-other", diff: "x" }));
+    await userEvent.click(screen.getByRole("button", { name: "src/a.rs" }));
+    await screen.findByText(/different task or workspace/);
+    expect(accept().disabled).toBe(true);
+  });
+
+  it("sends Accept once when double-submitted while the request is pending", async () => {
+    const { client } = setup();
+    await ready();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    client.setHandler("approvals.resolve", async () => {
+      await gate;
+      return { ...approval(), state: { state: "approved", by: { kind: "user", id: "u" } } };
+    });
+    const button = accept();
+    // Two clicks in one act() share a render, so only the handler-level guard can stop the second.
+    act(() => {
+      button.click();
+      button.click();
+    });
+    await waitFor(() => expect(accept().disabled).toBe(true));
+    await userEvent.click(reject());
+    release();
+    await screen.findByText(/receipt from daemon/);
+    expect(client.callsOf("approvals.resolve")).toHaveLength(1);
+  });
+
+  it("sends delivery once when double-submitted", async () => {
+    const { client } = setup();
+    await ready();
+    await userEvent.click(accept());
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    client.setHandler("delivery.request", async (p) => {
+      await gate;
+      return { task_id: p.task_id, step_id: "s", outcome: "recorded" };
+    });
+    const button = deliver();
+    act(() => {
+      button.click();
+      button.click();
+    });
+    release();
+    await screen.findByText(/Delivery request receipt from daemon/);
+    expect(client.callsOf("delivery.request")).toHaveLength(1);
   });
 });
 
