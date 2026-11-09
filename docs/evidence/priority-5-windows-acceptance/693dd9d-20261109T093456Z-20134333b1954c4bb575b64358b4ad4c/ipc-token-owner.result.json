@@ -1,0 +1,25 @@
+{
+  "name": "ipc-token-owner",
+  "command": "cargo.exe test --locked -p orchestrator-ipc --lib startup_replaces_only_regular_stale_token",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T093456Z-20134333b1954c4bb575b64358b4ad4c\\source",
+  "source_commit": "693dd9d8e1726f90b8b1c7a0a0c4c298834ae9bb",
+  "started_utc": "2026-11-09T09:44:50.1447706Z",
+  "duration_seconds": 14.008,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p5-acc-20261109T093456Z-20134333b1954c4bb575b64358b4ad4c\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 180,
+  "stdout_sha256": "2df20d1ada11c41a770f9a5cc35fdc19c4027715696636cec7ecbb488bcfb7bb",
+  "stderr_bytes": 578,
+  "stderr_sha256": "0d1e509a56d700a04bce3c1ec7aa1d77f912b4c897b718bd9abf9ddcadc1baad",
+  "error": null
+}

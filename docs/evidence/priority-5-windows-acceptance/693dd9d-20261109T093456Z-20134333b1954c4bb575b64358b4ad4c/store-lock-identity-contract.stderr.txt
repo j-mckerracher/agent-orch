@@ -1,0 +1,4 @@
+   Compiling orchestrator-store v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T093456Z-20134333b1954c4bb575b64358b4ad4c\source\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.53s
+     Running tests\lock_identity_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p5-acc-20261109T093456Z-20134333b1954c4bb575b64358b4ad4c\cargo-target\debug\deps\lock_identity_contract-ea3b09fbe1ff1982.exe)
+directory_at_the_lock_path: acquire=Io(Os { code: 5, kind: PermissionDenied, message: "Access is denied." }) directory_kept=true marker_intact=true
