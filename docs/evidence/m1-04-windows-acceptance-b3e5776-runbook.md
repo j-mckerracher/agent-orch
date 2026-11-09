@@ -1,9 +1,9 @@
 # M1-04 native Windows CLI acceptance runbook (candidate b3e5776122b1a40e85c145169a17faf2270161a4)
 
-**Review and QA of this revision are pending.** The coordinator re-reviews and
-re-QAs the candidate `b3e5776122b1a40e85c145169a17faf2270161a4` after this
-revision. This file does not claim that either is complete. If the candidate
-changes, copy this runbook and replace the pinned SHA, the source branch, and
+**Final source review of the candidate `b3e5776122b1a40e85c145169a17faf2270161a4` passed with no
+blockers (review 27497c37, as reported by the coordinator). Independent final QA
+(85229d78) is pending and this file does not claim it is complete.** If the
+candidate changes, copy this runbook and replace the pinned SHA, the source branch, and
 the file name before anyone runs it.
 
 ## Status of this run
@@ -47,7 +47,7 @@ claim one. The coordinator reports that an independent code review of
 verification. On the macOS host the new tests passed 2 of 2 in repeated runs,
 the existing `cli` test binary passed 19 of 19, and the workspace passed 386
 with 1 ignored; the coordinator's QA of the earlier revision `d612173` reported
-the same shape. Review and QA of this revision are pending. The new tests were
+the same shape. Final QA of this revision is pending. The new tests were
 not compiled for Windows on the macOS host (see the coverage gaps). If `cli-acceptance` fails, the failure is a finding about the
 product or the test on Windows. Do not edit the test to make it pass.
 
@@ -114,7 +114,7 @@ once. Each check records its exit code and every `running N tests` line.
 | `store-data-lock-integration` | `cargo test --locked -p orchestrator-store --test data_lock` | Exit 0. One test binary: `running 8 tests`, 7 passed, 0 failed, 1 ignored. `dead_pid_lock_is_taken_over_and_new_holder_is_recorded`, `live_pid_with_different_start_identity_is_taken_over`, and `concurrent_takeovers_have_one_holder_and_one_named_conflict` must report `ok`. The ignored test is `lock_child_process_helper`. Its parent test starts it. |
 | `store-data-lock-lib` | `cargo test --locked -p orchestrator-store --lib data_lock` | Exit 0. One test binary: `running 2 tests`, 2 passed, 0 failed, 0 ignored. `range_lock_does_not_block_other_handles_reading_the_record` and `identity_matches_hard_links_and_distinguishes_files` must report `ok`. |
 | `ipc-token-owner` | `cargo test --locked -p orchestrator-ipc --lib startup_replaces_only_regular_stale_token` | Exit 0. One test binary: `running 1 test`, 1 passed, 0 failed, 0 ignored. `startup_replaces_only_regular_stale_token` must report `ok`. This test checks that dropping a `Secret` removes `daemon.token` and that a directory at that path is refused and left in place. It is the explicit check of the Windows token fix. It also runs inside `workspace-tests`. This separate check makes a zero-test filter visible. |
-| `cli-acceptance` | `cargo test --locked -p orchestrator-cli --test portable_acceptance` | Exit 0. One test binary: `running 2 tests`, 2 passed, 0 failed, 0 ignored. `run_produces_isolated_diff_and_cleanup_preserves_primary` and `cancel_terminates_agent_and_descendant` must report `ok`. The check has a 10-minute limit. The step "Run the CLI acceptance check" below runs it with an isolated temp directory and then lists, without stopping anything, any process of this run that still runs from that directory or is a `__codex_capture` wrapper of this run; a survivor makes the check `FAIL`. The scan covers only this check. `workspace-tests` runs the same two tests with the default `TEMP` and has no survivor scan. `rustc` must be on `PATH` for the test, which compiles its fake agent. |
+| `cli-acceptance` | `cargo test --locked -p orchestrator-cli --test portable_acceptance` | Exit 0. One test binary: `running 2 tests`, 2 passed, 0 failed, 0 ignored. `run_produces_isolated_diff_and_cleanup_preserves_primary` and `cancel_terminates_agent_and_descendant` must report `ok`. The check has a 10-minute limit. The step "Run the CLI acceptance check" below runs it with an isolated temp directory and then lists, without stopping anything, any process whose image lies under that directory or whose command line names this run's directory (long or 8.3 short form); a survivor makes the check `FAIL`. The scan covers only this check. `workspace-tests` runs the same two tests with the default `TEMP` and has no survivor scan. `rustc` must be on `PATH` for the test, which compiles its fake agent. |
 
 All six checks count in the overall result. A missing `ipc-token-owner` or
 `cli-acceptance` verdict is a `FAIL`.
@@ -500,21 +500,36 @@ function Get-CheckVerdict($Check, $Result) {
     }
 }
 
-# A survivor is a process whose image lies under this run's TestTmp directory
-# (case-insensitive full prefix), or whose command line is a __codex_capture
-# wrapper that names this run's RunRoot directory. The wrapper image lives in
-# the cargo target directory, so the command-line test is what finds it.
-function Find-OwnedSurvivors($Processes) {
-    $TmpPrefix = $TestTmp.TrimEnd('\') + '\'
-    $RootPrefix = $RunRoot.TrimEnd('\') + '\'
+# Windows may report the same directory as a long or an 8.3 short path, and
+# TEMP itself can be a short path. Compare against every form of the owned path.
+Add-Type -Namespace Native -Name Paths -MemberDefinition @'
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+public static extern uint GetLongPathNameW(string path, System.Text.StringBuilder buffer, uint size);
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+public static extern uint GetShortPathNameW(string path, System.Text.StringBuilder buffer, uint size);
+'@
+function Get-PathAliases([string] $Path) {
+    $Long = [Text.StringBuilder]::new(32768)
+    $Short = [Text.StringBuilder]::new(32768)
+    $Aliases = @($Path)
+    if ([Native.Paths]::GetLongPathNameW($Path, $Long, 32768) -gt 0) { $Aliases += $Long.ToString() }
+    if ([Native.Paths]::GetShortPathNameW($Path, $Short, 32768) -gt 0) { $Aliases += $Short.ToString() }
+    @($Aliases | ForEach-Object { $_.TrimEnd('\') + '\' } | Sort-Object -Unique)
+}
+
+# A survivor is a process whose image lies under one of $TmpPrefixes (this
+# run's TestTmp directory), or whose command line contains one of $RootPrefixes
+# (this run's RunRoot directory). The wrapper image lives in the cargo target
+# directory, so the command-line test is what finds it. Comparison is
+# case-insensitive. Only the unique RunRoot is matched, never a base name.
+function Find-OwnedSurvivors($Processes, [string[]] $TmpPrefixes, [string[]] $RootPrefixes) {
     $Ordinal = [StringComparison]::OrdinalIgnoreCase
     foreach ($Process in $Processes) {
         $ByImage = $Process.ExecutablePath -and
-            $Process.ExecutablePath.StartsWith($TmpPrefix, $Ordinal)
-        $ByWrapper = $Process.CommandLine -and
-            $Process.CommandLine.IndexOf('__codex_capture', $Ordinal) -ge 0 -and
-            $Process.CommandLine.IndexOf($RootPrefix, $Ordinal) -ge 0
-        if ($ByImage -or $ByWrapper) {
+            @($TmpPrefixes | Where-Object { $Process.ExecutablePath.StartsWith($_, $Ordinal) }).Count -gt 0
+        $ByCommandLine = $Process.CommandLine -and
+            @($RootPrefixes | Where-Object { $Process.CommandLine.IndexOf($_, $Ordinal) -ge 0 }).Count -gt 0
+        if ($ByImage -or $ByCommandLine) {
             $Process | Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine
         }
     }
@@ -545,7 +560,8 @@ foreach ($Check in $Checks) {
     $Verdict = Get-CheckVerdict $Check $Run
     if ($Check.Isolated) {
         # Read-only listing of this run's processes only. No process is stopped.
-        $Survivors = @(Find-OwnedSurvivors (Get-CimInstance Win32_Process))
+        $Survivors = @(Find-OwnedSurvivors (Get-CimInstance Win32_Process) `
+            (Get-PathAliases $TestTmp) (Get-PathAliases $RunRoot))
         $Survivors | Format-List | Out-File -LiteralPath `
             (Join-Path $EvidenceDir "$($Check.Name).survivors.txt") -Encoding utf8
         if ($Survivors.Count -ne 0) {
@@ -632,8 +648,8 @@ This run does not close M1-04. The coordinator decides acceptance.
   startup_replaces_only_regular_stale_token and is part of the overall result.
 - Required CLI check: the cli-acceptance row below covers both
   portable_acceptance tests and a report-only survivor scan. The scan covers
-  processes under this run's private temp directory and `__codex_capture`
-  wrappers that name this run's directory. It does not cover `workspace-tests`,
+  processes whose image lies under this run's private temp directory and
+  processes whose command line names this run's directory (long or 8.3 form). It does not cover `workspace-tests`,
   which runs the same tests with the default TEMP. The row is part of the
   overall result.
 
