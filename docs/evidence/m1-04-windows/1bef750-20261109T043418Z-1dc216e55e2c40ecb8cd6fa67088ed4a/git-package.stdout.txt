@@ -1,0 +1,77 @@
+
+running 20 tests
+test delivery::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test verification::tests::rejects_branch_not_derived_from_task_id ... ok
+test verification::tests::rejects_worktree_owned_by_another_task ... ok
+test verification::tests::rejects_mutable_branch_reference_as_attempt_commit ... ok
+test verification::tests::rejects_candidate_after_branch_moves ... ok
+test worktree::tests::collision_allocates_suffix ... ok
+test verification::tests::default_trust_policy_does_not_run_untrusted_command ... ok
+test verification::tests::timed_out_command_is_killed_and_recorded ... ok
+test verification::tests::trusted_command_does_not_authorize_different_argv ... ok
+test verification::tests::trusted_command_runs_and_records_output_and_exit_code ... ok
+test verification::tests::question_mark_matches_one_unicode_path_character ... ok
+test worktree::tests::dirty_primary_checkout_preserved ... ok
+test verification::tests::trusted_nonzero_exit_is_recorded_as_failed ... ok
+test worktree::tests::git_add_failure_preserves_repo_state_and_reports_partial_state ... ok
+test verification::tests::fails_and_names_changed_protected_path ... ok
+test worktree::tests::empty_task_id_rejected ... ok
+test worktree::tests::worktrees_root_inside_repository_rejected ... ok
+test worktree::tests::resolve_base_commit_rejects_invalid_ref ... ok
+test worktree::tests::preexisting_branch_skipped ... ok
+test worktree::tests::open_accepts_repo_and_isolates_primary ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.60s
+
+
+running 13 tests
+test stale_destination_lock_is_reported_and_preserved ... ok
+test local_review_refuses_when_worktree_candidate_sha_changed ... ok
+test local_review_refuses_stale_verification_run ... ok
+test dirty_worktree_is_unsafe_and_survives_safety_check ... ok
+test local_review_refuses_changed_approved_candidate_sha ... ok
+test local_review_refuses_changed_parameter_digest ... ok
+test local_review_refuses_missing_approval ... ok
+test local_review_refuses_existing_ref_with_different_commit ... ok
+test destination_lock_refuses_second_concurrent_holder ... ok
+test local_review_accepts_existing_ref_with_same_candidate ... ok
+test report_only_preserves_refs_worktrees_and_repository_files ... ok
+test local_review_creates_only_review_ref ... ok
+test unlanded_worktree_is_unsafe_and_survives_safety_check ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.65s
+
+
+running 7 tests
+test report_only_step_has_no_review_ref_to_apply ... ok
+test missing_review_ref_is_not_applied ... ok
+test review_ref_at_an_unrecorded_commit_is_ambiguous_and_blocks_gate ... ok
+test incomplete_record_is_ambiguous_and_keeps_observed_ref ... ok
+test review_ref_at_candidate_is_confirmed_and_does_not_block_gate ... ok
+test plan_order_does_not_depend_on_input_order ... ok
+test reconciliation_does_not_change_git_or_supplied_record_snapshot ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.84s
+
+
+running 6 tests
+test foreign_workspace_is_reported_and_left_untouched ... ok
+test unrecorded_worktree_is_reported_as_unexpected_and_left_untouched ... ok
+test removed_real_worktree_is_classified_missing ... ok
+test checked_out_branch_mismatch_is_classified_branch_moved ... ok
+test unchanged_worktree_matches_recorded_branch_and_base ... ok
+test committed_worktree_branch_is_classified_branch_moved ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
+
+
+running 1 test
+test diff_reads_scoped_changes_and_rejects_external_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

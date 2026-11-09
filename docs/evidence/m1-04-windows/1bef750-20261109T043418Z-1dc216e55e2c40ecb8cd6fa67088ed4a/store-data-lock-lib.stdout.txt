@@ -1,0 +1,7 @@
+
+running 2 tests
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.01s
+

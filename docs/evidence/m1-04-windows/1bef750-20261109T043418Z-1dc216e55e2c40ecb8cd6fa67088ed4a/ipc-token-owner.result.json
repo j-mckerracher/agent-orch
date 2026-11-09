@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-ipc --lib startup_replaces_only_regular_stale_token",
+  "source_commit": "1bef750a5c3189ddea929e540e294a5d06a57aa3",
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}
