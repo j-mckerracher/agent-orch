@@ -40,6 +40,7 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
     try {
       const result = await source.submit({
         taskId: approval.action.task_id,
+        approvalId: approval.id,
         candidateCommit: approval.action.candidate_commit,
         feedback,
       });

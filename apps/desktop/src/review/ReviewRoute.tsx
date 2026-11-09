@@ -1,8 +1,11 @@
 // Mounts S6 inside the app shell. The mode is explicit and never changes after a
-// failed request: the real client unless the route query carries `fixture=1`.
+// failed request. With `fixture=1` the fixture daemon, D7 and D8 adapters are used
+// (the `evidence=` and `changes=` query scenarios apply). Otherwise every source
+// is the real daemon: the review client plus the D7/D8 daemon adapters.
 import { useMemo } from "react";
 import { useServices } from "../ui/services";
 import { createReviewClient } from "./client";
+import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "./daemonSources";
 import { createFixtureDaemonClient } from "./fixtureDaemon";
 import { ReviewScreen } from "./ReviewScreen";
 import { createFixtureChangeRequestSource, createFixtureReviewEvidenceSource } from "./sources";
@@ -21,13 +24,21 @@ export function ReviewRoute({ projectId, taskId, query }: ReviewRouteProps) {
     () => (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [fixtureMode, connection],
   );
+  const evidenceScenario = params.get("evidence") ?? undefined;
+  const changesScenario = params.get("changes") ?? undefined;
   const evidenceSource = useMemo(
-    () => createFixtureReviewEvidenceSource(params.get("evidence") ?? undefined),
-    [params],
+    () =>
+      fixtureMode
+        ? createFixtureReviewEvidenceSource(evidenceScenario)
+        : createDaemonReviewEvidenceSource(() => connection.api()),
+    [fixtureMode, evidenceScenario, connection],
   );
   const changeRequestSource = useMemo(
-    () => createFixtureChangeRequestSource(params.get("changes") ?? undefined),
-    [params],
+    () =>
+      fixtureMode
+        ? createFixtureChangeRequestSource(changesScenario)
+        : createDaemonChangeRequestSource(() => connection.api()),
+    [fixtureMode, changesScenario, connection],
   );
   const scope = useMemo(() => ({ projectId, taskId: taskId ?? undefined }), [projectId, taskId]);
 

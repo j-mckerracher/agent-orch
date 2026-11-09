@@ -8,18 +8,21 @@ export function PlaceholderTag({ show = true }: { show?: boolean }) {
 export function EvidencePanel({
   evidence,
   loading,
+  fixtureSource = true,
 }: {
   evidence: ReviewEvidenceResult | null;
   loading: boolean;
+  /** False for a daemon-backed source, so a pending load is not labelled placeholder data. */
+  fixtureSource?: boolean;
 }) {
   const fixture = evidence ? (evidence.state === "available" ? evidence.evidence.provenance : evidence.provenance) === "fixture" : false;
   return (
     <section aria-label="Action parameters and verification evidence" className="panel">
       <h3>
-        Exact action parameters and verification evidence <PlaceholderTag show={fixture || evidence === null} />
+        Exact action parameters and verification evidence <PlaceholderTag show={fixture || (evidence === null && fixtureSource)} />
       </h3>
       {loading || evidence === null ? (
-        <p>Loading evidence… {" "}<PlaceholderTag /></p>
+        <p>Loading evidence… {" "}<PlaceholderTag show={fixtureSource} /></p>
       ) : evidence.state !== "available" ? (
         <p role="status">
           Evidence {evidence.state}: {evidence.reason} <PlaceholderTag show={fixture} />

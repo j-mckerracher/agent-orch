@@ -1,7 +1,7 @@
-// Frontend boundary interfaces for the two unavailable read/write contracts
-// (D7 complete review evidence, D8 request changes). A daemon-backed adapter
-// (planned M5-02c) implements the same interfaces and replaces the fixture
-// adapters at the ReviewScreen boundary without any component change.
+// Frontend boundary interfaces for the two review contracts (D7 complete review
+// evidence, D8 request changes). Two adapter sets implement them and are
+// interchangeable at the ReviewScreen boundary without any component change:
+// the fixture adapters below, and the daemon-backed ones in daemonSources.ts.
 import changeRequestFixture from "../fixtures/ui/change-request.json";
 import reviewEvidenceFixture from "../fixtures/ui/review-evidence.json";
 
@@ -62,6 +62,7 @@ export type ChangeRequestHistory =
 
 export interface ChangeRequestInput {
   taskId: string;
+  approvalId: string;
   candidateCommit: string;
   feedback: string;
 }

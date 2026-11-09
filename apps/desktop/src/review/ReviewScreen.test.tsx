@@ -498,6 +498,51 @@ describe("self-originated approval events (M5-02 `approval.<decision>` durable e
   });
 });
 
+describe("self-originated delivery events (`delivery.<outcome>` durable events)", () => {
+  const deliveryEvent = (taskId = "task-1", kind = "delivery.review_ref_created") => ({
+    type: "event" as const,
+    event: { sequence: 9, task_id: taskId, session_id: null, kind, payload: { step_id: "step-1", outcome: "review_ref_created" }, created_at: "now" },
+  });
+
+  async function delivered() {
+    const ctx = setup();
+    await ready();
+    await userEvent.click(accept());
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    await userEvent.click(deliver());
+    await screen.findByText(/Delivery request receipt from daemon/);
+    return ctx;
+  }
+
+  it("arriving after the receipt do not mark the review stale, but a second one does", async () => {
+    const { client } = await delivered();
+    act(() => client.emit(deliveryEvent()));
+    expect(screen.queryByText(/Stale review/)).toBeNull();
+    act(() => client.emit(deliveryEvent()));
+    await screen.findByText(/Stale review/);
+  });
+
+  it("still mark the review stale when the delivery event is for another task", async () => {
+    const { client } = await delivered();
+    act(() => client.emit(deliveryEvent("task-other")));
+    expect(screen.queryByText(/Stale review/)).toBeNull();
+    act(() => client.emit({ ...deliveryEvent(), event: { ...deliveryEvent().event, task_id: "task-1", kind: "task.transition" } }));
+    await screen.findByText(/Stale review/);
+  });
+
+  it("are not suppressed when our delivery request failed", async () => {
+    const { client } = setup();
+    await ready();
+    client.setHandler("delivery.request", () => fail("timeout"));
+    await userEvent.click(accept());
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    await userEvent.click(deliver());
+    await screen.findByText(/Delivery request failed \(timeout\)/);
+    act(() => client.emit(deliveryEvent()));
+    await screen.findByText(/Stale review/);
+  });
+});
+
 describe("request integrity", () => {
   it("rejects a diff the daemon returns for a different task", async () => {
     const { client } = setup();

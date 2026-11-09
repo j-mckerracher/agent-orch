@@ -1,7 +1,8 @@
 // State and transport for S6. All data comes from the injected ReviewClient
-// (REAL contract: approvals.list, tasks.list/get, workspaces.diff,
-// approvals.resolve, delivery.request) or the injected D7 evidence source. A
-// failed live request surfaces as an error; nothing falls back to fixtures.
+// (approvals.list, tasks.list/get, workspaces.diff, approvals.resolve,
+// delivery.request) and the injected D7 evidence source (review.evidence for the
+// daemon adapter). A failed live request surfaces as an error; nothing falls
+// back to fixtures.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { asDaemonError, type DaemonErrorKind } from "../daemon/errors";
 import type { Approval, DaemonEvent, DeliveryResult, ResolveDecision, TaskRecord, WorkspaceDiff } from "../daemon/types";
@@ -55,8 +56,19 @@ function releaseSelfEvent(expected: Map<string, number>, key: string) {
   else expected.delete(key);
 }
 
-/** Matches M5-02's durable event `approval.<approved|rejected>` with payload `{approval_id, event}`. */
+/**
+ * Matches the durable events the daemon appends for a mutation this client just
+ * submitted: `approval.<approved|rejected>` with payload `{approval_id, event}`,
+ * and `delivery.<outcome>` (task-scoped, payload `{step_id, outcome}`, no approval id).
+ */
 function consumeSelfEvent(expected: Map<string, number>, event: DaemonEvent): boolean {
+  if (event.kind.startsWith("delivery.")) {
+    if (event.task_id === null) return false;
+    const key = selfEventKey(event.task_id, "delivery");
+    if (!expected.has(key)) return false;
+    releaseSelfEvent(expected, key);
+    return true;
+  }
   if (event.kind !== "approval.approved" && event.kind !== "approval.rejected") return false;
   const payload = event.payload;
   if (typeof payload !== "object" || payload === null) return false;
@@ -446,6 +458,8 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
     const request = plan.request;
     const key = stableKey(`delivery|${JSON.stringify(request)}|${ctxRef.current.deliveryCtx.approval?.action.candidate_commit}`);
     inFlight.current = true;
+    const eventKey = selfEventKey(request.task_id, "delivery");
+    expectedSelfEvents.current.set(eventKey, (expectedSelfEvents.current.get(eventKey) ?? 0) + 1);
     let receipt: DeliveryResult | undefined;
     try {
       receipt = await track(request.approval_id, "delivery", () =>
@@ -454,6 +468,8 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
     } finally {
       inFlight.current = false;
     }
+    // A failed request may still emit an event; treat it as external.
+    if (!receipt) releaseSelfEvent(expectedSelfEvents.current, eventKey);
     if (receipt) await refreshRef.current(request.approval_id);
   }, [client, stableKey, track]);
 

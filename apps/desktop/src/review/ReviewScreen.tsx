@@ -186,7 +186,11 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
 
       {approval && (
         <>
-          <EvidencePanel evidence={r.evidence} loading={r.loading && r.evidence === null} />
+          <EvidencePanel
+            evidence={r.evidence}
+            loading={r.loading && r.evidence === null}
+            fixtureSource={evidenceSource.provenance === "fixture"}
+          />
 
           <section aria-label="Decision" className="panel">
             <button
