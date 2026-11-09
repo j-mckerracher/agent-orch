@@ -492,11 +492,21 @@ async fn read_bounded_line<R: AsyncBufRead + Unpin>(
     Ok(Some(line))
 }
 
-/// Unix: true if any process in the group led by `pid` is still alive.
+/// Unix: false only when the group led by `pid` provably no longer exists.
+///
+/// `kill(-pgid, 0)` sends no signal. Only ESRCH proves the group is gone. EPERM
+/// means a live group this user cannot signal, and any other error is
+/// inconclusive, so both count as alive: callers use `false` to release or
+/// mark a session exited, so uncertainty must fail closed.
 #[cfg(unix)]
 pub fn process_group_alive(pid: u32) -> bool {
-    // kill(-pgid, 0) sends no signal; a dead group yields ESRCH.
-    unsafe { libc::kill(-(pid as i32), 0) == 0 }
+    let probe_ok = unsafe { libc::kill(-(pid as i32), 0) } == 0;
+    group_probe_means_alive(probe_ok, std::io::Error::last_os_error().raw_os_error())
+}
+
+#[cfg(unix)]
+fn group_probe_means_alive(probe_ok: bool, errno: Option<i32>) -> bool {
+    probe_ok || errno != Some(libc::ESRCH)
 }
 
 /// Liveness check for tests and recovery code.
@@ -523,6 +533,30 @@ mod tests {
             args: Vec::new(),
             working_dir: std::env::current_dir().expect("current directory"),
         }
+    }
+
+    #[test]
+    fn group_probe_only_esrch_means_dead() {
+        assert!(group_probe_means_alive(true, None));
+        assert!(group_probe_means_alive(false, Some(libc::EPERM)));
+        assert!(group_probe_means_alive(false, Some(libc::EINVAL)));
+        assert!(group_probe_means_alive(false, None));
+        assert!(!group_probe_means_alive(false, Some(libc::ESRCH)));
+    }
+
+    #[test]
+    fn unsignalable_live_group_is_alive() {
+        // A live group we cannot signal (typically root-owned) probes as EPERM.
+        // Skip when this host exposes none, for example when running as root.
+        let group = (2..4096u32).find(|group| {
+            let rc = unsafe { libc::kill(-(*group as i32), 0) };
+            rc != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        });
+        let Some(group) = group else {
+            eprintln!("skipped: no unsignalable process group on this host");
+            return;
+        };
+        assert!(process_group_alive(group));
     }
 
     #[tokio::test]
