@@ -309,13 +309,9 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
     seed_running_session_in(fixture, task_id, identity, &project, &project);
 }
 
-fn seed_running_session_in(
-    fixture: &Fixture,
-    task_id: &str,
-    identity: Option<ProcessIdentity>,
-    project_id: &str,
-    project_root: &str,
-) {
+/// Registers the project if needed, then records `task_id` and admits it. No
+/// attempt or session exists yet.
+fn create_admitted_task(fixture: &Fixture, task_id: &str, project_id: &str, project_root: &str) {
     let store = open_store(fixture);
     let project_id = project_id.to_owned();
     if store.get_project(&project_id).is_err() {
@@ -344,6 +340,17 @@ fn seed_running_session_in(
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();
+}
+
+fn seed_running_session_in(
+    fixture: &Fixture,
+    task_id: &str,
+    identity: Option<ProcessIdentity>,
+    project_id: &str,
+    project_root: &str,
+) {
+    create_admitted_task(fixture, task_id, project_id, project_root);
+    let store = open_store(fixture);
     let attempt = Attempt {
         id: format!("{task_id}-attempt-1"),
         task_id: task_id.to_owned(),
@@ -837,6 +844,102 @@ fn running_task_without_an_unfinished_session_refuses_scheduling() {
         stderr(&output)
     );
     assert_eq!(record_debug(&fixture, "orphaned"), seeded);
+}
+
+#[test]
+fn pending_attempt_without_any_session_refuses_scheduling() {
+    let fixture = fixture();
+    // Admitted with a Pending attempt that never got a session: no live owner can
+    // be proven, so the interrupted launch must not be silently ignored just
+    // because the task is not Running.
+    let project = project_id(&fixture);
+    create_admitted_task(&fixture, "half-launched", &project, &project);
+    open_store(&fixture)
+        .add_attempt(
+            "half-launched",
+            &Attempt {
+                id: "half-launched-attempt-1".to_owned(),
+                task_id: "half-launched".to_owned(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+            },
+        )
+        .unwrap();
+    let seeded = record_debug(&fixture, "half-launched");
+
+    let output = refused_run(&fixture, "after-half-launched");
+    assert_refusal_cites(&output, "half-launched", "attempt");
+    assert_eq!(record_debug(&fixture, "half-launched"), seeded);
+}
+
+#[test]
+fn planned_and_admitted_tasks_without_attempts_do_not_block_scheduling() {
+    let fixture = fixture();
+    let project = project_id(&fixture);
+    create_admitted_task(&fixture, "queued-admitted", &project, &project);
+    // A task that was created but never admitted is just as harmless.
+    open_store(&fixture)
+        .create(&TaskContract {
+            id: "queued-planned".to_owned(),
+            project_id: project.clone(),
+            parent_id: None,
+            objective: "queued".to_owned(),
+            kind: TaskKind::Implement,
+            agent: "codex".to_owned(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+        })
+        .unwrap();
+
+    let run = run_command(&fixture, "after-queued", "edit")
+        .output()
+        .expect("run CLI");
+    assert_success(&run, "run beside queued tasks that have no attempt");
+    assert!(stdout(&run).contains("status: Verifying"));
+    let store = open_store(&fixture);
+    assert_eq!(store.get("queued-admitted").unwrap().attempts.len(), 0);
+    assert_eq!(store.get("queued-planned").unwrap().attempts.len(), 0);
+}
+
+#[test]
+fn settled_candidate_ready_attempt_does_not_block_scheduling() {
+    let fixture = fixture();
+    // A finished run preserved for review: session Exited, attempt CandidateReady
+    // and task Verifying. That is settled, not an unfinished launch.
+    seed_running_session(&fixture, "awaiting-review", None);
+    let store = open_store(&fixture);
+    store
+        .update_session_state(
+            "awaiting-review",
+            "awaiting-review-session-1",
+            SessionState::Exited,
+        )
+        .unwrap();
+    store
+        .update_attempt_state(
+            "awaiting-review",
+            "awaiting-review-attempt-1",
+            AttemptState::CandidateReady,
+        )
+        .unwrap();
+    store
+        .transition("awaiting-review", TaskEvent::CandidateReady)
+        .unwrap();
+    assert_eq!(
+        store.get("awaiting-review").unwrap().state,
+        TaskState::Verifying
+    );
+    let seeded = record_debug(&fixture, "awaiting-review");
+
+    let run = run_command(&fixture, "after-awaiting-review", "edit")
+        .output()
+        .expect("run CLI");
+    assert_success(&run, "run beside a candidate preserved for review");
+    assert_eq!(record_debug(&fixture, "awaiting-review"), seeded);
 }
 
 // ---- the gate: interrupted-task workspace and delivery evidence --------------------
