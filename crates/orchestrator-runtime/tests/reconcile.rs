@@ -65,6 +65,41 @@ fn windows_identity_compares_creation_time_at_100ns_precision() {
     );
 }
 
+/// Returns a creation time that differs from `creation_time` but stays in the
+/// same microsecond bucket, so it remains consistent with an unchanged
+/// `start_time_micros` (`creation_time / 10`) for every 100ns remainder.
+fn forged_creation_time_in_same_microsecond(creation_time: u64) -> u64 {
+    creation_time - creation_time % 10 + (creation_time % 10 + 1) % 10
+}
+
+#[test]
+fn forged_windows_creation_time_is_a_mismatch_for_every_100ns_remainder() {
+    for remainder in 0..10_u64 {
+        let creation_time = 1_700_000_000_123_456_u64 * 10 + remainder;
+        let actual = ExactProcessIdentity {
+            identity: ProcessIdentity {
+                pid: 42,
+                process_group: None,
+                start_time_micros: Some(creation_time / 10),
+                platform: ProcessPlatform::Windows,
+            },
+            windows_creation_time_100ns_since_unix_epoch: Some(creation_time),
+        };
+        let forged = ExactProcessIdentity {
+            windows_creation_time_100ns_since_unix_epoch: Some(
+                forged_creation_time_in_same_microsecond(creation_time),
+            ),
+            ..actual
+        };
+
+        assert_eq!(
+            classify_exact_process_identity(forged, actual),
+            ProcessClassification::IdentityMismatch,
+            "remainder {remainder}"
+        );
+    }
+}
+
 #[test]
 fn scheduling_gate_blocks_unresolved_or_ambiguous_records() {
     assert!(!scheduling_may_resume(
@@ -286,7 +321,9 @@ fn windows_owner_observation_uses_creation_time_not_only_pid() {
     );
 
     let reused_pid = ExactProcessIdentity {
-        windows_creation_time_100ns_since_unix_epoch: Some(creation_time + 1),
+        windows_creation_time_100ns_since_unix_epoch: Some(
+            forged_creation_time_in_same_microsecond(creation_time),
+        ),
         ..identity
     };
     assert_eq!(
