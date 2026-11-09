@@ -347,7 +347,11 @@ function Protect-Text([string] $Text) {
     # The leading lookbehinds start a match only at the beginning of a word run.
     # Without them, a long run of word characters with no match is rescanned from
     # every start position (quadratic), which can hang a large captured output.
+    # The anchor must not let a URL escape: the literal "://" fallback (linear)
+    # redacts the rest of any URL whose scheme prefix is not a word-run start,
+    # such as "1https://host/q" or "-https://host/q".
     $Text = [regex]::Replace($Text, '(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://\S+', '<url-redacted>')
+    $Text = [regex]::Replace($Text, '://\S+', '<url-redacted>')
     $Text = [regex]::Replace($Text, '(?<![\w.-])[\w.-]+@[\w.-]+:\S+', '<url-redacted>')
     return [regex]::Replace($Text,
         '(?i)(?<=[\\/]Users(?:\\\\|[\\/]))[^\\/"''<>|:*?\r\n]+', '<user>')
