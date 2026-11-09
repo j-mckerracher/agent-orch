@@ -11,10 +11,12 @@ use std::fs::{self, File};
 use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub struct Client {
+    data_dir: PathBuf,
+    requested: Vec<Capability>,
     stream: Box<dyn IpcStream>,
     negotiated: Vec<Capability>,
     next_id: u64,
@@ -73,6 +75,8 @@ impl Client {
             return Err(IpcError::UnsupportedVersion);
         }
         Ok(Self {
+            data_dir: data_dir.to_path_buf(),
+            requested: requested.to_vec(),
             stream,
             negotiated: welcome.capabilities,
             next_id: 2,
@@ -108,6 +112,15 @@ impl Client {
 
     pub fn projects_list(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Projects, "projects.list", Value::Null)
+    }
+
+    /// Registers the Git repository at an absolute path as a project.
+    pub fn projects_register(&mut self, path: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Projects,
+            "projects.register",
+            json!({"path": path}),
+        )
     }
 
     pub fn tasks_submit(&mut self, params: Value) -> Result<Value, IpcError> {
@@ -242,6 +255,24 @@ impl Client {
             return Err(IpcError::Operation);
         }
         self.accept_event(result?)
+    }
+
+    /// Replaces the connection with a freshly authenticated one and resumes the
+    /// event stream after the last sequence this client accepted. Use it after
+    /// a transport error, a typed stream error, or a daemon restart; unread
+    /// buffered events are dropped and replayed by the daemon. The client stays
+    /// usable even when resuming fails. `IpcError::ReplayGap` means the daemon
+    /// journal is behind the cursor: refresh state with the list methods, then
+    /// call `events_subscribe(None)` to start over.
+    pub fn reconnect(&mut self) -> Result<(), IpcError> {
+        let cursor = self.last_event_sequence;
+        let mut fresh = Self::connect_with_capabilities(&self.data_dir, &self.requested)?;
+        let resumed = match cursor {
+            Some(cursor) => fresh.events_subscribe(Some(cursor)).map(|_| ()),
+            None => Ok(()),
+        };
+        *self = fresh;
+        resumed
     }
 
     pub fn last_event_sequence(&self) -> Option<i64> {
@@ -442,6 +473,7 @@ fn map_remote(code: i32) -> IpcError {
         -32014 => IpcError::IdempotencyInProgress,
         -32015 => IpcError::SlowConsumer,
         -32016 => IpcError::ResultTooLarge,
+        -32017 => IpcError::ReplayGap,
         _ => IpcError::Operation,
     }
 }

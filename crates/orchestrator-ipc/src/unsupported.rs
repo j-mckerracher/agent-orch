@@ -28,6 +28,9 @@ impl Client {
     pub fn projects_list(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn projects_register(&mut self, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn tasks_submit(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
@@ -70,6 +73,9 @@ impl Client {
         Err(IpcError::Unsupported)
     }
     pub fn next_event(&mut self) -> Result<IpcEvent, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn reconnect(&mut self) -> Result<(), IpcError> {
         Err(IpcError::Unsupported)
     }
     pub fn last_event_sequence(&self) -> Option<i64> {

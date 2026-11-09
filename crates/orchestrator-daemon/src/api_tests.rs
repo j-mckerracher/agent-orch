@@ -136,6 +136,9 @@ fn every_rpc_method_rejects_malformed_parameters() {
     let (_directory, api) = new_api();
     let invalid = [
         ("projects.list", json!({"extra": true})),
+        ("projects.register", json!({})),
+        ("projects.register", json!({"path": 4})),
+        ("projects.register", json!({"path": "/x", "extra": true})),
         ("tasks.submit", json!({"idempotency_key": 4})),
         ("tasks.list", json!({"extra": true})),
         ("tasks.get", json!({"task_id": 4})),
@@ -749,3 +752,146 @@ fn idempotency_fingerprint_normalizes_omitted_optional_fields() {
 
 #[path = "api_safety_tests.rs"]
 mod safety;
+
+fn git_init(path: &Path) {
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn project_registration_validates_the_repository_and_is_idempotent() {
+    let (_directory, api) = new_api();
+    let repository = tempfile::tempdir().unwrap();
+    git_init(repository.path());
+    std::fs::create_dir(repository.path().join("nested")).unwrap();
+    let root = Repository::new(repository.path())
+        .unwrap()
+        .path()
+        .display()
+        .to_string();
+
+    let registered = api
+        .dispatch(
+            "projects.register",
+            json!({"path": repository.path().to_str().unwrap()}),
+        )
+        .unwrap();
+    assert_eq!(registered, json!({"id": root}));
+    let nested = repository.path().join("nested");
+    assert_eq!(
+        api.dispatch(
+            "projects.register",
+            json!({"path": nested.to_str().unwrap()})
+        )
+        .unwrap(),
+        registered
+    );
+    assert_eq!(
+        api.dispatch("projects.list", Value::Null).unwrap(),
+        json!([registered])
+    );
+    assert_eq!(api.store.get_project(&root).unwrap().root_path, root);
+
+    let plain = tempfile::tempdir().unwrap();
+    for path in [plain.path().to_str().unwrap(), "relative/path", ""] {
+        assert_eq!(
+            api.dispatch("projects.register", json!({"path": path})),
+            Err(RpcError::InvalidParams),
+            "{path}"
+        );
+    }
+    assert_eq!(api.store.list_projects().unwrap().len(), 1);
+}
+
+#[test]
+fn session_events_page_and_report_a_cursor_beyond_the_journal() {
+    use orchestrator_core::approval::{
+        Actor, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
+    };
+    use orchestrator_core::authorization::ActionKind;
+
+    let (_directory, api) = new_api();
+    register_project(&api);
+    create_running_task(&api, "task-1");
+    let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();
+    for index in 0..130u8 {
+        let action = ApprovalAction::new(
+            ApprovalActionKind::Delivery(ActionKind::ReportPublish),
+            ParameterDigest::from_sha256([index; 32]),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "task-1",
+        )
+        .unwrap();
+        api.store
+            .request_approval(
+                &format!("approval-{index}"),
+                &action,
+                &Actor::Agent("agent-1".into()),
+                &allowlist,
+            )
+            .unwrap();
+    }
+
+    let mut cursor = 0;
+    let mut sequences = Vec::new();
+    let mut pages = 0;
+    loop {
+        let page = api
+            .dispatch(
+                "sessions.events",
+                json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": cursor}),
+            )
+            .unwrap();
+        pages += 1;
+        let events = page["events"].as_array().unwrap();
+        assert!(events.len() <= EVENT_PAGE_SIZE);
+        sequences.extend(
+            events
+                .iter()
+                .map(|event| event["sequence"].as_i64().unwrap()),
+        );
+        cursor = page["next_after_sequence"].as_i64().unwrap();
+        if !page["more"].as_bool().unwrap() {
+            break;
+        }
+    }
+    assert!(pages > 1, "fixture must exceed one page");
+    assert!(sequences.windows(2).all(|pair| pair[0] < pair[1]));
+    let expected: Vec<i64> = api
+        .store
+        .session_events_after("task-1", "session-1", 0, 1024)
+        .unwrap()
+        .iter()
+        .map(|event| event.sequence)
+        .collect();
+    assert_eq!(sequences, expected);
+    assert_eq!(cursor, *expected.last().unwrap());
+
+    let latest = api.store.latest_event_sequence().unwrap();
+    let at_head = api
+        .dispatch(
+            "sessions.events",
+            json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": latest}),
+        )
+        .unwrap();
+    assert_eq!(at_head["events"], json!([]));
+    assert_eq!(at_head["next_after_sequence"], latest);
+    assert_eq!(
+        api.dispatch(
+            "sessions.events",
+            json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": latest + 1}),
+        ),
+        Err(RpcError::ReplayGap)
+    );
+    assert_eq!(
+        api.dispatch(
+            "sessions.events",
+            json!({"task_id": "task-1", "session_id": "session-1", "after_sequence": -1}),
+        ),
+        Err(RpcError::InvalidParams)
+    );
+}

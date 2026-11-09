@@ -66,6 +66,9 @@ pub use server::{Server, ServerConfig};
 #[cfg(not(any(unix, windows)))]
 pub use unsupported::{Client, Server, ServerConfig};
 
+#[cfg(all(test, any(unix, windows)))]
+#[path = "event_stream_tests.rs"]
+mod event_stream_tests;
 #[cfg(all(test, unix))]
 #[path = "integration_tests.rs"]
 mod integration_tests;
@@ -102,6 +105,7 @@ pub enum RpcError {
     IdempotencyInProgress,
     SlowConsumer,
     ResultTooLarge,
+    ReplayGap,
     Internal,
 }
 
@@ -116,6 +120,7 @@ impl RpcError {
             Self::IdempotencyInProgress => -32014,
             Self::SlowConsumer => -32015,
             Self::ResultTooLarge => -32016,
+            Self::ReplayGap => -32017,
             Self::Internal => -32603,
         }
     }
@@ -130,6 +135,7 @@ impl RpcError {
             Self::IdempotencyInProgress => "idempotent operation is still in progress",
             Self::SlowConsumer => "event subscriber fell behind",
             Self::ResultTooLarge => "result exceeds size limit",
+            Self::ReplayGap => "event cursor is ahead of the durable journal",
             Self::Internal => "internal operation failed",
         }
     }
@@ -192,6 +198,8 @@ pub enum IpcError {
     SlowConsumer,
     #[error("RPC result exceeds size limit")]
     ResultTooLarge,
+    #[error("event cursor is ahead of the durable journal")]
+    ReplayGap,
     #[error("event subscription is not active")]
     NoSubscription,
     #[error("local IPC operation failed")]

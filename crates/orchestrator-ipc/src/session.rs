@@ -1,7 +1,7 @@
 use crate::auth::{authenticate, AuthError, Secret};
 use crate::protocol::{self, Capability, Handshake, RpcFailure, RpcId, RpcRequest, RpcResponse};
 use crate::transport::IpcStream;
-use crate::{Health, IpcError, RpcError, RpcHandler};
+use crate::{Health, IpcError, IpcEvent, RpcError, RpcHandler};
 use serde_json::{json, Value};
 use std::io;
 use std::path::PathBuf;
@@ -132,6 +132,9 @@ const MAX_BUFFERED_EVENTS: usize = 256;
 struct Subscription {
     id: String,
     cursor: i64,
+    /// Latest durable sequence when the subscription began. Events up to here
+    /// are replayed in pages; only live backlog beyond it can lag.
+    replay_until: i64,
     ended: bool,
 }
 
@@ -196,11 +199,11 @@ fn handle_request(
         let Some(handler) = &state.handler else {
             return write_error(stream, request.id, -32601, "method unavailable").is_ok();
         };
-        match handler.latest_event_sequence() {
-            Ok(latest) if cursor <= latest => {}
-            Ok(_) => return write_rpc_error(stream, request.id, RpcError::InvalidParams),
+        let replay_until = match handler.latest_event_sequence() {
+            Ok(latest) if cursor <= latest => latest,
+            Ok(_) => return write_rpc_error(stream, request.id, RpcError::ReplayGap),
             Err(error) => return write_rpc_error(stream, request.id, error),
-        }
+        };
         let id = format!(
             "subscription-{}",
             NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed)
@@ -217,6 +220,7 @@ fn handle_request(
         *subscription = Some(Subscription {
             id,
             cursor,
+            replay_until,
             ended: false,
         });
         return true;
@@ -243,7 +247,7 @@ fn empty_control_params(params: &Value) -> bool {
 
 fn method_capability(method: &str) -> Option<Capability> {
     match method {
-        "projects.list" => Some(Capability::Projects),
+        "projects.list" | "projects.register" => Some(Capability::Projects),
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" => Some(Capability::Tasks),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
@@ -264,6 +268,22 @@ fn send_pending_events(
     let Some(handler) = &state.handler else {
         return false;
     };
+    while subscription.cursor < subscription.replay_until {
+        if state.stopping.load(Ordering::Acquire) {
+            return false;
+        }
+        let events = match handler.events_after(subscription.cursor, MAX_BUFFERED_EVENTS) {
+            Ok(events) if !events.is_empty() => events,
+            Ok(_) => return write_event_error(stream, subscription, RpcError::Internal),
+            Err(error) => return write_event_error(stream, subscription, error),
+        };
+        if !send_events(stream, state, subscription, events) {
+            return false;
+        }
+        if subscription.ended {
+            return true;
+        }
+    }
     let events = match handler.events_after(subscription.cursor, MAX_BUFFERED_EVENTS + 1) {
         Ok(events) => events,
         Err(error) => return write_event_error(stream, subscription, error),
@@ -271,6 +291,17 @@ fn send_pending_events(
     if events.len() > MAX_BUFFERED_EVENTS {
         return write_event_error(stream, subscription, RpcError::SlowConsumer);
     }
+    send_events(stream, state, subscription, events)
+}
+
+/// Writes contiguous events and advances the cursor. A hole ends the
+/// subscription with a typed error; a failed write returns `false`.
+fn send_events(
+    stream: &mut Box<dyn IpcStream>,
+    state: &State,
+    subscription: &mut Subscription,
+    events: Vec<IpcEvent>,
+) -> bool {
     for event in events {
         if subscription.cursor.checked_add(1) != Some(event.sequence) {
             return write_event_error(stream, subscription, RpcError::Internal);

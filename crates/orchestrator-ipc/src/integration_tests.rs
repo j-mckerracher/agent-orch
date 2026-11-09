@@ -1,4 +1,4 @@
-use crate::{Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig};
+use crate::{Capability, Client, IpcEvent, RpcError, RpcHandler, Server, ServerConfig};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{Read, Write};
@@ -292,7 +292,7 @@ fn subscription_replays_then_streams_and_reconnects_from_observed_cursor() {
 }
 
 #[test]
-fn slow_event_subscriber_receives_typed_lag_error() {
+fn replay_backlog_beyond_the_live_buffer_is_delivered_in_order() {
     let dir = TempDir::new().unwrap();
     let handler = std::sync::Arc::new(EventHandler::default());
     for sequence in 1..=257 {
@@ -302,8 +302,9 @@ fn slow_event_subscriber_receives_typed_lag_error() {
     ready(dir.path());
     let mut client = Client::connect(dir.path()).unwrap();
     client.events_subscribe(None).unwrap();
-    assert!(matches!(client.next_event(), Err(IpcError::SlowConsumer)));
-    assert!(matches!(client.next_event(), Err(IpcError::NoSubscription)));
+    for sequence in 1..=257 {
+        assert_eq!(client.next_event().unwrap().sequence, sequence);
+    }
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }

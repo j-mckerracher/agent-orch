@@ -72,6 +72,12 @@ struct TaskSubmission {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RegisterProjectParams {
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TaskIdParams {
     task_id: String,
 }
@@ -167,6 +173,7 @@ impl RpcHandler for DaemonApi {
     fn dispatch(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         match method {
             "projects.list" => self.projects_list(params),
+            "projects.register" => self.register_project(params),
             "tasks.submit" => self.submit_task(params),
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
@@ -212,6 +219,40 @@ impl DaemonApi {
                 .map(|project| json!({"id": project.id}))
                 .collect(),
         ))
+    }
+
+    /// Registers a Git work tree. The id is the canonical work-tree root, the
+    /// same identity the CLI uses, so both front ends share one project row.
+    /// Re-registering the same root returns the existing project.
+    fn register_project(&self, params: Value) -> Result<Value, RpcError> {
+        let params: RegisterProjectParams = parse_params(params)?;
+        let requested = Path::new(&params.path);
+        if !requested.is_absolute() {
+            return Err(RpcError::InvalidParams);
+        }
+        let repository = Repository::new(requested).map_err(|error| match error {
+            orchestrator_git::Error::NotARepository { .. } => RpcError::InvalidParams,
+            other => map_git_error(other),
+        })?;
+        let root = repository.path().display().to_string();
+        let _guard = self
+            .idempotency_gate
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        match self.store.get_project(&root) {
+            Ok(project) if project.root_path == root => {}
+            Ok(_) => return Err(RpcError::Conflict),
+            Err(StoreError::RecordNotFound { .. }) => self
+                .store
+                .register_project(&Project {
+                    id: root.clone(),
+                    root_path: root.clone(),
+                    settings: json!({}),
+                })
+                .map_err(map_store_error)?,
+            Err(error) => return Err(map_store_error(error)),
+        }
+        Ok(json!({"id": root}))
     }
 
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
@@ -440,10 +481,13 @@ impl DaemonApi {
             .store
             .latest_event_sequence()
             .map_err(map_store_error)?;
-        if cursor < 0 || cursor > latest {
+        if cursor < 0 {
             return Err(RpcError::InvalidParams);
         }
-        let events = self
+        if cursor > latest {
+            return Err(RpcError::ReplayGap);
+        }
+        let mut events = self
             .store
             .session_events_after(
                 &params.task_id,
@@ -452,13 +496,15 @@ impl DaemonApi {
                 EVENT_PAGE_SIZE + 1,
             )
             .map_err(map_store_error)?;
-        if events.len() > EVENT_PAGE_SIZE {
-            return Err(RpcError::SlowConsumer);
-        }
+        let more = events.len() > EVENT_PAGE_SIZE;
+        events.truncate(EVENT_PAGE_SIZE);
+        let next_after_sequence = events.last().map_or(cursor, |event| event.sequence);
         Ok(json!({
             "task_id": params.task_id,
             "session_id": params.session_id,
-            "events": events.into_iter().map(stream_event).collect::<Vec<_>>()
+            "events": events.into_iter().map(stream_event).collect::<Vec<_>>(),
+            "more": more,
+            "next_after_sequence": next_after_sequence
         }))
     }
 
