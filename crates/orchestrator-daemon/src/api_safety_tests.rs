@@ -252,3 +252,77 @@ fn delivery_refuses_unapproved_local_review_without_changing_refs() {
     assert_eq!(steps[0]["outcome"], "refused");
     assert!(!format!("{result:?}").contains(&fixture.worktree_path.to_string_lossy().to_string()));
 }
+
+#[test]
+fn approved_local_review_delivery_creates_the_review_ref_once() {
+    use orchestrator_core::approval::{Actor, ApprovalActionKind, ApproverAllowlist};
+
+    let fixture = fixture();
+    let api = &fixture.api;
+    let workspace = api.store.workspaces_for_task("task-1").unwrap().remove(0);
+    let verification = api
+        .store
+        .verification_runs_for_task("task-1")
+        .unwrap()
+        .remove(0);
+    let target_ref = "refs/heads/orchestrator/review/task-1";
+    let destination = Repository::new(&fixture.repository_path)
+        .unwrap()
+        .path()
+        .to_string_lossy()
+        .into_owned();
+    let digest = delivery_digest(
+        DeliveryAction::LocalReview,
+        &destination,
+        &workspace.base_commit,
+        Some(target_ref),
+    )
+    .unwrap();
+    let action = ApprovalAction::new(
+        ApprovalActionKind::Delivery(ActionKind::LocalReviewMerge),
+        ParameterDigest::from_sha256(digest),
+        &verification.commit,
+        "task-1",
+    )
+    .unwrap();
+    let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();
+    api.store
+        .request_approval(
+            "approval-1",
+            &action,
+            &Actor::Agent("agent-1".into()),
+            &allowlist,
+        )
+        .unwrap();
+    api.dispatch(
+        "approvals.resolve",
+        json!({
+            "approval_id": "approval-1",
+            "decision": "approve",
+            "idempotency_key": "approve-key-1"
+        }),
+    )
+    .unwrap();
+
+    let params = json!({
+        "task_id": "task-1",
+        "workspace_id": "workspace-1",
+        "approval_id": "approval-1",
+        "verification_run_id": "verification-1",
+        "action": "local_review",
+        "target_ref": target_ref,
+        "idempotency_key": "delivery-key-2"
+    });
+    let delivered = api.dispatch("delivery.request", params.clone()).unwrap();
+    assert_eq!(delivered["task_id"], "task-1");
+    assert_eq!(delivered["outcome"], "review_ref_created");
+    assert_eq!(
+        git(&fixture.repository_path, &["rev-parse", target_ref]),
+        verification.commit
+    );
+    assert_eq!(api.dispatch("delivery.request", params).unwrap(), delivered);
+    assert_eq!(
+        api.store.delivery_steps_for_task("task-1").unwrap().len(),
+        1
+    );
+}

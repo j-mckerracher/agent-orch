@@ -152,6 +152,51 @@ fn cursor_ahead_of_the_journal_is_a_typed_replay_gap() {
 }
 
 #[test]
+fn failed_resume_keeps_the_cursor_until_a_resume_succeeds() {
+    let dir = TempDir::new().unwrap();
+    let journal = Arc::new(Journal::default());
+    journal.push_range(1..=5);
+    let daemon = serve(dir.path(), &journal);
+
+    let mut client = connect(dir.path());
+    client.events_subscribe(None).unwrap();
+    read_through(&mut client, 5);
+
+    journal.reset();
+    journal.push_range(1..=2);
+    for _ in 0..2 {
+        assert!(matches!(client.reconnect(), Err(IpcError::ReplayGap)));
+        assert_eq!(client.last_event_sequence(), Some(5));
+        assert!(matches!(client.next_event(), Err(IpcError::NoSubscription)));
+    }
+
+    journal.push_range(3..=6);
+    client.reconnect().unwrap();
+    read_through(&mut client, 6);
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn call_during_a_large_replay_keeps_events_and_the_connection_in_sync() {
+    let dir = TempDir::new().unwrap();
+    let journal = Arc::new(Journal::default());
+    journal.push_range(1..=700);
+    let daemon = serve(dir.path(), &journal);
+
+    let mut client = connect(dir.path());
+    client.events_subscribe(None).unwrap();
+    assert_eq!(client.capabilities().unwrap(), vec![Capability::Events]);
+    assert_eq!(client.capabilities().unwrap(), vec![Capability::Events]);
+    read_through(&mut client, 700);
+    assert_eq!(client.capabilities().unwrap(), vec![Capability::Events]);
+    journal.push_range(701..=701);
+    read_through(&mut client, 701);
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
 fn live_lag_is_typed_and_reconnect_catches_up_in_order() {
     let dir = TempDir::new().unwrap();
     let journal = Arc::new(Journal::default());

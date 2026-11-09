@@ -1,4 +1,6 @@
-//! Synchronous JSON-RPC client with bounded event buffering and cursor tracking.
+//! Synchronous JSON-RPC client with cursor tracking. A `call()` keeps any events
+//! that arrive before its response (for example a replay in flight), so the
+//! connection stays in sync; the daemon pages replay and bounds live lag.
 //! Updated: 2026-11-08T18:09:45+00:00.
 use crate::protocol::{
     self, Capability, Handshake, IncomingMessage, RpcId, RpcRequest, RpcResponse, Welcome,
@@ -260,10 +262,14 @@ impl Client {
     /// Replaces the connection with a freshly authenticated one and resumes the
     /// event stream after the last sequence this client accepted. Use it after
     /// a transport error, a typed stream error, or a daemon restart; unread
-    /// buffered events are dropped and replayed by the daemon. The client stays
-    /// usable even when resuming fails. `IpcError::ReplayGap` means the daemon
-    /// journal is behind the cursor: refresh state with the list methods, then
-    /// call `events_subscribe(None)` to start over.
+    /// buffered events are dropped and replayed by the daemon.
+    ///
+    /// The cursor is kept until a resume succeeds, so calling `reconnect()`
+    /// again after any failure retries the same resume and never returns `Ok`
+    /// without a subscription. `IpcError::ReplayGap` is terminal for that
+    /// cursor: the daemon journal is behind it. Refresh state with the list
+    /// methods, then call `events_subscribe(None)` (or with a known sequence)
+    /// to start a new stream.
     pub fn reconnect(&mut self) -> Result<(), IpcError> {
         let cursor = self.last_event_sequence;
         let mut fresh = Self::connect_with_capabilities(&self.data_dir, &self.requested)?;
@@ -271,6 +277,7 @@ impl Client {
             Some(cursor) => fresh.events_subscribe(Some(cursor)).map(|_| ()),
             None => Ok(()),
         };
+        fresh.last_event_sequence = cursor;
         *self = fresh;
         resumed
     }
@@ -354,9 +361,6 @@ impl Client {
                 if params.subscription_id != subscription {
                     return Err(IpcError::Operation);
                 }
-                if self.events.len() >= 256 {
-                    return Err(IpcError::SlowConsumer);
-                }
                 self.events.push_back(Ok(params.event));
             }
             "events.error" => {
@@ -364,9 +368,6 @@ impl Client {
                     serde_json::from_value(notification.params).map_err(|_| IpcError::Operation)?;
                 if params.subscription_id != subscription {
                     return Err(IpcError::Operation);
-                }
-                if self.events.len() >= 256 {
-                    return Err(IpcError::SlowConsumer);
                 }
                 self.subscription = None;
                 self.events.push_back(Err(map_remote(params.error.code)));
