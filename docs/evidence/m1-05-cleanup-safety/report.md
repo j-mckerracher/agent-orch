@@ -19,7 +19,8 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 - An Exited owner is not enough: the recorded session process identity (and its process group,
   same classification as `recover-owner`) must also be Exited/IdentityMismatch, because killing
   the owner does not stop the supervised wrapper/agent/descendants. Alive/Unknown: refuse.
-  Missing session identity keeps the existing contract.
+  Missing session identity also refuses (fail closed, `require_session_gone`); only a settled task
+  with no owner skips this check.
 - Read-only: no owner retired, no process signalled, no new stale-owner deletion path.
 
 ## Red / green
@@ -33,6 +34,8 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 | `cleanup_safety::cleanup_refuses_running_task_that_never_registered_a_run_owner` (QA, c89c1eb, feature fault-injection) | FAIL on 8f63da4b (QA) | ok |
 | `cleanup_safety::cleanup_follows_existing_contract_for_provably_exited_run_owner` (QA, 11d3e29) | ok | ok |
 | `cleanup_safety::cleanup_refuses_exited_run_owner_while_its_agent_tree_is_alive` (QA, 5816c9b, unix) | FAIL on 24de6136 (QA) | ok |
+| `workflow::tests::session_gone_guard_refuses_missing_alive_and_unknown_classifications` (portable) | not run on prior code (new pure guard) | ok |
+| `workflow::tests::cleanup_refuses_exited_owner_without_a_recorded_session_identity` (unix) | not run on prior code (prior rule allowed a missing identity) | ok |
 | `workflow::tests::cleanup_refuses_exited_owner_while_its_session_process_is_alive` (unix) | FAIL (session check disabled) | ok |
 | `cleanup_safety::cleanup_refuses_clean_worktree_while_run_owner_is_live` (QA, f96832d) | FAIL | ok |
 | `cleanup_safety::cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree` (QA) | ok | ok |

@@ -1316,6 +1316,24 @@ fn session_process_classification(
         }))
 }
 
+/// Cleanup guard: only a recorded, provably gone session process (and group)
+/// permits removal. Missing, Alive or Unknown classifications refuse.
+fn require_session_gone(
+    task_id: &str,
+    session_id: &str,
+    classification: Option<ProcessClassification>,
+) -> Result<(), String> {
+    match classification {
+        Some(ProcessClassification::Exited | ProcessClassification::IdentityMismatch) => Ok(()),
+        other => Err(format!(
+            "refusing cleanup: session {session_id} process of task {task_id} is not provably \
+             gone (recorded session identity classification: {other:?}); the worktree is \
+             preserved. After the agent tree has exited, retry; `agent-orch inspect {task_id}` \
+             shows the recorded agent PID"
+        )),
+    }
+}
+
 fn session_recovery_classification(
     identity: ProcessIdentity,
     observation: ProcessObservation,
@@ -1451,22 +1469,12 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
             ));
         }
         // The owner process exiting does not stop the supervised agent tree, so
-        // the recorded session process (and its group) must be gone too.
-        let session = session_process_classification(&store, task_id, &owner.session_id)?;
-        if let Some(session) = session.filter(|session| {
-            !matches!(
-                session,
-                ProcessClassification::Exited | ProcessClassification::IdentityMismatch
-            )
-        }) {
-            return Err(format!(
-                "refusing cleanup: run owner for task {task_id} exited, but its session {} \
-                 process is {session:?}, not provably gone; the worktree is preserved. After \
-                 the agent tree has exited, retry; `agent-orch inspect {task_id}` shows the \
-                 recorded agent PID",
-                owner.session_id
-            ));
-        }
+        // the recorded session process (and its group) must be provably gone.
+        require_session_gone(
+            task_id,
+            &owner.session_id,
+            session_process_classification(&store, task_id, &owner.session_id)?,
+        )?;
     }
     let metadata = validated_metadata(data_dir, task_id)?;
     let repository = Repository::new(&metadata.repository).map_err(|error| {
@@ -2531,19 +2539,64 @@ mod tests {
         );
     }
 
+    /// Owner proven exited by a start-time mismatch; returns the fixture.
     #[cfg(unix)]
-    #[test]
-    fn cleanup_follows_existing_contract_for_demonstrably_exited_owner() {
+    fn exited_owner_clean_worktree(task_id: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
         let mut identity = capture_process_identity(std::process::id()).expect("own identity");
         // Same PID with a different start time proves the recorded owner exited.
         identity.start_time_micros = identity.start_time_micros.map(|micros| micros + 1);
-        let (_root, data_dir, worktree) =
-            owned_clean_worktree("task-dead-clean", Some(Some(identity)));
+        owned_clean_worktree(task_id, Some(Some(identity)))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_follows_existing_contract_for_exited_owner_and_dead_session() {
+        use std::process::Command;
+
+        let (_root, data_dir, worktree) = exited_owner_clean_worktree("task-dead-clean");
+        let store = open_store(&data_dir).unwrap();
+        let session = store.get("task-dead-clean").unwrap().sessions[0].id.clone();
+        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let mut dead = capture_process_identity(child.id()).expect("child identity");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        dead.process_group = None; // the child shared this test's live group
+        store
+            .record_session_identity("task-dead-clean", &session, &dead)
+            .unwrap();
         cleanup_task(&data_dir, "task-dead-clean").unwrap();
         assert!(!worktree.exists());
         // Cleanup never retires or rewrites the owner record.
-        let store = open_store(&data_dir).unwrap();
         assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_refuses_exited_owner_without_a_recorded_session_identity() {
+        let (_root, data_dir, worktree) = exited_owner_clean_worktree("task-no-session-id");
+        let error = cleanup_task(&data_dir, "task-no-session-id").unwrap_err();
+        assert!(error.contains("not provably gone"), "{error}");
+        assert!(error.contains("None"), "{error}");
+        assert!(worktree.exists());
+    }
+
+    #[test]
+    fn session_gone_guard_refuses_missing_alive_and_unknown_classifications() {
+        let gone = [
+            ProcessClassification::Exited,
+            ProcessClassification::IdentityMismatch,
+        ];
+        for classification in gone {
+            require_session_gone("t", "s", Some(classification)).unwrap();
+        }
+        for classification in [
+            None,
+            Some(ProcessClassification::Alive),
+            Some(ProcessClassification::Unknown),
+        ] {
+            let error = require_session_gone("t", "s", classification).unwrap_err();
+            assert!(error.contains("not provably gone"), "{error}");
+        }
     }
 
     #[test]
