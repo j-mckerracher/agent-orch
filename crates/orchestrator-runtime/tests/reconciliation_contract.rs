@@ -144,3 +144,356 @@ mod process_group {
         assert!(scheduling_may_resume(&resolved, &[]));
     }
 }
+
+/// Real Git worktrees and delivery refs flow through the library converters
+/// and classifier into the scheduling gate.
+///
+/// RED on base 46497ac (no `workspace_evidence`, `delivery_evidence`,
+/// `classify_interrupted_task`, or runtime->git dependency); GREEN once the
+/// M2-04 owner candidate provides them. Platform-neutral: real `git` only.
+mod git_state {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use orchestrator_core::identity::ProcessClassification;
+    use orchestrator_core::task::{AttemptState, TaskState};
+    use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
+    use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
+    use orchestrator_git::reconcile::{reconcile_workspaces, RecordedWorkspace};
+    use orchestrator_git::{create_task_worktree, Repository, TaskWorktree};
+    use orchestrator_runtime::reconcile::{
+        classify_interrupted_task, delivery_evidence, scheduling_may_resume, workspace_evidence,
+        DeliveryEvidence, TaskEvidence, TaskRecovery, WorkspaceEvidence,
+    };
+
+    struct Fixture {
+        _directory: tempfile::TempDir,
+        path: PathBuf,
+        worktrees: PathBuf,
+        repository: Repository,
+        candidate_sha: String,
+    }
+
+    fn git(directory: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(directory)
+            .env("GIT_CONFIG_GLOBAL", "/nonexistent-git-global")
+            .env("GIT_CONFIG_SYSTEM", "/nonexistent-git-system")
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    fn fixture() -> Fixture {
+        let directory = tempfile::tempdir().expect("temporary git fixture");
+        let path = directory.path().join("repository");
+        fs::create_dir_all(&path).expect("create repository");
+        git(&path, &["init", "-b", "main"]);
+        git(&path, &["config", "user.email", "test@example.invalid"]);
+        git(&path, &["config", "user.name", "Test"]);
+        fs::write(path.join("base.txt"), "base\n").expect("write base");
+        git(&path, &["add", "base.txt"]);
+        git(&path, &["commit", "-m", "base"]);
+        let candidate_sha = git(&path, &["rev-parse", "HEAD"]);
+        let repository = Repository::new(&path).expect("validated repository");
+        Fixture {
+            worktrees: directory.path().join("worktrees"),
+            _directory: directory,
+            path,
+            repository,
+            candidate_sha,
+        }
+    }
+
+    fn state_snapshot(fixture: &Fixture) -> String {
+        format!(
+            "{}\n{}",
+            git(&fixture.path, &["for-each-ref"]),
+            git(&fixture.path, &["worktree", "list", "--porcelain"])
+        )
+    }
+
+    /// Mirrors what a recovery caller does for one task's worktree.
+    fn observe_workspace(
+        fixture: &Fixture,
+        worktree: &TaskWorktree,
+        inspect_safety: bool,
+    ) -> WorkspaceEvidence {
+        let recorded = [RecordedWorkspace {
+            id: "workspace-1".into(),
+            path: worktree.path().to_path_buf(),
+            branch: worktree.branch().to_owned(),
+            base_commit: worktree.base_sha().to_owned(),
+        }];
+        let plan = reconcile_workspaces(&fixture.repository, &recorded).expect("workspace plan");
+        let safety = (inspect_safety && worktree.path().exists()).then(|| {
+            check_worktree_safe_to_delete(&fixture.repository, worktree.path(), "main")
+                .expect("worktree safety")
+        });
+        workspace_evidence(plan.workspaces.first(), safety.as_ref())
+    }
+
+    fn evidence(
+        workspace: WorkspaceEvidence,
+        delivery: DeliveryEvidence,
+        task: TaskState,
+        attempt: AttemptState,
+    ) -> TaskEvidence {
+        TaskEvidence {
+            task,
+            attempt,
+            process: ProcessClassification::Exited,
+            workspace,
+            delivery,
+        }
+    }
+
+    fn step(fixture: &Fixture, id: &str, target_ref: &str, sha: &str) -> RecordedDeliveryStep {
+        RecordedDeliveryStep {
+            id: id.into(),
+            task_id: Some("task-1".into()),
+            action: Some(DeliveryAction::LocalReview),
+            candidate_sha: Some(sha.into()),
+            destination: Some(fixture.repository.path().to_path_buf()),
+            target_ref: Some(target_ref.into()),
+        }
+    }
+
+    fn gate(recovery: TaskRecovery) -> bool {
+        scheduling_may_resume(&[], &[recovery.resolution()])
+    }
+
+    #[test]
+    fn clean_matching_worktree_is_recoverable_and_dirty_work_is_preserved() {
+        let fixture = fixture();
+        let worktree =
+            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
+                .expect("create worktree");
+
+        let clean = observe_workspace(&fixture, &worktree, true);
+        assert_eq!(clean, WorkspaceEvidence::Matching);
+        let recovery = classify_interrupted_task(evidence(
+            clean,
+            DeliveryEvidence::None,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_eq!(recovery, TaskRecovery::Recoverable);
+        assert!(gate(recovery));
+
+        // Uncommitted work: never discardable, a human must inspect.
+        let dirty_file = worktree.path().join("unsaved.txt");
+        fs::write(&dirty_file, "uncommitted\n").expect("write dirty file");
+        let dirty = observe_workspace(&fixture, &worktree, true);
+        assert_eq!(dirty, WorkspaceEvidence::Dirty);
+        let recovery = classify_interrupted_task(evidence(
+            dirty,
+            DeliveryEvidence::None,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_eq!(recovery, TaskRecovery::RequiresInspection);
+        assert!(!gate(recovery), "dirty work must block scheduling");
+        assert_eq!(fs::read_to_string(&dirty_file).unwrap(), "uncommitted\n");
+    }
+
+    #[test]
+    fn committed_unlanded_work_is_never_treated_as_matching_or_discardable() {
+        let fixture = fixture();
+        let worktree =
+            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
+                .expect("create worktree");
+        fs::write(worktree.path().join("work.txt"), "work\n").expect("write work");
+        git(worktree.path(), &["add", "work.txt"]);
+        git(worktree.path(), &["commit", "-m", "unlanded work"]);
+        let head = git(worktree.path(), &["rev-parse", "HEAD"]);
+
+        let observed = observe_workspace(&fixture, &worktree, true);
+        assert_ne!(observed, WorkspaceEvidence::Matching);
+
+        // Mid-run: unlanded commits without a verified candidate need a human.
+        let running = classify_interrupted_task(evidence(
+            observed,
+            DeliveryEvidence::None,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_eq!(running, TaskRecovery::RequiresInspection);
+        assert!(!gate(running));
+
+        // A recorded candidate may be re-verified from the preserved branch.
+        let candidate = classify_interrupted_task(evidence(
+            observed,
+            DeliveryEvidence::None,
+            TaskState::Verifying,
+            AttemptState::CandidateReady,
+        ));
+        assert_eq!(candidate, TaskRecovery::Recoverable);
+        assert_eq!(git(worktree.path(), &["rev-parse", "HEAD"]), head);
+    }
+
+    #[test]
+    fn removed_worktree_blocks_the_task_without_blocking_other_scheduling() {
+        let fixture = fixture();
+        let worktree =
+            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
+                .expect("create worktree");
+        fs::remove_dir_all(worktree.path()).expect("simulate out-of-band removal");
+
+        let observed = observe_workspace(&fixture, &worktree, false);
+        assert_eq!(observed, WorkspaceEvidence::Missing);
+        let recovery = classify_interrupted_task(evidence(
+            observed,
+            DeliveryEvidence::None,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_eq!(recovery, TaskRecovery::Blocked);
+        assert!(gate(recovery));
+    }
+
+    #[test]
+    fn uninspected_or_unrecorded_workspace_requires_inspection() {
+        let fixture = fixture();
+        let worktree =
+            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
+                .expect("create worktree");
+
+        // Present worktree whose safety was never established.
+        let uninspected = observe_workspace(&fixture, &worktree, false);
+        assert_eq!(uninspected, WorkspaceEvidence::Unknown);
+        // No workspace decision at all.
+        assert_eq!(workspace_evidence(None, None), WorkspaceEvidence::Unknown);
+
+        for workspace in [uninspected, WorkspaceEvidence::Unknown] {
+            let recovery = classify_interrupted_task(evidence(
+                workspace,
+                DeliveryEvidence::None,
+                TaskState::Running,
+                AttemptState::Running,
+            ));
+            assert_eq!(recovery, TaskRecovery::RequiresInspection);
+            assert!(!gate(recovery));
+        }
+    }
+
+    #[test]
+    fn partially_landed_delivery_requires_inspection_and_leaves_git_untouched() {
+        let fixture = fixture();
+        let landed_ref = "refs/heads/orchestrator/review/task-1-a";
+        let pending_ref = "refs/heads/orchestrator/review/task-1-b";
+        git(
+            &fixture.path,
+            &["update-ref", landed_ref, fixture.candidate_sha.as_str()],
+        );
+        let before = state_snapshot(&fixture);
+        let steps = [
+            step(&fixture, "delivery-a", landed_ref, &fixture.candidate_sha),
+            step(&fixture, "delivery-b", pending_ref, &fixture.candidate_sha),
+        ];
+
+        let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
+        let observed = delivery_evidence(&plan.steps);
+        assert_eq!(observed, DeliveryEvidence::Partial);
+
+        // Even a clean matching worktree and a "succeeded" record must not
+        // hide a half-landed delivery.
+        for task in [TaskState::Running, TaskState::Succeeded] {
+            let recovery = classify_interrupted_task(evidence(
+                WorkspaceEvidence::Matching,
+                observed,
+                task,
+                AttemptState::CandidateReady,
+            ));
+            assert_eq!(recovery, TaskRecovery::RequiresInspection, "{task:?}");
+            assert!(!gate(recovery));
+        }
+        assert_eq!(
+            state_snapshot(&fixture),
+            before,
+            "reconciliation must not write"
+        );
+    }
+
+    #[test]
+    fn ambiguous_delivery_step_is_never_summarised_as_landed() {
+        let fixture = fixture();
+        let moved_ref = "refs/heads/orchestrator/review/task-1";
+        let base_sha = fixture.candidate_sha.clone();
+        fs::write(fixture.path.join("other.txt"), "other\n").expect("write other");
+        git(&fixture.path, &["add", "other.txt"]);
+        git(&fixture.path, &["commit", "-m", "other"]);
+        // Ref now points somewhere other than the recorded candidate.
+        git(&fixture.path, &["update-ref", moved_ref, "HEAD"]);
+        let landed_ref = "refs/heads/orchestrator/review/task-1-ok";
+        git(
+            &fixture.path,
+            &["update-ref", landed_ref, base_sha.as_str()],
+        );
+        let steps = [
+            step(&fixture, "delivery-a", landed_ref, &base_sha),
+            step(&fixture, "delivery-b", moved_ref, &base_sha),
+        ];
+
+        let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
+        assert!(plan.has_ambiguous_steps());
+        let observed = delivery_evidence(&plan.steps);
+        assert_eq!(observed, DeliveryEvidence::Ambiguous);
+        let recovery = classify_interrupted_task(evidence(
+            WorkspaceEvidence::Matching,
+            observed,
+            TaskState::Running,
+            AttemptState::CandidateReady,
+        ));
+        assert_eq!(recovery, TaskRecovery::RequiresInspection);
+        assert!(!gate(recovery));
+    }
+
+    #[test]
+    fn only_git_confirmed_delivery_is_completed_and_unlanded_delivery_is_not() {
+        let fixture = fixture();
+        let review_ref = "refs/heads/orchestrator/review/task-1";
+        let steps = [step(
+            &fixture,
+            "delivery-a",
+            review_ref,
+            &fixture.candidate_sha,
+        )];
+
+        // Nothing landed: an exited agent is not completion.
+        let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
+        let not_applied = delivery_evidence(&plan.steps);
+        assert_eq!(not_applied, DeliveryEvidence::NotApplied);
+        let recovery = classify_interrupted_task(evidence(
+            WorkspaceEvidence::Matching,
+            not_applied,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_ne!(recovery, TaskRecovery::Completed);
+
+        // Git now proves the delivery: completed, whatever the task record says.
+        git(
+            &fixture.path,
+            &["update-ref", review_ref, fixture.candidate_sha.as_str()],
+        );
+        let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
+        let confirmed = delivery_evidence(&plan.steps);
+        assert_eq!(confirmed, DeliveryEvidence::Confirmed);
+        let recovery = classify_interrupted_task(evidence(
+            WorkspaceEvidence::Matching,
+            confirmed,
+            TaskState::Running,
+            AttemptState::Running,
+        ));
+        assert_eq!(recovery, TaskRecovery::Completed);
+        assert!(gate(recovery));
+    }
+}
