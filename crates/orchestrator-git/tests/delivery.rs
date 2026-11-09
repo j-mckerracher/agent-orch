@@ -563,6 +563,312 @@ fn dirty_worktree_is_unsafe_and_survives_safety_check() {
     );
 }
 
+fn lock_path(fixture: &Fixture) -> PathBuf {
+    fixture
+        .repository
+        .git_common_dir()
+        .join(".orchestrator-delivery.lock")
+}
+
+#[test]
+fn local_review_refuses_refs_outside_the_review_namespace_before_any_callback() {
+    let fixture = fixture();
+    let before_refs = refs(&fixture.repository_path);
+    for target_ref in [
+        "refs/heads/main",
+        "refs/heads/orchestrator/review/",
+        "refs/heads/orchestrator/review/../main",
+        "refs/heads/orchestrator/review/a..b",
+        "refs/tags/orchestrator/review/task-1",
+    ] {
+        let calls = RefCell::new(Vec::new());
+        let persisted = RefCell::new(Vec::new());
+        let approval = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+            calls.borrow_mut().push("approval");
+            Ok(())
+        };
+        let verification = |_: &VerificationCheck<'_>| -> Result<(), CallbackError> {
+            calls.borrow_mut().push("verification");
+            Ok(())
+        };
+        let persist = |step: &DeliveryStep| -> Result<(), CallbackError> {
+            persisted.borrow_mut().push(step.clone());
+            Ok(())
+        };
+        let callbacks = DeliveryCallbacks {
+            check_approval: &approval,
+            check_verification: &verification,
+            persist_step: &persist,
+        };
+
+        let error = delivery::local_review(
+            &fixture.repository,
+            request(&fixture, "delivery-bad-ref"),
+            target_ref,
+            &callbacks,
+        )
+        .expect_err("ref outside the review namespace must be refused");
+
+        assert!(
+            matches!(error, DeliveryError::InvalidReviewRef(_)),
+            "{target_ref}: {error:?}"
+        );
+        assert!(calls.borrow().is_empty(), "{target_ref}: callbacks ran");
+        let persisted = persisted.borrow();
+        assert_eq!(persisted.len(), 1, "{target_ref}: refusal is persisted");
+        assert_eq!(persisted[0].outcome, DeliveryOutcome::Refused);
+        assert_eq!(refs(&fixture.repository_path), before_refs, "{target_ref}");
+        assert!(!lock_path(&fixture).exists(), "{target_ref}: lock released");
+    }
+}
+
+#[test]
+fn verification_is_revalidated_before_approval_and_before_any_write() {
+    let fixture = fixture();
+    let calls = RefCell::new(Vec::new());
+    let approval = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+        calls.borrow_mut().push("approval");
+        Ok(())
+    };
+    let verification = |_: &VerificationCheck<'_>| -> Result<(), CallbackError> {
+        calls.borrow_mut().push("verification");
+        assert!(
+            git(
+                &fixture.repository_path,
+                &["for-each-ref", "refs/heads/orchestrator/review/"]
+            )
+            .is_empty(),
+            "no review ref may exist while revalidating"
+        );
+        Ok(())
+    };
+    let callbacks = DeliveryCallbacks {
+        check_approval: &approval,
+        check_verification: &verification,
+        persist_step: &persist_nothing,
+    };
+
+    delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-order"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect("authorized delivery");
+
+    assert_eq!(calls.into_inner(), ["verification", "approval"]);
+}
+
+#[test]
+fn refused_delivery_persists_refusal_releases_lock_and_leaves_destination_reusable() {
+    let fixture = fixture();
+    let before_refs = refs(&fixture.repository_path);
+    let persisted = RefCell::new(Vec::new());
+    let persist = |step: &DeliveryStep| -> Result<(), CallbackError> {
+        persisted.borrow_mut().push(step.clone());
+        Ok(())
+    };
+    let denied = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+        Err(Box::new(io::Error::other("approval denied")))
+    };
+    let refusing = DeliveryCallbacks {
+        check_approval: &denied,
+        check_verification: &verification_ok,
+        persist_step: &persist,
+    };
+
+    let error = delivery::report_only(
+        &fixture.repository,
+        request(&fixture, "delivery-refused"),
+        &refusing,
+    )
+    .expect_err("report-only still requires approval");
+
+    assert!(matches!(error, DeliveryError::Approval(_)));
+    {
+        let persisted = persisted.borrow();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].outcome, DeliveryOutcome::Refused);
+        assert!(persisted[0].detail.as_deref().unwrap().contains("denied"));
+    }
+    assert_eq!(refs(&fixture.repository_path), before_refs);
+    assert!(!lock_path(&fixture).exists(), "refusal must release lock");
+
+    let callbacks = callbacks(&persist_nothing);
+    let step = delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-after-refusal"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect("a refusal must not block the next delivery");
+    assert_eq!(step.outcome, DeliveryOutcome::ReviewRefCreated);
+    assert!(!lock_path(&fixture).exists());
+}
+
+#[test]
+fn candidate_changed_by_approval_time_is_refused_without_writing_a_ref() {
+    for action in [DeliveryAction::ReportOnly, DeliveryAction::LocalReview] {
+        for dirty_only in [false, true] {
+            let fixture = fixture();
+            let main_before = git(&fixture.repository_path, &["rev-parse", "refs/heads/main"]);
+            let late_change = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+                fs::write(fixture.worktree_path.join("late.txt"), "late\n").unwrap();
+                if !dirty_only {
+                    git(&fixture.worktree_path, &["add", "late.txt"]);
+                    git(&fixture.worktree_path, &["commit", "-m", "late"]);
+                }
+                Ok(())
+            };
+            let callbacks = DeliveryCallbacks {
+                check_approval: &late_change,
+                check_verification: &verification_ok,
+                persist_step: &persist_nothing,
+            };
+            let request = request(&fixture, "delivery-late-change");
+
+            let result = match action {
+                DeliveryAction::ReportOnly => {
+                    delivery::report_only(&fixture.repository, request, &callbacks)
+                }
+                DeliveryAction::LocalReview => {
+                    delivery::local_review(&fixture.repository, request, REVIEW_REF, &callbacks)
+                }
+            };
+
+            let error = result.expect_err("change after approval check must refuse");
+            match (dirty_only, &error) {
+                (false, DeliveryError::CandidateChanged { .. })
+                | (true, DeliveryError::DirtyCandidate(_)) => {}
+                _ => panic!("{action:?} dirty_only={dirty_only}: {error:?}"),
+            }
+            assert!(
+                git(
+                    &fixture.repository_path,
+                    &["for-each-ref", "refs/heads/orchestrator/review/"]
+                )
+                .is_empty(),
+                "{action:?} dirty_only={dirty_only}: review ref written"
+            );
+            assert_eq!(
+                git(&fixture.repository_path, &["rev-parse", "refs/heads/main"]),
+                main_before
+            );
+            assert!(!lock_path(&fixture).exists());
+        }
+    }
+}
+
+#[test]
+fn dirty_candidate_is_refused_before_verification_or_approval() {
+    let fixture = fixture();
+    fs::write(fixture.worktree_path.join("uncommitted.txt"), "keep\n").unwrap();
+    let before_refs = refs(&fixture.repository_path);
+    let calls = RefCell::new(0);
+    let approval = |_: &ApprovalCheck<'_>| -> Result<(), CallbackError> {
+        *calls.borrow_mut() += 1;
+        Ok(())
+    };
+    let verification = |_: &VerificationCheck<'_>| -> Result<(), CallbackError> {
+        *calls.borrow_mut() += 1;
+        Ok(())
+    };
+    let callbacks = DeliveryCallbacks {
+        check_approval: &approval,
+        check_verification: &verification,
+        persist_step: &persist_nothing,
+    };
+
+    let error = delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-dirty"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect_err("dirty candidate must refuse");
+
+    assert!(matches!(error, DeliveryError::DirtyCandidate(_)));
+    assert_eq!(calls.into_inner(), 0);
+    assert_eq!(refs(&fixture.repository_path), before_refs);
+    assert_eq!(
+        fs::read(fixture.worktree_path.join("uncommitted.txt")).unwrap(),
+        b"keep\n"
+    );
+}
+
+#[test]
+fn primary_checkout_and_foreign_repository_are_not_deliverable_candidates() {
+    let foreign = fixture();
+    let fixture = fixture();
+    let before_refs = refs(&fixture.repository_path);
+    let callbacks = callbacks(&persist_nothing);
+
+    let mut primary = request(&fixture, "delivery-primary");
+    primary.worktree_path = &fixture.repository_path;
+    let error = delivery::local_review(&fixture.repository, primary, REVIEW_REF, &callbacks)
+        .expect_err("primary checkout must refuse");
+    assert!(matches!(error, DeliveryError::PrimaryCheckoutCandidate));
+
+    let mut other = request(&fixture, "delivery-foreign");
+    other.worktree_path = &foreign.worktree_path;
+    let error = delivery::local_review(&fixture.repository, other, REVIEW_REF, &callbacks)
+        .expect_err("worktree of another repository must refuse");
+    assert!(matches!(error, DeliveryError::DifferentRepository { .. }));
+
+    assert_eq!(refs(&fixture.repository_path), before_refs);
+    assert!(!lock_path(&fixture).exists());
+}
+
+#[test]
+fn persistence_failure_is_reported_and_still_releases_the_destination_lock() {
+    let fixture = fixture();
+    let failing = |_: &DeliveryStep| -> Result<(), CallbackError> {
+        Err(Box::new(io::Error::other("store unavailable")))
+    };
+    let callbacks = callbacks(&failing);
+
+    let error = delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-persist-fails"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect_err("an unrecorded delivery must be surfaced");
+
+    assert!(matches!(error, DeliveryError::Persistence(_)));
+    assert!(!lock_path(&fixture).exists(), "lock must not be stranded");
+}
+
+#[test]
+fn primary_checkout_is_retained_and_a_clean_landed_worktree_is_safe() {
+    let fixture = fixture();
+
+    let primary = delivery::check_worktree_safe_to_delete(
+        &fixture.repository,
+        &fixture.repository_path,
+        "main",
+    )
+    .expect("classify primary checkout");
+    assert_eq!(
+        primary,
+        WorktreeDeletionSafety::Unsafe(UnsafeToDeleteReason::PrimaryCheckout)
+    );
+    assert!(fixture.repository_path.join("base.txt").exists());
+
+    let landed = create_task_worktree(
+        &fixture.repository,
+        "task-landed",
+        "main",
+        &fixture._directory.path().join("worktrees"),
+    )
+    .expect("create landed worktree");
+    let result =
+        delivery::check_worktree_safe_to_delete(&fixture.repository, landed.path(), "main")
+            .expect("classify landed worktree");
+    assert_eq!(result, WorktreeDeletionSafety::SafeToDelete);
+    assert!(landed.path().exists(), "the check never deletes");
+}
+
 #[test]
 fn unlanded_worktree_is_unsafe_and_survives_safety_check() {
     let fixture = fixture();
