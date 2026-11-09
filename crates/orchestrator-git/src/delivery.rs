@@ -550,13 +550,20 @@ impl DestinationLock {
             Err(error) => return Err(error.into()),
         };
         // The just-created lock file is unverified if its identity cannot be
-        // read: fail acquisition with the real OS error and leave the file in
-        // place for inspection rather than returning a guard that cannot
-        // clean up (and would strand the lock).
+        // read (OS error) or the platform has none: fail acquisition with the
+        // real cause and leave the file in place for inspection rather than
+        // returning a guard that cannot verify ownership at cleanup.
         let identity = match file
             .metadata()
             .and_then(|metadata| identity_of(&file, &metadata))
-        {
+            .and_then(|identity| {
+                identity.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "file identity is unsupported on this platform",
+                    )
+                })
+            }) {
             Ok(identity) => identity,
             Err(source) => return Err(DestinationLockError::IdentityUnverified { path, source }),
         };
@@ -565,14 +572,14 @@ impl DestinationLock {
             .and_then(|()| file.sync_all())
         {
             drop(file);
-            remove_if_same_file(&path, identity.as_ref());
+            remove_if_same_file(&path, Some(&identity));
             return Err(error.into());
         }
         Ok(Self {
             path,
             file: Some(file),
             owner_contents,
-            identity,
+            identity: Some(identity),
         })
     }
 }
@@ -580,17 +587,17 @@ impl DestinationLock {
 impl Drop for DestinationLock {
     fn drop(&mut self) {
         drop(self.file.take());
-        let Ok(metadata) = fs::symlink_metadata(&self.path) else {
+        let (Some(identity), Ok(metadata)) = (&self.identity, fs::symlink_metadata(&self.path))
+        else {
             return;
         };
         let Ok(contents) = fs::read_to_string(&self.path) else {
             return;
         };
-        // Platforms without file identity fall back to exact-contents ownership.
-        let same_file = self.identity.as_ref().is_none_or(|identity| {
-            FileIdentity::from_path(&self.path, &metadata) == Some(*identity)
-        });
-        if !metadata.file_type().is_file() || !same_file || contents != self.owner_contents {
+        if !metadata.file_type().is_file()
+            || FileIdentity::from_path(&self.path, &metadata) != Some(*identity)
+            || contents != self.owner_contents
+        {
             return;
         }
         let _ = fs::remove_file(&self.path);
@@ -850,18 +857,32 @@ mod tests {
     }
 
     #[test]
-    fn missing_platform_identity_still_cleans_up_by_owner_contents() {
+    fn missing_platform_identity_fails_acquisition_and_keeps_the_artifact() {
         let directory = tempfile::tempdir().unwrap();
         let lock_path = fs::canonicalize(directory.path())
             .unwrap()
             .join(DELIVERY_LOCK_NAME);
-        let lock = DestinationLock::acquire_with(directory.path(), |_, _| Ok(None)).unwrap();
+        let result = DestinationLock::acquire_with(directory.path(), |_, _| Ok(None));
+        match result {
+            Err(DestinationLockError::IdentityUnverified { path, source }) => {
+                assert_eq!(path, lock_path);
+                assert_eq!(source.kind(), std::io::ErrorKind::Unsupported);
+            }
+            other => panic!("expected IdentityUnverified, got {:?}", other.err()),
+        }
+        assert!(lock_path.exists(), "unverified artifact must be preserved");
+    }
+
+    #[test]
+    fn verified_identity_lock_is_removed_on_drop() {
+        let directory = tempfile::tempdir().unwrap();
+        let lock_path = fs::canonicalize(directory.path())
+            .unwrap()
+            .join(DELIVERY_LOCK_NAME);
+        let lock = DestinationLock::acquire(directory.path()).unwrap();
         assert!(lock_path.exists());
         drop(lock);
-        assert!(
-            !lock_path.exists(),
-            "guard without identity must not strand the lock"
-        );
+        assert!(!lock_path.exists());
     }
 
     #[test]
