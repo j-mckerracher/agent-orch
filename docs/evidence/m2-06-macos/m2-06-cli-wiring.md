@@ -19,3 +19,7 @@ The CLI keeps repository, worktree, and log paths in sidecar files under `<data-
 ## Verification
 
 `cargo test --locked -p orchestrator-cli --test cli` passed 18 tests on macOS.
+
+## Addendum 2026-11-08 (M1-04, not part of the verified run above)
+
+The statements above describe the run that was verified. M1-04 later changed the finish phase. `run` no longer reacquires `.orchestrator.lock` to record the finish state. Cancellation confirmation and owner closure are single generation-fenced store transactions that only the run owner can commit, so a daemon that holds the lock for its lifetime no longer blocks a queued cancel. Reconciliation treats a task whose cancellation owner is observed Alive as still finishing and leaves it alone. Dead or unprovable owners stay fail-closed. This addendum was not re-verified on the macOS run above.

@@ -8,7 +8,7 @@
 //! Existing JSON task records are not migrated. Stale lock recovery precedes
 //! reconciliation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -1670,7 +1670,16 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
     let mut other_records = Vec::new();
     let mut blockers = Vec::new();
 
+    let finishing = tasks_with_live_owner(store)?;
+
     for task in &tasks {
+        // A run owner finishes without the data lock, so its session, attempt
+        // and task writes land one at a time. While its exact process is
+        // observed Alive, those intermediate states are not corruption and the
+        // owner, not this reconciliation, will complete them.
+        if finishing.contains(&task.contract.id) {
+            continue;
+        }
         let unfinished = task
             .sessions
             .iter()
@@ -1864,18 +1873,29 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
     ))
 }
 
+/// Task IDs whose open cancellation owner has an exact identity observed Alive.
+/// Dead, mismatched, unknown, or missing identities are excluded so they stay
+/// fail-closed.
+fn tasks_with_live_owner(store: &SqliteStore) -> Result<BTreeSet<String>, String> {
+    let owners = store
+        .open_cancellation_owners()
+        .map_err(|error| format!("cannot list cancellation owners for reconciliation: {error}"))?;
+    Ok(owners
+        .into_iter()
+        .filter(|owner| {
+            owner.exact_process_identity().map(observe_owner_process)
+                == Some(ProcessClassification::Alive)
+        })
+        .map(|owner| owner.task_id)
+        .collect())
+}
+
 fn reconcile_cancellation_owners(store: &SqliteStore) -> Result<Vec<String>, String> {
     let owners = store
         .open_cancellation_owners()
         .map_err(|error| format!("cannot list cancellation owners for reconciliation: {error}"))?;
     let mut blockers = Vec::new();
     for owner in owners {
-        let task = store.get(&owner.task_id).map_err(|error| {
-            format!(
-                "cannot load task {} for cancellation owner reconciliation: {error}",
-                owner.task_id
-            )
-        })?;
         let identity = owner.exact_process_identity();
         let classification = identity.map(observe_owner_process);
         match classification {
@@ -1887,16 +1907,6 @@ fn reconcile_cancellation_owners(store: &SqliteStore) -> Result<Vec<String>, Str
                         owner.task_id, owner.session_id
                     )
                 })?,
-            Some(ProcessClassification::Alive) if task.state != TaskState::Running => {
-                blockers.push(format!(
-                    "cancellation owner for task {} session {} generation {} is still alive \
-                         while task is {:?}; manual recovery is not safe until the owner exits",
-                    owner.task_id,
-                    owner.session_id,
-                    owner.generation(),
-                    task.state
-                ));
-            }
             Some(ProcessClassification::IdentityMismatch | ProcessClassification::Unknown)
             | None => {
                 blockers.push(format!(
@@ -2706,6 +2716,57 @@ mod tests {
             .expect("audited release");
         assert_eq!(released.payload["session_process_classification"], "Exited");
         reconcile_before_scheduling(&store).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_tolerates_live_owner_mid_finish_but_not_dead_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = open_store(directory.path()).unwrap();
+        // This test process stands in for a live run owner.
+        let identity = capture_process_identity(std::process::id()).expect("own identity");
+        let owner = register_test_owner(&store, "task-finishing", Some(identity));
+        assert_eq!(
+            observe_owner_process(owner.exact_process_identity().unwrap()),
+            ProcessClassification::Alive
+        );
+
+        // Window 1: the owner marked the session Exited; the task is still Running.
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        reconcile_before_scheduling(&store).expect("live owner is still finishing");
+
+        // Window 2: the owner moved the task to Verifying; it is still alive.
+        store
+            .update_attempt_state(
+                &owner.task_id,
+                &owner.attempt_id,
+                AttemptState::CandidateReady,
+            )
+            .unwrap();
+        store
+            .transition(&owner.task_id, TaskEvent::CandidateReady)
+            .unwrap();
+        assert!(reconcile_cancellation_owners(&store).unwrap().is_empty());
+        reconcile_before_scheduling(&store).expect("live owner is still finishing");
+        assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_stays_fail_closed_for_unprovable_owner_in_finish_window() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = open_store(directory.path()).unwrap();
+        let owner = register_test_owner(&store, "task-unproven", None);
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(
+            error.contains("Running without an unfinished session"),
+            "{error}"
+        );
     }
 
     #[test]
