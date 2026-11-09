@@ -486,3 +486,48 @@ fn cleanup_follows_existing_contract_for_provably_exited_run_owner() {
     );
     assert_eq!(&primary(&fixture.repo), &before);
 }
+
+/// Deterministic startup-window state: the run created its worktree, recorded the
+/// task as Running, then died before any agent launched or any run owner was
+/// registered. Nothing has settled the task, so cleanup must fail closed and keep
+/// the worktree (the operator settles the task first). Needs the CLI's existing
+/// `fault-injection` feature (same seam as `recovery.rs`); Unix-only because the
+/// injected crash is a Unix SIGKILL of the CLI itself.
+#[cfg(all(unix, feature = "fault-injection"))]
+#[test]
+fn cleanup_refuses_running_task_that_never_registered_a_run_owner() {
+    let fixture = fixture();
+    let before = primary(&fixture.repo);
+    let crashed = run_command(&fixture, "startup-crash", "edit")
+        .env("AGENT_ORCH_FAULT_INJECTION", "crash-before-agent-launch")
+        .output()
+        .expect("run CLI");
+    assert!(
+        !crashed.status.success(),
+        "injected crash must kill the run"
+    );
+
+    let worktree = fixture.data.join("worktrees/startup-crash");
+    assert!(worktree.exists(), "run must have created its worktree");
+    assert_eq!(
+        git(
+            &worktree,
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        "",
+        "worktree must be clean"
+    );
+    assert_eq!(
+        git(&worktree, &["rev-parse", "HEAD"]),
+        git(&fixture.repo, &["rev-parse", "main"]),
+        "worktree must be landed"
+    );
+    let refused = cli(&fixture, "cleanup", "startup-crash");
+    assert!(
+        !refused.status.success(),
+        "cleanup must not remove the worktree of an unsettled Running task; stdout: {}",
+        String::from_utf8_lossy(&refused.stdout)
+    );
+    assert!(worktree.exists(), "refused cleanup removed the worktree");
+    assert_eq!(&primary(&fixture.repo), &before);
+}
