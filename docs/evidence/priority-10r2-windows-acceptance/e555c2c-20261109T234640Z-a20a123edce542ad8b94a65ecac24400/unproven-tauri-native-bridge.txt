@@ -1,0 +1,2 @@
+status: UNPROVEN
+The Tauri shell and its native bridge to the daemon were not built or run. The shipped app has no connector until M5-05.

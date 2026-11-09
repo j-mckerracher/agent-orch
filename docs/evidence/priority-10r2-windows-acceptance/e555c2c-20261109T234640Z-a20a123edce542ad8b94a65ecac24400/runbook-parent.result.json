@@ -1,0 +1,25 @@
+{
+  "name": "runbook-parent",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10r2-acc-20261109T234640Z-a20a123edce542ad8b94a65ecac24400\\source rev-list --parents --reverse e555c2c922ce00ee93673452f67848c7f888b4f1..08531389c488fe29edd2107990921be16e31c1d5",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10r2-acc-20261109T234640Z-a20a123edce542ad8b94a65ecac24400",
+  "source_commit": "e555c2c922ce00ee93673452f67848c7f888b4f1",
+  "started_utc": "2026-11-09T23:46:53.1354276Z",
+  "duration_seconds": 0.618,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10r2-acc-20261109T234640Z-a20a123edce542ad8b94a65ecac24400\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 82,
+  "stdout_sha256": "d3d30e7a9152c5795bd52e47ca3bcafffa883c72ab87431941530f3072fa3455",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}
