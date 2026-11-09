@@ -1,0 +1,8 @@
+
+running 3 tests
+test delivery_step_is_append_only_and_a_reused_id_changes_nothing ... ok
+test outcome_that_does_not_match_a_delivery_action_persists_nothing ... ok
+test only_an_approved_current_exact_approval_authorizes_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+

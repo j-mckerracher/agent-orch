@@ -1,0 +1,25 @@
+{
+  "name": "cli-cleanup-safety",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test cleanup_safety",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\source",
+  "source_commit": "b5db71a3b395d49c0767d8019c502d9fadfd0aa3",
+  "started_utc": "2026-11-09T13:44:12.2203667Z",
+  "duration_seconds": 23.22,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\test-tmp\\cli-cleanup-safety",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\test-tmp\\cli-cleanup-safety",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 339,
+  "stdout_sha256": "cb7c05d7499601bfaefa67a372445802e66ab944bc643fe1d066b8b3c0a3211a",
+  "stderr_bytes": 452,
+  "stderr_sha256": "0e14fb66afcd34d5d84280acd0643876898ecdbfbcee2122c51842a89b3b72d3",
+  "error": null
+}

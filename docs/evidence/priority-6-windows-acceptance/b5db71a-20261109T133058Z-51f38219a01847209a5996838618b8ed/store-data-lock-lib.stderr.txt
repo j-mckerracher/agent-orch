@@ -1,0 +1,3 @@
+   Compiling orchestrator-store v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\source\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.38s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\cargo-target\debug\deps\orchestrator_store-83d5b0eb7428294f.exe)

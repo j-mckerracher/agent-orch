@@ -1,0 +1,8 @@
+
+running 3 tests
+test workflow::tests::cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable ... ok
+test workflow::tests::cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 2.48s
+

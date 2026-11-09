@@ -1,0 +1,25 @@
+{
+  "name": "runtime-reconcile",
+  "command": "cargo.exe test --locked -p orchestrator-runtime --test reconcile",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\source",
+  "source_commit": "b5db71a3b395d49c0767d8019c502d9fadfd0aa3",
+  "started_utc": "2026-11-09T13:43:12.0180898Z",
+  "duration_seconds": 2.768,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 2389,
+  "stdout_sha256": "13671f079cb684fdb02050efdb84ff49ff86bb810974054a8376adf38a270cd3",
+  "stderr_bytes": 450,
+  "stderr_sha256": "5cc302879096aff6e116a7bc3a9e766cf6facf737752505acb16c01a4acf7450",
+  "error": null
+}

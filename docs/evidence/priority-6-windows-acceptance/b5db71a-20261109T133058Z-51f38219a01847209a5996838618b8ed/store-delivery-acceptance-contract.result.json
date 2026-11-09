@@ -1,0 +1,25 @@
+{
+  "name": "store-delivery-acceptance-contract",
+  "command": "cargo.exe test --locked -p orchestrator-store --test delivery_acceptance_contract",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\source",
+  "source_commit": "b5db71a3b395d49c0767d8019c502d9fadfd0aa3",
+  "started_utc": "2026-11-09T13:44:57.6570103Z",
+  "duration_seconds": 4.145,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 333,
+  "stdout_sha256": "7ae9b382ee33fff694b4608d6c515ad321213caaf43d335eaf6b3ed70cd647b7",
+  "stderr_bytes": 484,
+  "stderr_sha256": "7fde64ee9e302cefcebdaa3f861af7b1827f0637edfc6ed4486c3aeba7b8eff1",
+  "error": null
+}

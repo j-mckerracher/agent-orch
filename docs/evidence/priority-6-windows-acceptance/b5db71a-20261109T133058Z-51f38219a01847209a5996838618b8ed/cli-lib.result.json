@@ -1,0 +1,25 @@
+{
+  "name": "cli-lib",
+  "command": "cargo.exe test --locked -p orchestrator-cli --lib",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\source",
+  "source_commit": "b5db71a3b395d49c0767d8019c502d9fadfd0aa3",
+  "started_utc": "2026-11-09T13:43:24.1666378Z",
+  "duration_seconds": 42.467,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1669,
+  "stdout_sha256": "54f5bcc0d40dba8caeb898bc16ee0bba699659ec300d63a108ebbeefe0e27582",
+  "stderr_bytes": 1659,
+  "stderr_sha256": "8eaf3218f23429e91e74341334415a7166eaec185e87c7a027bdecc877f49018",
+  "error": null
+}

@@ -1,0 +1,25 @@
+{
+  "name": "cli-acceptance",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test portable_acceptance",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\source",
+  "source_commit": "b5db71a3b395d49c0767d8019c502d9fadfd0aa3",
+  "started_utc": "2026-11-09T13:44:36.0847739Z",
+  "duration_seconds": 10.443,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\test-tmp\\cli-acceptance",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\test-tmp\\cli-acceptance",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p6-acc-20261109T133058Z-51f38219a01847209a5996838618b8ed\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 233,
+  "stdout_sha256": "1065d1107a10085d7525a621bf5aa4231449c23c238f57138fbdf07839daaad3",
+  "stderr_bytes": 462,
+  "stderr_sha256": "9ce65274a238d9820afc98873dc20dbeea68457e9de456e09befe40d26066893",
+  "error": null
+}

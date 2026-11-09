@@ -1,0 +1,3 @@
+runbook file: docs/evidence/priority-6-windows-acceptance-b5db71a-runbook.md
+runbook commit (operator-declared, not byte proof): c330e89460b32ea6103c1dd862d5fd84aebefe46
+source commit: b5db71a3b395d49c0767d8019c502d9fadfd0aa3
