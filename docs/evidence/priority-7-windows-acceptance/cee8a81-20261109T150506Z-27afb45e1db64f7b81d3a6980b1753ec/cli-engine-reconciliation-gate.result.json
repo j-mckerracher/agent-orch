@@ -1,0 +1,25 @@
+{
+  "name": "cli-engine-reconciliation-gate",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test engine_reconciliation_gate",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\source",
+  "source_commit": "cee8a81f63f1d876ef26c8920a052910cdd7fe3d",
+  "started_utc": "2026-11-09T15:24:31.1300637Z",
+  "duration_seconds": 40.351,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-engine-reconciliation-gate",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-engine-reconciliation-gate",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1855,
+  "stdout_sha256": "da68f5830460216a9d90b03734acaf952248c0b8e947230c4a57cb0c6d01e53a",
+  "stderr_bytes": 476,
+  "stderr_sha256": "c089b94f7794b57f3ccad91c07d283f8d8db224f09a9e2f1afe04a1814e1c379",
+  "error": null
+}

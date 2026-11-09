@@ -1,0 +1,42 @@
+
+running 37 tests
+test claude_code_unsupported_features ... ok
+test claude_code_cancellation_tree ... ok
+test claude_code_error_result ... ok
+test claude_code_unexpected_eof ... ok
+test claude_code_approvals ... ok
+test claude_code_cancellation ... ok
+test claude_code_crlf_framing ... ok
+test claude_code_cancel_after_exit ... ok
+test claude_code_framing ... ok
+test claude_code_errors ... ok
+test claude_code_launch ... ok
+test claude_code_interruption ... ok
+test codex_approvals ... ok
+test codex_cancellation ... ok
+test codex_cancel_after_exit ... ok
+test codex_cancellation_tree ... ok
+test codex_crlf_framing ... ok
+test codex_unsupported_features ... ok
+test codex_nonterminal_warning ... ok
+test codex_unexpected_eof ... ok
+test codex_launch ... ok
+test codex_interruption ... ok
+test codex_errors ... ok
+test codex_framing ... ok
+test codex_item_outside_turn ... ok
+test pi_rpc_cancel_after_exit ... ok
+test pi_rpc_unsupported_features ... ok
+test pi_rpc_approvals ... ok
+test pi_rpc_cancellation ... ok
+test pi_rpc_cancellation_tree ... ok
+test pi_rpc_error_result ... ok
+test pi_rpc_crlf_framing ... ok
+test pi_rpc_launch ... ok
+test pi_rpc_unexpected_eof ... ok
+test pi_rpc_framing ... ok
+test pi_rpc_errors ... ok
+test pi_rpc_interruption ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.55s
+

@@ -1,0 +1,25 @@
+{
+  "name": "cli-delivery-reconciliation-contract",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test delivery_reconciliation_contract",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\source",
+  "source_commit": "cee8a81f63f1d876ef26c8920a052910cdd7fe3d",
+  "started_utc": "2026-11-09T15:26:37.0782515Z",
+  "duration_seconds": 51.889,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-delivery-reconciliation-contract",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-delivery-reconciliation-contract",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 771,
+  "stdout_sha256": "8195583544c76dcc17de06ea1db54c45c7914535f3612638127ec38fcd968645",
+  "stderr_bytes": 488,
+  "stderr_sha256": "0de54838d8320baad265526467d6d9ecf704afc86b49becefed4b823a164b0b4",
+  "error": null
+}

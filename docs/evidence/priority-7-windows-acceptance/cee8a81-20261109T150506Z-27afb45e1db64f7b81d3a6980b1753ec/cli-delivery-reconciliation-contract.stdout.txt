@@ -1,0 +1,17 @@
+
+running 12 tests
+test store_row_json_maps_to_the_classifier_record ... ok
+test per_task_evidence_summarises_the_live_rows ... ok
+test each_task_reconciles_only_its_own_steps ... ok
+test snapshot_detects_a_removed_worktree ... ok
+test snapshot_detects_a_deleted_ref ... ok
+test ambiguous_records_stay_in_the_plan_and_in_the_store ... ok
+test snapshot_detects_a_dangling_symref_write_through ... ok
+test reconciliation_leaves_live_store_git_and_worktrees_unchanged_including_after_reopen ... ok
+test snapshot_detects_a_moved_ref ... ok
+test snapshot_detects_a_created_ref ... ok
+test snapshot_detects_a_store_write ... ok
+test snapshot_detects_changed_worktree_bytes ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 46.71s
+

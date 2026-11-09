@@ -1,0 +1,33 @@
+
+running 28 tests
+test changed_start_time_is_an_identity_mismatch ... ok
+test git_evidence::delivery_steps_summarise_conservatively ... ok
+test git_evidence::uninspected_or_unrecorded_workspace_fails_closed ... ok
+test forged_windows_creation_time_is_a_mismatch_for_every_100ns_remainder ... ok
+test git_evidence::dirty_or_primary_checkout_overrides_a_matching_workspace ... ok
+test git_evidence::missing_workspace_needs_no_safety_inspection ... ok
+test scheduling_gate_blocks_unresolved_or_ambiguous_records ... ok
+test git_evidence::workspace_classification_maps_one_to_one_when_clean ... ok
+test owner_observation_classifies_alive_and_reused_pid_by_creation_time ... ok
+test task_classification::active_tasks_without_delivery_keep_recovery_semantics ... ok
+test git_evidence::unlanded_head_on_a_matching_workspace_is_branch_moved ... ok
+test process_plan_order_is_deterministic ... ok
+test owner_observation_requires_a_creation_time ... ok
+test task_classification::candidate_commit_on_moved_branch_is_recoverable_for_verification ... ok
+test task_classification::confirmed_delivery_completes_only_a_succeeded_task_with_a_clean_known_workspace ... ok
+test task_classification::exited_owner_with_matching_workspace_and_no_delivery_is_recoverable ... ok
+test task_classification::exit_without_recorded_success_or_confirmed_delivery_is_never_completed ... ok
+test task_classification::succeeded_without_delivery_steps_completes_only_with_a_matching_workspace ... ok
+test task_classification::succeeded_with_a_recorded_unapplied_delivery_is_not_proven_complete ... ok
+test task_classification::partial_or_ambiguous_delivery_requires_inspection ... ok
+test task_classification::live_owner_blocks_the_task_without_blocking_scheduling ... ok
+test task_classification::terminal_failures_without_delivery_stay_blocked ... ok
+test task_classification::uncommitted_or_unlanded_work_is_preserved_for_inspection ... ok
+test task_classification::missing_workspace_blocks_the_task ... ok
+test task_classification::unsafe_workspace_outranks_every_completion_shortcut ... ok
+test windows_identity_compares_creation_time_at_100ns_precision ... ok
+test task_classification::unproven_owner_requires_inspection_and_blocks_scheduling ... ok
+test windows_owner_observation_uses_creation_time_not_only_pid ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,17 @@
+
+running 12 tests
+test report_only_step_has_no_review_ref_to_apply ... ok
+test review_ref_at_candidate_is_confirmed_and_does_not_block_gate ... ok
+test incomplete_record_is_ambiguous_and_keeps_observed_ref ... ok
+test review_ref_at_an_unrecorded_commit_is_ambiguous_and_blocks_gate ... ok
+test packed_review_ref_at_candidate_is_confirmed ... ok
+test missing_review_ref_is_not_applied ... ok
+test dwim_lookalike_ref_is_not_the_review_ref ... ok
+test symbolic_review_ref_is_ambiguous_and_keeps_observed_object ... ok
+test dangling_symbolic_review_ref_is_ambiguous ... ok
+test plan_order_does_not_depend_on_input_order ... ok
+test reconciliation_does_not_change_git_or_supplied_record_snapshot ... ok
+test incomplete_foreign_or_malformed_records_are_ambiguous ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.22s
+

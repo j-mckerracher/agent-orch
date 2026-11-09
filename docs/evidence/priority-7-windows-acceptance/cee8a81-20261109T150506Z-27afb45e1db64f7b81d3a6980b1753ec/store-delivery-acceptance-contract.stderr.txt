@@ -1,0 +1,3 @@
+   Compiling orchestrator-store v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.06s
+     Running tests\delivery_acceptance_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery_acceptance_contract-b58c880a1ec91e15.exe)

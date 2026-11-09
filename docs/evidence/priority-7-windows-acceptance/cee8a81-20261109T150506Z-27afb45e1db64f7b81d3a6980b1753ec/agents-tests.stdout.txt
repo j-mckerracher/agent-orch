@@ -1,0 +1,122 @@
+
+running 16 tests
+test codex_adapter::tests::nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test claude_code_adapter::tests::nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test claude_code_adapter::tests::error_result_with_clean_exit_is_not_completed ... ok
+test codex_parser::tests::turn_failed_is_an_unknown_type_and_never_completes_the_turn ... ok
+test codex_parser::tests::full_happy_sequence ... ok
+test codex_parser::tests::blank_and_unknown_item_lines_are_skipped ... ok
+test codex_parser::tests::malformed_json_faults ... ok
+test codex_parser::tests::non_object_line_faults ... ok
+test codex_parser::tests::bad_thread_id_faults ... ok
+test codex_parser::tests::pre_turn_error_item_is_ignored_but_other_items_fault ... ok
+test codex_parser::tests::ordering_violations_fault ... ok
+test codex_parser::tests::missing_turn_completed_is_detected ... ok
+test codex_parser::tests::unknown_type_faults ... ok
+test pi_rpc_adapter::tests::aborted_turn_with_clean_exit_is_not_completed ... ok
+test pi_rpc_adapter::tests::nonzero_exit_after_settled_turn_fails ... ok
+test pi_rpc_adapter::tests::malformed_json_is_recoverable_and_fails_settled_turn ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+test arguments_keep_prompt_separate_and_restrict_tools ... ok
+test malformed_lines_report_a_protocol_violation_without_panicking ... ok
+test unknown_events_are_ignored ... ok
+test missing_fields_in_known_events_are_protocol_violations ... ok
+test parses_the_recorded_stream_json_output ... ok
+test detection_reports_verified_capabilities ... ok
+test nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test cancellation_is_reported_as_a_transport_outcome ... ok
+test malformed_process_output_fails_even_when_process_exits_zero ... ok
+test eof_mid_turn_is_not_reported_as_completion ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.98s
+
+
+running 10 tests
+test detect_reports_not_found_for_missing_binary ... ok
+test detect_reports_capabilities_for_found_binary ... ok
+test happy_run_streams_events_and_completes ... ok
+test supervisor_cancel_kills_descendants ... ok
+test garbage_stdout_is_a_protocol_error_not_success ... ok
+test cancel_reports_cancelled_exit ... ok
+test oversized_stdout_and_stderr_lines_are_truncated_with_a_marker ... ok
+test deprecated_error_item_and_command_lifecycle_do_not_fail_a_successful_turn ... ok
+test stderr_is_diagnostics_and_nonzero_exit_fails ... ok
+test stream_lines_are_not_returned_after_exit_when_a_descendant_keeps_pipes_open ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.53s
+
+
+running 37 tests
+test claude_code_approvals ... ok
+test claude_code_unsupported_features ... ok
+test claude_code_cancel_after_exit ... ok
+test claude_code_cancellation_tree ... ok
+test claude_code_crlf_framing ... ok
+test claude_code_error_result ... ok
+test claude_code_cancellation ... ok
+test claude_code_unexpected_eof ... ok
+test claude_code_errors ... ok
+test claude_code_launch ... ok
+test claude_code_framing ... ok
+test claude_code_interruption ... ok
+test codex_approvals ... ok
+test codex_cancel_after_exit ... ok
+test codex_cancellation ... ok
+test codex_cancellation_tree ... ok
+test codex_crlf_framing ... ok
+test codex_unsupported_features ... ok
+test codex_nonterminal_warning ... ok
+test codex_unexpected_eof ... ok
+test codex_errors ... ok
+test codex_framing ... ok
+test codex_item_outside_turn ... ok
+test codex_interruption ... ok
+test codex_launch ... ok
+test pi_rpc_approvals ... ok
+test pi_rpc_cancel_after_exit ... ok
+test pi_rpc_cancellation ... ok
+test pi_rpc_cancellation_tree ... ok
+test pi_rpc_unsupported_features ... ok
+test pi_rpc_crlf_framing ... ok
+test pi_rpc_error_result ... ok
+test pi_rpc_unexpected_eof ... ok
+test pi_rpc_launch ... ok
+test pi_rpc_errors ... ok
+test pi_rpc_framing ... ok
+test pi_rpc_interruption ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.72s
+
+
+running 10 tests
+test does_not_reuse_previous_completion_after_new_prompt ... ok
+test preserves_failing_command_response ... ok
+test keeps_stderr_separate_from_rpc_records ... ok
+test matches_response_to_request_id ... ok
+test ignores_unknown_event_types ... ok
+test ignores_malformed_json_lines ... ok
+test correlates_out_of_order_responses ... ok
+test buffers_events_before_between_and_after_responses ... ok
+test reports_mid_turn_eof_as_transport_exit ... ok
+test detects_only_the_rpc_command_it_verified ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.51s
+
+
+running 9 tests
+test empty_preference_list_fails_closed ... ok
+test empty_requirements_select_first_preference ... ok
+test claude_code_unavailable_capabilities_are_rejected ... ok
+test codex_unavailable_capabilities_are_rejected ... ok
+test pi_unavailable_capabilities_are_rejected ... ok
+test no_match_reports_missing_capabilities_for_each_candidate ... ok
+test selects_first_adapter_that_supports_every_requirement ... ok
+test identical_inputs_always_select_same_adapter ... ok
+test preference_order_decides_between_equally_capable_adapters ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

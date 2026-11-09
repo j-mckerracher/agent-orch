@@ -1,0 +1,11 @@
+
+running 6 tests
+test event_write_failure_rolls_back_one_task_while_parallel_task_stays_live ... ok
+test cancel_targets_one_run_and_leaves_the_parallel_task_untouched ... ok
+test two_concurrent_runs_overlap_and_keep_their_changes ... ok
+test running_task_with_no_live_runs_left_is_reconciled_by_the_next_run ... ok
+test agent_runtime_failure_keeps_changes_and_parallel_task_and_a_new_run_succeeds ... ok
+test killed_run_owner_is_reconciled_while_parallel_task_completes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.87s
+

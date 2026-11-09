@@ -1,0 +1,213 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling thiserror v2.0.21
+   Compiling zmij v1.0.23
+   Compiling pin-project-lite v0.2.17
+   Compiling windows-sys v0.61.2
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling bytes v1.12.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling getrandom v0.4.3
+   Compiling fastrand v2.5.0
+   Compiling version_check v0.9.5
+   Compiling litemap v0.8.3
+   Compiling utf_types v1.0.0
+   Compiling smallvec v1.16.5
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling futures-core v0.3.34
+   Compiling writeable v0.6.4
+   Compiling utf8_iter v1.1.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling shlex v2.0.1
+   Compiling typenum v1.20.1
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling tempfile v3.27.0
+   Compiling scopeguard v1.2.0
+   Compiling find-msvc-tools v0.1.15
+   Compiling lock_api v0.4.14
+   Compiling vcpkg v0.2.15
+   Compiling pkg-config v0.3.34
+   Compiling futures-sink v0.3.34
+   Compiling cc v1.11.1
+   Compiling parking_lot_core v0.9.12
+   Compiling crossbeam-utils v0.8.23
+   Compiling equivalent v1.0.3
+   Compiling futures-io v0.3.34
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling allocator-api2 v0.2.21
+   Compiling autocfg v1.5.1
+   Compiling futures-task v0.3.34
+   Compiling slab v0.4.12
+   Compiling synstructure v0.14.0
+   Compiling foldhash v0.2.0
+   Compiling percent-encoding v2.3.2
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling num-traits v0.2.19
+   Compiling log v0.4.35
+   Compiling crc-catalog v2.5.0
+   Compiling hashbrown v0.17.1
+   Compiling parking v2.2.1
+   Compiling cpufeatures v0.2.17
+   Compiling hashlink v0.11.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling sha2 v0.10.9
+   Compiling event-listener v5.4.2
+   Compiling crc v3.4.0
+   Compiling futures-intrusive v0.5.0
+   Compiling indexmap v2.14.2
+   Compiling tracing-attributes v0.1.31
+   Compiling base64 v0.22.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling tokio-macros v2.7.2
+   Compiling displaydoc v0.2.7
+   Compiling tokio v1.54.1
+   Compiling spin v0.9.9
+   Compiling atoi v2.0.0
+   Compiling tracing v0.1.44
+   Compiling flume v0.12.0
+   Compiling futures-executor v0.3.34
+   Compiling futures-channel v0.3.34
+   Compiling heck v0.5.0
+   Compiling zerofrom v0.1.8
+   Compiling dotenvy v0.15.7
+   Compiling hex v0.4.3
+   Compiling orchestrator-git v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-git)
+   Compiling getrandom v0.3.4
+   Compiling async-trait v0.1.89
+   Compiling anstyle v1.0.14
+   Compiling utf8parse v0.2.2
+   Compiling yoke v0.8.4
+   Compiling once_cell_polyfill v1.70.2
+   Compiling anstyle-parse v1.0.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling anstyle-wincon v3.0.11
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.5
+   Compiling clap_lex v1.1.1
+   Compiling anstream v1.0.0
+   Compiling strsim v0.11.1
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling clap_derive v4.6.7
+   Compiling subtle v2.6.1
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling tokio-stream v0.1.19
+   Compiling clap_builder v4.6.7
+   Compiling libc v0.2.191
+   Compiling orchestrator-core v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-core)
+   Compiling either v1.19.0
+   Compiling icu_provider v2.4.0
+   Compiling uuid v1.18.1
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-ipc)
+   Compiling clap v4.6.7
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-runtime)
+   Compiling idna_adapter v1.2.2
+   Compiling orchestrator-agents v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-agents)
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-store)
+   Compiling orchestrator-cli v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-cli)
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-daemon)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:92:4
+   |
+92 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 22s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_agents-4a716f94ccc9c963.exe)
+     Running tests\claude_code_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\claude_code_adapter-b13679bbc32948c8.exe)
+     Running tests\codex_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\codex_adapter-97ed0efd198be446.exe)
+     Running tests\conformance.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\conformance-9174bfff98a19fe7.exe)
+     Running tests\pi_rpc_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\pi_rpc_adapter-e319f84ea8a6e40d.exe)
+     Running tests\routing.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\routing-de20b8d764179f5c.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_cli-6cdc28133f1eb6de.exe)
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_cli-ecbc4af22388665d.exe)
+     Running tests\cleanup_safety.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\cleanup_safety-c24bd34806138db6.exe)
+     Running tests\cli.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\cli-9c5111ba86d65ddf.exe)
+     Running tests\crash_concurrency.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\crash_concurrency-832188dad0e4dee4.exe)
+     Running tests\delivery_reconciliation_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery_reconciliation_contract-262155664ad44e12.exe)
+     Running tests\engine_reconciliation_gate.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\engine_reconciliation_gate-42372e85d9fc4343.exe)
+     Running tests\multi_task_review.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\multi_task_review-865a47467101113d.exe)
+     Running tests\portable_acceptance.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\portable_acceptance-0fa4607d2537f47c.exe)
+     Running tests\recovery.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\recovery-2c8edf083bc300e0.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_core-9e80a625b14b4680.exe)
+     Running tests\decomposition.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\decomposition-f4ca3495ece63f60.exe)
+     Running tests\retry.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\retry-4b7b8ea36a57bdd8.exe)
+     Running tests\scheduler.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\scheduler-3a8808a5bad3074a.exe)
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_daemon-d7b65dea539324c9.exe)
+     Running tests\daemon.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\daemon-e5fe51bd6b0acc05.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_git-0eff86802de90f50.exe)
+     Running tests\delivery.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery-8e7cf5bef084edc3.exe)
+     Running tests\delivery_acceptance_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery_acceptance_contract-251def04d0747211.exe)
+     Running tests\delivery_reconcile.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery_reconcile-73da78b7f4d08634.exe)
+     Running tests\reconcile.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\reconcile-73861929cd2ed01c.exe)
+     Running tests\scoped_diff.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\scoped_diff-66ce3ef70eab74fb.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_ipc-ae00bc8d90e6f6c1.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_runtime-92aaf5edd390e93c.exe)
+     Running tests\reconcile.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\reconcile-e49432d2bbd463a7.exe)
+     Running tests\reconciliation_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\reconciliation_contract-b13400630ec4e683.exe)
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_store-9a5f5cc97ede7bc1.exe)
+     Running tests\approvals.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\approvals-1fc7f13e262ed8de.exe)
+     Running tests\attempt_history.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\attempt_history-6457859f9e66b73e.exe)
+     Running tests\cancellation_owner.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\cancellation_owner-55b4f38da9303dec.exe)
+     Running tests\data_lock.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\data_lock-3bfd133eb48b039e.exe)
+     Running tests\delivery.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery-8e4d865d04dfd039.exe)
+     Running tests\delivery_acceptance_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\delivery_acceptance_contract-bd5af724456c5c7b.exe)
+     Running tests\lock_identity_contract.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\lock_identity_contract-e3b93aafea275cbb.exe)
+     Running tests\reconnectable_events.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\reconnectable_events-279b26077cfe3293.exe)
+     Running tests\sqlite_reconcile.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\sqlite_reconcile-0f42ba85602be70d.exe)
+     Running tests\verification.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\verification-691205c32b173665.exe)
+   Doc-tests orchestrator_agents
+   Doc-tests orchestrator_cli
+   Doc-tests orchestrator_core
+   Doc-tests orchestrator_git
+   Doc-tests orchestrator_ipc
+   Doc-tests orchestrator_runtime
+   Doc-tests orchestrator_store

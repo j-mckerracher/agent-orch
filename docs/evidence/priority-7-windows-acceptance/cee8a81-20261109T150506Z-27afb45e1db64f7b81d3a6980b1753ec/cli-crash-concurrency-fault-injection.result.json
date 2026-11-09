@@ -1,0 +1,25 @@
+{
+  "name": "cli-crash-concurrency-fault-injection",
+  "command": "cargo.exe test --locked -p orchestrator-cli --features fault-injection --test crash_concurrency",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\source",
+  "source_commit": "cee8a81f63f1d876ef26c8920a052910cdd7fe3d",
+  "started_utc": "2026-11-09T15:25:35.7401326Z",
+  "duration_seconds": 35.468,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-crash-concurrency-fault-injection",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\test-tmp\\cli-crash-concurrency-fault-injection",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 729,
+  "stdout_sha256": "83e0e874ce12b536011a82cfa03666e2b504e16a6efe02d0df3220da01466013",
+  "stderr_bytes": 458,
+  "stderr_sha256": "b57c291e10f10da5dc77590decce55cf14c95289ecc013393bea11dce238f00d",
+  "error": null
+}

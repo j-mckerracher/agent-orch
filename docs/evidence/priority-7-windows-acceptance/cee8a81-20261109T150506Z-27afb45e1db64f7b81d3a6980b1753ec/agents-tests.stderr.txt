@@ -1,0 +1,13 @@
+   Compiling syn v2.0.119
+   Compiling tokio v1.54.1
+   Compiling uuid v1.18.1
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-runtime)
+   Compiling async-trait v0.1.89
+   Compiling orchestrator-agents v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\source\crates\orchestrator-agents)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.72s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\orchestrator_agents-f684518e90b8cb36.exe)
+     Running tests\claude_code_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\claude_code_adapter-b0aec4f6af71c86b.exe)
+     Running tests\codex_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\codex_adapter-6c7f70bf73f670ae.exe)
+     Running tests\conformance.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\conformance-c01f059a6704cf99.exe)
+     Running tests\pi_rpc_adapter.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\pi_rpc_adapter-279db9ef6a164f1d.exe)
+     Running tests\routing.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\cargo-target\debug\deps\routing-2cbab14b8921244e.exe)

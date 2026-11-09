@@ -1,0 +1,28 @@
+
+running 23 tests
+test dirty_candidate_is_refused_before_verification_or_approval ... ok
+test local_review_refuses_changed_approved_candidate_sha ... ok
+test dirty_worktree_is_unsafe_and_survives_safety_check ... ok
+test local_review_refuses_refs_outside_the_review_namespace_before_any_callback ... ok
+test local_review_refuses_changed_parameter_digest ... ok
+test local_review_refuses_missing_approval ... ok
+test local_review_refuses_existing_ref_with_different_commit ... ok
+test destination_lock_refuses_second_concurrent_holder ... ok
+test local_review_accepts_existing_ref_with_same_candidate ... ok
+test local_review_creates_the_exact_ref_when_only_a_lookalike_exists ... ok
+test local_review_creates_only_review_ref ... ok
+test local_review_refuses_when_worktree_candidate_sha_changed ... ok
+test local_review_refuses_stale_verification_run ... ok
+test stale_destination_lock_is_reported_and_preserved ... ok
+test primary_checkout_is_retained_and_a_clean_landed_worktree_is_safe ... ok
+test persistence_failure_is_reported_and_still_releases_the_destination_lock ... ok
+test unlanded_worktree_is_unsafe_and_survives_safety_check ... ok
+test report_only_preserves_refs_worktrees_and_repository_files ... ok
+test primary_checkout_and_foreign_repository_are_not_deliverable_candidates ... ok
+test refused_delivery_persists_refusal_releases_lock_and_leaves_destination_reusable ... ok
+test verification_is_revalidated_before_approval_and_before_any_write ... ok
+test local_review_refuses_symbolic_review_refs_without_writing_through_them ... ok
+test candidate_changed_by_approval_time_is_refused_without_writing_a_ref ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.97s
+

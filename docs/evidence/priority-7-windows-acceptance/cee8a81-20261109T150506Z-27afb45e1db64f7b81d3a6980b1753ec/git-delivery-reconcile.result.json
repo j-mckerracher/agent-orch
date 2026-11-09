@@ -1,0 +1,25 @@
+{
+  "name": "git-delivery-reconcile",
+  "command": "cargo.exe test --locked -p orchestrator-git --test delivery_reconcile",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\source",
+  "source_commit": "cee8a81f63f1d876ef26c8920a052910cdd7fe3d",
+  "started_utc": "2026-11-09T15:28:02.6319944Z",
+  "duration_seconds": 26.741,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p7-acc-20261109T150506Z-27afb45e1db64f7b81d3a6980b1753ec\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 862,
+  "stdout_sha256": "5e661394dda62d28228ab922825fdb2bf817f5e62d47ecdcc1ddb7198d0c6355",
+  "stderr_bytes": 285,
+  "stderr_sha256": "a0d44a3fcdfb979e3c2aa23ea934c8625287cbd90a9a4d0ab3669705a54c81fb",
+  "error": null
+}

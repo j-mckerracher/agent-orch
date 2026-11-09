@@ -1,0 +1,11 @@
+
+running 6 tests
+test scheduler_starts_dependencies_before_dependent_task ... ok
+test decomposition_replaces_proposal_ids_and_rewrites_dependencies ... ok
+test verification_blocks_failed_commands_and_names_protected_paths ... ok
+test delivery_requires_exact_approval_and_reapproval_after_candidate_change ... ok
+test workflow_records_survive_reopen_after_each_stage ... ok
+test local_review_writes_only_approved_review_refs_without_merging ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.31s
+

@@ -1,0 +1,1 @@
+HEAD is now at cee8a81 test(cli): M3-06 live-store no-write proof: tolerant snapshot with sound baseline

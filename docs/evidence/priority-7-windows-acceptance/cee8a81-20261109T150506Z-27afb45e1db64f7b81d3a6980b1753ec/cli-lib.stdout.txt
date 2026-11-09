@@ -1,0 +1,22 @@
+
+running 17 tests
+test workflow::tests::delivery_blocks_only_partial_ambiguous_or_confirmed_on_unsucceeded_task ... ok
+test workflow::tests::recovery_classification_refuses_reused_lead_with_live_foreign_group ... ok
+test workflow::tests::session_gone_guard_refuses_missing_alive_and_unknown_classifications ... ok
+test cli::tests::rejects_run_without_repository_or_objective ... ok
+test workflow::tests::task_ids_reject_path_syntax_before_store_access ... ok
+test cli::tests::parses_every_command_and_global_data_directory ... ok
+test workflow::tests::canonical_target_resolves_symlinked_ancestors_and_missing_suffixes ... ok
+test workflow::tests::capture_stream_copies_raw_bytes_to_both_outputs ... ok
+test workflow::tests::unresolved_legacy_windows_owner_has_audited_manual_recovery_path ... ok
+test workflow::tests::settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+test workflow::tests::pending_attempt_without_a_session_blocks_but_a_planned_task_does_not ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner ... ok
+test workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block ... ok
+test workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything ... ok
+test workflow::tests::ambiguous_delivery_blocks_scheduling_and_is_not_rewritten ... ok
+test workflow::tests::cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.87s
+
