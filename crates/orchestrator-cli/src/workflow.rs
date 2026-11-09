@@ -1239,16 +1239,7 @@ pub fn recover_cancellation_owner(
             "cancellation owner generation {generation} is still alive; refusing manual recovery"
         ));
     }
-    let session_classification = store
-        .session_identity(task_id, session_id)
-        .map_err(|error| format!("cannot inspect session identity for {session_id}: {error}"))?
-        .map(|identity| {
-            session_recovery_classification(
-                identity,
-                observe_process(identity),
-                recorded_group_alive,
-            )
-        });
+    let session_classification = session_process_classification(&store, task_id, session_id)?;
     // Fail closed: only a proven-gone session process may be released. Unknown
     // includes a live group whose lead exited. Windows records no process
     // group (no job-object tracking), so descendants of a gone lead cannot be
@@ -1306,6 +1297,25 @@ fn recorded_group_alive(_group: u32) -> bool {
 /// lead with a live group, or any live recorded group stay `Unknown`, so they
 /// are refused. Windows records no process group and has no job-object
 /// tracking, so only the start-time check applies there.
+/// Classifies the recorded session process (and its process group); `None`
+/// when no identity was recorded.
+fn session_process_classification(
+    store: &SqliteStore,
+    task_id: &str,
+    session_id: &str,
+) -> Result<Option<ProcessClassification>, String> {
+    Ok(store
+        .session_identity(task_id, session_id)
+        .map_err(|error| format!("cannot inspect session identity for {session_id}: {error}"))?
+        .map(|identity| {
+            session_recovery_classification(
+                identity,
+                observe_process(identity),
+                recorded_group_alive,
+            )
+        }))
+}
+
 fn session_recovery_classification(
     identity: ProcessIdentity,
     observation: ProcessObservation,
@@ -1438,6 +1448,23 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
                  ids for `agent-orch recover-owner`",
                 owner.session_id,
                 owner.generation()
+            ));
+        }
+        // The owner process exiting does not stop the supervised agent tree, so
+        // the recorded session process (and its group) must be gone too.
+        let session = session_process_classification(&store, task_id, &owner.session_id)?;
+        if let Some(session) = session.filter(|session| {
+            !matches!(
+                session,
+                ProcessClassification::Exited | ProcessClassification::IdentityMismatch
+            )
+        }) {
+            return Err(format!(
+                "refusing cleanup: run owner for task {task_id} exited, but its session {} \
+                 process is {session:?}, not provably gone; the worktree is preserved. After \
+                 the agent tree has exited, retry; `agent-orch inspect {task_id}` shows the \
+                 recorded agent PID",
+                owner.session_id
             ));
         }
     }
@@ -2480,6 +2507,28 @@ mod tests {
         let error = cleanup_task(&data_dir, "task-live-clean").unwrap_err();
         assert!(error.contains("Some(Alive)"), "{error}");
         assert!(worktree.exists(), "cleanup removed a live owner's worktree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_refuses_exited_owner_while_its_session_process_is_alive() {
+        let live = capture_process_identity(std::process::id()).expect("own identity");
+        let mut forged = live;
+        forged.start_time_micros = forged.start_time_micros.map(|micros| micros + 1);
+        let (_root, data_dir, worktree) =
+            owned_clean_worktree("task-tree-alive", Some(Some(forged)));
+        let store = open_store(&data_dir).unwrap();
+        // The owner is provably exited, but the recorded session process is this live one.
+        let session = store.get("task-tree-alive").unwrap().sessions[0].id.clone();
+        store
+            .record_session_identity("task-tree-alive", &session, &live)
+            .unwrap();
+        let error = cleanup_task(&data_dir, "task-tree-alive").unwrap_err();
+        assert!(error.contains("not provably gone"), "{error}");
+        assert!(
+            worktree.exists(),
+            "cleanup removed a worktree with a live session process"
+        );
     }
 
     #[cfg(unix)]
