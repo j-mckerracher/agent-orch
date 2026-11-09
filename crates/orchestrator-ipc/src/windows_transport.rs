@@ -332,8 +332,7 @@ fn current_user_sid() -> Result<String, TransportError> {
     if error != ERROR_INSUFFICIENT_BUFFER || required < std::mem::size_of::<TOKEN_USER>() as u32 {
         return Err(io::Error::from_raw_os_error(error as i32).into());
     }
-    let words =
-        (required as usize + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>();
+    let words = (required as usize).div_ceil(std::mem::size_of::<usize>());
     let mut buffer = vec![0usize; words];
     let buffer_len = (buffer.len() * std::mem::size_of::<usize>()) as u32;
     let mut returned = 0u32;
@@ -509,3 +508,7 @@ impl Write for PipeStream {
 fn is_pipe_would_block(error: &io::Error) -> bool {
     error.kind() == io::ErrorKind::WouldBlock || error.raw_os_error() == Some(ERROR_NO_DATA as i32)
 }
+
+#[cfg(test)]
+#[path = "windows_transport_tests.rs"]
+mod tests;
