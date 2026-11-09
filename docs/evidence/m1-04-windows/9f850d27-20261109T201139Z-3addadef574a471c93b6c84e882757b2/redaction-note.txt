@@ -1,0 +1,1 @@
+Published evidence replaces the local Windows profile component in absolute paths with <local-profile>. Unmodified captured files are preserved in the local sibling raw-evidence directory and are not included in the evidence branch.

@@ -1,0 +1,3 @@
+C:\Program Files\Git\cmd\git.exe
+C:\Users\<local-profile>\.cargo\bin\cargo.exe
+C:\Users\<local-profile>\.cargo\bin\rustc.exe

@@ -1,0 +1,1 @@
+Initial harness attempt stopped before clone because Get-Command returned two git.exe paths and PowerShell treated the selected value as an array. No tests ran. Preserved as a setup failure; the retry uses the first PATH-resolved Git executable.

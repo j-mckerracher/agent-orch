@@ -1,0 +1,1 @@
+A runner assembly attempt split the script inside a PowerShell expression and failed parsing before clone or tests. The original script and parse diagnostic are preserved in local temp files; this was harness setup only.

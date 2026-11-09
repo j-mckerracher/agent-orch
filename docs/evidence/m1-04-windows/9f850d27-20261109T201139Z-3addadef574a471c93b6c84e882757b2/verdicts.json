@@ -1,0 +1,62 @@
+[
+  {
+    "name": "store-owner-exact",
+    "status": "FAIL",
+    "exit_code": 101,
+    "timed_out": false,
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": "Exit code 101."
+  },
+  {
+    "name": "runtime-reconcile-exact",
+    "status": "PASS",
+    "exit_code": 0,
+    "timed_out": false,
+    "passed": 4,
+    "failed": 0,
+    "ignored": 0,
+    "notes": ""
+  },
+  {
+    "name": "store-lock-exact",
+    "status": "FAIL",
+    "exit_code": 101,
+    "timed_out": false,
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": "Exit code 101."
+  },
+  {
+    "name": "store-owner-all",
+    "status": "FAIL",
+    "exit_code": 101,
+    "timed_out": false,
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": "Exit code 101."
+  },
+  {
+    "name": "runtime-reconcile-all",
+    "status": "PASS",
+    "exit_code": 0,
+    "timed_out": false,
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0,
+    "notes": ""
+  },
+  {
+    "name": "store-lock-all",
+    "status": "FAIL",
+    "exit_code": 101,
+    "timed_out": false,
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": "Exit code 101."
+  }
+]
