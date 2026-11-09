@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked --workspace --no-fail-fast",
+  "source_commit": "302337c459d782ba09d57a9f84c4223a24d98440",
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

@@ -1,0 +1,1 @@
+HEAD is now at 302337c test(git): expect exit code 1 for a killed command on Windows
