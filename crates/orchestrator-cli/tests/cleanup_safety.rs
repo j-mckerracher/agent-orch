@@ -531,3 +531,79 @@ fn cleanup_refuses_running_task_that_never_registered_a_run_owner() {
     assert!(worktree.exists(), "refused cleanup removed the worktree");
     assert_eq!(&primary(&fixture.repo), &before);
 }
+
+/// Killing only the CLI run owner (our own child) leaves its agent tree running in
+/// the worktree. An Exited owner must not be taken as proof that the worktree
+/// writers are gone: while the wrapper, agent or descendant is demonstrably alive,
+/// cleanup must refuse and keep the worktree. Unix-only because the owner kill must
+/// not take the agent tree with it (Windows `Child::kill` semantics differ).
+#[cfg(unix)]
+#[test]
+fn cleanup_refuses_exited_run_owner_while_its_agent_tree_is_alive() {
+    let fixture = fixture();
+    let before = primary(&fixture.repo);
+    let pidfile = fixture.root.path().join("pids.txt");
+
+    let mut run: Child = run_command(&fixture, "orphaned-tree", "tree")
+        .env("FAKE_AGENT_PIDFILE", &pidfile)
+        .stdout(File::create(fixture.root.path().join("run.stdout.log")).unwrap())
+        .stderr(File::create(fixture.root.path().join("run.stderr.log")).unwrap())
+        .spawn()
+        .expect("start CLI run");
+    let mut guard = OwnedProcesses::default();
+    guard.track("run owner", run.id());
+    let owner_identity = capture_exact_process_identity(run.id()).expect("run owner identity");
+    let metadata = fixture.data.join("cli/orphaned-tree/metadata.json");
+    let wrapper_pid = wait_until("wrapper PID in metadata", || read_json_pid(&metadata));
+    guard.track("wrapper", wrapper_pid);
+    let (agent_pid, descendant_pid) =
+        wait_until("agent and descendant PIDs", || read_pidfile(&pidfile));
+    guard.track("agent", agent_pid);
+    guard.track("descendant", descendant_pid);
+    let tree = [wrapper_pid, agent_pid, descendant_pid];
+    let identities: Vec<_> = tree
+        .iter()
+        .map(|pid| capture_exact_process_identity(*pid).expect("tree identity"))
+        .collect();
+
+    run.kill().expect("kill our own run owner");
+    run.wait().expect("reap run owner");
+    assert_eq!(
+        observe_owner_process(owner_identity),
+        ProcessClassification::Exited,
+        "precondition: the run owner must be provably exited"
+    );
+    // Evidence: classify each tree member by exact identity after the owner is gone.
+    let survivors: Vec<_> = tree
+        .iter()
+        .zip(&identities)
+        .map(|(pid, id)| (*pid, observe_owner_process(*id)))
+        .collect();
+    let any_alive = survivors
+        .iter()
+        .any(|(_, class)| *class == ProcessClassification::Alive);
+
+    let worktree = fixture.data.join("worktrees/orphaned-tree");
+    let refused = cli(&fixture, "cleanup", "orphaned-tree");
+    let worktree_kept = worktree.exists();
+    // Stop only our own tree before asserting; the guard backs this up.
+    guard.forget(run.id());
+    guard.terminate();
+    for pid in tree {
+        wait_until(&format!("PID {pid} to exit"), || {
+            (!is_process_running(pid)).then_some(())
+        });
+        guard.forget(pid);
+    }
+
+    // Precondition (observed, not assumed): SIGKILL of the owner does not stop the
+    // supervised tree, so the worktree still has live writers when cleanup runs.
+    assert!(any_alive, "agent tree unexpectedly gone: {survivors:?}");
+    assert!(
+        !refused.status.success(),
+        "cleanup removed a worktree while its agent tree was alive ({survivors:?}); stdout: {}",
+        String::from_utf8_lossy(&refused.stdout)
+    );
+    assert!(worktree_kept, "refused cleanup removed the worktree");
+    assert_eq!(&primary(&fixture.repo), &before);
+}
