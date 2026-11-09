@@ -14,6 +14,7 @@ use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
     self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::identity::ProcessClassification;
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{AttemptState, TaskEvent, TaskState};
@@ -23,6 +24,7 @@ use orchestrator_git::delivery::{
 };
 use orchestrator_git::Repository;
 use orchestrator_ipc::{Capability, IpcEvent, RpcError, RpcHandler};
+use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
     CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore,
     Store, StoreError,
@@ -315,6 +317,7 @@ impl DaemonApi {
         let task = self.store.get(task_id).map_err(map_store_error)?;
         match task.state {
             TaskState::Running => {
+                self.require_live_cancellation_owner(task_id)?;
                 return match self
                     .store
                     .request_cancellation_for_task(task_id)
@@ -349,6 +352,53 @@ impl DaemonApi {
         self.store
             .transition(task_id, TaskEvent::CancelRequested)
             .map_err(map_store_error)?;
+        Ok(())
+    }
+
+    /// Refuses to queue a cancellation that no live run owner can consume.
+    ///
+    /// The daemon holds the data-directory lock for its whole lifetime (see
+    /// `main`), so no CLI process can reconcile owners concurrently. An owner
+    /// whose exact recorded process has exited is retired for that exact
+    /// generation, which marks its request `Failed`. An owner that is not
+    /// provably alive (missing or inconclusive identity) is left untouched.
+    /// Both return `Conflict` before any request is created. `RpcError` carries
+    /// no detail, so recovery guidance goes to stderr.
+    fn require_live_cancellation_owner(&self, task_id: &str) -> Result<(), RpcError> {
+        let owners = self
+            .store
+            .open_cancellation_owners()
+            .map_err(map_store_error)?;
+        for owner in owners.into_iter().filter(|owner| owner.task_id == task_id) {
+            let classification = owner.exact_process_identity().map(observe_owner_process);
+            if classification == Some(ProcessClassification::Alive) {
+                continue;
+            }
+            if classification == Some(ProcessClassification::Exited) {
+                self.store
+                    .retire_stale_cancellation_owner(&owner)
+                    .map_err(map_store_error)?;
+                eprintln!(
+                    "orchestrator-daemon: cancellation owner for task {task_id} generation {} \
+                     exited; its request was marked Failed and the task remains Running. Stop \
+                     the daemon and use `agent-orch inspect {task_id}` to review the preserved state",
+                    owner.generation()
+                );
+            } else {
+                eprintln!(
+                    "orchestrator-daemon: cancellation owner for task {task_id} generation {} \
+                     is not provably alive ({classification:?}); no cancellation was requested. \
+                     Stop the daemon, confirm the owner and agent processes have exited, then \
+                     run `agent-orch recover-owner {task_id} --attempt-id {} --session-id {} \
+                     --generation {} --confirm-processes-exited --reason \"<reason>\"`",
+                    owner.generation(),
+                    owner.attempt_id,
+                    owner.session_id,
+                    owner.generation()
+                );
+            }
+            return Err(RpcError::Conflict);
+        }
         Ok(())
     }
 

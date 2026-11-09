@@ -345,8 +345,7 @@ fn queued_task_cancellation_is_idempotent() {
 }
 
 #[test]
-fn running_task_cancellation_requests_owner_without_process_identity() {
-    use orchestrator_core::task::{AttemptState, SessionState, TaskState};
+fn running_task_cancellation_rejects_owner_without_process_identity() {
     use orchestrator_store::{CancellationOwner, CancellationStatus};
 
     let (_directory, api) = new_api();
@@ -363,41 +362,24 @@ fn running_task_cancellation_requests_owner_without_process_identity() {
     api.store.register_cancellation_owner(&owner).unwrap();
     let before = api.store.get(task_id).unwrap();
     let audit_before = api.store.event_journal(0).unwrap();
-    let stream_before = api.store.stream_events_after(0, 100).unwrap();
 
     let result = api.dispatch(
         "tasks.cancel",
         json!({"task_id": task_id, "idempotency_key": "cancel-running-no-identity"}),
     );
-    let after = api.store.get(task_id).unwrap();
-    let audit_after = api.store.event_journal(0).unwrap();
-    let stream_after = api.store.stream_events_after(0, 100).unwrap();
-    let cancellation = api.store.cancellation_status_for_task(task_id);
-    let response_state = result
-        .as_ref()
-        .ok()
-        .and_then(|value| value["state"].as_str());
-    let cancellation_is_pending = matches!(&cancellation, Ok(Some(CancellationStatus::Pending)));
 
     assert!(
-        response_state == Some("Running")
-            && before == after
-            && after.state == TaskState::Running
-            && after.attempts[0].state == AttemptState::Running
-            && after.sessions[0].state == SessionState::Running
-            && audit_before == audit_after
-            && stream_before == stream_after
-            && cancellation_is_pending,
-        "result={result:?}, task={:?}, attempt={:?}, session={:?}, \
-         audit_events={}->{}, durable_events={}->{}, cancellation={cancellation:?}",
-        after.state,
-        after.attempts[0].state,
-        after.sessions[0].state,
-        audit_before.len(),
-        audit_after.len(),
-        stream_before.len(),
-        stream_after.len()
+        matches!(&result, Err(RpcError::Conflict)),
+        "result={result:?}"
     );
+    assert_eq!(before, api.store.get(task_id).unwrap());
+    assert_eq!(audit_before, api.store.event_journal(0).unwrap());
+    assert_eq!(
+        api.store.cancellation_status_for_task(task_id).unwrap(),
+        None::<CancellationStatus>,
+        "no request may be created for an owner that is not provably alive"
+    );
+    assert_eq!(api.store.open_cancellation_owners().unwrap().len(), 1);
 }
 
 #[cfg(unix)]
@@ -420,7 +402,10 @@ fn running_task_cancellation_requests_owner_without_mutating_run_state() {
         "session-1".into(),
         "0123456789abcdef0123456789abcdef".into(),
     )
-    .unwrap();
+    .unwrap()
+    .with_exact_process_identity(
+        orchestrator_runtime::reconcile::capture_exact_process_identity(child.0.id()).unwrap(),
+    );
     api.store.register_cancellation_owner(&owner).unwrap();
     let before = api.store.get(task_id).unwrap();
     let audit_before = api.store.event_journal(0).unwrap();
@@ -487,6 +472,60 @@ fn running_task_cancellation_requests_owner_without_mutating_run_state() {
         stream_before.len(),
         stream_after.len()
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn running_task_cancellation_with_crashed_owner_conflicts_and_retires_generation() {
+    use orchestrator_core::task::TaskState;
+    use orchestrator_store::{CancellationOwner, CancellationStatus};
+
+    let (_directory, api) = new_api();
+    register_project(&api);
+    let task_id = "running-with-crashed-owner";
+    create_running_task(&api, task_id);
+    let (mut owner_process, _) = TestChild::spawn_process_group();
+    let owner = CancellationOwner::new(
+        task_id.into(),
+        "attempt-1".into(),
+        "session-1".into(),
+        "0123456789abcdef0123456789abcdef".into(),
+    )
+    .unwrap()
+    .with_exact_process_identity(
+        orchestrator_runtime::reconcile::capture_exact_process_identity(owner_process.0.id())
+            .unwrap(),
+    );
+    api.store.register_cancellation_owner(&owner).unwrap();
+    owner_process.0.kill().unwrap();
+    owner_process.0.wait().unwrap();
+    let before = api.store.get(task_id).unwrap();
+    let audit_before = api.store.event_journal(0).unwrap();
+
+    let result = api.dispatch(
+        "tasks.cancel",
+        json!({"task_id": task_id, "idempotency_key": "cancel-crashed-owner"}),
+    );
+
+    assert!(
+        matches!(&result, Err(RpcError::Conflict)),
+        "result={result:?}"
+    );
+    let after = api.store.get(task_id).unwrap();
+    assert_eq!(before, after);
+    assert_eq!(after.state, TaskState::Running);
+    assert_eq!(audit_before, api.store.event_journal(0).unwrap());
+    assert!(api.store.open_cancellation_owners().unwrap().is_empty());
+    assert_ne!(
+        api.store.cancellation_status_for_task(task_id).unwrap(),
+        Some(CancellationStatus::Pending),
+        "a dead owner must never leave a Pending request behind"
+    );
+    let retry = api.dispatch(
+        "tasks.cancel",
+        json!({"task_id": task_id, "idempotency_key": "cancel-crashed-owner-retry"}),
+    );
+    assert!(matches!(&retry, Err(RpcError::Conflict)), "retry={retry:?}");
 }
 
 #[cfg(unix)]
