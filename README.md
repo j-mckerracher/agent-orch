@@ -109,7 +109,25 @@ lifetime. `run` records the agent's process identity at launch and, before it
 creates any new task or attempt, reconciles every unfinished record against the
 live OS process state. It refuses to schedule while any record is unresolved or
 ambiguous (for example a running session with no recorded identity) and prints
-the blocking records. See
+the blocking records.
+
+The gate also inspects the recorded worktree and any persisted delivery steps
+(read-only; it never applies, removes or repairs anything):
+
+- A session whose process is proven gone is inspected *before* the task is
+  marked Failed. A Foreign or Unknown workspace (not a registered worktree, no
+  recorded workspace, or the repository cannot be inspected) refuses scheduling
+  and leaves the session, attempt and task untouched, so the next run
+  re-inspects them.
+- A Dirty, Missing or BranchMoved worktree of such a task keeps its files, is
+  reported on stderr with the advisory classification, and takes the existing
+  Failed transition. This is a gate policy for unrelated new tasks, not a
+  success inference, a cleanup authorization or a classifier override.
+- For any task, Partial or Ambiguous delivery evidence, or Confirmed delivery
+  on a task that is not Succeeded, refuses scheduling. Settled terminal tasks
+  never block because their retained worktree is dirty or gone.
+
+See
 [the M2-06 evidence](docs/evidence/m2-06-macos/m2-06-cli-wiring.md).
 
 ## Dependencies

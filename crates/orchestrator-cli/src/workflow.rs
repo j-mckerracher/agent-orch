@@ -6,7 +6,11 @@
 //! need no exclusive lock because owner confirmation and closure are single
 //! generation-fenced store transactions only this owner may commit.
 //! Existing JSON task records are not migrated. Stale lock recovery precedes
-//! reconciliation.
+//! reconciliation. Before scheduling, a session whose process is proven gone
+//! has its recorded workspace inspected first: Foreign or Unknown evidence, or
+//! Partial/Ambiguous (or Confirmed-on-unsucceeded) delivery evidence, refuses
+//! scheduling and leaves the records unfinished for re-inspection; Dirty,
+//! Missing or BranchMoved keeps the worktree and takes the failure transition.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
@@ -29,11 +33,17 @@ use orchestrator_core::identity::{
 };
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
+use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
+use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
+use orchestrator_git::reconcile::{
+    reconcile_workspaces, RecordedWorkspace, WorkspaceClassification,
+};
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{
-    capture_exact_process_identity, capture_process_identity, observe_owner_process,
-    observe_process, reconcile_processes, scheduling_may_resume, ProcessAction, ProcessSubject,
-    ReconciliationResolution, RecordedProcess,
+    capture_exact_process_identity, capture_process_identity, classify_interrupted_task,
+    delivery_evidence, observe_owner_process, observe_process, reconcile_processes,
+    scheduling_may_resume, workspace_evidence, DeliveryEvidence, ProcessAction, ProcessSubject,
+    ReconciliationResolution, RecordedProcess, TaskEvidence, WorkspaceEvidence,
 };
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, DataDirectoryLock, DataDirectoryLockError, SqliteStore,
@@ -1746,6 +1756,35 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
     let tasks = store
         .list()
         .map_err(|error| format!("cannot list tasks for reconciliation: {error}"))?;
+    let mut workspaces_by_task: BTreeMap<String, Vec<Workspace>> = BTreeMap::new();
+    for workspace in store
+        .list_workspaces()
+        .map_err(|error| format!("cannot list workspaces for reconciliation: {error}"))?
+    {
+        workspaces_by_task
+            .entry(workspace.task_id.clone())
+            .or_default()
+            .push(workspace);
+    }
+    let mut delivery_steps: BTreeMap<String, Vec<serde_json::Value>> = BTreeMap::new();
+    for step in store
+        .all_delivery_steps()
+        .map_err(|error| format!("cannot read delivery journal for reconciliation: {error}"))?
+    {
+        let task_id = step
+            .get("task_id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
+        if let Some(task_id) = task_id {
+            delivery_steps.entry(task_id).or_default().push(step);
+        }
+    }
+    let projects: BTreeMap<&str, &str> = tasks
+        .iter()
+        .map(|task| (task.contract.id.as_str(), task.contract.project_id.as_str()))
+        .collect();
+    let mut delivery_by_task: BTreeMap<String, DeliveryEvidence> = BTreeMap::new();
+    let mut delivery_blocked = BTreeSet::new();
     let mut processes = Vec::new();
     let mut owners = BTreeMap::new();
     let mut other_records = Vec::new();
@@ -1758,6 +1797,30 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
         // owner, not this reconciliation, will complete them.
         if finishing.contains(&task.contract.id) {
             continue;
+        }
+        // A persisted delivery journal is read for every task, settled or not.
+        // Partial or ambiguous delivery, or a confirmed delivery on a task that
+        // is not Succeeded, blocks scheduling. Nothing here applies, removes or
+        // repairs a delivery. Consistent Confirmed/NotApplied does not block.
+        if let Some(steps) = delivery_steps.get(&task.contract.id) {
+            let (evidence, detail) = match inspect_task_delivery(&task.contract.project_id, steps) {
+                Ok(evidence) => (evidence, String::new()),
+                Err(error) => (DeliveryEvidence::Ambiguous, format!(" ({error})")),
+            };
+            delivery_by_task.insert(task.contract.id.clone(), evidence);
+            if delivery_blocks(task.state, evidence) {
+                other_records.push(ReconciliationResolution::Unresolved);
+                delivery_blocked.insert(task.contract.id.clone());
+                blockers.push(format!(
+                    "task {0} has {evidence:?} delivery evidence while {1:?}{detail}; the \
+                     delivery journal, review refs, worktree and history are preserved. Next \
+                     step: run `agent-orch inspect {0}` and review the recorded delivery steps \
+                     and `refs/heads/orchestrator/review/` refs by hand. No override exists \
+                     and nothing here applies or removes a delivery, so scheduling stays \
+                     blocked until the journal and Git agree",
+                    task.contract.id, task.state
+                ));
+            }
         }
         let unfinished = task
             .sessions
@@ -1873,6 +1936,56 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                 ));
             }
             ProcessAction::MarkInterrupted => {
+                // Inspect the recorded workspace and delivery BEFORE any state
+                // write. A blocking inspection leaves the unfinished session,
+                // attempt and task untouched, so the next run re-inspects the
+                // same evidence instead of finding a settled-looking record.
+                if delivery_blocked.contains(task_id) {
+                    continue;
+                }
+                let workspace = inspect_task_workspaces(
+                    projects.get(task_id.as_str()).copied().unwrap_or_default(),
+                    workspaces_by_task
+                        .get(task_id.as_str())
+                        .map_or(&[][..], Vec::as_slice),
+                );
+                if matches!(
+                    workspace,
+                    WorkspaceEvidence::Foreign | WorkspaceEvidence::Unknown
+                ) {
+                    other_records.push(ReconciliationResolution::Unresolved);
+                    blockers.push(format!(
+                        "interrupted session {task_id}/{session_id} has {workspace:?} workspace \
+                         evidence (the recorded worktree is missing from the store, is not a \
+                         registered worktree of the project repository, or could not be \
+                         inspected); its session, attempt, task, worktree and history are \
+                         preserved unchanged and will be re-inspected on the next run. Next \
+                         step: run `agent-orch inspect {task_id}`, save anything in the \
+                         recorded worktree path, then restore the registered worktree or move \
+                         the foreign path aside. No override exists"
+                    ));
+                    continue;
+                }
+                let recovery = classify_interrupted_task(TaskEvidence {
+                    task: *task_state,
+                    attempt: *attempt_state,
+                    process: decision.classification,
+                    workspace,
+                    delivery: delivery_by_task
+                        .get(task_id.as_str())
+                        .copied()
+                        .unwrap_or(DeliveryEvidence::None),
+                });
+                // Gate policy, not a classifier override: a proven-exited task
+                // with a Dirty, Missing or BranchMoved known workspace keeps
+                // its worktree and takes the existing failure resolution, so
+                // one ordinary crash cannot block every later run. The advisory
+                // classification below never means success, cleanup or delivery.
+                eprintln!(
+                    "interrupted task {task_id} session {session_id}: workspace {workspace:?}, \
+                     advisory classification {recovery:?}; the worktree is preserved and this is \
+                     never recorded as success"
+                );
                 store
                     .update_session_state(task_id, session_id, SessionState::Exited)
                     .map_err(|error| {
@@ -1950,6 +2063,101 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
         "cannot schedule while reconciliation records are unresolved: {}",
         blockers.join("; ")
     ))
+}
+
+/// Read-only observation of a task's recorded workspaces through the Git
+/// reconciliation adapters. Missing records, an unusable repository or any
+/// failed inspection is `Unknown`; the worst workspace decides.
+fn inspect_task_workspaces(project_id: &str, recorded: &[Workspace]) -> WorkspaceEvidence {
+    let Ok(repository) = Repository::new(Path::new(project_id)) else {
+        return WorkspaceEvidence::Unknown;
+    };
+    if recorded.is_empty() {
+        return WorkspaceEvidence::Unknown;
+    }
+    let inputs: Vec<_> = recorded
+        .iter()
+        .map(|workspace| RecordedWorkspace {
+            id: workspace.id.clone(),
+            path: PathBuf::from(&workspace.path),
+            branch: workspace.branch.clone(),
+            base_commit: workspace.base_commit.clone(),
+        })
+        .collect();
+    let Ok(plan) = reconcile_workspaces(&repository, &inputs) else {
+        return WorkspaceEvidence::Unknown;
+    };
+    let rank = |evidence| match evidence {
+        WorkspaceEvidence::Foreign => 5,
+        WorkspaceEvidence::Unknown => 4,
+        WorkspaceEvidence::Dirty => 3,
+        WorkspaceEvidence::BranchMoved => 2,
+        WorkspaceEvidence::Missing => 1,
+        WorkspaceEvidence::Matching => 0,
+    };
+    plan.workspaces
+        .iter()
+        .map(|decision| {
+            let present = matches!(
+                decision.classification,
+                WorkspaceClassification::PresentAndMatching | WorkspaceClassification::BranchMoved
+            );
+            let safety = present
+                .then(|| {
+                    check_worktree_safe_to_delete(
+                        &repository,
+                        &decision.path,
+                        &decision.base_commit,
+                    )
+                    .ok()
+                })
+                .flatten();
+            workspace_evidence(Some(decision), safety.as_ref())
+        })
+        .max_by_key(|evidence| rank(*evidence))
+        .unwrap_or(WorkspaceEvidence::Unknown)
+}
+
+/// Read-only comparison of a task's persisted delivery steps with Git refs.
+fn inspect_task_delivery(
+    project_id: &str,
+    steps: &[serde_json::Value],
+) -> Result<DeliveryEvidence, String> {
+    let repository = Repository::new(Path::new(project_id))
+        .map_err(|error| format!("cannot open repository {project_id}: {error}"))?;
+    let text = |step: &serde_json::Value, key: &str| {
+        step.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let recorded: Vec<_> = steps
+        .iter()
+        .map(|step| RecordedDeliveryStep {
+            id: text(step, "id").unwrap_or_default(),
+            task_id: text(step, "task_id"),
+            action: match text(step, "delivery_mode").as_deref() {
+                Some("report_only") => Some(DeliveryAction::ReportOnly),
+                Some("local_review") => Some(DeliveryAction::LocalReview),
+                _ => None,
+            },
+            candidate_sha: text(step, "candidate_sha"),
+            destination: text(step, "destination").map(PathBuf::from),
+            target_ref: text(step, "target_ref"),
+        })
+        .collect();
+    let plan = reconcile_delivery_steps(&repository, &recorded)
+        .map_err(|error| format!("cannot inspect delivery refs: {error}"))?;
+    Ok(delivery_evidence(&plan.steps))
+}
+
+/// Partial or ambiguous delivery blocks, as does a confirmed delivery on a
+/// task that is not Succeeded; consistent Confirmed/NotApplied does not.
+fn delivery_blocks(task: TaskState, evidence: DeliveryEvidence) -> bool {
+    match evidence {
+        DeliveryEvidence::Partial | DeliveryEvidence::Ambiguous => true,
+        DeliveryEvidence::Confirmed => task != TaskState::Succeeded,
+        DeliveryEvidence::None | DeliveryEvidence::NotApplied => false,
+    }
 }
 
 /// Task IDs whose open cancellation owner has an exact identity observed Alive.
@@ -2306,7 +2514,21 @@ mod tests {
         task_id: &str,
         process_identity: Option<ProcessIdentity>,
     ) -> CancellationOwner {
-        let (attempt_id, session_id) = start_test_run(store, task_id);
+        register_test_owner_in(
+            store,
+            task_id,
+            process_identity,
+            format!("project-{task_id}"),
+        )
+    }
+
+    fn register_test_owner_in(
+        store: &SqliteStore,
+        task_id: &str,
+        process_identity: Option<ProcessIdentity>,
+        project_id: String,
+    ) -> CancellationOwner {
+        let (attempt_id, session_id) = start_test_run_in(store, task_id, project_id);
         let mut owner = CancellationOwner::new(
             task_id.into(),
             attempt_id,
@@ -2324,7 +2546,14 @@ mod tests {
     /// A Running task with a running attempt and session, before any owner is
     /// published. Returns the attempt and session ids.
     fn start_test_run(store: &SqliteStore, task_id: &str) -> (String, String) {
-        let project_id = format!("project-{task_id}");
+        start_test_run_in(store, task_id, format!("project-{task_id}"))
+    }
+
+    fn start_test_run_in(
+        store: &SqliteStore,
+        task_id: &str,
+        project_id: String,
+    ) -> (String, String) {
         store
             .register_project(&Project {
                 id: project_id.clone(),
@@ -2966,14 +3195,22 @@ mod tests {
         use std::os::unix::process::CommandExt;
         use std::process::Command;
 
-        let directory = tempfile::tempdir().unwrap();
-        let data_dir = directory.path();
-        let store = open_store(data_dir).unwrap();
+        let (directory, repo, store) = gate_repo();
+        let data_dir = directory.path().join("data");
+        let data_dir = data_dir.as_path();
         // A legacy/Windows owner without an exact creation time is Unknown.
-        let owner = register_test_owner(
+        let owner = register_test_owner_in(
             &store,
             "task-running-dead-owner",
             Some(legacy_windows_owner_identity()),
+            repo.display().to_string(),
+        );
+        // The worktree was removed after the crash: Missing, preserved, permitted.
+        record_test_workspace(
+            &store,
+            &owner.task_id,
+            &repo,
+            &data_dir.join("worktrees").join(&owner.task_id),
         );
         let mut child = Command::new("/bin/sleep")
             .arg("0.05")
@@ -3065,6 +3302,305 @@ mod tests {
             error.contains("Running without an unfinished session"),
             "{error}"
         );
+    }
+
+    /// A real repository (canonical path) plus a data directory and store; the
+    /// task's project is that repository so the gate can open it.
+    fn gate_fixture(task_id: &str) -> (tempfile::TempDir, PathBuf, PathBuf, SqliteStore) {
+        let (root, repo, store) = gate_repo();
+        start_test_run_in(&store, task_id, repo.display().to_string());
+        let worktree = root.path().join("data").join("worktrees").join(task_id);
+        (root, repo, worktree, store)
+    }
+
+    fn gate_repo() -> (tempfile::TempDir, PathBuf, SqliteStore) {
+        let root = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(root.path()).unwrap();
+        let repo = base.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        git_in(&repo, &["init", "-q", "-b", "main"]);
+        git_in(&repo, &["config", "user.email", "t@example.invalid"]);
+        git_in(&repo, &["config", "user.name", "t"]);
+        git_in(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
+        let repo = fs::canonicalize(&repo).unwrap();
+        let store = open_store(&base.join("data")).unwrap();
+        (root, repo, store)
+    }
+
+    fn record_test_workspace(store: &SqliteStore, task_id: &str, repo: &Path, path: &Path) {
+        store
+            .add_workspace(&Workspace {
+                id: format!("{task_id}-workspace-1"),
+                task_id: task_id.into(),
+                path: path.display().to_string(),
+                branch: format!("task/{task_id}"),
+                base_commit: git_text(repo, &["rev-parse", "HEAD"]).unwrap(),
+            })
+            .unwrap();
+    }
+
+    /// Settles the fixture task as Failed with an exited session.
+    fn settle_failed(store: &SqliteStore, task_id: &str) {
+        let task = store.get(task_id).unwrap();
+        store
+            .update_session_state(task_id, &task.sessions[0].id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(task_id, &task.attempts[0].id, AttemptState::Failed)
+            .unwrap();
+        store
+            .transition(task_id, TaskEvent::ExecutionFailed)
+            .unwrap();
+    }
+
+    /// Persists one local-review delivery step for `task_id`.
+    fn record_test_delivery(
+        store: &SqliteStore,
+        task_id: &str,
+        repo: &Path,
+        step_id: &str,
+        candidate: &str,
+        review_ref: &str,
+    ) {
+        use orchestrator_core::approval::{ApprovalAction, ApprovalActionKind, ParameterDigest};
+        use orchestrator_core::authorization::ActionKind;
+        use orchestrator_store::{DeliveryOutcome, DeliveryStepRecord};
+
+        let action = ApprovalAction::new(
+            ApprovalActionKind::Delivery(ActionKind::LocalReviewMerge),
+            ParameterDigest::from_sha256([7; 32]),
+            candidate,
+            task_id,
+        )
+        .unwrap();
+        store
+            .record_delivery_step(&DeliveryStepRecord {
+                id: step_id,
+                approval_id: "approval-1",
+                verification_run_id: "run-1",
+                action: &action,
+                destination: &repo.display().to_string(),
+                target_ref: Some(review_ref),
+                outcome: DeliveryOutcome::ReviewRefCreated,
+                diff_summary: None,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn delivery_blocks_only_partial_ambiguous_or_confirmed_on_unsucceeded_task() {
+        use DeliveryEvidence::*;
+        for evidence in [Partial, Ambiguous] {
+            assert!(delivery_blocks(TaskState::Failed, evidence));
+            assert!(delivery_blocks(TaskState::Succeeded, evidence));
+        }
+        assert!(delivery_blocks(TaskState::Failed, Confirmed));
+        assert!(delivery_blocks(TaskState::Running, Confirmed));
+        assert!(!delivery_blocks(TaskState::Succeeded, Confirmed));
+        for state in [
+            TaskState::Failed,
+            TaskState::Cancelled,
+            TaskState::Succeeded,
+        ] {
+            assert!(!delivery_blocks(state, None));
+            assert!(!delivery_blocks(state, NotApplied));
+        }
+    }
+
+    #[test]
+    fn settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block() {
+        let (_root, repo, worktree, store) = gate_fixture("task-settled-ok");
+        record_test_workspace(&store, "task-settled-ok", &repo, &worktree);
+        settle_failed(&store, "task-settled-ok");
+        // Local-review step whose review ref was never created: NotApplied.
+        let head = git_text(&repo, &["rev-parse", "HEAD"]).unwrap();
+        record_test_delivery(
+            &store,
+            "task-settled-ok",
+            &repo,
+            "step-1",
+            &head,
+            "refs/heads/orchestrator/review/task-settled-ok",
+        );
+        // The retained worktree is absent: a settled record never gates on it.
+        reconcile_before_scheduling(&store).expect("settled record must not block");
+        assert_eq!(
+            store.get("task-settled-ok").unwrap().state,
+            TaskState::Failed
+        );
+    }
+
+    #[test]
+    fn confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything() {
+        let (_root, repo, worktree, store) = gate_fixture("task-confirmed-failed");
+        record_test_workspace(&store, "task-confirmed-failed", &repo, &worktree);
+        settle_failed(&store, "task-confirmed-failed");
+        let head = git_text(&repo, &["rev-parse", "HEAD"]).unwrap();
+        let review_ref = "refs/heads/orchestrator/review/task-confirmed-failed";
+        git_in(&repo, &["update-ref", review_ref, &head]);
+        record_test_delivery(
+            &store,
+            "task-confirmed-failed",
+            &repo,
+            "step-1",
+            &head,
+            review_ref,
+        );
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(
+            error.contains("Confirmed delivery evidence while Failed"),
+            "{error}"
+        );
+        assert_eq!(git_text(&repo, &["rev-parse", review_ref]).unwrap(), head);
+        assert_eq!(store.all_delivery_steps().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ambiguous_delivery_blocks_scheduling_and_is_not_rewritten() {
+        let (_root, repo, worktree, store) = gate_fixture("task-ambiguous");
+        record_test_workspace(&store, "task-ambiguous", &repo, &worktree);
+        settle_failed(&store, "task-ambiguous");
+        let candidate = git_text(&repo, &["rev-parse", "HEAD"]).unwrap();
+        git_in(&repo, &["commit", "-q", "--allow-empty", "-m", "other"]);
+        let other = git_text(&repo, &["rev-parse", "HEAD"]).unwrap();
+        let review_ref = "refs/heads/orchestrator/review/task-ambiguous";
+        // The ref exists but points at an object the journal does not explain.
+        git_in(&repo, &["update-ref", review_ref, &other]);
+        record_test_delivery(
+            &store,
+            "task-ambiguous",
+            &repo,
+            "step-1",
+            &candidate,
+            review_ref,
+        );
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(error.contains("Ambiguous delivery evidence"), "{error}");
+        assert_eq!(git_text(&repo, &["rev-parse", review_ref]).unwrap(), other);
+    }
+
+    /// Identity of a session process that has exited and been reaped.
+    #[cfg(unix)]
+    fn dead_session_identity() -> ProcessIdentity {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("0.05")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let identity = capture_process_identity(child.id()).expect("child identity");
+        child.wait().unwrap();
+        identity
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_task_with_foreign_workspace_stays_refused_and_unmodified() {
+        let (_root, repo, worktree, store) = gate_fixture("task-foreign");
+        let session = store.get("task-foreign").unwrap().sessions[0].id.clone();
+        store
+            .record_session_identity("task-foreign", &session, &dead_session_identity())
+            .unwrap();
+        // A plain directory the user owns, not a registered worktree.
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(worktree.join("user.txt"), "keep me\n").unwrap();
+        record_test_workspace(&store, "task-foreign", &repo, &worktree);
+        for _ in 0..2 {
+            let error = reconcile_before_scheduling(&store).unwrap_err();
+            assert!(error.contains("Foreign workspace evidence"), "{error}");
+            let task = store.get("task-foreign").unwrap();
+            assert_eq!(task.state, TaskState::Running);
+            assert_eq!(task.attempts[0].state, AttemptState::Running);
+            assert_eq!(task.sessions[0].state, SessionState::Running);
+            assert_eq!(fs::read(worktree.join("user.txt")).unwrap(), b"keep me\n");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_task_without_a_recorded_workspace_is_unknown_and_refused() {
+        let (_root, _repo, _worktree, store) = gate_fixture("task-no-workspace");
+        let session = store.get("task-no-workspace").unwrap().sessions[0]
+            .id
+            .clone();
+        store
+            .record_session_identity("task-no-workspace", &session, &dead_session_identity())
+            .unwrap();
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(error.contains("Unknown workspace evidence"), "{error}");
+        let task = store.get("task-no-workspace").unwrap();
+        assert_eq!(task.state, TaskState::Running);
+        assert_eq!(task.sessions[0].state, SessionState::Running);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_task_with_dirty_registered_worktree_keeps_it_and_does_not_block() {
+        let (_root, repo, worktree, store) = gate_fixture("task-dirty");
+        let session = store.get("task-dirty").unwrap().sessions[0].id.clone();
+        store
+            .record_session_identity("task-dirty", &session, &dead_session_identity())
+            .unwrap();
+        git_in(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "task/task-dirty",
+                worktree.to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        record_test_workspace(&store, "task-dirty", &repo, &worktree);
+        fs::write(worktree.join("unsaved.txt"), "uncommitted\n").unwrap();
+        // Gate policy: a known-owned dirty worktree of a proven-dead task keeps
+        // its files and takes the existing failure resolution (never Succeeded).
+        reconcile_before_scheduling(&store).expect("dirty known workspace must not block");
+        let task = store.get("task-dirty").unwrap();
+        assert_eq!(task.state, TaskState::Failed);
+        assert_eq!(task.sessions[0].state, SessionState::Exited);
+        assert_eq!(
+            fs::read(worktree.join("unsaved.txt")).unwrap(),
+            b"uncommitted\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_task_with_confirmed_delivery_is_refused_before_any_state_write() {
+        let (_root, repo, worktree, store) = gate_fixture("task-interrupted-confirmed");
+        let session = store.get("task-interrupted-confirmed").unwrap().sessions[0]
+            .id
+            .clone();
+        store
+            .record_session_identity(
+                "task-interrupted-confirmed",
+                &session,
+                &dead_session_identity(),
+            )
+            .unwrap();
+        record_test_workspace(&store, "task-interrupted-confirmed", &repo, &worktree);
+        let head = git_text(&repo, &["rev-parse", "HEAD"]).unwrap();
+        let review_ref = "refs/heads/orchestrator/review/task-interrupted-confirmed";
+        git_in(&repo, &["update-ref", review_ref, &head]);
+        record_test_delivery(
+            &store,
+            "task-interrupted-confirmed",
+            &repo,
+            "step-1",
+            &head,
+            review_ref,
+        );
+        let error = reconcile_before_scheduling(&store).unwrap_err();
+        assert!(
+            error.contains("Confirmed delivery evidence while Running"),
+            "{error}"
+        );
+        let task = store.get("task-interrupted-confirmed").unwrap();
+        assert_eq!(task.state, TaskState::Running);
+        assert_eq!(task.sessions[0].state, SessionState::Running);
     }
 
     #[test]

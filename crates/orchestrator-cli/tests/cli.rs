@@ -9,7 +9,7 @@ use orchestrator_core::contract::{
 use orchestrator_core::identity::ProcessIdentity;
 #[cfg(target_os = "macos")]
 use orchestrator_core::identity::ProcessPlatform;
-use orchestrator_core::records::Project;
+use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_runtime::reconcile::capture_process_identity;
 use std::fs;
@@ -144,6 +144,17 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();
+    // A real run records its worktree before any session. This one was removed
+    // after the crash, which the gate classifies Missing and preserves.
+    store
+        .add_workspace(&Workspace {
+            id: format!("{task_id}-workspace-1"),
+            task_id: task_id.to_owned(),
+            path: task_worktree(fixture, task_id).display().to_string(),
+            branch: format!("orchestrator/{task_id}"),
+            base_commit: git(&fixture.repo, &["rev-parse", "HEAD"]),
+        })
+        .unwrap();
     let attempt = Attempt {
         id: format!("{task_id}-attempt-1"),
         task_id: task_id.to_owned(),
