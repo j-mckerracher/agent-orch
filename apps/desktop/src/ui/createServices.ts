@@ -2,6 +2,7 @@ import { AppData, type AppDataOptions } from "../daemon/appData";
 import { ConnectionManager, type ConnectionOptions } from "../daemon/connection";
 import { DaemonError } from "../daemon/errors";
 import type { DaemonConnector } from "../daemon/session";
+import { createDaemonSources } from "../sources/daemon";
 import { createFixtureSources } from "../sources/fixtures";
 import type { Sources } from "../sources/types";
 import { DraftsStore } from "./drafts";
@@ -11,7 +12,7 @@ import type { Services } from "./services";
 export interface CreateServicesOptions {
   /** Host-supplied authenticated connector; absent until the M5-05 native bridge exists. */
   connector?: DaemonConnector;
-  /** Daemon-backed adapters replace fixtures here, with no component change. */
+  /** Overrides the default: daemon adapters when a connector is supplied, fixtures otherwise. */
   sources?: Sources;
   initialRoute?: Route;
   connection?: Omit<ConnectionOptions, "connector">;
@@ -28,7 +29,7 @@ export function createServices(options: CreateServicesOptions = {}): Services {
   return {
     connection,
     data: new AppData(connection, options.data),
-    sources: options.sources ?? createFixtureSources(),
+    sources: options.sources ?? (options.connector ? createDaemonSources(connection) : createFixtureSources()),
     router: new RouterStore(options.initialRoute),
     drafts: new DraftsStore(),
     bridgeBound: options.connector !== undefined,

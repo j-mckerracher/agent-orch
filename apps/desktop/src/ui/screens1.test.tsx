@@ -32,7 +32,9 @@ describe("C1 connection strip", () => {
   it("says continuity is unknown when D6 is unavailable", async () => {
     await mount(new FakeDaemon(), { sources: createFixtureSources({ scenario: "unavailable" }) });
     await waitFor(() =>
-      expect(screen.getByTestId("journal-continuity")).toHaveTextContent("unknown (no store identity in M5-02)"),
+      expect(screen.getByTestId("journal-continuity")).toHaveTextContent(
+        "unknown (Journal identity is unavailable in this fixture scenario.)",
+      ),
     );
   });
 
@@ -290,7 +292,7 @@ describe("S2 project detail and submission", () => {
         }),
     };
     await mount(seeded(), { route, sources: { ...fixture, agents } });
-    const section = screen.getByRole("region", { name: "Agent detection (placeholder)" });
+    const section = screen.getByRole("region", { name: "Agent detection" });
     expect(await within(section).findByText(/Real Agent: installed/)).toBeInTheDocument();
     expect(within(section).getByTestId("badge-D1")).toHaveTextContent("DAEMON (D1)");
     expect(within(section).getByTestId("badge-D1")).not.toHaveTextContent("PLACEHOLDER");

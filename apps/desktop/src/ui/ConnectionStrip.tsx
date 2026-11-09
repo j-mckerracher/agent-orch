@@ -18,7 +18,7 @@ const LABEL: Record<ConnectionStatus, string> = {
 export function ConnectionStrip() {
   const { connection, sources, bridgeBound } = useServices();
   const { connection: snap, connected } = useGate();
-  const journal = useSource(() => sources.journal.identity(), "journal");
+  const journal = useSource(() => sources.journal.identity(), "journal", sources.journal.provenance);
 
   const detail = snap.error ? presentError(snap.error) : null;
   return (
@@ -60,7 +60,9 @@ export function ConnectionStrip() {
           ? `${journal.data.cursorRelationship} (never proof that history is complete)`
           : journal.state === "loading"
             ? "loading"
-            : "unknown (no store identity in M5-02)"}
+            : journal.state === "unavailable"
+              ? `unknown (${journal.reason})`
+              : "unknown (journal identity could not be read)"}
       </p>
     </header>
   );

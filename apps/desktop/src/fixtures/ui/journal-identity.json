@@ -13,7 +13,7 @@
       "empty": true
     },
     "unavailable": {
-      "unavailable": "M5-02 has no store epoch, so journal identity cannot be verified."
+      "unavailable": "Journal identity is unavailable in this fixture scenario."
     },
     "error": {
       "error": "Fixture journal identity failed (simulated)."

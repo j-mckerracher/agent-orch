@@ -103,7 +103,7 @@ export function ErrorNotice({ error, action }: { error: DaemonError; action: str
   );
 }
 
-/** Wraps a DUMMY component: label, loading, empty, unavailable and error states. */
+/** Wraps a D1-D6 source: label, loading, empty, unavailable and error states. A daemon source drops the placeholder wording. */
 export function SourceSection<T>({
   title,
   provenance,
@@ -118,9 +118,10 @@ export function SourceSection<T>({
   children: (data: T) => ReactNode;
 }) {
   let body: ReactNode;
+  const live = provenance.kind === "daemon";
   switch (result.state) {
     case "loading":
-      body = <p role="status">Loading placeholder data…</p>;
+      body = <p role="status">{live ? "Loading…" : "Loading placeholder data…"}</p>;
       break;
     case "empty":
       body = <p>{emptyText}</p>;
@@ -129,14 +130,14 @@ export function SourceSection<T>({
       body = <p role="status">Unavailable: {result.reason}</p>;
       break;
     case "error":
-      body = <p role="alert">Placeholder source error: {result.message}</p>;
+      body = <p role="alert">{live ? "Source error" : "Placeholder source error"}: {result.message}</p>;
       break;
     case "ready":
       body = children(result.data);
       break;
   }
   return (
-    <section className="placeholder" aria-label={`${title} (placeholder)`}>
+    <section className={live ? undefined : "placeholder"} aria-label={live ? title : `${title} (placeholder)`}>
       <h3>
         {title} <PlaceholderBadge provenance={provenance} />
       </h3>

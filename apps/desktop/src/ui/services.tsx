@@ -3,7 +3,7 @@ import type { AppData } from "../daemon/appData";
 import type { ConnectionManager, ConnectionSnapshot } from "../daemon/connection";
 import type { Store } from "../daemon/store";
 import type { Capability } from "../daemon/types";
-import type { SourceResult, Sources } from "../sources/types";
+import type { Provenance, SourceResult, Sources } from "../sources/types";
 import type { DraftsStore } from "./drafts";
 import type { RouterStore } from "./router";
 
@@ -57,17 +57,31 @@ export function useGate(): Gate {
 
 export type SourceState<T> = { state: "loading" } | SourceResult<T>;
 
-/** Loads a DUMMY source result; `key` changes re-run the loader. */
-export function useSource<T>(load: () => Promise<SourceResult<T>>, key: string): SourceState<T> {
+/**
+ * Loads a D1-D6 source result; `key` changes re-run the loader. A daemon source
+ * (`provenance.kind === "daemon"`) also re-runs when the connection is
+ * re-established or its status changes, because its answers depend on it.
+ */
+export function useSource<T>(
+  load: () => Promise<SourceResult<T>>,
+  key: string,
+  provenance?: Provenance,
+): SourceState<T> {
+  const { connection } = useServices();
+  const snapshot = useStore(connection);
+  const fullKey =
+    provenance?.kind === "daemon"
+      ? `${key}@${snapshot.generation}:${snapshot.status}:${snapshot.history.reason ?? ""}`
+      : key;
   const [result, setResult] = useState<{ key: string; value: SourceResult<T> } | null>(null);
   useEffect(() => {
     let live = true;
     load().then(
-      (value) => live && setResult({ key, value }),
+      (value) => live && setResult({ key: fullKey, value }),
       (error: unknown) =>
         live &&
         setResult({
-          key,
+          key: fullKey,
           value: { state: "error", message: error instanceof Error ? error.message : "source failed" },
         }),
     );
@@ -75,6 +89,6 @@ export function useSource<T>(load: () => Promise<SourceResult<T>>, key: string):
       live = false;
     };
     // The loader closes over `key`; re-running on key is the contract.
-  }, [key]);
-  return result && result.key === key ? result.value : { state: "loading" };
+  }, [fullKey]);
+  return result && result.key === fullKey ? result.value : { state: "loading" };
 }

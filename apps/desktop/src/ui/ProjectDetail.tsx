@@ -16,8 +16,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [errors, setErrors] = useState<string[]>([]);
   const [failure, setFailure] = useState<DaemonError | null>(null);
   const [busy, setBusy] = useState(false);
-  const agents = useSource(() => sources.agents.listAgents(), "agents");
-  const availability = useSource(() => sources.execution.availability(), "availability");
+  const agents = useSource(() => sources.agents.listAgents(), "agents", sources.agents.provenance);
+  const availability = useSource(
+    () => sources.execution.availability(),
+    "availability",
+    sources.execution.provenance,
+  );
 
   const known = projects.data?.some((row) => row.id === projectId) ?? null;
   const own = tasks.data?.filter((task) => task.contract.project_id === projectId) ?? null;

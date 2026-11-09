@@ -9,7 +9,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   const { data, router, sources } = useServices();
   const { tasks, sessions, approvals } = useStore(data);
   const gate = useGate();
-  const preview = useSource(() => sources.execution.listPreviewTasks(), "preview");
+  const preview = useSource(() => sources.execution.listPreviewTasks(), "preview", sources.execution.provenance);
   const go = (next: TaskFilter) => router.navigate({ name: "tasks", projectId, filter: next });
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
   const approvalList = approvals.data ?? [];
@@ -99,6 +99,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
         }}
       </LoadableRegion>
 
+      {sources.execution.provenance.kind === "fixture" && (
       <SourceSection
         title="Execution preview"
         provenance={sources.execution.provenance}
@@ -137,6 +138,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
           </table>
         )}
       </SourceSection>
+      )}
     </main>
   );
 }

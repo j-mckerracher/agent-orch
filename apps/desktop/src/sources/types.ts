@@ -1,12 +1,13 @@
 /**
- * Frontend boundary interfaces for the unavailable services D1-D6.
+ * Frontend boundary interfaces for the services D1-D6.
  *
  * These are NOT daemon methods. Each interface is injected at the screen
- * boundary (`SourcesProvider`). A daemon-backed adapter replaces the fixture
- * adapter by returning the same view models with `provenance.kind === "daemon"`;
- * no component or route changes. Fixture adapters live in this directory,
- * never import the daemon client, and mint ids prefixed `fixture:` that
- * `DaemonApi` refuses to send.
+ * boundary (`SourcesProvider`). The daemon-backed adapter (`daemon.ts`) returns
+ * the same view models with `provenance.kind === "daemon"` and the fixture
+ * adapter with `"fixture"`; no component or route changes. Fixture adapters
+ * live in this directory, never import the daemon client, and mint ids
+ * prefixed `fixture:` that `DaemonApi` refuses to send. D3 (recovery status)
+ * has no daemon RPC and always uses the fixture adapter.
  */
 import type { AttemptState, TaskState } from "../daemon/types";
 
@@ -102,6 +103,8 @@ export interface TaskRetrySource {
   readonly provenance: Provenance;
   retryFor(ref: TaskRef): Promise<SourceResult<RetryAvailability>>;
   simulateRetry(ref: TaskRef): Promise<SimulatedReceipt & { newAttemptId: string }>;
+  /** Daemon-backed adapters only: calls `tasks.retry`. Rejects with DaemonError. */
+  retry?(ref: TaskRef): Promise<{ state: TaskState; attempts: number }>;
 }
 
 // D5 -- CoordinatorSource
@@ -132,6 +135,10 @@ export interface CoordinatorSource {
   conversation(projectId: string): Promise<SourceResult<CoordinatorConversation>>;
   previewReply(projectId: string, draft: string): Promise<SimulatedReceipt & { message: CoordinatorMessage }>;
   previewProposal(projectId: string, draft: string): Promise<SimulatedReceipt & { proposal: ProposedTask }>;
+  /** Daemon-backed adapters only: `coordinator.send_message`. Records a message; nothing acts on it. */
+  send?(projectId: string, text: string): Promise<void>;
+  /** Daemon-backed adapters only: `coordinator.propose`. Validates a JSON proposal; creates no task. */
+  propose?(projectId: string, proposalJson: string): Promise<void>;
 }
 
 // D6 -- JournalIdentitySource

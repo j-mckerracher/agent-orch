@@ -1,7 +1,7 @@
 /** S4: real task detail, plus the DUMMY D2/D3/D4 panels shared with the fixture-only view. */
 import { useEffect, useState } from "react";
 import { timelineKey } from "../daemon/appData";
-import type { DaemonError } from "../daemon/errors";
+import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { TERMINAL_STATES, basename, pendingApprovals } from "./format";
@@ -9,14 +9,36 @@ import { useGate, useServices, useSource, useStore } from "./services";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
-  const { sources } = useServices();
+  const { sources, data } = useServices();
+  const gate = useGate();
   const refKey = taskRef.origin === "real" ? `real:${taskRef.taskId}:${taskRef.state}` : `fixture:${taskRef.id}`;
-  const outcome = useSource(() => sources.execution.outcomeFor(taskRef), `outcome:${refKey}`);
-  const recovery = useSource(() => sources.recovery.recoveryFor(taskRef), `recovery:${refKey}`);
-  const retry = useSource(() => sources.retry.retryFor(taskRef), `retry:${refKey}`);
+  const outcome = useSource(() => sources.execution.outcomeFor(taskRef), `outcome:${refKey}`, sources.execution.provenance);
+  const recovery = useSource(() => sources.recovery.recoveryFor(taskRef), `recovery:${refKey}`, sources.recovery.provenance);
+  const retry = useSource(() => sources.retry.retryFor(taskRef), `retry:${refKey}`, sources.retry.provenance);
   const [receipts, setReceipts] = useState<SimulatedReceipt[]>([]);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<DaemonError | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const note = (receipt: SimulatedReceipt) => setReceipts((list) => [...list, receipt]);
   const ownId = taskRef.origin === "real" ? taskRef.taskId : taskRef.id;
+  const realRetry = sources.retry.provenance.kind === "daemon" ? sources.retry.retry : undefined;
+
+  const retryTask = async () => {
+    if (!realRetry) return;
+    setRetryNote(null);
+    setRetryError(null);
+    setRetrying(true);
+    try {
+      const result = await realRetry.call(sources.retry, taskRef);
+      setRetryNote(`Retry accepted; the daemon now records the task as ${result.state} with ${result.attempts} attempt(s).`);
+      void data.watchTask(ownId);
+      void data.refreshAll();
+    } catch (error) {
+      setRetryError(asDaemonError(error));
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <div>
@@ -29,19 +51,37 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
         {(info) => (
           <div>
             <p>
-              Retry {info.available ? "would be available" : "is not available"}: {info.reason}
+              Retry {info.available ? (realRetry ? "is available" : "would be available") : "is not available"}:{" "}
+              {info.reason}
             </p>
-            <button
-              type="button"
-              disabled={!info.available}
-              onClick={() =>
-                void sources.retry
-                  .simulateRetry(taskRef)
-                  .then((r) => note({ ...r, notice: `${r.notice} (new attempt ${r.newAttemptId})` }))
-              }
-            >
-              Preview retry
-            </button>
+            {realRetry ? (
+              <div>
+                <button
+                  type="button"
+                  disabled={!info.available || retrying || !gate.can("tasks")}
+                  onClick={() => void retryTask()}
+                >
+                  Retry task
+                </button>
+                {retryNote && <p role="status">{retryNote}</p>}
+                {retryError && <ErrorNotice error={retryError} action="Retrying the task" />}
+                {retryError?.indeterminate && (
+                  <p role="status">The outcome is unknown. Retrying again reuses the same request key.</p>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={!info.available}
+                onClick={() =>
+                  void sources.retry
+                    .simulateRetry(taskRef)
+                    .then((r) => note({ ...r, notice: `${r.notice} (new attempt ${r.newAttemptId})` }))
+                }
+              >
+                Preview retry
+              </button>
+            )}
           </div>
         )}
       </SourceSection>
@@ -336,7 +376,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
 /** Fixture-only S4: never reads or writes daemon records. */
 export function FixtureTaskDetail({ projectId, id }: { projectId: string; id: string }) {
   const { router, sources } = useServices();
-  const preview = useSource(() => sources.execution.getPreviewTask(id), `preview:${id}`);
+  const preview = useSource(() => sources.execution.getPreviewTask(id), `preview:${id}`, sources.execution.provenance);
   return (
     <main>
       <Crumbs

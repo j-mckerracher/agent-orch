@@ -1,20 +1,51 @@
 /** S5: coordinator view. The conversation is D5 placeholder data; related tasks and approvals are real. */
 import { useState } from "react";
+import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { basename, pendingApprovals } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
+import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
 
 export function Coordinator({ projectId }: { projectId: string }) {
   const { data, router, drafts, sources } = useServices();
   const { tasks, approvals } = useStore(data);
   const draft = useStore(drafts).coordinator[projectId] ?? "";
   const gate = useGate();
-  const conversation = useSource(() => sources.coordinator.conversation(projectId), `conversation:${projectId}`);
+  const real = sources.coordinator.provenance.kind === "daemon" && !!sources.coordinator.send && !!sources.coordinator.propose;
+  const [nonce, setNonce] = useState(0);
+  const conversation = useSource(
+    () => sources.coordinator.conversation(projectId),
+    `conversation:${projectId}:${nonce}`,
+    sources.coordinator.provenance,
+  );
   const [replies, setReplies] = useState<CoordinatorMessage[]>([]);
   const [proposals, setProposals] = useState<ProposedTask[]>([]);
   const [receipts, setReceipts] = useState<SimulatedReceipt[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [failure, setFailure] = useState<DaemonError | null>(null);
+
+  const submit = async (what: "message" | "proposal") => {
+    const call = what === "message" ? sources.coordinator.send : sources.coordinator.propose;
+    if (!call) return;
+    setBusy(true);
+    setStatus(null);
+    setFailure(null);
+    try {
+      await call.call(sources.coordinator, projectId, draft);
+      setStatus(
+        what === "message"
+          ? "Message recorded. Nothing acts on it automatically."
+          : "Proposal validated and recorded. No task was created.",
+      );
+      setNonce((n) => n + 1);
+    } catch (error) {
+      setFailure(asDaemonError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
   const ownIds = new Set(own.map((task) => task.contract.id));
@@ -30,7 +61,9 @@ export function Coordinator({ projectId }: { projectId: string }) {
         ]}
       />
       <h1>Coordinator</h1>
-      <p role="status">The coordinator conversation service is unavailable (D5). Everything below it is a preview.</p>
+      {!real && (
+        <p role="status">The coordinator conversation service is unavailable (D5). Everything below it is a preview.</p>
+      )}
       <SourceSection
         title="Coordinator conversation"
         provenance={sources.coordinator.provenance}
@@ -69,32 +102,58 @@ export function Coordinator({ projectId }: { projectId: string }) {
       </SourceSection>
       <section aria-label="Objective composer">
         <label>
-          Draft objective
+          {real ? "Message or proposal JSON" : "Draft objective"}
           <textarea value={draft} onChange={(event) => drafts.setCoordinator(projectId, event.target.value)} />
         </label>{" "}
-        <button
-          type="button"
-          onClick={() =>
-            void sources.coordinator.previewReply(projectId, draft).then((r) => {
-              setReplies((list) => [...list, r.message]);
-              setReceipts((list) => [...list, r]);
-            })
-          }
-        >
-          Preview reply
-        </button>{" "}
-        <button
-          type="button"
-          onClick={() =>
-            void sources.coordinator.previewProposal(projectId, draft).then((r) => {
-              setProposals((list) => [...list, r.proposal]);
-              setReceipts((list) => [...list, r]);
-            })
-          }
-        >
-          Preview proposed tasks
-        </button>
-        <SimulatedReceipts label="Simulated receipts" receipts={receipts} />
+        {real ? (
+          <div>
+            <button
+              type="button"
+              disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
+              onClick={() => void submit("message")}
+            >
+              Send message
+            </button>{" "}
+            <button
+              type="button"
+              disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
+              onClick={() => void submit("proposal")}
+            >
+              Validate proposal
+            </button>
+            {status && <p role="status">{status}</p>}
+            {failure && <ErrorNotice error={failure} action="Contacting the coordinator" />}
+            {failure?.indeterminate && (
+              <p role="status">The outcome is unknown. Submitting the same text again reuses the same request key.</p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                void sources.coordinator.previewReply(projectId, draft).then((r) => {
+                  setReplies((list) => [...list, r.message]);
+                  setReceipts((list) => [...list, r]);
+                })
+              }
+            >
+              Preview reply
+            </button>{" "}
+            <button
+              type="button"
+              onClick={() =>
+                void sources.coordinator.previewProposal(projectId, draft).then((r) => {
+                  setProposals((list) => [...list, r.proposal]);
+                  setReceipts((list) => [...list, r]);
+                })
+              }
+            >
+              Preview proposed tasks
+            </button>
+            <SimulatedReceipts label="Simulated receipts" receipts={receipts} />
+          </div>
+        )}
       </section>
 
       <section aria-label="Related live work">
