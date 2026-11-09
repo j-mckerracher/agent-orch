@@ -81,6 +81,12 @@ impl RpcHandler for Journal {
     }
 }
 
+/// Also the polling period of a subscribed connection, so it bounds how long a
+/// live event waits. An unsubscribed connection is closed after this much
+/// silence, which must outlast connect-to-first-call gaps on a loaded Windows
+/// host (a 50 ms limit made every test here fail with a 150 ms gap).
+const STREAM_TIMEOUT: Duration = Duration::from_secs(1);
+
 fn serve(dir: &Path, journal: &Arc<Journal>) -> JoinHandle<()> {
     let dir = dir.to_path_buf();
     let journal = journal.clone();
@@ -88,7 +94,7 @@ fn serve(dir: &Path, journal: &Arc<Journal>) -> JoinHandle<()> {
         Server::serve_with_handler(
             ServerConfig::new(dir, "reconnect-test")
                 .with_idle_timeout(Duration::from_secs(30))
-                .with_stream_timeout(Duration::from_millis(50)),
+                .with_stream_timeout(STREAM_TIMEOUT),
             journal,
         )
         .unwrap();

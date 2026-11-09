@@ -50,6 +50,13 @@ impl RpcHandler for Recorder {
     }
 }
 
+/// The server closes an unsubscribed connection that sends nothing for this
+/// long. Tests keep several clients open while connecting others, so it must
+/// far exceed the pipe-setup and scheduling gaps of a loaded Windows host.
+/// Tests that open more than one client drop them before shutdown, so the
+/// server never waits for this timeout to reap a worker.
+const STREAM_TIMEOUT: Duration = Duration::from_secs(5);
+
 fn serve(dir: &Path, handler: &Arc<Recorder>) -> JoinHandle<()> {
     let dir = dir.to_path_buf();
     let handler = handler.clone();
@@ -57,7 +64,7 @@ fn serve(dir: &Path, handler: &Arc<Recorder>) -> JoinHandle<()> {
         Server::serve_with_handler(
             ServerConfig::new(dir, "coordinator-review-test")
                 .with_idle_timeout(Duration::from_secs(30))
-                .with_stream_timeout(Duration::from_millis(50)),
+                .with_stream_timeout(STREAM_TIMEOUT),
             handler,
         )
         .unwrap();
@@ -189,8 +196,51 @@ fn a_handler_without_review_never_exposes_review_methods() {
         Err(IpcError::UnsupportedCapability)
     ));
     assert!(handler.calls.lock().unwrap().is_empty());
+    drop(other);
     client.shutdown().unwrap();
     daemon.join().unwrap();
+}
+
+fn dispatched(handler: &Recorder) -> Vec<String> {
+    handler
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(method, _)| method.clone())
+        .collect()
+}
+
+/// Asserts the server rejected `method` for lack of the capability, and not
+/// for any other reason such as a dropped connection.
+fn assert_unsupported(client: &mut Client, method: &str, needs: &str) {
+    let result = client.call(method, json!({}));
+    assert!(
+        matches!(result, Err(IpcError::UnsupportedCapability)),
+        "{method} must need the {needs} capability, got {result:?}"
+    );
+}
+
+/// Calls `method` with its capability and asserts that the handler ran exactly
+/// once more, with the handler's own result reaching the client.
+fn assert_dispatched(client: &mut Client, handler: &Recorder, method: &str) {
+    let mut expected = dispatched(handler);
+    let result = client.call(method, json!({}));
+    expected.push(method.to_owned());
+    assert_eq!(
+        dispatched(handler),
+        expected,
+        "{method} did not reach the handler; client saw {result:?}"
+    );
+    if method == "review.request_changes" {
+        assert!(
+            matches!(result, Err(IpcError::Conflict)),
+            "{method} must surface the handler's conflict, got {result:?}"
+        );
+    } else {
+        let value = result.unwrap_or_else(|error| panic!("{method} failed: {error:?}"));
+        assert_eq!(value["method"], method);
+    }
 }
 
 #[test]
@@ -216,45 +266,27 @@ fn server_gates_each_method_on_its_own_capability() {
     // `Client::call` skips the client-side gate, so these reach the server.
     let mut review_only = connect(dir.path(), &[Capability::Health, Capability::Review]);
     for method in coordinator_methods {
-        assert!(
-            matches!(
-                review_only.call(method, json!({})),
-                Err(IpcError::UnsupportedCapability)
-            ),
-            "{method} must need the coordinator capability"
-        );
+        assert_unsupported(&mut review_only, method, "coordinator");
     }
+    // Idle `review_only` past the stale 50 ms limit that once dropped it on
+    // Windows, so Unix runs also exercise a connection that sits unused.
+    thread::sleep(Duration::from_millis(200));
     let mut coordinator_only = connect(dir.path(), &[Capability::Health, Capability::Coordinator]);
     for method in review_methods {
-        assert!(
-            matches!(
-                coordinator_only.call(method, json!({})),
-                Err(IpcError::UnsupportedCapability)
-            ),
-            "{method} must need the review capability"
-        );
+        assert_unsupported(&mut coordinator_only, method, "review");
     }
-    assert!(handler.calls.lock().unwrap().is_empty());
+    assert_eq!(dispatched(&handler), Vec::<String>::new());
 
     for method in coordinator_methods {
-        assert!(coordinator_only.call(method, json!({})).is_ok());
+        assert_dispatched(&mut coordinator_only, &handler, method);
     }
+    // `review_only` has been idle through all of the above; it must still be
+    // connected and dispatch each review method to the handler.
     for method in review_methods {
-        let result = review_only.call(method, json!({}));
-        assert!(
-            !matches!(result, Err(IpcError::UnsupportedCapability)),
-            "{method} must dispatch with its capability"
-        );
+        assert_dispatched(&mut review_only, &handler, method);
     }
-    let dispatched: Vec<_> = handler
-        .calls
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|(method, _)| method.clone())
-        .collect();
     assert_eq!(
-        dispatched,
+        dispatched(&handler),
         coordinator_methods
             .iter()
             .chain(&review_methods)
@@ -262,6 +294,7 @@ fn server_gates_each_method_on_its_own_capability() {
             .collect::<Vec<_>>()
     );
 
+    drop(review_only);
     coordinator_only.shutdown().unwrap();
     daemon.join().unwrap();
 }
