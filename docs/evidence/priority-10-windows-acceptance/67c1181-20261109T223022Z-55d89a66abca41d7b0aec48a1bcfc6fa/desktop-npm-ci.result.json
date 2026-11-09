@@ -1,0 +1,25 @@
+{
+  "name": "desktop-npm-ci",
+  "command": "npm.cmd ci",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\\source\\apps\\desktop",
+  "source_commit": "67c1181db7cd44890cd229eee648033525f64c3e",
+  "started_utc": "2026-11-09T22:34:24.2445435Z",
+  "duration_seconds": 15.276,
+  "timeout_seconds": 1200,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 144,
+  "stdout_sha256": "f59b4460ffc78590c772a929aa423f4926a6536047f28a1fac7c29137a965c02",
+  "stderr_bytes": 521,
+  "stderr_sha256": "d98ee3a2bd76459fdfd30872fd25f80eae6416bb4e868263593544dc56c14d8d",
+  "error": null
+}

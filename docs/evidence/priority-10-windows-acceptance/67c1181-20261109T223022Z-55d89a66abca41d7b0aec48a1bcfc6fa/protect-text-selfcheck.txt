@@ -1,0 +1,8 @@
+C:\Users\<user>\AppData\Local\Temp
+C:\Users\<user>
+C:\Users\<user>\AppData\Local\Temp
+C:/Users/<user>/AppData/Local/Temp
+C:\\Users\\<user>\\AppData\\Local\\Temp
+\\?\C:\Users\<user>\AppData\Local\Temp
+<url-redacted>
+<url-redacted>

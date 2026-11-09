@@ -1,0 +1,17 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\source\crates\orchestrator-daemon)
+warning: method `blocked_reason` is never used
+   --> crates\orchestrator-daemon\src\executor.rs:130:19
+    |
+ 96 | impl Executor {
+    | ------------- method in this implementation
+...
+130 |     pub(crate) fn blocked_reason(&self) -> Option<String> {
+    |                   ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-daemon` (bin "orchestrator-daemon" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.87s
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\cargo-target\debug\deps\orchestrator_daemon-fa3ebc8fd7f64b8d.exe)
+error: test failed, to rerun pass `-p orchestrator-daemon --bin orchestrator-daemon`

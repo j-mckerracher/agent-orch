@@ -1,0 +1,25 @@
+{
+  "name": "desktop-tsc",
+  "command": "npx.cmd tsc -b",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\\source\\apps\\desktop",
+  "source_commit": "67c1181db7cd44890cd229eee648033525f64c3e",
+  "started_utc": "2026-11-09T22:34:40.2330435Z",
+  "duration_seconds": 5.048,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p10-acc-20261109T223022Z-55d89a66abca41d7b0aec48a1bcfc6fa\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

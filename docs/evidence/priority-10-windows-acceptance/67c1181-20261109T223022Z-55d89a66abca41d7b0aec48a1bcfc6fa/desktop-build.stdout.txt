@@ -1,0 +1,14 @@
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+vite v8.3.6 building client environment for production...
+transforming...
+✓ 60 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.41 kB │ gzip:  0.27 kB
+dist/assets/index-CuaYIvsK.css    1.85 kB │ gzip:  0.76 kB
+dist/assets/index-BvaYmRrW.js   328.41 kB │ gzip: 98.31 kB
+
+✓ built in 273ms

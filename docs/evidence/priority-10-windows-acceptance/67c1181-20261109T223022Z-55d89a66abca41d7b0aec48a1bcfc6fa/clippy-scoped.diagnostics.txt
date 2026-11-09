@@ -1,0 +1,4 @@
+BASELINE warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let` @ crates\orchestrator-runtime\src\supervisor.rs:401:9
+BASELINE warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let` @ crates\orchestrator-runtime\src\supervisor.rs:424:9
+NEW warning: method `blocked_reason` is never used @ crates\orchestrator-daemon\src\executor.rs:130:19
+RECONCILIATION (report only): summary lines declare 3 warning(s) in total; 3 distinct warning diagnostic(s) were classified; 2 baseline; 1 new.
