@@ -836,6 +836,7 @@ dependencies = [
  "orchestrator-store",
  "serde",
  "serde_json",
+ "sqlx",
  "tempfile",
  "tokio",
  "uuid",

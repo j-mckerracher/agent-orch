@@ -115,17 +115,16 @@ mod fault_injection {
         Ok(())
     }
 
-    #[cfg(unix)]
     pub fn before_agent_launch() {
         if enabled("crash-before-agent-launch") {
             crash_self();
         }
     }
 
-    #[cfg(not(unix))]
-    pub fn before_agent_launch() {}
-
-    #[cfg(unix)]
+    /// Waits for the gate file, then ends the run owner. On Unix the owned
+    /// agent group is SIGKILLed first. On Windows the run owner's kill-on-close
+    /// Job Object ends the agent tree when this process dies, so no extra kill
+    /// is issued: the crash itself is the portable fault.
     pub fn after_lock_release(agent_pid: u32) -> Result<(), String> {
         if !enabled("kill-agent-group-and-cli") {
             return Ok(());
@@ -140,31 +139,34 @@ mod fault_injection {
         if !gate.exists() {
             return Err(format!("fault gate {} did not appear", gate.display()));
         }
-        let group = i32::try_from(agent_pid)
-            .map_err(|_| format!("agent PID {agent_pid} exceeds process-group range"))?;
-        // SAFETY: the supervisor launches this agent as leader of its owned group.
-        if unsafe { kill(-group, 9) } != 0 {
-            return Err(format!(
-                "cannot SIGKILL owned agent group {group}: {}",
-                std::io::Error::last_os_error()
-            ));
+        #[cfg(unix)]
+        {
+            let group = i32::try_from(agent_pid)
+                .map_err(|_| format!("agent PID {agent_pid} exceeds process-group range"))?;
+            // SAFETY: the supervisor launches this agent as leader of its owned group.
+            if unsafe { kill(-group, 9) } != 0 {
+                return Err(format!(
+                    "cannot SIGKILL owned agent group {group}: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
         }
+        #[cfg(not(unix))]
+        let _ = agent_pid;
         crash_self();
     }
 
-    #[cfg(not(unix))]
-    pub fn after_lock_release(_agent_pid: u32) -> Result<(), String> {
-        Ok(())
-    }
-
-    #[cfg(unix)]
     fn crash_self() -> ! {
-        let process = i32::try_from(std::process::id()).expect("Unix PID fits i32");
-        // SAFETY: this signal targets only the CLI process running this hook.
-        unsafe {
-            kill(process, 9);
+        #[cfg(unix)]
+        {
+            let process = i32::try_from(std::process::id()).expect("Unix PID fits i32");
+            // SAFETY: this signal targets only the CLI process running this hook.
+            unsafe {
+                kill(process, 9);
+            }
         }
-        std::process::abort();
+        // Abrupt, non-unwinding exit that avoids abort()'s Windows error report.
+        std::process::exit(137);
     }
 }
 
