@@ -2,9 +2,10 @@
 //! They do not launch agent processes or contact a remote repository.
 //! Each case owns a temporary repository and SQLite database. The restart
 //! case closes its only store handle after every persisted workflow stage.
-//! Updated: 2026-11-08T03:41:45-07:00.
-
-#![cfg(unix)]
+//! They are not platform-gated: the failing validation command is `git`
+//! itself, so no shell or Unix-only API is needed. Native Windows results
+//! are recorded separately per pinned commit.
+//! Updated: 2026-11-09T07:09:00-07:00.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -123,9 +124,9 @@ fn decomposition_replaces_proposal_ids_and_rewrites_dependencies() {
         vec![ids[0].clone(), ids[1].clone()]
     );
 
-    let reordered_local_keys = validate_proposal(&proposal(["other-a", "other-b", "other-c"]))
+    let renamed_local_keys = validate_proposal(&proposal(["other-a", "other-b", "other-c"]))
         .expect("validate equivalent proposal");
-    assert_eq!(plan_ids(&reordered_local_keys), ids);
+    assert_eq!(plan_ids(&renamed_local_keys), ids);
 }
 
 #[test]
@@ -556,8 +557,10 @@ fn verification_blocks_failed_commands_and_names_protected_paths() {
 
     let failed_candidate = candidate(&workspace, &ids[0], "candidate-a.txt", "candidate\n");
     let command = CommandSpec {
-        program: "/bin/sh".into(),
-        args: vec!["-c".into(), "printf rejected; exit 7".into()],
+        program: "git".into(),
+        args: ["rev-parse", "--verify", "--quiet", "refs/heads/missing"]
+            .map(Into::into)
+            .into(),
     };
     let mut execution_trust = ExecutionTrustPolicy::default();
     execution_trust
@@ -580,20 +583,22 @@ fn verification_blocks_failed_commands_and_names_protected_paths() {
     );
     assert_eq!(failed.status, VerificationStatus::Failed);
     assert_eq!(failed.commands[0].status, CommandStatus::Failed);
-    assert_eq!(failed.commands[0].exit_code, Some(7));
+    assert_eq!(failed.commands[0].exit_code, Some(1));
     let failed_run = persist_verification(&store, &failed);
     assert!(!store
         .delivery_verification_matches(&ids[0], &failed_run.id, &failed_candidate.sha)
         .expect("recheck failed verification"));
 
     let review_ref = format!("refs/heads/orchestrator/review/{}", ids[0]);
+    // Approve the exact candidate first: only failed verification may block delivery.
+    let failed_approval = approve_candidate(&store, &ids[0], &failed_candidate.sha, [7; 32]);
     let refs_before_refusal = reference_values(&workspace.primary_path);
     let request = DeliveryRequest {
         step_id: "delivery-failed-validation",
         task_id: &ids[0],
         candidate_sha: &failed_candidate.sha,
         base_sha: failed_candidate.worktree.base_sha(),
-        approval_id: "missing-validation-approval",
+        approval_id: &failed_approval.id,
         verification_run_id: &failed_run.id,
         parameter_digest: [7; 32],
         worktree_path: failed_candidate.worktree.path(),
@@ -654,7 +659,7 @@ fn delivery_requires_exact_approval_and_reapproval_after_candidate_change() {
     let plan = validated_plan();
     let ids = plan_ids(&plan);
     let workspace = workspace_fixture();
-    let store = SqliteStore::new(&workspace.database_path).expect("open test database");
+    let mut store = SqliteStore::new(&workspace.database_path).expect("open test database");
     register_plan(&store, &plan, &workspace.primary_path);
     let mut candidate = candidate(&workspace, &ids[0], "candidate-a.txt", "first\n");
     let default_policy = GitVerificationPolicy::default();
@@ -666,7 +671,7 @@ fn delivery_requires_exact_approval_and_reapproval_after_candidate_change() {
         &default_policy,
     );
     assert_eq!(first_result.status, VerificationStatus::Passed);
-    persist_verification(&store, &first_result);
+    let first_run = persist_verification(&store, &first_result);
 
     let digest = [9; 32];
     let old_approval = approve_candidate(&store, &ids[0], &candidate.sha, digest);
@@ -746,6 +751,11 @@ fn delivery_requires_exact_approval_and_reapproval_after_candidate_change() {
     );
     assert_eq!(changed_result.status, VerificationStatus::Passed);
     let changed_run = persist_verification(&store, &changed_result);
+    // Reopen from disk: the old approval and stale verification must still be refused.
+    store = restart_store(store, &workspace.database_path);
+    assert!(!store
+        .delivery_verification_matches(&ids[0], &first_run.id, &candidate.sha)
+        .expect("recheck stale verification"));
     let changed_action = action(&ids[0], &candidate.sha, digest);
     assert_eq!(
         store.check_approval(&old_approval.id, &changed_action),
@@ -1088,6 +1098,36 @@ fn run_restarting_workflow() -> WorkflowEvidence {
             Ok(())
         );
     }
+
+    // After reopening, the persisted approval still rejects another candidate and digest.
+    let refs_before_mismatch = reference_values(&workspace.primary_path);
+    let reopened_approval_id = &approvals_before_restart[0].0.id;
+    assert_eq!(
+        store.check_delivery_approval(
+            reopened_approval_id,
+            &ids[0],
+            ActionKind::LocalReviewMerge,
+            ParameterDigest::from_sha256(digests[0]),
+            &candidates[1].sha,
+        ),
+        Err(ApprovalError::ActionMismatch(
+            ActionMismatch::CandidateCommit
+        ))
+    );
+    assert_eq!(
+        store.check_delivery_approval(
+            reopened_approval_id,
+            &ids[0],
+            ActionKind::LocalReviewMerge,
+            ParameterDigest::from_sha256([9; 32]),
+            &candidates[0].sha,
+        ),
+        Err(ApprovalError::ActionMismatch(ActionMismatch::Parameters))
+    );
+    assert_eq!(
+        reference_values(&workspace.primary_path),
+        refs_before_mismatch
+    );
 
     let refs_before_delivery = reference_values(&workspace.primary_path);
     let main_before = git(&workspace.primary_path, &["rev-parse", "refs/heads/main"]);
