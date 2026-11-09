@@ -3,6 +3,12 @@
 //! Protected DACLs grant access only to the current process user's SID. Every
 //! accepted stream enters the shared server session, which authenticates its
 //! handshake before dispatching methods.
+//!
+//! Known limits (M6 threat review): the client opens the pipe without
+//! `SECURITY_SQOS_PRESENT` and does not verify the server's identity before
+//! sending the token; the data-directory ACL and token owner are not validated
+//! as they are on Unix, and an elevated process owns its files as
+//! `BUILTIN\Administrators` by default.
 
 use crate::transport::{IpcStream, TransportError};
 use std::fs::{self, File};
@@ -48,7 +54,6 @@ pub(crate) struct Listener {
     name: Vec<u16>,
     security: UserSecurity,
     pending: Option<File>,
-    connected: bool,
 }
 
 impl Listener {
@@ -79,35 +84,56 @@ impl Listener {
             name,
             security,
             pending: Some(pending),
-            connected: false,
         })
     }
 
+    /// Returns the next connected client, or `WouldBlock` when none is waiting.
+    ///
+    /// The pipe name must never be left without a server instance: while it is
+    /// unbound a second daemon could claim it (`FILE_FLAG_FIRST_PIPE_INSTANCE`
+    /// only guards an existing name) and another user could squat it. So every
+    /// replacement instance is created before the instance it replaces is
+    /// dropped. At the instance limit creation fails with `WouldBlock`, which
+    /// also means other instances still hold the name.
     pub(crate) fn accept(&mut self) -> Result<Box<dyn IpcStream>, TransportError> {
         if self.pending.is_none() {
-            self.pending = Some(create_pipe_instance(&self.name, &self.security, false)?);
+            self.pending = self.replacement()?;
         }
-        let file = self.pending.as_ref().expect("pipe instance exists");
+        let Some(file) = self.pending.as_ref() else {
+            return Err(TransportError::Io(io::ErrorKind::WouldBlock));
+        };
         // SAFETY: `file` owns a valid synchronous named-pipe handle; null OVERLAPPED
         // selects the synchronous operation supported by this nonblocking pipe.
         if unsafe { ConnectNamedPipe(file.as_raw_handle(), std::ptr::null_mut()) } == 0 {
-            let error = last_error().raw_os_error().unwrap_or_default() as u32;
-            if error == ERROR_PIPE_LISTENING || error == ERROR_NO_DATA {
-                if error == ERROR_NO_DATA {
-                    drop(self.pending.take());
-                }
+            let error = last_error_code();
+            if error == ERROR_PIPE_LISTENING {
+                return Err(TransportError::Io(io::ErrorKind::WouldBlock));
+            }
+            if error == ERROR_NO_DATA {
+                // The client connected and left already; swap in a fresh instance.
+                self.pending = self.replacement()?;
                 return Err(TransportError::Io(io::ErrorKind::WouldBlock));
             }
             if error != ERROR_PIPE_CONNECTED {
-                return Err(pipe_error(error));
+                return Err(io::Error::from_raw_os_error(error as i32).into());
             }
         }
-        self.connected = true;
-        let file = self.pending.take().expect("connected pipe instance exists");
+        let next = self.replacement()?;
+        let file =
+            std::mem::replace(&mut self.pending, next).expect("connected pipe instance exists");
         Ok(Box::new(PipeStream {
             file,
             timeout: Duration::from_secs(2),
         }))
+    }
+
+    /// Creates the next listening instance, or `None` at the instance limit.
+    fn replacement(&self) -> Result<Option<File>, TransportError> {
+        match create_pipe_instance(&self.name, &self.security, false) {
+            Ok(file) => Ok(Some(file)),
+            Err(TransportError::Io(io::ErrorKind::WouldBlock)) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn set_nonblocking(&self, _enabled: bool) -> Result<(), TransportError> {
@@ -151,19 +177,16 @@ fn create_pipe_instance(
         if !first && error == ERROR_PIPE_BUSY {
             return Err(TransportError::Io(io::ErrorKind::WouldBlock));
         }
-        return Err(pipe_error(error));
+        // With FILE_FLAG_FIRST_PIPE_INSTANCE, access denied is the documented
+        // name-collision result. Elsewhere it stays a plain I/O error.
+        if first && error == ERROR_ACCESS_DENIED {
+            return Err(TransportError::AlreadyRunning);
+        }
+        return Err(io::Error::from_raw_os_error(error as i32).into());
     }
     // SAFETY: successful CreateNamedPipeW returns a unique owned handle that
     // `File` closes exactly once.
     Ok(unsafe { File::from_raw_handle(handle) })
-}
-
-fn pipe_error(code: u32) -> TransportError {
-    if code == ERROR_ACCESS_DENIED {
-        TransportError::AlreadyRunning
-    } else {
-        io::Error::from_raw_os_error(code as i32).into()
-    }
 }
 
 fn pipe_name(data_dir: &Path) -> Result<Vec<u16>, TransportError> {
@@ -189,7 +212,7 @@ pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportEr
         if unsafe { WaitNamedPipeW(name.as_ptr(), 100) } == 0 {
             let error = last_error_code();
             if error != ERROR_FILE_NOT_FOUND && error != ERROR_SEM_TIMEOUT {
-                return Err(pipe_error(error));
+                return Err(io::Error::from_raw_os_error(error as i32).into());
             }
             if Instant::now() >= deadline {
                 return Err(TransportError::Io(io::ErrorKind::TimedOut));
@@ -213,9 +236,12 @@ pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportEr
         if handle == INVALID_HANDLE_VALUE {
             let error = last_error_code();
             if error == ERROR_PIPE_BUSY || error == ERROR_FILE_NOT_FOUND {
+                if Instant::now() >= deadline {
+                    return Err(TransportError::Io(io::ErrorKind::TimedOut));
+                }
                 continue;
             }
-            return Err(pipe_error(error));
+            return Err(io::Error::from_raw_os_error(error as i32).into());
         }
         // SAFETY: successful CreateFileW returns a unique owned handle.
         let file = unsafe { File::from_raw_handle(handle) };
@@ -486,7 +512,8 @@ impl Write for PipeStream {
                     }
                     thread::sleep(Duration::from_millis(2));
                 }
-                Err(error) if is_pipe_would_block(&error) => {
+                // ERROR_NO_DATA on a write means the peer closed; fail at once.
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
                         return Err(io::Error::new(
                             io::ErrorKind::TimedOut,

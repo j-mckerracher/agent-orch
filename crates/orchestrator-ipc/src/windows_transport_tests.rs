@@ -89,18 +89,16 @@ fn file_dacl(path: &Path) -> String {
     dacl_sddl(descriptor)
 }
 
-/// Asserts a protected DACL with exactly one allow entry for the current user.
-fn assert_current_user_only(sddl: &str) {
+/// Asserts a protected DACL holding exactly one allow ACE: the current user
+/// with one of `masks` (SDDL text; the OS may render generic-all as `FA`).
+fn assert_current_user_only(sddl: &str, masks: &[&str]) {
     let sid = current_user_sid().unwrap();
     assert!(
-        sddl.starts_with("D:P(A;;"),
-        "unprotected or non-allow DACL: {sddl}"
+        masks
+            .iter()
+            .any(|mask| sddl == format!("D:P(A;;{mask};;;{sid})")),
+        "DACL is not a protected single {masks:?} ACE for {sid}: {sddl}"
     );
-    assert!(
-        sddl.ends_with(&format!(";;;{sid})")),
-        "wrong principal: {sddl}"
-    );
-    assert_eq!(sddl.matches('(').count(), 1, "extra ACEs: {sddl}");
 }
 
 fn start(dir: &Path) -> thread::JoinHandle<()> {
@@ -136,14 +134,46 @@ fn handshake(stream: &mut Box<dyn IpcStream>, token: &str) -> Value {
     protocol::read::<Value>(stream).unwrap()
 }
 
+/// Connects a client to a fresh listener and returns (client, accepted server).
+fn connected_pair(listener: &mut Listener, dir: &Path) -> (Box<dyn IpcStream>, Box<dyn IpcStream>) {
+    let client = connect(dir).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match listener.accept() {
+            Ok(server) => return (client, server),
+            Err(TransportError::Io(io::ErrorKind::WouldBlock)) => {
+                assert!(Instant::now() < deadline, "accept never saw the client");
+                thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("accept failed: {error}"),
+        }
+    }
+}
+
 #[test]
 fn pipe_and_token_dacls_grant_only_the_current_user() {
     let dir = TempDir::new().unwrap();
-    let listener = Listener::bind(dir.path()).unwrap();
-    assert_current_user_only(&pipe_dacl(listener.pending.as_ref().unwrap()));
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    assert_current_user_only(
+        &pipe_dacl(listener.pending.as_ref().unwrap()),
+        &["GA", "FA"],
+    );
+
+    // Instances created after the first must carry the same descriptor.
+    let _pair = connected_pair(&mut listener, dir.path());
+    assert_current_user_only(
+        &pipe_dacl(listener.pending.as_ref().unwrap()),
+        &["GA", "FA"],
+    );
 
     let _secret = Secret::create(dir.path()).unwrap();
-    assert_current_user_only(&file_dacl(&dir.path().join("daemon.token")));
+    assert_current_user_only(&file_dacl(&dir.path().join("daemon.token")), &["FA"]);
+}
+
+#[test]
+fn pipe_limits_and_remote_rejection_are_configured() {
+    assert_eq!(PIPE_MAX_INSTANCES, 16);
+    assert_ne!(PIPE_MODE & PIPE_REJECT_REMOTE_CLIENTS, 0);
 }
 
 #[test]
@@ -165,21 +195,8 @@ fn instance_limit_is_enforced_and_released() {
     let dir = TempDir::new().unwrap();
     let mut listener = Listener::bind(dir.path()).unwrap();
     let mut held = Vec::new();
-    for _ in 0..PIPE_MAX_INSTANCES {
-        // Creates the next pending instance, or reports that none is waiting.
-        assert!(matches!(
-            listener.accept(),
-            Err(TransportError::Io(io::ErrorKind::WouldBlock))
-        ));
-        let client = connect(dir.path()).unwrap();
-        let server = loop {
-            match listener.accept() {
-                Ok(stream) => break stream,
-                Err(TransportError::Io(io::ErrorKind::WouldBlock)) => {}
-                Err(error) => panic!("accept failed: {error}"),
-            }
-        };
-        held.push((client, server));
+    for _ in 0..16 {
+        held.push(connected_pair(&mut listener, dir.path()));
     }
     assert!(matches!(
         listener.accept(),
@@ -197,6 +214,39 @@ fn instance_limit_is_enforced_and_released() {
         listener.pending.is_some(),
         "released instance was not reusable"
     );
+}
+
+#[test]
+fn pipe_name_stays_bound_when_a_client_connects_and_leaves() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    for _ in 0..5 {
+        drop(connect(dir.path()).unwrap());
+        for _ in 0..3 {
+            // Any accept result is fine; the name must never lose its last instance.
+            let _ = listener.accept();
+            assert!(matches!(
+                Listener::prepare(dir.path()),
+                Err(TransportError::AlreadyRunning)
+            ));
+            assert!(matches!(
+                Listener::bind(dir.path()),
+                Err(TransportError::AlreadyRunning)
+            ));
+        }
+        assert!(listener.pending.is_some());
+    }
+}
+
+#[test]
+fn write_to_a_closed_peer_fails_promptly() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    let (client, mut server) = connected_pair(&mut listener, dir.path());
+    drop(client);
+    let started = Instant::now();
+    assert!(server.write_all(b"x").is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[test]
