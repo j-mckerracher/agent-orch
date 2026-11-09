@@ -497,6 +497,34 @@ fn event_insert_failure_rolls_back_transition_then_retry_records_once() {
 
 #[cfg(feature = "fault-injection")]
 #[test]
+fn identity_capture_failure_fails_run_without_leaving_running_session() {
+    let fixture = Fixture::new(BARRIER_AGENT);
+    let mut command = run_command(&fixture, "no-identity", "injected identity failure");
+    command.env("AGENT_ORCH_FAULT_INJECTION", "fail-identity-capture");
+    let output = run_bounded(command);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("injected identity capture failure"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
+    let failed = store.get("no-identity").unwrap();
+    assert_eq!(failed.state, TaskState::Failed);
+    assert_eq!(failed.attempts[0].state, AttemptState::Failed);
+    assert_eq!(failed.sessions.len(), 1);
+    assert_eq!(failed.sessions[0].state, SessionState::Aborted);
+    assert!(store.open_cancellation_owners().unwrap().is_empty());
+    assert!(
+        !fixture.data.join(".orchestrator.lock").exists(),
+        "failed run released the data lock"
+    );
+    assert_audit_complete(&store);
+}
+
+#[cfg(feature = "fault-injection")]
+#[test]
 fn prelaunch_crash_reconciles_before_any_second_attempt() {
     let fixture = Fixture::new(BARRIER_AGENT);
     let mut command = run_command(&fixture, "orphan-task", "crash before launch");

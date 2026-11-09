@@ -23,7 +23,10 @@ use orchestrator_agents::{
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
-use orchestrator_core::identity::{plan_process_reconciliation, ProcessClassification};
+use orchestrator_core::identity::{
+    plan_process_reconciliation, ProcessClassification, ProcessIdentity, ProcessObservation,
+    ProcessPlatform,
+};
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_git::{create_task_worktree, Repository};
@@ -95,6 +98,13 @@ mod fault_injection {
         Ok(())
     }
 
+    pub fn before_identity_capture() -> std::io::Result<()> {
+        if enabled("fail-identity-capture") {
+            return Err(std::io::Error::other("injected identity capture failure"));
+        }
+        Ok(())
+    }
+
     #[cfg(unix)]
     pub fn before_agent_launch() {
         if enabled("crash-before-agent-launch") {
@@ -153,6 +163,10 @@ mod fault_injection {
     use super::Path;
 
     pub fn before_admit(_data_dir: &Path, _task_id: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn before_identity_capture() -> std::io::Result<()> {
         Ok(())
     }
 
@@ -424,43 +438,27 @@ pub async fn run_task(
             task_paths.metadata.display()
         ));
     }
-    match capture_process_identity(agent_pid) {
-        Ok(identity) => {
-            if let Err(error) = store.record_session_identity(&task_id, &session_id, &identity) {
-                let mut handle = handle;
-                handle.cancel().await.map_err(|cancel_error| {
-                    format!(
-                        "cannot persist session identity; cancellation also failed: {cancel_error}"
-                    )
-                })?;
-                let _ = handle.wait().await;
-                fail_before_agent_exit(
-                    &store,
-                    &mut metadata,
-                    &task_paths,
-                    &ids,
-                    &error.to_string(),
-                )?;
-                return Err(format!(
-                    "cannot persist identity for session {session_id}: {error}"
-                ));
-            }
-        }
-        Err(error) => {
-            let message = format!("process identity unavailable for session {session_id}: {error}");
-            if let Err(log_error) = log_session_message(&task_paths.session_log, &message) {
-                let mut handle = handle;
-                handle.cancel().await.map_err(|cancel_error| {
-                    format!(
-                        "cannot record identity failure; cancellation also failed: {cancel_error}"
-                    )
-                })?;
-                let _ = handle.wait().await;
-                fail_before_agent_exit(&store, &mut metadata, &task_paths, &ids, &log_error)?;
-                return Err(log_error);
-            }
-            eprintln!("{message}");
-        }
+    // A Running session without a recorded identity cannot be reconciled or
+    // recovered later, so identity capture and persistence are mandatory.
+    let identity_recorded = fault_injection::before_identity_capture()
+        .and_then(|()| capture_process_identity(agent_pid))
+        .map_err(|error| format!("process identity unavailable for session {session_id}: {error}"))
+        .and_then(|identity| {
+            store
+                .record_session_identity(&task_id, &session_id, &identity)
+                .map_err(|error| {
+                    format!("cannot persist identity for session {session_id}: {error}")
+                })
+        });
+    if let Err(message) = identity_recorded {
+        let _ = log_session_message(&task_paths.session_log, &message);
+        let mut handle = handle;
+        handle.cancel().await.map_err(|cancel_error| {
+            format!("{message}; cancellation also failed: {cancel_error}")
+        })?;
+        let _ = handle.wait().await;
+        fail_before_agent_exit(&store, &mut metadata, &task_paths, &ids, &message)?;
+        return Err(message);
     }
     store
         .update_session_state(&task_id, &session_id, SessionState::Running)
@@ -1245,15 +1243,25 @@ pub fn recover_cancellation_owner(
         .session_identity(task_id, session_id)
         .map_err(|error| format!("cannot inspect session identity for {session_id}: {error}"))?
         .map(|identity| {
-            plan_process_reconciliation(identity, observe_process(identity)).classification
+            session_recovery_classification(
+                identity,
+                observe_process(identity),
+                recorded_group_alive,
+            )
         });
-    // Fail closed: only a proven-gone session process (lead PID and recorded
-    // group) may be released. Unknown includes a live group whose lead exited.
+    // Fail closed: only a proven-gone session process may be released. Unknown
+    // includes a live group whose lead exited. Windows records no process
+    // group (no job-object tracking), so descendants of a gone lead cannot be
+    // detected there; the operator's --confirm-processes-exited is the guard.
     if let Some(classification) = session_classification {
-        if classification != ProcessClassification::Exited {
+        if !matches!(
+            classification,
+            ProcessClassification::Exited | ProcessClassification::IdentityMismatch
+        ) {
             return Err(format!(
                 "session process for {task_id}/{session_id} is {classification:?}, not proven \
-                 exited (a live process group with an exited lead is Unknown); refusing manual \
+                 exited (a live process group with an exited lead is Unknown; a reused or \
+                 inconclusive lead PID with a live recorded group is refused); refusing manual \
                  recovery"
             ));
         }
@@ -1274,6 +1282,55 @@ pub fn recover_cancellation_owner(
          was marked Failed, task lifecycle was not changed, and a durable audit event was recorded"
     );
     Ok(())
+}
+
+#[cfg(unix)]
+fn recorded_group_alive(group: u32) -> bool {
+    orchestrator_runtime::supervisor::process_group_alive(group)
+}
+
+#[cfg(not(unix))]
+fn recorded_group_alive(_group: u32) -> bool {
+    false
+}
+
+/// Classifies a session's recorded process for `recover-owner`.
+///
+/// `Exited` and `IdentityMismatch` both mean the session is provably gone.
+/// `IdentityMismatch` is kept only for PID reuse: the lead PID is alive with a
+/// different start time, and the recorded group is dead (or is led by that
+/// reused PID, which the kernel only allows once the old group is empty).
+/// A same-start-time lead that changed group, missing start times, an absent
+/// lead with a live group, or any live recorded group stay `Unknown`, so they
+/// are refused. Windows records no process group and has no job-object
+/// tracking, so only the start-time check applies there.
+fn session_recovery_classification(
+    identity: ProcessIdentity,
+    observation: ProcessObservation,
+    group_alive: impl Fn(u32) -> bool,
+) -> ProcessClassification {
+    let classification = plan_process_reconciliation(identity, observation).classification;
+    if classification != ProcessClassification::IdentityMismatch {
+        return classification;
+    }
+    let ProcessObservation::Alive(observed) = observation else {
+        return ProcessClassification::Unknown;
+    };
+    let pid_reused = observed.pid == identity.pid
+        && observed.platform == identity.platform
+        && matches!(
+            (identity.start_time_micros, observed.start_time_micros),
+            (Some(recorded), Some(current)) if recorded != current
+        );
+    let group_gone = match identity.process_group {
+        Some(group) => !group_alive(group) || observed.process_group == Some(group),
+        None => identity.platform == ProcessPlatform::Windows,
+    };
+    if pid_reused && group_gone {
+        ProcessClassification::IdentityMismatch
+    } else {
+        ProcessClassification::Unknown
+    }
 }
 
 pub fn show_diff(data_dir: &Path, task_id: &str) -> Result<(), String> {
@@ -1682,7 +1739,14 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                 None => {
                     other_records.push(ReconciliationResolution::Unresolved);
                     blockers.push(format!(
-                        "session {}/{} has no recorded process identity",
+                        "session {0}/{1} has no recorded process identity (a legacy record or a \
+                         run interrupted before identity capture; current runs fail instead of \
+                         creating one). Next step: run `agent-orch inspect {0}` to read the \
+                         recorded agent PID and preserved worktree, confirm by hand that the \
+                         agent and its child processes are gone (stop them if not), and keep the \
+                         worktree and logs. No override exists for this record, so scheduling \
+                         stays blocked on this data directory until it is resolved or the \
+                         directory is retired",
                         task.contract.id, session.id
                     ));
                 }
@@ -2145,7 +2209,6 @@ fn capture_stream<R: Read, W: Write>(mut input: R, mut output: W, mut log: File)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchestrator_core::identity::{ProcessIdentity, ProcessPlatform};
 
     fn register_test_owner(
         store: &SqliteStore,
@@ -2388,6 +2451,128 @@ mod tests {
         assert_eq!(
             events[0].payload["session_process_classification"],
             "Exited"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recover_owner_releases_reused_lead_pid_with_dead_group_and_audits_classification() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path();
+        let store = open_store(data_dir).unwrap();
+        let owner = register_test_owner(
+            &store,
+            "task-reused-lead-pid",
+            Some(legacy_windows_owner_identity()),
+        );
+        store.request_cancellation_for_task(&owner.task_id).unwrap();
+
+        // A reaped group leader supplies a dead recorded group.
+        let mut dead_leader = Command::new("/bin/sh")
+            .args(["-c", "true"])
+            .process_group(0)
+            .spawn()
+            .expect("spawn short-lived leader");
+        let dead_group = dead_leader.id();
+        dead_leader.wait().expect("reap leader");
+        // An unrelated live process now owns the recorded lead PID.
+        let mut reused = Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn unrelated process");
+        let live = capture_process_identity(reused.id()).expect("capture unrelated identity");
+        let recorded = ProcessIdentity {
+            process_group: Some(dead_group),
+            start_time_micros: Some(live.start_time_micros.expect("start time") + 1),
+            ..live
+        };
+        store
+            .record_session_identity(&owner.task_id, &owner.session_id, &recorded)
+            .unwrap();
+        let observed = observe_process(recorded);
+        let classification = plan_process_reconciliation(recorded, observed).classification;
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(&owner.task_id, &owner.attempt_id, AttemptState::Failed)
+            .unwrap();
+        store
+            .transition(&owner.task_id, TaskEvent::ExecutionFailed)
+            .unwrap();
+
+        let result = recover_cancellation_owner(
+            data_dir,
+            &owner.task_id,
+            &owner.attempt_id,
+            &owner.session_id,
+            owner.generation(),
+            true,
+            "operator verified the owner and managed process tree exited",
+        );
+        let _ = reused.kill();
+        let _ = reused.wait();
+
+        assert_eq!(classification, ProcessClassification::IdentityMismatch);
+        result.unwrap();
+        assert!(store.open_cancellation_owners().unwrap().is_empty());
+        let events: Vec<_> = store
+            .stream_events_after(0, 100)
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "cancellation.owner_manually_released")
+            .collect();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].payload["session_process_classification"],
+            "IdentityMismatch"
+        );
+    }
+
+    #[test]
+    fn recovery_classification_refuses_reused_lead_with_live_foreign_group() {
+        let recorded = ProcessIdentity {
+            pid: 4000,
+            process_group: Some(4000),
+            start_time_micros: Some(10),
+            platform: ProcessPlatform::Unix,
+        };
+        let reused = |group, start| {
+            ProcessObservation::Alive(ProcessIdentity {
+                process_group: Some(group),
+                start_time_micros: Some(start),
+                ..recorded
+            })
+        };
+        let classify = |observation, group_alive: bool| {
+            session_recovery_classification(recorded, observation, move |_| group_alive)
+        };
+        // Reused lead PID in another group, recorded group dead: provably gone.
+        assert_eq!(
+            classify(reused(9000, 99), false),
+            ProcessClassification::IdentityMismatch
+        );
+        // Reused lead PID in another group, recorded group still alive: refused.
+        assert_eq!(
+            classify(reused(9000, 99), true),
+            ProcessClassification::Unknown
+        );
+        // Same process that merely changed group is not PID reuse: refused.
+        assert_eq!(
+            classify(reused(9000, 10), false),
+            ProcessClassification::Unknown
+        );
+        // Absent lead with a live group stays Unknown; with a dead group, Exited.
+        assert_eq!(
+            classify(ProcessObservation::Unknown, true),
+            ProcessClassification::Unknown
+        );
+        assert_eq!(
+            classify(ProcessObservation::Exited, false),
+            ProcessClassification::Exited
         );
     }
 
