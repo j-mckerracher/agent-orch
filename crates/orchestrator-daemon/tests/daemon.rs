@@ -554,6 +554,10 @@ impl RunningAgentFixture {
                 .arg("--data-dir")
                 .arg(&self.data)
                 .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
+                // Never probe a real claude or pi: the report must not depend
+                // on what is installed on the machine or on CPU load.
+                .env("AGENT_ORCH_CLAUDE_PROGRAM", &self.agent)
+                .env("AGENT_ORCH_PI_PROGRAM", self.root.path().join("no-such-pi"))
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
@@ -733,9 +737,25 @@ fn daemon_reports_agent_capabilities_without_paths() {
         .unwrap();
     assert_eq!(codex["installed"], true);
     assert_eq!(codex["launchable"], true);
-    assert!(!report
-        .to_string()
-        .contains(&fixture.data.display().to_string()));
+    let pi = report
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["agent"] == "pi")
+        .unwrap();
+    assert_eq!(pi["installed"], false);
+    assert_eq!(pi["launchable"], false);
+    // No executable, data, repository, or temp-root path may appear.
+    let text = report.to_string();
+    for path in [
+        &fixture.data,
+        &fixture.agent,
+        &fixture.repo,
+        fixture.root.path(),
+    ] {
+        assert!(!text.contains(&path.display().to_string()), "{text}");
+    }
+    assert!(!text.contains('/'), "{text}");
     client.shutdown().unwrap();
     assert!(daemon.finish().status.success());
 }

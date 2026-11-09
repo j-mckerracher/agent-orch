@@ -75,8 +75,10 @@ impl Fixture {
             worktrees_root: data.join("worktrees"),
             codex_program: Some(program.to_owned()),
             claude_program: None,
+            pi_program: None,
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(25),
+            probe_timeout: Duration::from_secs(5),
         }
     }
 
@@ -630,4 +632,123 @@ fn restart_gate_blocks_launches_while_a_run_cannot_be_proven_dead() {
     assert_eq!(store.get("held-back").unwrap().state, TaskState::Queued);
     assert_eq!(store.get("unknown").unwrap().state, TaskState::Running);
     executor.shutdown();
+}
+
+fn spawn_group_leader() -> std::process::Child {
+    Command::new("/bin/sleep")
+        .arg("300")
+        .process_group(0)
+        .spawn()
+        .unwrap()
+}
+
+#[test]
+fn restart_never_signals_an_agent_whose_owner_daemon_is_still_alive() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+    fixture.register(&store);
+    let mut agent = spawn_group_leader();
+    seed_interrupted_run(&store, &fixture, "owned", Some(agent.id()));
+    // This test process stands in for a live owning daemon.
+    let owner = CancellationOwner::new(
+        "owned".into(),
+        "owned-attempt-1".into(),
+        "owned-session-1".into(),
+        uuid::Uuid::new_v4().simple().to_string(),
+    )
+    .unwrap()
+    .with_exact_process_identity(capture_exact_process_identity(std::process::id()).unwrap());
+    store.register_cancellation_owner(&owner).unwrap();
+
+    terminate_orphaned_agents(&store);
+
+    assert!(
+        agent.try_wait().unwrap().is_none(),
+        "an agent with a live owner must not be signalled"
+    );
+    agent.kill().unwrap();
+    agent.wait().unwrap();
+}
+
+#[test]
+fn restart_never_signals_a_process_whose_identity_differs_from_the_recorded_one() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+    fixture.register(&store);
+    // The live process now at the recorded pid started at a different time,
+    // as after PID reuse. It is a group leader, so only the identity check
+    // stands between it and SIGTERM.
+    let mut reused = spawn_group_leader();
+    let mut recorded = capture_process_identity(reused.id()).unwrap();
+    recorded.start_time_micros = Some(
+        recorded
+            .start_time_micros
+            .map_or(1, |started| started + 3_600_000_000),
+    );
+    seed_interrupted_run(&store, &fixture, "reused", None);
+    store
+        .record_session_identity("reused", "reused-session-1", &recorded)
+        .unwrap();
+
+    terminate_orphaned_agents(&store);
+
+    assert!(
+        reused.try_wait().unwrap().is_none(),
+        "a process that does not match the recorded identity must not be signalled"
+    );
+    reused.kill().unwrap();
+    reused.wait().unwrap();
+}
+
+#[test]
+fn capabilities_probe_is_bounded_and_kills_a_wedged_agent_by_pid() {
+    let fixture = Fixture::new();
+    let pid_file = fixture.marker("wedged.pids");
+    // Wedges on the first probe command and leaves a grandchild behind.
+    let pi = fixture.script(
+        "wedged-pi",
+        &format!(
+            "echo $$ > '{0}'\nsleep 300 &\necho $! >> '{0}'\nwait\n",
+            pid_file.display()
+        ),
+    );
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.pi_program = Some(pi.clone());
+        // Generous enough that the script has started even on a loaded host.
+        config.probe_timeout = Duration::from_secs(2);
+    });
+
+    // A script written moments ago can fail to exec with ETXTBSY while another
+    // test thread forks; such a failed spawn is quick and leaves no pid file,
+    // so retry until the wedged script has actually run.
+    let mut attempts = 0;
+    let (agents, elapsed) = loop {
+        let started = Instant::now();
+        let agents = api.dispatch("agents.capabilities", json!({})).unwrap();
+        let elapsed = started.elapsed();
+        attempts += 1;
+        if pid_file.exists() || attempts == 20 {
+            break (agents, elapsed);
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+
+    assert!(elapsed < Duration::from_secs(10), "probe took {elapsed:?}");
+    let pi_entry = agents
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["agent"] == "pi")
+        .unwrap();
+    assert_eq!(pi_entry["installed"], false);
+    assert_eq!(pi_entry["launchable"], false);
+    let pids = fs::read_to_string(&pid_file).unwrap();
+    for pid in pids.split_whitespace() {
+        let pid: i32 = pid.parse().unwrap();
+        wait_until("wedged probe process to be killed", || unsafe {
+            libc::kill(pid, 0) != 0
+        });
+    }
 }

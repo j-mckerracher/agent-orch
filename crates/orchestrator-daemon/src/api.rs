@@ -404,11 +404,23 @@ impl DaemonApi {
         if let Some(program) = &self.config.claude_program {
             claude = claude.with_program(program);
         }
-        // Probes run real agent binaries, so run them together to keep the
-        // reply within the client's I/O timeout.
-        let pi = PiRpcAdapter::new();
-        let (codex, claude, pi) =
-            runtime.block_on(async { tokio::join!(codex.detect(), claude.detect(), pi.detect()) });
+        // Probes can run real agent binaries (Pi's RPC probe), so they run
+        // together and each is bounded. Dropping an unfinished probe drops its
+        // `ChildSupervisor`, which SIGKILLs the child's process group by PID
+        // (Job Object termination on Windows), so a wedged binary neither
+        // blocks the reply nor outlives it.
+        let mut pi = PiRpcAdapter::new();
+        if let Some(program) = &self.config.pi_program {
+            pi = pi.with_program(program);
+        }
+        let limit = self.config.probe_timeout;
+        let (codex, claude, pi) = runtime.block_on(async {
+            tokio::join!(
+                probe(limit, codex.detect()),
+                probe(limit, claude.detect()),
+                probe(limit, pi.detect())
+            )
+        });
         Ok(json!([
             agent_entry("codex", true, codex),
             agent_entry("claude-code", true, claude),
@@ -975,6 +987,20 @@ fn delivery_digest(
 
 fn callback_failure() -> CallbackError {
     Box::new(std::io::Error::other("delivery policy check failed"))
+}
+
+/// Bounds one capability probe; an unfinished probe is dropped, which kills
+/// the child it supervises, and is reported as not installed.
+async fn probe<T>(
+    limit: std::time::Duration,
+    detect: impl std::future::Future<Output = orchestrator_agents::Result<T>>,
+) -> orchestrator_agents::Result<T> {
+    match tokio::time::timeout(limit, detect).await {
+        Ok(result) => result,
+        Err(_) => Err(orchestrator_agents::AgentError::Protocol(
+            "capability probe timed out".into(),
+        )),
+    }
 }
 
 fn agent_entry(

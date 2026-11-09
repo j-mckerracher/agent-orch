@@ -55,8 +55,11 @@ pub(crate) struct ExecutorConfig {
     pub(crate) worktrees_root: PathBuf,
     pub(crate) codex_program: Option<PathBuf>,
     pub(crate) claude_program: Option<PathBuf>,
+    pub(crate) pi_program: Option<PathBuf>,
     pub(crate) limits: SchedulerLimits,
     pub(crate) poll: Duration,
+    /// Upper bound for one `agents.capabilities` probe of an agent binary.
+    pub(crate) probe_timeout: Duration,
 }
 
 impl ExecutorConfig {
@@ -65,8 +68,11 @@ impl ExecutorConfig {
             worktrees_root: data_dir.join("worktrees"),
             codex_program: std::env::var_os("AGENT_ORCH_CODEX_PROGRAM").map(PathBuf::from),
             claude_program: std::env::var_os("AGENT_ORCH_CLAUDE_PROGRAM").map(PathBuf::from),
+            pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(500),
+            // Leaves headroom under the 2 s client I/O timeout.
+            probe_timeout: Duration::from_millis(1200),
         }
     }
 }
