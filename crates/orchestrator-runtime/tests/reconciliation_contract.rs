@@ -479,7 +479,8 @@ mod git_state {
         ));
         assert_ne!(recovery, TaskRecovery::Completed);
 
-        // Git now proves the delivery: completed, whatever the task record says.
+        // Git now proves the delivery ref, but an unfinished task record
+        // contradicts it: a human decides, nothing is auto-promoted.
         git(
             &fixture.path,
             &["update-ref", review_ref, fixture.candidate_sha.as_str()],
@@ -487,11 +488,21 @@ mod git_state {
         let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
         let confirmed = delivery_evidence(&plan.steps);
         assert_eq!(confirmed, DeliveryEvidence::Confirmed);
-        let recovery = classify_interrupted_task(evidence(
+        let contradictory = classify_interrupted_task(evidence(
             WorkspaceEvidence::Matching,
             confirmed,
             TaskState::Running,
             AttemptState::Running,
+        ));
+        assert_eq!(contradictory, TaskRecovery::RequiresInspection);
+        assert!(!gate(contradictory));
+
+        // Recorded verified success plus Git-confirmed delivery is completed.
+        let recovery = classify_interrupted_task(evidence(
+            WorkspaceEvidence::Matching,
+            confirmed,
+            TaskState::Succeeded,
+            AttemptState::Succeeded,
         ));
         assert_eq!(recovery, TaskRecovery::Completed);
         assert!(gate(recovery));
@@ -623,5 +634,282 @@ mod git_state {
             assert!(path.exists(), "{name} work must be preserved");
         }
         assert_all_require_inspection(cases);
+    }
+
+    // ---- F1 decision matrix (follow-up to the 33abce9d RED commit) ----
+    //
+    // Independent oracle of the approved precedence, evaluated over real Git
+    // workspace and delivery evidence. `Completed` is a read-only advisory:
+    // it never authorises cleanup, merging, or state advancement.
+
+    fn expected_recovery(
+        task: TaskState,
+        attempt: AttemptState,
+        workspace: WorkspaceEvidence,
+        delivery: DeliveryEvidence,
+    ) -> TaskRecovery {
+        use TaskRecovery::*;
+        if matches!(
+            delivery,
+            DeliveryEvidence::Partial | DeliveryEvidence::Ambiguous
+        ) {
+            return RequiresInspection;
+        }
+        if matches!(
+            workspace,
+            WorkspaceEvidence::Dirty | WorkspaceEvidence::Foreign | WorkspaceEvidence::Unknown
+        ) {
+            return RequiresInspection;
+        }
+        if delivery == DeliveryEvidence::Confirmed {
+            return if task == TaskState::Succeeded
+                && matches!(
+                    workspace,
+                    WorkspaceEvidence::Matching | WorkspaceEvidence::Missing
+                ) {
+                Completed
+            } else {
+                RequiresInspection
+            };
+        }
+        match task {
+            TaskState::Succeeded => {
+                if delivery == DeliveryEvidence::None && workspace == WorkspaceEvidence::Matching {
+                    Completed
+                } else {
+                    RequiresInspection
+                }
+            }
+            TaskState::Failed | TaskState::VerificationFailed | TaskState::Cancelled => Blocked,
+            _ => match workspace {
+                WorkspaceEvidence::Matching => Recoverable,
+                WorkspaceEvidence::Missing => Blocked,
+                WorkspaceEvidence::BranchMoved if attempt == AttemptState::CandidateReady => {
+                    Recoverable
+                }
+                _ => RequiresInspection,
+            },
+        }
+    }
+
+    /// One real workspace per evidence class (unsafe ones via `unsafe_workspaces`).
+    fn all_workspaces(fixture: &Fixture) -> Vec<(&'static str, WorkspaceEvidence)> {
+        let matching =
+            create_task_worktree(&fixture.repository, "matching", "HEAD", &fixture.worktrees)
+                .expect("create matching worktree");
+        let matching = observe_workspace(fixture, &matching, true);
+
+        let missing =
+            create_task_worktree(&fixture.repository, "missing", "HEAD", &fixture.worktrees)
+                .expect("create missing worktree");
+        fs::remove_dir_all(missing.path()).expect("simulate out-of-band removal");
+        let missing = observe_workspace(fixture, &missing, false);
+
+        let moved = create_task_worktree(&fixture.repository, "moved", "HEAD", &fixture.worktrees)
+            .expect("create moved worktree");
+        fs::write(moved.path().join("work.txt"), "work\n").expect("write work");
+        git(moved.path(), &["add", "work.txt"]);
+        git(moved.path(), &["commit", "-m", "unlanded work"]);
+        let moved = observe_workspace(fixture, &moved, true);
+
+        let mut all = vec![
+            ("matching", matching),
+            ("missing", missing),
+            ("branch-moved", moved),
+        ];
+        all.extend(
+            unsafe_workspaces(fixture)
+                .into_iter()
+                .map(|(name, workspace, _)| (name, workspace)),
+        );
+        all
+    }
+
+    /// Real delivery evidence for every class.
+    fn all_deliveries(fixture: &Fixture) -> Vec<(&'static str, DeliveryEvidence)> {
+        let landed = "refs/heads/orchestrator/review/matrix-landed";
+        let pending = "refs/heads/orchestrator/review/matrix-pending";
+        let moved = "refs/heads/orchestrator/review/matrix-moved";
+        let base = fixture.candidate_sha.clone();
+        git(&fixture.path, &["update-ref", landed, base.as_str()]);
+        fs::write(fixture.path.join("other.txt"), "other\n").expect("write other");
+        git(&fixture.path, &["add", "other.txt"]);
+        git(&fixture.path, &["commit", "-m", "other"]);
+        git(&fixture.path, &["update-ref", moved, "HEAD"]);
+        let evidence_of = |steps: &[RecordedDeliveryStep]| {
+            let plan = reconcile_delivery_steps(&fixture.repository, steps).expect("plan");
+            delivery_evidence(&plan.steps)
+        };
+        let a = step(fixture, "delivery-a", landed, &base);
+        let b = step(fixture, "delivery-b", pending, &base);
+        let c = step(fixture, "delivery-c", moved, &base);
+        vec![
+            ("none", evidence_of(&[])),
+            ("not-applied", evidence_of(std::slice::from_ref(&b))),
+            ("confirmed", evidence_of(std::slice::from_ref(&a))),
+            ("partial", evidence_of(&[a.clone(), b])),
+            ("ambiguous", evidence_of(&[a, c])),
+        ]
+    }
+
+    #[test]
+    fn real_git_evidence_matrix_matches_the_approved_precedence() {
+        let fixture = fixture();
+        let workspaces = all_workspaces(&fixture);
+        let deliveries = all_deliveries(&fixture);
+        assert_eq!(
+            workspaces.iter().map(|(_, w)| *w).collect::<Vec<_>>(),
+            [
+                WorkspaceEvidence::Matching,
+                WorkspaceEvidence::Missing,
+                WorkspaceEvidence::BranchMoved,
+                WorkspaceEvidence::Dirty,
+                WorkspaceEvidence::Unknown,
+                WorkspaceEvidence::Foreign,
+            ]
+        );
+        assert_eq!(
+            deliveries.iter().map(|(_, d)| *d).collect::<Vec<_>>(),
+            [
+                DeliveryEvidence::None,
+                DeliveryEvidence::NotApplied,
+                DeliveryEvidence::Confirmed,
+                DeliveryEvidence::Partial,
+                DeliveryEvidence::Ambiguous,
+            ]
+        );
+
+        let tasks = [
+            (TaskState::Created, AttemptState::Pending),
+            (TaskState::Queued, AttemptState::Pending),
+            (TaskState::Running, AttemptState::Running),
+            (TaskState::Verifying, AttemptState::CandidateReady),
+            (TaskState::Succeeded, AttemptState::Succeeded),
+            (TaskState::Failed, AttemptState::Failed),
+            (TaskState::VerificationFailed, AttemptState::Failed),
+            (TaskState::Cancelled, AttemptState::Cancelled),
+            // Active tasks: moved branches depend on candidate evidence.
+            (TaskState::Running, AttemptState::CandidateReady),
+            (TaskState::Verifying, AttemptState::Running),
+        ];
+        let mut mismatches = Vec::new();
+        let mut rows = 0;
+        for (task, attempt) in tasks {
+            for (workspace_name, workspace) in &workspaces {
+                for (delivery_name, delivery) in &deliveries {
+                    rows += 1;
+                    let actual =
+                        classify_interrupted_task(evidence(*workspace, *delivery, task, attempt));
+                    let expected = expected_recovery(task, attempt, *workspace, *delivery);
+                    if actual != expected {
+                        mismatches.push(format!(
+                            "{task:?}/{attempt:?}+{workspace_name}+{delivery_name}: \
+                             expected {expected:?}, got {actual:?}"
+                        ));
+                    }
+                    // Only requires-inspection blocks scheduling.
+                    assert_eq!(gate(actual), actual != TaskRecovery::RequiresInspection);
+                }
+            }
+        }
+        assert_eq!(rows, 300);
+        assert!(mismatches.is_empty(), "{mismatches:#?}");
+    }
+
+    #[test]
+    fn named_matrix_anchor_cases_hold() {
+        use TaskRecovery::*;
+        let classify = |task, attempt, workspace, delivery| {
+            classify_interrupted_task(evidence(workspace, delivery, task, attempt))
+        };
+        let (s, sa) = (TaskState::Succeeded, AttemptState::Succeeded);
+        // Verified success with Git-confirmed delivery, safe workspace.
+        for workspace in [WorkspaceEvidence::Matching, WorkspaceEvidence::Missing] {
+            assert_eq!(
+                classify(s, sa, workspace, DeliveryEvidence::Confirmed),
+                Completed
+            );
+        }
+        assert_eq!(
+            classify(
+                s,
+                sa,
+                WorkspaceEvidence::BranchMoved,
+                DeliveryEvidence::Confirmed
+            ),
+            RequiresInspection
+        );
+        // Confirmed delivery contradicts every non-Succeeded task state.
+        for task in [
+            TaskState::Created,
+            TaskState::Queued,
+            TaskState::Running,
+            TaskState::Verifying,
+            TaskState::Failed,
+            TaskState::VerificationFailed,
+            TaskState::Cancelled,
+        ] {
+            for workspace in [WorkspaceEvidence::Matching, WorkspaceEvidence::Missing] {
+                assert_eq!(
+                    classify(
+                        task,
+                        AttemptState::Running,
+                        workspace,
+                        DeliveryEvidence::Confirmed
+                    ),
+                    RequiresInspection,
+                    "{task:?}"
+                );
+            }
+        }
+        // Verified report-only / no-delivery success completes only when matching.
+        assert_eq!(
+            classify(s, sa, WorkspaceEvidence::Matching, DeliveryEvidence::None),
+            Completed
+        );
+        for workspace in [WorkspaceEvidence::Missing, WorkspaceEvidence::BranchMoved] {
+            assert_eq!(
+                classify(s, sa, workspace, DeliveryEvidence::None),
+                RequiresInspection
+            );
+        }
+        // A recorded but unapplied delivery is never proven complete.
+        assert_eq!(
+            classify(
+                s,
+                sa,
+                WorkspaceEvidence::Matching,
+                DeliveryEvidence::NotApplied
+            ),
+            RequiresInspection
+        );
+    }
+
+    #[test]
+    fn process_uncertainty_outranks_every_workspace_and_delivery_state() {
+        for (process, expected) in [
+            (ProcessClassification::Alive, TaskRecovery::Blocked),
+            (
+                ProcessClassification::Unknown,
+                TaskRecovery::RequiresInspection,
+            ),
+            (
+                ProcessClassification::IdentityMismatch,
+                TaskRecovery::RequiresInspection,
+            ),
+        ] {
+            for workspace in [WorkspaceEvidence::Matching, WorkspaceEvidence::Dirty] {
+                for delivery in [DeliveryEvidence::None, DeliveryEvidence::Confirmed] {
+                    let mut input = evidence(
+                        workspace,
+                        delivery,
+                        TaskState::Succeeded,
+                        AttemptState::Succeeded,
+                    );
+                    input.process = process;
+                    assert_eq!(classify_interrupted_task(input), expected, "{process:?}");
+                }
+            }
+        }
     }
 }
