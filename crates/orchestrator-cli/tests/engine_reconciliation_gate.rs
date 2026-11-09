@@ -1266,3 +1266,165 @@ fn consistent_delivery_journals_do_not_block_scheduling() {
     assert_success(&run, "run beside consistent delivery journals");
     assert!(stdout(&run).contains("status: Verifying"));
 }
+
+// ---- live owners are exempt from process blockers, never from delivery journals ----
+
+/// Starts a real live run owner, seeds its delivery journal with `seed_journal`, and
+/// checks the live owner is intact. Returns what the caller needs to finish it.
+fn live_owner_with_journal(
+    fixture: &Fixture,
+    task_id: &str,
+    guard: &mut OwnedProcesses,
+    seed_journal: impl FnOnce(&Fixture, &str),
+) -> LiveRun {
+    let live = start_live_run(fixture, task_id, guard);
+    let recorded = open_store(fixture)
+        .session_identity(task_id, &format!("{task_id}-session-1"))
+        .unwrap()
+        .expect("live owner's launch identity is persisted");
+    assert_eq!(
+        capture_process_identity(live.wrapper).unwrap(),
+        recorded,
+        "the exact live process is the recorded session owner"
+    );
+    assert_eq!(
+        open_store(fixture).get(task_id).unwrap().state,
+        TaskState::Running
+    );
+    seed_journal(fixture, task_id);
+    live
+}
+
+/// Cancels the live owner and waits for its exact processes to exit.
+fn finish_live_owner(
+    fixture: &Fixture,
+    task_id: &str,
+    mut live: LiveRun,
+    guard: &mut OwnedProcesses,
+) {
+    assert_success(&cli(fixture, &["cancel", task_id]), "cancel live owner");
+    wait_until("live run to exit after cancel", || {
+        live.run.try_wait().expect("poll run")
+    });
+    guard.forget(live.run.id());
+    for pid in [live.wrapper, live.agent, live.descendant] {
+        wait_until(&format!("PID {pid} to exit"), || {
+            (!is_process_running(pid)).then_some(())
+        });
+        guard.forget(pid);
+    }
+}
+
+/// A live owner is exempt from the process, workspace and attempt blockers only. An
+/// unresolved delivery journal for it must still refuse scheduling, with delivery
+/// evidence in the diagnostic, while the owner, its processes, its records and its
+/// journal stay exactly as they were.
+fn assert_live_owner_journal_refuses(
+    task_id: &str,
+    evidence: &str,
+    seed_journal: impl FnOnce(&Fixture, &str),
+) {
+    let fixture = fixture();
+    let mut guard = OwnedProcesses::default();
+    let live = live_owner_with_journal(&fixture, task_id, &mut guard, seed_journal);
+    let store = open_store(&fixture);
+    let record_before = record_debug(&fixture, task_id);
+    let steps_before = store.delivery_steps_for_task(task_id).unwrap().len();
+    let identity_before = store.session_identity(task_id, &format!("{task_id}-session-1"));
+    assert!(steps_before > 0, "journal was seeded");
+
+    let output = refused_run(&fixture, &format!("after-{task_id}"));
+    assert_refusal_cites(&output, task_id, evidence);
+
+    assert_eq!(record_debug(&fixture, task_id), record_before);
+    assert_eq!(
+        open_store(&fixture)
+            .delivery_steps_for_task(task_id)
+            .unwrap()
+            .len(),
+        steps_before,
+        "delivery journal untouched"
+    );
+    assert_eq!(
+        open_store(&fixture)
+            .session_identity(task_id, &format!("{task_id}-session-1"))
+            .unwrap(),
+        identity_before.unwrap(),
+        "launch identity untouched"
+    );
+    assert_eq!(
+        open_store(&fixture).get(task_id).unwrap().state,
+        TaskState::Running,
+        "refusal must not settle the live owner"
+    );
+    for pid in [live.wrapper, live.agent, live.descendant] {
+        assert!(
+            is_process_running(pid),
+            "refusal must not touch live PID {pid}"
+        );
+    }
+    assert!(fixture.data.join("worktrees").join(task_id).exists());
+
+    let mut live = live;
+    assert!(live.run.try_wait().unwrap().is_none(), "owner kept going");
+    finish_live_owner(&fixture, task_id, live, &mut guard);
+}
+
+#[test]
+fn live_owner_with_partial_delivery_journal_refuses_scheduling() {
+    assert_live_owner_journal_refuses("live-partial", "partial", |fixture, task_id| {
+        let landed = review_ref(task_id, "");
+        point_ref_at_candidate(fixture, &landed);
+        record_delivery(fixture, task_id, "step-landed", &landed);
+        record_delivery(
+            fixture,
+            task_id,
+            "step-unlanded",
+            &review_ref(task_id, "-retry"),
+        );
+    });
+}
+
+#[test]
+fn live_owner_with_ambiguous_delivery_journal_refuses_scheduling() {
+    assert_live_owner_journal_refuses("live-ambiguous", "ambiguous", |fixture, task_id| {
+        let target = review_ref(task_id, "");
+        git(
+            &fixture.repo,
+            &["update-ref", &target, &unrelated_commit(fixture)],
+        );
+        record_delivery(fixture, task_id, "step-1", &target);
+    });
+}
+
+#[test]
+fn live_owner_with_confirmed_delivery_while_running_refuses_scheduling() {
+    assert_live_owner_journal_refuses("live-confirmed", "confirmed", |fixture, task_id| {
+        let target = review_ref(task_id, "");
+        point_ref_at_candidate(fixture, &target);
+        record_delivery(fixture, task_id, "step-1", &target);
+    });
+}
+
+#[test]
+fn live_owner_with_consistent_not_applied_journal_does_not_block_scheduling() {
+    let fixture = fixture();
+    let mut guard = OwnedProcesses::default();
+    let live = live_owner_with_journal(&fixture, "live-consistent", &mut guard, |fixture, id| {
+        // The review ref was never created: NotApplied, consistent with Running.
+        record_delivery(fixture, id, "step-1", &review_ref(id, ""));
+    });
+
+    let before = snapshot(&fixture.repo);
+    let second = run_command(&fixture, "after-live-consistent", "edit")
+        .output()
+        .expect("run CLI");
+    assert_success(&second, "run beside a live owner with a consistent journal");
+    assert!(stdout(&second).contains("status: Verifying"));
+    assert_eq!(snapshot(&fixture.repo), before);
+    assert_eq!(
+        open_store(&fixture).get("live-consistent").unwrap().state,
+        TaskState::Running
+    );
+    finish_live_owner(&fixture, "live-consistent", live, &mut guard);
+}
