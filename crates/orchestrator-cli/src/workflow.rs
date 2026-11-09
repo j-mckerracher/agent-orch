@@ -1298,8 +1298,10 @@ fn recorded_group_alive(_group: u32) -> bool {
 ///
 /// `Exited` and `IdentityMismatch` both mean the session is provably gone.
 /// `IdentityMismatch` is kept only for PID reuse: the lead PID is alive with a
-/// different start time, and the recorded group is dead (or is led by that
-/// reused PID, which the kernel only allows once the old group is empty).
+/// different start time, and the recorded group is provably dead. A live
+/// recorded group always refuses, even when the lead is a member of it, because
+/// a start-time drift (for example a wall-clock step) is indistinguishable from
+/// PID reuse and the lead may still be the original session process.
 /// A same-start-time lead that changed group, missing start times, an absent
 /// lead with a live group, or any live recorded group stay `Unknown`, so they
 /// are refused. Windows records no process group and has no job-object
@@ -1323,7 +1325,7 @@ fn session_recovery_classification(
             (Some(recorded), Some(current)) if recorded != current
         );
     let group_gone = match identity.process_group {
-        Some(group) => !group_alive(group) || observed.process_group == Some(group),
+        Some(group) => !group_alive(group),
         None => identity.platform == ProcessPlatform::Windows,
     };
     if pid_reused && group_gone {
@@ -2532,6 +2534,75 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn recover_owner_refuses_live_lead_in_own_group_with_drifted_start_time() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        let directory = tempfile::tempdir().unwrap();
+        let data_dir = directory.path();
+        let store = open_store(data_dir).unwrap();
+        let owner = register_test_owner(
+            &store,
+            "task-live-lead-drift",
+            Some(legacy_windows_owner_identity()),
+        );
+        store.request_cancellation_for_task(&owner.task_id).unwrap();
+
+        let mut lead = Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("spawn live lead");
+        let live = capture_process_identity(lead.id()).expect("capture lead identity");
+        assert_eq!(live.process_group, Some(lead.id()));
+        // Simulate a wall-clock step that shifts the derived start time by 1s.
+        let recorded = ProcessIdentity {
+            start_time_micros: Some(live.start_time_micros.expect("start time") + 1_000_000),
+            ..live
+        };
+        store
+            .record_session_identity(&owner.task_id, &owner.session_id, &recorded)
+            .unwrap();
+        let classification =
+            plan_process_reconciliation(recorded, observe_process(recorded)).classification;
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        store
+            .update_attempt_state(&owner.task_id, &owner.attempt_id, AttemptState::Failed)
+            .unwrap();
+        store
+            .transition(&owner.task_id, TaskEvent::ExecutionFailed)
+            .unwrap();
+
+        let result = recover_cancellation_owner(
+            data_dir,
+            &owner.task_id,
+            &owner.attempt_id,
+            &owner.session_id,
+            owner.generation(),
+            true,
+            "operator verified the owner and managed process tree exited",
+        );
+        let still_open = !store.open_cancellation_owners().unwrap().is_empty();
+        let release_events = store
+            .stream_events_after(0, 100)
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "cancellation.owner_manually_released")
+            .count();
+        // Reap before asserting so a failure cannot leak the process.
+        let _ = lead.kill();
+        let _ = lead.wait();
+
+        assert_eq!(classification, ProcessClassification::IdentityMismatch);
+        assert!(result.unwrap_err().contains("not proven exited"));
+        assert!(still_open);
+        assert_eq!(release_events, 0);
+    }
+
     #[test]
     fn recovery_classification_refuses_reused_lead_with_live_foreign_group() {
         let recorded = ProcessIdentity {
@@ -2558,6 +2629,11 @@ mod tests {
         // Reused lead PID in another group, recorded group still alive: refused.
         assert_eq!(
             classify(reused(9000, 99), true),
+            ProcessClassification::Unknown
+        );
+        // Drifted start time on a lead inside its own live recorded group: refused.
+        assert_eq!(
+            classify(reused(4000, 99), true),
             ProcessClassification::Unknown
         );
         // Same process that merely changed group is not PID reuse: refused.
