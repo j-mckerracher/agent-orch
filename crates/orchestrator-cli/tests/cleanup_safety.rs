@@ -204,8 +204,9 @@ impl OwnedProcesses {
     }
 }
 
-impl Drop for OwnedProcesses {
-    fn drop(&mut self) {
+impl OwnedProcesses {
+    /// Signals every tracked process whose exact identity is still observed alive.
+    fn terminate(&self) {
         for (pid, identity) in &self.0 {
             if observe_owner_process(*identity) != ProcessClassification::Alive {
                 continue;
@@ -217,6 +218,12 @@ impl Drop for OwnedProcesses {
             #[cfg(unix)]
             let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
+    }
+}
+
+impl Drop for OwnedProcesses {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 
@@ -414,4 +421,68 @@ fn cleanup_refuses_clean_worktree_while_run_owner_is_live() {
         &before,
         "cleanup changed the primary"
     );
+}
+
+/// An open run owner that is provably exited (our own killed, reaped child) must not
+/// block cleanup: a clean, landed worktree follows the existing safe-cleanup contract.
+/// The fake agent tree is stopped first so only the owner state decides the outcome.
+#[test]
+fn cleanup_follows_existing_contract_for_provably_exited_run_owner() {
+    let fixture = fixture();
+    let before = primary(&fixture.repo);
+    let pidfile = fixture.root.path().join("pids.txt");
+
+    let mut run: Child = run_command(&fixture, "exited-owner", "tree")
+        .env("FAKE_AGENT_PIDFILE", &pidfile)
+        .stdout(File::create(fixture.root.path().join("run.stdout.log")).unwrap())
+        .stderr(File::create(fixture.root.path().join("run.stderr.log")).unwrap())
+        .spawn()
+        .expect("start CLI run");
+    let mut guard = OwnedProcesses::default();
+    // The run owner is our unreaped child, so its PID cannot have been reused.
+    guard.track("run owner", run.id());
+    let owner_identity = capture_exact_process_identity(run.id()).expect("run owner identity");
+
+    let metadata = fixture.data.join("cli/exited-owner/metadata.json");
+    let wrapper_pid = wait_until("wrapper PID in metadata", || read_json_pid(&metadata));
+    guard.track("wrapper", wrapper_pid);
+    let (agent_pid, descendant_pid) =
+        wait_until("agent and descendant PIDs", || read_pidfile(&pidfile));
+    guard.track("agent", agent_pid);
+    guard.track("descendant", descendant_pid);
+    let tree = [wrapper_pid, agent_pid, descendant_pid];
+
+    run.kill().expect("kill our own run owner");
+    run.wait().expect("reap run owner");
+    assert_eq!(
+        observe_owner_process(owner_identity),
+        ProcessClassification::Exited,
+        "precondition: the run owner must be provably exited"
+    );
+    guard.forget(run.id());
+    guard.terminate();
+    for pid in tree {
+        wait_until(&format!("PID {pid} to exit"), || {
+            (!is_process_running(pid)).then_some(())
+        });
+        guard.forget(pid);
+    }
+
+    let worktree = fixture.data.join("worktrees/exited-owner");
+    assert!(worktree.exists(), "run must have created its worktree");
+    assert_eq!(
+        git(
+            &worktree,
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        "",
+        "worktree must be clean"
+    );
+    let cleanup = cli(&fixture, "cleanup", "exited-owner");
+    assert_success(&cleanup, "cleanup with a provably exited run owner");
+    assert!(
+        !worktree.exists(),
+        "clean, landed worktree should be removed"
+    );
+    assert_eq!(&primary(&fixture.repo), &before);
 }
