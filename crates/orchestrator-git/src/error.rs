@@ -26,7 +26,7 @@ pub enum Error {
     #[error("worktrees root {root:?} is inside the repository work tree {toplevel:?}; it must live outside every work tree")]
     WorktreesRootInsideRepository { root: PathBuf, toplevel: PathBuf },
 
-    #[error("worktree creation failed at {path} on branch {branch}; the partially created state was left in place for inspection")]
+    #[error("worktree creation failed at {path} on branch {branch}; the partially created state was left in place for inspection: {source}")]
     CreationFailed {
         path: PathBuf,
         branch: String,
@@ -60,14 +60,23 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-/// Collapse git's stderr to its first line; git's fatal lines are single-line.
-pub(super) fn first_line(stderr: &[u8]) -> String {
-    String::from_utf8_lossy(stderr)
+/// Summarize git's stderr on one line: every non-empty line, in order, joined
+/// by `; ` and capped at `MAX_STDERR_CHARS`. Git often prints a progress line
+/// (for example `Preparing worktree ...`) before the `fatal:` line that holds
+/// the cause, so keeping only the first line hides the cause.
+pub(super) fn stderr_detail(stderr: &[u8]) -> String {
+    const MAX_STDERR_CHARS: usize = 1024;
+    let text = String::from_utf8_lossy(stderr);
+    let joined = text
         .lines()
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    match joined.char_indices().nth(MAX_STDERR_CHARS) {
+        Some((end, _)) => format!("{}...", &joined[..end]),
+        None => joined,
+    }
 }
 
 impl Error {

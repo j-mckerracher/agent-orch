@@ -371,4 +371,30 @@ mod tests {
         );
         assert_eq!(git(&repo_dir, &["rev-parse", "HEAD"]), head);
     }
+
+    /// A branch named `orchestrator` makes `refs/heads/orchestrator/<slug>`
+    /// uncreatable (ref directory/file conflict). Git prints a progress line
+    /// before its `fatal:` line; the reported error must carry the `fatal:`
+    /// cause, not just the progress line, and must keep the original source.
+    #[test]
+    fn git_add_failure_reports_git_stderr_cause() {
+        let (tmp, wts, repo) = fixture();
+        let repo_dir = tmp.path().join("repo");
+        git(&repo_dir, &["branch", "orchestrator"]);
+        let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts).unwrap_err();
+        let shown = err.to_string();
+        assert!(shown.contains("worktree creation failed at"), "{shown}");
+        assert!(shown.contains("cannot lock ref"), "git's cause is lost: {shown}");
+        match &err {
+            Error::CreationFailed { source, .. } => match &**source {
+                Error::Git { step, status, stderr } => {
+                    assert_eq!(*step, "add worktree");
+                    assert!(!status.success());
+                    assert!(stderr.contains("cannot lock ref"), "{stderr}");
+                }
+                other => panic!("expected Git source, got {other:?}"),
+            },
+            other => panic!("expected CreationFailed, got {other:?}"),
+        }
+    }
 }

@@ -33,7 +33,7 @@ where
         return Err(Error::Git {
             step,
             status: output.status,
-            stderr: super::error::first_line(&output.stderr),
+            stderr: super::error::stderr_detail(&output.stderr),
         });
     }
     Ok(output.stdout)

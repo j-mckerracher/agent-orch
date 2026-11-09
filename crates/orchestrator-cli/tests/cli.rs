@@ -251,6 +251,37 @@ fn run_rejects_data_directory_inside_primary_checkout_before_writing() {
 }
 
 #[test]
+fn run_reports_git_cause_when_worktree_creation_fails() {
+    let fixture = fixture(successful_script());
+    // A branch named `orchestrator` makes `orchestrator/<task>` uncreatable.
+    git(&fixture.repo, &["branch", "orchestrator"]);
+    let output = Command::new(CLI)
+        .arg("--data-dir")
+        .arg(&fixture.data)
+        .arg("run")
+        .arg("--repo")
+        .arg(&fixture.repo)
+        .arg("--task-id")
+        .arg("cause-visible")
+        .arg("--objective")
+        .arg("edit sample")
+        .arg("--base-ref")
+        .arg("main")
+        .arg("--agent-program")
+        .arg(&fixture.agent)
+        .output()
+        .expect("run CLI with an uncreatable task branch");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot create worktree for task cause-visible"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("worktree creation failed"), "{stderr}");
+    assert!(stderr.contains("cannot lock ref"), "git's cause is lost: {stderr}");
+}
+
+#[test]
 fn run_refuses_a_held_data_directory_lock_with_holder_pid() {
     let fixture = fixture(successful_script());
     let _lock = DataDirectoryLock::acquire(&fixture.data).unwrap();
