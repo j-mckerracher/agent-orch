@@ -14,6 +14,6 @@
     "types": ["node"],
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.e2e.tsbuildinfo"
   },
-  "include": ["e2e", "src/daemon"],
+  "include": ["e2e", "src/daemon", "src/review/daemonSources.ts", "src/review/sources.ts", "src/fixtures/ui"],
   "exclude": ["src/**/*.test.ts"]
 }

@@ -6,10 +6,10 @@
  * exercised here; they need native Windows proof.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DaemonError } from "../src/daemon/errors";
 import type { DaemonConnector, OpenedChannel, RpcChannel } from "../src/daemon/session";
 import type { Capability, Welcome } from "../src/daemon/types";
@@ -137,6 +137,16 @@ export class NodeConnector implements DaemonConnector {
   }
 }
 
+export interface SeededReview {
+  project_id: string;
+  task_id: string;
+  workspace_id: string;
+  verification_run_id: string;
+  base_commit: string;
+  candidate_commit: string;
+  worktree: string;
+}
+
 export interface RunningDaemon {
   dataDir: string;
   repo: string;
@@ -144,6 +154,17 @@ export interface RunningDaemon {
   stderr: () => string;
   stop(): Promise<void>;
   workDir: string;
+  /** Stops the process but keeps the data directory. */
+  halt(): Promise<void>;
+  /** Starts a new process over the same data directory; `resetStore` first deletes the store files. */
+  restart(options?: { resetStore?: boolean }): Promise<void>;
+  /** Seeds a reviewable task (see the `seed_review` example) while the daemon is stopped, then restarts. */
+  seedReview(taskId?: string): Promise<SeededReview>;
+}
+
+/** Defaults to the `seed_review` example next to the daemon binary (`cargo build --examples`). */
+export function seedBinary(): string {
+  return process.env.ORCH_SEED_BIN ?? join(dirname(daemonBinary()), "examples", "seed_review");
 }
 
 function git(cwd: string, ...args: string[]): void {
@@ -162,42 +183,76 @@ export function initRepo(path: string): void {
   git(path, "commit", "-q", "-m", "init");
 }
 
+function probe(dataDir: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = net.createConnection(join(dataDir, "ipc", "daemon.sock"));
+    s.once("connect", () => {
+      s.destroy();
+      resolve(true);
+    });
+    s.once("error", () => resolve(false));
+  });
+}
+
+async function launch(dataDir: string): Promise<{ child: ChildProcess; stderr: () => string }> {
+  const child = spawn(daemonBinary(), ["--data-dir", dataDir], { stdio: ["ignore", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
+  const deadline = Date.now() + 15_000;
+  while (!(await probe(dataDir))) {
+    if (child.exitCode !== null) throw new Error(`daemon exited early: ${stderr}`);
+    if (Date.now() > deadline) throw new Error(`daemon did not become ready: ${stderr}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return { child, stderr: () => stderr };
+}
+
+async function terminate(child: ChildProcess): Promise<void> {
+  if (child.exitCode === null) {
+    child.kill("SIGTERM");
+    await new Promise((r) => child.once("exit", r));
+  }
+}
+
 export async function startDaemon(): Promise<RunningDaemon> {
   const workDir = mkdtempSync(join(workRoot(), "r-"));
   const dataDir = join(workDir, "d");
   const repo = join(workDir, "repo");
   mkdirSync(dataDir, { recursive: true });
   initRepo(repo);
-  const child = spawn(daemonBinary(), ["--data-dir", dataDir], { stdio: ["ignore", "pipe", "pipe"] });
-  let stderr = "";
-  child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
-  const deadline = Date.now() + 15_000;
-  const probe = (): Promise<boolean> =>
-    new Promise((resolve) => {
-      const s = net.createConnection(join(dataDir, "ipc", "daemon.sock"));
-      s.once("connect", () => {
-        s.destroy();
-        resolve(true);
-      });
-      s.once("error", () => resolve(false));
-    });
-  while (!(await probe())) {
-    if (child.exitCode !== null) throw new Error(`daemon exited early: ${stderr}`);
-    if (Date.now() > deadline) throw new Error(`daemon did not become ready: ${stderr}`);
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  return {
+  let running = await launch(dataDir);
+  const daemon: RunningDaemon = {
     dataDir,
     repo,
-    process: child,
     workDir,
-    stderr: () => stderr,
-    async stop() {
-      if (child.exitCode === null) {
-        child.kill("SIGTERM");
-        await new Promise((r) => child.once("exit", r));
+    get process() {
+      return running.child;
+    },
+    stderr: () => running.stderr(),
+    async halt() {
+      await terminate(running.child);
+    },
+    async restart(options = {}) {
+      await terminate(running.child);
+      if (options.resetStore) {
+        for (const suffix of ["", "-wal", "-shm"]) rmSync(join(dataDir, `store.sqlite${suffix}`), { force: true });
       }
+      running = await launch(dataDir);
+    },
+    async seedReview(taskId = "e2e-task") {
+      await terminate(running.child);
+      const out = execFileSync(
+        seedBinary(),
+        [dataDir, realpathSync(repo), join(workDir, "worktrees"), taskId],
+        { encoding: "utf8" },
+      );
+      running = await launch(dataDir);
+      return JSON.parse(out) as SeededReview;
+    },
+    async stop() {
+      await terminate(running.child);
       rmSync(workDir, { recursive: true, force: true });
     },
   };
+  return daemon;
 }

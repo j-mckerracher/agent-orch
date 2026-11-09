@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { AppData } from "../src/daemon/appData";
 import { ConnectionManager, type ConnectionStatus } from "../src/daemon/connection";
 import { DaemonError } from "../src/daemon/errors";
 import { DaemonSession } from "../src/daemon/session";
 import { DaemonApi } from "../src/daemon/api";
+import { toReviewEvidence } from "../src/review/daemonSources";
 import { M5_03_CAPABILITIES, type DaemonEvent, type TaskSubmission } from "../src/daemon/types";
-import { NodeConnector, startDaemon, type RunningDaemon } from "./harness";
+import { NodeConnector, startDaemon, type RunningDaemon, type SeededReview } from "./harness";
 
 let daemon: RunningDaemon;
 let connector: NodeConnector;
@@ -179,7 +181,7 @@ describe("real M5-02 daemon: event stream", () => {
 });
 
 describe("real M5-02 daemon: ConnectionManager and AppData", () => {
-  it("connects, loads snapshots, reflects a submit through live events, and reconnects after a drop (asserts PRE-EPOCH resume; flips with M5-02b)", async () => {
+  it("connects, loads snapshots, reflects a submit through live events, and resumes after a drop on the same journal", async () => {
     const manager = new ConnectionManager({ connector, backoffMs: [50], requestTimeoutMs: 5000 });
     const data = new AppData(manager, { coalesceMs: 20 });
     const statuses: ConnectionStatus[] = [];
@@ -203,13 +205,15 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
 
     const generation = manager.getSnapshot().generation;
     const sequenceBefore = manager.getSnapshot().lastSequence;
+    const epochBefore = manager.getSnapshot().journalEpoch;
+    expect(epochBefore).toMatch(/\S/);
     connector.opened[connector.opened.length - 1]!.sever();
     await until(() => manager.getSnapshot().generation > generation, "reconnected");
     expect(manager.getSnapshot().status).toBe("connected");
-    // PRE-EPOCH BEHAVIOUR (M5-02 D3): the in-memory cursor is resumed silently because M5-02
-    // has no store epoch. Against M5-02b (EpochMismatch -32018, commit 27181dbb) this must
-    // flip at integration: a changed epoch has to force a fresh baseline and history.incomplete.
+    // The Welcome names the journal, so the cursor is resumed with its epoch and accepted.
+    expect(manager.getSnapshot().journalEpoch).toBe(epochBefore);
     expect(manager.getSnapshot().resumedFrom).toBe(sequenceBefore);
+    expect(manager.getSnapshot().history).toEqual({ incomplete: false, reason: null });
     expect(statuses).toContain("reconnecting");
 
     const cancel = await data.cancelTask(id);
@@ -235,5 +239,234 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     expect(manager.getSnapshot().status).toBe("auth-failed");
     expect(bad.opened.length).toBe(1); // one attempt, never retried
     manager.stop();
+  });
+});
+
+describe("real daemon: journal epoch", () => {
+  it("names the journal in the Welcome and rejects a stale cursor against a replaced store (-32018)", async () => {
+    const own = await startDaemon();
+    try {
+      const own_connector = new NodeConnector(own.dataDir);
+      const first = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+      const epoch = first.welcome.journal_epoch;
+      expect(epoch).toMatch(/\S/);
+      const api = new DaemonApi(first);
+      await api.projectsRegister(own.repo);
+      const seen: DaemonEvent[] = [];
+      await first.subscribe(0, { event: (e) => seen.push(e), error: () => undefined });
+      await api.tasksSubmit("epoch-key-1", { ...submission(), project_id: realpathSync(own.repo) });
+      await until(() => seen.length > 0, "events");
+      const cursor = seen[seen.length - 1]!.sequence;
+      first.close();
+
+      // The same store keeps its epoch, so the cursor resumes.
+      await own.restart();
+      const same = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+      expect(same.welcome.journal_epoch).toBe(epoch);
+      await same.subscribe(cursor, { event: () => undefined, error: () => undefined }, epoch);
+      same.close();
+
+      // A replaced store is a different journal: the old cursor must not resume silently.
+      await own.restart({ resetStore: true });
+      const replaced = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+      expect(replaced.welcome.journal_epoch).toMatch(/\S/);
+      expect(replaced.welcome.journal_epoch).not.toBe(epoch);
+      await expect(
+        replaced.subscribe(cursor, { event: () => undefined, error: () => undefined }, epoch),
+      ).rejects.toMatchObject({ kind: "epoch-mismatch", code: -32018 });
+      replaced.close();
+    } finally {
+      await own.stop();
+    }
+  });
+
+  it("ConnectionManager drops its cursor, reports incomplete history and re-baselines on a replaced store", async () => {
+    const own = await startDaemon();
+    const own_connector = new NodeConnector(own.dataDir);
+    const manager = new ConnectionManager({ connector: own_connector, backoffMs: [50], requestTimeoutMs: 5000 });
+    try {
+      const session = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+      const seedApi = new DaemonApi(session);
+      await seedApi.projectsRegister(own.repo);
+      await seedApi.tasksSubmit("epoch-key-2", { ...submission(), project_id: realpathSync(own.repo) });
+      session.close();
+      manager.start();
+      await until(() => manager.getSnapshot().status === "connected", "connected");
+      await until(() => manager.getSnapshot().lastSequence > 0, "a cursor");
+      const before = manager.getSnapshot();
+      expect(before.history).toEqual({ incomplete: false, reason: null });
+
+      await own.restart({ resetStore: true });
+      await until(
+        () => manager.getSnapshot().history.reason === "epoch-mismatch" && manager.getSnapshot().status === "connected",
+        "epoch mismatch re-baseline",
+        15_000,
+      );
+      const after = manager.getSnapshot();
+      expect(after.history).toEqual({ incomplete: true, reason: "epoch-mismatch" });
+      expect(after.journalEpoch).toMatch(/\S/);
+      expect(after.journalEpoch).not.toBe(before.journalEpoch);
+      expect(after.resumedFrom).toBeNull();
+    } finally {
+      manager.stop();
+      await own.stop();
+    }
+  });
+});
+
+describe("real daemon: M5-02b/M5-02c methods", () => {
+  it("answers agents.capabilities, tasks.retry (conflict outside Failed) and the coordinator methods", async () => {
+    const session = await openSession();
+    const api = new DaemonApi(session);
+    await api.projectsRegister(daemon.repo);
+
+    const agents = await api.agentsCapabilities();
+    expect(agents.map((a) => a.agent)).toEqual(expect.arrayContaining(["codex", "claude-code", "pi"]));
+    expect(typeof agents[0]!.installed).toBe("boolean");
+
+    const queued = await api.tasksSubmit("m502b-key-retry", submission({ objective: "retry me" }));
+    await expect(api.tasksRetry(queued.contract.id, "m502b-key-retry-1")).rejects.toMatchObject({ kind: "conflict" });
+    await expect(api.tasksRetry("task-does-not-exist", "m502b-key-retry-2")).rejects.toMatchObject({
+      kind: "not-found",
+    });
+
+    const message = await api.coordinatorSendMessage(projectId, "hello coordinator", "m502b-key-msg");
+    expect(message).toMatchObject({ kind: "message", author: "user", body: "hello coordinator" });
+    const replay = await api.coordinatorSendMessage(projectId, "hello coordinator", "m502b-key-msg");
+    expect(replay.id).toBe(message.id);
+    const proposal = await api.coordinatorPropose(projectId, "{}", "m502b-key-prop");
+    expect(proposal).toMatchObject({ kind: "proposal", validation: { status: "invalid" } });
+    const page = await api.coordinatorGet(projectId);
+    expect(page.entries.map((e) => e.id)).toEqual([message.id, proposal.id]);
+    await expect(api.coordinatorSendMessage("/no/such/project", "x", "m502b-key-msg-2")).rejects.toMatchObject({
+      kind: "not-found",
+    });
+    session.close();
+  });
+});
+
+describe("real daemon: review flow on a seeded task (workspaces.diff, review.*, approvals.resolve, delivery.request)", () => {
+  let own: RunningDaemon;
+  let seeded: SeededReview;
+  let own_connector: NodeConnector;
+
+  beforeAll(async () => {
+    own = await startDaemon();
+    seeded = await own.seedReview();
+    own_connector = new NodeConnector(own.dataDir);
+  });
+
+  afterAll(async () => {
+    await own?.stop();
+  });
+
+  const targetRef = () => `refs/heads/orchestrator/review/${seeded.task_id}`;
+
+  it("returns the real worktree diff and refuses delivery before an approval exists", async () => {
+    const session = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+    const api = new DaemonApi(session);
+    const diff = await api.workspacesDiff({ task_id: seeded.task_id, workspace_id: seeded.workspace_id });
+    expect(diff.workspace_id).toBe(seeded.workspace_id);
+    expect(diff.diff).toContain("candidate.txt");
+    await expect(api.workspacesDiff({ task_id: "task-does-not-exist" })).rejects.toMatchObject({ kind: "not-found" });
+    await expect(
+      api.deliveryRequest(
+        {
+          task_id: seeded.task_id,
+          workspace_id: seeded.workspace_id,
+          approval_id: "no-such-approval",
+          verification_run_id: seeded.verification_run_id,
+          action: "local_review",
+          target_ref: targetRef(),
+        },
+        "review-key-early",
+      ),
+    ).rejects.toBeInstanceOf(DaemonError);
+    session.close();
+  });
+
+  it("requests approval, resolves it, delivers a local review ref, and replays idempotently", async () => {
+    const session = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+    const api = new DaemonApi(session);
+    const events: DaemonEvent[] = [];
+    await session.subscribe(0, { event: (e) => events.push(e), error: () => undefined });
+
+    const requested = await api.reviewRequestApproval(
+      {
+        task_id: seeded.task_id,
+        workspace_id: seeded.workspace_id,
+        verification_run_id: seeded.verification_run_id,
+        action: "local_review",
+        target_ref: targetRef(),
+      },
+      "review-key-request",
+    );
+    expect(requested.approval.state).toBe("requested");
+    expect(requested.approval.candidate_commit).toBe(seeded.candidate_commit);
+    expect(requested.digest).toMatch(/^[0-9a-f]{64}$/);
+
+    const evidence = await api.reviewEvidence(seeded.task_id, requested.approval.id);
+    expect(evidence).toMatchObject({
+      state: "current",
+      review_state: "awaiting_decision",
+      decision_ready: true,
+      digest_relationship: "matches",
+      candidate: { commit: seeded.candidate_commit },
+      workspace: { id: seeded.workspace_id, base_commit: seeded.base_commit },
+    });
+    expect(evidence.verification[0]).toMatchObject({ id: seeded.verification_run_id, status: "passed" });
+    // The UI adapter must accept the daemon's real wire shape, not just the fake's.
+    expect(toReviewEvidence(evidence, {
+      approvalId: requested.approval.id,
+      digestHex: requested.digest,
+    })).toMatchObject({
+      state: "available",
+      evidence: {
+        provenance: "daemon",
+        workspaceId: seeded.workspace_id,
+        candidate: { commit: seeded.candidate_commit, baseCommit: seeded.base_commit },
+        action: { kind: "LocalReviewMerge", target: targetRef(), digestHex: requested.digest },
+        verification: { runId: seeded.verification_run_id, commit: seeded.candidate_commit, outcome: "passed" },
+      },
+    });
+
+    const pending = await api.approvalsList();
+    expect(pending.map((a) => a.id)).toContain(requested.approval.id);
+    const resolved = await api.approvalsResolve(requested.approval.id, "approve", "review-key-resolve");
+    expect(resolved).toMatchObject({ id: requested.approval.id, state: { state: "approved" } });
+    expect((await api.approvalsResolve(requested.approval.id, "approve", "review-key-resolve")).state).toMatchObject({
+      state: "approved",
+    });
+
+    const delivery = {
+      task_id: seeded.task_id,
+      workspace_id: seeded.workspace_id,
+      approval_id: requested.approval.id,
+      verification_run_id: seeded.verification_run_id,
+      action: "local_review" as const,
+      target_ref: targetRef(),
+    };
+    const result = await api.deliveryRequest(delivery, "review-key-deliver");
+    expect(result).toMatchObject({ task_id: seeded.task_id, outcome: "review_ref_created" });
+    expect(execFileSync("git", ["rev-parse", targetRef()], { cwd: own.repo, encoding: "utf8" }).trim()).toBe(
+      seeded.candidate_commit,
+    );
+    expect(await api.deliveryRequest(delivery, "review-key-deliver")).toEqual(result);
+
+    // The durable event is what the UI treats as its own delivery and must not mistake for staleness.
+    await until(
+      () => events.some((e) => e.task_id === seeded.task_id && e.kind === "delivery.review_ref_created"),
+      "delivery event",
+    );
+    session.close();
+  });
+
+  it("rejects request-changes for an unknown approval", async () => {
+    const session = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
+    const api = new DaemonApi(session);
+    await expect(
+      api.reviewRequestChanges("no-such-approval", seeded.candidate_commit, "x", "review-key-changes"),
+    ).rejects.toBeInstanceOf(DaemonError);
+    session.close();
   });
 });
