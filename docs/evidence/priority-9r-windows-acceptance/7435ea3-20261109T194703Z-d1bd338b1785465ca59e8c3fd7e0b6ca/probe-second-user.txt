@@ -1,0 +1,2 @@
+UNPROVEN: no second local user is used. Denial of a different non-admin user is not exercised here. The anonymous-token row is the nearest check and does not replace it.
+Verdict: UNPROVEN

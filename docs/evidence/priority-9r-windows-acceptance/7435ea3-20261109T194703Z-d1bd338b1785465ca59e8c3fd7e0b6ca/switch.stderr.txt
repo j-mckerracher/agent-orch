@@ -1,0 +1,1 @@
+HEAD is now at 7435ea3 fix(ipc): read Windows named pipes with ReadFile so empty is not EOF

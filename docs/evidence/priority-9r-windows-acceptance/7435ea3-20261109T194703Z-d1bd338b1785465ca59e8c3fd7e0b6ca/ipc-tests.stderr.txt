@@ -1,0 +1,17 @@
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling getrandom v0.4.3
+   Compiling windows-sys v0.61.2
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling fastrand v2.5.0
+   Compiling syn v3.0.9
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tempfile v3.27.0
+   Compiling thiserror v2.0.21
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\source\crates\orchestrator-ipc)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.35s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\cargo-target\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+   Doc-tests orchestrator_ipc

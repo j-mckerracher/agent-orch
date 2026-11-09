@@ -1,0 +1,25 @@
+{
+  "name": "source-toplevel",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\\source rev-parse --show-toplevel",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca",
+  "source_commit": "7435ea32bcb541044e61ef49e863d394f0d49e12",
+  "started_utc": "2026-11-09T19:47:11.1682054Z",
+  "duration_seconds": 0.118,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 113,
+  "stdout_sha256": "1fa05bbcfc350c4e571ad883109c7e01df9a11bc3414135012fc247bba09bd7f",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

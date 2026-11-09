@@ -1,0 +1,4 @@
+round 1: PASS Protected single-ACE DACL for the current user: D:P(A;;FA;;;S-1-5-21-<domain>-377014)
+round 2: PASS Protected single-ACE DACL for the current user: D:P(A;;FA;;;S-1-5-21-<domain>-377014)
+round 3: PASS Protected single-ACE DACL for the current user: D:P(A;;FA;;;S-1-5-21-<domain>-377014)
+Verdict: PASS

@@ -1,0 +1,30 @@
+
+running 20 tests
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... ok
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test tests::lock_conflict_reports_live_holder_pid ... ok
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... ok
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.02s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

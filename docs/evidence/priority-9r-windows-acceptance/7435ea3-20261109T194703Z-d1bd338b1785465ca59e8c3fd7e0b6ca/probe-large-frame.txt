@@ -1,0 +1,5 @@
+round 1: PASS 512 KiB frame accepted in 32 chunks; a reply with the same id arrived; health still works. Reply kind: error.
+round 2: PASS 512 KiB frame accepted in 32 chunks; a reply with the same id arrived; health still works. Reply kind: error.
+round 3: PASS 512 KiB frame accepted in 32 chunks; a reply with the same id arrived; health still works. Reply kind: error.
+UNPROVEN (not a row): a single daemon-to-client write above 64 KiB to a slow reader is not exercised. No daemon method on an empty store returns such a reply.
+Verdict: PASS

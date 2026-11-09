@@ -1,0 +1,25 @@
+{
+  "name": "probe-second-daemon-r1",
+  "command": "orchestrator-daemon.exe --data-dir C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\\probe-data-r1",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca",
+  "source_commit": "7435ea32bcb541044e61ef49e863d394f0d49e12",
+  "started_utc": "2026-11-09T19:51:01.5211770Z",
+  "duration_seconds": 0.122,
+  "timeout_seconds": 15,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9r-acc-20261109T194703Z-d1bd338b1785465ca59e8c3fd7e0b6ca\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 1,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 104,
+  "stderr_sha256": "507b21aca93e8f78dddab2df3b671e363d8514eb07dca565225cc787c0c6e3a9",
+  "error": null
+}

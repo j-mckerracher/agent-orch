@@ -1,0 +1,4 @@
+round 1: PASS 20 connect-and-close cycles; the pipe stayed listed, answered WaitNamedPipe, and health still worked.
+round 2: PASS 20 connect-and-close cycles; the pipe stayed listed, answered WaitNamedPipe, and health still worked.
+round 3: PASS 20 connect-and-close cycles; the pipe stayed listed, answered WaitNamedPipe, and health still worked.
+Verdict: PASS

@@ -1,0 +1,11 @@
+crates/orchestrator-daemon/src/api.rs
+crates/orchestrator-daemon/src/api_safety_tests.rs
+crates/orchestrator-daemon/src/api_tests.rs
+crates/orchestrator-ipc/src/client.rs
+crates/orchestrator-ipc/src/event_stream_tests.rs
+crates/orchestrator-ipc/src/integration_tests.rs
+crates/orchestrator-ipc/src/lib.rs
+crates/orchestrator-ipc/src/session.rs
+crates/orchestrator-ipc/src/unsupported.rs
+crates/orchestrator-ipc/src/windows_transport.rs
+crates/orchestrator-ipc/src/windows_transport_tests.rs

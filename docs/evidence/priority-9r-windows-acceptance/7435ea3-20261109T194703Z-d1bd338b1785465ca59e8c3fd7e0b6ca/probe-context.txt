@@ -1,0 +1,7 @@
+elevated: False
+current user SID: S-1-5-21-<domain>-377014
+rounds: 3
+round 1: pipe \\.\pipe\agent-orch-747a0f731d576308
+round 2: pipe \\.\pipe\agent-orch-747a12731d576821
+round 3: pipe \\.\pipe\agent-orch-747a11731d57666e
+Every probe row below was repeated in 3 rounds; each verdict is the worst round.

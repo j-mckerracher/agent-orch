@@ -1,0 +1,4 @@
+round 1: PASS The shutdown reply arrived, the daemon exited 0, and daemon.token was removed.
+round 2: PASS The shutdown reply arrived, the daemon exited 0, and daemon.token was removed.
+round 3: PASS The shutdown reply arrived, the daemon exited 0, and daemon.token was removed.
+Verdict: PASS

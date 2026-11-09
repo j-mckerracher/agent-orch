@@ -1,0 +1,4 @@
+round 1: PASS Exit code 1 with a refusal diagnostic.
+round 2: PASS Exit code 1 with a refusal diagnostic.
+round 3: PASS Exit code 1 with a refusal diagnostic.
+Verdict: PASS

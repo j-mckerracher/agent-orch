@@ -1,0 +1,4 @@
+round 1: PASS 16 clients opened; the 17th got ERROR_PIPE_BUSY (231) at 0 ms and at 250 ms (645 ms in total); the instances were released.
+round 2: PASS 16 clients opened; the 17th got ERROR_PIPE_BUSY (231) at 0 ms and at 250 ms (624 ms in total); the instances were released.
+round 3: PASS 16 clients opened; the 17th got ERROR_PIPE_BUSY (231) at 0 ms and at 250 ms (651 ms in total); the instances were released.
+Verdict: PASS

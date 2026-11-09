@@ -1,0 +1,11 @@
+{
+  "name": "probe-daemon-r2",
+  "source_commit": "7435ea32bcb541044e61ef49e863d394f0d49e12",
+  "exit_code": 0,
+  "stopped_by_the_probe": false,
+  "root_process_stopped": true,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
