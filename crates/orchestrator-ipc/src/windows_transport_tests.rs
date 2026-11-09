@@ -102,12 +102,16 @@ fn assert_current_user_only(sddl: &str, masks: &[&str]) {
 }
 
 fn start(dir: &Path) -> thread::JoinHandle<()> {
+    start_with_stream_timeout(dir, Duration::from_millis(500))
+}
+
+fn start_with_stream_timeout(dir: &Path, stream_timeout: Duration) -> thread::JoinHandle<()> {
     let dir = dir.to_path_buf();
     thread::spawn(move || {
         Server::serve(
             ServerConfig::new(dir, "windows-test")
                 .with_idle_timeout(Duration::from_secs(20))
-                .with_stream_timeout(Duration::from_millis(500)),
+                .with_stream_timeout(stream_timeout),
         )
         .unwrap();
     })
@@ -299,6 +303,105 @@ fn stalled_connection_does_not_block_other_clients() {
     stalled.write_all(&[0]).unwrap();
     let mut client = Client::connect(dir.path()).unwrap();
     assert_eq!(client.health().unwrap().package_version, "windows-test");
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+// A byte-mode PIPE_NOWAIT read of an empty pipe fails with ERROR_NO_DATA, which
+// std reports as end-of-file. Each test below fails if that mapping returns.
+
+#[test]
+fn read_waits_for_data_instead_of_reporting_end_of_file() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    let (mut client, mut server) = connected_pair(&mut listener, dir.path());
+    let writer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
+        client.write_all(b"late").unwrap();
+        client
+    });
+    let started = Instant::now();
+    let mut buffer = [0u8; 4];
+    server.read_exact(&mut buffer).unwrap();
+    assert_eq!(&buffer, b"late");
+    assert!(started.elapsed() >= Duration::from_millis(100));
+    drop(writer.join().unwrap());
+}
+
+#[test]
+fn read_reports_end_of_file_only_after_the_peer_closes() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    let (client, mut server) = connected_pair(&mut listener, dir.path());
+    server.set_timeouts(Duration::from_millis(100)).unwrap();
+    let mut buffer = [0u8; 1];
+    let silent = server.read(&mut buffer).unwrap_err();
+    assert_eq!(silent.kind(), io::ErrorKind::TimedOut);
+
+    drop(client);
+    assert_eq!(server.read(&mut buffer).unwrap(), 0);
+}
+
+#[test]
+fn data_written_before_the_writer_closes_is_still_readable() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    let (mut client, mut server) = connected_pair(&mut listener, dir.path());
+    server.write_all(b"reply").unwrap();
+    drop(server);
+    let mut buffer = [0u8; 5];
+    client.read_exact(&mut buffer).unwrap();
+    assert_eq!(&buffer, b"reply");
+    assert_eq!(client.read(&mut buffer).unwrap(), 0);
+}
+
+#[test]
+fn handshake_waits_for_a_client_that_writes_after_connecting() {
+    let dir = TempDir::new().unwrap();
+    let daemon = start_with_stream_timeout(dir.path(), Duration::from_secs(5));
+    let token = wait_for_token(dir.path());
+
+    let mut slow = connect(dir.path()).unwrap();
+    thread::sleep(Duration::from_millis(300));
+    assert!(handshake(&mut slow, &token).get("result").is_some());
+    thread::sleep(Duration::from_millis(300));
+    protocol::write(
+        &mut slow,
+        &json!({"jsonrpc": "2.0", "id": 2, "method": "health", "params": {}}),
+    )
+    .unwrap();
+    assert!(protocol::read::<Value>(&mut slow)
+        .unwrap()
+        .get("result")
+        .is_some());
+    drop(slow);
+
+    let mut client = Client::connect(dir.path()).unwrap();
+    client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn idle_connections_hold_their_instances_until_they_close() {
+    let dir = TempDir::new().unwrap();
+    let daemon = start_with_stream_timeout(dir.path(), Duration::from_secs(10));
+    wait_for_token(dir.path());
+
+    let mut held: Vec<_> = (0..PIPE_MAX_INSTANCES)
+        .map(|_| connect(dir.path()).unwrap())
+        .collect();
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        connect_within(dir.path(), Duration::from_millis(300)).is_err(),
+        "a 17th client joined while 16 connections were still open"
+    );
+
+    drop(held.pop());
+    let replacement = connect_within(dir.path(), Duration::from_secs(5)).unwrap();
+    drop(replacement);
+    drop(held);
+
+    let mut client = Client::connect(dir.path()).unwrap();
     client.shutdown().unwrap();
     daemon.join().unwrap();
 }

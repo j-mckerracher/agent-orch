@@ -19,10 +19,10 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, LocalFree, ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND,
-    ERROR_INSUFFICIENT_BUFFER, ERROR_NO_DATA, ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED,
-    ERROR_PIPE_LISTENING, ERROR_SEM_TIMEOUT, GENERIC_READ, GENERIC_WRITE, HANDLE,
-    INVALID_HANDLE_VALUE,
+    CloseHandle, GetLastError, LocalFree, ERROR_ACCESS_DENIED, ERROR_BROKEN_PIPE,
+    ERROR_FILE_NOT_FOUND, ERROR_HANDLE_EOF, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_DATA,
+    ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, ERROR_PIPE_LISTENING, ERROR_SEM_TIMEOUT, GENERIC_READ,
+    GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -34,8 +34,8 @@ use windows_sys::Win32::Security::{
     GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_FIRST_PIPE_INSTANCE, OPEN_EXISTING,
-    PIPE_ACCESS_DUPLEX,
+    CreateFileW, ReadFile, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_FIRST_PIPE_INSTANCE,
+    OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
 };
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, SetNamedPipeHandleState, WaitNamedPipeW,
@@ -205,8 +205,15 @@ fn pipe_name(data_dir: &Path) -> Result<Vec<u16>, TransportError> {
 }
 
 pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportError> {
+    connect_within(
+        data_dir,
+        Duration::from_millis(u64::from(PIPE_WAIT_MILLISECONDS)),
+    )
+}
+
+fn connect_within(data_dir: &Path, limit: Duration) -> Result<Box<dyn IpcStream>, TransportError> {
     let name = pipe_name(data_dir)?;
-    let deadline = Instant::now() + Duration::from_millis(u64::from(PIPE_WAIT_MILLISECONDS));
+    let deadline = Instant::now() + limit;
     loop {
         // SAFETY: `name` is NUL-terminated UTF-16 and remains live for the call.
         if unsafe { WaitNamedPipeW(name.as_ptr(), 100) } == 0 {
@@ -479,8 +486,8 @@ impl Read for PipeStream {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         let deadline = Instant::now() + self.timeout;
         loop {
-            match self.file.read(buffer) {
-                Err(error) if is_pipe_would_block(&error) => {
+            match read_pipe(&self.file, buffer) {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
                         return Err(io::Error::new(
                             io::ErrorKind::TimedOut,
@@ -492,6 +499,41 @@ impl Read for PipeStream {
                 result => return result,
             }
         }
+    }
+}
+
+/// Reads once from a nonblocking pipe handle: `WouldBlock` while no data has
+/// arrived, `Ok(0)` once the peer has closed.
+///
+/// `File::read` cannot be used: std maps `ERROR_NO_DATA` (the empty-pipe
+/// result in `PIPE_NOWAIT` mode) to `ErrorKind::BrokenPipe` and then turns
+/// every `BrokenPipe` read into `Ok(0)`, so an empty pipe looked like a closed
+/// peer and a connection was dropped before its first byte arrived.
+fn read_pipe(file: &File, buffer: &mut [u8]) -> io::Result<usize> {
+    if buffer.is_empty() {
+        return Ok(0);
+    }
+    let length = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
+    let mut read = 0u32;
+    // SAFETY: `file` owns a valid synchronous pipe handle; `buffer` is writable
+    // for `length` bytes and `read` is a writable output pointer; a null
+    // OVERLAPPED selects the synchronous operation.
+    let succeeded = unsafe {
+        ReadFile(
+            file.as_raw_handle(),
+            buffer.as_mut_ptr(),
+            length,
+            &mut read,
+            std::ptr::null_mut(),
+        )
+    };
+    if succeeded != 0 {
+        return Ok(read as usize);
+    }
+    match last_error_code() {
+        ERROR_NO_DATA => Err(io::ErrorKind::WouldBlock.into()),
+        ERROR_BROKEN_PIPE | ERROR_HANDLE_EOF => Ok(0),
+        error => Err(io::Error::from_raw_os_error(error as i32)),
     }
 }
 
@@ -530,10 +572,6 @@ impl Write for PipeStream {
     fn flush(&mut self) -> io::Result<()> {
         self.file.flush()
     }
-}
-
-fn is_pipe_would_block(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::WouldBlock || error.raw_os_error() == Some(ERROR_NO_DATA as i32)
 }
 
 #[cfg(test)]
