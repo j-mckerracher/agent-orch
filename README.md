@@ -95,6 +95,23 @@ capture and termination, and a response-only Codex JSON protocol probe also
 passed. See [the laptop verification plan and results](docs/laptop-verification-plan.md)
 for commands, environment, and limitations. The Windows GUI remains unverified.
 
+## CLI task store and reconciliation
+
+`orchestrator-cli` keeps task, attempt, session and process-identity records in
+`<data-dir>/store.sqlite` (`SqliteStore`). Task JSON records written by the
+earlier `FileStore`-based CLI are not migrated or read, and no migration
+command exists. Such tasks do not appear in `tasks`; keep or retire the old
+data directory by hand.
+
+`run`, `cancel`, `recover-owner` and `cleanup` take the `.orchestrator.lock`
+data-directory lock for their short mutation sections only, not for the agent's
+lifetime. `run` records the agent's process identity at launch and, before it
+creates any new task or attempt, reconciles every unfinished record against the
+live OS process state. It refuses to schedule while any record is unresolved or
+ambiguous (for example a running session with no recorded identity) and prints
+the blocking records. See
+[the M2-06 evidence](docs/evidence/m2-06-macos/m2-06-cli-wiring.md).
+
 ## Dependencies
 
 All direct dependencies are pinned with `=` and all three lockfiles are
