@@ -119,14 +119,30 @@ Every count below is **calculated from the source at the pinned commit. None is 
 for this candidate.** They were not copied from macOS totals, because many tests are `cfg(unix)`. They
 were derived like this:
 
-1. The workspace was type-checked for the target `x86_64-pc-windows-msvc` with `cargo check --locked
-   --workspace --tests` on a macOS host. Each workspace test crate was also expanded with
-   `rustc -Zunpretty=expanded`. The listed tests are the `StaticTestName` entries of the expansion,
-   with their `ignore` flag. This applies the real `cfg` gates for Windows: a `cfg(unix)` test is not
-   listed. The `cli`, `recovery`, `multi_task_review` and daemon test files list zero tests.
+1. On a macOS host, `cargo check --offline --locked --workspace --tests --target
+   x86_64-pc-windows-msvc` was run, and each workspace test crate was also expanded with
+   `rustc -Zunpretty=expanded` through a `RUSTC_WORKSPACE_WRAPPER`. The listed tests are the
+   `StaticTestName` entries of the expansion, with their `ignore` flag. This applies the real `cfg`
+   gates for Windows: a `cfg(unix)` test is not listed. The `cli`, `recovery`, `multi_task_review`
+   and daemon test files list zero tests.
+
+   **Scope of that step, stated exactly.** It is **Rust-only: Windows `cfg` evaluation, Rust
+   type-checking and macro expansion, nothing more.** The `libsqlite3-sys` build script needs a C
+   compiler and Windows C headers for the MSVC target, which a macOS host does not have. To let
+   `cargo check` proceed, the C compiler was replaced by `/usr/bin/true` (`CC_x86_64_pc_windows_msvc`)
+   and the archiver by a stub that writes an 8-byte empty `!<arch>` file (`AR_x86_64_pc_windows_msvc`),
+   so `libsqlite3.a` and `sqlite3.lib` were **empty placeholders**. Those two overrides were
+   scratch-only. They never compiled SQLite C, never linked, never produced a runnable binary, and
+   were never used to run any test. This step is therefore **not** a C build, **not** a link, **not**
+   a native or cross build, **not** a test execution, and **not** acceptance proof. The wrapper and
+   summarizer scripts are scratch tools and are not shipped with this runbook. The count summaries
+   they produced had these SHA-256 values: c1be `1894cd70f3d9e0a87c9285f6a3beeaaffb4e1773d572e8c0d59a06de8c443972`,
+   baseline `657a1656a3a8b3004ccb24a83b9bc2c421659748373869e298b6ffcfe65a0e34`.
 2. The method was validated on the accepted baseline `46497ac98fd8d053b80b5d9b730d2fd2110c56f7`: it
    listed 334 tests with 1 ignored, which equals the measured native Windows result of the approved
-   evidence commit `5d26c659c818c87ae58f2dc3d94a9ade59156f4e` (333 passed, 1 ignored).
+   evidence commit `5d26c659c818c87ae58f2dc3d94a9ade59156f4e` (333 passed, 1 ignored). That match
+   validates only the counting method. The c1be counts below remain **expected, not measured**,
+   until a native Windows run.
 3. At the pinned commit it lists **386 tests with 1 ignored**, so 385 passed are expected: 52 more
    than the baseline. Per test binary: `cleanup_safety` +3, `orchestrator_cli` lib +4,
    `orchestrator-git` lib +3, runtime `reconcile` +20 (8 to 28), runtime `reconciliation_contract`
@@ -328,8 +344,11 @@ $env:RUST_BACKTRACE = '1'
 # backslash, a slash, or a doubled backslash (JSON). Only that one component is
 # replaced, never a bare word. Every string is redacted BEFORE it is serialized.
 function Protect-Text([string] $Text) {
-    $Text = [regex]::Replace($Text, '[A-Za-z][A-Za-z0-9+.-]*://\S+', '<url-redacted>')
-    $Text = [regex]::Replace($Text, '[\w.-]+@[\w.-]+:\S+', '<url-redacted>')
+    # The leading lookbehinds start a match only at the beginning of a word run.
+    # Without them, a long run of word characters with no match is rescanned from
+    # every start position (quadratic), which can hang a large captured output.
+    $Text = [regex]::Replace($Text, '(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*://\S+', '<url-redacted>')
+    $Text = [regex]::Replace($Text, '(?<![\w.-])[\w.-]+@[\w.-]+:\S+', '<url-redacted>')
     return [regex]::Replace($Text,
         '(?i)(?<=[\\/]Users(?:\\\\|[\\/]))[^\\/"''<>|:*?\r\n]+', '<user>')
 }
@@ -359,7 +378,7 @@ $Redacted = @($Samples | ForEach-Object { Protect-Text $_ })
 [IO.File]::WriteAllLines((Join-Path $EvidenceDir 'protect-text-selfcheck.txt'),
     [string[]]$Redacted)
 foreach ($Line in $Redacted) {
-    if ($Line -match '://|[\w.-]+@[\w.-]+:') {
+    if ($Line -match '://|(?<![\w.-])[\w.-]+@[\w.-]+:') {
         throw 'Protect-Text left a URL in a sample. Do not continue. Report BLOCKED.'
     }
     foreach ($Pattern in $ProfileLeakPatterns) {
@@ -1246,3 +1265,9 @@ Known limits of this runbook:
   line, and the test cancel scenarios are the Windows evidence for job closure.
 - The counts are calculated and must be reconciled with the measured native listing. A mismatch is
   `INCONCLUSIVE` and is a finding for the coordinator, not an edit of this file.
+- The `workspace-tests` check is not isolated; the isolated standalone checks (`cli-cleanup-safety`,
+  `cli-acceptance`) cover the tests that need an isolated `TEMP` and `rustc` on `PATH`.
+- The survivor scan is report-only. It does not stop any process.
+- The redaction patterns are anchored at the start of a word run so a very large output without a URL
+  or scp form is scanned in linear time. A regression check with a large word run is part of the
+  review of this runbook, not a gate of the native run.
