@@ -97,11 +97,55 @@ fn directory_at_the_lock_path_is_never_removed() {
     let marker = path.join("keep");
     fs::write(&marker, b"keep").expect("write marker");
 
-    assert!(matches!(
-        DataDirectoryLock::acquire(directory.path()),
-        Err(DataDirectoryLockError::HolderUnknown)
-    ));
-    assert_eq!(fs::read(&marker).expect("marker survives"), b"keep");
+    let result = DataDirectoryLock::acquire(directory.path());
+
+    // Observe retention before any variant assertion so a variant mismatch
+    // cannot hide whether the artifact survived. stderr keeps the real error
+    // for native runs (`-- --nocapture`); only fixed, non-secret values print.
+    let directory_kept = fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir());
+    let marker_contents = fs::read(&marker).ok();
+    let outcome = match &result {
+        Ok(_) => "Ok(lock)".to_owned(),
+        Err(error) => format!("{error:?}"),
+    };
+    eprintln!(
+        "directory_at_the_lock_path: acquire={outcome} directory_kept={directory_kept} \
+         marker_intact={}",
+        marker_contents.as_deref() == Some(b"keep".as_slice())
+    );
+
+    assert!(
+        directory_kept,
+        "directory at lock path must survive: {outcome}"
+    );
+    assert_eq!(
+        marker_contents.as_deref(),
+        Some(b"keep".as_slice()),
+        "marker must survive unchanged: {outcome}"
+    );
+    let error = match result {
+        Ok(lock) => {
+            drop(lock);
+            panic!("acquire must fail closed on a directory at the lock path");
+        }
+        Err(error) => error,
+    };
+    // Unix `create_new` reports AlreadyExists, which routes to HolderUnknown.
+    // Other platforms may surface the OS error as Io; any other variant is a
+    // contract violation.
+    #[cfg(unix)]
+    assert!(
+        matches!(error, DataDirectoryLockError::HolderUnknown),
+        "expected HolderUnknown, got {error:?}"
+    );
+    #[cfg(not(unix))]
+    assert!(
+        matches!(
+            error,
+            DataDirectoryLockError::HolderUnknown | DataDirectoryLockError::Io(_)
+        ),
+        "expected HolderUnknown or Io, got {error:?}"
+    );
 }
 
 #[cfg(unix)]
