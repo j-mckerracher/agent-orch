@@ -122,11 +122,13 @@ fn run_worker(
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .foreign_keys(true)
-        // Every store transaction starts with `BEGIN IMMEDIATE`. A deferred
+        // Every transaction that writes starts with `BEGIN IMMEDIATE`. A deferred
         // transaction that reads and then writes fails at once with
         // SQLITE_BUSY_SNAPSHOT when another process commits in between, and
         // the busy timeout does not apply. Taking the write lock up front makes
-        // concurrent run owners and the daemon queue for it instead.
+        // concurrent run owners and the daemon queue for it instead. Read-only
+        // transactions stay deferred so lock-free readers never queue behind
+        // writers and still work on a read-only database.
         .busy_timeout(Duration::from_secs(5));
     let pool = match runtime.block_on(
         SqlitePoolOptions::new()

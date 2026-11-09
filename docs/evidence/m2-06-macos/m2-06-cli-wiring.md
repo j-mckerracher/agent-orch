@@ -10,7 +10,7 @@ The CLI keeps repository, worktree, and log paths in sidecar files under `<data-
 
 ## Data-directory lock scope
 
-`run` acquires `.orchestrator.lock` before reconciliation and scheduling. It holds the lock through task, worktree, attempt, session, and launch-identity writes. It releases the lock before it monitors the agent and does not reacquire it. Finish writes, including cancellation confirmation and owner closure, are single generation-fenced store transactions that only this owner may commit, so they need no exclusive lock. This also lets a daemon that holds the lock for its lifetime coexist with a finishing owner. Agent execution has no fixed duration. Releasing the lock lets `cancel` acquire it while the agent runs.
+`run` acquires `.orchestrator.lock` before reconciliation and scheduling. It holds the lock through task, worktree, attempt, session, and launch-identity writes. It releases the lock before it monitors the agent, then reacquires it to record the finish state. Agent execution has no fixed duration. Releasing the lock lets `cancel` acquire it while the agent runs.
 
 `cancel` holds the lock while it loads the session identity, observes the process, signals the process group, and records cancellation through store transitions. It refuses to signal if PID, process group, or start time cannot be verified. On Unix, it sends `SIGTERM`, then sends `SIGKILL` after 500 ms only if a second observation still matches the stored identity. The running CLI records the session exit after it reaps the agent.
 
