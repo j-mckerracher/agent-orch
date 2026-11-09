@@ -7,9 +7,10 @@
 use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
 use orchestrator_runtime::is_process_running;
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, observe_owner_process};
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, ExitStatus, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -17,6 +18,7 @@ use tempfile::TempDir;
 const CLI: &str = env!("CARGO_BIN_EXE_orchestrator-cli");
 const FAKE_AGENT_SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/fake_codex.rs");
 const STEP_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_LOG_BYTES: u64 = 64 * 1024;
 
 struct Fixture {
     _root: TempDir,
@@ -167,6 +169,36 @@ fn labeled(text: &str, label: &str) -> String {
         .to_string()
 }
 
+/// Tail of a captured stream, at most `MAX_LOG_BYTES`, with a note when bytes
+/// were dropped from the front.
+fn read_log(path: &Path) -> String {
+    let read = || -> std::io::Result<(u64, Vec<u8>)> {
+        let mut file = File::open(path)?;
+        let len = file.metadata()?.len();
+        let omitted = len.saturating_sub(MAX_LOG_BYTES);
+        file.seek(SeekFrom::Start(omitted))?;
+        let mut bytes = Vec::new();
+        file.take(MAX_LOG_BYTES).read_to_end(&mut bytes)?;
+        Ok((omitted, bytes))
+    };
+    match read() {
+        Ok((0, bytes)) => String::from_utf8_lossy(&bytes).into_owned(),
+        Ok((omitted, bytes)) => format!(
+            "[first {omitted} bytes omitted]\n{}",
+            String::from_utf8_lossy(&bytes)
+        ),
+        Err(error) => format!("<cannot read {}: {error}>", path.display()),
+    }
+}
+
+fn early_exit_message(status: ExitStatus, stdout: &Path, stderr: &Path) -> String {
+    format!(
+        "run exited early with {status}\nstdout:\n{}\nstderr:\n{}",
+        read_log(stdout),
+        read_log(stderr)
+    )
+}
+
 fn wait_until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
     let deadline = Instant::now() + STEP_TIMEOUT;
     loop {
@@ -300,11 +332,15 @@ fn cancel_terminates_agent_and_descendant() {
     let fixture = fixture();
     let before = snapshot(&fixture.repo);
     let pidfile = fixture._root.path().join("pids.txt");
+    // Files, not pipes: nothing can fill a pipe and block the run, and the
+    // output survives for the early-exit diagnostic.
+    let run_stdout = fixture._root.path().join("run.stdout.log");
+    let run_stderr = fixture._root.path().join("run.stderr.log");
 
     let mut run = run_command(&fixture, "accept-cancel", "tree")
         .env("FAKE_AGENT_PIDFILE", &pidfile)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(File::create(&run_stdout).expect("create run stdout log"))
+        .stderr(File::create(&run_stderr).expect("create run stderr log"))
         .spawn()
         .expect("start CLI run");
     let mut guard = OwnedProcesses::default();
@@ -314,14 +350,14 @@ fn cancel_terminates_agent_and_descendant() {
     let metadata = fixture.data.join("cli/accept-cancel/metadata.json");
     let wrapper_pid = wait_until("wrapper PID in metadata", || {
         if let Some(status) = run.try_wait().expect("poll run") {
-            panic!("run exited early with {status}");
+            panic!("{}", early_exit_message(status, &run_stdout, &run_stderr));
         }
         read_json_pid(&metadata)
     });
     guard.track("wrapper", wrapper_pid);
     let (agent_pid, descendant_pid) = wait_until("agent and descendant PIDs", || {
         if let Some(status) = run.try_wait().expect("poll run") {
-            panic!("run exited early with {status}");
+            panic!("{}", early_exit_message(status, &run_stdout, &run_stderr));
         }
         read_pidfile(&pidfile)
     });
@@ -345,8 +381,13 @@ fn cancel_terminates_agent_and_descendant() {
         run.try_wait().expect("poll run")
     });
     guard.forget(run.id());
-    assert_eq!(status.code(), Some(130), "run exit after cancel");
-    let _ = run.wait_with_output();
+    assert_eq!(
+        status.code(),
+        Some(130),
+        "run exit after cancel\nstdout:\n{}\nstderr:\n{}",
+        read_log(&run_stdout),
+        read_log(&run_stderr)
+    );
 
     for (name, pid) in [
         ("wrapper", wrapper_pid),
