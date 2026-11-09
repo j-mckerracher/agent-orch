@@ -261,3 +261,220 @@ fn working_tree_snapshot(path: &Path) -> WorkingTreeSnapshot {
         files,
     }
 }
+
+/// A bare ref name must not be resolved through Git's DWIM rules: only a ref
+/// named `refs/heads/refs/heads/...` exists here, which is not the review ref.
+#[test]
+fn dwim_lookalike_ref_is_not_the_review_ref() {
+    let fixture = fixture();
+    let lookalike = format!("refs/heads/{REVIEW_REF}");
+    git(
+        &fixture.path,
+        &[
+            "update-ref",
+            lookalike.as_str(),
+            fixture.candidate_sha.as_str(),
+        ],
+    );
+
+    let plan = reconcile_delivery_steps(&fixture.repository, &[recorded_step(&fixture)])
+        .expect("reconcile delivery step");
+
+    assert_eq!(
+        plan.steps[0].classification,
+        DeliveryClassification::NotApplied
+    );
+    assert_eq!(plan.steps[0].observed_ref, None);
+    assert_eq!(
+        git(&fixture.path, &["rev-parse", lookalike.as_str()]),
+        fixture.candidate_sha,
+        "the lookalike ref is left in place"
+    );
+}
+
+/// A symbolic review ref only borrows another ref's object, so even when that
+/// object is the candidate it is Ambiguous. The borrowed object stays visible.
+#[test]
+fn symbolic_review_ref_is_ambiguous_and_keeps_observed_object() {
+    let fixture = fixture();
+    git(
+        &fixture.path,
+        &["symbolic-ref", REVIEW_REF, "refs/heads/main"],
+    );
+    assert_eq!(
+        git(&fixture.path, &["rev-parse", "main"]),
+        fixture.candidate_sha
+    );
+
+    let plan = reconcile_delivery_steps(&fixture.repository, &[recorded_step(&fixture)])
+        .expect("reconcile delivery step");
+
+    assert_eq!(
+        plan.steps[0].classification,
+        DeliveryClassification::Ambiguous
+    );
+    assert_eq!(
+        plan.steps[0].observed_ref.as_deref(),
+        Some(fixture.candidate_sha.as_str())
+    );
+    assert_eq!(
+        git(&fixture.path, &["symbolic-ref", REVIEW_REF]),
+        "refs/heads/main",
+        "the symbolic ref is left in place"
+    );
+}
+
+/// A dangling symbolic review ref has no object, but it is still an artifact
+/// at the review name, so it is Ambiguous rather than "not applied".
+#[test]
+fn dangling_symbolic_review_ref_is_ambiguous() {
+    let fixture = fixture();
+    git(
+        &fixture.path,
+        &["symbolic-ref", REVIEW_REF, "refs/heads/victim"],
+    );
+
+    let plan = reconcile_delivery_steps(&fixture.repository, &[recorded_step(&fixture)])
+        .expect("reconcile delivery step");
+
+    assert_eq!(
+        plan.steps[0].classification,
+        DeliveryClassification::Ambiguous
+    );
+    assert_eq!(plan.steps[0].observed_ref, None);
+    assert_eq!(
+        git(&fixture.path, &["symbolic-ref", REVIEW_REF]),
+        "refs/heads/victim",
+        "the symbolic ref is left in place"
+    );
+    assert!(git(&fixture.path, &["for-each-ref", "refs/heads/victim"]).is_empty());
+}
+
+#[test]
+fn packed_review_ref_at_candidate_is_confirmed() {
+    let fixture = fixture();
+    git(
+        &fixture.path,
+        &["update-ref", REVIEW_REF, fixture.candidate_sha.as_str()],
+    );
+    git(&fixture.path, &["pack-refs", "--all", "--prune"]);
+
+    let plan = reconcile_delivery_steps(&fixture.repository, &[recorded_step(&fixture)])
+        .expect("reconcile delivery step");
+
+    assert_eq!(
+        plan.steps[0].classification,
+        DeliveryClassification::Confirmed
+    );
+}
+
+type Mutation = fn(&mut RecordedDeliveryStep, &Fixture);
+
+/// Every incomplete, foreign or malformed record fails closed to Ambiguous,
+/// with the review ref sitting at the candidate so absence cannot explain it.
+/// The bool is whether the ref object is still reported for review.
+#[test]
+fn incomplete_foreign_or_malformed_records_are_ambiguous() {
+    let cases: [(&str, Mutation, bool); 15] = [
+        (
+            "destination elsewhere",
+            |s, f| {
+                s.destination = Some(f.path.join("elsewhere"));
+            },
+            false,
+        ),
+        ("destination missing", |s, _| s.destination = None, false),
+        (
+            "ref outside review prefix",
+            |s, _| {
+                s.target_ref = Some("refs/heads/main".into());
+            },
+            false,
+        ),
+        (
+            "ref with invalid format",
+            |s, _| {
+                s.target_ref = Some("refs/heads/orchestrator/review/bad..name".into());
+            },
+            false,
+        ),
+        (
+            "ref is only the prefix",
+            |s, _| {
+                s.target_ref = Some("refs/heads/orchestrator/review/".into());
+            },
+            false,
+        ),
+        (
+            "short candidate",
+            |s, f| {
+                s.candidate_sha = Some(f.candidate_sha[..12].into());
+            },
+            true,
+        ),
+        (
+            "uppercase candidate",
+            |s, f| {
+                s.candidate_sha = Some(f.candidate_sha.to_uppercase());
+            },
+            true,
+        ),
+        (
+            "non-hex candidate",
+            |s, _| {
+                s.candidate_sha = Some("z".repeat(40));
+            },
+            true,
+        ),
+        ("candidate missing", |s, _| s.candidate_sha = None, true),
+        ("empty id", |s, _| s.id = String::new(), true),
+        ("task id missing", |s, _| s.task_id = None, true),
+        (
+            "task id empty",
+            |s, _| s.task_id = Some(String::new()),
+            true,
+        ),
+        ("action missing", |s, _| s.action = None, true),
+        (
+            "report-only step carrying a ref",
+            |s, _| {
+                s.action = Some(DeliveryAction::ReportOnly);
+            },
+            true,
+        ),
+        (
+            "local review without a ref",
+            |s, _| s.target_ref = None,
+            false,
+        ),
+    ];
+    for (label, mutate, ref_reported) in cases {
+        let fixture = fixture();
+        git(
+            &fixture.path,
+            &["update-ref", REVIEW_REF, fixture.candidate_sha.as_str()],
+        );
+        let mut step = recorded_step(&fixture);
+        mutate(&mut step, &fixture);
+
+        let plan = reconcile_delivery_steps(&fixture.repository, &[step])
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
+
+        assert_eq!(
+            plan.steps[0].classification,
+            DeliveryClassification::Ambiguous,
+            "{label}"
+        );
+        assert_eq!(
+            plan.steps[0].observed_ref.as_deref(),
+            ref_reported.then_some(fixture.candidate_sha.as_str()),
+            "{label}"
+        );
+        assert!(plan.has_ambiguous_steps(), "{label}");
+        assert_eq!(
+            git(&fixture.path, &["rev-parse", REVIEW_REF]),
+            fixture.candidate_sha,
+            "{label}: the review ref is untouched"
+        );
+    }
+}

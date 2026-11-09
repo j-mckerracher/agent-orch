@@ -109,10 +109,11 @@ fn classify_step(
         .map(|target_ref| is_valid_review_ref(repository, target_ref))
         .transpose()?
         .unwrap_or(false);
-    let observed_ref = match (destination_matches, record.target_ref.as_deref(), valid_ref) {
-        (true, Some(target_ref), true) => read_ref(repository, target_ref)?,
-        _ => None,
-    };
+    let (observed_ref, symbolic) =
+        match (destination_matches, record.target_ref.as_deref(), valid_ref) {
+            (true, Some(target_ref), true) => read_ref(repository, target_ref)?,
+            _ => (None, false),
+        };
     let action_matches_ref = match (record.action, record.target_ref.as_ref()) {
         (Some(DeliveryAction::ReportOnly), None) => true,
         (Some(DeliveryAction::LocalReview), Some(_)) => valid_ref,
@@ -129,7 +130,8 @@ fn classify_step(
             .as_deref()
             .is_some_and(is_full_object_id)
         && action_matches_ref;
-    let classification = if !complete {
+    // A symbolic review ref (even a dangling one) is never evidence of a delivery.
+    let classification = if !complete || symbolic {
         DeliveryClassification::Ambiguous
     } else {
         match record.action {
@@ -174,20 +176,47 @@ fn is_valid_review_ref(repository: &Repository, target_ref: &str) -> Result<bool
     }
 }
 
-fn read_ref(repository: &Repository, target_ref: &str) -> Result<Option<String>, Error> {
-    match git(
+/// Observes exactly `target_ref`: its object (`None` when absent) and whether it
+/// is symbolic.
+///
+/// `for-each-ref` is used instead of `rev-parse`, which also resolves a bare
+/// name through DWIM rules (for example `refs/heads/<name>`) and would report a
+/// different ref's object as this one. Name, object and symref come from ONE
+/// listing, so a symref swapped in meanwhile cannot be read as a direct ref. Git
+/// omits a dangling symref from the listing, so an absent ref falls back to
+/// `symbolic-ref`.
+fn read_ref(repository: &Repository, target_ref: &str) -> Result<(Option<String>, bool), Error> {
+    let listing = git(
         "read delivery review ref",
         repository.path(),
         [
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            "--end-of-options",
+            "for-each-ref",
+            "--format=%(refname) %(objectname) %(symref)",
             target_ref,
         ],
+    )?;
+    let found = listing.lines().find_map(|line| {
+        let mut fields = line.splitn(3, ' ');
+        let name = fields.next()?;
+        let object_id = fields.next()?;
+        let symref = fields.next().unwrap_or("");
+        (name == target_ref).then(|| (object_id.to_owned(), !symref.is_empty()))
+    });
+    match found {
+        Some((object_id, symbolic)) => Ok((Some(object_id), symbolic)),
+        None => Ok((None, is_symbolic_ref(repository, target_ref)?)),
+    }
+}
+
+/// True when `target_ref` is a symbolic ref, including a dangling one.
+fn is_symbolic_ref(repository: &Repository, target_ref: &str) -> Result<bool, Error> {
+    match git(
+        "check delivery review ref is symbolic",
+        repository.path(),
+        ["symbolic-ref", "--quiet", target_ref],
     ) {
-        Ok(object_id) => Ok(Some(object_id)),
-        Err(Error::Git { status, .. }) if status.code() == Some(1) => Ok(None),
+        Ok(_) => Ok(true),
+        Err(Error::Git { status, .. }) if status.code() == Some(1) => Ok(false),
         Err(error) => Err(error),
     }
 }

@@ -493,7 +493,13 @@ fn create_review_ref(
     match git(
         "create local-review ref",
         repository.path(),
-        ["update-ref", target_ref, candidate_sha, &zero_id],
+        [
+            "update-ref",
+            "--no-deref",
+            target_ref,
+            candidate_sha,
+            &zero_id,
+        ],
     ) {
         Ok(_) => Ok(DeliveryOutcome::ReviewRefCreated),
         Err(write_error) => match resolve_ref(repository, target_ref)? {
@@ -511,13 +517,44 @@ fn create_review_ref(
     }
 }
 
+/// Reads exactly `target_ref`: an object id, or a description when it is symbolic.
+///
+/// `rev-parse` would resolve a bare name through DWIM rules (for example
+/// `refs/heads/<name>`) and follow symbolic refs, so a different ref's object
+/// could look like this one. A symbolic ref (even a dangling one) is reported as
+/// a value that never equals a candidate, so it is a conflict and never a match.
 fn resolve_ref(repository: &Repository, target_ref: &str) -> Result<Option<String>, DeliveryError> {
-    match git(
+    let listing = git(
         "read local-review ref",
         repository.path(),
-        ["rev-parse", "--verify", "--quiet", target_ref],
+        [
+            "for-each-ref",
+            "--format=%(refname) %(objectname) %(symref)",
+            target_ref,
+        ],
+    )?;
+    // One listing gives name, object and symref together, so a symref swapped in
+    // meanwhile cannot be read as a direct ref.
+    let found = listing.lines().find_map(|line| {
+        let mut fields = line.splitn(3, ' ');
+        let name = fields.next()?;
+        let object_id = fields.next()?;
+        let symref = fields.next().unwrap_or("");
+        (name == target_ref).then(|| match symref {
+            "" => object_id.to_owned(),
+            target => format!("symbolic ref to {target}"),
+        })
+    });
+    if found.is_some() {
+        return Ok(found);
+    }
+    // Git omits a dangling symref from the listing.
+    match git(
+        "check local-review ref is symbolic",
+        repository.path(),
+        ["symbolic-ref", "--quiet", target_ref],
     ) {
-        Ok(sha) => Ok(Some(sha)),
+        Ok(symbolic_target) => Ok(Some(format!("symbolic ref to {symbolic_target}"))),
         Err(Error::Git { status, .. }) if status.code() == Some(1) => Ok(None),
         Err(error) => Err(error.into()),
     }

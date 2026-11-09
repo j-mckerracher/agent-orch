@@ -906,3 +906,92 @@ fn unlanded_worktree_is_unsafe_and_survives_safety_check() {
         before_worktrees
     );
 }
+
+/// A ref that only DWIM-matches the review name must not count as delivered.
+#[test]
+fn local_review_creates_the_exact_ref_when_only_a_lookalike_exists() {
+    let fixture = fixture();
+    let lookalike = format!("refs/heads/{REVIEW_REF}");
+    git(
+        &fixture.repository_path,
+        &["update-ref", lookalike.as_str(), &fixture.candidate_sha],
+    );
+    let callbacks = callbacks(&persist_nothing);
+
+    let step = delivery::local_review(
+        &fixture.repository,
+        request(&fixture, "delivery-lookalike"),
+        REVIEW_REF,
+        &callbacks,
+    )
+    .expect("lookalike is not the review ref");
+
+    assert_eq!(step.outcome, DeliveryOutcome::ReviewRefCreated);
+    assert_eq!(
+        git(
+            &fixture.repository_path,
+            &[
+                "for-each-ref",
+                "--format=%(refname) %(objectname)",
+                REVIEW_REF
+            ]
+        ),
+        format!("{REVIEW_REF} {}", fixture.candidate_sha)
+    );
+    assert_eq!(
+        git(&fixture.repository_path, &["rev-parse", lookalike.as_str()]),
+        fixture.candidate_sha,
+        "the lookalike ref is left in place"
+    );
+}
+
+/// A symbolic review ref is a conflict even when it resolves to the candidate,
+/// and a dangling one must not be written through to create its target.
+#[test]
+fn local_review_refuses_symbolic_review_refs_without_writing_through_them() {
+    for (label, symbolic_target, target_exists) in [
+        ("dangling", "refs/heads/victim", false),
+        ("at candidate", "refs/heads/at-candidate", true),
+    ] {
+        let fixture = fixture();
+        if target_exists {
+            git(
+                &fixture.repository_path,
+                &["update-ref", symbolic_target, &fixture.candidate_sha],
+            );
+        }
+        git(
+            &fixture.repository_path,
+            &["symbolic-ref", REVIEW_REF, symbolic_target],
+        );
+        let before_refs = refs(&fixture.repository_path);
+        let callbacks = callbacks(&persist_nothing);
+
+        let error = delivery::local_review(
+            &fixture.repository,
+            request(&fixture, "delivery-symbolic"),
+            REVIEW_REF,
+            &callbacks,
+        )
+        .expect_err("symbolic review ref must be refused");
+
+        assert!(
+            matches!(error, DeliveryError::ReviewRefConflict { .. }),
+            "{label}: {error:?}"
+        );
+        assert_eq!(refs(&fixture.repository_path), before_refs, "{label}");
+        assert_eq!(
+            git(&fixture.repository_path, &["symbolic-ref", REVIEW_REF]),
+            symbolic_target,
+            "{label}: the symbolic ref is left in place"
+        );
+        assert!(
+            git(
+                &fixture.repository_path,
+                &["for-each-ref", "refs/heads/victim"]
+            )
+            .is_empty(),
+            "{label}: no ref was created outside the review ref"
+        );
+    }
+}
