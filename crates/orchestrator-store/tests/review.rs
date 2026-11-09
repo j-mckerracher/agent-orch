@@ -358,3 +358,46 @@ fn concurrent_approve_and_request_changes_never_both_succeed() {
         assert_eq!(has_change, changed.is_ok());
     }
 }
+
+#[test]
+fn plain_approve_approval_cannot_bypass_a_change_request() {
+    let (_directory, store) = new_store();
+    let policy = allowlist();
+    request(&store, "a1", 1, COMMIT_A);
+    store
+        .request_changes("c1", "a1", COMMIT_A, "fix it", &user(), &policy)
+        .unwrap();
+    assert!(matches!(
+        store.approve_approval("a1", &user(), &policy),
+        Err(orchestrator_core::approval::ApprovalError::IllegalTransition { .. })
+    ));
+    assert_eq!(
+        store.get_approval("a1").unwrap().state,
+        ApprovalState::Requested
+    );
+}
+
+#[test]
+fn reviewed_approval_authorizes_before_looking_at_the_approval() {
+    let (_directory, store) = new_store();
+    let policy = allowlist();
+    let stranger = Actor::User("stranger".into());
+    // A missing approval would report NotFound if authorization did not run first.
+    assert!(matches!(
+        store.approve_reviewed_approval("missing", &stranger, &policy),
+        Err(ReviewError::Approval(
+            orchestrator_core::approval::ApprovalError::UnauthorizedActor { .. }
+        ))
+    ));
+    // A change request would report ChangesRequested if authorization did not run first.
+    request(&store, "a1", 1, COMMIT_A);
+    store
+        .request_changes("c1", "a1", COMMIT_A, "fix it", &user(), &policy)
+        .unwrap();
+    assert!(matches!(
+        store.approve_reviewed_approval("a1", &stranger, &policy),
+        Err(ReviewError::Approval(
+            orchestrator_core::approval::ApprovalError::UnauthorizedActor { .. }
+        ))
+    ));
+}

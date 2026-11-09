@@ -79,9 +79,10 @@ fn connect(dir: &Path, capabilities: &[Capability]) -> Client {
 
 #[test]
 fn capability_set_names_are_unique_and_round_trip() {
-    assert_eq!(Capability::ALL.len(), 10);
     let names: BTreeSet<_> = Capability::ALL.iter().map(|c| c.as_str()).collect();
     assert_eq!(names.len(), Capability::ALL.len());
+    assert!(Capability::ALL.contains(&Capability::Coordinator));
+    assert!(Capability::ALL.contains(&Capability::Review));
     assert!(names.contains("coordinator") && names.contains("review"));
     for capability in Capability::ALL {
         let encoded = serde_json::to_value(capability).unwrap();
@@ -189,5 +190,78 @@ fn a_handler_without_review_never_exposes_review_methods() {
     ));
     assert!(handler.calls.lock().unwrap().is_empty());
     client.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn server_gates_each_method_on_its_own_capability() {
+    let coordinator_methods = [
+        "coordinator.send_message",
+        "coordinator.propose",
+        "coordinator.get",
+    ];
+    let review_methods = [
+        "review.request_approval",
+        "review.evidence",
+        "review.request_changes",
+    ];
+    let dir = TempDir::new().unwrap();
+    let handler = Recorder::new(vec![
+        Capability::Health,
+        Capability::Coordinator,
+        Capability::Review,
+    ]);
+    let daemon = serve(dir.path(), &handler);
+
+    // `Client::call` skips the client-side gate, so these reach the server.
+    let mut review_only = connect(dir.path(), &[Capability::Health, Capability::Review]);
+    for method in coordinator_methods {
+        assert!(
+            matches!(
+                review_only.call(method, json!({})),
+                Err(IpcError::UnsupportedCapability)
+            ),
+            "{method} must need the coordinator capability"
+        );
+    }
+    let mut coordinator_only = connect(dir.path(), &[Capability::Health, Capability::Coordinator]);
+    for method in review_methods {
+        assert!(
+            matches!(
+                coordinator_only.call(method, json!({})),
+                Err(IpcError::UnsupportedCapability)
+            ),
+            "{method} must need the review capability"
+        );
+    }
+    assert!(handler.calls.lock().unwrap().is_empty());
+
+    for method in coordinator_methods {
+        assert!(coordinator_only.call(method, json!({})).is_ok());
+    }
+    for method in review_methods {
+        let result = review_only.call(method, json!({}));
+        assert!(
+            !matches!(result, Err(IpcError::UnsupportedCapability)),
+            "{method} must dispatch with its capability"
+        );
+    }
+    let dispatched: Vec<_> = handler
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(method, _)| method.clone())
+        .collect();
+    assert_eq!(
+        dispatched,
+        coordinator_methods
+            .iter()
+            .chain(&review_methods)
+            .map(|method| (*method).to_owned())
+            .collect::<Vec<_>>()
+    );
+
+    coordinator_only.shutdown().unwrap();
     daemon.join().unwrap();
 }

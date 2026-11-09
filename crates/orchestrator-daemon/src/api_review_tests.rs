@@ -970,3 +970,79 @@ fn approval_from_review_request_delivers_end_to_end() {
         fixture.candidate_sha
     );
 }
+
+#[test]
+fn evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale() {
+    use orchestrator_core::approval::{
+        Actor, ApprovalAction, ApprovalActionKind, ApproverAllowlist,
+    };
+
+    let fixture = fixture();
+    let honest = request_approval(&fixture, "ra-1");
+    let parameters = fixture
+        .api
+        .store
+        .approval_parameters(honest["approval"]["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    let forged = ApprovalAction::new(
+        ApprovalActionKind::Delivery(ActionKind::LocalReviewMerge),
+        ParameterDigest::from_sha256([9; 32]),
+        &fixture.candidate_sha,
+        "task-1",
+    )
+    .unwrap();
+    let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();
+    fixture
+        .api
+        .store
+        .request_approval_with_parameters(
+            "approval-forged",
+            &forged,
+            &Actor::Agent("agent-1".into()),
+            &allowlist,
+            &parameters,
+        )
+        .unwrap();
+
+    let result = evidence(&fixture);
+    assert_eq!(result["approval"]["id"], "approval-forged");
+    assert_eq!(result["digest_relationship"], "mismatch");
+    assert_eq!(result["state"], "stale");
+    assert_eq!(result["decision_ready"], false);
+    assert_eq!(
+        result["reasons"],
+        json!(["digest_mismatch"]),
+        "the candidate, verification and workspace are all current"
+    );
+}
+
+#[test]
+fn evidence_snapshot_lists_at_most_one_thousand_files() {
+    let fixture = fixture();
+    let write_files = |range: std::ops::Range<u32>| {
+        for index in range {
+            fs::write(
+                fixture.worktree_path.join(format!("many-{index:04}.txt")),
+                format!("{index}\n"),
+            )
+            .unwrap();
+        }
+        git(&fixture.worktree_path, &["add", "-A"]);
+        git(&fixture.worktree_path, &["commit", "-m", "many files"]);
+    };
+
+    // candidate.txt plus 999 files is exactly the cap.
+    write_files(0..999);
+    let at_cap = evidence(&fixture);
+    assert_eq!(at_cap["snapshot"]["files"].as_array().unwrap().len(), 1000);
+    assert_eq!(at_cap["snapshot"]["files_truncated"], false);
+    assert_eq!(at_cap["snapshot"]["diff_state"], "complete");
+
+    write_files(999..1001);
+    let over_cap = evidence(&fixture);
+    let files = over_cap["snapshot"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1000);
+    assert_eq!(over_cap["snapshot"]["files_truncated"], true);
+    assert_eq!(files[0], "candidate.txt", "Git byte order is kept");
+}

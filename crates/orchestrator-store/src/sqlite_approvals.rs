@@ -11,7 +11,7 @@ use std::future::Future;
 
 use orchestrator_core::approval::{
     self, Actor, Approval, ApprovalAction, ApprovalActionKind, ApprovalError, ApprovalEvent,
-    ApprovalEventKind, ApprovalState, ApproverAllowlist,
+    ApprovalEventKind, ApprovalState, ApprovalStateKind, ApproverAllowlist,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -128,29 +128,25 @@ impl SqliteStore {
     }
 
     /// Approve a pending action as an allowlisted non-agent identity.
+    ///
+    /// This delegates to [`SqliteStore::approve_reviewed_approval`], so it
+    /// cannot bypass the changes-requested guard. An approval with requested
+    /// changes has no legal approve edge and reports `IllegalTransition`.
     pub fn approve_approval(
         &self,
         id: &str,
         actor: &Actor,
         allowlist: &ApproverAllowlist,
     ) -> Result<Approval, ApprovalError> {
-        validate_approval_id(id)?;
-        validate_actor(actor)?;
-        authorize_decision(actor, allowlist)?;
-        let id = id.to_owned();
-        let actor = actor.clone();
-        approval_call(self, move |pool| async move {
-            let mut transaction = pool
-                .begin_with("BEGIN IMMEDIATE")
-                .await
-                .map_err(persistence)?;
-            let current = load_approval(&mut transaction, &id).await?;
-            let event = ApprovalEvent::Approved { by: actor };
-            let next = approval::transition(Some(&current.state), &event)?;
-            let updated = update_approval(&mut transaction, &current, &event, &next).await?;
-            transaction.commit().await.map_err(persistence)?;
-            Ok(updated)
-        })
+        self.approve_reviewed_approval(id, actor, allowlist)
+            .map_err(|error| match error {
+                crate::ReviewError::Approval(error) => error,
+                crate::ReviewError::ChangesRequested { .. } => ApprovalError::IllegalTransition {
+                    from: Some(ApprovalStateKind::Requested),
+                    event: ApprovalEventKind::Approved,
+                },
+                other => persistence(other),
+            })
     }
 
     /// Reject a pending action as an allowlisted non-agent identity.

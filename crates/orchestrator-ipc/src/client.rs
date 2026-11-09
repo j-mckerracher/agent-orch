@@ -443,7 +443,7 @@ impl Client {
         self.call(method, params)
     }
 
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, IpcError> {
+    pub(crate) fn call(&mut self, method: &str, params: Value) -> Result<Value, IpcError> {
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).ok_or(IpcError::Operation)?;
         let rpc_id = RpcId::Number(id.into());

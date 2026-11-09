@@ -129,3 +129,87 @@ fn pinned_diff_rejects_unsafe_ids_and_paths() {
         Err(Error::DiffPathOutsideWorktree)
     ));
 }
+
+#[test]
+fn diff_between_treats_the_path_as_a_path_not_an_option_or_revision() {
+    let (_directory, path, repository, base) = repository();
+    commit(&path, "--stat", "dash\n");
+    let candidate = commit(&path, "main", "named like a branch\n");
+    let dashed = repository
+        .diff_between(&base, &candidate, Some(Path::new("--stat")))
+        .unwrap();
+    assert!(dashed.contains("diff --git") && dashed.contains("+dash"));
+    let branch_named = repository
+        .diff_between(&base, &candidate, Some(Path::new("main")))
+        .unwrap();
+    assert!(branch_named.contains("+named like a branch"));
+    assert!(!branch_named.contains("+dash"));
+}
+
+#[cfg(unix)]
+mod drivers {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn script(directory: &Path, marker: &Path) -> PathBuf {
+        let script = directory.join("driver.sh");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho ran >> '{}'\ncat \"$1\"\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    /// Both drivers are repository-local configuration, so a candidate that
+    /// carries them must still never get a helper executed by the daemon.
+    fn assert_helper_never_runs(configure: impl Fn(&Path, &Path)) {
+        let (directory, path, repository, base) = repository();
+        let marker = directory.path().join("marker");
+        let script = script(directory.path(), &marker);
+        configure(&path, &script);
+        git(&path, &["add", "-A"]);
+        git(&path, &["commit", "--allow-empty", "-m", "drivers"]);
+        let candidate = commit(&path, "base.txt", "changed\n");
+        fs::write(path.join("base.txt"), "worktree edit\n").unwrap();
+
+        let diff = repository.diff_between(&base, &candidate, None).unwrap();
+        assert!(diff.contains("+changed"), "{diff}");
+        repository.diff_from(&base, None).unwrap();
+        repository.changed_files_between(&base, &candidate).unwrap();
+        assert!(!marker.exists(), "a configured diff helper was executed");
+
+        // Control: the same configuration does run a helper when asked to.
+        git(&path, &["diff", &base, "HEAD"]);
+        assert!(marker.exists(), "the helper is not wired up in this test");
+    }
+
+    #[test]
+    fn configured_external_diff_is_never_executed() {
+        assert_helper_never_runs(|path, script| {
+            git(
+                path,
+                &["config", "diff.external", &script.display().to_string()],
+            );
+        });
+    }
+
+    #[test]
+    fn configured_textconv_driver_is_never_executed() {
+        assert_helper_never_runs(|path, script| {
+            fs::write(path.join(".gitattributes"), "*.txt diff=probe\n").unwrap();
+            git(
+                path,
+                &[
+                    "config",
+                    "diff.probe.textconv",
+                    &script.display().to_string(),
+                ],
+            );
+        });
+    }
+}
