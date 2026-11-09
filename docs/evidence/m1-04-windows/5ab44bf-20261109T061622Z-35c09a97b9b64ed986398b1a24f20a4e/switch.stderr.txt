@@ -1,0 +1,1 @@
+HEAD is now at 5ab44bf fix(git): bound worktree-add diagnostics and retry only on real name conflicts

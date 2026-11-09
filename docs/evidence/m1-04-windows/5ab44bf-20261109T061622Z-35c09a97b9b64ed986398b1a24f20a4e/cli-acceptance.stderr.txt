@@ -1,0 +1,24 @@
+   Compiling windows-sys v0.61.2
+   Compiling sqlx-core v0.9.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling anstyle-query v1.1.5
+   Compiling anstyle-wincon v3.0.11
+   Compiling orchestrator-git v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\source\crates\orchestrator-git)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling tokio v1.54.1
+   Compiling clap_builder v4.6.7
+   Compiling sqlx-sqlite v0.9.0
+   Compiling clap v4.6.7
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\source\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\source\crates\orchestrator-agents)
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\source\crates\orchestrator-store)
+   Compiling orchestrator-cli v0.1.0 (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\source\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.79s
+     Running tests\portable_acceptance.rs (C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-acc-20261109T061622Z-35c09a97b9b64ed986398b1a24f20a4e\cargo-target\debug\deps\portable_acceptance-629529c0d2c2c661.exe)
+error: test failed, to rerun pass `-p orchestrator-cli --test portable_acceptance`
