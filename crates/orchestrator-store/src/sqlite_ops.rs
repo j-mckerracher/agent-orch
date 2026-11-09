@@ -5,6 +5,7 @@
 
 use orchestrator_core::authorization::Approval;
 use orchestrator_core::contract::{validate as validate_contract, TaskContract};
+use orchestrator_core::identity::ProcessIdentity;
 use orchestrator_core::records::{Artifact, Project, VerificationRun, Workspace};
 use orchestrator_core::task::{
     attempt_transition, session_transition, transition as task_transition, Attempt, AttemptState,
@@ -42,6 +43,7 @@ pub struct CancellationOwner {
     pub attempt_id: String,
     pub session_id: String,
     generation: String,
+    process_identity: Option<ProcessIdentity>,
 }
 
 impl CancellationOwner {
@@ -57,9 +59,21 @@ impl CancellationOwner {
             attempt_id,
             session_id,
             generation,
+            process_identity: None,
         };
         validate_cancellation_owner(&owner)?;
         Ok(owner)
+    }
+
+    /// Associates the exact process identity that owns the live agent handle.
+    pub fn with_process_identity(mut self, identity: ProcessIdentity) -> Self {
+        self.process_identity = Some(identity);
+        self
+    }
+
+    /// Returns the recorded identity of the process that owns the live handle.
+    pub fn process_identity(&self) -> Option<ProcessIdentity> {
+        self.process_identity
     }
 }
 
@@ -345,6 +359,18 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
+    /// Lists open owner generations, including generations whose task is no
+    /// longer running. Reconciliation uses these records to retire only owners
+    /// whose exact process identity has been observed as exited.
+    pub fn open_cancellation_owners(&self) -> Result<Vec<CancellationOwner>, StoreError> {
+        self.call(|pool| async move {
+            let mut transaction = pool.begin().await?;
+            let owners = read_open_cancellation_owners(&mut transaction, None).await?;
+            transaction.commit().await?;
+            Ok(owners)
+        })
+    }
+
     /// Finds the unique active owner for a running task. A stale owner row is
     /// never surfaced for a task whose durable state is no longer `Running`.
     fn active_cancellation_owner(
@@ -359,24 +385,8 @@ impl SqliteStore {
                 transaction.commit().await?;
                 return Ok(None);
             }
-            let prefix = format!("cli.cancel.owner:{task_id}:");
-            let rows = sqlx::query(
-                "SELECT key, method, fingerprint FROM idempotency_records \
-                 WHERE substr(method, 1, ?) = ? AND result IS NULL ORDER BY key",
-            )
-            .bind(prefix.len() as i64)
-            .bind(&prefix)
-            .fetch_all(&mut *transaction)
-            .await?;
-            let mut owners = Vec::with_capacity(rows.len());
-            for row in rows {
-                owners.push(parse_cancellation_owner_record(
-                    &task_id,
-                    &row.try_get::<String, _>("key")?,
-                    &row.try_get::<String, _>("method")?,
-                    &row.try_get::<String, _>("fingerprint")?,
-                )?);
-            }
+            let mut owners =
+                read_open_cancellation_owners(&mut transaction, Some(&task_id)).await?;
             if owners.len() > 1 {
                 return Err(StoreError::CancellationConflict {
                     task_id,
@@ -514,17 +524,33 @@ impl SqliteStore {
     ///
     /// This uses the existing SQLite idempotency table as a durable local
     /// mailbox. The owner row is namespaced separately from request rows and
-    /// stays pending while the run process owns the handle. No process id is
-    /// used as authority.
+    /// stays pending while the run process owns the handle. Process identity
+    /// is recorded only to reconcile a stale owner, never as cancellation
+    /// authority.
     pub fn register_cancellation_owner(&self, owner: &CancellationOwner) -> Result<(), StoreError> {
         validate_cancellation_owner(owner)?;
         let owner = owner.clone();
         let key = cancellation_owner_key(&owner);
         let method = cancellation_owner_method(&owner);
         let fingerprint = cancellation_fingerprint(&owner);
+        let process_identity = owner.process_identity;
+        let process_key = cancellation_owner_process_key(&owner);
+        let process_method = cancellation_owner_process_method(&owner);
+        let process_result = process_identity
+            .map(|identity| encode(&identity))
+            .transpose()?;
         self.call(move |pool| async move {
             let mut transaction = pool.begin().await?;
             require_running_owner_records(&mut transaction, &owner).await?;
+            if !read_open_cancellation_owners(&mut transaction, Some(&owner.task_id))
+                .await?
+                .is_empty()
+            {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "another cancellation owner generation is still open",
+                });
+            }
             let inserted = sqlx::query(
                 "INSERT INTO idempotency_records (key, method, fingerprint) \
                  VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
@@ -540,6 +566,116 @@ impl SqliteStore {
                     detail: "owner generation is already registered",
                 });
             }
+            if let Some(process_result) = process_result {
+                let inserted = sqlx::query(
+                    "INSERT INTO idempotency_records (key, method, fingerprint, result) \
+                     VALUES (?, ?, ?, ?) ON CONFLICT(key) DO NOTHING",
+                )
+                .bind(&process_key)
+                .bind(&process_method)
+                .bind(&fingerprint)
+                .bind(process_result)
+                .execute(&mut *transaction)
+                .await?;
+                if inserted.rows_affected() != 1 {
+                    return Err(StoreError::CancellationConflict {
+                        task_id: owner.task_id,
+                        detail: "owner process identity is already registered",
+                    });
+                }
+            }
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Resolves a pending request and closes exactly the observed stale
+    /// generation. This does not change task, attempt, session, or audit state.
+    pub fn retire_stale_cancellation_owner(
+        &self,
+        owner: &CancellationOwner,
+    ) -> Result<(), StoreError> {
+        validate_cancellation_owner(owner)?;
+        let Some(process_identity) = owner.process_identity else {
+            return Err(StoreError::CancellationConflict {
+                task_id: owner.task_id.clone(),
+                detail: "owner process identity is unavailable",
+            });
+        };
+        let owner = owner.clone();
+        let owner_key = cancellation_owner_key(&owner);
+        let owner_method = cancellation_owner_method(&owner);
+        let request_key = cancellation_request_key(&owner);
+        let request_method = cancellation_request_method(&owner);
+        let fingerprint = cancellation_fingerprint(&owner);
+        let closed_result = serde_json::json!({"status": "closed"}).to_string();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            sqlx::query(
+                "UPDATE idempotency_records SET result = result WHERE key = ? \
+                 AND method = ? AND fingerprint = ?",
+            )
+            .bind(&owner_key)
+            .bind(&owner_method)
+            .bind(&fingerprint)
+            .execute(&mut *transaction)
+            .await?;
+            let Some((stored_method, stored_fingerprint, owner_result)) =
+                read_idempotency_record(&mut transaction, &owner_key).await?
+            else {
+                return Err(StoreError::NoActiveCancellationOwner {
+                    task_id: owner.task_id,
+                    session_id: owner.session_id,
+                });
+            };
+            verify_cancellation_record(
+                &owner,
+                &owner_method,
+                &fingerprint,
+                &stored_method,
+                &stored_fingerprint,
+            )?;
+            if owner_result.as_deref() == Some(closed_result.as_str()) {
+                transaction.commit().await?;
+                return Ok(());
+            }
+            if owner_result.is_some() {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "owner registration already has a result",
+                });
+            }
+            if read_cancellation_owner_process_identity(&mut transaction, &owner).await?
+                != Some(process_identity)
+            {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "owner process identity does not match the recorded generation",
+                });
+            }
+            if current_task_state(&mut transaction, &owner.task_id).await? == TaskState::Cancelled {
+                return Err(StoreError::CancellationConflict {
+                    task_id: owner.task_id,
+                    detail: "task is already Cancelled",
+                });
+            }
+            write_cancellation_receipt(
+                &mut transaction,
+                &owner,
+                &request_key,
+                &request_method,
+                &fingerprint,
+                CancellationStatus::Failed,
+            )
+            .await?;
+            close_cancellation_owner(
+                &mut transaction,
+                &owner,
+                &owner_key,
+                &owner_method,
+                &fingerprint,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(())
         })
@@ -1002,6 +1138,71 @@ impl SqliteStore {
     }
 }
 
+async fn read_open_cancellation_owners(
+    transaction: &mut Transaction<'_, Sqlite>,
+    task_id: Option<&str>,
+) -> Result<Vec<CancellationOwner>, StoreError> {
+    let prefix = task_id
+        .map(|task_id| format!("cli.cancel.owner:{task_id}:"))
+        .unwrap_or_else(|| "cli.cancel.owner:".to_string());
+    let rows = sqlx::query(
+        "SELECT key, method, fingerprint FROM idempotency_records \
+         WHERE substr(method, 1, ?) = ? AND result IS NULL ORDER BY key",
+    )
+    .bind(prefix.len() as i64)
+    .bind(&prefix)
+    .fetch_all(&mut **transaction)
+    .await?;
+    let mut owners = Vec::with_capacity(rows.len());
+    for row in rows {
+        let key = row.try_get::<String, _>("key")?;
+        let method = row.try_get::<String, _>("method")?;
+        let record_task_id = task_id
+            .map(str::to_owned)
+            .or_else(|| cancellation_owner_task_id(&method))
+            .ok_or(StoreError::IdempotencyConflict)?;
+        let mut owner = parse_cancellation_owner_record(
+            &record_task_id,
+            &key,
+            &method,
+            &row.try_get::<String, _>("fingerprint")?,
+        )?;
+        owner.process_identity =
+            read_cancellation_owner_process_identity(transaction, &owner).await?;
+        owners.push(owner);
+    }
+    Ok(owners)
+}
+
+async fn read_cancellation_owner_process_identity(
+    transaction: &mut Transaction<'_, Sqlite>,
+    owner: &CancellationOwner,
+) -> Result<Option<ProcessIdentity>, StoreError> {
+    let key = cancellation_owner_process_key(owner);
+    let Some((method, fingerprint, result)) = read_idempotency_record(transaction, &key).await?
+    else {
+        return Ok(None);
+    };
+    if method != cancellation_owner_process_method(owner)
+        || fingerprint != cancellation_fingerprint(owner)
+    {
+        return Err(StoreError::IdempotencyConflict);
+    }
+    let Some(result) = result else {
+        return Err(StoreError::CancellationConflict {
+            task_id: owner.task_id.clone(),
+            detail: "owner process identity record has no value",
+        });
+    };
+    Ok(Some(decode(&result)?))
+}
+
+fn cancellation_owner_task_id(method: &str) -> Option<String> {
+    let identity = method.strip_prefix("cli.cancel.owner:")?;
+    let (task_id, _) = identity.split_once(':')?;
+    (!task_id.is_empty()).then(|| task_id.to_string())
+}
+
 async fn require_running_owner_records(
     transaction: &mut Transaction<'_, Sqlite>,
     owner: &CancellationOwner,
@@ -1094,6 +1295,10 @@ fn cancellation_owner_key(owner: &CancellationOwner) -> String {
     format!("agent-orch-owner-{}", owner.generation)
 }
 
+fn cancellation_owner_process_key(owner: &CancellationOwner) -> String {
+    format!("agent-orch-owner-process-{}", owner.generation)
+}
+
 fn parse_cancellation_owner_record(
     task_id: &str,
     key: &str,
@@ -1115,6 +1320,7 @@ fn parse_cancellation_owner_record(
         attempt_id: attempt_id.to_owned(),
         session_id: session_id.to_owned(),
         generation: generation.to_owned(),
+        process_identity: None,
     };
     validate_cancellation_owner(&owner)?;
     if session_id.contains(':') || cancellation_fingerprint(&owner) != fingerprint {
@@ -1130,6 +1336,13 @@ fn cancellation_request_key(owner: &CancellationOwner) -> String {
 fn cancellation_owner_method(owner: &CancellationOwner) -> String {
     format!(
         "cli.cancel.owner:{}:{}:{}",
+        owner.task_id, owner.attempt_id, owner.session_id
+    )
+}
+
+fn cancellation_owner_process_method(owner: &CancellationOwner) -> String {
+    format!(
+        "cli.cancel.owner_process:{}:{}:{}",
         owner.task_id, owner.attempt_id, owner.session_id
     )
 }

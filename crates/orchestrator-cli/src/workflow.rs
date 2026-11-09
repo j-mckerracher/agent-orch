@@ -20,12 +20,13 @@ use orchestrator_agents::{
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::identity::{plan_process_reconciliation, ProcessClassification};
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{
-    capture_process_identity, reconcile_processes, scheduling_may_resume, ProcessAction,
-    ProcessSubject, ReconciliationResolution, RecordedProcess,
+    capture_process_identity, observe_process, reconcile_processes, scheduling_may_resume,
+    ProcessAction, ProcessSubject, ReconciliationResolution, RecordedProcess,
 };
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, DataDirectoryLock, DataDirectoryLockError, SqliteStore,
@@ -467,6 +468,15 @@ pub async fn run_task(
         Uuid::new_v4().simple().to_string(),
     )
     .map_err(|error| format!("cannot create cancellation owner for {task_id}: {error}"))?;
+    let cancellation_owner = match capture_process_identity(std::process::id()) {
+        Ok(identity) => cancellation_owner.with_process_identity(identity),
+        Err(error) => {
+            eprintln!(
+                "process identity unavailable for cancellation owner of task {task_id}: {error}"
+            );
+            cancellation_owner
+        }
+    };
     if let Err(registration_error) = store.register_cancellation_owner(&cancellation_owner) {
         let mut handle = handle;
         let cancel_error = handle.cancel().await.err().map(|error| error.to_string());
@@ -1061,11 +1071,12 @@ pub fn inspect_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
 }
 
 /// Requests cancellation from the run process that owns the live agent handle.
-/// The request remains pending until that owner cancels and reaps the process.
+/// Reconciliation fails the request if that exact owner process has exited.
 pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     validate_task_id(task_id)?;
     let _lock = acquire_data_directory_lock(data_dir)?;
     let store = open_store(data_dir)?;
+    let _unresolved_owners = reconcile_cancellation_owners(&store)?;
     let task = store
         .get(task_id)
         .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
@@ -1099,10 +1110,19 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
             attempt.id, attempt.state
         ));
     }
-    match store
+    let status = store
         .request_cancellation_for_task(task_id)
-        .map_err(|error| format!("cannot request cancellation for task {task_id}: {error}"))?
-    {
+        .map_err(|error| format!("cannot request cancellation for task {task_id}: {error}"))?;
+    let status = if status == CancellationStatus::Pending {
+        let _unresolved_owners = reconcile_cancellation_owners(&store)?;
+        store
+            .cancellation_status_for_task(task_id)
+            .map_err(|error| format!("cannot recheck cancellation for task {task_id}: {error}"))?
+            .unwrap_or(status)
+    } else {
+        status
+    };
+    match status {
         CancellationStatus::Pending => {
             println!(
                 "cancellation pending for task {task_id}; the run owner has not confirmed \
@@ -1631,6 +1651,11 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
         }
     }
 
+    for blocker in reconcile_cancellation_owners(store)? {
+        other_records.push(ReconciliationResolution::Unresolved);
+        blockers.push(blocker);
+    }
+
     if scheduling_may_resume(&decisions, &other_records) {
         return Ok(());
     }
@@ -1641,6 +1666,53 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
         "cannot schedule while reconciliation records are unresolved: {}",
         blockers.join("; ")
     ))
+}
+
+fn reconcile_cancellation_owners(store: &SqliteStore) -> Result<Vec<String>, String> {
+    let owners = store
+        .open_cancellation_owners()
+        .map_err(|error| format!("cannot list cancellation owners for reconciliation: {error}"))?;
+    let mut blockers = Vec::new();
+    for owner in owners {
+        let task = store.get(&owner.task_id).map_err(|error| {
+            format!(
+                "cannot load task {} for cancellation owner reconciliation: {error}",
+                owner.task_id
+            )
+        })?;
+        let identity = owner.process_identity();
+        let classification = identity.map(|identity| {
+            plan_process_reconciliation(identity, observe_process(identity)).classification
+        });
+        match classification {
+            Some(ProcessClassification::Exited) => store
+                .retire_stale_cancellation_owner(&owner)
+                .map_err(|error| {
+                    format!(
+                        "cannot retire stale cancellation owner for task {} session {}: {error}",
+                        owner.task_id, owner.session_id
+                    )
+                })?,
+            Some(ProcessClassification::Alive) if task.state != TaskState::Running => {
+                blockers.push(format!(
+                    "cancellation owner for task {} session {} is still alive while task is {:?}",
+                    owner.task_id, owner.session_id, task.state
+                ));
+            }
+            Some(ProcessClassification::IdentityMismatch | ProcessClassification::Unknown)
+            | None
+                if task.state != TaskState::Running =>
+            {
+                blockers.push(format!(
+                    "cancellation owner for task {} session {} has unresolved process identity; \
+                     refusing to retry or replace the owner",
+                    owner.task_id, owner.session_id
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(blockers)
 }
 
 fn read_metadata(data_dir: &Path, task_id: &str) -> Result<TaskMetadata, String> {

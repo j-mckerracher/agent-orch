@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
-use orchestrator_core::task::{AttemptState, SessionState, TaskState};
-use orchestrator_store::{SqliteStore, Store};
+use orchestrator_core::task::{AttemptState, AuditEvent, SessionState, TaskState};
+use orchestrator_store::{CancellationStatus, SqliteStore, Store, StoreError};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -98,6 +98,19 @@ fn run_command(fixture: &Fixture, task_id: &str, objective: &str) -> Command {
         .arg("main")
         .arg("--agent-program")
         .arg(&fixture.agent)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    command
+}
+
+fn cancel_command(fixture: &Fixture, task_id: &str) -> Command {
+    let mut command = Command::new(CLI);
+    command
+        .arg("--data-dir")
+        .arg(&fixture.data)
+        .arg("cancel")
+        .arg(task_id)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
@@ -269,6 +282,56 @@ fn checksum(bytes: &[u8]) -> u64 {
 
 #[cfg(feature = "fault-injection")]
 #[test]
+fn cancel_leaves_a_live_run_owner_active() {
+    let fixture = Fixture::new(BARRIER_AGENT);
+    let barrier = fixture._root.path().join("live-owner-barrier");
+    let ready = fixture._root.path().join("live-owner-ready");
+    let mut command = run_command(&fixture, "live-owner-task", "wait for cancellation");
+    command
+        .env("M2_TASK_CONTENT", "live owner bytes\n")
+        .env("M2_TASK_FILE", "live-owner.txt")
+        .env("M2_READY_MARKER", &ready)
+        .env("M2_BARRIER_FILE", &barrier);
+    let mut run = ChildGuard::spawn(command);
+    wait_for_path(&ready);
+
+    let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
+    let record = store.get("live-owner-task").unwrap();
+    let identity = store
+        .session_identity("live-owner-task", &record.sessions[0].id)
+        .unwrap()
+        .expect("live agent process identity is recorded");
+    run.process_group = identity.process_group;
+
+    let cancel_output = run_bounded(cancel_command(&fixture, "live-owner-task"));
+    assert_success(&cancel_output);
+    assert!(
+        String::from_utf8_lossy(&cancel_output.stdout).contains("cancellation pending"),
+        "unexpected cancel output: {}",
+        String::from_utf8_lossy(&cancel_output.stdout)
+    );
+    let run_output = run
+        .wait()
+        .expect("run owner observes and confirms cancellation");
+    assert_eq!(run_output.status.code(), Some(130));
+    if let Some(group) = identity.process_group {
+        wait_for_process_group_exit(group);
+    }
+    run.process_group = None;
+    assert_eq!(
+        store.get("live-owner-task").unwrap().state,
+        TaskState::Cancelled
+    );
+    assert_eq!(
+        store
+            .cancellation_status_for_task("live-owner-task")
+            .unwrap(),
+        Some(CancellationStatus::Confirmed)
+    );
+}
+
+#[cfg(feature = "fault-injection")]
+#[test]
 fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
     let fixture = Fixture::new(BARRIER_AGENT);
     let crash_ready = fixture._root.path().join("crash-ready");
@@ -288,6 +351,10 @@ fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
     wait_for_path(&crash_ready);
 
     let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
+    assert_eq!(
+        store.request_cancellation_for_task("crashed-task").unwrap(),
+        CancellationStatus::Pending
+    );
     let crashed = store.get("crashed-task").unwrap();
     let identity = store
         .session_identity("crashed-task", &crashed.sessions[0].id)
@@ -338,6 +405,18 @@ fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
         orchestrator_runtime::reconcile::ProcessAction::MarkInterrupted
     );
 
+    let cancel_output = run_bounded(cancel_command(&fixture, "crashed-task"));
+    assert!(!cancel_output.status.success());
+    assert!(
+        String::from_utf8_lossy(&cancel_output.stderr).contains("no active cancellation owner"),
+        "unexpected cancel error: {}",
+        String::from_utf8_lossy(&cancel_output.stderr)
+    );
+    assert_eq!(
+        store.cancellation_status_for_task("crashed-task").unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+
     let recovery_barrier = fixture._root.path().join("recovery-release");
     let recovery_ready = fixture._root.path().join("recovery-ready");
     fs::write(&recovery_barrier, b"release\n").unwrap();
@@ -358,6 +437,15 @@ fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
     assert_eq!(recovered.attempts.len(), 1);
     assert_eq!(recovered.attempts[0].state, AttemptState::Failed);
     assert_eq!(recovered.sessions[0].state, SessionState::Exited);
+    assert_eq!(
+        store.cancellation_status_for_task("crashed-task").unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert!(!recovered.events.contains(&AuditEvent::TaskCancelled));
+    assert!(matches!(
+        store.request_cancellation_for_task("crashed-task"),
+        Err(StoreError::NoActiveCancellationOwner { .. })
+    ));
     let after = fs::read(&changed_file).expect("uncommitted file survived reconciliation");
     assert_eq!(checksum(&after), before_checksum);
     assert_eq!(after, before);

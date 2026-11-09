@@ -1,0 +1,179 @@
+uow_id: "M1-04"
+status: "complete"
+implementation_summary: >
+  Persisted each run owner's process identity beside its generation-bound
+  cancellation record. CLI cancellation and scheduling reconciliation now
+  retire only an owner whose exact identity is classified Exited, atomically
+  fail its pending request, and close that generation. Registration rejects a
+  successor while any prior owner generation remains open.
+
+librarian_queries: []
+librarian_exploration_summaries: []
+
+library_research:
+  feature_needed: "Exact process identity capture and stale cancellation-owner reconciliation"
+  libraries_checked:
+    - "orchestrator_runtime::reconcile"
+    - "orchestrator_core::identity"
+    - "SQLite idempotency_records"
+  documentation_consulted: >
+    Local API documentation and source for process reconciliation, process
+    identity classification, and migration 0006. No external HTTP requests.
+  existing_solution_found: true
+  solution_used: >
+    Reused the existing ProcessIdentity observation/classification APIs and
+    idempotency table. No new dependency or database migration was introduced.
+
+files_modified:
+  - path: "crates/orchestrator-store/src/sqlite_ops.rs"
+    change_type: "modified"
+    change_summary: >
+      Persisted owner identity, listed open generations, prevented multiple
+      open generations for one task, and added atomic stale-generation
+      retirement that fails only that generation's pending request.
+  - path: "crates/orchestrator-store/tests/cancellation_owner.rs"
+    change_type: "modified"
+    change_summary: >
+      Added coverage for identity mismatch and absence, lifecycle/audit
+      preservation, retry gating, and old-generation isolation.
+  - path: "crates/orchestrator-cli/src/workflow.rs"
+    change_type: "modified"
+    change_summary: >
+      Captured the run owner's identity and reconciled stale owners before
+      scheduling and cancellation, including a post-request liveness recheck.
+  - path: "crates/orchestrator-cli/tests/recovery.rs"
+    change_type: "modified"
+    change_summary: >
+      Extended the SIGKILL recovery scenario to assert stale cancellation
+      resolution and added a live-owner cancellation control.
+  - path: "agent-context/M1-04/impl_report.yaml"
+    change_type: "created"
+    change_summary: "Recorded implementation scope, validation, and known risks."
+
+definition_of_done_status:
+  "Independently reproduce the candidate-induced recovery gap":
+    met: true
+    evidence: >
+      Before implementation, the extended SIGKILL test observed
+      Some(Pending) instead of Some(Failed) after recovery.
+  "Retire only an owner proven exited by exact process identity":
+    met: true
+    evidence: >
+      CLI reconciliation uses the stored ProcessIdentity and existing
+      process planner; only ProcessClassification::Exited calls the store
+      retirement operation. Identity mismatch and missing identity remain
+      unresolved.
+  "Resolve pending requests and close only the stale generation":
+    met: true
+    evidence: >
+      Store retirement updates the request receipt and owner row in one
+      transaction, keyed and verified by the owner generation. Retry tests
+      prove registration is rejected before retirement and succeeds after it.
+  "Preserve task, attempt, session, and audit outcomes":
+    met: true
+    evidence: >
+      Store tests verify stale-owner retirement does not alter lifecycle
+      records or add TaskCancelled. The CLI crash test verifies normal process
+      reconciliation still records the failed attempt and exited session.
+  "Prevent an old generation from affecting its successor":
+    met: true
+    evidence: >
+      Re-retiring and confirming the old generation after successor
+      registration leaves the successor request pending and its owner open.
+  "Add focused crash, reconciliation, retry, and stale-generation tests":
+    met: true
+    evidence: >
+      Added store identity/retry tests and CLI live-owner and SIGKILL recovery
+      integration coverage.
+
+commands_executed:
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-cli --features fault-injection --test recovery
+      sigkill_reconciles_dead_task_while_parallel_task_completes -- --exact
+      --nocapture (before implementation)
+    result: "pass"
+    output_summary: "Existing crash-recovery baseline passed before adding the cancellation assertion."
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-cli --features fault-injection --test recovery
+      sigkill_reconciles_dead_task_while_parallel_task_completes -- --exact
+      --nocapture (with regression assertion, before implementation)
+    result: "fail"
+    output_summary: >
+      Expected red reproduction: observed Some(Pending), expected
+      Some(Failed), after the run-owner process group was killed.
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-store --test cancellation_owner (initial compile attempt)
+    result: "fail"
+    output_summary: >
+      Initial implementation compile error called .ok() on Option; corrected
+      the task-id parser before rerunning tests.
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-cli --features fault-injection --test recovery
+      sigkill_reconciles_dead_task_while_parallel_task_completes -- --exact
+      --nocapture (first run with cancel assertion)
+    result: "fail"
+    output_summary: >
+      The test helper initially passed unsupported --task-id to cancel; changed
+      it to the positional TASK_ID argument.
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-store
+    result: "pass"
+    output_summary: "71 passed, 1 ignored; includes 9 cancellation-owner tests."
+  - command: >
+      cargo test --locked --manifest-path <task-worktree>/Cargo.toml
+      -p orchestrator-cli --features fault-injection
+    result: "pass"
+    output_summary: >
+      36 tests passed across CLI unit, CLI integration, multi-task, and
+      recovery suites.
+  - command: >
+      cargo check --locked --manifest-path <task-worktree>/Cargo.toml
+      --workspace
+    result: "pass"
+    output_summary: "Complete Cargo workspace checked successfully."
+  - command: "cargo fmt --manifest-path <task-worktree>/Cargo.toml --all -- --check"
+    result: "fail"
+    output_summary: >
+      Initial workspace-wide check found formatting drift in the changed
+      crates and unrelated agents, core, git, and runtime files. The changed
+      crates were formatted and their package-scoped check now passes; no
+      unrelated files were changed.
+  - command: >
+      cargo fmt --manifest-path <task-worktree>/Cargo.toml
+      --package orchestrator-store --package orchestrator-cli -- --check
+      && git diff --check
+    result: "pass"
+    output_summary: "Changed crates are formatted and the patch has no whitespace errors."
+
+risks_identified:
+  - type: "tech_debt"
+    description: >
+      The existing runtime identity capture is unsupported on Windows, and
+      owner rows created before this change have no recorded owner identity.
+      Those rows are not retired from a PID alone. If a task is no longer
+      Running, unresolved owners block scheduling; for a Running task with
+      unavailable identity, a cancellation request may remain Pending.
+    mitigation: >
+      Preserve the owner and request when identity is missing, mismatched, or
+      unknown. A separate runtime change is needed to capture the owner process
+      creation/start identity and report Alive, Exited, or Unknown while
+      detecting PID reuse; no runtime, daemon, or agent-adapter files were
+      changed here.
+    requires_escalation: false
+
+notes: >
+  Work was limited to store cancellation-owner/recovery code and tests plus
+  CLI stale-owner reconciliation and directly related tests. The coordinator
+  checkout, daemon, runtime, agent-adapter, and other worktrees were not
+  modified. No database migration or dependency change was needed.
+
+revision_history:
+  - attempt: 1
+    feedback_addressed: >
+      Addressed the independently reviewed gap by persisting exact owner
+      identity, resolving stale pending requests, and isolating generations.

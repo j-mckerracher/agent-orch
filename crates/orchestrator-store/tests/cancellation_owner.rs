@@ -4,8 +4,11 @@ use std::thread;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::identity::{ProcessIdentity, ProcessPlatform};
 use orchestrator_core::records::Project;
-use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
+use orchestrator_core::task::{
+    Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent, TaskState,
+};
 use orchestrator_store::{CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError};
 
 fn running_task(store: &SqliteStore, task_id: &str, register_owner: bool) -> CancellationOwner {
@@ -88,6 +91,74 @@ fn assert_running(store: &SqliteStore, task_id: &str) {
     assert_eq!(record.state, TaskState::Running);
     assert_eq!(record.attempts[0].state, AttemptState::Running);
     assert_eq!(record.sessions[0].state, SessionState::Running);
+}
+
+fn process_identity(pid: u32, start_time_micros: u64) -> ProcessIdentity {
+    ProcessIdentity {
+        pid,
+        process_group: Some(pid),
+        start_time_micros: Some(start_time_micros),
+        platform: ProcessPlatform::MacOS,
+    }
+}
+
+fn fail_running_owner_task(store: &SqliteStore, owner: &CancellationOwner) {
+    store
+        .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+        .unwrap();
+    store
+        .update_attempt_state(&owner.task_id, &owner.attempt_id, AttemptState::Failed)
+        .unwrap();
+    store
+        .transition(&owner.task_id, TaskEvent::ExecutionFailed)
+        .unwrap();
+}
+
+fn retry_owner(store: &SqliteStore, task_id: &str, identity: ProcessIdentity) -> CancellationOwner {
+    store
+        .transition(task_id, TaskEvent::RetryRequested)
+        .unwrap();
+    let attempt_id = format!("{task_id}-attempt-2");
+    let session_id = format!("{task_id}-session-2");
+    store
+        .add_attempt(
+            task_id,
+            &Attempt {
+                id: attempt_id.clone(),
+                task_id: task_id.into(),
+                attempt_number: 2,
+                state: AttemptState::Pending,
+            },
+        )
+        .unwrap();
+    store
+        .transition(task_id, TaskEvent::ExecutionStarted)
+        .unwrap();
+    store
+        .update_attempt_state(task_id, &attempt_id, AttemptState::Running)
+        .unwrap();
+    store
+        .add_session(
+            task_id,
+            &Session {
+                id: session_id.clone(),
+                attempt_id: attempt_id.clone(),
+                adapter: "codex".into(),
+                state: SessionState::Spawning,
+            },
+        )
+        .unwrap();
+    store
+        .update_session_state(task_id, &session_id, SessionState::Running)
+        .unwrap();
+    CancellationOwner::new(
+        task_id.into(),
+        attempt_id,
+        session_id,
+        "fedcba9876543210fedcba9876543210".into(),
+    )
+    .unwrap()
+    .with_process_identity(identity)
 }
 
 #[test]
@@ -223,6 +294,143 @@ fn crashed_owner_leaves_durable_request_pending_not_cancelled() {
         Err(StoreError::CancellationConflict { .. })
     ));
     assert_running(&reopened, "cancel-owner-crash");
+}
+
+#[test]
+fn stale_owner_recovery_resolves_request_without_changing_lifecycle() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let owner = running_task(&store, "cancel-stale-owner", false)
+        .with_process_identity(process_identity(101, 10_000));
+    store.register_cancellation_owner(&owner).unwrap();
+    assert_eq!(
+        store
+            .request_cancellation_for_task("cancel-stale-owner")
+            .unwrap(),
+        CancellationStatus::Pending
+    );
+    fail_running_owner_task(&store, &owner);
+
+    store.retire_stale_cancellation_owner(&owner).unwrap();
+
+    let record = store.get("cancel-stale-owner").unwrap();
+    assert_eq!(record.state, TaskState::Failed);
+    assert_eq!(record.attempts[0].state, AttemptState::Failed);
+    assert_eq!(record.sessions[0].state, SessionState::Exited);
+    assert!(!record.events.contains(&AuditEvent::TaskCancelled));
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert_eq!(
+        store
+            .cancellation_status_for_task("cancel-stale-owner")
+            .unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert!(store.open_cancellation_owners().unwrap().is_empty());
+}
+
+#[test]
+fn stale_owner_recovery_requires_the_recorded_process_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let identity = process_identity(201, 20_000);
+    let owner =
+        running_task(&store, "cancel-identity-mismatch", false).with_process_identity(identity);
+    store.register_cancellation_owner(&owner).unwrap();
+    store
+        .request_cancellation_for_task("cancel-identity-mismatch")
+        .unwrap();
+    let wrong_identity = owner
+        .clone()
+        .with_process_identity(process_identity(201, 21_000));
+
+    assert!(matches!(
+        store.retire_stale_cancellation_owner(&wrong_identity),
+        Err(StoreError::CancellationConflict { .. })
+    ));
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Pending)
+    );
+    assert_eq!(
+        store.open_cancellation_owners().unwrap()[0].process_identity(),
+        Some(identity)
+    );
+    assert_running(&store, "cancel-identity-mismatch");
+}
+
+#[test]
+fn stale_owner_without_process_identity_is_not_retired() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let owner = running_task(&store, "cancel-unknown-owner", true);
+    store
+        .request_cancellation_for_task("cancel-unknown-owner")
+        .unwrap();
+
+    assert!(matches!(
+        store.retire_stale_cancellation_owner(&owner),
+        Err(StoreError::CancellationConflict { .. })
+    ));
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(CancellationStatus::Pending)
+    );
+    assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
+    assert_running(&store, "cancel-unknown-owner");
+}
+
+#[test]
+fn stale_generation_is_retired_before_retry_owner_can_register() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    let first_identity = process_identity(301, 30_000);
+    let first_owner =
+        running_task(&store, "cancel-retry", false).with_process_identity(first_identity);
+    store.register_cancellation_owner(&first_owner).unwrap();
+    store.request_cancellation_for_task("cancel-retry").unwrap();
+    fail_running_owner_task(&store, &first_owner);
+
+    let second_identity = process_identity(302, 31_000);
+    let second_owner = retry_owner(&store, "cancel-retry", second_identity);
+    assert!(matches!(
+        store.register_cancellation_owner(&second_owner),
+        Err(StoreError::CancellationConflict { .. })
+    ));
+
+    store.retire_stale_cancellation_owner(&first_owner).unwrap();
+    store.register_cancellation_owner(&second_owner).unwrap();
+    store.retire_stale_cancellation_owner(&first_owner).unwrap();
+    assert!(matches!(
+        store.confirm_cancellation(&first_owner),
+        Err(StoreError::NoActiveCancellationOwner { .. })
+    ));
+
+    assert_eq!(
+        store.request_cancellation_for_task("cancel-retry").unwrap(),
+        CancellationStatus::Pending
+    );
+    assert_eq!(
+        store.cancellation_request(&first_owner).unwrap(),
+        Some(CancellationStatus::Failed)
+    );
+    assert_eq!(
+        store.cancellation_request(&second_owner).unwrap(),
+        Some(CancellationStatus::Pending)
+    );
+    let open_owners = store.open_cancellation_owners().unwrap();
+    assert_eq!(open_owners.len(), 1);
+    assert_eq!(open_owners[0].session_id, second_owner.session_id);
+    assert_eq!(open_owners[0].process_identity(), Some(second_identity));
+    let record = store.get("cancel-retry").unwrap();
+    assert_eq!(record.state, TaskState::Running);
+    assert_eq!(record.attempts[0].state, AttemptState::Failed);
+    assert_eq!(record.attempts[1].state, AttemptState::Running);
+    assert_eq!(record.sessions[0].state, SessionState::Exited);
+    assert_eq!(record.sessions[1].state, SessionState::Running);
+    assert!(!record.events.contains(&AuditEvent::TaskCancelled));
 }
 
 #[test]
