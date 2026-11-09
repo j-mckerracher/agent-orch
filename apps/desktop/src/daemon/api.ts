@@ -8,12 +8,19 @@
 import { DaemonError } from "./errors";
 import type { DaemonSession } from "./session";
 import type {
+  AgentCapabilityEntry,
   Approval,
+  CoordinatorEntry,
+  CoordinatorPage,
   DaemonHealth,
   DeliveryRequest,
   DeliveryResult,
   ProjectRow,
   ResolveDecision,
+  ReviewApprovalRequest,
+  ReviewApprovalResult,
+  ReviewChangesResult,
+  ReviewEvidenceWire,
   SessionEntry,
   SessionEventsPage,
   TaskRecord,
@@ -128,6 +135,75 @@ export class DaemonApi {
       approval_id: realId(request.approval_id),
       verification_run_id: realId(request.verification_run_id),
       ...(request.workspace_id === undefined ? {} : { workspace_id: realId(request.workspace_id) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Legal only for a Failed or VerificationFailed task within its retry or repair budget. */
+  async tasksRetry(taskId: string, idempotencyKey: string): Promise<TaskRecord> {
+    return this.session.request("tasks.retry", {
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  agentsCapabilities(): Promise<AgentCapabilityEntry[]> {
+    return this.session.request("agents.capabilities");
+  }
+
+  /** Records a user message; the daemon never acts on it. */
+  async coordinatorSendMessage(projectId: string, text: string, idempotencyKey: string): Promise<CoordinatorEntry> {
+    return this.session.request("coordinator.send_message", {
+      project_id: realId(projectId),
+      text,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Validates a proposal (a JSON string) without creating tasks or approvals. */
+  async coordinatorPropose(projectId: string, proposal: string, idempotencyKey: string): Promise<CoordinatorEntry> {
+    return this.session.request("coordinator.propose", {
+      project_id: realId(projectId),
+      proposal,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async coordinatorGet(projectId: string, afterSequence?: number): Promise<CoordinatorPage> {
+    return this.session.request("coordinator.get", {
+      project_id: realId(projectId),
+      ...(afterSequence === undefined ? {} : { after_sequence: afterSequence }),
+    });
+  }
+
+  async reviewRequestApproval(request: ReviewApprovalRequest, idempotencyKey: string): Promise<ReviewApprovalResult> {
+    return this.session.request("review.request_approval", {
+      ...request,
+      task_id: realId(request.task_id),
+      verification_run_id: realId(request.verification_run_id),
+      ...(request.workspace_id === undefined ? {} : { workspace_id: realId(request.workspace_id) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async reviewEvidence(taskId: string, approvalId?: string, path?: string): Promise<ReviewEvidenceWire> {
+    return this.session.request("review.evidence", {
+      task_id: realId(taskId),
+      ...(approvalId === undefined ? {} : { approval_id: realId(approvalId) }),
+      ...(path === undefined ? {} : { path }),
+    });
+  }
+
+  async reviewRequestChanges(
+    approvalId: string,
+    candidateCommit: string,
+    feedback: string,
+    idempotencyKey: string,
+  ): Promise<ReviewChangesResult> {
+    return this.session.request("review.request_changes", {
+      approval_id: realId(approvalId),
+      candidate_commit: candidateCommit,
+      feedback,
       idempotency_key: idempotencyKey,
     });
   }

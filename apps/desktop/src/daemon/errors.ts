@@ -2,7 +2,7 @@
  * Daemon and transport failures as one typed error.
  *
  * Codes come from `crates/orchestrator-ipc` (handshake -32001..-32004,
- * -32601, -32600) and `RpcError` (-32602, -32010..-32017, -32603). Messages
+ * -32601, -32600) and `RpcError` (-32602, -32010..-32018, -32603). Messages
  * from the daemon are sanitized and path-free; the UI still never renders a
  * token, which the webview does not hold.
  */
@@ -23,6 +23,7 @@ export type DaemonErrorKind =
   | "slow-consumer"
   | "result-too-large"
   | "replay-gap"
+  | "epoch-mismatch"
   | "internal"
   | "timeout"
   | "disconnected"
@@ -44,6 +45,7 @@ const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
   [-32015]: "slow-consumer",
   [-32016]: "result-too-large",
   [-32017]: "replay-gap",
+  [-32018]: "epoch-mismatch",
   [-32603]: "internal",
 };
 
@@ -157,6 +159,10 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   },
   "replay-gap": {
     reason: "The saved event position is no longer valid.",
+    nextStep: "History is incomplete; the client starts a fresh baseline.",
+  },
+  "epoch-mismatch": {
+    reason: "The saved event position belongs to a different daemon store.",
     nextStep: "History is incomplete; the client starts a fresh baseline.",
   },
   internal: {

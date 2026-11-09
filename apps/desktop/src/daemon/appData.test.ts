@@ -88,7 +88,7 @@ describe("ConnectionManager", () => {
     await until(() => connection.getSnapshot().generation > generation);
     expect(status(connection)).toBe("connected");
     expect(connection.getSnapshot().resumedFrom).toBe(2);
-    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 2 });
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 2, epoch: "epoch-1" });
     fake.emit(mkEvent(3, "t", null));
     await until(() => connection.getSnapshot().lastSequence === 3);
   });
@@ -104,7 +104,7 @@ describe("ConnectionManager", () => {
     connection.reconnect();
     await until(() => connection.getSnapshot().generation > generation && status(connection) === "connected");
     expect(connection.getSnapshot().resumedFrom).toBe(2);
-    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 2 });
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 2, epoch: "epoch-1" });
 
     generation = connection.getSnapshot().generation;
     connection.reconnect({ fresh: true });
@@ -137,6 +137,60 @@ describe("ConnectionManager", () => {
     await until(() => status(connection) === "connected");
     expect(connection.getSnapshot().history.reason).toBe("replay-gap");
     expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({});
+  });
+
+  it("resumes with the journal epoch and the cursor", async () => {
+    const fake = new FakeDaemon();
+    fake.events = [mkEvent(1, "t", null)];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => connection.getSnapshot().lastSequence === 1);
+    expect(connection.getSnapshot().journalEpoch).toBe("epoch-1");
+    fake.drop();
+    await until(() => fake.callsTo("events.subscribe").length === 2);
+    await until(() => status(connection) === "connected");
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 1, epoch: "epoch-1" });
+    expect(connection.getSnapshot().history.incomplete).toBe(false);
+  });
+
+  it("restarts from a fresh baseline on epoch-mismatch instead of resuming silently", async () => {
+    const fake = new FakeDaemon();
+    fake.events = [mkEvent(1, "t", null)];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => connection.getSnapshot().lastSequence === 1);
+    // The daemon restarts on a replaced store: new epoch, same-looking cursor.
+    fake.journalEpoch = "epoch-2";
+    fake.drop();
+    await until(() => connection.getSnapshot().history.reason === "epoch-mismatch");
+    await until(() => status(connection) === "connected");
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({});
+    expect(connection.getSnapshot().journalEpoch).toBe("epoch-2");
+    expect(connection.getSnapshot().history.incomplete).toBe(true);
+  });
+
+  it("treats a stream-level epoch-mismatch like a replay gap", async () => {
+    const fake = new FakeDaemon();
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    fake.pushStreamError(-32018, "epoch");
+    await until(() => connection.getSnapshot().history.reason === "epoch-mismatch");
+    await until(() => status(connection) === "connected");
+    expect(connection.getSnapshot().lastSequence).toBe(0);
+  });
+
+  it("works against a daemon that does not advertise an epoch", async () => {
+    const fake = new FakeDaemon();
+    fake.journalEpoch = null;
+    fake.events = [mkEvent(1, "t", null)];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => connection.getSnapshot().lastSequence === 1);
+    expect(connection.getSnapshot().journalEpoch).toBeNull();
+    fake.drop();
+    await until(() => fake.callsTo("events.subscribe").length === 2);
+    expect(fake.callsTo("events.subscribe").at(-1)!.params).toEqual({ after_sequence: 1 });
   });
 
   it("marks history incomplete on a slow-consumer stream error and reconnects", async () => {

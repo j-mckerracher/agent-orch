@@ -124,15 +124,23 @@ export class FakeDaemon implements DaemonConnector {
   /** Makes `sessions.events` ignore `after_sequence`, as an overlapping page would. */
   ignoreAfterSequence = false;
   capabilitiesOverride: Capability[] | null = null;
+  /** Journal identity advertised in the Welcome; null omits it, as an older daemon would. */
+  journalEpoch: string | null = "epoch-1";
   openFailures: DaemonError[] = [];
   openError: DaemonError | null = null;
   calls: Array<{ method: string; params: unknown }> = [];
   channels: FakeChannel[] = [];
+  private stubs = new Map<string, (params: Record<string, unknown>) => unknown>();
   private failures = new Map<string, Failure[]>();
   private delays = new Map<string, number[]>();
   private submitted = new Map<string, TaskRecord>();
   private nextSub = 1;
   private nextTask = 1;
+
+  /** Answers a method with a fixed result or a computed one; use failNext for error replies. */
+  stub(method: string, result: unknown | ((params: Record<string, unknown>) => unknown)): void {
+    this.stubs.set(method, typeof result === "function" ? (result as (p: Record<string, unknown>) => unknown) : () => result);
+  }
 
   failNext(method: string, failure: Failure, times = 1): void {
     const list = this.failures.get(method) ?? [];
@@ -158,7 +166,11 @@ export class FakeDaemon implements DaemonConnector {
     this.channels.push(channel);
     return {
       channel,
-      welcome: { version: 1, capabilities: this.capabilitiesOverride ?? [...requested] },
+      welcome: {
+        version: 1,
+        capabilities: this.capabilitiesOverride ?? [...requested],
+        ...(this.journalEpoch === null ? {} : { journal_epoch: this.journalEpoch }),
+      },
     };
   }
 
@@ -280,17 +292,27 @@ export class FakeDaemon implements DaemonConnector {
         return reply(this.approvals);
       case "events.subscribe": {
         if (channel.subscriptionId) return fail(-32011, "already subscribed");
+        if (typeof params.epoch === "string" && this.journalEpoch !== null && params.epoch !== this.journalEpoch) {
+          return fail(-32018, "journal epoch mismatch");
+        }
         const after = typeof params.after_sequence === "number" ? params.after_sequence : 0;
         const id = `sub-${this.nextSub++}`;
         channel.subscriptionId = id;
-        reply({ subscription_id: id, after_sequence: after });
+        reply({
+          subscription_id: id,
+          after_sequence: after,
+          ...(this.journalEpoch === null ? {} : { epoch: this.journalEpoch }),
+        });
         for (const event of this.events.filter((e) => e.sequence > after)) {
           channel.deliver({ jsonrpc: "2.0", method: "events.event", params: { subscription_id: id, event } });
         }
         return;
       }
-      default:
+      default: {
+        const stub = this.stubs.get(message.method);
+        if (stub) return reply(stub(params));
         return fail(-32601, `method unavailable: ${message.method}`);
+      }
     }
   }
 }

@@ -57,6 +57,14 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "approvals.resolve": "approvals",
   "workspaces.diff": "workspaces",
   "delivery.request": "delivery",
+  "tasks.retry": "tasks",
+  "agents.capabilities": "agents",
+  "coordinator.send_message": "coordinator",
+  "coordinator.propose": "coordinator",
+  "coordinator.get": "coordinator",
+  "review.request_approval": "review",
+  "review.evidence": "review",
+  "review.request_changes": "review",
 };
 
 interface Pending {
@@ -120,20 +128,18 @@ export class DaemonSession {
    * subscription id is recorded synchronously with the response so notifications
    * delivered in the same tick are not dropped.
    */
-  async subscribe(afterSequence: number, handlers: StreamHandlers): Promise<void> {
+  async subscribe(afterSequence: number, handlers: StreamHandlers, epoch?: string): Promise<void> {
     if (this.subscription) throw new DaemonError("conflict", "already subscribed", -32011);
     this.handlers = handlers;
     const pendingCursor = afterSequence;
-    await this.send(
-      "events.subscribe",
-      afterSequence > 0 ? { after_sequence: afterSequence } : {},
-      this.requestTimeoutMs,
-      (result) => {
-        const id = (result as { subscription_id?: unknown } | null)?.subscription_id;
-        if (typeof id !== "string") throw new DaemonError("protocol", "malformed subscribe result");
-        this.subscription = { id, lastSequence: pendingCursor };
-      },
-    );
+    const params: Record<string, unknown> = {};
+    if (afterSequence > 0) params.after_sequence = afterSequence;
+    if (afterSequence > 0 && epoch) params.epoch = epoch;
+    await this.send("events.subscribe", params, this.requestTimeoutMs, (result) => {
+      const id = (result as { subscription_id?: unknown } | null)?.subscription_id;
+      if (typeof id !== "string") throw new DaemonError("protocol", "malformed subscribe result");
+      this.subscription = { id, lastSequence: pendingCursor };
+    });
   }
 
   private send(

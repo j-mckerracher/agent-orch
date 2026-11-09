@@ -15,7 +15,10 @@ export type Capability =
   | "events"
   | "approvals"
   | "workspaces"
-  | "delivery";
+  | "delivery"
+  | "agents"
+  | "coordinator"
+  | "review";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -26,23 +29,19 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "approvals",
   "workspaces",
   "delivery",
+  "agents",
+  "coordinator",
+  "review",
 ];
 
-/** The capabilities the UI requests: M5-03 screens plus the S6 review ones (workspaces, delivery). */
-export const M5_03_CAPABILITIES: readonly Capability[] = [
-  "health",
-  "projects",
-  "tasks",
-  "sessions",
-  "events",
-  "approvals",
-  "workspaces",
-  "delivery",
-];
+/** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
+export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
 
 export interface Welcome {
   version: number;
   capabilities: Capability[];
+  /** Names the durable journal; absent from daemons without a store epoch. */
+  journal_epoch?: string;
 }
 
 export type TaskState =
@@ -206,6 +205,145 @@ export interface DaemonHealth {
   package_version: string;
   uptime_seconds: number;
   data_directory: string;
+}
+
+/** `agents.capabilities` row (M5-02b). The flags are null when the agent was not detected. */
+export interface AgentCapabilityEntry {
+  agent: string;
+  installed: boolean;
+  launchable: boolean;
+  capabilities: {
+    streaming: boolean;
+    interactive_input: boolean;
+    structured_output: boolean;
+    cancellation: boolean;
+    session_resumption: boolean;
+    approvals: boolean;
+    model_selection: boolean;
+  } | null;
+}
+
+export interface ProposalTaskSummary {
+  id: string;
+  title: string;
+  dependencies: string[];
+  contract: Partial<TaskContract> & Record<string, unknown>;
+}
+
+export interface ProposalError {
+  code: string;
+  task_key: string | null;
+  message: string;
+}
+
+/** `validation` is always advisory: `authority` is "none" and no task or approval is created. */
+export type ProposalValidation =
+  | { status: "valid"; authority: "none"; objective: string; tasks: ProposalTaskSummary[] }
+  | { status: "invalid"; authority: "none"; errors: ProposalError[] };
+
+/** `coordinator.*` entry (M5-02c). */
+export interface CoordinatorEntry {
+  sequence: number;
+  id: string;
+  project_id: string;
+  kind: "message" | "proposal";
+  author: "user" | "coordinator";
+  body: string;
+  validation: ProposalValidation | null;
+  created_at: string;
+}
+
+export interface CoordinatorPage {
+  project_id: string;
+  entries: CoordinatorEntry[];
+  more: boolean;
+  next_after_sequence: number;
+}
+
+export type ReviewApprovalAction = "report_only" | "local_review";
+
+export interface ReviewApprovalRequest {
+  task_id: string;
+  workspace_id?: string;
+  verification_run_id: string;
+  action: ReviewApprovalAction;
+  target_ref?: string;
+}
+
+export interface ReviewApprovalSummary {
+  id: string;
+  state: "requested" | "approved" | "rejected" | "superseded";
+  kind: string;
+  task_id: string;
+  candidate_commit: string;
+}
+
+export interface ReviewApprovalResult {
+  approval: ReviewApprovalSummary;
+  action: {
+    action: ReviewApprovalAction;
+    destination: { project_id: string };
+    base_sha: string;
+    target_ref: string | null;
+    candidate_commit: string;
+  };
+  digest: string;
+  existing: boolean;
+}
+
+export interface ReviewVerificationRun {
+  id: string;
+  status: string;
+  commit: string;
+  started_at_ms: number | null;
+  finished_at_ms: number | null;
+  matches_candidate: boolean;
+  details: unknown;
+  details_truncated: boolean;
+}
+
+export interface ChangeRequestRecord {
+  id: string;
+  task_id: string;
+  approval_id: string;
+  candidate_commit: string;
+  feedback: string;
+  requested_by: string;
+  created_at: string;
+}
+
+/** `review.evidence` result. */
+export interface ReviewEvidenceWire {
+  task_id: string;
+  project_id: string;
+  state: "current" | "stale" | "missing";
+  reasons: string[];
+  review_state: "not_requested" | "awaiting_decision" | "changes_requested" | "approved" | "rejected" | "superseded";
+  decision_ready: boolean;
+  approval: ReviewApprovalSummary | null;
+  action: ReviewApprovalResult["action"] | null;
+  digest_relationship: "matches" | "mismatch" | "unavailable";
+  candidate: { commit: string | null; source: string; workspace_head: string | null };
+  workspace: { id: string; branch: string; base_commit: string } | null;
+  verification: ReviewVerificationRun[];
+  artifacts: Array<{ id: string; kind: string; checksum: string }>;
+  snapshot: {
+    base_commit: string;
+    candidate_commit: string;
+    files: unknown[];
+    files_truncated: boolean;
+    path: string | null;
+    diff: string | null;
+    diff_state: "complete" | "too_large" | "unavailable";
+    diff_bytes: number;
+  } | null;
+  change_request: ChangeRequestRecord | null;
+}
+
+export interface ReviewChangesResult {
+  change_request: ChangeRequestRecord;
+  review_state: "changes_requested";
+  approval_state: "requested";
 }
 
 /** Body of `tasks.submit` `contract`; the daemon assigns the task id. */

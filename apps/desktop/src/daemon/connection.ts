@@ -9,9 +9,11 @@
  *   gap, internal) marks history incomplete and reconnects;
  * - `replay-gap` restarts from a fresh baseline (cursor 0) because the daemon
  *   journal is behind the saved cursor;
- * - the cursor is held in memory only. M5-02 has no store epoch (known D3),
- *   so a cursor is never persisted or treated as proof of continuity across
- *   a daemon restart or store reset; D6 will supply real identity.
+ * - the Welcome names the journal (`journal_epoch`, M5-02b). A resume sends
+ *   that epoch with the cursor, and the daemon answers `epoch-mismatch`
+ *   (-32018) when the store was replaced; the client then restarts from a
+ *   fresh baseline instead of silently resuming against another journal;
+ * - the cursor and epoch are held in memory only.
  */
 import { DaemonApi } from "./api";
 import { DaemonError, asDaemonError, type DaemonErrorKind } from "./errors";
@@ -44,6 +46,8 @@ export interface ConnectionSnapshot {
   /** Increments each time a connection is fully established. */
   generation: number;
   failedAttempts: number;
+  /** Journal identity from the daemon Welcome; null before the first connection or when absent. */
+  journalEpoch: string | null;
 }
 
 export interface ConnectionOptions {
@@ -84,6 +88,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
       resumedFrom: null,
       generation: 0,
       failedAttempts: 0,
+      journalEpoch: null,
     });
     this.connector = options.connector;
     this.requested = options.capabilities ?? M5_03_CAPABILITIES;
@@ -137,7 +142,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     this.update({
       failedAttempts: 0,
       ...(options.fresh
-        ? { lastSequence: 0, history: { incomplete: false, reason: null } }
+        ? { lastSequence: 0, journalEpoch: null, history: { incomplete: false, reason: null } }
         : {}),
     });
     void this.establish();
@@ -168,25 +173,31 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
 
     this.session = session;
     const cursor = this.state_().lastSequence;
+    const savedEpoch = this.state_().journalEpoch ?? undefined;
     session.onClose((reason) => {
       if (epoch !== this.epoch || this.session !== session) return;
       this.session = null;
       this.fail(reason ?? new DaemonError("disconnected", "connection closed"));
     });
     try {
-      await session.subscribe(cursor, {
-        event: (event) => this.applyEvent(epoch, event),
-        error: (error) => this.streamEnded(epoch, session, error),
-      });
+      await session.subscribe(
+        cursor,
+        {
+          event: (event) => this.applyEvent(epoch, event),
+          error: (error) => this.streamEnded(epoch, session, error),
+        },
+        savedEpoch,
+      );
     } catch (error) {
       if (epoch !== this.epoch || this.session !== session) return;
       const failure = asDaemonError(error);
       this.session = null;
       session.close();
-      if (failure.kind === "replay-gap") {
+      if (failure.kind === "replay-gap" || failure.kind === "epoch-mismatch") {
         this.update({
           lastSequence: 0,
-          history: { incomplete: true, reason: "replay-gap" },
+          journalEpoch: null,
+          history: { incomplete: true, reason: failure.kind },
         });
         void this.establish();
       } else {
@@ -204,6 +215,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
       resumedFrom: cursor > 0 ? cursor : null,
       generation: this.state_().generation + 1,
       failedAttempts: 0,
+      journalEpoch: session.welcome.journal_epoch ?? null,
     });
     for (const listener of [...this.connectedListeners]) listener();
   }
@@ -220,7 +232,9 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     session.close();
     this.update({
       history: { incomplete: true, reason: error.kind },
-      ...(error.kind === "replay-gap" ? { lastSequence: 0 } : {}),
+      ...(error.kind === "replay-gap" || error.kind === "epoch-mismatch"
+        ? { lastSequence: 0, journalEpoch: null }
+        : {}),
     });
     this.fail(error);
   }
