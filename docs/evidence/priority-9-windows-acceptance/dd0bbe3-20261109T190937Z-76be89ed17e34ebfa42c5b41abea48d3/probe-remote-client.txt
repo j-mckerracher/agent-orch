@@ -1,0 +1,4 @@
+round 1: PASS The daemon pipe denied the loopback open (5). A control pipe with the same current-user-only DACL opened through the same path, so the denial is not caused by SMB loopback, policy, or token filtering. This assumes that .NET does not request remote-client rejection for the control pipe.
+round 2: PASS The daemon pipe denied the loopback open (5). A control pipe with the same current-user-only DACL opened through the same path, so the denial is not caused by SMB loopback, policy, or token filtering. This assumes that .NET does not request remote-client rejection for the control pipe.
+round 3: PASS The daemon pipe denied the loopback open (5). A control pipe with the same current-user-only DACL opened through the same path, so the denial is not caused by SMB loopback, policy, or token filtering. This assumes that .NET does not request remote-client rejection for the control pipe.
+Verdict: PASS

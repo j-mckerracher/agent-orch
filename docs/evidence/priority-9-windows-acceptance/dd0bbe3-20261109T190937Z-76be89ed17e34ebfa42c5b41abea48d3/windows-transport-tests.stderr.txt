@@ -1,0 +1,3 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3\cargo-target\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+error: test failed, to rerun pass `-p orchestrator-ipc --lib`

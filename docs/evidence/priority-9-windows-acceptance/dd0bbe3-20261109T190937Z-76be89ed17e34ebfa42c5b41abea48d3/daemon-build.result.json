@@ -1,0 +1,25 @@
+{
+  "name": "daemon-build",
+  "command": "cargo.exe build --locked -p orchestrator-daemon",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3\\source",
+  "source_commit": "dd0bbe33f5e64843f5eef9ab7e52937ac26eda58",
+  "started_utc": "2026-11-09T19:09:54.5019224Z",
+  "duration_seconds": 98.292,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 4733,
+  "stderr_sha256": "53d7f5780819d9df53fc286f3d322d76be602b7a66f8e41cd66f3ea58f394fc2",
+  "error": null
+}

@@ -1,0 +1,240 @@
+
+running 26 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test auth::tests::reports_no_common_version ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... FAILED
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... FAILED
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... FAILED
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... FAILED
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... FAILED
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... FAILED
+test event_stream_tests::reconnect_still_requires_the_current_token ... FAILED
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... FAILED
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... FAILED
+
+failures:
+
+---- windows_transport::tests::every_connection_must_complete_the_authenticated_handshake stdout ----
+
+thread 'windows_transport::tests::every_connection_must_complete_the_authenticated_handshake' (13932) panicked at crates\orchestrator-ipc\src\windows_transport_tests.rs:134:37:
+called `Result::unwrap()` on an `Err` value: Truncated { part: "header" }
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<enum2$<serde_json::value::Value>,enum2$<orchestrator_ipc::protocol::FrameError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: orchestrator_ipc::windows_transport::tests::handshake
+             at .\src\windows_transport_tests.rs:134
+   5: orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake
+             at .\src\windows_transport_tests.rs:269
+   6: orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake::closure$0
+             at .\src\windows_transport_tests.rs:253
+   7: core::ops::function::FnOnce::call_once<orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   8: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- windows_transport::tests::stalled_connection_does_not_block_other_clients stdout ----
+
+thread 'windows_transport::tests::stalled_connection_does_not_block_other_clients' (2232) panicked at crates\orchestrator-ipc\src\windows_transport_tests.rs:300:50:
+called `Result::unwrap()` on an `Err` value: Frame(Truncated { part: "header" })
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<orchestrator_ipc::client::Client,enum2$<orchestrator_ipc::IpcError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients
+             at .\src\windows_transport_tests.rs:300
+   5: orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients::closure$0
+             at .\src\windows_transport_tests.rs:294
+   6: core::ops::function::FnOnce::call_once<orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds stdout ----
+
+thread 'event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds' (35404) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds
+             at .\src\event_stream_tests.rs:161
+   4: orchestrator_ipc::event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds::closure$0
+             at .\src\event_stream_tests.rs:155
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap stdout ----
+
+thread 'event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap' (11656) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap
+             at .\src\event_stream_tests.rs:133
+   4: orchestrator_ipc::event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap::closure$0
+             at .\src\event_stream_tests.rs:127
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync stdout ----
+
+thread 'event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync' (14964) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync
+             at .\src\event_stream_tests.rs:187
+   4: orchestrator_ipc::event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync::closure$0
+             at .\src\event_stream_tests.rs:181
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token stdout ----
+
+thread 'event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token' (556) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token
+             at .\src\event_stream_tests.rs:223
+   4: orchestrator_ipc::event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token::closure$0
+             at .\src\event_stream_tests.rs:217
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::reconnect_still_requires_the_current_token stdout ----
+
+thread 'event_stream_tests::reconnect_still_requires_the_current_token' (19916) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::reconnect_still_requires_the_current_token
+             at .\src\event_stream_tests.rs:250
+   4: orchestrator_ipc::event_stream_tests::reconnect_still_requires_the_current_token::closure$0
+             at .\src\event_stream_tests.rs:244
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::reconnect_still_requires_the_current_token::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order stdout ----
+
+thread 'event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order' (43148) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order
+             at .\src\event_stream_tests.rs:205
+   4: orchestrator_ipc::event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order::closure$0
+             at .\src\event_stream_tests.rs:200
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect stdout ----
+
+thread 'event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect' (30368) panicked at crates\orchestrator-ipc\src\event_stream_tests.rs:93:17:
+daemon not ready: truncated frame header
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: orchestrator_ipc::event_stream_tests::connect
+             at .\src\event_stream_tests.rs:93
+   3: orchestrator_ipc::event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect
+             at .\src\event_stream_tests.rs:115
+   4: orchestrator_ipc::event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect::closure$0
+             at .\src\event_stream_tests.rs:109
+   5: core::ops::function::FnOnce::call_once<orchestrator_ipc::event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync
+    event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap
+    event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds
+    event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order
+    event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token
+    event_stream_tests::reconnect_still_requires_the_current_token
+    event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect
+    windows_transport::tests::every_connection_must_complete_the_authenticated_handshake
+    windows_transport::tests::stalled_connection_does_not_block_other_clients
+
+test result: FAILED. 17 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.03s
+

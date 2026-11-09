@@ -1,0 +1,4 @@
+round 1: FAIL 17 clients opened. The limit is 16.
+round 2: FAIL 17 clients opened. The limit is 16.
+round 3: FAIL 17 clients opened. The limit is 16.
+Verdict: FAIL

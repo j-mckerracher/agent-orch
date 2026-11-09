@@ -1,0 +1,25 @@
+{
+  "name": "runbook-bytes",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3\\source cat-file blob 9c05e7699992d57a469fc1d90b11774439a50ad1",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3",
+  "source_commit": "dd0bbe33f5e64843f5eef9ab7e52937ac26eda58",
+  "started_utc": "2026-11-09T19:09:47.7155217Z",
+  "duration_seconds": 0.635,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p9-acc-20261109T190937Z-76be89ed17e34ebfa42c5b41abea48d3\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 145084,
+  "stdout_sha256": "8284e0da1175d22644abe573102e634feee13461b69946e1b4592da96811e1a7",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

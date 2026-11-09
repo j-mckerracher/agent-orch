@@ -1,0 +1,68 @@
+
+running 8 tests
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... FAILED
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... FAILED
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+
+failures:
+
+---- windows_transport::tests::stalled_connection_does_not_block_other_clients stdout ----
+
+thread 'windows_transport::tests::stalled_connection_does_not_block_other_clients' (13964) panicked at crates\orchestrator-ipc\src\windows_transport_tests.rs:300:50:
+called `Result::unwrap()` on an `Err` value: Frame(Truncated { part: "header" })
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<orchestrator_ipc::client::Client,enum2$<orchestrator_ipc::IpcError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients
+             at .\src\windows_transport_tests.rs:300
+   5: orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients::closure$0
+             at .\src\windows_transport_tests.rs:294
+   6: core::ops::function::FnOnce::call_once<orchestrator_ipc::windows_transport::tests::stalled_connection_does_not_block_other_clients::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+---- windows_transport::tests::every_connection_must_complete_the_authenticated_handshake stdout ----
+
+thread 'windows_transport::tests::every_connection_must_complete_the_authenticated_handshake' (29764) panicked at crates\orchestrator-ipc\src\windows_transport_tests.rs:134:37:
+called `Result::unwrap()` on an `Err` value: Truncated { part: "header" }
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<enum2$<serde_json::value::Value>,enum2$<orchestrator_ipc::protocol::FrameError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: orchestrator_ipc::windows_transport::tests::handshake
+             at .\src\windows_transport_tests.rs:134
+   5: orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake
+             at .\src\windows_transport_tests.rs:269
+   6: orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake::closure$0
+             at .\src\windows_transport_tests.rs:253
+   7: core::ops::function::FnOnce::call_once<orchestrator_ipc::windows_transport::tests::every_connection_must_complete_the_authenticated_handshake::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   8: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    windows_transport::tests::every_connection_must_complete_the_authenticated_handshake
+    windows_transport::tests::stalled_connection_does_not_block_other_clients
+
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 18 filtered out; finished in 5.06s
+

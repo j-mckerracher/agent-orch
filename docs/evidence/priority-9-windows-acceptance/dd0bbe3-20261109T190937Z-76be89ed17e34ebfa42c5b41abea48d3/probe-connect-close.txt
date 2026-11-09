@@ -1,0 +1,4 @@
+round 1: FAIL Health failed after the cycles: health-send-closed:232.
+round 2: FAIL Health failed after the cycles: health-send-closed:232.
+round 3: FAIL Health failed after the cycles: health-send-closed:232.
+Verdict: FAIL

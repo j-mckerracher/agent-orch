@@ -1,0 +1,5 @@
+round 1: FAIL The write failed (closed:232). Error 109 or 232 means the broken-pipe fault.
+round 2: FAIL The write failed (closed:232). Error 109 or 232 means the broken-pipe fault.
+round 3: FAIL The write failed (closed:232). Error 109 or 232 means the broken-pipe fault.
+UNPROVEN (not a row): a single daemon-to-client write above 64 KiB to a slow reader is not exercised. No daemon method on an empty store returns such a reply.
+Verdict: FAIL

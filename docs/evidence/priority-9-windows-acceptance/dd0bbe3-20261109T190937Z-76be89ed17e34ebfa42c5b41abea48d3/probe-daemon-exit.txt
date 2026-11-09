@@ -1,0 +1,4 @@
+round 1: FAIL The daemon did not exit within 10 seconds of shutdown (reply send-closed:232); the probe ended it.
+round 2: FAIL The daemon did not exit within 10 seconds of shutdown (reply send-closed:232); the probe ended it.
+round 3: FAIL The daemon did not exit within 10 seconds of shutdown (reply send-closed:232); the probe ended it.
+Verdict: FAIL

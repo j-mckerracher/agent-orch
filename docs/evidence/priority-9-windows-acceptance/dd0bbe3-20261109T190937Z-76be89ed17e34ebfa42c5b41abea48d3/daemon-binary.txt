@@ -1,0 +1,3 @@
+artifact: debug\orchestrator-daemon.exe (relative to the target directory)
+bytes: 8841728
+sha256: 5f51e7bf27570779c127464cc3cf3fa670ae8e4d41c3c7f197fa58bb338a2c86
