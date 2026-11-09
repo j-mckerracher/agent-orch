@@ -10,6 +10,9 @@ inconclusive. It failed 3 verification tests, 4 delivery tests, and 3
 `data_lock` tests. It also ran zero CLI cancel tests. Do not reuse its
 results. This run checks the same areas again on the new candidate.
 
+**PowerShell 7 (`pwsh`) only.** Do not use Windows PowerShell 5.1
+(`powershell.exe`). The commands below do not work in it.
+
 ## Assignment
 
 Run the checks below on native Windows. Publish the evidence on a separate
@@ -57,7 +60,8 @@ at the source commit. If the final candidate renamed a test, that check reports
 
 **CLI cancel and CLI integration tests are not part of this run.** The test
 files `cli.rs`, `multi_task_review.rs`, and `recovery.rs` in
-`orchestrator-cli` are `#![cfg(unix)]`. On Windows they compile to zero
+`orchestrator-cli`, and `daemon.rs` in `orchestrator-daemon`, are
+`#![cfg(unix)]`. On Windows they compile to zero
 tests. Do not run them. Do not claim Windows coverage for them. Windows
 coverage of the CLI workflow comes only from crate-level tests (the checks
 above and the other crates in the workspace run). Report this as a coverage
@@ -83,7 +87,7 @@ use a filter. If either reports `running 0 tests`, its status is
 
 ## 1. Prepare the checkout
 
-Use native Windows PowerShell 7 or later. Open a new `pwsh` session. Run each
+Use native Windows with PowerShell 7 (`pwsh`) only. Open a new `pwsh` session. Run each
 block in that session. Keep the session open for all steps.
 
 ```powershell
@@ -107,7 +111,7 @@ if ($SourceSha -cnotmatch '^[0-9a-f]{40}$') {
 if ($SourceBranch -cnotmatch '^orch/m1-04-windows-owner-[0-9a-f]{7,40}$') {
     throw 'The source branch name is not valid.'
 }
-$Short = $SourceSha.Substring(0, 8)
+$Short = $SourceSha.Substring(0, 7)
 $RunId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' +
     [Guid]::NewGuid().ToString('N')
 $RunRoot = Join-Path $env:TEMP "agent-orch-m1-04-windows-$RunId"
@@ -492,6 +496,8 @@ $Summaries
 - Windows CLI cancel coverage: none. The orchestrator-cli cancel and CLI
   integration tests (cli.rs, multi_task_review.rs, recovery.rs) are Unix-only
   (cfg unix) and compile to zero tests on Windows. This run does not run them.
+- Windows daemon integration coverage: none. crates/orchestrator-daemon/tests/daemon.rs
+  is Unix-only (cfg unix) and compiles to zero tests on Windows.
 - Windows coverage of the CLI workflow comes only from crate-level tests.
 "@
 [IO.File]::WriteAllText((Join-Path $EvidenceDir 'result.md'), $Report)
@@ -534,7 +540,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $EvidenceDir 'result.md') -PathType 
     throw 'Create the result summary before publishing evidence.'
 }
 
-$SecretPattern = 'ghp_[A-Za-z0-9]{20,}|github_pat_|gho_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?i)(password|passwd|secret|api[_-]?key|authorization:|bearer)\s*[:=]'
+$SecretPattern = 'ghp_[A-Za-z0-9]{20,}|github_pat_|gho_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?i)(password|passwd|secret|api[_-]?key|bearer)\s*[:=](?!:)|(?i)authorization:(?!:)'
 $UrlPattern = '://[^/\s@]*@|git@|ssh://'
 $Hits = @(Select-String -Path (Join-Path $EvidenceDir '*') -Pattern $SecretPattern) +
     @(Select-String -Path (Join-Path $EvidenceDir '*') -Pattern $UrlPattern) +
@@ -556,6 +562,8 @@ $Run = Invoke-Git 'publish-worktree' @(
     '-c', 'core.longpaths=true', 'worktree', 'add', '-b', $EvidenceBranch,
     $EvidenceWorktree, 'refs/remotes/origin/main')
 if ($Run.Code -ne 0) { throw "Worktree creation failed. Preserve $RunRoot and report it." }
+& $Git -C $EvidenceWorktree config core.longpaths true
+if ($LASTEXITCODE -ne 0) { throw 'Cannot set core.longpaths in the evidence worktree.' }
 
 $Destination = Join-Path $EvidenceWorktree $EvidencePath
 if (Test-Path -LiteralPath $Destination) { throw "Evidence path exists: $Destination" }
@@ -607,8 +615,8 @@ non-zero exit code if you run the block as a script. Report to the coordinator:
 - the OS, CPU, `rustc -Vv`, `cargo -V`, `git --version`, and
   `core.autocrlf` (with its origin)
 - the branch tip and the pinned source commit, and that `HEAD` matched
-- the coverage gaps: no Windows CLI cancel coverage, and CLI workflow
-  coverage only from crate-level tests
+- the coverage gaps: no Windows CLI cancel coverage, no Windows daemon
+  integration coverage, and CLI workflow coverage only from crate-level tests
 - any setting that you could not observe
 
 Do not edit `board.json`. The coordinator reviews the evidence and updates the
