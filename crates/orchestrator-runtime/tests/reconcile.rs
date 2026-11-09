@@ -479,14 +479,104 @@ mod task_classification {
         assert_ne!(classify_interrupted_task(e), R::Completed);
     }
 
+    const ALL_TASKS: [TaskState; 8] = [
+        TaskState::Created,
+        TaskState::Queued,
+        TaskState::Running,
+        TaskState::Verifying,
+        TaskState::Succeeded,
+        TaskState::Failed,
+        TaskState::VerificationFailed,
+        TaskState::Cancelled,
+    ];
+
+    fn with_task(task: TaskState, workspace: W, delivery: D) -> TaskEvidence {
+        let mut e = evidence(P::Exited, workspace, delivery);
+        e.task = task;
+        e
+    }
+
     #[test]
-    fn confirmed_delivery_or_recorded_success_is_completed() {
-        let delivered = evidence(P::Exited, W::Matching, D::Confirmed);
-        assert_eq!(classify_interrupted_task(delivered), R::Completed);
-        let mut succeeded = evidence(P::Exited, W::Matching, D::None);
-        succeeded.task = TaskState::Succeeded;
-        succeeded.attempt = AttemptState::Succeeded;
-        assert_eq!(classify_interrupted_task(succeeded), R::Completed);
+    fn unsafe_workspace_outranks_every_completion_shortcut() {
+        for task in ALL_TASKS {
+            for delivery in [D::None, D::NotApplied, D::Confirmed] {
+                for workspace in [W::Dirty, W::Foreign, W::Unknown] {
+                    let e = with_task(task, workspace, delivery);
+                    assert_eq!(classify_interrupted_task(e), R::RequiresInspection, "{e:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn confirmed_delivery_completes_only_a_succeeded_task_with_a_clean_known_workspace() {
+        for task in ALL_TASKS {
+            for workspace in [W::Matching, W::Missing, W::BranchMoved] {
+                let expected = match (task, workspace) {
+                    (TaskState::Succeeded, W::Matching | W::Missing) => R::Completed,
+                    _ => R::RequiresInspection,
+                };
+                let e = with_task(task, workspace, D::Confirmed);
+                assert_eq!(classify_interrupted_task(e), expected, "{e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn succeeded_without_delivery_steps_completes_only_with_a_matching_workspace() {
+        for (workspace, expected) in [
+            (W::Matching, R::Completed),
+            (W::Missing, R::RequiresInspection),
+            (W::BranchMoved, R::RequiresInspection),
+        ] {
+            let e = with_task(TaskState::Succeeded, workspace, D::None);
+            assert_eq!(classify_interrupted_task(e), expected, "{e:?}");
+        }
+    }
+
+    #[test]
+    fn succeeded_with_a_recorded_unapplied_delivery_is_not_proven_complete() {
+        for workspace in [W::Matching, W::Missing, W::BranchMoved] {
+            let e = with_task(TaskState::Succeeded, workspace, D::NotApplied);
+            assert_eq!(classify_interrupted_task(e), R::RequiresInspection, "{e:?}");
+        }
+    }
+
+    #[test]
+    fn terminal_failures_without_delivery_stay_blocked() {
+        for task in [
+            TaskState::Failed,
+            TaskState::VerificationFailed,
+            TaskState::Cancelled,
+        ] {
+            for delivery in [D::None, D::NotApplied] {
+                for workspace in [W::Matching, W::Missing, W::BranchMoved] {
+                    let e = with_task(task, workspace, delivery);
+                    assert_eq!(classify_interrupted_task(e), R::Blocked, "{e:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn active_tasks_without_delivery_keep_recovery_semantics() {
+        for task in [
+            TaskState::Created,
+            TaskState::Queued,
+            TaskState::Running,
+            TaskState::Verifying,
+        ] {
+            for delivery in [D::None, D::NotApplied] {
+                let matching = with_task(task, W::Matching, delivery);
+                assert_eq!(classify_interrupted_task(matching), R::Recoverable);
+                let missing = with_task(task, W::Missing, delivery);
+                assert_eq!(classify_interrupted_task(missing), R::Blocked);
+                let mut moved = with_task(task, W::BranchMoved, delivery);
+                assert_eq!(classify_interrupted_task(moved), R::RequiresInspection);
+                moved.attempt = AttemptState::CandidateReady;
+                assert_eq!(classify_interrupted_task(moved), R::Recoverable);
+            }
+        }
     }
 
     #[test]

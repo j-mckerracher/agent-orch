@@ -5,7 +5,13 @@
 //! time; Windows cancellation owners also retain exact creation time.
 //! Reconciliation observes but never mutates or kills.
 //!
-//! Updated: 2026-11-08T08:24:47+00:00.
+//! It also maps Git workspace/delivery inspection to task evidence and
+//! classifies each interrupted task (`classify_interrupted_task`) as
+//! recoverable, blocked, completed or requiring inspection; only the last
+//! keeps `scheduling_may_resume` false. Classification is advisory and
+//! read-only: it never authorises cleanup, merging or state advancement.
+//!
+//! Updated: 2026-11-09T08:08:00+00:00.
 
 use std::io;
 
@@ -471,7 +477,9 @@ pub enum TaskRecovery {
     /// Not resumable now (live owner, missing workspace, terminal failure);
     /// nothing is deleted or released.
     Blocked,
-    /// Completion is recorded or proven by Git, never inferred from exit code.
+    /// Succeeded task, consistent with Git delivery evidence and a clean known
+    /// workspace; never inferred from exit code. Advisory only: not
+    /// authorisation to clean up, merge or advance task state.
     Completed,
     /// Ownership, workspace or delivery state is unproven; a human decides.
     RequiresInspection,
@@ -487,9 +495,34 @@ impl TaskRecovery {
     }
 }
 
-/// Conservatively classifies one interrupted task. Unproven ownership,
-/// uncommitted or unlanded work, and partial or ambiguous delivery all fail
-/// closed to `RequiresInspection`.
+/// Conservatively classifies one interrupted task. Read-only: it performs no
+/// signal, state write, cleanup or Git mutation.
+///
+/// Precedence:
+/// 1. Live owner => `Blocked`; owner not provably exited => `RequiresInspection`.
+/// 2. Partial or ambiguous delivery => `RequiresInspection`.
+/// 3. Dirty, foreign or unknown workspace => `RequiresInspection`, whatever the
+///    task or delivery state (uncommitted or unlanded work is never completed
+///    or discarded silently).
+/// 4. Confirmed delivery completes only a `Succeeded` task whose workspace is
+///    `Matching` or `Missing` (a valid cleanup leaves the review ref as the
+///    candidate's record). Any other task state, or `BranchMoved` (an unlanded
+///    head), is contradictory => `RequiresInspection`. Verification precedes
+///    delivery, so `Running`/`Verifying` + confirmed delivery is not a normal
+///    crash window and is never auto-promoted.
+/// 5. `Succeeded` with no recorded delivery steps completes only with a
+///    `Matching` workspace. `Succeeded` with a recorded but unapplied step is
+///    `RequiresInspection` even when `Matching`: the evidence cannot tell a
+///    report-only/no-ref delivery from one that still has to land.
+/// 6. Otherwise terminal failures are `Blocked`; active tasks are `Recoverable`
+///    with a `Matching` workspace (or `BranchMoved` with a `CandidateReady`
+///    attempt), `Blocked` when `Missing`, else `RequiresInspection`.
+///
+/// `Completed` is an advisory classification only. It does not authorise
+/// cleanup, merging, task-state advancement, or skipping verification, policy
+/// or approval, and it is not proof of destination integration: `Confirmed`
+/// means the recorded review ref equals the exact candidate, not that it was
+/// merged.
 pub fn classify_interrupted_task(evidence: TaskEvidence) -> TaskRecovery {
     use TaskRecovery::*;
     match evidence.process {
@@ -497,15 +530,31 @@ pub fn classify_interrupted_task(evidence: TaskEvidence) -> TaskRecovery {
         ProcessClassification::Exited => {}
         _ => return RequiresInspection,
     }
-    match evidence.delivery {
-        DeliveryEvidence::Partial | DeliveryEvidence::Ambiguous => return RequiresInspection,
-        DeliveryEvidence::Confirmed => return Completed,
-        DeliveryEvidence::None | DeliveryEvidence::NotApplied => {}
+    if matches!(
+        evidence.delivery,
+        DeliveryEvidence::Partial | DeliveryEvidence::Ambiguous
+    ) || matches!(
+        evidence.workspace,
+        WorkspaceEvidence::Dirty | WorkspaceEvidence::Foreign | WorkspaceEvidence::Unknown
+    ) {
+        return RequiresInspection;
     }
-    match evidence.task {
-        TaskState::Succeeded => return Completed,
-        TaskState::Failed | TaskState::VerificationFailed | TaskState::Cancelled => return Blocked,
+    let succeeded = evidence.task == TaskState::Succeeded;
+    match (evidence.delivery, succeeded, evidence.workspace) {
+        (
+            DeliveryEvidence::Confirmed,
+            true,
+            WorkspaceEvidence::Matching | WorkspaceEvidence::Missing,
+        )
+        | (DeliveryEvidence::None, true, WorkspaceEvidence::Matching) => return Completed,
+        (DeliveryEvidence::Confirmed, ..) | (_, true, _) => return RequiresInspection,
         _ => {}
+    }
+    if matches!(
+        evidence.task,
+        TaskState::Failed | TaskState::VerificationFailed | TaskState::Cancelled
+    ) {
+        return Blocked;
     }
     match evidence.workspace {
         WorkspaceEvidence::Matching => Recoverable,
@@ -544,7 +593,15 @@ pub fn workspace_evidence(
         Some(WorktreeDeletionSafety::Unsafe(UnsafeToDeleteReason::PrimaryCheckout)) => {
             WorkspaceEvidence::Foreign
         }
-        Some(WorktreeDeletionSafety::Unsafe(_)) => WorkspaceEvidence::BranchMoved,
+        // Exactly the Git-proven "HEAD is not reachable from base" (exit 1 of
+        // `merge-base --is-ancestor`) on a worktree already registered and on
+        // the expected path/branch; unregistered or foreign worktrees never
+        // get here (Missing/Foreign above) and failed inspections arrive as
+        // `None` (Unknown). Listed explicitly so a new unsafe reason must be
+        // classified here instead of silently becoming a valid candidate.
+        Some(WorktreeDeletionSafety::Unsafe(UnsafeToDeleteReason::NotReachable { .. })) => {
+            WorkspaceEvidence::BranchMoved
+        }
     }
 }
 
