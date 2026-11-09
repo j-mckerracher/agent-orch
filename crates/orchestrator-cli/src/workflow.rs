@@ -1662,6 +1662,12 @@ fn ensure_project_registered(store: &SqliteStore, repository: &Repository) -> Re
 }
 
 fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
+    // Read the live owners before the task snapshot. An owner that finishes
+    // after this call has already closed or is still skipped here, and the
+    // later task read can only be newer than the owner set. Reading tasks
+    // first could pair a stale mid-finish task with an owner that has since
+    // closed, which reports a spurious blocker or a terminal-session error.
+    let finishing = tasks_with_live_owner(store)?;
     let tasks = store
         .list()
         .map_err(|error| format!("cannot list tasks for reconciliation: {error}"))?;
@@ -1669,8 +1675,6 @@ fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
     let mut owners = BTreeMap::new();
     let mut other_records = Vec::new();
     let mut blockers = Vec::new();
-
-    let finishing = tasks_with_live_owner(store)?;
 
     for task in &tasks {
         // A run owner finishes without the data lock, so its session, attempt
