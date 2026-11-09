@@ -44,7 +44,7 @@ impl DataDirectoryLock {
         let mut last_holder_pid = pid;
 
         for _ in 0..MAX_ACQUIRE_ATTEMPTS {
-            match create_lock(&path, &owner_contents) {
+            match create_lock(&path, &owner_contents, FileIdentity::from_file) {
                 Ok(lock) => return Ok(lock),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                     match take_over_existing(&path, &owner_contents, pid, FileIdentity::from_file)?
@@ -65,28 +65,39 @@ impl DataDirectoryLock {
     }
 }
 
-fn create_lock(path: &Path, contents: &str) -> io::Result<DataDirectoryLock> {
+fn create_lock(
+    path: &Path,
+    contents: &str,
+    identity_of: FileIdentityFn,
+) -> io::Result<DataDirectoryLock> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-    // A missing identity here is fail-closed: `owns_file` and Drop fall back
-    // to comparing the exact owner contents, so cleanup never removes a
-    // foreign file.
+    // The new file is unverified if its identity cannot be read or the
+    // platform has none: fail with the real cause and leave the file in place
+    // for inspection. A guard is only ever returned with a verified identity.
     let identity = file
         .metadata()
-        .ok()
-        .and_then(|metadata| FileIdentity::from_file(&file, &metadata).ok().flatten());
+        .and_then(|metadata| identity_of(&file, &metadata))
+        .and_then(|identity| {
+            identity.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "file identity is unsupported on this platform",
+                )
+            })
+        })?;
     if let Err(error) = file
         .write_all(contents.as_bytes())
         .and_then(|()| file.sync_all())
     {
         drop(file);
-        remove_if_same_file(path, identity.as_ref());
+        remove_if_same_file(path, Some(&identity));
         return Err(error);
     }
     Ok(DataDirectoryLock {
         path: path.to_path_buf(),
         file: Some(file),
         owner_contents: contents.to_owned(),
-        identity,
+        identity: Some(identity),
     })
 }
 
@@ -110,15 +121,12 @@ impl Drop for DataDirectoryLock {
 
 impl DataDirectoryLock {
     fn owns_file(&self, metadata: &fs::Metadata) -> bool {
-        match (
-            &self.identity,
-            FileIdentity::from_path(&self.path, metadata),
-        ) {
-            (Some(expected), Some(actual)) => *expected == actual,
-            _ => fs::read_to_string(&self.path)
-                .map(|contents| contents == self.owner_contents)
-                .unwrap_or(false),
-        }
+        // Ownership is proven by file identity only; an unreadable identity
+        // leaves the file in place rather than guessing from its contents.
+        matches!(
+            (&self.identity, FileIdentity::from_path(&self.path, metadata)),
+            (Some(expected), Some(actual)) if *expected == actual
+        )
     }
 }
 
@@ -345,7 +353,7 @@ fn take_over_existing(
     drop(file);
     fs::remove_file(&moved_path)?;
     let _ = fs::remove_dir(&temporary_directory);
-    match create_lock(path, owner_contents) {
+    match create_lock(path, owner_contents, identity_of) {
         Ok(lock) => Ok(TakeoverOutcome::Acquired(lock)),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(TakeoverOutcome::Retry {
             holder_pid: current.pid,
@@ -777,6 +785,41 @@ mod tests {
             result.err()
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), record);
+    }
+
+    #[test]
+    fn fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(LOCK_FILE_NAME);
+        let result = create_lock(&path, "pid=1\n", failing_identity);
+        assert!(
+            matches!(result, Err(ref error) if error.to_string().contains("injected")),
+            "{:?}",
+            result.err()
+        );
+        assert!(path.exists(), "unverified artifact must be preserved");
+    }
+
+    #[test]
+    fn fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact() {
+        fn none(_: &File, _: &fs::Metadata) -> io::Result<Option<FileIdentity>> {
+            Ok(None)
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(LOCK_FILE_NAME);
+        let error = create_lock(&path, "pid=1\n", none).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn verified_creation_is_cleaned_up_on_drop() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(LOCK_FILE_NAME);
+        let lock = create_lock(&path, "pid=1\n", FileIdentity::from_file).unwrap();
+        assert!(path.exists());
+        drop(lock);
+        assert!(!path.exists());
     }
 
     #[test]
