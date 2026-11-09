@@ -81,6 +81,7 @@ describe("router", () => {
     { name: "coordinator", projectId: "/repo" },
     { name: "review", projectId: "/repo", taskId: "task-1" },
     { name: "review", projectId: "/repo", taskId: null },
+    { name: "review", projectId: "/repo", taskId: "fixture-task-1", query: "fixture=1&evidence=missing" },
   ];
 
   it.each(routes)("round-trips %j through the hash", (route) => {
