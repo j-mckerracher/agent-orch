@@ -57,3 +57,11 @@ cancellation; `cleanup_task` changed, so cleanup behaviour needs fresh native pr
 Windows and macOS runs of `cleanup_safety` (2) + `portable_acceptance` (2) on the final integrated
 candidate. The exited-owner and alive-owner inline unit tests are `cfg(unix)` (PID/start-time
 fixtures); the unprovable-identity inline test and both QA tests are portable.
+
+## Combined M1-05 + M2-04 candidate 921203bb: fixture correction (no production change)
+Three unix inline tests failed at the owner guard with `Some(Unknown)`. Cause: their "exited
+owner" was this test process's own PID with `start_time_micros + 1` and the test's still-live
+process group. M2-04 `observe_owner_process` now maps a same-PID mismatch to Exited only when the
+recorded group is gone (otherwise Unknown, fail closed), so the forged identity is correctly
+Unknown. Fixtures now use `reaped_child_identity()` (a spawned, killed and reaped child whose PID
+is absent), which classifies Exited. Guards are unchanged; the Alive/Unknown owner refusals still pass.

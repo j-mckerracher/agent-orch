@@ -2521,10 +2521,7 @@ mod tests {
     #[test]
     fn cleanup_refuses_exited_owner_while_its_session_process_is_alive() {
         let live = capture_process_identity(std::process::id()).expect("own identity");
-        let mut forged = live;
-        forged.start_time_micros = forged.start_time_micros.map(|micros| micros + 1);
-        let (_root, data_dir, worktree) =
-            owned_clean_worktree("task-tree-alive", Some(Some(forged)));
+        let (_root, data_dir, worktree) = exited_owner_clean_worktree("task-tree-alive");
         let store = open_store(&data_dir).unwrap();
         // The owner is provably exited, but the recorded session process is this live one.
         let session = store.get("task-tree-alive").unwrap().sessions[0].id.clone();
@@ -2539,27 +2536,32 @@ mod tests {
         );
     }
 
-    /// Owner proven exited by a start-time mismatch; returns the fixture.
+    /// Identity captured from a child this test spawned, killed and reaped: its PID is absent.
+    #[cfg(unix)]
+    fn reaped_child_identity() -> ProcessIdentity {
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let identity = capture_process_identity(child.id()).expect("child identity");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        identity
+    }
+
+    /// Owner proven exited because its recorded process is gone; returns the fixture.
     #[cfg(unix)]
     fn exited_owner_clean_worktree(task_id: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
-        let mut identity = capture_process_identity(std::process::id()).expect("own identity");
-        // Same PID with a different start time proves the recorded owner exited.
-        identity.start_time_micros = identity.start_time_micros.map(|micros| micros + 1);
-        owned_clean_worktree(task_id, Some(Some(identity)))
+        owned_clean_worktree(task_id, Some(Some(reaped_child_identity())))
     }
 
     #[cfg(unix)]
     #[test]
     fn cleanup_follows_existing_contract_for_exited_owner_and_dead_session() {
-        use std::process::Command;
-
         let (_root, data_dir, worktree) = exited_owner_clean_worktree("task-dead-clean");
         let store = open_store(&data_dir).unwrap();
         let session = store.get("task-dead-clean").unwrap().sessions[0].id.clone();
-        let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();
-        let mut dead = capture_process_identity(child.id()).expect("child identity");
-        child.kill().unwrap();
-        child.wait().unwrap();
+        let mut dead = reaped_child_identity();
         dead.process_group = None; // the child shared this test's live group
         store
             .record_session_identity("task-dead-clean", &session, &dead)
