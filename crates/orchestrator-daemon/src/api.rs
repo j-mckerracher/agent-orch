@@ -6,8 +6,6 @@
 
 use std::path::{Component, Path};
 use std::sync::Mutex;
-use std::thread;
-use std::time::{Duration, Instant};
 
 use orchestrator_core::approval::{
     Actor, Approval, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
@@ -16,21 +14,18 @@ use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
     self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
-use orchestrator_core::identity::{
-    classify_identity, ProcessClassification, ProcessIdentity, ProcessObservation,
-};
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
-use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState};
+use orchestrator_core::task::{AttemptState, TaskEvent, TaskState};
 use orchestrator_git::delivery::{
     self, ApprovalCheck, CallbackError, DeliveryAction, DeliveryCallbacks, DeliveryOutcome,
     DeliveryRequest, DeliveryStep, VerificationCheck,
 };
 use orchestrator_git::Repository;
 use orchestrator_ipc::{Capability, IpcEvent, RpcError, RpcHandler};
-use orchestrator_runtime::reconcile::observe_process;
 use orchestrator_store::{
-    DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, StoreError,
+    CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore,
+    Store, StoreError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -319,8 +314,19 @@ impl DaemonApi {
     fn cancel_task_record(&self, task_id: &str) -> Result<(), RpcError> {
         let task = self.store.get(task_id).map_err(map_store_error)?;
         match task.state {
-            TaskState::Running => self.cancel_running_task(&task)?,
-            TaskState::Created | TaskState::Queued | TaskState::Verifying => {
+            TaskState::Running => {
+                return match self
+                    .store
+                    .request_cancellation_for_task(task_id)
+                    .map_err(map_store_error)?
+                {
+                    CancellationStatus::Pending | CancellationStatus::Confirmed => Ok(()),
+                    CancellationStatus::Rejected | CancellationStatus::Failed => {
+                        Err(RpcError::Conflict)
+                    }
+                };
+            }
+            TaskState::Created | TaskState::Queued => {
                 if task
                     .sessions
                     .iter()
@@ -339,41 +345,9 @@ impl DaemonApi {
                 }
             }
             _ => return Err(RpcError::Conflict),
-        }
+        };
         self.store
             .transition(task_id, TaskEvent::CancelRequested)
-            .map_err(map_store_error)?;
-        Ok(())
-    }
-
-    fn cancel_running_task(&self, task: &orchestrator_store::TaskRecord) -> Result<(), RpcError> {
-        let mut sessions = task
-            .sessions
-            .iter()
-            .filter(|session| !session.state.is_terminal());
-        let session = sessions.next().ok_or(RpcError::Forbidden)?;
-        if sessions.next().is_some() {
-            return Err(RpcError::Conflict);
-        }
-        let attempt = task
-            .attempts
-            .iter()
-            .find(|attempt| attempt.id == session.attempt_id)
-            .ok_or(RpcError::Conflict)?;
-        if attempt.state != AttemptState::Running {
-            return Err(RpcError::Conflict);
-        }
-        let identity = self
-            .store
-            .session_identity(&task.contract.id, &session.id)
-            .map_err(map_store_error)?
-            .ok_or(RpcError::Forbidden)?;
-        terminate_process_group(identity)?;
-        self.store
-            .update_session_state(&task.contract.id, &session.id, SessionState::Aborted)
-            .map_err(map_store_error)?;
-        self.store
-            .update_attempt_state(&task.contract.id, &attempt.id, AttemptState::Cancelled)
             .map_err(map_store_error)?;
         Ok(())
     }
@@ -785,7 +759,10 @@ fn map_store_error(error: StoreError) -> RpcError {
         | StoreError::InvalidEventCursor
         | StoreError::InvalidEventLimit
         | StoreError::InvalidIdempotencyKey => RpcError::InvalidParams,
-        StoreError::AlreadyExists(_) | StoreError::IllegalTransition(_) => RpcError::Conflict,
+        StoreError::AlreadyExists(_)
+        | StoreError::IllegalTransition(_)
+        | StoreError::NoActiveCancellationOwner { .. }
+        | StoreError::CancellationConflict { .. } => RpcError::Conflict,
         _ => RpcError::Internal,
     }
 }
@@ -836,55 +813,6 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
     }
 }
 
-#[cfg(unix)]
-fn terminate_process_group(identity: ProcessIdentity) -> Result<(), RpcError> {
-    if identity.process_group != Some(identity.pid) || !process_is_alive(identity)? {
-        return Err(RpcError::Forbidden);
-    }
-    let group = i32::try_from(identity.pid).map_err(|_| RpcError::Forbidden)?;
-    // SAFETY: persisted PID, group, and start identity were rechecked immediately before signal.
-    // Updated: 2026-11-08T17:33:37+00:00.
-    if unsafe { libc::kill(-group, libc::SIGTERM) } != 0 && process_is_alive(identity)? {
-        return Err(RpcError::Forbidden);
-    }
-    let deadline = Instant::now() + Duration::from_millis(500);
-    while Instant::now() < deadline && process_is_alive(identity)? {
-        thread::sleep(Duration::from_millis(20));
-    }
-    if process_is_alive(identity)? {
-        // SAFETY: process identity was rechecked after the grace period.
-        if unsafe { libc::kill(-group, libc::SIGKILL) } != 0 && process_is_alive(identity)? {
-            return Err(RpcError::Forbidden);
-        }
-        let deadline = Instant::now() + Duration::from_millis(500);
-        while Instant::now() < deadline && process_is_alive(identity)? {
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
-    if process_is_alive(identity)? {
-        Err(RpcError::Forbidden)
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(unix)]
-fn process_is_alive(identity: ProcessIdentity) -> Result<bool, RpcError> {
-    match observe_process(identity) {
-        ProcessObservation::Exited => Ok(false),
-        ProcessObservation::Alive(observed)
-            if classify_identity(identity, observed) == ProcessClassification::Alive =>
-        {
-            Ok(true)
-        }
-        _ => Err(RpcError::Forbidden),
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate_process_group(_identity: ProcessIdentity) -> Result<(), RpcError> {
-    Err(RpcError::Forbidden)
-}
 #[cfg(test)]
 #[path = "api_tests.rs"]
 mod tests;
