@@ -1,5 +1,5 @@
 use std::{
-    io::{BufRead, Write},
+    io::{self, BufRead, Write},
     process, thread,
     time::Duration,
 };
@@ -7,8 +7,56 @@ use std::{
 const SESSION: &str = "01a1b721-1f91-7393-ae1d-6aace8e4646a";
 const LAUNCH_ARGUMENT: &str = "literal arg;$(echo must-not-run)";
 
+/// Codex 0.167 emits this nonterminal error item after `thread.started` and
+/// before `turn.started`, then continues with a successful turn.
+const CODEX_HOOKS_WARNING: &str = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].codex_hooks` is deprecated. Use `[features].hooks` instead."}}"#;
+const CODEX_COMMAND_STARTED: &str = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"printf ok","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#;
+const CODEX_COMMAND_DONE: &str = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"printf ok","aggregated_output":"ok","exit_code":0,"status":"completed"}}"#;
+const CODEX_MESSAGE_DONE: &str =
+    r#"{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"done"}}"#;
+
+/// Rewrites every `\n` as `\r\n`, the line ending a Windows producer may use.
+struct CrLf<'a, W: Write>(&'a mut W);
+
+impl<W: Write> Write for CrLf<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        for part in buf.split_inclusive(|byte| *byte == b'\n') {
+            match part.strip_suffix(b"\n") {
+                Some(text) => {
+                    self.0.write_all(text)?;
+                    self.0.write_all(b"\r")?;
+                    self.0.flush()?;
+                    self.0.write_all(b"\n")?;
+                }
+                None => self.0.write_all(part)?,
+            }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+/// Records a long-lived descendant before any protocol output so the harness
+/// can prove cancellation removes the whole process tree.
+fn spawn_descendant() {
+    let descendant = process::Command::new(std::env::current_exe().expect("fake child path"))
+        .arg("--descendant")
+        .stdin(process::Stdio::null())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .expect("spawn descendant");
+    std::fs::write("descendant.pid", descendant.id().to_string()).expect("record descendant pid");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--descendant") {
+        sleep_forever();
+    }
     let start = if args.first().map(String::as_str) == Some("--mode") {
         2
     } else {
@@ -30,14 +78,55 @@ fn stream(adapter: &str, scenario: &str, variant: &str, argument: Option<&str>) 
     let mut out = stdout.lock();
     match scenario {
         "framing" if variant == "oversized" => oversized_stream(adapter, &mut out),
+        "framing" if variant == "crlf" => complete_stream(adapter, &mut CrLf(&mut out)),
         "framing" => partial_start(adapter, &mut out),
         "launch" => {
             if argument != Some(LAUNCH_ARGUMENT) {
                 process::exit(64);
             }
+            eprintln!("diagnostic: stderr is not protocol");
             complete_stream(adapter, &mut out);
         }
+        "approvals" => {
+            start_stream(adapter, &mut out);
+            let request = if adapter == "codex" {
+                r#"{"type":"exec_approval_request","call_id":"call_1"}"#
+            } else {
+                r#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool"}}"#
+            };
+            event(&mut out, request);
+            complete_body(adapter, &mut out);
+        }
+        "errors" if variant == "warning" && adapter == "codex" => {
+            start_stream(adapter, &mut out);
+            event(&mut out, CODEX_HOOKS_WARNING);
+            event(&mut out, r#"{"type":"turn.started"}"#);
+            event(&mut out, CODEX_COMMAND_STARTED);
+            event(&mut out, CODEX_COMMAND_DONE);
+            event(&mut out, CODEX_MESSAGE_DONE);
+            event(&mut out, r#"{"type":"turn.completed"}"#);
+        }
+        "errors" if variant == "preturn_message" && adapter == "codex" => {
+            start_stream(adapter, &mut out);
+            event(&mut out, CODEX_MESSAGE_DONE);
+            complete_body(adapter, &mut out);
+        }
+        "errors" if variant == "postturn_error" && adapter == "codex" => {
+            complete_stream(adapter, &mut out);
+            event(&mut out, CODEX_HOOKS_WARNING);
+        }
+        "errors" if variant == "result_error" && adapter == "claude" => {
+            start_stream(adapter, &mut out);
+            event(
+                &mut out,
+                r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"boom"}"#,
+            );
+        }
+        "completed" => complete_stream(adapter, &mut out),
         "cancellation" | "interruption" => {
+            if variant == "tree" {
+                spawn_descendant();
+            }
             start_stream(adapter, &mut out);
             message_stream(adapter, &mut out);
             sleep_forever();
@@ -163,6 +252,11 @@ fn pi(scenario: &str, variant: &str, argument: Option<&str>) {
             )
             .unwrap();
         }
+        "framing" if variant == "crlf" => {
+            let mut crlf = CrLf(&mut out);
+            response(&mut crlf, &id, &command, r#"{"marker":"complete"}"#);
+            event(&mut crlf, r#"{"type":"agent_settled","aborted":false}"#);
+        }
         "framing" => {
             let line = format!(
                 r#"{{"type":"response","id":"{id}","command":"{command}","success":true,"data":{{"marker":"complete"}}}}"#
@@ -174,6 +268,7 @@ fn pi(scenario: &str, variant: &str, argument: Option<&str>) {
             if argument != Some(LAUNCH_ARGUMENT) {
                 process::exit(64);
             }
+            eprintln!("diagnostic: stderr is not protocol");
             response(&mut out, &id, &command, "{}");
             event(
                 &mut out,
@@ -181,7 +276,22 @@ fn pi(scenario: &str, variant: &str, argument: Option<&str>) {
             );
             event(&mut out, r#"{"type":"agent_settled","aborted":false}"#);
         }
+        "approvals" => {
+            response(&mut out, &id, &command, "{}");
+            event(
+                &mut out,
+                r#"{"type":"extension_ui_request","id":"u1","method":"confirm","title":"Allow?"}"#,
+            );
+            event(&mut out, r#"{"type":"agent_settled","aborted":false}"#);
+        }
+        "completed" => {
+            response(&mut out, &id, &command, "{}");
+            event(&mut out, r#"{"type":"agent_settled","aborted":false}"#);
+        }
         "cancellation" | "interruption" => {
+            if variant == "tree" {
+                spawn_descendant();
+            }
             response(&mut out, &id, &command, "{}");
             event(
                 &mut out,
@@ -189,6 +299,10 @@ fn pi(scenario: &str, variant: &str, argument: Option<&str>) {
             );
             out.flush().unwrap();
             sleep_forever();
+        }
+        "errors" if variant == "aborted" => {
+            response(&mut out, &id, &command, "{}");
+            event(&mut out, r#"{"type":"agent_settled","aborted":true}"#);
         }
         "errors" if variant == "nonzero" => {
             response(&mut out, &id, &command, "{}");

@@ -336,6 +336,19 @@ mod tests {
     }
 
     #[test]
+    fn turn_failed_is_an_unknown_type_and_never_completes_the_turn() {
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        assert_eq!(p.feed(TURN_STARTED), None);
+        let err = p
+            .feed(r#"{"type":"turn.failed","error":{"message":"boom"}}"#)
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(err, ProtocolViolation::UnknownType(t) if t == "turn.failed"));
+        assert!(!p.turn_finished());
+    }
+
+    #[test]
     fn unknown_type_faults() {
         let mut p = Parser::new();
         p.feed(&thread()).unwrap().unwrap();

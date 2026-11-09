@@ -159,6 +159,10 @@ impl AgentHandle for CodexHandle {
     }
 
     async fn cancel(&mut self) -> Result<()> {
+        // A natural exit already observed is terminal; do not relabel it.
+        if self.cancelled || self.exited {
+            return Ok(());
+        }
         self.cancelled = true;
         self.sup.cancel().await;
         Ok(())

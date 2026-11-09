@@ -407,6 +407,11 @@ fn terminal_outcome(
             code,
             reason: Some(format!("Pi RPC protocol violation: {protocol_error}")),
         }
+    } else if turn_outcome == Some(TurnOutcome::Failure) {
+        AgentExit::Failed {
+            code,
+            reason: Some("Pi RPC agent_settled reported a failed turn".to_owned()),
+        }
     } else if turn_outcome.is_some() {
         AgentExit::Completed {
             code,
@@ -649,6 +654,21 @@ mod tests {
             other => panic!("expected protocol failure after settlement, got {other:?}"),
         }
     }
+    #[test]
+    fn aborted_turn_with_clean_exit_is_not_completed() {
+        let exit = terminal_outcome(false, Some(0), Some(TurnOutcome::Failure), None);
+        assert!(
+            matches!(
+                exit,
+                AgentExit::Failed {
+                    code: Some(0),
+                    reason: Some(_)
+                }
+            ),
+            "exit: {exit:?}"
+        );
+    }
+
     #[test]
     fn nonzero_exit_after_settled_turn_fails() {
         let exit = terminal_outcome(false, Some(7), Some(TurnOutcome::Success), None);

@@ -189,6 +189,10 @@ impl AgentHandle for ClaudeCodeHandle {
     }
 
     async fn cancel(&mut self) -> Result<()> {
+        // A natural exit already observed is terminal; do not relabel it.
+        if self.cancelled || self.exited {
+            return Ok(());
+        }
         self.cancelled = true;
         self.supervisor.cancel().await;
         Ok(())
@@ -214,6 +218,7 @@ impl ClaudeCodeHandle {
             self.code,
             self.parser.violation().map(ToString::to_string),
             self.parser.turn_finished(),
+            self.parser.turn_failure().map(str::to_owned),
             self.parser.last_message().map(str::to_owned),
         )
     }
@@ -246,6 +251,7 @@ pub enum ProtocolViolation {
 pub struct StreamParser {
     last_message: Option<String>,
     turn_finished: bool,
+    turn_failure: Option<String>,
     violation: Option<ProtocolViolation>,
 }
 
@@ -255,9 +261,14 @@ impl StreamParser {
         Self::default()
     }
 
-    /// True after a terminal `result` event.
+    /// True after a successful terminal `result` event.
     pub fn turn_finished(&self) -> bool {
         self.turn_finished
+    }
+
+    /// Provider-reported failure text from an error or non-success `result`.
+    pub fn turn_failure(&self) -> Option<&str> {
+        self.turn_failure.as_deref()
     }
 
     /// The latest complete message observed in deltas or the result event.
@@ -386,9 +397,20 @@ impl StreamParser {
         if let Some(result) = object.get("result").and_then(Value::as_str) {
             self.last_message = Some(result.to_owned());
         }
-        self.turn_finished = true;
+        // Only a successful result completes the turn; an error result stays
+        // unfinished so a clean exit cannot be reported as `Completed`.
+        let success = subtype == "success" && !is_error;
+        self.turn_finished = success;
+        if !success {
+            let mut failure = format!("Claude Code result reported a failed turn ({subtype})");
+            if let Some(result) = object.get("result").and_then(Value::as_str) {
+                failure.push_str(": ");
+                failure.push_str(result);
+            }
+            self.turn_failure = Some(failure);
+        }
         Ok(Some(AgentEvent::TurnFinished {
-            outcome: if subtype == "success" && !is_error {
+            outcome: if success {
                 TurnOutcome::Success
             } else {
                 TurnOutcome::Failure
@@ -402,6 +424,7 @@ fn terminal_outcome(
     code: Option<i32>,
     violation: Option<String>,
     turn_finished: bool,
+    turn_failure: Option<String>,
     last_message: Option<String>,
 ) -> AgentExit {
     if cancelled {
@@ -429,6 +452,11 @@ fn terminal_outcome(
         }
     } else if turn_finished {
         AgentExit::Completed { code, last_message }
+    } else if turn_failure.is_some() {
+        AgentExit::Failed {
+            code,
+            reason: turn_failure,
+        }
     } else {
         AgentExit::Failed { code, reason: None }
     }
@@ -440,7 +468,7 @@ mod tests {
 
     #[test]
     fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
-        let exit = terminal_outcome(false, Some(7), None, true, Some("done".to_owned()));
+        let exit = terminal_outcome(false, Some(7), None, true, None, Some("done".to_owned()));
         match exit {
             AgentExit::Failed {
                 code: Some(7),
@@ -450,6 +478,41 @@ mod tests {
                 assert!(reason.contains("last message: done"), "reason: {reason}");
             }
             other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn error_result_with_clean_exit_is_not_completed() {
+        for line in [
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"boom"}"#,
+            r#"{"type":"result","subtype":"success","is_error":true,"result":"boom"}"#,
+        ] {
+            let mut parser = StreamParser::new();
+            let event = parser.feed(line).expect("event").expect("no violation");
+            assert!(matches!(
+                event,
+                AgentEvent::TurnFinished {
+                    outcome: TurnOutcome::Failure
+                }
+            ));
+            let exit = terminal_outcome(
+                false,
+                Some(0),
+                None,
+                parser.turn_finished(),
+                parser.turn_failure().map(str::to_owned),
+                parser.last_message().map(str::to_owned),
+            );
+            match exit {
+                AgentExit::Failed {
+                    code: Some(0),
+                    reason: Some(reason),
+                } => {
+                    assert!(reason.contains("failed turn"), "reason: {reason}");
+                    assert!(reason.contains("boom"), "reason: {reason}");
+                }
+                other => panic!("expected failed turn with reason, got {other:?}"),
+            }
         }
     }
 }

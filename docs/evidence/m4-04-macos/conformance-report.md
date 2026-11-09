@@ -174,3 +174,57 @@ cargo clippy --locked -p orchestrator-agents --all-targets --no-deps
 The original Codex and Claude Code defects were fixed under the amendment. Pi's nonzero-after-settlement outcome was also changed because the shared conformance Errors scenario requires failure for all adapters. No Windows command was run.
 
 Updated: 2026-11-08T11:53:16Z.
+
+## M4-04 reverification at base `b5db71a3` (macOS, fake children)
+
+Recorded: 2026-11-09. Everything above, including the 24-test, 76-suite and 277-workspace counts, is the historical result at the earlier base and is not the current count. The numbers below are the current, separately measured results; Mac counts do not transfer to Windows.
+
+Branch `task/m4-04-adapter-conformance-b5db71a3-20261109`, base `b5db71a3b395d49c0767d8019c502d9fadfd0aa3`. Raw stdout, stderr, exit codes and metadata are stored outside the checkout in `.agent-worktrees/m4-04-evidence-20261109/` (files 00 to 09).
+
+### Measured RED then GREEN with an identical test tree
+
+The `crates/orchestrator-agents/tests` tree is `18d669e5e5c1b4e6ba692f8ca786c620e1217fde` in both runs. Only `src/` changed between them.
+
+| Run | Commit | Command | Exit | Result |
+| --- | --- | --- | ---: | --- |
+| RED | `843bc40c` | `cargo test --locked -p orchestrator-agents --test conformance` | 101 | 37 tests: 33 passed, 4 failed. |
+| GREEN | `32563640` | `cargo test --locked -p orchestrator-agents --tests` | 0 | 92 passed: lib 16, claude 10, codex 10, conformance 37, pi 10, routing 9. |
+| GREEN | `32563640` | `cargo clippy --locked -p orchestrator-agents --all-targets --no-deps` | 0 | Clean. |
+
+The four RED failures were real contract failures:
+
+- `claude_code_error_result`: `is_error` result plus exit 0 returned `Completed`.
+- `pi_rpc_error_result`: `agent_settled` with `aborted:true` plus exit 0 returned `Completed`.
+- `claude_code_cancel_after_exit` and `codex_cancel_after_exit`: a cancel after an observed natural exit relabelled `Completed` as `Cancelled`. Pi already guarded this.
+
+Fixes: Claude finishes the turn only on a successful `result`; Pi maps a `Failure` turn outcome to `Failed`; Codex and Claude `cancel()` do nothing once the exit was observed or a cancel was already issued. Codex has no failed-turn path: `turn.failed` is an unknown-type violation (parser unit test).
+
+The 37 conformance tests are the 24 historical tests plus 13 new ones. Codex adds `crlf_framing`, `cancel_after_exit`, `cancellation_tree`, `nonterminal_warning`, `item_outside_turn`. Claude Code and Pi each add `crlf_framing`, `cancel_after_exit`, `cancellation_tree`, `error_result`. The count is taken from the test output.
+
+A later source-only change makes a failed Claude `result` carry the provider error text in `AgentExit::Failed.reason`. It has a unit assertion in `claude_code_adapter::tests::error_result_with_clean_exit_is_not_completed`. Its results are not in the table above and are recorded only once it has been built and run.
+
+### Per-adapter contract status (macOS, fake children)
+
+| Scenario | Codex | Claude Code | Pi |
+| --- | --- | --- | --- |
+| Framing (split, oversized, CRLF) | Pass | Pass | Pass |
+| Launch (argv `literal arg;$(echo must-not-run)`) | Pass | Pass | Pass |
+| Cancellation, including a descendant process | Pass | Pass | Pass |
+| Cancel after natural exit | Pass | Pass | Pass |
+| Errors (nonzero exit keeps code and last message; protocol error) | Pass | Pass | Pass |
+| Failed turn plus exit 0 is not `Completed` | N/A, no such record | Pass | Pass |
+| Codex 0.167 warning order and out-of-turn negatives | Pass | N/A | N/A |
+| Unexpected EOF | Pass | Pass | Pass |
+| Unsupported features and routing | Pass | Pass | Pass |
+| Interruption | Pass | Pass | Pass |
+| Approvals | No-grant and routing refusal | No-grant and routing refusal | No-grant and routing refusal |
+
+### Limits
+
+- Fake children only. Every scenario uses a fake NDJSON or RPC child compiled from `tests/conformance/fake_child.rs`, with no provider credentials. The only real-CLI evidence is the macOS version and handshake probes above.
+- Windows is not covered by this report. The tests have no `cfg(unix)` gating on the scenarios, so the same test names must run natively at the final SHA. Open Windows points: `rustc` on `PATH`, argv quoting of the launch argument, Codex resolving only `.exe` and not `.cmd` shims.
+- Interruption differs by platform and is not equivalent. Unix sends SIGINT. Windows uses `taskkill /T /F`, a forced external kill, so a Windows pass proves no graceful interrupt.
+- CRLF proof is tolerance only. It shows CRLF-terminated records decode like LF records. It does not prove the runtime's trailing `\r` stripping or a read-boundary crossing, and the split-record fixtures flush each half with no delay.
+- Approvals prove no grant and routing refusal only. `approvals=false` for all three adapters, no approval protocol is implemented, and an approval-like provider record is never surfaced as `ApprovalRequested`. This is not evidence of safe interactive approval handling.
+
+Updated: 2026-11-09.
