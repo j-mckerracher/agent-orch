@@ -1,7 +1,10 @@
 //! CLI lifecycle state lives in `store.sqlite`; worktree metadata and logs
-//! remain sidecars. Run holds the data lock through setup and finish updates,
-//! then releases it during agent execution so a separate cancel command can
-//! enqueue a request for the run process that owns the live agent handle.
+//! remain sidecars. Run holds the data lock through setup, then releases it for
+//! the rest of the run so a separate cancel command can enqueue a request for
+//! the run process that owns the live agent handle, and so a daemon that holds
+//! the lock for its lifetime cannot starve the owner's finish. Finish writes
+//! need no exclusive lock because owner confirmation and closure are single
+//! generation-fenced store transactions only this owner may commit.
 //! Existing JSON task records are not migrated. Stale lock recovery precedes
 //! reconciliation.
 
@@ -525,7 +528,6 @@ pub async fn run_task(
     drop(lock);
     fault_injection::after_lock_release(agent_pid)?;
     let monitored = monitor_agent(handle, &store, &cancellation_owner).await;
-    let _finish_lock = acquire_data_directory_lock(&data_target.path)?;
     let current = store
         .get(&task_id)
         .map_err(|error| format!("cannot reload task {task_id} after agent exit: {error}"))?;

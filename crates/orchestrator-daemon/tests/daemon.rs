@@ -4,9 +4,11 @@ use orchestrator_core::records::Project;
 use orchestrator_ipc::{Client, IpcError};
 use orchestrator_store::SqliteStore;
 use serde_json::json;
+use std::fs;
 use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -209,6 +211,159 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
         "Cancelled"
     );
     assert_eq!(client.next_event().unwrap().sequence, 3);
+    client.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+}
+
+/// Builds the CLI next to the daemon test binary so a real run owner can be
+/// launched. Cargo only provides `CARGO_BIN_EXE_*` for this package, so the
+/// sibling package is built with the same profile and target directory. The
+/// build is incremental and a no-op when the binary is already current.
+fn build_cli_binary() -> PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let profile_dir = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
+    let target_dir = profile_dir.parent().unwrap();
+    let mut build = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    build
+        .args([
+            "build",
+            "--locked",
+            "-p",
+            "orchestrator-cli",
+            "--manifest-path",
+        ])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml"))
+        .arg("--target-dir")
+        .arg(target_dir);
+    if profile_dir
+        .file_name()
+        .is_some_and(|name| name == "release")
+    {
+        build.arg("--release");
+    }
+    let status = build.status().expect("run cargo build for the CLI");
+    assert!(status.success(), "cannot build orchestrator-cli");
+    let cli = profile_dir.join("orchestrator-cli");
+    assert!(cli.exists(), "missing {}", cli.display());
+    cli
+}
+
+fn git(repo: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed");
+}
+
+fn wait_for_agent_pid(run: &mut Child, metadata: &Path) -> u32 {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(pid) = fs::read(metadata)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| value["agent_pid"].as_u64())
+        {
+            return pid as u32;
+        }
+        if let Some(status) = run.try_wait().unwrap() {
+            panic!("CLI run exited before agent launch with {status}");
+        }
+        assert!(Instant::now() < deadline, "agent PID was not recorded");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// A real run owner (not a fake) must be able to confirm a cancellation that
+/// the daemon queued, even though the daemon holds the data lock for its whole
+/// lifetime. This is the live path that previously left the task Running and
+/// the next cancel returning Conflict.
+#[test]
+fn daemon_cancel_reaches_cancelled_through_real_run_owner() {
+    let cli = build_cli_binary();
+    let root = TempDir::new().unwrap();
+    let repo = root.path().join("repo");
+    let data = root.path().join("data");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--initial-branch=main"]);
+    git(&repo, &["config", "user.name", "daemon test"]);
+    git(
+        &repo,
+        &["config", "user.email", "daemon-test@example.invalid"],
+    );
+    fs::write(repo.join("sample.txt"), "base\n").unwrap();
+    git(&repo, &["add", "sample.txt"]);
+    git(&repo, &["commit", "-m", "initial"]);
+    let agent = root.path().join("fake-codex");
+    fs::write(
+        &agent,
+        "#!/bin/sh\nprintf '{\"type\":\"thread.started\",\"thread_id\":\"01a1b721-1f91-7393-ae1d-6aace8e4646a\"}\\n'\nprintf '{\"type\":\"turn.started\"}\\n'\nexec sleep 60\n",
+    )
+    .unwrap();
+    fs::set_permissions(&agent, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // The run owner needs the data lock for setup, so it starts first. The
+    // daemon starts after the agent is live and then holds the lock until exit.
+    let mut run = Command::new(&cli)
+        .arg("--data-dir")
+        .arg(&data)
+        .args(["run", "--repo"])
+        .arg(&repo)
+        .args(["--task-id", "live-cancel", "--objective", "wait for cancel"])
+        .args(["--base-ref", "main", "--agent-program"])
+        .arg(&agent)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let agent_pid = wait_for_agent_pid(&mut run, &data.join("cli/live-cancel/metadata.json"));
+
+    let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+    let owners = store.open_cancellation_owners().unwrap();
+    assert_eq!(owners.len(), 1, "real run owner must be registered");
+    let owner = owners.into_iter().next().unwrap();
+
+    let mut daemon = Daemon::start(&data);
+    wait_for_ipc(&data, &mut daemon);
+    let mut client = Client::connect(&data).unwrap();
+    let cancelled = client.tasks_cancel("live-cancel", "live-cancel-1");
+    let cancelled = cancelled.unwrap_or_else(|error| {
+        let _ = run.kill();
+        panic!("daemon cancel failed: {error:?}");
+    });
+    // The request is queued for the owner; the owner confirms it afterwards.
+    assert!(cancelled["state"] == "Running" || cancelled["state"] == "Cancelled");
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = run.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "run owner did not exit after cancel"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let output = run.wait_with_output().unwrap();
+    assert_eq!(
+        status.code(),
+        Some(130),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!orchestrator_runtime::is_process_running(agent_pid));
+
+    let task = client.tasks_get("live-cancel").unwrap();
+    assert_eq!(task["state"], "Cancelled");
+    assert!(store.open_cancellation_owners().unwrap().is_empty());
+    assert_eq!(
+        store.cancellation_request(&owner).unwrap(),
+        Some(orchestrator_store::CancellationStatus::Confirmed)
+    );
+
     client.shutdown().unwrap();
     assert!(daemon.finish().status.success());
 }

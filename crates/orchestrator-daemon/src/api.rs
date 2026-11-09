@@ -358,7 +358,10 @@ impl DaemonApi {
     /// Refuses to queue a cancellation that no live run owner can consume.
     ///
     /// The daemon holds the data-directory lock for its whole lifetime (see
-    /// `main`), so no CLI process can reconcile owners concurrently. An owner
+    /// `main`), so no CLI command that takes the lock can reconcile owners
+    /// concurrently. A live run owner takes no lock while it finishes, and
+    /// confirms or closes its own record in one generation-fenced store
+    /// transaction, so it can race this method safely. An owner
     /// whose exact recorded process has exited is retired for that exact
     /// generation, which marks its request `Failed`. An owner that is not
     /// provably alive (missing or inconclusive identity) is left untouched.
@@ -390,7 +393,9 @@ impl DaemonApi {
                      is not provably alive ({classification:?}); no cancellation was requested. \
                      Stop the daemon, confirm the owner and agent processes have exited, then \
                      run `agent-orch recover-owner {task_id} --attempt-id {} --session-id {} \
-                     --generation {} --confirm-processes-exited --reason \"<reason>\"`",
+                     --generation {} --confirm-processes-exited --reason \"<reason>\"`. \
+                     This Conflict is cached for the idempotency key, so retry cancellation \
+                     with a new key after recovery",
                     owner.generation(),
                     owner.attempt_id,
                     owner.session_id,
