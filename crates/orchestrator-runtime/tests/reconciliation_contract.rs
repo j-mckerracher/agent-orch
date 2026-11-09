@@ -496,4 +496,132 @@ mod git_state {
         assert_eq!(recovery, TaskRecovery::Completed);
         assert!(gate(recovery));
     }
+
+    // ---- F1: unsafe workspace evidence must outrank completion shortcuts ----
+    //
+    // RED provenance (base 4fc9ff3b): `classify_interrupted_task` returns
+    // `Completed` for `Succeeded` tasks and `Confirmed` delivery before it
+    // looks at the workspace, so dirty, uninspected, or foreign workspaces are
+    // reported as completed. The legitimate clean crash-recovery case
+    // (clean `Matching` workspace + `Confirmed` delivery) is deliberately NOT
+    // asserted here; its expected class awaits the owner's decision matrix.
+
+    /// Real workspace evidence for each unsafe class, built from real Git state.
+    /// Returns (label, evidence, path whose contents must survive).
+    fn unsafe_workspaces(fixture: &Fixture) -> Vec<(&'static str, WorkspaceEvidence, PathBuf)> {
+        let dirty_tree =
+            create_task_worktree(&fixture.repository, "dirty", "HEAD", &fixture.worktrees)
+                .expect("create dirty worktree");
+        let dirty_file = dirty_tree.path().join("unsaved.txt");
+        fs::write(&dirty_file, "uncommitted\n").expect("write uncommitted work");
+        let dirty = observe_workspace(fixture, &dirty_tree, true);
+
+        let unknown_tree =
+            create_task_worktree(&fixture.repository, "unknown", "HEAD", &fixture.worktrees)
+                .expect("create uninspected worktree");
+        let unknown = observe_workspace(fixture, &unknown_tree, false);
+
+        let foreign_path = fixture.worktrees.join("foreign");
+        fs::create_dir_all(&foreign_path).expect("create foreign directory");
+        let foreign_file = foreign_path.join("keep.txt");
+        fs::write(&foreign_file, "keep\n").expect("write foreign data");
+        let recorded = [RecordedWorkspace {
+            id: "workspace-foreign".into(),
+            path: foreign_path,
+            branch: "orchestrator/foreign".into(),
+            base_commit: fixture.candidate_sha.clone(),
+        }];
+        let plan = reconcile_workspaces(&fixture.repository, &recorded).expect("workspace plan");
+        let foreign = workspace_evidence(plan.workspaces.first(), None);
+
+        assert_eq!(dirty, WorkspaceEvidence::Dirty);
+        assert_eq!(unknown, WorkspaceEvidence::Unknown);
+        assert_eq!(foreign, WorkspaceEvidence::Foreign);
+        vec![
+            ("dirty", dirty, dirty_file),
+            ("unknown", unknown, unknown_tree.path().to_path_buf()),
+            ("foreign", foreign, foreign_file),
+        ]
+    }
+
+    fn real_delivery(fixture: &Fixture, landed: bool) -> DeliveryEvidence {
+        let review_ref = "refs/heads/orchestrator/review/task-1";
+        if landed {
+            git(
+                &fixture.path,
+                &["update-ref", review_ref, fixture.candidate_sha.as_str()],
+            );
+        }
+        let steps = [step(
+            fixture,
+            "delivery-a",
+            review_ref,
+            &fixture.candidate_sha,
+        )];
+        let plan = reconcile_delivery_steps(&fixture.repository, &steps).expect("delivery plan");
+        delivery_evidence(&plan.steps)
+    }
+
+    fn assert_all_require_inspection(cases: Vec<(String, TaskRecovery)>) {
+        let failures: Vec<_> = cases
+            .iter()
+            .filter(|(_, recovery)| {
+                *recovery != TaskRecovery::RequiresInspection || gate(*recovery)
+            })
+            .map(|(label, recovery)| format!("{label} => {recovery:?}"))
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "unsafe workspace must require inspection and block scheduling, got: {failures:#?}"
+        );
+    }
+
+    #[test]
+    fn unsafe_workspace_requires_inspection_even_when_task_succeeded() {
+        let fixture = fixture();
+        let workspaces = unsafe_workspaces(&fixture);
+        let not_applied = real_delivery(&fixture, false);
+        assert_eq!(not_applied, DeliveryEvidence::NotApplied);
+
+        let mut cases = Vec::new();
+        for (name, workspace, path) in &workspaces {
+            for (delivery_name, delivery) in [
+                ("no-delivery", DeliveryEvidence::None),
+                ("not-applied", not_applied),
+            ] {
+                let recovery = classify_interrupted_task(evidence(
+                    *workspace,
+                    delivery,
+                    TaskState::Succeeded,
+                    AttemptState::Succeeded,
+                ));
+                cases.push((format!("Succeeded+{name}+{delivery_name}"), recovery));
+            }
+            assert!(path.exists(), "{name} work must be preserved");
+        }
+        assert_all_require_inspection(cases);
+    }
+
+    #[test]
+    fn unsafe_workspace_requires_inspection_even_when_delivery_is_confirmed() {
+        let fixture = fixture();
+        let workspaces = unsafe_workspaces(&fixture);
+        let confirmed = real_delivery(&fixture, true);
+        assert_eq!(confirmed, DeliveryEvidence::Confirmed);
+
+        let mut cases = Vec::new();
+        for (name, workspace, path) in &workspaces {
+            for (task, attempt) in [
+                (TaskState::Running, AttemptState::Running),
+                (TaskState::Verifying, AttemptState::CandidateReady),
+                (TaskState::Succeeded, AttemptState::Succeeded),
+            ] {
+                let recovery =
+                    classify_interrupted_task(evidence(*workspace, confirmed, task, attempt));
+                cases.push((format!("{task:?}+{name}+Confirmed"), recovery));
+            }
+            assert!(path.exists(), "{name} work must be preserved");
+        }
+        assert_all_require_inspection(cases);
+    }
 }
