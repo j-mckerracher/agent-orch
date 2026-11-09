@@ -1,0 +1,25 @@
+{
+  "name": "switch",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171957Z-c1590e7c745540bf9eb1ec0deb131971\\source switch --detach 5f6f3a117089fe6c08936bc2b21c5d76b83cdb39",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171957Z-c1590e7c745540bf9eb1ec0deb131971",
+  "source_commit": "5f6f3a117089fe6c08936bc2b21c5d76b83cdb39",
+  "started_utc": "2026-11-09T17:20:11.9507566Z",
+  "duration_seconds": 0.793,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171957Z-c1590e7c745540bf9eb1ec0deb131971\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 100,
+  "stderr_sha256": "5809b7b45c0f4b18f3ab94f0600b96387c5e811d0db619598aa1361983ed709b",
+  "error": null
+}

@@ -1,0 +1,1 @@
+Earlier run 20261109T171749Z-3c531a296b5f41289441259316235c4c stopped before Cargo gates: clone exited 128 because the runbook default source branch was absent. The retry used the published source branch containing the pinned commit, as permitted by setup step 1. The earlier run directory remains preserved outside the checkout.

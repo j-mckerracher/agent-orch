@@ -1,0 +1,25 @@
+{
+  "name": "clone",
+  "command": "git.exe clone --no-checkout --single-branch --branch orch/priority-8-windows-acceptance-5f6f3a1 <url-redacted> C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171749Z-3c531a296b5f41289441259316235c4c\\source",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171749Z-3c531a296b5f41289441259316235c4c",
+  "source_commit": "5f6f3a117089fe6c08936bc2b21c5d76b83cdb39",
+  "started_utc": "2026-11-09T17:17:50.6164030Z",
+  "duration_seconds": 1.35,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p8-acc-20261109T171749Z-3c531a296b5f41289441259316235c4c\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 128,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 314,
+  "stderr_sha256": "5784be1e218de5d42ec6b0e0e0775c70d28739fcd6b58ef5b2d83d8b796b886b",
+  "error": null
+}

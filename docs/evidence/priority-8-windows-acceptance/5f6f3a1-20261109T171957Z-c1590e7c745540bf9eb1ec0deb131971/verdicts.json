@@ -1,0 +1,50 @@
+[
+  {
+    "name": "daemon-build",
+    "status": "PASS",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_seconds": 121.972,
+    "running": "",
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": ""
+  },
+  {
+    "name": "ipc-tests",
+    "status": "PASS",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_seconds": 20.755,
+    "running": "11,0",
+    "passed": 11.0,
+    "failed": 0.0,
+    "ignored": 0.0,
+    "notes": ""
+  },
+  {
+    "name": "daemon-tests",
+    "status": "PASS",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_seconds": 18.996,
+    "running": "17,0",
+    "passed": 17.0,
+    "failed": 0.0,
+    "ignored": 0.0,
+    "notes": ""
+  },
+  {
+    "name": "clippy-scoped",
+    "status": "INCONCLUSIVE",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_seconds": 44.949,
+    "running": "",
+    "passed": null,
+    "failed": null,
+    "ignored": null,
+    "notes": "6 warning line(s). Expected 0. Report each one verbatim."
+  }
+]
