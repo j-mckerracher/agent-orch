@@ -39,7 +39,7 @@ What the coordinator reported about the candidate (not re-run here, not Windows 
   this candidate and none of its results is reused.
 - This candidate `693dd9d8e1726f90b8b1c7a0a0c4c298834ae9bb` is a single-commit, single-file,
   fixture-only change on `c1be4bba…` (`crates/orchestrator-store/tests/lock_identity_contract.rs`,
-  +49 −5, production code unchanged, no test name or `cfg` changed). The test now observes retention
+  +49 −5, production code unchanged; no test name, `#[test]`, `#[ignore]` or item-level `cfg` changed; two statement-level `cfg` attributes were added inside the existing test body). The test now observes retention
   of the directory and its marker first, prints the actual outcome on stderr, and then asserts the
   typed result: exactly `HolderUnknown` on Unix, `HolderUnknown` or `Io` elsewhere. The owner reported
   targeted macOS tests green. Source evaluation and full macOS validation are running in parallel
@@ -159,7 +159,8 @@ were derived like this:
    `693dd9d8…`. The candidate differs from the parent only by the body of one existing test function
    in `crates/orchestrator-store/tests/lock_identity_contract.rs` (+49 −5). A `git diff` between the
    two commits shows no added, removed, or renamed test, no change of any `#[test]`, `#[ignore]` or
-   `cfg` attribute, and no other file. The Windows test descriptors are therefore the same by
+   item-level `cfg` attribute (two statement-level `cfg` attributes were added inside the existing
+   test body), and no other file. The Windows test descriptors are therefore the same by
    construction, and the counts below are carried over from the parent's expansion, not re-expanded
    or measured for this candidate.
 2. The method was validated on the accepted baseline `46497ac98fd8d053b80b5d9b730d2fd2110c56f7`: it
@@ -194,7 +195,7 @@ checks passed. `workspace-tests` 333 passed and 1 ignored, `git-package` 56 pass
 | `git-delivery-lib` | `test --locked -p orchestrator-git --lib delivery` | One binary. 4 passed, 0 ignored. Covers lock identity `Err` and `None` failing explicitly with the file preserved, and a verified lock removed on drop. |
 | `store-data-lock-integration` | `test --locked -p orchestrator-store --test data_lock` | One binary. `running 8 tests`, 7 passed, 1 ignored (`lock_child_process_helper`). Unchanged. |
 | `store-data-lock-lib` | `test --locked -p orchestrator-store --lib data_lock` | One binary. 7 passed, 0 ignored (was 2). New: fresh creation `Err` and `None` fail explicitly, identity lookup failure is an I/O error and not a retry, a platform without identity still retries, and a verified creation is cleaned up on drop. |
-| `store-lock-identity-contract` | `test --locked -p orchestrator-store --test lock_identity_contract -- --nocapture` | One binary. 3 passed (macOS 4; the Unix symlink test is not built on Windows). `--nocapture` is the only argument change: it makes `directory_at_the_lock_path_is_never_removed` print `directory_at_the_lock_path: acquire=<actual outcome> directory_kept=<bool> marker_intact=<bool>` on stderr. The stdout `running`, `test ... ok` and `test result` lines, and so the named and count gates, are unchanged. Read that stderr line in `store-lock-identity-contract.stderr.txt`; on PASS it must show `directory_kept=true marker_intact=true` and an outcome of `Err(HolderUnknown)` or `Err(Io(..))`. It is recorded for the reviewer. The verdict code does not parse it. |
+| `store-lock-identity-contract` | `test --locked -p orchestrator-store --test lock_identity_contract -- --nocapture` | One binary. 3 passed (macOS 4; the Unix symlink test is not built on Windows). `--nocapture` is the only argument change: it makes `directory_at_the_lock_path_is_never_removed` print `directory_at_the_lock_path: acquire=<actual outcome> directory_kept=<bool> marker_intact=<bool>` on stderr. The stdout `running`, `test ... ok` and `test result` lines, and so the named and count gates, are unchanged. Read that stderr line in `store-lock-identity-contract.stderr.txt`; on PASS it must show `directory_kept=true marker_intact=true` and an outcome of `acquire=HolderUnknown` or `acquire=Io(..)`. The test prints the error itself, not a `Result` wrapper, so `Err(..)` never appears. `acquire=Ok(lock)` is a FAIL (acquire must fail closed), whatever else the line shows. It is recorded for the reviewer. The verdict code does not parse it. |
 | `runtime-reconciliation-contract` | `test --locked -p orchestrator-runtime --test reconciliation_contract` | One binary. 14 passed (macOS 15; the Unix process-group survivor test is not built on Windows). Includes the `git_state::*` matrix over real Git evidence. |
 | `runtime-reconcile` | `test --locked -p orchestrator-runtime --test reconcile` | One binary. 28 passed (macOS 34). Includes the new `git_evidence::*` and `task_classification::*` tests and the preserved 100 ns identity and creation-time tests. |
 | `ipc-token-owner` | `test --locked -p orchestrator-ipc --lib startup_replaces_only_regular_stale_token` | One binary. 1 passed. Unchanged. |
