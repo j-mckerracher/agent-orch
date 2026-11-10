@@ -80,6 +80,7 @@ impl Fixture {
             poll: Duration::from_millis(25),
             probe_timeout: Duration::from_secs(5),
             catalog_timeout: Duration::from_secs(5),
+            catalog_wait: Duration::from_secs(5),
         }
     }
 

@@ -64,10 +64,23 @@ pub(crate) struct ExecutorConfig {
     /// Upper bound for each CLI probe behind `agents.catalog` and submit-time
     /// selection checks. Launch-time checks use `LAUNCH_CATALOG_TIMEOUT`.
     pub(crate) catalog_timeout: Duration,
+    /// How long a caller waits for a catalog read before it is told the
+    /// catalog is not known yet. Must stay well under the 2 s client I/O
+    /// timeout. The read itself continues in the background and fills the
+    /// cache for the retry.
+    pub(crate) catalog_wait: Duration,
 }
 
 /// No client waits on a launch, so its catalog check can wait for a slow CLI.
 const LAUNCH_CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Replaces control characters in text taken from a request so it cannot
+/// forge or hide log lines.
+pub(crate) fn log_safe(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
+}
 
 impl ExecutorConfig {
     /// Reads one agent's catalog from its installed CLI. An agent the daemon
@@ -114,6 +127,7 @@ impl ExecutorConfig {
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
             catalog_timeout: Duration::from_millis(1500),
+            catalog_wait: Duration::from_millis(1100),
         }
     }
 }
@@ -443,7 +457,9 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
             .read_catalog(&job.agent, &job.worktree, LAUNCH_CATALOG_TIMEOUT)
             .await
             .validate(model, effort)
-            .map_err(|error| format!("model selection refused: {error}"))?;
+            .map_err(|error| {
+                format!("model selection refused: {}", log_safe(&error.to_string()))
+            })?;
     }
     let (program, args, detect) = match job.agent.as_str() {
         CODEX_AGENT => {

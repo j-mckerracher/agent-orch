@@ -52,7 +52,7 @@ pub(crate) struct DaemonApi {
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
     /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
-    catalog_cache: models::CatalogCache,
+    catalog_cache: Arc<models::CatalogCache>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -182,7 +182,7 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
-            catalog_cache: Mutex::new(Default::default()),
+            catalog_cache: Arc::default(),
         })
     }
 
@@ -332,6 +332,13 @@ impl DaemonApi {
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
         let request: TaskSubmitParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
+        // The catalog read can take as long as a CLI probe, so it happens
+        // before the idempotency gate is taken: the gate serializes every
+        // mutating request and must not wait on a subprocess.
+        let selection_catalog = self.selection_catalog(
+            &request.contract.agent,
+            request.contract.model_selection.as_ref(),
+        )?;
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
@@ -359,7 +366,10 @@ impl DaemonApi {
                     .map_err(map_store_error)?;
                 contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
                 if let Some(selection) = &contract.model_selection {
-                    self.check_selection(&contract.agent, selection)?;
+                    // `contract::validate` has accepted the selection, so the
+                    // pre-gate read was made for it.
+                    let catalog = selection_catalog.as_ref().ok_or(RpcError::Internal)?;
+                    self.check_selection(catalog, selection)?;
                 }
                 self.validate_scheduler(&contract)?;
                 self.store.create(&contract).map_err(map_store_error)?;

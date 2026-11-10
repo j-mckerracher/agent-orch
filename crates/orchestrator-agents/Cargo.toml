@@ -15,6 +15,10 @@ thiserror = "=2.0.21"
 async-trait = "=0.1.89"
 uuid = { version = "=1.18.1", features = ["v4", "serde"] }
 
+# Catalog probes run in their own process group, which is killed as a whole.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
 [dev-dependencies]
 tempfile = "=3.27.0"
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros"] }

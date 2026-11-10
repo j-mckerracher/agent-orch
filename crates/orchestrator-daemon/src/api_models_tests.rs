@@ -482,3 +482,185 @@ fn launch_checks_the_selection_again_against_a_fresh_catalog() {
         "the agent must not have launched"
     );
 }
+
+/// A fake codex whose `debug models` probe runs `debug_body` first and
+/// appends a line to the returned counter file each time it is run.
+fn probing_codex(fixture: &Fixture, debug_body: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let models = fixture.marker("probing-models.json");
+    fs::write(&models, MODELS).unwrap();
+    let counter = fixture.marker("debug-calls.txt");
+    let started = fixture.marker("debug-started");
+    let codex = fixture.script(
+        "probing-codex",
+        &format!(
+            "case \"$1\" in\n\
+             login) echo 'Logged in'; exit 0;;\n\
+             debug) echo x >> '{counter}'; touch '{started}'; {debug_body}\n cat '{models}'; exit 0;;\n\
+             esac\n\
+             {THREAD_STARTED}{TURN_COMPLETED}",
+            counter = counter.display(),
+            started = started.display(),
+            models = models.display(),
+        ),
+    );
+    (codex, counter, started)
+}
+
+fn probe_count(counter: &Path) -> usize {
+    fs::read_to_string(counter).map_or(0, |calls| calls.lines().count())
+}
+
+fn probing_api(fixture: &Fixture, codex: &Path, timeout: Duration, wait: Duration) -> DaemonApi {
+    let claude = agents(fixture).claude;
+    fixture.api_with(codex, |config| {
+        config.claude_program = Some(claude);
+        config.catalog_timeout = timeout;
+        config.catalog_wait = wait;
+    })
+}
+
+#[test]
+fn a_slow_catalog_read_does_not_block_an_unrelated_submit() {
+    let fixture = Fixture::new();
+    let (codex, _, started) = probing_codex(&fixture, "sleep 2");
+    let api = probing_api(
+        &fixture,
+        &codex,
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+    );
+    let selecting_finished = std::sync::atomic::AtomicBool::new(false);
+
+    std::thread::scope(|scope| {
+        let selecting = scope.spawn(|| {
+            let result = submit_with(
+                &fixture,
+                &api,
+                "slow-1",
+                "codex",
+                json!({"model": "gpt-6-luna"}),
+            );
+            selecting_finished.store(true, std::sync::atomic::Ordering::SeqCst);
+            result
+        });
+        wait_until("the cold catalog read to start", || started.exists());
+
+        let unrelated = submit_with(&fixture, &api, "plain-1", "codex", Value::Null);
+
+        assert!(unrelated.is_ok(), "{unrelated:?}");
+        assert!(
+            !selecting_finished.load(std::sync::atomic::Ordering::SeqCst),
+            "the unrelated submit waited for the catalog read"
+        );
+        assert!(selecting.join().unwrap().is_ok());
+    });
+}
+
+#[test]
+fn a_read_that_outlasts_the_wait_is_refused_with_a_retry_hint_and_the_key_stays_usable() {
+    let fixture = Fixture::new();
+    let (codex, _, _) = probing_codex(&fixture, "sleep 2");
+    let api = probing_api(
+        &fixture,
+        &codex,
+        Duration::from_secs(10),
+        Duration::from_millis(300),
+    );
+    let selection = json!({"model": "gpt-6-luna"});
+
+    let began = Instant::now();
+    let first = submit_with(&fixture, &api, "retry-1", "codex", selection.clone());
+    let elapsed = began.elapsed();
+
+    assert_eq!(first, Err(RpcError::Conflict));
+    assert!(elapsed < Duration::from_millis(1900), "{elapsed:?}");
+    assert_eq!(api.dispatch("tasks.list", json!({})).unwrap(), json!([]));
+    let pending = validate(&api, "codex", json!("gpt-6-luna"), Value::Null);
+    assert_eq!(pending["valid"], false);
+    assert_eq!(pending["reason"], "agent_state_unknown");
+    let listed = api.dispatch("agents.catalog", Value::Null).unwrap();
+    assert!(entry(&listed, "codex")["detail"]
+        .as_str()
+        .unwrap()
+        .contains("retry"));
+
+    // The read finishes in the background; the same key then succeeds, so the
+    // refusal was not stored under it.
+    let mut retried = Err(RpcError::Conflict);
+    wait_until("the background read to make the retry succeed", || {
+        retried = submit_with(&fixture, &api, "retry-1", "codex", selection.clone());
+        retried != Err(RpcError::Conflict)
+    });
+    assert!(retried.is_ok(), "{retried:?}");
+}
+
+#[test]
+fn a_timed_out_facet_is_not_cached_but_a_definitive_read_is() {
+    let fixture = Fixture::new();
+    let first_run = fixture.marker("first-debug-run");
+    let (codex, counter, _) = probing_codex(
+        &fixture,
+        &format!(
+            "if [ ! -f '{marker}' ]; then touch '{marker}'; sleep 30; fi",
+            marker = first_run.display()
+        ),
+    );
+    let api = probing_api(
+        &fixture,
+        &codex,
+        Duration::from_secs(2),
+        Duration::from_secs(10),
+    );
+
+    let timed_out = api.dispatch("agents.catalog", Value::Null).unwrap();
+    assert_eq!(entry(&timed_out, "codex")["models"]["state"], "unknown");
+
+    let recovered = api.dispatch("agents.catalog", Value::Null).unwrap();
+    assert_eq!(entry(&recovered, "codex")["models"]["state"], "available");
+    assert_eq!(probe_count(&counter), 2, "the timed-out read was reused");
+
+    api.dispatch("agents.catalog", Value::Null).unwrap();
+    assert_eq!(probe_count(&counter), 2, "a definitive read was not reused");
+    assert!(submit_with(
+        &fixture,
+        &api,
+        "after-timeout",
+        "codex",
+        json!({"model": "gpt-6-sol"})
+    )
+    .is_ok());
+}
+
+#[test]
+fn concurrent_cold_reads_share_one_set_of_probes() {
+    let fixture = Fixture::new();
+    let (codex, counter, started) = probing_codex(&fixture, "sleep 1");
+    let api = probing_api(
+        &fixture,
+        &codex,
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+    );
+
+    std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..6)
+            .map(|_| scope.spawn(|| api.dispatch("agents.catalog", Value::Null).unwrap()))
+            .collect();
+        for reader in readers {
+            let catalog = reader.join().unwrap();
+            assert_eq!(entry(&catalog, "codex")["models"]["state"], "available");
+        }
+    });
+
+    assert!(started.exists());
+    assert_eq!(probe_count(&counter), 1);
+}
+
+#[test]
+fn logged_text_cannot_carry_control_characters() {
+    assert_eq!(
+        log_safe("agent\nFORGED: line\u{1b}[31m\0"),
+        "agent?FORGED: line?[31m?"
+    );
+    assert_eq!(log_safe("codex"), "codex");
+}

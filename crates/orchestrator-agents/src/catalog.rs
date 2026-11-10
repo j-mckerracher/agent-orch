@@ -20,6 +20,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
@@ -174,6 +175,20 @@ impl AgentCatalog {
         }
     }
 
+    /// A catalog that could not be obtained, for example because the read is
+    /// still running. Not "none": nothing can be selected from it.
+    pub fn unknown(agent: &str, detail: &str) -> Self {
+        Self::uniform(agent, provider_of(agent), CatalogState::Unknown, detail)
+    }
+
+    /// Whether every part of this catalog is a fact rather than a failed
+    /// read. Only a definitive catalog is worth reusing.
+    pub fn is_definitive(&self) -> bool {
+        [self.state, self.models.state, self.efforts.state]
+            .iter()
+            .all(|state| *state != CatalogState::Unknown)
+    }
+
     /// An adapter the daemon cannot launch with a selection.
     pub fn unsupported_agent(agent: &str, detail: &str) -> Self {
         Self::uniform(agent, None, CatalogState::Unsupported, detail)
@@ -305,42 +320,115 @@ pub(crate) enum CaptureFailure {
     TooLarge,
 }
 
+/// Everything a probe started, not just the process the daemon spawned.
+///
+/// Unix: the probe leads its own process group and the whole group is sent
+/// `SIGKILL`, so a wrapper script or shim cannot leave a grandchild running
+/// (or holding the output pipes open) after the probe ends or times out.
+///
+/// Windows: only the direct child is killed (`kill_on_drop`); a `.cmd` or npm
+/// shim's descendants can outlive a timed-out probe. Closing a kill-on-close
+/// Job Object that holds the child would cover them, as the process
+/// supervisor in `orchestrator-runtime` does for agent launches, but that
+/// needs a suspended spawn and handle plumbing that is out of scope for a
+/// read-only probe. Tracked as a Windows follow-up.
+struct ProcessGroup {
+    #[cfg(unix)]
+    leader: Option<u32>,
+    armed: AtomicBool,
+}
+
+impl ProcessGroup {
+    fn of(child: &tokio::process::Child) -> Self {
+        #[cfg(not(unix))]
+        let _ = child;
+        Self {
+            #[cfg(unix)]
+            leader: child.id(),
+            armed: AtomicBool::new(true),
+        }
+    }
+
+    /// Kill every member. Harmless when the group is already empty.
+    fn kill(&self) {
+        #[cfg(unix)]
+        if let Some(leader) = self.leader.and_then(|pid| i32::try_from(pid).ok()) {
+            // SAFETY: `kill` with a negative pid only signals the group this
+            // probe created; it touches no memory.
+            let _ = unsafe { libc::kill(-leader, libc::SIGKILL) };
+        }
+    }
+
+    /// The group has been dealt with; dropping must not signal a pid the
+    /// system may have reused.
+    fn disarm(&self) {
+        self.armed.store(false, Ordering::Release);
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        if self.armed.load(Ordering::Acquire) {
+            self.kill();
+        }
+    }
+}
+
 /// Run one read-only command to completion within `limit`. Dropping the
-/// future (including on timeout) kills the child.
+/// future (including on timeout) kills the child and its process group.
+/// Once the child exits, anything it left behind is killed too, so a
+/// background process holding the output pipes cannot stall the read.
 async fn capture(
     program: &Path,
     args: &[&str],
     working_dir: &Path,
     limit: Duration,
 ) -> Result<Captured, CaptureFailure> {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(working_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| CaptureFailure::Launch)?;
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command.spawn().map_err(|_| CaptureFailure::Launch)?;
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(CaptureFailure::Launch);
     };
     let run = async {
+        let group = ProcessGroup::of(&child);
         let mut out = Vec::new();
         let mut err = Vec::new();
         let mut out_reader = stdout.take(MAX_STDOUT_BYTES + 1);
         let mut err_reader = stderr.take(MAX_STDERR_BYTES);
-        let (read_out, read_err) = tokio::join!(
-            out_reader.read_to_end(&mut out),
-            err_reader.read_to_end(&mut err),
-        );
-        if out.len() as u64 > MAX_STDOUT_BYTES {
-            return Err(CaptureFailure::TooLarge);
-        }
-        if read_out.is_err() || read_err.is_err() {
-            return Err(CaptureFailure::Launch);
-        }
-        let status = child.wait().await.map_err(|_| CaptureFailure::Launch)?;
+        let reads = async {
+            let (read_out, read_err) = tokio::join!(
+                out_reader.read_to_end(&mut out),
+                err_reader.read_to_end(&mut err),
+            );
+            // The child may be blocked writing to a pipe nobody reads now.
+            if out.len() as u64 > MAX_STDOUT_BYTES {
+                group.kill();
+                return Err(CaptureFailure::TooLarge);
+            }
+            if read_out.is_err() || read_err.is_err() {
+                group.kill();
+                return Err(CaptureFailure::Launch);
+            }
+            Ok(())
+        };
+        let exit = async {
+            let status = child.wait().await;
+            group.kill();
+            group.disarm();
+            status
+        };
+        let (read_result, status) = tokio::join!(reads, exit);
+        read_result?;
+        let status = status.map_err(|_| CaptureFailure::Launch)?;
         Ok(Captured {
             code: status.code(),
             stdout: out,
@@ -794,6 +882,25 @@ mod tests {
     }
 
     #[test]
+    fn only_a_catalog_with_every_facet_known_is_definitive() {
+        let timed_out_models = codex_catalog(&captured(0, "ok"), Err(CaptureFailure::TimedOut));
+        assert_eq!(timed_out_models.state, CatalogState::Available);
+        assert_eq!(timed_out_models.models.state, CatalogState::Unknown);
+        assert!(!timed_out_models.is_definitive());
+        let no_help = claude_catalog(&captured(0, r#"{"loggedIn":true}"#), captured(0, "Usage"));
+        assert!(!no_help.is_definitive());
+        assert!(!AgentCatalog::unknown("codex", "still reading").is_definitive());
+        assert_eq!(
+            AgentCatalog::unknown("codex", "x").provider.as_deref(),
+            Some("openai")
+        );
+        assert!(claude().is_definitive());
+        let signed_out = claude_catalog(&captured(1, r#"{"loggedIn":false}"#), captured(0, ""));
+        assert!(signed_out.is_definitive());
+        assert!(pi_catalog().is_definitive());
+    }
+
+    #[test]
     fn claude_effort_parser_rejects_unsafe_levels() {
         assert_eq!(parse_claude_efforts("  --effort <l>  x (low, -rf)"), None);
         assert_eq!(parse_claude_efforts("  --effort <l>  x (Low)"), None);
@@ -968,6 +1075,94 @@ mod tests {
                 .catalog(dir.path(), Duration::from_secs(1))
                 .await;
             assert_eq!(missing.state, CatalogState::Unavailable);
+        }
+
+        /// Waits for every process whose pid the fake CLI recorded to exit,
+        /// stopping any that did not so the test never leaks them.
+        fn all_recorded_processes_exit(path: &std::path::Path) -> bool {
+            let recorded = std::fs::read_to_string(path)
+                .expect("the fake CLI records its background processes");
+            let pids: Vec<i32> = recorded
+                .lines()
+                .map(|pid| pid.trim().parse().unwrap())
+                .collect();
+            assert!(!pids.is_empty());
+            let mut all_exited = true;
+            for pid in pids {
+                let mut exited = false;
+                for _ in 0..100 {
+                    // SAFETY: signal 0 only checks that the process exists.
+                    if unsafe { libc::kill(pid, 0) } != 0 {
+                        exited = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                if !exited {
+                    all_exited = false;
+                    // SAFETY: stops the leaked fake process this test started.
+                    unsafe { libc::kill(pid, libc::SIGKILL) };
+                }
+            }
+            all_exited
+        }
+
+        #[tokio::test]
+        async fn a_timed_out_probe_leaves_no_descendant_running() {
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("background.pids");
+            let program = script(
+                &dir,
+                &format!("sleep 300 &\necho $! >> '{}'\nwait\n", pid_file.display()),
+            );
+            let result = ClaudeCodeAdapter::new()
+                .with_program(&program)
+                .catalog(dir.path(), Duration::from_secs(3))
+                .await;
+            assert_eq!(result.state, CatalogState::Unknown);
+            assert!(
+                all_recorded_processes_exit(&pid_file),
+                "a probe's background process survived the timeout"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_background_process_holding_the_pipe_does_not_stall_a_finished_probe() {
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("background.pids");
+            let help = dir.path().join("help.txt");
+            std::fs::write(
+                &help,
+                "Options:\n  --effort <level>  x\n                    (low, high)\n",
+            )
+            .unwrap();
+            let program = script(
+                &dir,
+                &format!(
+                    "case \"$1\" in\n\
+                     auth) echo '{{\"loggedIn\":true}}'; exit 0;;\n\
+                     --help) sleep 300 &\n echo $! >> '{pid}'\n cat '{help}'; exit 0;;\n\
+                     esac\n",
+                    pid = pid_file.display(),
+                    help = help.display(),
+                ),
+            );
+            let started = std::time::Instant::now();
+            let result = ClaudeCodeAdapter::new()
+                .with_program(&program)
+                .catalog(dir.path(), Duration::from_secs(60))
+                .await;
+            let elapsed = started.elapsed();
+            assert_eq!(result.efforts.state, CatalogState::Available);
+            assert_eq!(result.efforts.items, ["low", "high"]);
+            assert!(
+                all_recorded_processes_exit(&pid_file),
+                "a finished probe's background process survived"
+            );
+            assert!(
+                elapsed < Duration::from_secs(30),
+                "the read waited for the background process"
+            );
         }
 
         #[tokio::test]
