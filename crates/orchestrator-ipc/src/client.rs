@@ -310,6 +310,12 @@ impl Client {
         self.call_feature(Capability::Review, "review.request_approval", params)
     }
 
+    /// `host.metrics`: cached CPU, memory, disk and GPU meters. See
+    /// `docs/host-metrics.md`.
+    pub fn host_metrics(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Host, "host.metrics", Value::Null)
+    }
+
     pub fn review_evidence(
         &mut self,
         task_id: &str,

@@ -95,6 +95,9 @@ impl Client {
     pub fn review_request_approval(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn host_metrics(&mut self) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn review_evidence(
         &mut self,
         _: &str,

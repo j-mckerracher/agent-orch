@@ -386,6 +386,7 @@ fn method_capability(method: &str) -> Option<Capability> {
         "review.request_approval" | "review.evidence" | "review.request_changes" => {
             Some(Capability::Review)
         }
+        "host.metrics" => Some(Capability::Host),
         _ => None,
     }
 }
