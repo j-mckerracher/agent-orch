@@ -126,6 +126,43 @@ impl Repository {
         candidate_sha: &str,
     ) -> Result<Vec<String>, Error> {
         self.require_commit_pair(base_sha, candidate_sha)?;
+        self.list_changed_files(base_sha, candidate_sha)
+    }
+
+    /// Reads a diff between two commits, restricted to one relative path.
+    ///
+    /// The diff is pinned to the named commits, so later work-tree edits or new
+    /// commits cannot change it. Path rules match [`Repository::diff_from`].
+    pub fn diff_between(
+        &self,
+        base_sha: &str,
+        candidate_sha: &str,
+        path: Option<&Path>,
+    ) -> Result<String, Error> {
+        self.require_commit_pair(base_sha, candidate_sha)?;
+        self.read_commit_diff(base_sha, candidate_sha, path)
+    }
+
+    /// Changed files and the diff between two commits, validating the commit
+    /// pair once. Same rules and errors as calling [`Repository::changed_files_between`]
+    /// then [`Repository::diff_between`], with two fewer Git processes.
+    pub fn snapshot_between(
+        &self,
+        base_sha: &str,
+        candidate_sha: &str,
+        path: Option<&Path>,
+    ) -> Result<(Vec<String>, String), Error> {
+        self.require_commit_pair(base_sha, candidate_sha)?;
+        let files = self.list_changed_files(base_sha, candidate_sha)?;
+        let diff = self.read_commit_diff(base_sha, candidate_sha, path)?;
+        Ok((files, diff))
+    }
+
+    fn list_changed_files(
+        &self,
+        base_sha: &str,
+        candidate_sha: &str,
+    ) -> Result<Vec<String>, Error> {
         let output = git_bytes(
             "list candidate files",
             &self.path,
@@ -149,17 +186,12 @@ impl Repository {
             .collect())
     }
 
-    /// Reads a diff between two commits, restricted to one relative path.
-    ///
-    /// The diff is pinned to the named commits, so later work-tree edits or new
-    /// commits cannot change it. Path rules match [`Repository::diff_from`].
-    pub fn diff_between(
+    fn read_commit_diff(
         &self,
         base_sha: &str,
         candidate_sha: &str,
         path: Option<&Path>,
     ) -> Result<String, Error> {
-        self.require_commit_pair(base_sha, candidate_sha)?;
         let path = path.map(|path| self.diff_path(path)).transpose()?.flatten();
         let mut args: Vec<OsString> = [
             "--literal-pathspecs",

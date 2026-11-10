@@ -66,13 +66,13 @@ mod server;
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(any(unix, windows))]
-pub use client::Client;
+pub use client::{Client, DEFAULT_IO_TIMEOUT};
 #[cfg(any(unix, windows))]
 pub use relay::{CloseReason, Relay, RelayError, RelayEvent};
 #[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
 #[cfg(not(any(unix, windows)))]
-pub use unsupported::{Client, Server, ServerConfig};
+pub use unsupported::{Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
 
 #[cfg(all(test, any(unix, windows)))]
 #[path = "coordinator_review_tests.rs"]

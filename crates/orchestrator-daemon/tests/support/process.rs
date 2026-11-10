@@ -6,12 +6,14 @@
 //! Short paths: Windows has a 260-character path limit, so every test root is
 //! `<temp>/ao*` with one-letter children.
 //!
-//! Failure diagnostics: the daemon's stdout and stderr go to `daemon.log`,
-//! which is printed when the test panics.
+//! Failure diagnostics: the daemon's stdout and stderr go to `daemon.log`;
+//! its tail, and the elapsed time of every call made through `timed!`, are
+//! printed when the test panics.
 
 #![allow(dead_code)]
 
-use orchestrator_ipc::Client;
+use orchestrator_ipc::{Capability, Client};
+use std::cell::RefCell;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -23,6 +25,53 @@ use tempfile::TempDir;
 /// loaded Windows host can be slow.
 const READY: Duration = Duration::from_secs(30);
 const STOP: Duration = Duration::from_secs(15);
+/// Read/write timeout of test clients. Review calls run several Git processes
+/// in the daemon, which takes seconds on a slow Windows host; the production
+/// default (`DEFAULT_IO_TIMEOUT`) is sized for fast calls.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+const LOG_TAIL_LINES: usize = 60;
+
+thread_local! {
+    static TIMINGS: RefCell<Vec<(String, Duration, bool)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Runs one client call and records its label, elapsed time and whether it
+/// returned `Ok`, for the failure report.
+pub fn timed<T, E>(label: &str, call: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    let started = Instant::now();
+    let result = call();
+    let label = label.split_whitespace().collect::<Vec<_>>().join(" ");
+    TIMINGS.with(|timings| {
+        timings
+            .borrow_mut()
+            .push((label, started.elapsed(), result.is_ok()))
+    });
+    result
+}
+
+fn print_timings() {
+    TIMINGS.with(|timings| {
+        eprintln!("--- per-call timing (client I/O timeout {CALL_TIMEOUT:?}) ---");
+        for (label, elapsed, ok) in timings.borrow().iter() {
+            eprintln!(
+                "{:>9.1} ms  {}  {label}",
+                elapsed.as_secs_f64() * 1000.0,
+                if *ok { "ok " } else { "ERR" }
+            );
+        }
+        eprintln!("--- end per-call timing ---");
+    });
+}
+
+fn log_tail(log: &Path) -> String {
+    let text = fs::read_to_string(log).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(LOG_TAIL_LINES)..].join("\n")
+}
+
+fn connect_all(data: &Path) -> Result<Client, orchestrator_ipc::IpcError> {
+    Client::connect_with_timeout(data, &Capability::ALL, CALL_TIMEOUT)
+}
 
 pub struct Layout {
     _root: TempDir,
@@ -62,6 +111,7 @@ impl Daemon {
     /// authenticate. Panics, with the daemon log, if it exits or is not ready
     /// within `READY`.
     pub fn start(layout: &Layout) -> Self {
+        TIMINGS.with(|timings| timings.borrow_mut().clear());
         let log = File::options()
             .create(true)
             .append(true)
@@ -86,7 +136,7 @@ impl Daemon {
     fn wait_ready(&mut self, data: &Path) {
         let deadline = Instant::now() + READY;
         loop {
-            match Client::connect(data) {
+            match connect_all(data) {
                 Ok(_) => return,
                 Err(error) => {
                     assert!(
@@ -121,20 +171,21 @@ impl Drop for Daemon {
         let _ = self.child.kill();
         let _ = self.child.wait();
         if thread::panicking() {
+            print_timings();
             eprintln!(
-                "--- daemon log ({}) ---\n{}\n--- end daemon log ---",
+                "--- daemon log tail ({}) ---\n{}\n--- end daemon log ---",
                 self.log.display(),
-                fs::read_to_string(&self.log).unwrap_or_default()
+                log_tail(&self.log)
             );
         }
     }
 }
 
-/// Connects with every capability, retrying briefly.
+/// Connects with every capability and `CALL_TIMEOUT`, retrying briefly.
 pub fn connect(data: &Path) -> Client {
     let deadline = Instant::now() + READY;
     loop {
-        match Client::connect(data) {
+        match connect_all(data) {
             Ok(client) => return client,
             Err(error) => {
                 assert!(Instant::now() < deadline, "cannot connect: {error:?}");

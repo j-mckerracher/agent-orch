@@ -489,8 +489,8 @@ fn snapshot_json(
             "diff_bytes": 0,
         })
     };
-    let mut files = match worktree.changed_files_between(base, candidate) {
-        Ok(files) => files,
+    let (mut files, diff) = match worktree.snapshot_between(base, candidate, path.map(Path::new)) {
+        Ok(snapshot) => snapshot,
         Err(
             orchestrator_git::Error::InvalidDiffBase
             | orchestrator_git::Error::InvalidDiffCandidate
@@ -500,9 +500,6 @@ fn snapshot_json(
     };
     let files_truncated = files.len() > MAX_SNAPSHOT_FILES;
     files.truncate(MAX_SNAPSHOT_FILES);
-    let diff = worktree
-        .diff_between(base, candidate, path.map(Path::new))
-        .map_err(map_git_error)?;
     let diff_bytes = diff.len();
     let (diff, diff_state) = if diff_bytes > MAX_DIFF_BYTES {
         (Value::Null, "too_large")

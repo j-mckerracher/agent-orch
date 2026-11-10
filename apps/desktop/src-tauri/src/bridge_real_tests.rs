@@ -24,7 +24,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
-const WAIT: Duration = Duration::from_secs(10);
+/// Bound on one frame from the host. Review calls run several Git processes in
+/// the daemon, which takes seconds on a slow Windows host.
+const WAIT: Duration = Duration::from_secs(30);
 const STOP: Duration = Duration::from_secs(15);
 const BUILD_FAILED: &str = "building the real daemon failed";
 
@@ -206,7 +208,8 @@ impl Drop for Fixture {
         // The host never stops the daemon, so the test does, over a plain
         // client, and waits for the token to go away so the directory can be
         // removed.
-        if let Ok(mut client) = Client::connect_with_capabilities(&self.data, &[Capability::Health])
+        if let Ok(mut client) =
+            Client::connect_with_timeout(&self.data, &[Capability::Health], STOP)
         {
             let _ = client.shutdown();
         }
@@ -234,7 +237,7 @@ struct Frames {
 
 impl Frames {
     fn next(&mut self) -> Value {
-        let payload = self.receiver.recv_timeout(WAIT).expect("frame within 10 s");
+        let payload = self.receiver.recv_timeout(WAIT).expect("frame within 30 s");
         self.seen.push(payload.to_string());
         payload
     }

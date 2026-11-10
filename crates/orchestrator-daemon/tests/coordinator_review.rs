@@ -9,6 +9,7 @@
 //! runs only through `review.*`, `approvals.*` and `delivery.*` methods.
 //! Daemon output goes to `daemon.log`, which is printed when a test fails.
 
+#[macro_use]
 mod support;
 
 use orchestrator_core::records::Project;
@@ -23,7 +24,7 @@ use std::time::Duration;
 use support::process::{connect, Daemon, Layout};
 use support::seed;
 
-const WAIT: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(30);
 
 fn target_ref(task_id: &str) -> String {
     format!("refs/heads/orchestrator/review/{task_id}")
@@ -89,7 +90,7 @@ fn raw(
         .send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
         .unwrap();
     loop {
-        match frames.recv_timeout(WAIT).expect("response within 10 s") {
+        match frames.recv_timeout(WAIT).expect("response within 30 s") {
             RelayEvent::Message(message) if message["id"] == id => return message,
             RelayEvent::Message(_) => {}
             RelayEvent::Closed(reason) => panic!("relay closed: {reason:?}"),
@@ -177,8 +178,12 @@ fn daemon_gates_the_coordinator_and_review_methods_on_token_and_capability() {
     }
 
     // A client that did not ask for a capability cannot use it, locally...
-    let mut health_only =
-        Client::connect_with_capabilities(&layout.data, &[Capability::Health]).unwrap();
+    let mut health_only = Client::connect_with_timeout(
+        &layout.data,
+        &[Capability::Health],
+        support::process::CALL_TIMEOUT,
+    )
+    .unwrap();
     assert!(matches!(
         health_only.review_evidence("task", None, None),
         Err(IpcError::UnsupportedCapability)
@@ -257,17 +262,19 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
     let _daemon = Daemon::start(&layout);
     let mut client = connect(&layout.data);
 
-    let before = client.review_evidence(task_id, None, None).unwrap();
+    let before = timed!(client.review_evidence(task_id, None, None)).unwrap();
     assert_eq!(before["state"], "missing");
     assert_eq!(before["review_state"], "not_requested");
     assert_eq!(before["decision_ready"], false);
     assert_eq!(before["candidate"]["commit"], candidate);
-    let diff = client
-        .workspaces_diff(task_id, seeded["workspace_id"].as_str(), None)
-        .unwrap();
+    let diff =
+        timed!(client.workspaces_diff(task_id, seeded["workspace_id"].as_str(), None)).unwrap();
     assert!(diff["diff"].as_str().unwrap().contains("candidate.txt"));
-    let early =
-        client.delivery_request(delivery_params(seeded, "no-such-approval", "deliver-early"));
+    let early = timed!(client.delivery_request(delivery_params(
+        seeded,
+        "no-such-approval",
+        "deliver-early"
+    )));
     assert!(
         matches!(early, Err(IpcError::Forbidden)),
         "delivery needs an approval: {early:?}"
@@ -275,24 +282,25 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
     assert_eq!(ref_commit(&layout.repo, task_id), None);
 
     let request = with_key(request_params(seeded), "request-1");
-    let requested = client.review_request_approval(request.clone()).unwrap();
+    let requested = timed!(client.review_request_approval(request.clone())).unwrap();
     assert_eq!(requested["approval"]["state"], "requested");
     assert_eq!(requested["approval"]["candidate_commit"], candidate);
     assert_eq!(requested["existing"], false);
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_owned();
     assert!(!approval_id.is_empty());
-    assert_eq!(client.review_request_approval(request).unwrap(), requested);
+    assert_eq!(
+        timed!(client.review_request_approval(request)).unwrap(),
+        requested
+    );
 
-    let awaiting = client
-        .review_evidence(task_id, Some(&approval_id), None)
-        .unwrap();
+    let awaiting = timed!(client.review_evidence(task_id, Some(&approval_id), None)).unwrap();
     assert_eq!(awaiting["state"], "current");
     assert_eq!(awaiting["review_state"], "awaiting_decision");
     assert_eq!(awaiting["decision_ready"], true);
     assert_eq!(awaiting["digest_relationship"], "matches");
     assert_eq!(awaiting["workspace"]["id"], seeded["workspace_id"]);
     assert_eq!(awaiting["verification"][0]["status"], "passed");
-    let pending = client.approvals_list().unwrap();
+    let pending = timed!(client.approvals_list()).unwrap();
     assert!(
         pending
             .as_array()
@@ -302,26 +310,20 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
         "{pending}"
     );
 
-    let approved = client
-        .approvals_resolve(&approval_id, "approve", "resolve-1")
-        .unwrap();
+    let approved = timed!(client.approvals_resolve(&approval_id, "approve", "resolve-1")).unwrap();
     assert_eq!(approved["id"], approval_id.as_str());
     assert_eq!(approved["state"]["state"], "approved");
     assert_eq!(
-        client
-            .approvals_resolve(&approval_id, "approve", "resolve-1")
-            .unwrap(),
+        timed!(client.approvals_resolve(&approval_id, "approve", "resolve-1")).unwrap(),
         approved,
         "idempotent replay"
     );
-    let after = client
-        .review_evidence(task_id, Some(&approval_id), None)
-        .unwrap();
+    let after = timed!(client.review_evidence(task_id, Some(&approval_id), None)).unwrap();
     assert_eq!(after["review_state"], "approved");
     assert_eq!(after["approval"]["state"], "approved");
 
     let delivery = delivery_params(seeded, &approval_id, "deliver-1");
-    let delivered = client.delivery_request(delivery.clone()).unwrap();
+    let delivered = timed!(client.delivery_request(delivery.clone())).unwrap();
     assert_eq!(delivered["task_id"], task_id);
     assert_eq!(delivered["outcome"], "review_ref_created");
     assert_eq!(
@@ -329,7 +331,10 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
         Some(candidate),
         "the review ref points at the approved candidate"
     );
-    assert_eq!(client.delivery_request(delivery).unwrap(), delivered);
+    assert_eq!(
+        timed!(client.delivery_request(delivery)).unwrap(),
+        delivered
+    );
 
     // The durable journal, read from a second connection, records the delivery.
     let mut observer = connect(&layout.data);
@@ -343,7 +348,7 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
         }
     });
     loop {
-        let event = seen.recv_timeout(WAIT).expect("delivery event within 10 s");
+        let event = seen.recv_timeout(WAIT).expect("delivery event within 30 s");
         if event.task_id == task_id && event.kind == "delivery.review_ref_created" {
             break;
         }
@@ -361,24 +366,19 @@ fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
     // nothing is delivered or can be approved afterwards.
     let rejected_task = &seeded[0];
     let task_id = rejected_task["task_id"].as_str().unwrap();
-    let requested = client
-        .review_request_approval(with_key(request_params(rejected_task), "request-b"))
-        .unwrap();
+    let requested = timed!(
+        client.review_request_approval(with_key(request_params(rejected_task), "request-b"))
+    )
+    .unwrap();
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_owned();
-    let rejected = client
-        .approvals_resolve(&approval_id, "reject", "resolve-b")
-        .unwrap();
+    let rejected = timed!(client.approvals_resolve(&approval_id, "reject", "resolve-b")).unwrap();
     assert_eq!(rejected["state"]["state"], "rejected");
     assert_eq!(
-        client
-            .approvals_resolve(&approval_id, "reject", "resolve-b")
-            .unwrap(),
+        timed!(client.approvals_resolve(&approval_id, "reject", "resolve-b")).unwrap(),
         rejected,
         "idempotent replay"
     );
-    let evidence = client
-        .review_evidence(task_id, Some(&approval_id), None)
-        .unwrap();
+    let evidence = timed!(client.review_evidence(task_id, Some(&approval_id), None)).unwrap();
     assert_eq!(evidence["review_state"], "rejected");
     assert_eq!(evidence["state"], "stale");
     assert!(evidence["reasons"]
@@ -387,8 +387,7 @@ fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
         .contains(&json!("approval_inactive")));
     assert_eq!(evidence["decision_ready"], false);
     assert!(
-        !client
-            .approvals_list()
+        !timed!(client.approvals_list())
             .unwrap()
             .as_array()
             .unwrap()
@@ -396,12 +395,13 @@ fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
             .any(|approval| approval["id"] == approval_id.as_str()),
         "a rejected approval is no longer pending"
     );
-    let approve_late = client.approvals_resolve(&approval_id, "approve", "resolve-b-late");
+    let approve_late = timed!(client.approvals_resolve(&approval_id, "approve", "resolve-b-late"));
     assert!(
         matches!(approve_late, Err(IpcError::Conflict)),
         "approve after reject: {approve_late:?}"
     );
-    let late = client.delivery_request(delivery_params(rejected_task, &approval_id, "deliver-b"));
+    let late =
+        timed!(client.delivery_request(delivery_params(rejected_task, &approval_id, "deliver-b")));
     assert!(
         matches!(late, Err(IpcError::Forbidden)),
         "delivery after reject: {late:?}"
@@ -412,34 +412,45 @@ fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
     let changes_task = &seeded[1];
     let task_id = changes_task["task_id"].as_str().unwrap();
     let candidate = changes_task["candidate_commit"].as_str().unwrap();
-    let requested = client
-        .review_request_approval(with_key(request_params(changes_task), "request-c"))
-        .unwrap();
+    let requested =
+        timed!(client.review_request_approval(with_key(request_params(changes_task), "request-c")))
+            .unwrap();
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_owned();
-    let changes = client
-        .review_request_changes(&approval_id, candidate, "Rename the file", "changes-c")
-        .unwrap();
+    let changes = timed!(client.review_request_changes(
+        &approval_id,
+        candidate,
+        "Rename the file",
+        "changes-c"
+    ))
+    .unwrap();
     assert_eq!(changes["review_state"], "changes_requested");
     assert_eq!(changes["approval_state"], "requested");
     assert_eq!(
-        client
-            .review_request_changes(&approval_id, candidate, "Rename the file", "changes-c")
-            .unwrap(),
+        timed!(client.review_request_changes(
+            &approval_id,
+            candidate,
+            "Rename the file",
+            "changes-c"
+        ))
+        .unwrap(),
         changes,
         "idempotent replay"
     );
-    let evidence = client
-        .review_evidence(task_id, Some(&approval_id), None)
-        .unwrap();
+    let evidence = timed!(client.review_evidence(task_id, Some(&approval_id), None)).unwrap();
     assert_eq!(evidence["review_state"], "changes_requested");
     assert_eq!(evidence["decision_ready"], false);
     assert!(matches!(
-        client.approvals_resolve(&approval_id, "approve", "resolve-c"),
+        timed!(client.approvals_resolve(&approval_id, "approve", "resolve-c")),
         Err(IpcError::Conflict)
     ));
     assert_eq!(ref_commit(&layout.repo, task_id), None);
     assert!(matches!(
-        client.review_request_changes("no-such-approval", candidate, "x", "changes-missing"),
+        timed!(client.review_request_changes(
+            "no-such-approval",
+            candidate,
+            "x",
+            "changes-missing"
+        )),
         Err(IpcError::NotFound)
     ));
     client.shutdown().unwrap();

@@ -4,9 +4,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub struct Client;
 
 impl Client {
+    pub fn connect_with_timeout(
+        _: impl AsRef<std::path::Path>,
+        _: &[Capability],
+        _: Duration,
+    ) -> Result<Self, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn connect(_: impl AsRef<std::path::Path>) -> Result<Self, IpcError> {
         Err(IpcError::Unsupported)
     }

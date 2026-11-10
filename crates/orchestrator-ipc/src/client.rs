@@ -16,6 +16,9 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// I/O timeout `Client::connect` uses for the handshake and each call.
+pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub struct Client {
     data_dir: PathBuf,
     requested: Vec<Capability>,
@@ -39,10 +42,21 @@ impl Client {
         data_dir: impl AsRef<Path>,
         requested: &[Capability],
     ) -> Result<Self, IpcError> {
+        Self::connect_with_timeout(data_dir, requested, DEFAULT_IO_TIMEOUT)
+    }
+
+    /// Like `connect_with_capabilities`, with a per-read and per-write I/O
+    /// timeout for the handshake and every later call. A call that spans a slow
+    /// daemon operation (for example Git work on a slow host) needs a larger
+    /// bound than `DEFAULT_IO_TIMEOUT`; `reconnect()` keeps the chosen value.
+    pub fn connect_with_timeout(
+        data_dir: impl AsRef<Path>,
+        requested: &[Capability],
+        io_timeout: Duration,
+    ) -> Result<Self, IpcError> {
         let data_dir = data_dir.as_ref();
         let token = read_token(data_dir)?;
         let mut stream = connect_local(data_dir).map_err(|_| IpcError::Operation)?;
-        let io_timeout = Duration::from_secs(2);
         stream
             .set_timeouts(io_timeout)
             .map_err(|_| IpcError::Operation)?;
@@ -403,7 +417,8 @@ impl Client {
     pub fn reconnect(&mut self) -> Result<(), IpcError> {
         let cursor = self.last_event_sequence;
         let cursor_epoch = self.cursor_epoch.clone();
-        let mut fresh = Self::connect_with_capabilities(&self.data_dir, &self.requested)?;
+        let mut fresh =
+            Self::connect_with_timeout(&self.data_dir, &self.requested, self.io_timeout)?;
         let resumed = match cursor {
             Some(cursor) => fresh
                 .events_subscribe_in_epoch(Some(cursor), cursor_epoch.as_deref())

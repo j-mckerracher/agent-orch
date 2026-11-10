@@ -24,6 +24,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(30);
+/// A client call may span slow daemon work on a slow host; the production
+/// default is 2 s. Retry loops below swallow errors, so a short bound would
+/// turn one slow call into a 30 s hang.
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn connect(data: &Path) -> Result<Client, orchestrator_ipc::IpcError> {
+    Client::connect_with_timeout(data, &Capability::ALL, CALL_TIMEOUT)
+}
 const AGENT_ROLE: &str = "AGENT_ORCH_LIFECYCLE_AGENT_PID_FILE";
 
 fn main() {
@@ -139,7 +147,7 @@ fn diagnostics() -> String {
     let (longest, count) = longest_path(&evidence.base);
     let _ = writeln!(out, "longest path under base ({} chars of {count} entries): {}", longest.as_os_str().len(), longest.display());
     let _ = writeln!(out, "worktrees: {:?}", list(&data.join("worktrees")));
-    match Client::connect(&data) {
+    match connect(&data) {
         Err(error) => {
             let _ = writeln!(out, "daemon not reachable: {error}");
         }
@@ -212,7 +220,7 @@ fn until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
 /// subscription is dropped by the daemon after a short timeout.
 fn call<T>(data: &Path, what: &str, mut request: impl FnMut(&mut Client) -> Option<T>) -> T {
     until(what, || {
-        let mut client = Client::connect(data).ok()?;
+        let mut client = connect(data).ok()?;
         request(&mut client)
     })
 }
@@ -374,7 +382,7 @@ fn scenario(base: &Path) {
         if let Some(status) = daemon.0.try_wait().unwrap() {
             fail(&format!("daemon exited before the agent started: {status}"));
         }
-        let task = Client::connect(&data)
+        let task = connect(&data)
             .ok()
             .and_then(|mut client| client.tasks_get(&task_id).ok())?;
         if matches!(task["state"].as_str(), Some("Failed" | "Cancelled")) {
