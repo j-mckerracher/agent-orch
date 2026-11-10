@@ -16,7 +16,15 @@ export type TaskFilter =
   | "terminal"
   | `state:${string}`;
 
+/** Global (not project-scoped) views of the app shell, in navigation order. Hash form: `#/<view>`. */
+export const GLOBAL_VIEWS = ["workspace", "workstreams", "agents", "review"] as const;
+export type GlobalView = (typeof GLOBAL_VIEWS)[number];
+
+const isGlobalView = (segment: string | undefined): segment is GlobalView =>
+  GLOBAL_VIEWS.includes(segment as GlobalView);
+
 export type Route =
+  | { name: "global"; view: GlobalView }
   | { name: "projects" }
   | { name: "project"; projectId: string }
   | { name: "tasks"; projectId: string; filter: TaskFilter }
@@ -27,8 +35,13 @@ export type Route =
 
 const enc = encodeURIComponent;
 
+/** Where an empty or unrecognised hash lands. `RouterStore`'s constructor default is unchanged (`projects`). */
+export const DEFAULT_ROUTE: Route = { name: "global", view: "workspace" };
+
 export function formatRoute(route: Route): string {
   switch (route.name) {
+    case "global":
+      return `#/${route.view}`;
     case "projects":
       return "#/projects";
     case "project":
@@ -55,7 +68,10 @@ export function parseRoute(hash: string): Route {
   } catch {
     return { name: "projects" };
   }
-  if (parts[0] !== "project" || !parts[1]) return { name: "projects" };
+  if (parts[0] === "projects") return { name: "projects" };
+  if (isGlobalView(parts[0])) return { name: "global", view: parts[0] };
+  if (parts[0] !== "project") return DEFAULT_ROUTE;
+  if (!parts[1]) return { name: "projects" };
   const projectId = parts[1];
   switch (parts[2]) {
     case "tasks":
