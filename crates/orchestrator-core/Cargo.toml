@@ -4,6 +4,7 @@ description = "Domain contracts for the agent orchestrator: task state, contract
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 # Serde is a data dependency, not I/O: it gives the domain types a canonical

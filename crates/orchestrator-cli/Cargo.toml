@@ -4,6 +4,7 @@ description = "Standalone CLI client for the orchestration engine. Runs the engi
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [features]
 fault-injection = []
