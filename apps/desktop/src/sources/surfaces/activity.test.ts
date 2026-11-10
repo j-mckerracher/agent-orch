@@ -176,6 +176,17 @@ describe("live D11 activity adapter", () => {
       expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
     });
 
+    it("is unsupported on an older daemon that does not know the queue capability", async () => {
+      const fake = new FakeDaemon();
+      fake.unknownCapabilities = ["queue"];
+      const connected = await connect(fake);
+      stops.push(connected.stop);
+      expect(connected.connection.getSnapshot().status).toBe("connected");
+      expect(await connected.surfaces.activity.activity()).toMatchObject({ status: "unsupported", provenance: { id: "D11" } });
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
+      expect(fake.callsTo("tasks.list")).toHaveLength(0);
+    });
+
     it("is unavailable, not unsupported and not fixture data, when the daemon errors", async () => {
       const fake = new FakeDaemon();
       fake.failNext("queue.snapshot", { code: -32603, message: "boom" });
@@ -184,10 +195,54 @@ describe("live D11 activity adapter", () => {
       expect(JSON.stringify(result)).toMatch(/boom/);
     });
 
-    it("is unavailable when tasks.list fails after the snapshot succeeded", async () => {
+    it("degrades only the task details when tasks.list fails after the snapshot succeeded", async () => {
       const fake = new FakeDaemon();
+      fake.tasks = [
+        mkTask("r1", ALPHA, { state: "Running" }),
+        mkTask("q1", ALPHA, { state: "Queued" }),
+        mkTask("v1", ALPHA, { state: "Verifying" }),
+      ];
+      fake.approvals = [mkApproval("a1", "r1")];
       fake.failNext("tasks.list", { code: -32603, message: "tasks boom" }, 10);
-      expect(await activityOf(fake)).toMatchObject({ status: "unavailable" });
+      const data = await okActivity(fake);
+      expect(data.degraded?.tasks).toMatch(/tasks boom/);
+      expect(data.degraded?.approvals).toBeUndefined();
+      expect(data.slots).toMatchObject({ status: "ok", value: { used: 1, limit: 2 } });
+      expect(data.running.map((entry) => entry.taskId)).toEqual(["r1"]);
+      expect(data.running[0]!.objective).toBe("Objective not available");
+      expect(data.queued.map((entry) => entry.taskId)).toEqual(["q1"]);
+      expect(data.attention.map((item) => item.approvalId)).toEqual(["a1"]);
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(1);
+    });
+
+    it("degrades only the attention list when approvals.list fails after the snapshot succeeded", async () => {
+      const fake = new FakeDaemon();
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" }), mkTask("q1", ALPHA, { state: "Queued" })];
+      fake.approvals = [mkApproval("a1", "r1")];
+      fake.failNext("approvals.list", { code: -32603, message: "approvals boom" }, 10);
+      const data = await okActivity(fake);
+      expect(data.degraded?.approvals).toMatch(/approvals boom/);
+      expect(data.degraded?.tasks).toBeUndefined();
+      expect(data.attention).toEqual([]);
+      expect(data.slots).toMatchObject({ status: "ok", value: { used: 1, limit: 2 } });
+      expect(data.running[0]!.objective).not.toBe("Objective not available");
+      expect(data.queued.map((entry) => entry.taskId)).toEqual(["q1"]);
+    });
+
+    it("reports both degraded parts when both follow-up reads fail", async () => {
+      const fake = new FakeDaemon();
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" })];
+      fake.failNext("tasks.list", { code: -32603, message: "tasks boom" }, 10);
+      fake.failNext("approvals.list", { code: -32603, message: "approvals boom" }, 10);
+      const data = await okActivity(fake);
+      expect(Object.keys(data.degraded ?? {}).sort()).toEqual(["approvals", "tasks"]);
+      expect(data.running.map((entry) => entry.taskId)).toEqual(["r1"]);
+    });
+
+    it("has no degraded marker when every read succeeds", async () => {
+      const fake = new FakeDaemon();
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" })];
+      expect((await okActivity(fake)).degraded).toBeUndefined();
     });
 
     it("is unavailable when the snapshot is malformed", async () => {

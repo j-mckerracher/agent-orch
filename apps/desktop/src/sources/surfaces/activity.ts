@@ -3,8 +3,10 @@
  * joined with `tasks.list` and `approvals.list`.
  *
  * Rules:
- * - Never imports fixtures. A failed live call is `unavailable`, or `unsupported` when the daemon
- *   or this connection lacks the method or capability; it is never answered with fixture data.
+ * - Never imports fixtures. A failed `queue.snapshot` is `unavailable`, or `unsupported` when the
+ *   daemon or this connection lacks the method or capability (an older daemon without `queue`);
+ *   it is never answered with fixture data. A failed `tasks.list` or `approvals.list` degrades
+ *   only its own part, named in `degraded`, and is never shown as empty.
  * - `queue.snapshot` decides who runs, who waits, the order and the limits. `tasks.list` only adds
  *   text (objective, queued agent) and the `Verifying` tasks, which hold no slot and so appear in
  *   neither snapshot list. The two reads are not atomic: the pair is re-read when they disagree on
@@ -46,18 +48,31 @@ function approvalKind(approval: Approval): string {
   return kind.type === "delivery" ? kind.kind : kind.type;
 }
 
+function reasonOf(failed: DaemonError): string {
+  return `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
+}
+
 function failure<T>(error: unknown): SurfaceResult<T> {
   const failed = asDaemonError(error);
-  const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
+  const reason = reasonOf(failed);
   const missing =
     failed.kind === "method-unavailable" || failed.kind === "capability-unavailable" || failed.kind === "capability-not-negotiated";
   return notOk(PROVENANCE, missing ? "unsupported" : "unavailable", reason);
 }
 
+/** A read that failed after the snapshot succeeded, kept as its reason so only that part degrades. */
+type Part<T> = { ok: true; value: T } | { ok: false; reason: string };
+
 interface Reading {
   snapshot: QueueSnapshotWire;
-  tasks: TaskRecord[];
-  approvals: Approval[];
+  tasks: Part<TaskRecord[]>;
+  approvals: Part<Approval[]>;
+}
+
+function settle<T>(result: PromiseSettledResult<T>): Part<T> {
+  return result.status === "fulfilled"
+    ? { ok: true, value: result.value }
+    : { ok: false, reason: reasonOf(asDaemonError(result.reason)) };
 }
 
 function agree(snapshot: QueueSnapshotWire, tasks: readonly TaskRecord[]): boolean {
@@ -74,9 +89,10 @@ async function read(connection: ConnectionManager): Promise<Reading> {
   let reading: Reading | null = null;
   for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt++) {
     const snapshot = await api.queueSnapshot();
-    const [tasks, approvals] = await Promise.all([api.tasksList(), api.approvalsList()]);
-    reading = { snapshot, tasks, approvals };
-    if (agree(snapshot, tasks)) break;
+    const [tasks, approvals] = await Promise.allSettled([api.tasksList(), api.approvalsList()]);
+    reading = { snapshot, tasks: settle(tasks), approvals: settle(approvals) };
+    // Without a task list there is nothing to compare, and a re-read would not repair it.
+    if (!reading.tasks.ok || agree(snapshot, reading.tasks.value)) break;
   }
   return reading!;
 }
@@ -112,7 +128,9 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNul
 }
 
 function snapshotOf(reading: Reading, at: Observation): ActivitySnapshot {
-  const { snapshot, tasks, approvals } = reading;
+  const { snapshot } = reading;
+  const tasks = reading.tasks.ok ? reading.tasks.value : [];
+  const approvals = reading.approvals.ok ? reading.approvals.value : [];
   const byId = new Map(tasks.map((task) => [task.contract.id, task]));
   const projects = new Map(tasks.map((task) => [task.contract.id, task.contract.project_id]));
 
@@ -179,6 +197,14 @@ function snapshotOf(reading: Reading, at: Observation): ActivitySnapshot {
         ? "The daemon has no pause contract. Its restart gate is blocking all launches, which is not a pause you can set."
         : "The daemon has no dispatch pause contract.",
     ),
+    ...(reading.tasks.ok && reading.approvals.ok
+      ? {}
+      : {
+          degraded: {
+            ...(reading.tasks.ok ? {} : { tasks: reading.tasks.reason }),
+            ...(reading.approvals.ok ? {} : { approvals: reading.approvals.reason }),
+          },
+        }),
   };
 }
 

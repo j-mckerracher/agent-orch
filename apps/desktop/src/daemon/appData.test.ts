@@ -77,6 +77,39 @@ describe("ConnectionManager", () => {
     expect(status(connection)).toBe("incompatible");
   });
 
+  it("degrades to no queue capability on an older daemon instead of becoming incompatible", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["queue"];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    expect(fake.openRequests).toHaveLength(2);
+    expect(fake.openRequests[0]).toContain("queue");
+    expect(fake.openRequests[1]).not.toContain("queue");
+    expect(fake.openRequests[1]).toContain("tasks");
+    expect(connection.getSnapshot().capabilities).not.toContain("queue");
+    expect(connection.getSnapshot().capabilities).toContain("tasks");
+  });
+
+  it("stays incompatible when the daemon also rejects a required capability", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["queue", "tasks"];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "incompatible");
+    expect(fake.openRequests).toHaveLength(2);
+  });
+
+  it("does not retry without optional capabilities when none were requested", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["tasks"];
+    const connection = new ConnectionManager({ connector: fake, backoffMs: [5], capabilities: ["health", "tasks"] });
+    disposables.push(() => connection.stop());
+    connection.start();
+    await until(() => status(connection) === "incompatible");
+    expect(fake.openRequests).toHaveLength(1);
+  });
+
   it("reconnects after a drop and resumes after the last applied sequence", async () => {
     const fake = new FakeDaemon();
     fake.events = [mkEvent(1, "t", null), mkEvent(2, "t", null)];

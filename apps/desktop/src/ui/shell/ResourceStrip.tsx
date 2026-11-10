@@ -205,9 +205,24 @@ export function ResourceStrip({ source, defaultOpen, now = Date.now }: ResourceS
   const state = useSurface(() => metrics.metrics(), "resource-strip", metrics.provenance);
   const [nowMs, setNowMs] = useState(now);
   useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    // The tick only moves a local clock, so it stops while the window is hidden and catches up on return.
+    const sync = () => {
+      if (document.hidden) {
+        if (timer !== null) clearInterval(timer);
+        timer = null;
+      } else if (timer === null) {
+        setNowMs(now());
+        timer = setInterval(() => setNowMs(now()), AGE_TICK_MS);
+      }
+    };
     setNowMs(now());
-    const timer = setInterval(() => setNowMs(now()), AGE_TICK_MS);
-    return () => clearInterval(timer);
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      if (timer !== null) clearInterval(timer);
+    };
   }, [now, state]);
   return <ResourceStripView state={state} provenance={metrics.provenance} nowMs={nowMs} defaultOpen={defaultOpen} />;
 }

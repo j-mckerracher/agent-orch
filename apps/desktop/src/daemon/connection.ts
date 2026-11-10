@@ -19,7 +19,7 @@ import { DaemonApi } from "./api";
 import { DaemonError, asDaemonError, type DaemonErrorKind } from "./errors";
 import { DaemonSession, type DaemonConnector } from "./session";
 import { Store } from "./store";
-import { M5_03_CAPABILITIES, type Capability, type DaemonEvent } from "./types";
+import { M5_03_CAPABILITIES, OPTIONAL_CAPABILITIES, type Capability, type DaemonEvent } from "./types";
 
 export type ConnectionStatus =
   | "idle"
@@ -153,6 +153,17 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     return this.getSnapshot();
   }
 
+  /** Opens with every requested capability, then without the optional ones if the daemon rejects them. */
+  private async open() {
+    try {
+      return await this.connector.open(this.requested);
+    } catch (error) {
+      const required = this.requested.filter((capability) => !OPTIONAL_CAPABILITIES.includes(capability));
+      if (asDaemonError(error).kind !== "capability-unavailable" || required.length === this.requested.length) throw error;
+      return this.connector.open(required);
+    }
+  }
+
   private async establish(): Promise<void> {
     const epoch = ++this.epoch;
     this.clearTimer();
@@ -161,7 +172,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
 
     let session: DaemonSession;
     try {
-      const opened = await this.connector.open(this.requested);
+      const opened = await this.open();
       if (epoch !== this.epoch) {
         opened.channel.close();
         return;

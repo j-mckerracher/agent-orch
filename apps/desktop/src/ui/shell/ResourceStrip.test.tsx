@@ -255,6 +255,40 @@ describe("ResourceStrip behaviour", () => {
     expect(meters[1]).toHaveAttribute("aria-valuetext", expect.stringContaining("observed 2 min ago"));
     unmount();
   });
+  it("stops ageing while the window is hidden and catches up when it is shown again", async () => {
+    let clock = NOW;
+    const services = fixtureServices();
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const spy = vi.spyOn(globalThis, "setInterval");
+    const now = () => clock;
+    render(
+      <ServicesProvider services={services}>
+        <ResourceStrip defaultOpen now={now} />
+      </ServicesProvider>,
+    );
+    const meter = await screen.findByRole("meter", { name: "CPU utilization" });
+    const ticks = spy.mock.calls.length;
+    expect(ticks).toBeGreaterThan(0);
+    try {
+      act(() => setHidden(true));
+      clock = NOW + 120_000;
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("observed 2 s ago"));
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => setHidden(false));
+      expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("observed 2 min ago"));
+      expect(vi.getTimerCount()).toBe(1);
+    } finally {
+      Reflect.deleteProperty(document, "hidden");
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("formatAge", () => {

@@ -208,7 +208,7 @@ describe("fixture ids cannot reach a real mutation", () => {
 describe("a failed live call never falls back to fixtures", () => {
   it("returns non-ok daemon results with no data when the daemon errors", async () => {
     const fake = populate(new FakeDaemon());
-    for (const method of ["projects.list", "tasks.list", "approvals.list", "agents.capabilities", "coordinator.get"]) {
+    for (const method of ["projects.list", "tasks.list", "approvals.list", "queue.snapshot", "agents.capabilities", "coordinator.get"]) {
       fake.failNext(method, { code: -32603, message: "boom" }, 10);
     }
     const s = await live(fake);

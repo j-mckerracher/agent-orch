@@ -143,6 +143,26 @@ describe("live mode", () => {
     expect(panel).not.toHaveTextContent("20 of 24");
   });
 
+  it("shows an unavailable attention list, not an empty one, when only approvals.list fails", async () => {
+    const fake = liveDaemon();
+    fake.failNext("approvals.list", { code: -32603, message: "approvals boom" }, 20);
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-attention-degraded")).toHaveTextContent(/approvals boom/));
+    expect(within(panel).getByTestId("activity-attention")).not.toHaveTextContent("Nothing needs attention.");
+    expect(within(panel).getByTestId("activity-status")).toHaveTextContent("attention not available");
+    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("of");
+    expect(within(panel).getByTestId("activity-task-t1")).toBeInTheDocument();
+  });
+
+  it("keeps queue and slots and says task details are missing when only tasks.list fails", async () => {
+    const fake = liveDaemon();
+    fake.failNext("tasks.list", { code: -32603, message: "tasks boom" }, 20);
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-tasks-degraded")).toHaveTextContent(/tasks boom/));
+    expect(within(panel).getByTestId("activity-task-t1")).toBeInTheDocument();
+    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("of");
+  });
+
   it("updates queue and attention when a live event arrives", async () => {
     const fake = liveDaemon();
     const { panel } = await mountPanel(fake);

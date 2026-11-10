@@ -8,9 +8,10 @@
  * - This file never imports fixtures. A failed live call is `unavailable` (or
  *   `unsupported` when the daemon lacks the method) with daemon provenance; it
  *   is never answered with fixture data.
- * - Values the daemon does not record (slots, spend, host metrics, models,
- *   objectives, priorities, deadlines) are `unsupported` or `unknown`, never
- *   zero or an invented number.
+ * - Values the daemon does not record (spend, models, objectives, priorities,
+ *   deadlines) are `unsupported` or `unknown`, never zero or an invented
+ *   number. Slots and queue order are read live by `activity.ts`. Host metrics
+ *   are not read here: D13 stays `unsupported` in this file.
  * - `simulate*` calls reject: they exist for fixture adapters only.
  */
 import type { ConnectionManager } from "../../daemon/connection";
