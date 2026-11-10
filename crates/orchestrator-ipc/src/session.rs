@@ -388,6 +388,15 @@ fn method_capability(method: &str) -> Option<Capability> {
         }
         "host.metrics" => Some(Capability::Host),
         "queue.snapshot" => Some(Capability::Queue),
+        "workstreams.create"
+        | "workstreams.list"
+        | "workstreams.get"
+        | "workstreams.update"
+        | "workstreams.add_objective"
+        | "workstreams.revise_objective"
+        | "workstreams.set_gate"
+        | "workstreams.link_task"
+        | "workstreams.unlink_task" => Some(Capability::Workstreams),
         _ => None,
     }
 }

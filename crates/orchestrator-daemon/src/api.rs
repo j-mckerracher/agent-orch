@@ -219,6 +219,7 @@ impl RpcHandler for DaemonApi {
             Capability::Review,
             Capability::Host,
             Capability::Queue,
+            Capability::Workstreams,
         ]
     }
 
@@ -248,6 +249,15 @@ impl RpcHandler for DaemonApi {
             "host.metrics" => self.host_metrics(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
+            "workstreams.create" => self.workstreams_create(params),
+            "workstreams.list" => self.workstreams_list(params),
+            "workstreams.get" => self.workstreams_get(params),
+            "workstreams.update" => self.workstreams_update(params),
+            "workstreams.add_objective" => self.workstreams_add_objective(params),
+            "workstreams.revise_objective" => self.workstreams_revise_objective(params),
+            "workstreams.set_gate" => self.workstreams_set_gate(params),
+            "workstreams.link_task" => self.workstreams_link_task(params),
+            "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1137,10 +1147,16 @@ mod usage_tests;
 #[cfg(test)]
 #[path = "api_queue_tests.rs"]
 mod queue_tests;
+#[path = "api_workstreams.rs"]
+mod workstreams;
 
 #[cfg(test)]
 #[path = "api_review_tests.rs"]
 mod review_tests;
+
+#[cfg(test)]
+#[path = "api_workstreams_tests.rs"]
+mod workstreams_tests;
 
 #[cfg(test)]
 #[path = "api_tests.rs"]

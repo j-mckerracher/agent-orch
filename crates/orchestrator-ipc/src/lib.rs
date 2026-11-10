@@ -95,6 +95,9 @@ mod lifecycle_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "queue_tests.rs"]
 mod queue_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "workstreams_tests.rs"]
+mod workstreams_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
