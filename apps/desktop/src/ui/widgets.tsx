@@ -15,14 +15,15 @@ export function Notice({
   className,
   children,
   ...rest
-}: { tone?: Tone } & Omit<HTMLAttributes<HTMLDivElement>, "children"> & { children: ReactNode }) {
+}: { tone?: Tone } & Omit<HTMLAttributes<HTMLParagraphElement>, "children"> & { children: ReactNode }) {
+  // A paragraph, as before the restyle; children must stay phrasing content.
   return (
-    <div className={`ps-notice ps-notice-${tone}${className ? ` ${className}` : ""}`} {...rest}>
+    <p className={`ps-notice ps-notice-${tone}${className ? ` ${className}` : ""}`} {...rest}>
       <span className="ps-notice-mark" aria-hidden="true">
         {NOTICE_MARK[tone]}
       </span>
-      <div className="ps-notice-body">{children}</div>
-    </div>
+      <span className="ps-notice-body">{children}</span>
+    </p>
   );
 }
 

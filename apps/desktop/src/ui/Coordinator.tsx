@@ -174,8 +174,8 @@ export function Coordinator({ projectId }: { projectId: string }) {
             <div>
               <ul aria-label="Related tasks" className="ps-list">
                 {own.map((task) => (
-                  <li key={task.contract.id} className="ps-project-row">
-                    <code>{task.contract.id}</code> {task.contract.objective} <StateText state={task.state} />{" "}
+                  <li key={task.contract.id} className="ps-project-row ps-task-row">
+                    <code>{task.contract.id}</code> <span className="ps-row-main">{task.contract.objective}</span> <StateText state={task.state} />{" "}
                     <Button onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}>
                       Open task
                     </Button>

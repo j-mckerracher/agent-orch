@@ -179,11 +179,31 @@
   color: var(--ink);
 }
 
+/* break-word keeps min-content intact, so ids and badge words are not split mid-word unless they cannot fit. */
 .ps-table-wrap td,
 .ps-table-wrap th {
   padding: 8px 12px;
   border-bottom: 1px solid var(--line-soft);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.ps-section .ui-badge,
+.ps-card .ui-badge,
+.ps-table-wrap .ui-badge,
+.ps-list .ui-badge,
+.conn-strip .ui-badge {
+  overflow-wrap: break-word;
+}
+
+.ps-table-wrap .ui-pill,
+.ps-list .ui-pill {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.ps-table-wrap td:first-child,
+.ps-table-wrap th:first-child {
+  min-width: 6.5rem;
 }
 
 .ps-table-wrap tbody tr:last-child td {
@@ -216,6 +236,7 @@
 /* The pressed mark is a glyph so selection is not colour-only. */
 .ps-filters .ui-btn[aria-pressed="true"]::before {
   content: "●";
+  content: "●" / "";
   font-size: 9px;
 }
 
@@ -326,6 +347,16 @@
   color: var(--subtle);
 }
 
+.ps-task-row > code {
+  flex: 0 1 auto;
+}
+
+.ps-row-main {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Notices --------------------------------------------------------------------------------- */
 .ps-notice {
   display: flex;
@@ -433,8 +464,9 @@
 }
 
 /* Connection strip (C1) --------------------------------------------------------------------- */
+/* Positioning is owned by the shell: .shell-strip .strip { position: static } (shell.css, M7-02), because the
+   strip sits in a non-scrolling shell row. Do not set `position` here. */
 .strip.conn-strip {
-  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
@@ -507,11 +539,13 @@
 
 .strip.conn-strip > p[data-testid="fixture-banner"]::before {
   content: "◇";
+  content: "◇" / "";
   color: var(--amber);
 }
 
 .strip.conn-strip > p[data-testid="connected-note"]::before {
   content: "✓";
+  content: "✓" / "";
   color: var(--green);
 }
 
@@ -528,6 +562,7 @@
 
 .strip.conn-strip > p[data-testid="offline-note"]::before {
   content: "⏸";
+  content: "⏸" / "";
   color: var(--amber);
 }
 
@@ -538,25 +573,29 @@
 
 .strip.conn-strip > p[role="alert"]::before {
   content: "✕";
+  content: "✕" / "";
   color: var(--red);
 }
 
 .strip.conn-strip > p[data-testid="history-incomplete"] {
-  border-left-style: dotted;
-  border-left-width: 6px;
+  border: 2px dotted var(--red);
+  border-left: 6px solid var(--red);
 }
 
 .strip.conn-strip > p[data-testid="history-incomplete"]::before {
   content: "⚠";
+  content: "⚠" / "";
 }
 
 .strip.conn-strip > p[data-testid="recovery-unknown"]::before {
   content: "?";
+  content: "?" / "";
   color: var(--blue);
 }
 
 .strip.conn-strip > p[data-testid="journal-continuity"]::before {
   content: "≈";
+  content: "≈" / "";
   color: var(--blue);
 }
 
