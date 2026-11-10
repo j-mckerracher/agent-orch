@@ -326,3 +326,64 @@ fn approved_local_review_delivery_creates_the_review_ref_once() {
         1
     );
 }
+
+fn submit_with(
+    api: &DaemonApi,
+    key: &str,
+    edit: impl FnOnce(&mut Value),
+) -> Result<Value, RpcError> {
+    let mut params = json!({
+        "idempotency_key": key,
+        "contract": {
+            "project_id": "project-1",
+            "parent_id": null,
+            "objective": "Review one candidate",
+            "kind": "Implement",
+            "agent": "codex",
+            "dependencies": [],
+            "verification": "None",
+            "delivery": "ReportOnly",
+            "autonomy": "ApprovalRequired",
+            "max_retries": 0,
+            "max_repairs": 0
+        }
+    });
+    edit(&mut params["contract"]);
+    api.dispatch("tasks.submit", params)
+}
+
+#[test]
+fn submit_refuses_read_only_autonomy_because_the_agent_would_write() {
+    let fixture = fixture();
+    let before = fixture.api.store.list().unwrap().len();
+    assert_eq!(
+        submit_with(&fixture.api, "read-only-key", |c| c["autonomy"] =
+            json!("ReadOnly")),
+        Err(RpcError::Forbidden)
+    );
+    assert_eq!(fixture.api.store.list().unwrap().len(), before);
+    assert!(submit_with(&fixture.api, "approval-key", |_| {}).is_ok());
+}
+
+#[test]
+fn submit_rejects_oversized_and_nul_contract_fields() {
+    let fixture = fixture();
+    let huge = "x".repeat(orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES + 1);
+    assert_eq!(
+        submit_with(&fixture.api, "huge-objective", |c| c["objective"] =
+            json!(huge)),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(
+        submit_with(&fixture.api, "nul-objective", |c| c["objective"] =
+            json!("a\u{0}b")),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(
+        submit_with(&fixture.api, "nul-command", |c| {
+            c["verification"] = json!({"Commands": {"commands": [["cargo", "te\u{0}st"]]}})
+        }),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(fixture.api.store.list().unwrap().len(), 1);
+}

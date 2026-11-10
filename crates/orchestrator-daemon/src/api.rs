@@ -331,6 +331,12 @@ impl DaemonApi {
             &key,
             &request,
             || {
+                // The executor always launches a writing agent, so a policy
+                // that denies workspace writes cannot be honored. Refuse it
+                // rather than run an agent with more access than requested.
+                if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
+                    return Err(RpcError::Forbidden);
+                }
                 let contract = TaskContract {
                     id: idempotency::stable_id("task", &key),
                     project_id: request.contract.project_id.clone(),
