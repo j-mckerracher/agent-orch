@@ -1,0 +1,5 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.87s
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\ao11r4-20261110T061103Z-9cf58b71\cargo-target\debug\deps\coordinator_review-45c0c5fb4a74ac4c.exe)

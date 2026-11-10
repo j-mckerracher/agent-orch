@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN. The desktop e2e suite (npm run test:e2e) uses a Unix domain socket and cannot run on Windows. No Windows e2e number exists.
