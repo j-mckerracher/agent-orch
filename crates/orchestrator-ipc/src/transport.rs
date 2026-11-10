@@ -23,6 +23,10 @@ pub(crate) trait IpcStream: Read + Write + Send {
 }
 
 #[cfg(unix)]
-pub(crate) use crate::unix_transport::{connect, create_private_file, random_token, Listener};
+pub(crate) use crate::unix_transport::{
+    connect, connect_fail_fast, create_private_file, random_token, Listener,
+};
 #[cfg(windows)]
-pub(crate) use crate::windows_transport::{connect, create_private_file, random_token, Listener};
+pub(crate) use crate::windows_transport::{
+    connect, connect_fail_fast, create_private_file, random_token, Listener,
+};

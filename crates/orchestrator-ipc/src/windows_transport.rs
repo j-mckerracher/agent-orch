@@ -49,6 +49,12 @@ const PIPE_MAX_INSTANCES: u32 = 16;
 const PIPE_MODE: u32 =
     PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS;
 const PIPE_WAIT_MILLISECONDS: u32 = 5_000;
+/// The daemon writes its token before it creates the pipe; a plain client
+/// waits this long for the pipe to appear, as it always has.
+const PIPE_MISSING_GRACE: Duration = Duration::from_secs(5);
+/// Wait for a missing pipe for callers that retry themselves.
+const PIPE_MISSING_FAST: Duration = Duration::from_millis(300);
+const PIPE_MISSING_POLL: Duration = Duration::from_millis(25);
 
 pub(crate) struct Listener {
     name: Vec<u16>,
@@ -204,21 +210,57 @@ fn pipe_name(data_dir: &Path) -> Result<Vec<u16>, TransportError> {
         .collect())
 }
 
+/// Connects, tolerating a daemon that published its token a moment before it
+/// created the pipe.
 pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportError> {
-    connect_within(
+    connect_with_grace(
         data_dir,
         Duration::from_millis(u64::from(PIPE_WAIT_MILLISECONDS)),
+        PIPE_MISSING_GRACE,
     )
 }
 
+/// Connects for a caller that retries on its own (the desktop relay): a pipe
+/// that does not exist is reported almost at once, so a token left behind by a
+/// dead daemon costs a fraction of a second instead of a full wait.
+pub(crate) fn connect_fail_fast(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportError> {
+    connect_with_grace(
+        data_dir,
+        Duration::from_millis(u64::from(PIPE_WAIT_MILLISECONDS)),
+        PIPE_MISSING_FAST,
+    )
+}
+
+#[cfg(test)]
 fn connect_within(data_dir: &Path, limit: Duration) -> Result<Box<dyn IpcStream>, TransportError> {
+    connect_with_grace(data_dir, limit, PIPE_MISSING_GRACE)
+}
+
+/// `busy_limit` bounds the wait for a free pipe instance (every instance in
+/// use); `missing_grace` bounds the wait for a pipe that does not exist yet.
+/// A missing pipe never blocks inside the OS call, so it is polled with a
+/// short sleep instead of spinning.
+fn connect_with_grace(
+    data_dir: &Path,
+    busy_limit: Duration,
+    missing_grace: Duration,
+) -> Result<Box<dyn IpcStream>, TransportError> {
     let name = pipe_name(data_dir)?;
-    let deadline = Instant::now() + limit;
+    let started = Instant::now();
+    let deadline = started + busy_limit;
+    let missing_deadline = started + missing_grace.min(busy_limit);
     loop {
         // SAFETY: `name` is NUL-terminated UTF-16 and remains live for the call.
         if unsafe { WaitNamedPipeW(name.as_ptr(), 100) } == 0 {
             let error = last_error_code();
-            if error != ERROR_FILE_NOT_FOUND && error != ERROR_SEM_TIMEOUT {
+            if error == ERROR_FILE_NOT_FOUND {
+                if Instant::now() >= missing_deadline {
+                    return Err(TransportError::Io(io::ErrorKind::TimedOut));
+                }
+                thread::sleep(PIPE_MISSING_POLL);
+                continue;
+            }
+            if error != ERROR_SEM_TIMEOUT {
                 return Err(io::Error::from_raw_os_error(error as i32).into());
             }
             if Instant::now() >= deadline {
@@ -243,9 +285,15 @@ fn connect_within(data_dir: &Path, limit: Duration) -> Result<Box<dyn IpcStream>
         if handle == INVALID_HANDLE_VALUE {
             let error = last_error_code();
             if error == ERROR_PIPE_BUSY || error == ERROR_FILE_NOT_FOUND {
-                if Instant::now() >= deadline {
+                let (limit, pause) = if error == ERROR_FILE_NOT_FOUND {
+                    (missing_deadline, PIPE_MISSING_POLL)
+                } else {
+                    (deadline, Duration::ZERO)
+                };
+                if Instant::now() >= limit {
                     return Err(TransportError::Io(io::ErrorKind::TimedOut));
                 }
+                thread::sleep(pause);
                 continue;
             }
             return Err(io::Error::from_raw_os_error(error as i32).into());

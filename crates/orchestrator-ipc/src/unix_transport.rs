@@ -194,6 +194,12 @@ pub(crate) fn connect(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportEr
     )?))
 }
 
+/// A refused or missing socket already fails at once on Unix.
+#[cfg(unix)]
+pub(crate) fn connect_fail_fast(data_dir: &Path) -> Result<Box<dyn IpcStream>, TransportError> {
+    connect(data_dir)
+}
+
 #[cfg(unix)]
 pub(crate) fn create_private_file(path: &Path) -> Result<(File, fs::Metadata), TransportError> {
     let file = OpenOptions::new()

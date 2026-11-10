@@ -16,7 +16,7 @@ use crate::client::read_token;
 use crate::protocol::{
     self, Handshake, RpcId, RpcRequest, RpcResponse, HEADER_LEN, MAX_BODY, VERSION,
 };
-use crate::transport::{connect as connect_local, IpcStream, TransportError};
+use crate::transport::{connect_fail_fast as connect_local, IpcStream, TransportError};
 use crate::Capability;
 use serde_json::Value;
 use std::fs;
@@ -26,8 +26,11 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
-const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Seconds-scale: a first pipe or socket use on a loaded Windows host (virus
+/// scan, cold start) can take longer than two seconds. A wedged daemon delays
+/// a close by at most `WRITE_TIMEOUT`.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL_TIMEOUT: Duration = Duration::from_millis(25);
 
 /// Why a relay could not open, or could not carry a message.
