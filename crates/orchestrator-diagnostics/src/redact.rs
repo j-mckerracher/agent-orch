@@ -13,7 +13,13 @@
 //! - `Bearer` tokens anywhere,
 //! - well-known token shapes (GitHub, GitLab, OpenAI-style, Slack, AWS access
 //!   key ids, JWTs) and 64-character hex strings, the shape of the daemon's
-//!   IPC token (this also masks SHA-256 digests, which is the safe direction).
+//!   IPC token (this also masks SHA-256 digests, which is the safe direction),
+//! - secrets the process knows exactly (see [`crate::register_secret`]),
+//!   wherever they appear, so a known token is masked even when glued to other
+//!   text or split across lines.
+//!
+//! Values inside text printed with `{:?}` or embedded JSON are covered too:
+//! there the quotes are backslash-escaped (`{\"token\":\"...\"}`).
 //!
 //! `redact` is idempotent. Never rely on it to make a secret safe to store;
 //! it exists so a secret that reaches an error string does not reach a log.
@@ -53,9 +59,12 @@ pub fn is_sensitive_key(key: &str) -> bool {
         .any(|suffix| key.len() >= suffix.len() && key.as_bytes()[key.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes()))
 }
 
-/// Replaces credential-shaped text with [`MASK`].
+/// Replaces credential-shaped text with [`MASK`], and every secret registered
+/// with [`crate::register_secret`] or [`crate::watch_secret_file`] by exact
+/// value, including when it is glued to other text or split across lines.
 pub fn redact(input: &str) -> String {
-    let urls = redact_url_userinfo(input);
+    let known = crate::secrets::mask_registered(input);
+    let urls = redact_url_userinfo(&known);
     let pairs = redact_key_values(&urls);
     let bearer = redact_bearer(&pairs);
     redact_known_tokens(&bearer)
@@ -105,10 +114,13 @@ fn redact_url_userinfo(input: &str) -> String {
             end += 1;
         }
         if let Some(at) = at.filter(|at| *at > start) {
-            // `ssh://git@host` names a user, not a credential.
-            let web = ["http", "https", "ftp", "ftps"]
-                .iter()
-                .any(|scheme| input[..scheme_end].to_ascii_lowercase().ends_with(scheme));
+            // `ssh://git@host` names a user, not a credential. Checking only the
+            // bytes before `://` keeps this pass linear.
+            let web = ["http", "https", "ftp", "ftps"].iter().any(|scheme| {
+                scheme_end >= scheme.len()
+                    && bytes[scheme_end - scheme.len()..scheme_end]
+                        .eq_ignore_ascii_case(scheme.as_bytes())
+            });
             if web || bytes[start..at].contains(&b':') {
                 out.push_str(&input[copied..start]);
                 out.push_str(MASK);
@@ -119,6 +131,46 @@ fn redact_url_userinfo(input: &str) -> String {
     }
     out.push_str(&input[copied..]);
     out
+}
+
+fn is_quote(byte: u8) -> bool {
+    matches!(byte, b'"' | b'\'')
+}
+
+fn skip_backslashes(bytes: &[u8], mut at: usize) -> usize {
+    while at < bytes.len() && bytes[at] == b'\\' {
+        at += 1;
+    }
+    at
+}
+
+/// Scans a quoted value whose opening quote is at `open`, preceded by `depth`
+/// backslashes (`depth > 0` inside text printed with `{:?}` or embedded JSON:
+/// `\"value\"`). Returns `(value start, value end, resume)`. The value ends at
+/// a quote preceded by exactly `depth` backslashes (an even number when
+/// `depth` is 0, so `\"` stays inside a plain quoted value), at an unescaped
+/// quote, or at a line end. An unterminated value runs to the line end, which
+/// masks more rather than less.
+fn quoted_value(bytes: &[u8], open: usize, depth: usize) -> (usize, usize, usize) {
+    let quote = bytes[open];
+    let inner = open + 1;
+    let mut stop = inner;
+    while stop < bytes.len() && bytes[stop] != b'\n' {
+        let run_end = skip_backslashes(bytes, stop);
+        let run = run_end - stop;
+        if run_end < bytes.len() && bytes[run_end] == quote {
+            let closes = if depth == 0 { run.is_multiple_of(2) } else { run == depth || run == 0 };
+            if closes {
+                return (inner, stop, run_end + 1);
+            }
+            stop = run_end + 1;
+        } else if run > 0 {
+            stop = run_end;
+        } else {
+            stop += 1;
+        }
+    }
+    (inner, stop, stop)
 }
 
 fn is_value_end(byte: u8) -> bool {
@@ -150,29 +202,34 @@ fn redact_key_values(input: &str) -> String {
             continue;
         }
         let mut at = i;
-        if at < bytes.len() && matches!(bytes[at], b'"' | b'\'') {
+        // Text printed with `{:?}` or embedded JSON escapes the key's quotes:
+        // `{\"token\":\"...\"}`.
+        let after_escapes = skip_backslashes(bytes, at);
+        if after_escapes > at && after_escapes < bytes.len() && is_quote(bytes[after_escapes]) {
+            at = after_escapes + 1;
+        } else if at < bytes.len() && is_quote(bytes[at]) {
             at += 1;
         }
         at = skip_blanks(bytes, at);
         let separated = at < bytes.len() && matches!(bytes[at], b'=' | b':');
         if separated {
             at = skip_blanks(bytes, at + 1);
-        } else if !(word.starts_with('-') && at > i && bytes[i] != b'"' && bytes[i] != b'\'') {
+        } else if !(word.starts_with('-')
+            && at > i
+            && !is_quote(bytes[i])
+            && bytes[i] != b'\\')
+        {
             // Only a flag (`--token VALUE`) takes its value without a separator.
             continue;
         }
         if at >= bytes.len() {
             continue;
         }
-        let (value_start, mut value_stop, resume) = if matches!(bytes[at], b'"' | b'\'') {
-            let quote = bytes[at];
-            let inner = at + 1;
-            let mut stop = inner;
-            while stop < bytes.len() && bytes[stop] != quote && bytes[stop] != b'\n' {
-                stop += 1;
-            }
-            let closed = stop < bytes.len() && bytes[stop] == quote;
-            (inner, stop, stop + usize::from(closed))
+        let escapes = skip_backslashes(bytes, at);
+        let (value_start, mut value_stop, resume) = if escapes < bytes.len()
+            && is_quote(bytes[escapes])
+        {
+            quoted_value(bytes, escapes, escapes - at)
         } else {
             let stop = value_end(bytes, at);
             (at, stop, stop)

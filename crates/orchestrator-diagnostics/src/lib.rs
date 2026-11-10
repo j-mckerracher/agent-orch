@@ -3,8 +3,10 @@
 //! format.
 
 pub mod redact;
+mod secrets;
 
 pub use redact::{is_sensitive_key, redact, truncate, MASK};
+pub use secrets::{register_secret, watch_secret_file};
 
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom, Write};

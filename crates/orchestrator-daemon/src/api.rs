@@ -35,7 +35,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::executor::{Executor, ExecutorConfig};
-use orchestrator_diagnostics::{Diagnostics, Level};
+use orchestrator_diagnostics::Level;
 use crate::idempotency;
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
@@ -200,6 +200,22 @@ impl DaemonApi {
             executor.wake();
         }
     }
+
+    /// Runs one request and writes the causes of any unexpected (`Internal`)
+    /// failures it hit to the injected diagnostics sink.
+    pub(crate) fn report_internal<T>(&self, call: impl FnOnce() -> T) -> T {
+        INTERNAL_CAUSES.with(|causes| causes.borrow_mut().clear());
+        let output = call();
+        let causes = INTERNAL_CAUSES.with(|causes| std::mem::take(&mut *causes.borrow_mut()));
+        for (source, cause) in &causes {
+            self.config.diagnostics.error(
+                "api",
+                "internal_error",
+                &[("source", source), ("cause", cause)],
+            );
+        }
+        output
+    }
 }
 
 impl RpcHandler for DaemonApi {
@@ -219,7 +235,7 @@ impl RpcHandler for DaemonApi {
     }
 
     fn dispatch(&self, method: &str, params: Value) -> Result<Value, RpcError> {
-        let result = match method {
+        let result = self.report_internal(|| match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
             "tasks.submit" => self.submit_task(params),
@@ -242,7 +258,7 @@ impl RpcHandler for DaemonApi {
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
             _ => Err(RpcError::InvalidParams),
-        };
+        });
         // Only the method and the error class are reported, never parameters.
         // Caller mistakes (invalid params, unknown ids) stay quiet.
         if let Err(error) = &result {
@@ -264,18 +280,20 @@ impl RpcHandler for DaemonApi {
     }
 
     fn events_after(&self, after_sequence: i64, limit: usize) -> Result<Vec<IpcEvent>, RpcError> {
-        self.store
-            .stream_events_after(after_sequence, limit)
-            .map(|events| events.into_iter().map(stream_event).collect())
-            .map_err(map_store_error)
+        self.report_internal(|| {
+            self.store
+                .stream_events_after(after_sequence, limit)
+                .map(|events| events.into_iter().map(stream_event).collect())
+                .map_err(map_store_error)
+        })
     }
 
     fn latest_event_sequence(&self) -> Result<i64, RpcError> {
-        self.store.latest_event_sequence().map_err(map_store_error)
+        self.report_internal(|| self.store.latest_event_sequence().map_err(map_store_error))
     }
 
     fn journal_epoch(&self) -> Result<Option<String>, RpcError> {
-        self.store.store_epoch().map(Some).map_err(map_store_error)
+        self.report_internal(|| self.store.store_epoch().map(Some).map_err(map_store_error))
     }
 
     fn keep_alive(&self) -> bool {
@@ -1150,14 +1168,22 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
 }
 
 /// An unexpected failure reaches the client as a bare `Internal`, so its cause
-/// goes to the diagnostics log (redacted) or it would be lost.
-fn internal(source: &str, cause: &dyn std::fmt::Display) -> RpcError {
-    Diagnostics::stderr().error(
-        "api",
-        "internal_error",
-        &[("source", source), ("cause", &cause.to_string())],
-    );
+/// is queued here and written by [`DaemonApi::report_internal`] to the injected
+/// diagnostics sink (redacted) or it would be lost.
+pub(crate) fn internal(source: &str, cause: &dyn std::fmt::Display) -> RpcError {
+    INTERNAL_CAUSES.with(|causes| {
+        causes
+            .borrow_mut()
+            .push((source.to_owned(), cause.to_string()));
+    });
     RpcError::Internal
+}
+
+thread_local! {
+    // Requests are handled synchronously on one thread, so the causes queued
+    // by the error mappers belong to the request being reported.
+    static INTERNAL_CAUSES: std::cell::RefCell<Vec<(String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[path = "api_coordinator.rs"]

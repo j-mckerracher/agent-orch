@@ -35,6 +35,9 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let data_dir = data_dir()?;
+    // The IPC server writes the token after this point; the redactor reads the
+    // file lazily, so it masks the token by value as soon as it exists.
+    orchestrator_diagnostics::watch_secret_file(data_dir.join("daemon.token"));
     let _lock = acquire_lock(&data_dir)?;
     let config = ExecutorConfig::for_data_dir(&data_dir);
     let handler = Arc::new(DaemonApi::with_executor(&data_dir, config)?);

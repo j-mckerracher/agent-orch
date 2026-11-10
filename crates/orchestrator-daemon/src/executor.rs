@@ -41,10 +41,12 @@ use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
-use orchestrator_engine::reconcile::reconcile_before_scheduling;
+use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
-use orchestrator_store::{CancellationOwner, CancellationStatus, SqliteStore, Store};
+use orchestrator_store::{
+    CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
+};
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -140,19 +142,24 @@ impl Executor {
     /// Stops the scheduler thread. Running agents keep their own threads and
     /// are reconciled by the next daemon start if this process exits first.
     pub(crate) fn shutdown(&self) {
-        let running = running_task_ids(&self.inner.store);
-        if !running.is_empty() {
-            self.inner.config.diagnostics.warn(
-                LOG,
-                "shutdown_with_running_agents",
-                &[
-                    ("task_ids", &running.join(",")),
-                    (
-                        "recovery",
-                        "agents are reconciled and their worktrees kept on the next daemon start",
-                    ),
-                ],
-            );
+        let diag = &self.inner.config.diagnostics;
+        match running_task_ids(&self.inner.store, diag, "shutdown") {
+            Some(running) if running.is_empty() => {}
+            running => {
+                // An unreadable store is reported as unknown, never as no agents.
+                let task_ids = running.map_or_else(|| "unknown".to_owned(), |ids| ids.join(","));
+                diag.warn(
+                    LOG,
+                    "shutdown_with_running_agents",
+                    &[
+                        ("task_ids", &task_ids),
+                        (
+                            "recovery",
+                            "agents are reconciled and their worktrees kept on the next daemon start",
+                        ),
+                    ],
+                );
+            }
         }
         self.inner.stop.store(true, Ordering::SeqCst);
         self.inner.request_pass();
@@ -162,17 +169,65 @@ impl Executor {
     }
 }
 
-fn running_task_ids(store: &SqliteStore) -> Vec<String> {
-    store
-        .list()
-        .map(|tasks| {
+/// Ids of tasks recorded as Running, or `None` after logging why the store
+/// could not be listed. Callers must not treat `None` as "nothing running".
+fn running_task_ids(
+    store: &SqliteStore,
+    diagnostics: &Diagnostics,
+    context: &str,
+) -> Option<Vec<String>> {
+    running_ids_from(store.list(), diagnostics, context)
+}
+
+fn running_ids_from(
+    listing: Result<Vec<TaskRecord>, StoreError>,
+    diagnostics: &Diagnostics,
+    context: &str,
+) -> Option<Vec<String>> {
+    match listing {
+        Ok(tasks) => Some(
             tasks
                 .into_iter()
                 .filter(|task| task.state == TaskState::Running)
                 .map(|task| task.contract.id)
-                .collect()
-        })
-        .unwrap_or_default()
+                .collect(),
+        ),
+        Err(error) => {
+            diagnostics.error(
+                LOG,
+                "running_tasks_unreadable",
+                &[
+                    ("context", context),
+                    ("error", &error.to_string()),
+                    (
+                        "effect",
+                        "running agents cannot be listed; their state is reported as unknown",
+                    ),
+                ],
+            );
+            None
+        }
+    }
+}
+
+/// Ids in `before` that are no longer in `after`, or `None` when either
+/// listing failed.
+fn interrupted_between(
+    before: Option<&[String]>,
+    after: Option<&[String]>,
+) -> Option<Vec<String>> {
+    let (before, after) = (before?, after?);
+    Some(
+        before
+            .iter()
+            .filter(|id| !after.contains(id))
+            .cloned()
+            .collect(),
+    )
+}
+
+fn join_or_unknown(ids: Option<&[String]>) -> String {
+    ids.map_or_else(|| "unknown".to_owned(), |ids| ids.join(","))
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -193,25 +248,26 @@ impl Inner {
             *lock(&self.dirty) = false;
             if !gate_open {
                 terminate_orphaned_agents(&self.store, diag);
-                let running_before = running_task_ids(&self.store);
-                match reconcile_before_scheduling(&self.store) {
+                let running_before = running_task_ids(&self.store, diag, "before_recovery_gate");
+                match reconcile_before_scheduling_with(&self.store, diag) {
                     Ok(()) => {
                         gate_open = true;
                         *lock(&self.blocked) = None;
-                        let running_after = running_task_ids(&self.store);
-                        let interrupted: Vec<_> = running_before
-                            .iter()
-                            .filter(|id| !running_after.contains(id))
-                            .cloned()
-                            .collect();
-                        diag.info(
-                            LOG,
-                            "recovery_gate_open",
-                            &[
-                                ("interrupted_task_ids", &interrupted.join(",")),
-                                ("still_running_task_ids", &running_after.join(",")),
-                            ],
-                        );
+                        let running_after =
+                            running_task_ids(&self.store, diag, "after_recovery_gate");
+                        let interrupted =
+                            interrupted_between(running_before.as_deref(), running_after.as_deref());
+                        let interrupted_ids = join_or_unknown(interrupted.as_deref());
+                        let still_running = join_or_unknown(running_after.as_deref());
+                        let fields = [
+                            ("interrupted_task_ids", interrupted_ids.as_str()),
+                            ("still_running_task_ids", still_running.as_str()),
+                        ];
+                        if interrupted.is_some() && running_after.is_some() {
+                            diag.info(LOG, "recovery_gate_open", &fields);
+                        } else {
+                            diag.warn(LOG, "recovery_gate_open", &fields);
+                        }
                     }
                     Err(reason) => {
                         let mut blocked = lock(&self.blocked);
@@ -1081,6 +1137,45 @@ fn terminate_orphaned_agents(store: &SqliteStore, diag: &Diagnostics) {
 
 #[cfg(not(unix))]
 fn terminate_orphaned_agents(_store: &SqliteStore, _diag: &Diagnostics) {}
+
+/// Portable (also built on Windows) tests for the running-task listing.
+#[cfg(test)]
+mod running_listing_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_listing_is_logged_and_never_reads_as_nothing_running() {
+        let diag = Diagnostics::memory();
+        let result = running_ids_from(Err(StoreError::WorkerStopped), &diag, "shutdown");
+        assert_eq!(result, None);
+        let lines = diag.lines().join("\n");
+        assert!(lines.contains("\"level\":\"error\""), "{lines}");
+        assert!(lines.contains("\"event\":\"running_tasks_unreadable\""), "{lines}");
+        assert!(lines.contains("\"context\":\"shutdown\""), "{lines}");
+    }
+
+    #[test]
+    fn a_readable_empty_listing_is_quiet_and_empty() {
+        let diag = Diagnostics::memory();
+        assert_eq!(running_ids_from(Ok(Vec::new()), &diag, "x"), Some(Vec::new()));
+        assert!(diag.lines().is_empty());
+    }
+
+    #[test]
+    fn interrupted_tasks_are_unknown_when_either_listing_failed() {
+        let one = vec!["a".to_owned(), "b".to_owned()];
+        let two = vec!["b".to_owned()];
+        assert_eq!(
+            interrupted_between(Some(&one), Some(&two)),
+            Some(vec!["a".to_owned()])
+        );
+        assert_eq!(interrupted_between(None, Some(&two)), None);
+        assert_eq!(interrupted_between(Some(&one), None), None);
+        assert_eq!(join_or_unknown(None), "unknown");
+        assert_eq!(join_or_unknown(Some(&one)), "a,b");
+        assert_eq!(join_or_unknown(Some(&[])), "");
+    }
+}
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]

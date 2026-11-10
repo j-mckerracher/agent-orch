@@ -831,6 +831,7 @@ dependencies = [
  "clap",
  "orchestrator-agents",
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-engine",
  "orchestrator-git",
  "orchestrator-runtime",
@@ -885,6 +886,7 @@ name = "orchestrator-engine"
 version = "0.1.0"
 dependencies = [
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-git",
  "orchestrator-runtime",
  "orchestrator-store",

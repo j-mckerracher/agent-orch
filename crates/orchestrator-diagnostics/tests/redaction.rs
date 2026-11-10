@@ -106,3 +106,64 @@ fn multibyte_text_does_not_split_characters() {
     assert!(!out.contains("päss"), "{out}");
     assert!(out.contains("ключ=значение"), "{out}");
 }
+
+#[test]
+fn debug_escaped_json_values_are_masked() {
+    assert_hidden(r##"Error("bad {\"token\":\"SECRETVALUE1\"}")"##, "SECRETVALUE1");
+    assert_hidden(r##"token="\"SECRETVALUE2\"""##, "SECRETVALUE2");
+    assert_hidden(r##"password=\"SECRETVALUE3\" next"##, "SECRETVALUE3");
+    assert_hidden(r##"{\"api_key\": \"SECRETVALUE4\"}"##, "SECRETVALUE4");
+    // Escaped twice, as when a Debug string is itself Debug printed.
+    assert_hidden(r##"\\\"token\\\":\\\"SECRETVALUE5\\\""##, "SECRETVALUE5");
+    // Real `{:?}` output of a string holding JSON, once and twice.
+    let json = r#"{"token":"SECRETVALUE6","user":"bob"}"#;
+    let once = format!("{json:?}");
+    let twice = format!("{once:?}");
+    assert_hidden(&once, "SECRETVALUE6");
+    assert_hidden(&twice, "SECRETVALUE6");
+    assert!(redact(&once).contains("bob"), "other fields stay: {}", redact(&once));
+}
+
+#[test]
+fn escaped_values_end_at_their_own_closing_quote() {
+    let out = redact(r##"{\"token\":\"SECRETVALUE7\",\"user\":\"bob\",\"note\":\"keep\"}"##);
+    assert!(out.contains(r#"\"user\":\"bob\""#), "{out}");
+    assert!(out.contains(r#"\"note\":\"keep\""#), "{out}");
+    // An escaped quote inside a plain quoted value does not end it early.
+    assert_hidden(r#"token="ab\"SECRETVALUE8""#, "SECRETVALUE8");
+    // Empty escaped values stay as they are.
+    assert_eq!(redact(r##"{\"token\":\"\"}"##), r##"{\"token\":\"\"}"##);
+}
+
+#[test]
+fn escaped_quote_forms_stay_linear() {
+    let started = std::time::Instant::now();
+    for sample in [
+        "token=\\\"".repeat(500_000),
+        "token=\\\\\\\"a\\\"".repeat(300_000),
+        "\\\"".repeat(1_000_000),
+        format!("token=\\\"{}", "a".repeat(3_000_000)),
+    ] {
+        let _ = redact(&sample);
+    }
+    assert!(started.elapsed().as_secs() < 20, "took {:?}", started.elapsed());
+}
+
+#[test]
+fn url_userinfo_pass_is_linear_on_repeated_schemes() {
+    // `x://a@` repeated used to lowercase the whole prefix per occurrence.
+    let started = std::time::Instant::now();
+    let input = "x://a@".repeat(300_000);
+    assert_eq!(redact(&input), input, "a bare user on an unknown scheme is not a credential");
+    let web = "https://a@".repeat(300_000);
+    let _ = redact(&web);
+    assert!(started.elapsed().as_secs() < 10, "took {:?}", started.elapsed());
+}
+
+#[test]
+fn url_scheme_check_is_case_insensitive_and_bounds_safe() {
+    assert_hidden("HTTPS://user@example.com/x", "user");
+    assert_hidden("see Http://tok3nvalue@host", "tok3nvalue");
+    assert_eq!(redact("://a@b"), "://a@b");
+    assert_eq!(redact("p://a@b"), "p://a@b");
+}

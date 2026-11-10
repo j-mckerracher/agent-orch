@@ -84,11 +84,11 @@ fn decode_reply(value: Value) -> Result<Value, RpcError> {
     }
 }
 
-fn map_store_error(error: StoreError) -> RpcError {
+pub(crate) fn map_store_error(error: StoreError) -> RpcError {
     match error {
         StoreError::InvalidIdempotencyKey => RpcError::InvalidParams,
         StoreError::IdempotencyConflict => RpcError::IdempotencyConflict,
-        _ => RpcError::Internal,
+        _ => crate::api::internal("idempotency", &error),
     }
 }
 

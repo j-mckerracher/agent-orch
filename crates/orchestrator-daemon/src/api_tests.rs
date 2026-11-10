@@ -916,3 +916,55 @@ fn session_events_page_and_report_a_cursor_beyond_the_journal() {
         Err(RpcError::EpochMismatch)
     );
 }
+
+fn api_with_memory_sink() -> (tempfile::TempDir, DaemonApi, orchestrator_diagnostics::Diagnostics) {
+    let directory = tempfile::tempdir().unwrap();
+    let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
+    let mut config = ExecutorConfig::for_data_dir(directory.path());
+    config.diagnostics = diagnostics.clone();
+    let api = DaemonApi::with_config(directory.path(), config).unwrap();
+    (directory, api, diagnostics)
+}
+
+#[test]
+fn internal_error_causes_reach_the_injected_redacting_sink() {
+    let (_directory, api, diagnostics) = api_with_memory_sink();
+    let error = api.report_internal(|| {
+        map_store_error(StoreError::Io(std::io::Error::other(
+            "disk failed password=SECRETVALUE10",
+        )))
+    });
+    assert_eq!(error, RpcError::Internal);
+    let lines = diagnostics.lines().join("\n");
+    assert!(lines.contains("\"event\":\"internal_error\""), "{lines}");
+    assert!(lines.contains("\"source\":\"store\""), "{lines}");
+    assert!(lines.contains("disk failed"), "{lines}");
+    assert!(!lines.contains("SECRETVALUE10"), "{lines}");
+}
+
+#[test]
+fn internal_causes_do_not_leak_into_the_next_request() {
+    let (_directory, api, diagnostics) = api_with_memory_sink();
+    // Queued outside any request, for example by a mapper called elsewhere.
+    let _ = map_store_error(StoreError::WorkerStopped);
+    let value = api.report_internal(|| 7);
+    assert_eq!(value, 7);
+    assert!(diagnostics.lines().is_empty(), "{:?}", diagnostics.lines());
+    let _ = api.report_internal(|| map_store_error(StoreError::WorkerStopped));
+    assert_eq!(diagnostics.lines().len(), 1);
+}
+
+#[test]
+fn idempotency_store_failures_report_their_cause_too() {
+    let (_directory, api, diagnostics) = api_with_memory_sink();
+    let error = api.report_internal(|| idempotency::map_store_error(StoreError::WorkerStopped));
+    assert_eq!(error, RpcError::Internal);
+    assert!(diagnostics
+        .lines()
+        .join("\n")
+        .contains("\"source\":\"idempotency\""));
+    assert_eq!(
+        idempotency::map_store_error(StoreError::IdempotencyConflict),
+        RpcError::IdempotencyConflict
+    );
+}
