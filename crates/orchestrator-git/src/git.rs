@@ -3,6 +3,11 @@ use std::process::Command;
 
 use crate::Error;
 
+/// Git for Windows rejects paths over MAX_PATH unless this is set. A data
+/// directory plus the 69-character task id (`task-` + 64 hex) and Git's ref
+/// lock/reflog suffixes can pass 259 characters. It is a no-op elsewhere.
+pub(super) const LONG_PATHS: [&str; 2] = ["-c", "core.longpaths=true"];
+
 /// Run the system Git executable from `dir` and return trimmed stdout.
 /// Args are passed as-is (no encoding); the working directory and every
 /// argument is a literal value, never a user-controlled option.
@@ -26,6 +31,7 @@ where
 {
     let output = Command::new("git")
         .current_dir(dir)
+        .args(LONG_PATHS)
         .args(args)
         .output()
         .map_err(Error::Io)?;

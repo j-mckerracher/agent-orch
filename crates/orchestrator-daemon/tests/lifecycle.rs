@@ -19,6 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -42,17 +43,39 @@ fn main() {
 
 /// The fake agent: reports a started turn like codex, records its own pid, and
 /// idles until killed (or 90 s, so a failed run cannot leave it behind).
+/// Its stdout and stderr belong to the daemon, so it leaves breadcrumb files
+/// next to the pid file for the failure diagnostics.
 fn agent(pid_file: &Path) {
     if std::env::args().any(|arg| arg == "--version") {
         println!("lifecycle-fake-agent 0.0.0");
         return;
     }
-    println!(r#"{{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}}"#);
-    println!(r#"{{"type":"turn.started"}}"#);
-    let staged = pid_file.with_extension("tmp");
-    fs::write(&staged, std::process::id().to_string()).unwrap();
-    fs::rename(&staged, pid_file).unwrap();
+    let launch = format!(
+        "pid={} cwd={:?} args={:?}",
+        std::process::id(),
+        std::env::current_dir(),
+        std::env::args().collect::<Vec<_>>()
+    );
+    let _ = fs::write(pid_file.with_extension("launch"), launch);
+    if let Err(error) = record_pid(pid_file) {
+        let _ = fs::write(pid_file.with_extension("err"), error.to_string());
+        return;
+    }
     thread::sleep(Duration::from_secs(90));
+}
+
+fn record_pid(pid_file: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut stdout = std::io::stdout();
+    writeln!(
+        stdout,
+        r#"{{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}}"#
+    )?;
+    writeln!(stdout, r#"{{"type":"turn.started"}}"#)?;
+    stdout.flush()?;
+    let staged = pid_file.with_extension("tmp");
+    fs::write(&staged, std::process::id().to_string())?;
+    fs::rename(&staged, pid_file)
 }
 
 struct Daemon(Child);
@@ -78,13 +101,109 @@ fn git(repo: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
+/// Where the failure report finds the evidence: the daemon's own output and
+/// the task being driven. The daemon logs every launch failure to stderr.
+struct Evidence {
+    base: PathBuf,
+    daemon_log: PathBuf,
+    task_id: Option<String>,
+}
+
+static EVIDENCE: Mutex<Option<Evidence>> = Mutex::new(None);
+
+fn evidence(update: impl FnOnce(&mut Option<Evidence>)) {
+    update(&mut EVIDENCE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
+}
+
+/// Panics with `what` plus everything needed to explain it without a rerun:
+/// daemon output, agent breadcrumbs, task/session state, worktrees and the
+/// longest path (Windows rejects paths over 259 characters in many APIs).
+fn fail(what: &str) -> ! {
+    panic!("{what}\n{}", diagnostics())
+}
+
+fn diagnostics() -> String {
+    use std::fmt::Write;
+    let guard = EVIDENCE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(evidence) = guard.as_ref() else {
+        return "no diagnostics: the scenario had not started".to_owned();
+    };
+    let data = evidence.base.join("data");
+    let mut out = String::from("--- lifecycle diagnostics ---\n");
+    let _ = writeln!(out, "base: {} ({} chars)", evidence.base.display(), evidence.base.as_os_str().len());
+    let _ = writeln!(out, "daemon log {}:\n{}", evidence.daemon_log.display(), tail(&evidence.daemon_log));
+    for extension in ["launch", "err"] {
+        let file = evidence.base.join("agent").with_extension(extension);
+        let _ = writeln!(out, "agent.{extension}: {}", tail(&file));
+    }
+    let (longest, count) = longest_path(&evidence.base);
+    let _ = writeln!(out, "longest path under base ({} chars of {count} entries): {}", longest.as_os_str().len(), longest.display());
+    let _ = writeln!(out, "worktrees: {:?}", list(&data.join("worktrees")));
+    match Client::connect(&data) {
+        Err(error) => {
+            let _ = writeln!(out, "daemon not reachable: {error}");
+        }
+        Ok(mut client) => {
+            if let Some(task_id) = &evidence.task_id {
+                let _ = writeln!(out, "tasks.get: {:?}", client.tasks_get(task_id));
+                let _ = writeln!(out, "sessions.list: {:?}", client.sessions_list(Some(task_id)));
+            } else {
+                let _ = writeln!(out, "tasks.list: {:?}", client.tasks_list());
+            }
+        }
+    }
+    out
+}
+
+fn tail(file: &Path) -> String {
+    match fs::read_to_string(file) {
+        Ok(text) => {
+            let start = text.char_indices().rev().nth(8000).map_or(0, |(index, _)| index);
+            text[start..].to_owned()
+        }
+        Err(error) => format!("<unreadable: {error}>"),
+    }
+}
+
+fn list(dir: &Path) -> Vec<String> {
+    fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn longest_path(root: &Path) -> (PathBuf, usize) {
+    let mut longest = root.to_path_buf();
+    let mut count = 0;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            count += 1;
+            if path.as_os_str().len() > longest.as_os_str().len() {
+                longest = path.clone();
+            }
+            if path.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+    (longest, count)
+}
+
 fn until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
     let deadline = Instant::now() + WAIT;
     loop {
         if let Some(found) = probe() {
             return found;
         }
-        assert!(Instant::now() < deadline, "timed out after 30 s: {what}");
+        if Instant::now() >= deadline {
+            fail(&format!("timed out after 30 s: {what}"));
+        }
         thread::sleep(Duration::from_millis(50));
     }
 }
@@ -121,12 +240,12 @@ fn open_relay(data: &Path) -> (Relay, Value, Receiver<RelayEvent>) {
 }
 
 fn message(receiver: &Receiver<RelayEvent>) -> Value {
-    match receiver
-        .recv_timeout(WAIT)
-        .expect("relay message within 30 s")
-    {
-        RelayEvent::Message(value) => value,
-        RelayEvent::Closed(reason) => panic!("relay closed unexpectedly: {}", reason.code()),
+    match receiver.recv_timeout(WAIT) {
+        Ok(RelayEvent::Message(value)) => value,
+        Ok(RelayEvent::Closed(reason)) => {
+            fail(&format!("relay closed unexpectedly: {}", reason.code()))
+        }
+        Err(error) => fail(&format!("no relay message within 30 s: {error}")),
     }
 }
 
@@ -173,6 +292,7 @@ fn scenario(base: &Path) {
         &["config", "user.email", "lifecycle@example.invalid"],
     );
     git(&repo, &["config", "core.autocrlf", "false"]);
+    git(&repo, &["config", "core.longpaths", "true"]);
     fs::write(repo.join("sample.txt"), "base\n").unwrap();
     git(&repo, &["add", "sample.txt"]);
     git(&repo, &["commit", "-m", "initial"]);
@@ -180,6 +300,21 @@ fn scenario(base: &Path) {
     step("1 start a real daemon with a fake agent binary");
     let agent: PathBuf = std::env::current_exe().unwrap();
     let nonexistent: PathBuf = base.join("no-such-agent");
+    // Diagnostics self-check: an unlaunchable agent must fail fast and explain itself.
+    let agent = if std::env::var_os("AGENT_ORCH_LIFECYCLE_BREAK_AGENT").is_some() {
+        nonexistent.clone()
+    } else {
+        agent
+    };
+    let daemon_log = base.join("daemon.log");
+    let log = fs::File::create(&daemon_log).unwrap();
+    evidence(|slot| {
+        *slot = Some(Evidence {
+            base: base.to_path_buf(),
+            daemon_log: daemon_log.clone(),
+            task_id: None,
+        });
+    });
     let mut daemon = Daemon(
         Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")
@@ -188,8 +323,8 @@ fn scenario(base: &Path) {
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)
             .env(AGENT_ROLE, &pid_file)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
             .spawn()
             .unwrap(),
     );
@@ -223,8 +358,29 @@ fn scenario(base: &Path) {
             .ok()
     });
     let task_id = task["contract"]["id"].as_str().unwrap().to_owned();
+    evidence(|slot| {
+        if let Some(evidence) = slot {
+            evidence.task_id = Some(task_id.clone());
+        }
+    });
     let agent_pid: u32 = until("agent wrote its pid", || {
-        fs::read_to_string(&pid_file).ok()?.trim().parse().ok()
+        if let Some(pid) = fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            return Some(pid);
+        }
+        // Fail fast with the daemon's own explanation instead of idling 30 s.
+        if let Some(status) = daemon.0.try_wait().unwrap() {
+            fail(&format!("daemon exited before the agent started: {status}"));
+        }
+        let task = Client::connect(&data)
+            .ok()
+            .and_then(|mut client| client.tasks_get(&task_id).ok())?;
+        if matches!(task["state"].as_str(), Some("Failed" | "Cancelled")) {
+            fail("task ended before the agent wrote its pid");
+        }
+        None
     });
     until("task Running", || {
         (task_state(&data, &task_id) == "Running").then_some(())

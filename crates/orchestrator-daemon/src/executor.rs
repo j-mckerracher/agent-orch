@@ -724,6 +724,7 @@ fn fail_records(store: &SqliteStore, job: &Job, session: SessionState) {
 
 fn git(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("git")
+        .args(["-c", "core.longpaths=true"])
         .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())

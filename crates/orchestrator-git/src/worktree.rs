@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{stderr_detail, Error};
-use crate::git::git;
+use crate::git::{git, LONG_PATHS};
 use crate::git_path;
 use crate::repository::Repository;
 
@@ -126,6 +126,7 @@ fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Resu
     let output = Command::new("git")
         .current_dir(repo.path())
         .env("LC_ALL", "C")
+        .args(LONG_PATHS)
         .args(["worktree", "add", "-b"])
         .arg(branch)
         .arg("--")
@@ -293,6 +294,23 @@ mod tests {
             "{:?}",
             wt.path()
         );
+    }
+
+    /// A task worktree under a path past MAX_PATH (260) must still be created:
+    /// Git for Windows fails creating refs, reflogs and checkout files without
+    /// `core.longpaths`. On other platforms this only guards the arguments.
+    #[test]
+    fn worktree_under_a_path_longer_than_max_path_is_created() {
+        let (_tmp, wts, repo) = fixture();
+        let mut root = wts;
+        for _ in 0..5 {
+            root.push("long-path-segment-long-path-segment-long-path-segment");
+        }
+        let id = format!("task-{}", "a".repeat(64));
+        std::fs::create_dir_all(&root).unwrap();
+        let wt = create_task_worktree(&repo, &id, "HEAD", &root).unwrap();
+        assert!(wt.path().as_os_str().len() > 260, "{:?}", wt.path());
+        assert!(wt.path().join("base.txt").exists());
     }
 
     #[test]
