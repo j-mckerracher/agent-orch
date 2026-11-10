@@ -4,8 +4,8 @@ use std::io::{self, Read, Write};
 use thiserror::Error;
 
 pub(crate) const VERSION: u16 = 1;
-const HEADER_LEN: usize = 6;
-const MAX_BODY: usize = 1024 * 1024;
+pub(crate) const HEADER_LEN: usize = 6;
+pub(crate) const MAX_BODY: usize = 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum FrameError {

@@ -555,7 +555,7 @@ struct RemoteEventError {
 }
 
 #[cfg(any(unix, windows))]
-fn read_token(data_dir: &Path) -> Result<String, IpcError> {
+pub(crate) fn read_token(data_dir: &Path) -> Result<String, IpcError> {
     let path = data_dir.join("daemon.token");
     let before = fs::symlink_metadata(&path).map_err(|_| IpcError::Authentication)?;
     #[cfg(unix)]

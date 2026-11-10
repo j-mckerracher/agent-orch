@@ -60,11 +60,15 @@ pub use protocol::{Capability, FrameError};
 #[cfg(any(unix, windows))]
 mod client;
 #[cfg(any(unix, windows))]
+mod relay;
+#[cfg(any(unix, windows))]
 mod server;
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(any(unix, windows))]
 pub use client::Client;
+#[cfg(any(unix, windows))]
+pub use relay::{CloseReason, Relay, RelayError, RelayEvent};
 #[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
 #[cfg(not(any(unix, windows)))]
