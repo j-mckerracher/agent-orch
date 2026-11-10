@@ -34,6 +34,28 @@ body:has(.shell) {
   outline-offset: 2px;
 }
 
+.shell-skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border: 2px solid var(--shell-blue);
+  border-radius: 6px;
+  background: var(--shell-panel);
+  color: var(--ink, #111);
+  font-weight: 650;
+  transform: translateY(-200%);
+}
+
+.shell-skip:focus {
+  transform: none;
+}
+
+.shell-main:focus {
+  outline: none;
+}
+
 .shell-strip {
   min-width: 0;
   max-height: 30dvh;
@@ -323,6 +345,20 @@ body:has(.shell) {
   .shell-activity {
     margin: 0 22px 16px;
     overflow: visible;
+  }
+
+  /*
+   * Wireframe: the resource strip stays at the bottom of the shell at every width. Below
+   * 960 px the content column scrolls, so the strip pins to its bottom edge instead of
+   * flowing after the content. It is collapsed by default (one bar) and capped while open so
+   * it can never cover more than ~15% of the viewport.
+   */
+  .shell-resources {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    max-height: 15dvh;
+    overflow: auto;
   }
 }
 

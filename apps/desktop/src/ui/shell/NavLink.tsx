@@ -14,8 +14,8 @@ export function NavLink({
   children,
 }: {
   to: Route;
-  /** Renders `aria-current="page"`. */
-  current?: boolean;
+  /** `true`/`"page"` renders `aria-current="page"`; `"true"` marks an ancestor of the current page. */
+  current?: boolean | "page" | "true";
   className?: string;
   children: ReactNode;
 }) {
@@ -24,7 +24,7 @@ export function NavLink({
     <a
       href={formatRoute(to)}
       className={className}
-      aria-current={current ? "page" : undefined}
+      aria-current={current === "true" ? "true" : current ? "page" : undefined}
       onClick={(event) => {
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
           return;

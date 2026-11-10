@@ -19,14 +19,19 @@ describe("shell.css resources region", () => {
     expect(bodies.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("never pins the strip over content at any width, so an open strip cannot cover the screen", () => {
-    for (const body of bodies) {
+  it("pins the strip to the bottom edge only in the narrow, scrolling layout, with a height cap", () => {
+    const sticky = bodies.filter((body) => /position\s*:\s*sticky/.test(body));
+    expect(sticky).toHaveLength(1);
+    expect(sticky[0]).toMatch(/bottom\s*:\s*0/);
+    expect(sticky[0]).toMatch(/max-height\s*:\s*15dvh/);
+    expect(shellCss.indexOf(sticky[0])).toBeGreaterThan(shellCss.indexOf("@media (max-width: 960px)"));
+    expect(shellCss.indexOf(sticky[0])).toBeLessThan(shellCss.indexOf("@media (max-width: 760px)"));
+    for (const body of bodies.filter((entry) => entry !== sticky[0])) {
       expect(body).not.toMatch(/position\s*:\s*(sticky|fixed|absolute)/);
     }
-    expect(shellCss).not.toMatch(/position\s*:\s*sticky/);
   });
 
-  it("keeps the strip as a normal-flow grid area", () => {
+  it("keeps the strip a grid area of the content column", () => {
     expect(bodies.some((body) => /grid-area\s*:\s*res\b/.test(body))).toBe(true);
   });
 });

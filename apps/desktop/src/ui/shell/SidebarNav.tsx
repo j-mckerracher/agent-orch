@@ -6,8 +6,8 @@ interface NavItem {
   label: string;
   icon: string;
   to: Route;
-  /** True when `route` selects this item. */
-  isCurrent: (route: Route) => boolean;
+  /** Whether `route` selects this item; `"true"` marks the section of a deeper page that carries `aria-current="page"` itself. */
+  isCurrent: (route: Route) => boolean | "true";
   /** Trailing slot, e.g. the review count. */
   trailing?: ReactNode;
 }
@@ -43,7 +43,7 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
       label: "Projects",
       icon: "▤",
       to: { name: "projects" },
-      isCurrent: (current) => current.name !== "global",
+      isCurrent: (current) => (current.name !== "global" ? "true" : false),
     },
   ];
   return (

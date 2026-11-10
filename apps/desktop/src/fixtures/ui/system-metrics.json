@@ -4,9 +4,9 @@
     "success": {
       "ageMs": 2000,
       "data": {
-        "cpu": { "status": "ok", "ageMs": 2000, "value": { "value": 41, "unit": "%", "kind": "utilization", "label": "CPU" } },
+        "cpu": { "status": "ok", "ageMs": 2000, "value": { "value": 44, "unit": "%", "kind": "utilization", "label": "CPU" } },
         "memory": { "status": "ok", "ageMs": 2000, "value": { "value": 18.5, "unit": "GiB", "kind": "capacity", "label": "Memory in use" } },
-        "disk": { "status": "ok", "ageMs": 30000, "value": { "value": 62, "unit": "%", "kind": "capacity", "label": "Data volume" } },
+        "disk": { "status": "ok", "ageMs": 30000, "value": { "value": 71, "unit": "%", "kind": "capacity", "label": "Data volume" } },
         "gpu": { "status": "unsupported", "reason": "No cross-platform GPU meter exists on this platform." }
       }
     },

@@ -64,14 +64,14 @@ describe("ResourceStrip with D13 fixtures", () => {
   it("shows four rows with value, unit, scope and age, labelled PLACEHOLDER DATA", async () => {
     renderStrip(fixtureServices());
     const cpu = await screen.findByRole("meter", { name: "CPU utilization" });
-    expect(cpu).toHaveAttribute("aria-valuenow", "41");
+    expect(cpu).toHaveAttribute("aria-valuenow", "44");
     expect(cpu).toHaveAttribute("aria-valuemin", "0");
     expect(cpu).toHaveAttribute("aria-valuemax", "100");
-    expect(cpu).toHaveAttribute("aria-valuetext", "41%, scope CPU, observed 2 s ago");
+    expect(cpu).toHaveAttribute("aria-valuetext", "44%, scope CPU, observed 2 s ago");
 
     const disk = screen.getByRole("meter", { name: "Disk capacity used" });
-    expect(disk).toHaveAttribute("aria-valuenow", "62");
-    expect(disk).toHaveAttribute("aria-valuetext", "62%, scope Data volume, observed 30 s ago");
+    expect(disk).toHaveAttribute("aria-valuenow", "71");
+    expect(disk).toHaveAttribute("aria-valuetext", "71%, scope Data volume, observed 30 s ago");
 
     expect(screen.getAllByRole("meter")).toHaveLength(2);
     expect(screen.getAllByTestId("badge-D13")[0]).toHaveTextContent("PLACEHOLDER DATA (D13)");
@@ -109,7 +109,7 @@ describe("ResourceStrip with D13 fixtures", () => {
   it("summarises the values while collapsed and keeps the badge visible", async () => {
     renderStrip(fixtureServices(), false);
     expect(await screen.findByTestId("resource-strip-compact")).toHaveTextContent(
-      "CPU 41% · Memory 18.5 GiB · GPU unsupported · Disk 62%",
+      "CPU 44% · Memory 18.5 GiB · GPU unsupported · Disk 71%",
     );
     expect(screen.getByTestId("badge-D13")).toBeVisible();
     expect(screen.getByTestId("resource-strip")).not.toHaveAttribute("open");
@@ -162,7 +162,7 @@ describe("ResourceStrip in live mode", () => {
     expect(screen.queryByTestId("badge-D13")).toBeNull();
     expect(screen.queryAllByRole("meter")).toHaveLength(0);
     const strip = screen.getByTestId("resource-strip");
-    expect(strip).not.toHaveTextContent(/PLACEHOLDER|41|18\.5|62/);
+    expect(strip).not.toHaveTextContent(/PLACEHOLDER|44|18\.5|71/);
   });
 });
 
@@ -279,7 +279,7 @@ describe("ResourceStrip in the shell", () => {
     const services = fixtureServices();
     render(<App services={services} shellSlots={{ resources: <ResourceStrip now={() => NOW} /> }} />);
     const region = await screen.findByRole("region", { name: "Device resources" });
-    expect(await within(region).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 41%");
+    expect(await within(region).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 44%");
     expect(within(region).queryAllByRole("region")).toHaveLength(0);
     expect(within(region).queryAllByRole("navigation")).toHaveLength(0);
     expect(within(region).getByTestId("badge-D13")).toBeInTheDocument();

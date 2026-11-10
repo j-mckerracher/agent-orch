@@ -109,7 +109,7 @@ describe("usage pill", () => {
   it("fixture mode shows a PLACEHOLDER amount", async () => {
     await mount(null);
     const pill = screen.getByTestId("top-usage");
-    await waitFor(() => expect(within(pill).getByTestId("top-usage-value")).toHaveTextContent("$20.00"));
+    await waitFor(() => expect(within(pill).getByTestId("top-usage-value")).toHaveTextContent("$26.00"));
     expect(within(pill).getByTestId("badge-D12")).toBeInTheDocument();
   });
 

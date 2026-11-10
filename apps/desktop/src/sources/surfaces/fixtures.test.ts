@@ -22,11 +22,11 @@ describe("fixture surfaces (D9-D16)", () => {
     expect(activity.status === "ok" && activity.data.slots).toMatchObject({ status: "ok", value: { used: 20, limit: 24 } });
     const usage = await s.usage.usage();
     expect(usage.status === "ok" && [usage.data.reported, usage.data.estimated]).toMatchObject([
-      { status: "ok", value: 20 },
+      { status: "ok", value: 26 },
       { status: "ok", value: 6 },
     ]);
     const metrics = await s.metrics.metrics();
-    expect(metrics.status === "ok" && metrics.data.cpu).toMatchObject({ status: "ok", value: { value: 41 } });
+    expect(metrics.status === "ok" && metrics.data.cpu).toMatchObject({ status: "ok", value: { value: 44 } });
     expect(metrics.status === "ok" && metrics.data.gpu.status).toBe("unsupported");
   });
 

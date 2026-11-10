@@ -255,6 +255,8 @@
   overflow: hidden;
   border-radius: 4px;
   background: var(--meter-gradient);
+  /* A 3:1 boundary makes the full extent identifiable even where the fill/track are pale. */
+  outline: 1px solid var(--control-border);
 }
 
 .ui-meter-track::after {
@@ -285,6 +287,7 @@
 
 .ui-meter-unavailable .ui-meter-track {
   background: transparent;
+  outline: none;
   border: 1px dashed var(--control-border);
 }
 

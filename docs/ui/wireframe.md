@@ -427,7 +427,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 ### Placeholder registry D9–D16 (extends D1–D8)
 
-The M5 `DUMMY interface and fixture registry` (D1–D8) is unchanged and its replacement-acceptance rules carry over: each interface keeps one typed boundary, fixture values are labelled in the UI, and a real adapter replaces a fixture only with its own acceptance evidence. M7 adds D9–D16. Fixture content mirrors the illustrative values in `wireframes.html` and is visible only in fixture mode (`?fixture=1`) or where a row says a labelled placeholder is acceptable. Interfaces are owned by M7-03; adapters by M7-20..M7-24.
+The M5 `DUMMY interface and fixture registry` (D1–D8) is unchanged and its replacement-acceptance rules carry over: each interface keeps one typed boundary, fixture values are labelled in the UI, and a real adapter replaces a fixture only with its own acceptance evidence. M7 adds D9–D16. Fixture content follows the illustrative values in `wireframes.html` where the contract can carry them (CPU 44%, disk 71%, reported usage $26.00 with the estimate kept separate and never added to it); memory is an absolute figure because the D13 contract has no total, so the wireframe's 63% is not reproduced. It is visible only in fixture mode (`?fixture=1`) or where a row says a labelled placeholder is acceptable. Interfaces are owned by M7-03; adapters by M7-20..M7-24.
 
 | ID | Interface | Fixture content (illustrative only) | Real source today | Real source later | Adapter |
 | --- | --- | --- | --- | --- | --- |
@@ -472,7 +472,7 @@ M6-04 stands and is not displaced by M7. Whether M7 is part of the first release
 1. Every fixture value carries a visible "PLACEHOLDER DATA (D#)" badge with the registry id, in both themes, and in a form that does not rely on colour.
 2. `fixture:` ids stay unreachable from any mutation, as in M5.
 3. An action without a supported contract is disabled with a stated reason in live mode, and may be enabled only against fixtures in `?fixture=1`. No control is silently inert.
-4. Illustrative numbers from `wireframes.html` (10 workstreams, 40 tasks, 20 / 24 slots, $26.00, CPU 41%) never appear in live mode.
+4. Illustrative numbers from `wireframes.html` (10 workstreams, 40 tasks, 20 / 24 slots, $26.00, CPU 44%) never appear in live mode.
 5. Boot-mode selection is unchanged.
 6. A derived value that approximates something the daemon does not report is labelled as derived. A real-looking figure is never invented.
 

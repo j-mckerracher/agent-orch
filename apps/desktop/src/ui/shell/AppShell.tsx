@@ -32,17 +32,28 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
   const hasActivity = slots.activity !== null && slots.activity !== undefined;
   const hasResources = slots.resources !== null && slots.resources !== undefined;
   const main = mainLandmark ? (
-    <main id="shell-main" className="shell-main">
+    <main id="shell-main" className="shell-main" tabIndex={-1}>
       {children}
     </main>
   ) : (
-    <div id="shell-main" className="shell-main">
+    <div id="shell-main" className="shell-main" tabIndex={-1}>
       {children}
     </div>
   );
 
   return (
     <div className="shell" data-shell-tier={tier}>
+      <a
+        className="shell-skip"
+        href="#shell-main"
+        onClick={(event) => {
+          // The hash carries the route, so focus the region instead of following the anchor.
+          event.preventDefault();
+          document.getElementById("shell-main")?.focus();
+        }}
+      >
+        Skip to main content
+      </a>
       <div className="shell-strip" data-testid="shell-connection">
         {connection}
       </div>

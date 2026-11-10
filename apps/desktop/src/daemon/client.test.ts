@@ -165,6 +165,9 @@ describe("DaemonApi placeholder-id guard", () => {
     ).rejects.toMatchObject({ kind: "invalid-params" });
     expect(fake.calls.filter((c) => c.method !== "events.subscribe")).toEqual([]);
     expect(isFixtureId("fixture:x")).toBe(true);
+    expect(isFixtureId("FIXTURE:x")).toBe(true);
+    expect(isFixtureId("  Fixture:x")).toBe(true);
+    expect(isFixtureId("fixture-project")).toBe(false);
     expect(isFixtureId("task-1")).toBe(false);
   });
 });

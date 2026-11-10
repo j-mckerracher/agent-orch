@@ -10,6 +10,7 @@ import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
+import { THEME_STORAGE_KEY } from "../theme/theme";
 
 const shellCss = readFileSync("src/ui/shell/shell.css", "utf8");
 
@@ -118,9 +119,10 @@ describe("legacy project routes in the shell", () => {
     await mount(daemon(), { route });
     expect(screen.getAllByRole("main")).toHaveLength(1);
     const current = document.querySelectorAll('.shell [aria-current="page"]');
-    expect(current.length).toBeGreaterThan(0);
-    const labels = [...current].map((node) => node.textContent);
-    expect(labels.some((label) => label?.includes("Projects"))).toBe(true);
+    expect(current.length).toBeLessThanOrEqual(1);
+    const section = document.querySelector('.shell-nav [aria-current]');
+    expect(section).toHaveAttribute("aria-current", "true");
+    expect(section).toHaveTextContent("Projects");
   });
 });
 
@@ -156,6 +158,17 @@ describe("navigation", () => {
     expect(screen.getByRole("navigation", { name: "Primary views" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Workstreams" })).toBeInTheDocument();
     expect(screen.getAllByRole("main")).toHaveLength(1);
+  });
+
+  it("offers a skip link that moves focus to main without changing the route", async () => {
+    const { user, services } = await mount(daemon());
+    const route = services.router.getSnapshot();
+    await user.tab();
+    const skip = screen.getByRole("link", { name: "Skip to main content" });
+    expect(skip).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("main")).toHaveFocus();
+    expect(services.router.getSnapshot()).toEqual(route);
   });
 
   it("is keyboard operable: focus a link and press Enter", async () => {
@@ -291,7 +304,8 @@ describe("slots", () => {
 
   it("loads the theme tokens and initialiser in the real app entry", () => {
     expect(readFileSync("src/ui/app.css", "utf8")).toContain('@import "./theme/tokens.css"');
-    expect(readFileSync("index.html", "utf8")).toContain("/src/ui/theme/init.ts");
+    expect(readFileSync("index.html", "utf8")).toContain('<script src="/theme-init.js"></script>');
+    expect(readFileSync("public/theme-init.js", "utf8")).toContain(`"${THEME_STORAGE_KEY}"`);
   });
 
   it("removes the activity and resource regions when their slots are null", async () => {

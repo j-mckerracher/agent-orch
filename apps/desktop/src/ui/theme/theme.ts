@@ -73,7 +73,7 @@ export function applyTheme(preference: ThemePreference, root: HTMLElement = docu
   else root.setAttribute("data-theme", preference);
 }
 
-/** Applies the stored preference. Import `./init` from index.html so this runs before first paint. */
+/** Applies the stored preference. `public/theme-init.js` does the same earlier, from index.html, before first paint. */
 export function initTheme(win: Window = window): ThemePreference {
   const preference = readPreference(defaultStorage(win));
   applyTheme(preference, win.document.documentElement);
