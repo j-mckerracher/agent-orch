@@ -42,7 +42,11 @@ const FLAG_TEXT: Record<Flag, { tone: Tone; text: string }> = {
 
 export function FlagPill({ flag }: { flag: Flag }) {
   const { tone, text } = FLAG_TEXT[flag];
-  return <Pill tone={tone}>{text}</Pill>;
+  return (
+    <Pill tone={tone} className="agents-flag">
+      {text}
+    </Pill>
+  );
 }
 
 /** A control the daemon cannot honour: disabled, with the reason always visible and linked. */

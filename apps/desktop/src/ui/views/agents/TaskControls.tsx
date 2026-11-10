@@ -119,6 +119,10 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
       break;
   }
   if (retryOffered && noLink) retryReason = noLink;
+  if (retryOffered && live && !realRetry) {
+    retryOffered = false;
+    retryReason = "Not available: this task cannot be retried through the daemon.";
+  }
 
   return (
     <section aria-label="Task controls" className="agents-controls">

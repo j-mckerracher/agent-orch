@@ -52,7 +52,9 @@ export type Count = { kind: "known"; value: number } | { kind: "unknown"; reason
 export interface Headline {
   runningTasks: number;
   runningSessions: number;
-  /** Created or Queued tasks with every dependency met. */
+  /** Every Created or Queued task; equals the Queued tab length. */
+  queued: number;
+  /** The queued tasks whose dependencies are met (`queued - blocked`). */
   readyQueued: number;
   blocked: number;
   disconnected: Count;
@@ -139,6 +141,7 @@ export function headline(rows: readonly WorkRow[], recovery: RecoveryMap): Headl
   return {
     runningTasks: rows.filter(isActive).length,
     runningSessions: rows.reduce((n, row) => n + row.sessions.filter((s) => isRunningSession(s.state)).length, 0),
+    queued: queued.length,
     readyQueued: queued.filter((row) => !row.blocked).length,
     blocked: queued.filter((row) => row.blocked).length,
     disconnected: disconnected(rows, recovery),

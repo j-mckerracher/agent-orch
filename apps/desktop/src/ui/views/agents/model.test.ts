@@ -30,6 +30,8 @@ describe("agents model", () => {
     expect(stats.runningSessions).toBe(1);
     expect(tabRows("queued", rows, {}).map((r) => r.id)).toEqual(["dep", "q"]);
     expect(stats.readyQueued).toBe(1);
+    expect(stats.queued).toBe(2);
+    expect(stats.queued).toBe(tabRows("queued", rows, {}).length);
     expect(stats.blocked).toBe(1);
     expect(tabRows("failed", rows, {}).map((r) => r.id)).toEqual(["fail", "vfail"]);
   });

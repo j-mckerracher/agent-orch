@@ -37,7 +37,9 @@ export function AgentsView() {
               </Pill>
             </li>
             <li>
-              <Pill>{stats.readyQueued} ready tasks queued</Pill>
+              <Pill>
+                {stats.queued} tasks queued ({stats.readyQueued} ready)
+              </Pill>
             </li>
             <li>
               <Pill tone={stats.blocked > 0 ? "warn" : "neutral"}>{stats.blocked} tasks blocked</Pill>
@@ -55,7 +57,7 @@ export function AgentsView() {
             </li>
             {!model.live && (
               <li>
-                <PlaceholderMark id="D2" />
+                <PlaceholderMark id="D2" /> <PlaceholderMark id="D3" />
               </li>
             )}
           </ul>
@@ -66,7 +68,7 @@ export function AgentsView() {
               : "Execution status is unknown because the task list is not available."}
           </p>
         )}
-        {stats && <p className="agents-sub">Counts cover {rows?.length ?? 0} task(s). Queued counts exclude blocked tasks.</p>}
+        {stats && <p className="agents-sub">Counts cover {rows?.length ?? 0} task(s). The Queued tab lists every queued task, blocked ones included.</p>}
       </section>
 
       <Inventory inventory={model.inventory} live={model.live} onRetry={model.reloadInventory} />

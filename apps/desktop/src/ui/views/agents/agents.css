@@ -54,6 +54,12 @@
   font-size: 13px;
 }
 
+/* The theme pill breaks anywhere; a one-word flag must never split mid-word. */
+.agents-view .agents-flag {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 .agents-view th {
   color: var(--muted);
   font-weight: 600;

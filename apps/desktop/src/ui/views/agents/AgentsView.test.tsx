@@ -1,7 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { DaemonError } from "../../../daemon/errors";
 import { FakeDaemon, mkSession, mkTask } from "../../../test/fakeDaemon";
+import App from "../../../App";
+import { createServices } from "../../createServices";
 import { mountAgents } from "./harness";
+import { agentsGlobalViews } from "./register";
 
 const REPO = "/work/repo";
 
@@ -147,6 +151,84 @@ describe("Agents & Sessions, live mode", () => {
     await mountAgents(fake, { live: true });
     expect(await screen.findByText("No active tasks.")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Active (0)" })).toBeInTheDocument();
+  });
+
+  it("shows an empty state on the Queued and Failed tabs", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-run", REPO, { state: "Running", sessions: [mkSession("s-1")] })];
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Queued (0)" }));
+    expect(screen.getByText("No queued tasks.")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Failed (0)" }));
+    expect(screen.getByText(/^No failed tasks\./)).toBeInTheDocument();
+  });
+
+  it("shows a known-zero Disconnected empty state when no task is active", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-queued", REPO, { state: "Queued" })];
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Disconnected (0)" }));
+    expect(screen.getByText("No disconnected tasks.")).toBeInTheDocument();
+    expect(screen.getByText(/0 disconnected sessions/)).toBeInTheDocument();
+  });
+
+  it("agrees between the headline and the Queued tab when a queued task is blocked", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-a", REPO, { state: "Queued" }),
+      mkTask("t-b", REPO, { state: "Queued", contract: { dependencies: ["t-a"] } }),
+    ];
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Queued (2)" }));
+    expect(screen.getByText("2 tasks queued (1 ready)")).toBeInTheDocument();
+    expect(screen.getByText(/1 tasks blocked/)).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "queued tasks" })).getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByText(/Queued tab lists every queued task, blocked ones included/)).toBeInTheDocument();
+  });
+
+  it("shows a retryable error when the task list cannot load", async () => {
+    const fake = seeded();
+    fake.failNext("tasks.list", { code: -32603, message: "list failed" }, 50);
+    const { user } = await mountAgents(fake, { live: true });
+    expect(await screen.findByText("Tasks could not be loaded")).toBeInTheDocument();
+    expect(screen.getByText(/Execution status is unknown because the task list is not available/)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Queued (…)" })).toBeInTheDocument();
+    const calls = fake.callsTo("tasks.list").length;
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(fake.callsTo("tasks.list").length).toBeGreaterThan(calls));
+  });
+
+  it("says tasks are unavailable when the daemon is unreachable before any task list arrived", async () => {
+    const fake = seeded();
+    fake.failNext("tasks.list", { code: -32603, message: "list failed" }, 50);
+    fake.openError = new DaemonError("disconnected", "daemon unreachable");
+    const services = createServices({
+      connector: fake,
+      initialRoute: { name: "global", view: "agents" },
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+    });
+    render(<App services={services} globalViews={agentsGlobalViews} />);
+    expect(await screen.findByText("Tasks unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/Not connected to the daemon, so tasks cannot be read/)).toBeInTheDocument();
+    expect(within(screen.getByRole("tabpanel")).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("keeps the last rows and warns when a refresh fails", async () => {
+    const fake = seeded();
+    const { services } = await liveView(fake);
+    fake.failNext("tasks.list", { code: -32603, message: "refresh failed" }, 50);
+    await services.data.refreshAll();
+    expect(await screen.findByText("The last refresh failed; these rows may be out of date.")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();
+  });
+
+  it("keeps the Unknown flag pill on one line", async () => {
+    await liveView();
+    const table = await screen.findByRole("table", { name: /inventory/i });
+    const pills = within(table).getAllByText("Unknown");
+    expect(pills.length).toBeGreaterThan(0);
+    for (const pill of pills) expect(pill).toHaveClass("agents-flag");
   });
 
   it("shows a retryable error when the inventory cannot load", async () => {
