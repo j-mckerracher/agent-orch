@@ -752,3 +752,91 @@ fn capabilities_probe_is_bounded_and_kills_a_wedged_agent_by_pid() {
         });
     }
 }
+
+fn queue_snapshot(api: &DaemonApi) -> Value {
+    api.dispatch("queue.snapshot", json!({})).unwrap()
+}
+
+fn queue_ids(entries: &Value) -> Vec<String> {
+    entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["task_id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn queue_snapshot_reports_a_closed_restart_gate_from_the_running_executor() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    {
+        let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+        fixture.register(&store);
+        // Running with no recorded process identity: the gate cannot open.
+        seed_interrupted_run(&store, &fixture, "unknown", None);
+        store
+            .create(&queued_contract(&fixture, "held-back"))
+            .unwrap();
+        store.transition("held-back", TaskEvent::Admit).unwrap();
+    }
+    let api = DaemonApi::with_executor(&data, fixture.config(&data, &succeeding_agent(&fixture)))
+        .unwrap();
+
+    wait_until("snapshot to report the closed gate", || {
+        queue_snapshot(&api)["dispatch_blocked"] == true
+    });
+
+    let result = queue_snapshot(&api);
+    assert_eq!(queue_ids(&result["running"]), ["unknown"]);
+    let held_back = &result["queued"][0];
+    assert_eq!(held_back["task_id"], "held-back");
+    assert_eq!(held_back["waiting_reason"], "other");
+    assert_eq!(held_back["waiting_detail"], "dispatch_blocked");
+    api.shutdown();
+}
+
+#[test]
+fn queue_snapshot_orders_the_queue_from_the_executors_fairness_cursor() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let release = fixture.marker("release");
+    {
+        let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+        fixture.register(&store);
+        // Sorts after the fixture project, which is a filesystem path.
+        store
+            .register_project(&Project {
+                id: "zz-other".into(),
+                root_path: "/zz-other".into(),
+                settings: json!({}),
+            })
+            .unwrap();
+        for (id, project) in [("p1", None), ("p2", None), ("q1", Some("zz-other"))] {
+            let mut contract = queued_contract(&fixture, id);
+            if let Some(project) = project {
+                contract.project_id = project.into();
+            }
+            store.create(&contract).unwrap();
+            store.transition(id, TaskEvent::Admit).unwrap();
+        }
+    }
+    let mut config = fixture.config(&data, &waiting_agent(&fixture, &release));
+    config.limits = SchedulerLimits::new(Some(1), Some(1)).unwrap();
+    let api = DaemonApi::with_executor(&data, config).unwrap();
+
+    // The first pass starts p1 and records its project as the last started,
+    // so the next pass would serve the other project first.
+    wait_until("queue to follow the fairness cursor", || {
+        let result = queue_snapshot(&api);
+        queue_ids(&result["running"]) == ["p1"] && queue_ids(&result["queued"]) == ["q1", "p2"]
+    });
+
+    let result = queue_snapshot(&api);
+    assert_eq!(result["dispatch_blocked"], false);
+    assert_eq!(result["queued"][0]["position"], 1);
+    assert_eq!(result["queued"][0]["waiting_reason"], "global_cap");
+    api.shutdown();
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, "p1", "Verifying");
+}

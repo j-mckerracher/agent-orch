@@ -75,8 +75,8 @@ pub(super) struct QueueSnapshot {
 
 pub(super) struct Reading {
     pub(super) sequence: i64,
-    tasks: Vec<TaskRecord>,
-    workspaces: Vec<Workspace>,
+    pub(super) tasks: Vec<TaskRecord>,
+    pub(super) workspaces: Vec<Workspace>,
     projects: Vec<Project>,
 }
 
@@ -107,32 +107,39 @@ impl DaemonApi {
     }
 
     pub(super) fn consistent_reading(&self) -> Result<Reading, RpcError> {
-        let mut reading = None;
-        for _ in 0..CONSISTENT_READ_ATTEMPTS {
-            let before = self
-                .store
-                .latest_event_sequence()
-                .map_err(map_store_error)?;
-            let tasks = self.store.list().map_err(map_store_error)?;
-            let workspaces = self.store.list_workspaces().map_err(map_store_error)?;
-            let projects = self.store.list_projects().map_err(map_store_error)?;
-            let after = self
-                .store
-                .latest_event_sequence()
-                .map_err(map_store_error)?;
-            let current = Reading {
-                sequence: before,
-                tasks,
-                workspaces,
-                projects,
-            };
-            if before == after {
-                return Ok(current);
-            }
-            reading = Some(current);
-        }
-        reading.ok_or(RpcError::Internal)
+        settle(
+            CONSISTENT_READ_ATTEMPTS,
+            || self.store.latest_event_sequence().map_err(map_store_error),
+            |sequence| {
+                Ok(Reading {
+                    sequence,
+                    tasks: self.store.list().map_err(map_store_error)?,
+                    workspaces: self.store.list_workspaces().map_err(map_store_error)?,
+                    projects: self.store.list_projects().map_err(map_store_error)?,
+                })
+            },
+        )
     }
+}
+
+/// Reads with `read(sequence_before)` until the journal sequence is the same
+/// before and after, at most `attempts` times; if it never settles, the last
+/// reading is returned with the sequence it started at.
+pub(super) fn settle<T>(
+    attempts: usize,
+    mut latest_sequence: impl FnMut() -> Result<i64, RpcError>,
+    mut read: impl FnMut(i64) -> Result<T, RpcError>,
+) -> Result<T, RpcError> {
+    let mut last = None;
+    for _ in 0..attempts {
+        let before = latest_sequence()?;
+        let reading = read(before)?;
+        if before == latest_sequence()? {
+            return Ok(reading);
+        }
+        last = Some(reading);
+    }
+    last.ok_or(RpcError::Internal)
 }
 
 pub(super) fn build_snapshot(

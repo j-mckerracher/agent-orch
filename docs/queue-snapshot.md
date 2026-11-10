@@ -34,6 +34,17 @@ limits.
 - `running`: tasks in state `Running`, ordered by task id.
 - `queued`: tasks in state `Queued` only (`Created` tasks are not admitted),
   ordered by `position` (nulls last) then task id.
+- **`Verifying` tasks appear in neither list.** The snapshot models scheduler
+  capacity, and the scheduler counts only `Running` tasks against the global
+  and per-project limits (and only `Running` tasks own a worktree for conflict
+  checks). A task whose agent has finished and whose candidate is being
+  verified holds no worker slot, so it is not `running` here and it never makes
+  a queued task wait. A client that compares this snapshot with `tasks.list`
+  will therefore see `Verifying` tasks only in `tasks.list`; every other
+  active state (`Running`, `Queued`) matches one-to-one. The snapshot does not
+  expose a separate `verifying` list: that would be a contract change after
+  clients began building on these fields, and `tasks.list` already carries it.
+  The behavior is pinned by `verifying_tasks_are_in_neither_list_and_hold_no_capacity`.
 - `waiting_reason`: `dependency` | `global_cap` | `project_cap` | `approval` |
   `other`. It is taken from a real scheduler pass with the daemon's real
   limits, so it equals the executor's decision. The global cap is reported
