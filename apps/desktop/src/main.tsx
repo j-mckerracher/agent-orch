@@ -1,15 +1,17 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { bootServices } from "./native/boot";
 import { ReviewRoute } from "./review/ReviewRoute";
-import { createServices } from "./ui/createServices";
-import { parseRoute, syncRouterToHash } from "./ui/router";
+import { syncRouterToHash } from "./ui/router";
 import "./ui/app.css";
 
-// The Tauri host supplies a daemon connector in M5-05; until then the app is honestly offline.
-const services = createServices({
-  initialRoute: parseRoute(window.location.hash),
+const { services } = bootServices(window, {
   renderReview: (props) => <ReviewRoute {...props} />,
+  storage: window.localStorage,
 });
 syncRouterToHash(services.router);
+
+// Closing or reloading the page ends only this window's daemon connection; the daemon keeps running.
+window.addEventListener("pagehide", () => services.connection.stop());
 
 createRoot(document.getElementById("root")!).render(<App services={services} />);

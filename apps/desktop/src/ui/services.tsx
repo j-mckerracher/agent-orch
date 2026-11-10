@@ -13,7 +13,7 @@ export interface Services {
   sources: Sources;
   router: RouterStore;
   drafts: DraftsStore;
-  /** False when the host has not supplied a daemon connector (M5-05 bridge). */
+  /** False in explicit fixture demo mode: no connector, sample data only. */
   bridgeBound: boolean;
   /** S6 is owned by M5-04; it plugs in here and receives the same services. */
   renderReview?: (props: { projectId: string; taskId: string | null; query?: string }) => ReactNode;

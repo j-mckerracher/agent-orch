@@ -10,7 +10,7 @@ th, td { border-bottom: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: lef
 .pill { padding: 0.1rem 0.5rem; border-radius: 1rem; background: #ddd; }
 .pill-connected { background: #bde5b8; }
 .pill-reconnecting, .pill-connecting { background: #f5e1a4; }
-.pill-disconnected, .pill-idle, .pill-auth-failed, .pill-incompatible { background: #f2b8b5; }
+.pill-disconnected, .pill-unavailable, .pill-idle, .pill-auth-failed, .pill-incompatible { background: #f2b8b5; }
 .muted { color: #666; }
 .notice { padding: 0.3rem 0.5rem; background: #fff6d6; }
 .notice-error { background: #fde0de; }

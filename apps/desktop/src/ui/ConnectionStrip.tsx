@@ -10,7 +10,8 @@ const LABEL: Record<ConnectionStatus, string> = {
   connecting: "Connecting...",
   connected: "Connected",
   reconnecting: "Reconnecting...",
-  disconnected: "Offline",
+  disconnected: "Disconnected (daemon may still be running)",
+  unavailable: "Daemon unavailable",
   "auth-failed": "Authentication failed",
   incompatible: "Incompatible version or capability",
 };
@@ -35,12 +36,21 @@ export function ConnectionStrip() {
         </button>
       </div>
       {!bridgeBound && (
-        <p role="status">Native bridge not bound: the daemon connector is supplied by the desktop host (M5-05).</p>
+        <p role="status" data-testid="fixture-banner" className="notice">
+          <span className="placeholder-tag">FIXTURE DEMO MODE</span> Every screen shows built-in sample data. No daemon
+          is contacted, so nothing here reflects real projects, tasks or agents.
+        </p>
+      )}
+      {bridgeBound && connected && (
+        <p className="muted" data-testid="connected-note">
+          Connected to the daemon. A connection does not prove any agent is running; process, workspace and delivery
+          state come from each task.
+        </p>
       )}
       {bridgeBound && !connected && (
         <p role="status" data-testid="offline-note">
           Showing cached data (stale). Last event received: {formatTime(snap.lastEventAt)}. Actions are unavailable
-          until the connection returns.
+          until the connection returns. Closing or losing this connection never stops the daemon or its agents.
         </p>
       )}
       {snap.history.incomplete && (
@@ -54,6 +64,10 @@ export function ConnectionStrip() {
           {detail.reason} {detail.nextStep}
         </p>
       )}
+      <p className="muted" data-testid="recovery-unknown">
+        Recovery: unknown <PlaceholderBadge provenance={sources.recovery.provenance} /> The daemon does not expose
+        recovery status yet; no process is assumed safe from a PID or from a successful connection.
+      </p>
       <p className="muted" data-testid="journal-continuity">
         Journal continuity <PlaceholderBadge provenance={sources.journal.provenance} />:{" "}
         {journal.state === "ready"

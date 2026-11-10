@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { FakeDaemon, mkTask } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
@@ -20,8 +20,9 @@ describe("daemon-backed D1-D6 screens", () => {
     await mount(seeded(), { route: { name: "project", projectId: REPO }, daemonSources: true });
     expect(await screen.findByText(/codex: installed/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Agent detection" })).toBeInTheDocument();
-    expect(screen.queryByText(/placeholder/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
+    const screens = within(screen.getByRole("main"));
+    expect(screens.queryByText(/placeholder/i)).not.toBeInTheDocument();
+    expect(screens.queryByText(/simulated/i)).not.toBeInTheDocument();
   });
 
   it("hides the fixture-only execution preview", async () => {

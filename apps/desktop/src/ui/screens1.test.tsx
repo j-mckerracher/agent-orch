@@ -9,10 +9,10 @@ import { REPO, connected, mount } from "../test/render";
 const fixture = createFixtureSources();
 
 describe("C1 connection strip", () => {
-  it("shows Offline and the unbound bridge when the host supplies no connector", async () => {
+  it("shows Offline and the fixture demo banner when no connector is supplied", async () => {
     await mount(new FakeDaemon(), { bridge: false });
     expect(screen.getByTestId("connection-status")).toHaveTextContent("Offline");
-    expect(screen.getByText(/Native bridge not bound/)).toBeInTheDocument();
+    expect(screen.getByTestId("fixture-banner")).toHaveTextContent("FIXTURE DEMO MODE");
     expect(screen.getByRole("button", { name: "Refresh / reconnect" })).toBeDisabled();
     expect(screen.getByText("Offline: no cached projects. This is not an empty list.")).toBeInTheDocument();
   });

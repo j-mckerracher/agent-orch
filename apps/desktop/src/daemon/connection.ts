@@ -27,6 +27,7 @@ export type ConnectionStatus =
   | "connected"
   | "reconnecting"
   | "disconnected"
+  | "unavailable"
   | "auth-failed"
   | "incompatible";
 
@@ -256,7 +257,11 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     }
     const failedAttempts = this.state_().failedAttempts + 1;
     if (failedAttempts > this.maxAutoAttempts) {
-      this.update({ status: "disconnected", error, failedAttempts });
+      this.update({
+        status: error.kind === "daemon-unavailable" ? "unavailable" : "disconnected",
+        error,
+        failedAttempts,
+      });
       return;
     }
     this.update({ status: "reconnecting", error, failedAttempts });

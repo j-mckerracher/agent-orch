@@ -27,6 +27,7 @@ export type DaemonErrorKind =
   | "internal"
   | "timeout"
   | "disconnected"
+  | "daemon-unavailable"
   | "protocol";
 
 const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
@@ -85,6 +86,7 @@ export class DaemonError extends Error {
       this.kind === "version" ||
       this.kind === "capability-unavailable" ||
       this.kind === "disconnected" ||
+      this.kind === "daemon-unavailable" ||
       this.kind === "invalid-handshake"
     );
   }
@@ -176,6 +178,11 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   disconnected: {
     reason: "The connection to the daemon was lost.",
     nextStep: "Actions are paused until the client reconnects.",
+  },
+  "daemon-unavailable": {
+    reason: "The daemon is not running and could not be started.",
+    nextStep:
+      "Nothing is known about running work. Check daemon.log in the data directory, then use Refresh / reconnect.",
   },
   protocol: {
     reason: "The daemon sent an unexpected response.",
