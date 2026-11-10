@@ -1,0 +1,8 @@
+{
+ "macos": {
+  "ipc": [],
+  "daemon": [],
+  "coordinator-review": [],
+  "tauri": []
+ }
+}
