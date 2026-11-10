@@ -119,7 +119,22 @@
    "daemon_reports_agent_capabilities_without_paths",
    "daemon_launches_submitted_work_and_a_client_disconnect_does_not_stop_it",
    "daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches",
-   "daemon_cancel_reaches_cancelled_through_real_run_owner"
+   "daemon_cancel_reaches_cancelled_through_real_run_owner",
+   "daemon_log_never_holds_a_passthrough_value_and_the_data_dir_is_private",
+   "a_failed_launch_is_explained_in_the_log_without_the_credential",
+   "submit_refuses_read_only_autonomy_because_the_agent_would_write",
+   "submit_rejects_oversized_and_nul_contract_fields",
+   "idempotency_store_failures_report_their_cause_too",
+   "internal_causes_do_not_leak_into_the_next_request",
+   "internal_error_causes_reach_the_injected_redacting_sink",
+   "a_failed_listing_is_logged_and_never_reads_as_nothing_running",
+   "a_readable_empty_listing_is_quiet_and_empty",
+   "interrupted_tasks_are_unknown_when_either_listing_failed",
+   "launch_failure_is_reported_without_leaking_the_credential_in_the_program_path",
+   "failed_agent_is_reported_with_its_exit_and_the_preserved_worktree",
+   "restart_gate_refusal_is_reported_once_with_its_blocker",
+   "restart_reports_the_orphan_it_stopped_and_the_runs_it_interrupted",
+   "rpc_failures_are_reported_by_method_and_class_but_never_with_parameters"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -137,7 +152,11 @@
    "a_daemon_that_stops_is_reported_as_a_closed_connection_not_a_task_state",
    "the_host_forwards_capability_and_token_gating_from_the_real_daemon",
    "the_host_drives_reject_and_request_changes_through_the_real_daemon",
-   "the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery"
+   "the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery",
+   "the_data_dir_and_log_are_owner_only_new_or_existing",
+   "a_launch_failure_quotes_only_the_redacted_end_of_the_log",
+   "the_whole_message_is_redacted_and_the_daemon_token_is_masked_exactly",
+   "a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log"
   ]
  }
 }

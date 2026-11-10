@@ -4,6 +4,8 @@
 // expectation. A count that differs from the expectation is a problem in either direction:
 // expected counts are never edited to fit a measured run.
 
+import { LIFECYCLE_STEPS } from "./expected.mjs";
+
 export const normalize = (text) => text.replace(/\r\n/g, "\n").replace(/\x1b\[[0-9;]*m/g, "");
 
 // Every `running N test(s)` line, in order. A filtered cargo run prints one block, an
@@ -70,9 +72,9 @@ export const checkTests = ({ stdout, expect = [], passed, ignored, runningSequen
   return problems;
 };
 
-// The harness-free lifecycle test: exit 0, STEP 1..7 in order, exactly one `lifecycle: PASS`,
-// and no libtest `running` or `test result` line (that would be a different binary shape).
-export const checkLifecycle = (stdout, steps = 7) => {
+// The harness-free lifecycle test: exit 0, STEP 1..LIFECYCLE_STEPS in order, exactly one
+// `lifecycle: PASS`, and no libtest `running` or `test result` line (a different binary shape).
+export const checkLifecycle = (stdout, steps = LIFECYCLE_STEPS) => {
   const problems = [];
   const text = normalize(stdout);
   const passes = [...text.matchAll(/^lifecycle: PASS[ \t]*$/gm)].length;

@@ -114,7 +114,16 @@
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
    "daemon_gates_the_coordinator_and_review_methods_on_token_and_capability",
    "approval_flow_approves_and_delivers_through_the_real_daemon",
-   "approval_flow_rejects_and_requests_changes_through_the_real_daemon"
+   "approval_flow_rejects_and_requests_changes_through_the_real_daemon",
+   "a_failed_launch_is_explained_in_the_log_without_the_credential",
+   "submit_refuses_read_only_autonomy_because_the_agent_would_write",
+   "submit_rejects_oversized_and_nul_contract_fields",
+   "idempotency_store_failures_report_their_cause_too",
+   "internal_causes_do_not_leak_into_the_next_request",
+   "internal_error_causes_reach_the_injected_redacting_sink",
+   "a_failed_listing_is_logged_and_never_reads_as_nothing_running",
+   "a_readable_empty_listing_is_quiet_and_empty",
+   "interrupted_tasks_are_unknown_when_either_listing_failed"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -125,7 +134,10 @@
    "an_oversized_log_is_rotated_and_a_small_one_is_kept",
    "the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery",
    "the_host_drives_reject_and_request_changes_through_the_real_daemon",
-   "the_host_forwards_capability_and_token_gating_from_the_real_daemon"
+   "the_host_forwards_capability_and_token_gating_from_the_real_daemon",
+   "a_launch_failure_quotes_only_the_redacted_end_of_the_log",
+   "the_whole_message_is_redacted_and_the_daemon_token_is_masked_exactly",
+   "a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log"
   ]
  }
 }

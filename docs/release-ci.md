@@ -35,14 +35,14 @@ The Windows list is the published runbook
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (45 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
-| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 46, macOS 59+4+9) | both |
-| `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` | both |
+| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 55 = 50+4+0+1, macOS 87 = 72+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
+| `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (638 passed, 1 ignored) | macOS |
-| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 287 tests) | both |
+| `workspace-tests` | `cargo test --locked --workspace` (705 passed, 1 ignored) | macOS |
+| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 289 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
-| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 9, macOS 10), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
+| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 12, macOS 14), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
 
 Windows and macOS counts differ because tests are gated by `cfg`. Expected counts are never edited
@@ -69,14 +69,14 @@ sequence and a name list disagree. Measure on the platform; do not edit to fit a
 `single_match` baseline lines in `supervisor.rs` are `CLIPPY_BASELINE` there: they are
 `#[cfg(windows)]` code, so only the Windows `clippy-scoped` gate can show them as new.
 
-**Merging M6-01** (`orch/m6-01-20261110T045853Z`) changes these, all in `expected.mjs` and the name
-lists: daemon-tests +2 (Windows `[42,4,0]`/46 to about `[44,4,0]`/48, macOS `[59,4,9]`/72 to about
-`[61,4,9]`/74; the new tests are `submit_refuses_read_only_autonomy_because_the_agent_would_write`
-and `submit_rejects_oversized_and_nul_contract_fields` in `api_safety_tests.rs`); macOS
-`workspace-tests` 638 to the M6-01 owner's 654; and `CLIPPY_BASELINE.lines` 401 and 424 move to
-409 and 432 (M6-01 adds eight lines above them in `supervisor.rs`). Re-measure all of it on the
-merged tree; the M6-01 figures are the owner's, not this CI's. `deny.toml` also conflicts; see the
-remediation report.
+**Priority 12 merge** (M6-01 security, M6-02 CI and M6-03 diagnostics on the M5-05 round 4 source)
+set the current values in `expected.mjs` and the name lists: `daemon-tests` Windows `[50,4,0,1]`/55
+and macOS `[72,4,10,1]`/87 (M6-01 added the two `submit_` tests; M6-03 added the diagnostics
+tests and the `diagnostics_log` test binary); `tauri-tests` Windows `[12,0,0]` and macOS
+`[14,0,0]`; macOS `workspace-tests` 705 passed and 1 ignored; vitest 289; `CLIPPY_BASELINE.lines`
+409 and 432; and the lifecycle test prints `STEP 1` to `STEP 8` (`LIFECYCLE_STEPS`). The macOS
+figures were measured on the merged tree; the Windows figures are derived from the three owner
+reports and are unproven until a Windows run. Re-measure on Windows; do not edit to fit.
 Run on both platforms, outside the checkout: `node --test "scripts/**/*.test.mjs"` (harness
 self-tests).
 
@@ -89,8 +89,9 @@ Windows the list of rows this CI cannot prove. The workflow uploads the director
 
 ## Dependency audits
 
-- `deny.toml` pins the graph to `aarch64-apple-darwin`, `x86_64-apple-darwin` and
-  `x86_64-pc-windows-msvc`, so Linux-only crates are not judged. It denies unknown registries and
+- `deny.toml` pins the graph to `aarch64-apple-darwin`, `x86_64-apple-darwin`,
+  `x86_64-pc-windows-msvc` and `x86_64-unknown-linux-gnu` (the Linux target is the M6-01 policy:
+  the Tauri graph's Linux-only crates are judged too). It denies unknown registries and
   git sources, yanked crates, and licenses outside an allow-list. `cargo deny` runs once per
   manifest because `apps/desktop/src-tauri` is outside the root workspace.
 - `cargo audit --file <lockfile>` runs for both lockfiles; vulnerabilities fail, warnings (the

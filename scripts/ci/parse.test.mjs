@@ -34,8 +34,8 @@ test("name matching is by whole path segment, not substring", () => {
   assert.match(checkTests({ stdout: out, expect: ["one"] })[0], /test not reported: one/);
 });
 
-test("lifecycle needs seven ordered STEP lines, one PASS and no libtest shape", () => {
-  const good = Array.from({ length: 7 }, (_, i) => `STEP ${i + 1} something`).join("\n") + "\nlifecycle: PASS\n";
+test("lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape", () => {
+  const good = Array.from({ length: 8 }, (_, i) => `STEP ${i + 1} something`).join("\n") + "\nlifecycle: PASS\n";
   assert.deepEqual(checkLifecycle(good), []);
   assert.match(checkLifecycle(good.replace("STEP 3", "STEP 9"))[0], /STEP lines/);
   assert.match(checkLifecycle(`${good}${good}`)[0], /appears 2 times/);
