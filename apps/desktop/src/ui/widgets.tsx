@@ -1,9 +1,54 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { presentError } from "../daemon/errors";
 import type { DaemonError } from "../daemon/errors";
 import type { Loadable } from "../daemon/appData";
 import type { Provenance } from "../sources/types";
 import type { SourceState } from "./services";
+import { Badge, Button, EmptyState, Pill, type Tone } from "./theme";
+import "./projectScreens.css";
+
+const NOTICE_MARK: Record<Tone, string> = { neutral: "–", info: "i", ok: "✓", warn: "!", bad: "✕" };
+
+/** Inline notice. The glyph and the text carry the meaning; colour only reinforces it. */
+export function Notice({
+  tone = "warn",
+  className,
+  children,
+  ...rest
+}: { tone?: Tone } & Omit<HTMLAttributes<HTMLDivElement>, "children"> & { children: ReactNode }) {
+  return (
+    <div className={`ps-notice ps-notice-${tone}${className ? ` ${className}` : ""}`} {...rest}>
+      <span className="ps-notice-mark" aria-hidden="true">
+        {NOTICE_MARK[tone]}
+      </span>
+      <div className="ps-notice-body">{children}</div>
+    </div>
+  );
+}
+
+const STATE_TONE: Record<string, Tone> = {
+  Succeeded: "ok",
+  Running: "info",
+  Verifying: "info",
+  Spawning: "info",
+  Failed: "bad",
+  VerificationFailed: "bad",
+  Aborted: "bad",
+  Cancelled: "neutral",
+  Exited: "neutral",
+  Created: "neutral",
+  Queued: "neutral",
+};
+
+/** Task, attempt or session state as text plus a glyph; unknown states render neutral. */
+export function StateText({ state }: { state: string }) {
+  return <Pill tone={STATE_TONE[state] ?? "neutral"}>{state}</Pill>;
+}
+
+/** Wraps a table in a bordered, horizontally scrollable region. */
+export function TableWrap({ children }: { children: ReactNode }) {
+  return <div className="ps-table-wrap">{children}</div>;
+}
 
 /**
  * Loading / error / offline / empty / ready for a REAL snapshot. Empty is
@@ -29,9 +74,9 @@ export function LoadableRegion<T>({
 }) {
   const { data, status, error } = loadable;
   const retry = (
-    <button type="button" onClick={onRetry} disabled={!connected}>
+    <Button onClick={onRetry} disabled={!connected}>
       Retry
-    </button>
+    </Button>
   );
   if (data === null) {
     if (status === "error" && error) {
@@ -42,33 +87,37 @@ export function LoadableRegion<T>({
       );
     }
     if (!connected && status !== "loading") {
-      return <p role="status">Offline: no cached {what}. This is not an empty list.</p>;
+      return (
+        <Notice tone="bad" role="status">
+          Offline: no cached {what}. This is not an empty list.
+        </Notice>
+      );
     }
     return <p role="status">Loading {what}…</p>;
   }
   return (
     <div>
       {!connected && (
-        <p role="status" className="notice" data-testid={`stale-${what}`}>
+        <Notice tone="warn" role="status" data-testid={`stale-${what}`}>
           Stale: cached {what} from before the connection was lost.
-        </p>
+        </Notice>
       )}
       {status === "error" && error && (
         <div>
           <ErrorNotice error={error} action={`Refreshing ${what}`} /> {retry}
         </div>
       )}
-      {isEmpty(data) ? <p>{emptyText}</p> : children(data)}
+      {isEmpty(data) ? <EmptyState title={emptyText} /> : children(data)}
     </div>
   );
 }
 
 export function PlaceholderBadge({ provenance }: { provenance: Provenance }) {
-  const label = provenance.kind === "fixture" ? "PLACEHOLDER DATA" : "DAEMON";
+  const fixture = provenance.kind === "fixture";
   return (
-    <span className={`badge badge-${provenance.kind}`} data-testid={`badge-${provenance.id}`}>
-      {label} ({provenance.id})
-    </span>
+    <Badge tone={fixture ? "placeholder" : "info"} data-testid={`badge-${provenance.id}`}>
+      {fixture ? "PLACEHOLDER DATA" : "DAEMON"} ({provenance.id})
+    </Badge>
   );
 }
 
@@ -81,10 +130,10 @@ export function SimulatedReceipts({
   receipts: Array<{ provenance: Provenance; notice: string }>;
 }) {
   return (
-    <ul aria-label={label}>
+    <ul aria-label={label} className="ps-list">
       {receipts.map((receipt, index) => (
         <li key={index} data-testid="simulated-receipt">
-          <span className="badge badge-fixture">SIMULATED</span> <PlaceholderBadge provenance={receipt.provenance} />{" "}
+          <Badge tone="placeholder">SIMULATED</Badge> <PlaceholderBadge provenance={receipt.provenance} />{" "}
           {receipt.notice}
         </li>
       ))}
@@ -96,10 +145,10 @@ export function SimulatedReceipts({
 export function ErrorNotice({ error, action }: { error: DaemonError; action: string }) {
   const { reason, nextStep } = presentError(error);
   return (
-    <div role="alert" className="notice notice-error">
+    <Notice tone="bad" role="alert">
       <strong>{action} failed.</strong> {reason} <span>{nextStep}</span>
-      <span className="muted"> ({error.kind}{error.code !== null ? ` ${error.code}` : ""}: {error.message})</span>
-    </div>
+      <span className="ps-error-detail"> ({error.kind}{error.code !== null ? ` ${error.code}` : ""}: {error.message})</span>
+    </Notice>
   );
 }
 
@@ -137,7 +186,10 @@ export function SourceSection<T>({
       break;
   }
   return (
-    <section className={live ? undefined : "placeholder"} aria-label={live ? title : `${title} (placeholder)`}>
+    <section
+      className={live ? "ps-section" : "ps-section ps-section-placeholder"}
+      aria-label={live ? title : `${title} (placeholder)`}
+    >
       <h3>
         {title} <PlaceholderBadge provenance={provenance} />
       </h3>

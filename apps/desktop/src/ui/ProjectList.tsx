@@ -5,6 +5,7 @@ import { Crumbs } from "./ConnectionStrip";
 import { basename } from "./format";
 import { useGate, useServices, useStore } from "./services";
 import { ErrorNotice, LoadableRegion } from "./widgets";
+import { Button } from "./theme";
 
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
@@ -39,10 +40,11 @@ export function ProjectList() {
   };
 
   return (
-    <main>
+    <main className="ps-page">
       <Crumbs items={[{ label: "Projects" }]} />
       <h1>Projects</h1>
       <form
+        className="ps-inline-form"
         onSubmit={(event) => {
           event.preventDefault();
           void register();
@@ -55,12 +57,18 @@ export function ProjectList() {
             onChange={(event) => drafts.setRegisterPath(event.target.value)}
             placeholder="/path/to/repository"
           />
-        </label>{" "}
-        <button type="submit" disabled={!gate.can("projects") || busy || registerPath.trim() === ""}>
+        </label>
+        <Button type="submit" variant="primary" disabled={!gate.can("projects") || busy || registerPath.trim() === ""}>
           Register
-        </button>
-        {!gate.connected && <span className="muted"> Registration is unavailable while offline; the draft is kept.</span>}
-        {localError && <p role="alert">{localError}</p>}
+        </Button>
+        {!gate.connected && (
+          <span className="muted ps-inline-full"> Registration is unavailable while offline; the draft is kept.</span>
+        )}
+        {localError && (
+          <p role="alert" className="ps-inline-full">
+            {localError}
+          </p>
+        )}
         {error && <ErrorNotice error={error} action="Registering the repository" />}
       </form>
       <LoadableRegion
@@ -72,13 +80,11 @@ export function ProjectList() {
         onRetry={() => void data.refreshAll()}
       >
         {(rows) => (
-          <ul aria-label="Projects">
+          <ul aria-label="Projects" className="ps-list">
             {rows.map((row) => (
-              <li key={row.id}>
+              <li key={row.id} className="ps-project-row">
                 <strong>{basename(row.id)}</strong> <code>{row.id}</code>{" "}
-                <button type="button" onClick={() => router.navigate({ name: "project", projectId: row.id })}>
-                  Open
-                </button>
+                <Button onClick={() => router.navigate({ name: "project", projectId: row.id })}>Open</Button>
               </li>
             ))}
           </ul>

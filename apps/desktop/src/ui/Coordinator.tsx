@@ -5,7 +5,8 @@ import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sour
 import { Crumbs } from "./ConnectionStrip";
 import { basename, pendingApprovals } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
+import { Button } from "./theme";
+import { ErrorNotice, LoadableRegion, Notice, SimulatedReceipts, SourceSection, StateText } from "./widgets";
 
 export function Coordinator({ projectId }: { projectId: string }) {
   const { data, router, drafts, sources } = useServices();
@@ -52,7 +53,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
   const pending = pendingApprovals(approvals.data ?? []).filter((a) => ownIds.has(a.action.task_id));
 
   return (
-    <main>
+    <main className="ps-page">
       <Crumbs
         items={[
           { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
@@ -62,7 +63,9 @@ export function Coordinator({ projectId }: { projectId: string }) {
       />
       <h1>Coordinator</h1>
       {!real && (
-        <p role="status">The coordinator conversation service is unavailable (D5). Everything below it is a preview.</p>
+        <Notice tone="warn" role="status">
+          The coordinator conversation service is unavailable (D5). Everything below it is a preview.
+        </Notice>
       )}
       <SourceSection
         title="Coordinator conversation"
@@ -72,15 +75,15 @@ export function Coordinator({ projectId }: { projectId: string }) {
       >
         {(convo) => (
           <div>
-            <ul aria-label="Messages">
+            <ul aria-label="Messages" className="ps-messages">
               {[...convo.messages, ...replies].map((message, index) => (
-                <li key={`${index}:${message.id}`}>
+                <li key={`${index}:${message.id}`} data-role={message.role}>
                   <strong>{message.role}</strong>: {message.text}
                 </li>
               ))}
             </ul>
             <h4>Structured proposals</h4>
-            <ul aria-label="Proposals">
+            <ul aria-label="Proposals" className="ps-list">
               {[...convo.proposals, ...proposals].map((proposal, index) => (
                 <li key={`${index}:${proposal.id}`}>
                   {proposal.objective} — validation {proposal.validation}
@@ -91,7 +94,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
               ))}
             </ul>
             {convo.outstandingDecisions.length > 0 && (
-              <ul aria-label="Outstanding decisions">
+              <ul aria-label="Outstanding decisions" className="ps-steps">
                 {convo.outstandingDecisions.map((text) => (
                   <li key={text}>{text}</li>
                 ))}
@@ -100,27 +103,28 @@ export function Coordinator({ projectId }: { projectId: string }) {
           </div>
         )}
       </SourceSection>
-      <section aria-label="Objective composer">
+      <section aria-label="Objective composer" className="ps-section ps-composer">
         <label>
           {real ? "Message or proposal JSON" : "Draft objective"}
           <textarea value={draft} onChange={(event) => drafts.setCoordinator(projectId, event.target.value)} />
-        </label>{" "}
+        </label>
         {real ? (
           <div>
-            <button
-              type="button"
-              disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
-              onClick={() => void submit("message")}
-            >
-              Send message
-            </button>{" "}
-            <button
-              type="button"
-              disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
-              onClick={() => void submit("proposal")}
-            >
-              Validate proposal
-            </button>
+            <div className="ps-actions">
+              <Button
+                variant="primary"
+                disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
+                onClick={() => void submit("message")}
+              >
+                Send message
+              </Button>
+              <Button
+                disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
+                onClick={() => void submit("proposal")}
+              >
+                Validate proposal
+              </Button>
+            </div>
             {status && <p role="status">{status}</p>}
             {failure && <ErrorNotice error={failure} action="Contacting the coordinator" />}
             {failure?.indeterminate && (
@@ -129,34 +133,34 @@ export function Coordinator({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <div>
-            <button
-              type="button"
-              onClick={() =>
-                void sources.coordinator.previewReply(projectId, draft).then((r) => {
-                  setReplies((list) => [...list, r.message]);
-                  setReceipts((list) => [...list, r]);
-                })
-              }
-            >
-              Preview reply
-            </button>{" "}
-            <button
-              type="button"
-              onClick={() =>
-                void sources.coordinator.previewProposal(projectId, draft).then((r) => {
-                  setProposals((list) => [...list, r.proposal]);
-                  setReceipts((list) => [...list, r]);
-                })
-              }
-            >
-              Preview proposed tasks
-            </button>
+            <div className="ps-actions">
+              <Button
+                onClick={() =>
+                  void sources.coordinator.previewReply(projectId, draft).then((r) => {
+                    setReplies((list) => [...list, r.message]);
+                    setReceipts((list) => [...list, r]);
+                  })
+                }
+              >
+                Preview reply
+              </Button>
+              <Button
+                onClick={() =>
+                  void sources.coordinator.previewProposal(projectId, draft).then((r) => {
+                    setProposals((list) => [...list, r.proposal]);
+                    setReceipts((list) => [...list, r]);
+                  })
+                }
+              >
+                Preview proposed tasks
+              </Button>
+            </div>
             <SimulatedReceipts label="Simulated receipts" receipts={receipts} />
           </div>
         )}
       </section>
 
-      <section aria-label="Related live work">
+      <section aria-label="Related live work" className="ps-section">
         <h2>Related live tasks and decisions</h2>
         <LoadableRegion
           what="tasks"
@@ -168,29 +172,25 @@ export function Coordinator({ projectId }: { projectId: string }) {
         >
           {() => (
             <div>
-              <ul aria-label="Related tasks">
+              <ul aria-label="Related tasks" className="ps-list">
                 {own.map((task) => (
-                  <li key={task.contract.id}>
-                    <code>{task.contract.id}</code> {task.contract.objective} ({task.state}){" "}
-                    <button
-                      type="button"
-                      onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}
-                    >
+                  <li key={task.contract.id} className="ps-project-row">
+                    <code>{task.contract.id}</code> {task.contract.objective} <StateText state={task.state} />{" "}
+                    <Button onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}>
                       Open task
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
-              <ul aria-label="Pending decisions">
+              <ul aria-label="Pending decisions" className="ps-list">
                 {pending.map((approval) => (
-                  <li key={approval.id}>
+                  <li key={approval.id} className="ps-project-row">
                     Approval <code>{approval.id}</code> for task <code>{approval.action.task_id}</code>{" "}
-                    <button
-                      type="button"
+                    <Button
                       onClick={() => router.navigate({ name: "review", projectId, taskId: approval.action.task_id })}
                     >
                       Open review
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
