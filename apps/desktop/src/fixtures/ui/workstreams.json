@@ -1,0 +1,63 @@
+{
+  "fixture": "workstreams",
+  "scenarios": {
+    "success": {
+      "ageMs": 3000,
+      "data": {
+        "workstreams": [
+          {
+            "id": "fixture:ws-auth",
+            "title": "Auth hardening",
+            "grouping": "objective",
+            "projectIds": ["fixture:project-alpha"],
+            "objective": {
+              "status": "ok",
+              "ageMs": 3000,
+              "value": {
+                "text": "Harden session handling across the service.",
+                "revision": 3,
+                "gates": [
+                  { "id": "fixture:gate-1", "label": "Threat model reviewed", "passed": true },
+                  { "id": "fixture:gate-2", "label": "Penetration findings closed", "passed": false }
+                ]
+              }
+            },
+            "tasks": [
+              { "id": "fixture:task-auth-1", "objective": "Rotate signing keys", "state": "Succeeded", "agent": "codex", "dependencies": [] },
+              { "id": "fixture:task-auth-2", "objective": "Add refresh-token expiry", "state": "Running", "agent": "codex", "dependencies": ["fixture:task-auth-1"] },
+              { "id": "fixture:task-auth-3", "objective": "Document the session model", "state": "Queued", "agent": "claude-code", "dependencies": ["fixture:task-auth-2"] }
+            ]
+          },
+          {
+            "id": "fixture:ws-docs",
+            "title": "Docs refresh",
+            "grouping": "objective",
+            "projectIds": ["fixture:project-alpha"],
+            "objective": {
+              "status": "ok",
+              "ageMs": 3000,
+              "value": { "text": "Bring the operator guide up to date.", "revision": 1, "gates": [] }
+            },
+            "tasks": [
+              { "id": "fixture:task-docs-1", "objective": "Rewrite the install guide", "state": "Failed", "agent": "claude-code", "dependencies": [] },
+              { "id": "fixture:task-docs-2", "objective": "Add a troubleshooting page", "state": "Queued", "agent": "claude-code", "dependencies": [] }
+            ]
+          },
+          {
+            "id": "fixture:ws-infra",
+            "title": "Build infrastructure",
+            "grouping": "objective",
+            "projectIds": ["fixture:project-beta"],
+            "objective": { "status": "unknown", "reason": "The objective text was not recorded for this workstream." },
+            "tasks": [
+              { "id": "fixture:task-infra-1", "objective": "Cache dependency downloads", "state": "Verifying", "agent": "codex", "dependencies": [] }
+            ]
+          }
+        ]
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the workstream source is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: workstreams are not supported." },
+    "unknown": { "reason": "Fixture scenario: workstream state is unknown." }
+  }
+}
