@@ -6,12 +6,14 @@ import { test } from "node:test";
 import { runBounded } from "./bounded.mjs";
 
 const node = process.execPath;
+// Windows releases a killed process's directory handle after the kill call returns, so removal
+// retries a busy directory for up to 10 s. A directory that is still busy after that fails the test.
 const withDir = async (body) => {
   const dir = mkdtempSync(join(os.tmpdir(), "bounded-"));
   try {
     return await body(dir);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
   }
 };
 const run = (dir, script, extra = {}) =>
@@ -26,6 +28,11 @@ const alive = (pid) => {
   } catch {
     return false;
   }
+};
+const waitUntilGone = async (pid, limitMs = 10000) => {
+  const deadline = Date.now() + limitMs;
+  while (alive(pid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(!alive(pid), `process ${pid} is still running ${limitMs} ms after it was killed`);
 };
 
 test("captures stdout, stderr and the exit code, and also the file bytes", () =>
@@ -52,12 +59,15 @@ test("a descendant holding the output pipes cannot stall the run after the proce
       assert.ok(Date.now() - started < 15000, "returned long before the grandchild's 60 s");
       assert.ok(pid > 0 && alive(pid), "the descendant is still running, for the survivor scan to find");
     } finally {
+      // The grandchild inherits `dir` as its working directory, which Windows will not remove
+      // while the process lives: kill it and wait for it to be gone before the directory is removed.
       if (pid > 0) {
         try {
           process.kill(pid, "SIGKILL");
         } catch {
           // already gone
         }
+        await waitUntilGone(pid);
       }
     }
   }));

@@ -27,6 +27,18 @@ test("each expected total equals the length of its name list, so a merge updates
   assert.equal(win["windows-transport"].length, WINDOWS.windowsTransport.passed);
   assert.equal(win.tauri.length, WINDOWS.tauri.passed);
   const mac = names("macos-test-names.json").macos;
+  const suites = [
+    ["git-lib", "gitLib"],
+    ["cli-cleanup-safety", "cliCleanupSafety"],
+    ["private-fs", "privateFs"],
+    ["runtime-command-line", "runtimeCommandLine"],
+    ["cli-command-line", "cliCommandLine"],
+  ];
+  for (const [list, key] of suites) {
+    assert.equal(win[list].length, WINDOWS[key].passed, `windows ${list}`);
+    assert.equal(mac[list].length, MACOS[key].passed, `macos ${list}`);
+    assert.equal(new Set(win[list]).size, win[list].length, `windows ${list} has duplicate names`);
+  }
   assert.equal(mac.ipc.length, MACOS.ipc.passed);
   assert.equal(mac.daemon.length, MACOS.daemon.passed);
   assert.equal(mac["coordinator-review"].length, MACOS.coordinatorReview.passed);
@@ -38,6 +50,15 @@ test("gates take their counts from expected.mjs", () => {
   const win = byName("win32");
   assert.deepEqual([win["daemon-tests"].passed, win["daemon-tests"].runningSequence], [WINDOWS.daemon.passed, WINDOWS.daemon.sequence]);
   assert.equal(win["windows-transport-tests"].filteredOut, WINDOWS.windowsTransport.filteredOut);
+  for (const [gate, key] of [
+    ["git-lib-tests", "gitLib"],
+    ["cli-cleanup-safety-tests", "cliCleanupSafety"],
+    ["private-fs-tests", "privateFs"],
+    ["runtime-command-line-tests", "runtimeCommandLine"],
+    ["cli-command-line-tests", "cliCommandLine"],
+  ]) {
+    assert.deepEqual([win[gate].passed, win[gate].runningSequence], [WINDOWS[key].passed, WINDOWS[key].sequence], gate);
+  }
   const mac = byName("darwin");
   assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
   assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);

@@ -39,6 +39,37 @@ impl TaskWorktree {
 
 const MAX_NAME_ATTEMPTS: u32 = 1024;
 
+/// Longest worktree path, in characters, that `git worktree add` can create on
+/// Windows. Git runs the checkout step with `GIT_DIR=<worktree>\.git`, and
+/// `setup_explicit_git_dir` dies with `'$GIT_DIR' too big` past
+/// `PATH_MAX - 40` (260 - 40 = 220 on Windows), whatever `core.longpaths` says:
+/// 220 minus the 5 characters of `\.git`. `core.longpaths` still lets the
+/// files inside the checkout exceed `MAX_PATH`.
+///
+/// Observed: Git 2.46.2 for Windows failed with `'$GIT_DIR' too big` at a
+/// worktree path over 260 characters; Git 2.56 on macOS (PATH_MAX 1024) accepts
+/// 969 and rejects 981 characters, the same formula with its own `PATH_MAX`.
+/// The exact Windows boundary is derived, and a Windows test creates a worktree
+/// at exactly this length.
+const WINDOWS_MAX_WORKTREE_PATH: usize = 260 - 40 - r"\.git".len();
+
+/// Refuses a worktree path Git for Windows cannot create, before any Git
+/// state exists. `limit` is `None` where Git has no such limit in practice.
+fn ensure_worktree_path_fits(path: &Path, limit: Option<usize>) -> Result<(), Error> {
+    let Some(max) = limit else { return Ok(()) };
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // Git measures the UTF-8 bytes of the absolute path.
+    let length = absolute.to_string_lossy().len();
+    if length > max {
+        return Err(Error::WorktreePathTooLong {
+            path: absolute,
+            length,
+            max,
+        });
+    }
+    Ok(())
+}
+
 /// Create a task branch and worktree from the resolved commit of `base_ref`.
 ///
 /// The worktree directory goes under `worktrees_root`, which must live
@@ -76,6 +107,7 @@ pub fn create_task_worktree(
         if branch_taken || path.exists() {
             continue;
         }
+        ensure_worktree_path_fits(&path, cfg!(windows).then_some(WINDOWS_MAX_WORKTREE_PATH))?;
         match add_worktree(repo, &branch, &path, &sha) {
             Ok(()) => {
                 verify_head(&path, &sha)?;
@@ -296,21 +328,94 @@ mod tests {
         );
     }
 
-    /// A task worktree under a path past MAX_PATH (260) must still be created:
-    /// Git for Windows fails creating refs, reflogs and checkout files without
-    /// `core.longpaths`. On other platforms this only guards the arguments.
+    /// A checkout whose files go past MAX_PATH (260) must still be created:
+    /// Git for Windows fails creating checkout files without `core.longpaths`.
+    /// The worktree path itself stays short, because Git cannot create a
+    /// worktree at a path over `WINDOWS_MAX_WORKTREE_PATH` at all.
     #[test]
-    fn worktree_under_a_path_longer_than_max_path_is_created() {
-        let (_tmp, wts, repo) = fixture();
-        let mut root = wts;
-        for _ in 0..5 {
-            root.push("long-path-segment-long-path-segment-long-path-segment");
+    fn checkout_files_longer_than_max_path_are_created() {
+        let (tmp, wts, repo) = fixture();
+        let repo_dir = tmp.path().join("repo");
+        let mut deep = PathBuf::new();
+        for _ in 0..4 {
+            deep.push("long-path-segment-long-path-segment-long-path-segment");
         }
-        let id = format!("task-{}", "a".repeat(64));
+        std::fs::create_dir_all(repo_dir.join(&deep)).unwrap();
+        std::fs::write(repo_dir.join(&deep).join("deep.txt"), "deep\n").unwrap();
+        git(&repo_dir, &["-c", "core.longpaths=true", "add", "."]);
+        git(&repo_dir, &["-c", "core.longpaths=true", "commit", "-m", "deep file"]);
+
+        let wt = create_task_worktree(&repo, "deep-checkout", "HEAD", &wts).unwrap();
+        let file = wt.path().join(&deep).join("deep.txt");
+        assert!(file.as_os_str().len() > 260, "{file:?}");
+        assert!(file.exists(), "{file:?}");
+    }
+
+    /// Builds `wts\<a>\<b>\<id>` with exactly `total` characters.
+    fn path_of_length(wts: &Path, id: &str, total: usize) -> PathBuf {
+        let rest = total
+            .checked_sub(wts.as_os_str().len() + 1 + id.len())
+            .filter(|rest| *rest >= 4)
+            .unwrap_or_else(|| panic!("{wts:?} is too long for a {total} character worktree path"));
+        let first = rest / 2 - 1;
+        let second = rest - first - 2;
+        let mut root = wts.to_path_buf();
+        root.push("a".repeat(first));
+        root.push("b".repeat(second));
+        root
+    }
+
+    /// The longest worktree path Git accepts must work: the Windows limit is
+    /// derived from Git's source, and this is what proves it is not too low.
+    #[test]
+    fn worktree_at_the_longest_accepted_path_is_created() {
+        let (_tmp, wts, repo) = fixture();
+        let id = "longest";
+        let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH);
         std::fs::create_dir_all(&root).unwrap();
-        let wt = create_task_worktree(&repo, &id, "HEAD", &root).unwrap();
-        assert!(wt.path().as_os_str().len() > 260, "{:?}", wt.path());
+        let wt = create_task_worktree(&repo, id, "HEAD", &root).unwrap();
+        assert_eq!(wt.path().as_os_str().len(), WINDOWS_MAX_WORKTREE_PATH, "{:?}", wt.path());
         assert!(wt.path().join("base.txt").exists());
+    }
+
+    #[test]
+    fn a_worktree_path_over_the_limit_is_refused_naming_the_limit() {
+        let absolute_of_length = |total: usize| {
+            let prefix = if cfg!(windows) { r"C:\" } else { "/" };
+            PathBuf::from(format!("{prefix}{}", "x".repeat(total - prefix.len())))
+        };
+        let path = absolute_of_length(WINDOWS_MAX_WORKTREE_PATH + 1);
+        let err = ensure_worktree_path_fits(&path, Some(WINDOWS_MAX_WORKTREE_PATH)).unwrap_err();
+        match &err {
+            Error::WorktreePathTooLong { length, max, .. } => {
+                assert!(*length > *max && *max == WINDOWS_MAX_WORKTREE_PATH, "{err}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(err.to_string().contains("Nothing was created"));
+        let at_limit = absolute_of_length(WINDOWS_MAX_WORKTREE_PATH);
+        ensure_worktree_path_fits(&at_limit, Some(WINDOWS_MAX_WORKTREE_PATH)).unwrap();
+        ensure_worktree_path_fits(&path, None).unwrap();
+    }
+
+    /// Where the limit applies, creation is refused before Git runs, so no
+    /// branch or directory is left behind. Windows only: elsewhere Git has no
+    /// such limit.
+    #[cfg(windows)]
+    #[test]
+    fn a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists() {
+        let (tmp, wts, repo) = fixture();
+        let id = "too-long";
+        let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH + 1);
+        std::fs::create_dir_all(&root).unwrap();
+        let err = create_task_worktree(&repo, id, "HEAD", &root).unwrap_err();
+        assert!(matches!(err, Error::WorktreePathTooLong { .. }), "{err:?}");
+        assert!(!root.join(id).exists());
+        let repo_dir = tmp.path().join("repo");
+        assert!(!git_ok(
+            &repo_dir,
+            &["rev-parse", "--verify", "--quiet", "refs/heads/orchestrator/too-long"]
+        ));
     }
 
     #[test]

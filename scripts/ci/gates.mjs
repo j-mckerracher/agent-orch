@@ -70,6 +70,24 @@ export function gatesFor(platform) {
     },
   ];
 
+  // Per-crate suites the Priority 12r2 runbook ran by hand or never ran. Windows counts are derived
+  // from the sources' cfg gates (see expected.mjs); the filters name tests, not test binaries.
+  const suite = (name, args, key, list, timeout = 1800) => ({
+    name, mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout, args: ["test", "--locked", ...args],
+    expect: counts[list], passed: want[key].passed, ignored: 0, runningSequence: want[key].sequence,
+  });
+  gates.push(
+    suite("git-lib-tests", ["-p", "orchestrator-git", "--lib"], "gitLib", "git-lib"),
+    suite("cli-cleanup-safety-tests", ["-p", "orchestrator-cli", "--test", "cleanup_safety"], "cliCleanupSafety", "cli-cleanup-safety"),
+    suite("private-fs-tests", ["-p", "orchestrator-private-fs"], "privateFs", "private-fs", 600),
+    suite("runtime-command-line-tests", ["-p", "orchestrator-runtime", "--lib", "command_line"], "runtimeCommandLine", "runtime-command-line", 600),
+    suite(
+      "cli-command-line-tests",
+      ["-p", "orchestrator-cli", "--lib", "--", "os_command_line_limit", "65000_character_objective"],
+      "cliCommandLine", "cli-command-line", 600,
+    ),
+  );
+
   if (win) {
     gates.push({
       name: "windows-transport-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,

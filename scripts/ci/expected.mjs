@@ -13,6 +13,17 @@ export const WINDOWS = {
   coordinatorReview: { passed: 4, sequence: [4] },
   windowsTransport: { passed: 13, sequence: [13], filteredOut: 33 },
   tauri: { passed: 13, sequence: [13, 0, 0] },
+  // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
+  // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
+  // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
+  // git-lib: 49 = 47 portable tests + 2 cfg(windows) tests (macOS: 47 + 2 cfg(unix) = 49).
+  gitLib: { passed: 49, sequence: [49] },
+  cliCleanupSafety: { passed: 3, sequence: [3] },
+  // 3 portable tests + 6 in the cfg(windows) module (the DACL tests).
+  privateFs: { passed: 9, sequence: [9, 0] },
+  runtimeCommandLine: { passed: 8, sequence: [8] },
+  // One portable test and one cfg(windows) test.
+  cliCommandLine: { passed: 2, sequence: [2] },
 };
 
 // macOS: measured on the Priority 12 integration merge (M6-01 + M6-02 + M6-03 on the M5-05 round 5
@@ -21,8 +32,13 @@ export const MACOS = {
   ipc: { passed: 46, sequence: [46, 0] },
   daemon: { passed: 88, sequence: [73, 4, 10, 1] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 721, ignored: 1 },
+  workspace: { passed: 723, ignored: 1 },
   tauri: { passed: 15, sequence: [15, 0, 0] },
+  gitLib: { passed: 49, sequence: [49] },
+  cliCleanupSafety: { passed: 4, sequence: [4] },
+  privateFs: { passed: 6, sequence: [6, 0] },
+  runtimeCommandLine: { passed: 8, sequence: [8] },
+  cliCommandLine: { passed: 1, sequence: [1] },
   e2eFiles: 1,
 };
 

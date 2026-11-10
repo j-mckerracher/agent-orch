@@ -38,8 +38,13 @@ The Windows list is the published runbook
 | `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 57 = 52+4+0+1, macOS 88 = 73+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
 | `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
+| `git-lib-tests` | `cargo test --locked -p orchestrator-git --lib` (49 on both: Windows 47 portable + 2 `cfg(windows)`, macOS 47 portable + 2 `cfg(unix)`) | both |
+| `cli-cleanup-safety-tests` | `cargo test --locked -p orchestrator-cli --test cleanup_safety` (Windows 3, macOS 4: one test is `cfg(unix)`; a fifth is `cfg(all(unix, feature = "fault-injection"))` and runs nowhere by default) | both |
+| `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[9,0]`: 3 portable + 6 DACL; macOS `[6,0]`: 3 portable + 3 Unix; the `0` is the doc-test binary) | both |
+| `runtime-command-line-tests` | `cargo test --locked -p orchestrator-runtime --lib command_line` (8 tests; the pure Windows rules run on every host) | both |
+| `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (721 passed, 1 ignored) | macOS |
+| `workspace-tests` | `cargo test --locked --workspace` (723 passed, 1 ignored) | macOS |
 | `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 290 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
 | `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 13, macOS 15), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
@@ -93,7 +98,37 @@ on both, and Windows-only `windows_submit_refuses_an_objective_that_cannot_be_pa
 tests that moved into it); `CLIPPY_BASELINE.lines` 414 and 437 (the check added five lines above them).
 The macOS figures were measured; the Windows ones are derived. `orchestrator-private-fs` runs 6 tests
 on macOS (3 portable, 3 Unix) and 9 on Windows (3 portable, 6 DACL), and the Windows-only CLI test
-is a 35th `orchestrator-cli` unit test there; no Windows gate counts either crate.
+is a 35th `orchestrator-cli` unit test there.
+
+**Priority 12 round 3** (the first native Windows run of 4d5566d) corrected two derived counts and
+made the per-crate suites harness gates, so they run automatically: `git-lib-tests`,
+`cli-cleanup-safety-tests`, `private-fs-tests`, `runtime-command-line-tests` and
+`cli-command-line-tests` (21 gates on Windows now, up from 16). The Windows run measured `orchestrator-git --lib`
+at 46 and `cleanup_safety` at 3; the runbook had derived 47 and 4, which were the macOS counts
+(`cfg(unix)` tests counted as if they ran on Windows, and the `cfg(windows)` ones missed). Derived now
+from the `cfg` gates in the sources: `orchestrator-git --lib` 49 on both platforms (47 portable,
+plus 2 `cfg(unix)` on macOS or 2 `cfg(windows)` on Windows); round 3 replaced the unachievable
+over-`MAX_PATH` worktree test with three portable tests and added one `cfg(windows)` test (46 measured
+becomes 49 derived on Windows: -1 replaced, +3 portable, +1 `cfg(windows)`). `cleanup_safety` 3 on Windows and 4 on macOS.
+The macOS `workspace-tests` count is 723 passed (the two added `orchestrator-git` tests).
+
+### Maximum path lengths on Windows
+
+- **Worktree path: 215 characters.** `git worktree add` runs its checkout with `GIT_DIR=<worktree>\.git`, and
+  Git dies with ``'$GIT_DIR' too big`` when that exceeds `PATH_MAX - 40` = 220 characters, whatever `core.longpaths`
+  says (observed with Git 2.46.2 at a worktree path over 260 characters; the 215 boundary is derived from
+  Git's source and its macOS analogue, 969 accepted and 981 refused, not yet measured on Windows).
+  `orchestrator-git` therefore refuses a longer path with `WorktreePathTooLong`, before any branch or
+  directory exists. The daemon's worktree is `<data-dir>\worktrees\task-<64 hex>` (69 characters of
+  task name), so the data directory must be at most about 130 characters; the CLI's
+  `<data-dir>\worktrees\<task-id>` is shorter. Files inside a checkout may pass 260 characters:
+  `core.longpaths=true` is passed to every Git call and the test
+  `checkout_files_longer_than_max_path_are_created` covers it.
+- **Harness paths.** `--test-tmp`, `--target-dir` and `--evidence-dir` should be at most about 60
+  characters (`C:\ao\t`, `C:\ao\target`): the test temp directory, a task or fixture name and a test's
+  worktree all go under it. A harness that passes a long `TMP`/`TEMP` (such as
+  `C:\Users\<name>\AppData\Local\Temp\<run-id>\test-tmp`) shortens at the source by choosing a short
+  `--test-tmp`; do not rely on `core.longpaths`.
 
 ### Evidence
 
@@ -194,8 +229,8 @@ the M6-02 owner.
    workload, Windows SDK, network access (NSIS download). Record versions; a missing tool is
    `BLOCKED`.
 3. `node --test "scripts/**/*.test.mjs"`: the parser tests (including CRLF output) must pass.
-4. `node scripts/ci/run-gates.mjs --list` must show the 16 Windows gates, including
-   `windows-transport-tests` and `desktop-package-win`.
+4. `node scripts/ci/run-gates.mjs --list` must show the 21 Windows gates, including
+   `windows-transport-tests`, `git-lib-tests`, `private-fs-tests` and `desktop-package-win`.
 5. `$env:CI = "true"; node scripts/ci/run-gates.mjs --evidence-dir <new> --target-dir <new empty> --test-tmp <new>`
    Expected: every gate `PASS` with the derived counts in the gate table. A count mismatch is a
    finding: report it; do not edit `scripts/ci/expected.mjs` to fit.
@@ -213,7 +248,18 @@ the M6-02 owner.
    - with a test `.pfx` in `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD`: expect
      `Valid` only if the test certificate chains to a trusted root (record the real status either
      way), and that the thumbprint is gone from `Cert:\CurrentUser\My` afterwards.
-8. Report the real counts, durations, and the first failing gate, if any.
+8. Run the by-hand checks that a script can do, after the harness and with the same target directory, from a
+   short path (no `$ErrorActionPreference = 'Stop'` around it; it never halts and exits 0):
+   `powershell -NoProfile -File scripts\ci\p12-windows-checks.ps1 -TargetDir <the harness --target-dir> -RunRoot C:\ao\p12 -EvidenceDir <evidence dir>`.
+   It prints `icacls` for the data directory and every file in it, asserts only the current user with no
+   inherited ACE and no `CodexSandboxUsers`, `SYSTEM`, Administrators, Users, Everyone or Authenticated Users, runs
+   the CLI against an over-limit objective for a `.cmd` agent launcher (8,191 units), and ends with
+   `P12-WINDOWS-CHECKS: PASS`, `FAIL (n of m failed)` or `INCOMPLETE`. It writes `manual-p12.txt`. The redacted
+   launch failure in the real window is the one check it cannot do (`NOT RUN`). A literal 65,000-character
+   objective cannot be given to the CLI on Windows: `CreateProcess` refuses a command line over 32,767 units
+   before the CLI starts, so that path is only reachable through the daemon (`tasks.submit`), which the
+   `daemon-tests` unit test covers.
+9. Report the real counts, durations, and the first failing gate, if any.
 
 ## What only a real GitHub runner can prove
 

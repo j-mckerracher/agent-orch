@@ -85,6 +85,11 @@ fn a_failed_launch_is_explained_in_the_log_without_the_credential() {
     assert_eq!(launch["agent"], "codex");
     wait_for_event(&layout, "daemon_start");
 
+    // The daemon closes a connection that has been idle (and unsubscribed)
+    // for 2 s, and creating the worktree alone took about 4 s on Windows, so
+    // the client above may be closed by now. Reconnect instead of reusing it.
+    drop(client);
+    let mut client = connect(&layout.data);
     let task = client.tasks_get(&task_id).unwrap();
     assert_eq!(task["state"], "Failed", "the failure is also in the task state");
 

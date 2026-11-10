@@ -34,6 +34,13 @@ pub enum Error {
         source: Box<Error>,
     },
 
+    #[error("the worktree path {path} is {length} characters, over the {max} that Git for Windows accepts for a worktree (it rejects `$GIT_DIR` beyond PATH_MAX - 40 characters even with core.longpaths); use a shorter worktrees root or task id. Nothing was created.")]
+    WorktreePathTooLong {
+        path: PathBuf,
+        length: usize,
+        max: usize,
+    },
+
     #[error("git {step} exited with {status}: {stderr}")]
     Git {
         step: &'static str,
