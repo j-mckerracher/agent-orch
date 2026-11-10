@@ -91,6 +91,9 @@ struct Inner {
     stop: AtomicBool,
     /// Why scheduling is blocked by the restart gate, if it is.
     blocked: Mutex<Option<String>>,
+    /// Project that received the last start; mirrors the loop's fairness
+    /// cursor so read models order the queue as the next pass would.
+    cursor: Mutex<Option<String>>,
 }
 
 impl Executor {
@@ -102,6 +105,7 @@ impl Executor {
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
+            cursor: Mutex::new(None),
         });
         let worker = inner.clone();
         let handle = thread::Builder::new()
@@ -123,6 +127,15 @@ impl Executor {
     /// out between an admission and its launch.
     pub(crate) fn has_pending_pass(&self) -> bool {
         *lock(&self.inner.dirty)
+    }
+
+    /// The next scheduling pass's fairness cursor and whether the restart gate
+    /// currently blocks every launch. Read-only; for the queue snapshot.
+    pub(crate) fn dispatch_state(&self) -> (Option<String>, bool) {
+        (
+            lock(&self.inner.cursor).clone(),
+            lock(&self.inner.blocked).is_some(),
+        )
     }
 
     /// The restart-gate refusal currently blocking all launches, if any.
@@ -176,6 +189,7 @@ impl Inner {
             }
             if gate_open {
                 self.schedule_pass(&mut last_started_project);
+                *lock(&self.cursor) = last_started_project.clone();
             }
             let wait = if gate_open {
                 self.config.poll

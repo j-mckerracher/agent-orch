@@ -1,7 +1,7 @@
 use orchestrator_core::{
     scheduler::{
         RejectionReason, SchedulePlan, Scheduler, SchedulerError, SchedulerLimits,
-        SchedulerSnapshot, StartAuthorization, TaskSnapshot,
+        SchedulerSnapshot, StartAuthorization, TaskSnapshot, WaitingReason,
     },
     task::TaskState,
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy, Workspace,
@@ -433,4 +433,64 @@ fn same_branch_name_in_different_projects_does_not_conflict() {
 
     assert_eq!(plan.started, ["a", "b"]);
     assert!(plan.rejected.is_empty());
+}
+
+#[test]
+fn limit_accessors_report_configured_values_and_defaults() {
+    let defaults = SchedulerLimits::default();
+    assert_eq!(defaults.max_concurrent_workers(), 2);
+    assert_eq!(defaults.max_workers_per_project(), 2);
+    let limits = SchedulerLimits::new(Some(5), Some(3)).unwrap();
+    assert_eq!(limits.max_concurrent_workers(), 5);
+    assert_eq!(limits.max_workers_per_project(), 3);
+}
+
+#[test]
+fn every_rejection_maps_to_one_waiting_reason() {
+    use orchestrator_core::scheduler::WorktreeResource;
+
+    let cases = [
+        (
+            RejectionReason::DependencyNotSucceeded {
+                dependency_id: "d".into(),
+            },
+            WaitingReason::Dependency,
+            "dependency",
+        ),
+        (
+            RejectionReason::GlobalLimitReached,
+            WaitingReason::GlobalCap,
+            "global_cap",
+        ),
+        (
+            RejectionReason::ProjectLimitReached,
+            WaitingReason::ProjectCap,
+            "project_cap",
+        ),
+        (
+            RejectionReason::Unauthorized,
+            WaitingReason::Approval,
+            "approval",
+        ),
+        (
+            RejectionReason::TaskNotQueued {
+                state: TaskState::Created,
+            },
+            WaitingReason::Other,
+            "other",
+        ),
+        (
+            RejectionReason::WorktreeOwned {
+                owner_task_id: "o".into(),
+                resource: WorktreeResource::Path,
+                value: "p".into(),
+            },
+            WaitingReason::Other,
+            "other",
+        ),
+    ];
+    for (reason, expected, name) in cases {
+        assert_eq!(reason.waiting_reason(), expected);
+        assert_eq!(expected.as_str(), name);
+    }
 }

@@ -386,6 +386,7 @@ fn method_capability(method: &str) -> Option<Capability> {
         "review.request_approval" | "review.evidence" | "review.request_changes" => {
             Some(Capability::Review)
         }
+        "queue.snapshot" => Some(Capability::Queue),
         _ => None,
     }
 }

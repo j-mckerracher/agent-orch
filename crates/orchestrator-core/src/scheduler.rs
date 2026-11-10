@@ -61,6 +61,16 @@ impl SchedulerLimits {
             max_workers_per_project,
         })
     }
+
+    /// Maximum number of `Running` tasks across all projects.
+    pub fn max_concurrent_workers(&self) -> usize {
+        self.max_concurrent_workers.get()
+    }
+
+    /// Maximum number of `Running` tasks in one project.
+    pub fn max_workers_per_project(&self) -> usize {
+        self.max_workers_per_project.get()
+    }
 }
 
 impl Default for SchedulerLimits {
@@ -224,6 +234,50 @@ pub enum RejectionReason {
         resource: WorktreeResource,
         value: String,
     },
+}
+
+/// Operator-facing category of a [`RejectionReason`], for read models that
+/// explain why a queued task is waiting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitingReason {
+    /// A dependency has not succeeded.
+    Dependency,
+    /// The global worker limit is full.
+    GlobalCap,
+    /// The per-project worker limit is full.
+    ProjectCap,
+    /// Start authorization has not been granted.
+    Approval,
+    /// Anything else: wrong task state or a worktree claimed by another task.
+    Other,
+}
+
+impl WaitingReason {
+    /// Stable wire name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dependency => "dependency",
+            Self::GlobalCap => "global_cap",
+            Self::ProjectCap => "project_cap",
+            Self::Approval => "approval",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl RejectionReason {
+    /// Category of this rejection. It is a pure projection of the scheduler's
+    /// own decision, so a read model built from it cannot disagree with a
+    /// scheduling pass over the same snapshot.
+    pub fn waiting_reason(&self) -> WaitingReason {
+        match self {
+            Self::DependencyNotSucceeded { .. } => WaitingReason::Dependency,
+            Self::GlobalLimitReached => WaitingReason::GlobalCap,
+            Self::ProjectLimitReached => WaitingReason::ProjectCap,
+            Self::Unauthorized => WaitingReason::Approval,
+            Self::TaskNotQueued { .. } | Self::WorktreeOwned { .. } => WaitingReason::Other,
+        }
+    }
 }
 
 /// Deterministic result of one scheduling pass. Started IDs follow dispatch

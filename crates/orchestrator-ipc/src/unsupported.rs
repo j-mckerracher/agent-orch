@@ -92,6 +92,9 @@ impl Client {
     pub fn coordinator_get(&mut self, _: &str, _: Option<i64>) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn queue_snapshot(&mut self) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn review_request_approval(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
