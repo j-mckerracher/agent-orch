@@ -4,6 +4,7 @@ description = "Long-lived orchestration daemon binary. Composes the workspace cr
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 orchestrator-ipc = { path = "../orchestrator-ipc" }

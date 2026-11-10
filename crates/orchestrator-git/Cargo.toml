@@ -4,6 +4,7 @@ description = "System-git-based repository validation and task worktree creation
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 thiserror = "=2.0.21"

@@ -32,7 +32,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 fn connect(data: &Path) -> Result<Client, orchestrator_ipc::IpcError> {
     Client::connect_with_timeout(data, &Capability::ALL, CALL_TIMEOUT)
 }
-const AGENT_ROLE: &str = "AGENT_ORCH_LIFECYCLE_AGENT_PID_FILE";
+
+// Not `AGENT_ORCH_`-prefixed: the supervisor never forwards that prefix.
+const AGENT_ROLE: &str = "LIFECYCLE_AGENT_PID_FILE";
 
 fn main() {
     if let Some(pid_file) = std::env::var_os(AGENT_ROLE) {
@@ -331,6 +333,7 @@ fn scenario(base: &Path) {
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)
             .env(AGENT_ROLE, &pid_file)
+            .env("AGENT_ORCH_ENV_PASSTHROUGH", AGENT_ROLE)
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log))
             .spawn()

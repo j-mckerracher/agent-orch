@@ -31,6 +31,14 @@ use crate::routing::RoutableAdapter;
 
 const ALLOWED_TOOLS: &str = "Read,Edit,Write";
 
+/// Parent variables Claude Code needs beyond the baseline allowlist.
+const PROVIDER_ENV: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CONFIG_DIR",
+];
+
 /// Claude Code's one-shot adapter for `claude -p --output-format stream-json`.
 #[derive(Debug, Clone, Default)]
 pub struct ClaudeCodeAdapter {
@@ -144,6 +152,7 @@ impl AgentAdapter for ClaudeCodeAdapter {
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,
+            env_names: PROVIDER_ENV.iter().map(|name| (*name).to_owned()).collect(),
         })?;
         Ok(Box::new(ClaudeCodeHandle {
             supervisor,

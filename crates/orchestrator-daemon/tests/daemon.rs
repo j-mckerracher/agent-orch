@@ -549,20 +549,32 @@ impl RunningAgentFixture {
     }
 
     fn start_daemon(&self) -> Daemon {
-        Daemon(Some(
-            Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
-                .arg("--data-dir")
-                .arg(&self.data)
-                .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
-                // Never probe a real claude or pi: the report must not depend
-                // on what is installed on the machine or on CPU load.
-                .env("AGENT_ORCH_CLAUDE_PROGRAM", &self.agent)
-                .env("AGENT_ORCH_PI_PROGRAM", self.root.path().join("no-such-pi"))
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap(),
-        ))
+        self.start_daemon_with(Stdio::null(), None)
+    }
+
+    /// Starts the daemon with stderr in `daemon.log` (as the desktop host
+    /// does) and the given passthrough list.
+    fn start_daemon_logging(&self, passthrough: &str) -> Daemon {
+        let log = fs::File::create(self.data.join("daemon.log")).unwrap();
+        self.start_daemon_with(Stdio::from(log), Some(passthrough))
+    }
+
+    fn start_daemon_with(&self, stderr: Stdio, passthrough: Option<&str>) -> Daemon {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
+        command
+            .arg("--data-dir")
+            .arg(&self.data)
+            .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
+            // Never probe a real claude or pi: the report must not depend
+            // on what is installed on the machine or on CPU load.
+            .env("AGENT_ORCH_CLAUDE_PROGRAM", &self.agent)
+            .env("AGENT_ORCH_PI_PROGRAM", self.root.path().join("no-such-pi"))
+            .stdout(Stdio::null())
+            .stderr(stderr);
+        if let Some(list) = passthrough {
+            command.env("AGENT_ORCH_ENV_PASSTHROUGH", list);
+        }
+        Daemon(Some(command.spawn().unwrap()))
     }
 
     fn submit(&self, client: &mut Client, key: &str, max_retries: u32) -> String {
@@ -650,6 +662,10 @@ fn daemon_launches_submitted_work_and_a_client_disconnect_does_not_stop_it() {
     let mut client = connect_when_ready(&fixture.data);
     let task_id = fixture.submit(&mut client, "disconnect-1", 0);
     let agent_pid = fixture.wait_for_agent();
+    // The server closes a connection idle for 2 s, so a client that waited
+    // for the agent reconnects instead of reusing a possibly closed stream.
+    drop(client);
+    let mut client = connect_when_ready(&fixture.data);
     wait_for_task_state(&mut client, &task_id, "Running");
 
     drop(client);
@@ -670,8 +686,9 @@ fn daemon_launches_submitted_work_and_a_client_disconnect_does_not_stop_it() {
         thread::sleep(Duration::from_millis(25));
     }
     wait_for_task_state(&mut reconnected, &task_id, "Cancelled");
+    drop(reconnected);
     wait_for_process_exit(agent_pid);
-    reconnected.shutdown().unwrap();
+    connect_when_ready(&fixture.data).shutdown().unwrap();
     assert!(daemon.finish().status.success());
     drop(fixture.root);
 }
@@ -684,6 +701,8 @@ fn daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches() {
     let mut client = connect_when_ready(&fixture.data);
     let task_id = fixture.submit(&mut client, "crash-1", 1);
     let first_agent = fixture.wait_for_agent();
+    drop(client);
+    let mut client = connect_when_ready(&fixture.data);
     wait_for_task_state(&mut client, &task_id, "Running");
     drop(client);
 
@@ -694,8 +713,10 @@ fn daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches() {
     fs::remove_file(&fixture.pid_file).unwrap();
 
     let restarted = fixture.start_daemon();
-    let mut client = connect_when_ready(&fixture.data);
+    let client = connect_when_ready(&fixture.data);
     wait_for_process_exit(first_agent);
+    drop(client);
+    let mut client = connect_when_ready(&fixture.data);
     let failed = wait_for_task_state(&mut client, &task_id, "Failed");
     assert_eq!(failed["attempts"][0]["state"], "Failed");
     assert!(
@@ -707,6 +728,8 @@ fn daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches() {
     assert!(retried["state"] == "Queued" || retried["state"] == "Running");
     let second_agent = fixture.wait_for_agent();
     assert_ne!(first_agent, second_agent);
+    drop(client);
+    let mut client = connect_when_ready(&fixture.data);
     let task = wait_for_task_state(&mut client, &task_id, "Running");
     assert_eq!(task["attempts"].as_array().unwrap().len(), 2);
     assert_eq!(task["attempts"][0]["state"], "Failed");
@@ -717,9 +740,57 @@ fn daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches() {
         thread::sleep(Duration::from_millis(25));
     }
     wait_for_task_state(&mut client, &task_id, "Cancelled");
+    drop(client);
     wait_for_process_exit(second_agent);
-    client.shutdown().unwrap();
+    connect_when_ready(&fixture.data).shutdown().unwrap();
     assert!(restarted.finish().status.success());
+}
+
+/// F-Q1 and F-Q2: a rejected passthrough entry reaches `daemon.log` by name
+/// only, and the daemon makes its data directory and files owner-only.
+#[test]
+fn daemon_log_never_holds_a_passthrough_value_and_the_data_dir_is_private() {
+    const CANARY: &str = "sk-LEAKCANARY-123";
+    let fixture = RunningAgentFixture::new();
+    fs::set_permissions(&fixture.data, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut daemon =
+        fixture.start_daemon_logging(&format!("OPENAI_API_KEY={CANARY},HARMLESS_NAME"));
+    wait_for_ipc(&fixture.data, &mut daemon);
+    let mut client = connect_when_ready(&fixture.data);
+    let task_id = fixture.submit(&mut client, "canary-1", 0);
+    let agent_pid = fixture.wait_for_agent();
+    drop(client);
+
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&fixture.data), 0o700);
+    for file in ["store.sqlite", ".orchestrator.lock"] {
+        assert_eq!(mode(&fixture.data.join(file)), 0o600, "{file}");
+    }
+    for sidecar in ["store.sqlite-wal", "store.sqlite-shm"] {
+        let path = fixture.data.join(sidecar);
+        if path.exists() {
+            assert_eq!(mode(&path), 0o600, "{sidecar}");
+        }
+    }
+
+    let mut client = connect_when_ready(&fixture.data);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while client.tasks_cancel(&task_id, "canary-cancel").is_err() {
+        assert!(Instant::now() < deadline, "cancel never accepted");
+        thread::sleep(Duration::from_millis(25));
+    }
+    wait_for_task_state(&mut client, &task_id, "Cancelled");
+    drop(client);
+    wait_for_process_exit(agent_pid);
+    connect_when_ready(&fixture.data).shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+
+    let log = fs::read_to_string(fixture.data.join("daemon.log")).unwrap();
+    assert!(
+        log.contains("ignoring AGENT_ORCH_ENV_PASSTHROUGH entry #1 (OPENAI_API_KEY)"),
+        "the rejection must be reported by name: {log}"
+    );
+    assert!(!log.contains(CANARY), "a value reached daemon.log: {log}");
 }
 
 #[test]

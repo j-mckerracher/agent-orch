@@ -51,10 +51,7 @@ pub fn daemon_program() -> Option<PathBuf> {
 pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
     create_private_dir(data_dir)?;
     rotate_log(data_dir);
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(data_dir.join(DAEMON_LOG))?;
+    let log = open_private_log(&data_dir.join(DAEMON_LOG))?;
     let mut command = Command::new(program);
     command
         .arg("--data-dir")
@@ -71,16 +68,50 @@ fn rotate_log(data_dir: &Path) {
     let log = data_dir.join(DAEMON_LOG);
     let oversized = fs::metadata(&log).is_ok_and(|meta| meta.len() > DAEMON_LOG_MAX_BYTES);
     if oversized {
-        let _ = fs::rename(&log, data_dir.join(DAEMON_LOG_ROTATED));
+        let rotated = data_dir.join(DAEMON_LOG_ROTATED);
+        if fs::rename(&log, &rotated).is_ok() {
+            let _ = restrict_to_owner(&rotated);
+        }
     }
 }
 
+/// Creates the data directory owner-only on Unix and removes group and other
+/// access from one that already exists. Windows relies on the inherited ACL.
 fn create_private_dir(path: &Path) -> std::io::Result<()> {
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(path)
+    builder.create(path)?;
+    restrict_to_owner(path)
+}
+
+/// Opens `daemon.log` for append, owner-only on Unix (it carries daemon
+/// stderr). An existing log loses group and other access.
+fn open_private_log(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let log = options.open(path)?;
+    restrict_to_owner(path)?;
+    Ok(log)
+}
+
+fn restrict_to_owner(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = fs::metadata(path)?;
+        let mode = metadata.permissions().mode();
+        if mode & 0o077 != 0 {
+            let private = if metadata.is_dir() { 0o700 } else { 0o600 };
+            fs::set_permissions(path, fs::Permissions::from_mode(mode & private))?;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -123,5 +154,30 @@ mod tests {
 
         rotate_log(dir.path());
         assert!(!log.exists(), "a missing log is not an error");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_data_dir_and_log_are_owner_only_new_or_existing() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let root = TempDir::new().unwrap();
+
+        let fresh = root.path().join("fresh");
+        create_private_dir(&fresh).unwrap();
+        let log = fresh.join(DAEMON_LOG);
+        drop(open_private_log(&log).unwrap());
+        assert_eq!((mode(&fresh), mode(&log)), (0o700, 0o600));
+
+        let existing = root.path().join("existing");
+        fs::create_dir(&existing).unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
+        let old_log = existing.join(DAEMON_LOG);
+        fs::write(&old_log, b"kept").unwrap();
+        fs::set_permissions(&old_log, fs::Permissions::from_mode(0o644)).unwrap();
+        create_private_dir(&existing).unwrap();
+        drop(open_private_log(&old_log).unwrap());
+        assert_eq!((mode(&existing), mode(&old_log)), (0o700, 0o600));
+        assert_eq!(fs::read(&old_log).unwrap(), b"kept");
     }
 }

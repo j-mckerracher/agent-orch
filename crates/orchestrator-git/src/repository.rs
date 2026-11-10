@@ -55,6 +55,13 @@ impl Repository {
     /// tree, so the user's uncommitted changes are preserved and are not
     /// carried into the task branch.
     pub fn resolve_base_ref(&self, refspec: &str) -> Result<String, Error> {
+        // A leading dash would be read as a `git rev-parse` option.
+        if refspec.starts_with('-') || refspec.contains(['\n', '\r', '\0']) {
+            return Err(Error::InvalidBaseRef {
+                refspec: refspec.to_string(),
+                detail: "ref must not start with '-' or contain control characters".to_string(),
+            });
+        }
         let sha = match git(
             "resolve base ref",
             &self.path,

@@ -38,17 +38,26 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     /// Opens a database file, creates its parent if needed, and applies migrations.
+    ///
+    /// On Unix a new parent directory is `0700` and the database, `-wal` and
+    /// `-shm` files are `0600`; existing files lose group and other access.
     pub fn new(path: &Path) -> Result<Self, StoreError> {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
-            std::fs::create_dir_all(parent)?;
+            if !parent.exists() {
+                crate::private::create_private_dir(parent)?;
+            }
         }
+        // SQLite gives `-wal` and `-shm` the main file's mode, so the file must
+        // be private before the first connection creates them.
+        crate::private::create_private_file(path)?;
 
         let path = path.to_path_buf();
         let (sender, receiver) = mpsc::sync_channel(0);
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
+        let sidecars = [sidecar_path(&path, "-wal"), sidecar_path(&path, "-shm")];
         let worker = thread::Builder::new()
             .name("orchestrator-sqlite".to_owned())
             .spawn(move || run_worker(path, receiver, ready_sender))?;
@@ -57,10 +66,15 @@ impl SqliteStore {
             .recv()
             .map_err(|_| StoreError::WorkerStopped)?
         {
-            Ok(()) => Ok(Self {
-                sender: Some(sender),
-                worker: Some(worker),
-            }),
+            Ok(()) => {
+                for sidecar in &sidecars {
+                    crate::private::restrict_to_owner(sidecar)?;
+                }
+                Ok(Self {
+                    sender: Some(sender),
+                    worker: Some(worker),
+                })
+            }
             Err(error) => {
                 drop(sender);
                 let _ = worker.join();
@@ -100,6 +114,12 @@ impl Drop for SqliteStore {
             let _ = worker.join();
         }
     }
+}
+
+fn sidecar_path(path: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
 }
 
 fn run_worker(
@@ -243,5 +263,34 @@ mod tests {
             assert_eq!(foreign_keys, 1);
             assert!(rejected);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_files_are_owner_only_new_or_existing() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let widen = |path: &Path| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap()
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("nested/store.sqlite");
+        let wal = sidecar_path(&path, "-wal");
+        let shm = sidecar_path(&path, "-shm");
+
+        let store = SqliteStore::new(&path).unwrap();
+        assert_eq!(mode(path.parent().unwrap()), 0o700);
+        for file in [&path, &wal, &shm] {
+            assert_eq!(mode(file), 0o600, "{}", file.display());
+        }
+        // Keep the handle open so the sidecars exist while they are widened.
+        for file in [&path, &wal, &shm] {
+            widen(file);
+        }
+        let reopened = SqliteStore::new(&path).unwrap();
+        for file in [&path, &wal, &shm] {
+            assert_eq!(mode(file), 0o600, "{}", file.display());
+        }
+        drop((store, reopened));
     }
 }

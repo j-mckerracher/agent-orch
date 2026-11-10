@@ -27,7 +27,9 @@ pub enum TaskKind {
 /// `Ord` here is container ordering only (for the authorization envelope's
 /// delivery set); it confers no rank or "more permissive" relationship
 /// between policies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub enum DeliveryPolicy {
     /// Produce a report artifact only. Never merges code.
     ReportOnly,
@@ -143,6 +145,45 @@ pub enum ContractError {
     EmptyAgent,
     /// A `Commands` verification gate carries no commands.
     EmptyVerificationCommands,
+    /// A field exceeds its documented size bound; the payload names it.
+    FieldTooLarge(&'static str),
+    /// A text field contains a NUL byte, which no process argument, path, or
+    /// identifier can carry; the payload names the field.
+    ContainsNul(&'static str),
+    /// A free-text field contains a control character other than newline,
+    /// carriage return or tab, or a bidirectional formatting character that
+    /// can reorder displayed text; the payload names the field.
+    DisallowedCharacter(&'static str),
+}
+
+/// Size bounds for untrusted contract fields. The 1 MiB IPC frame is the
+/// only other limit; these keep one contract from filling the store or the
+/// UI. They do not guarantee that an argument vector fits the operating
+/// system: Windows `CreateProcess` caps a whole command line at 32,767
+/// characters, so a prompt near `MAX_OBJECTIVE_BYTES` (passed as one
+/// argument to Codex and Claude Code) or many large verification arguments
+/// make the launch fail with a spawn error after validation succeeds. That
+/// fails closed. Unix limits are far larger.
+pub mod limits {
+    /// Objective text, in bytes.
+    pub const MAX_OBJECTIVE_BYTES: usize = 64 * 1024;
+    /// Agent name, in bytes.
+    pub const MAX_AGENT_BYTES: usize = 64;
+    /// Project and parent identifiers, in bytes. Project ids are repository
+    /// paths.
+    pub const MAX_ID_BYTES: usize = 4096;
+    /// Dependency count.
+    pub const MAX_DEPENDENCIES: usize = 256;
+    /// Verification commands per contract.
+    pub const MAX_VERIFICATION_COMMANDS: usize = 32;
+    /// Arguments per verification command, program included.
+    pub const MAX_COMMAND_ARGS: usize = 64;
+    /// One verification argument, in bytes.
+    pub const MAX_COMMAND_ARG_BYTES: usize = 4096;
+    /// Retries after a failed run. Each retry launches a billed agent.
+    pub const MAX_RETRIES: u32 = 10;
+    /// Repair attempts after failed verification.
+    pub const MAX_REPAIRS: u32 = 10;
 }
 
 impl std::fmt::Display for ContractError {
@@ -158,6 +199,12 @@ impl std::fmt::Display for ContractError {
                     "Commands verification policy must carry at least one command"
                 )
             }
+            ContractError::FieldTooLarge(field) => write!(f, "{field} exceeds its limit"),
+            ContractError::ContainsNul(field) => write!(f, "{field} contains a NUL byte"),
+            ContractError::DisallowedCharacter(field) => write!(
+                f,
+                "{field} contains a control or bidirectional formatting character"
+            ),
         }
     }
 }
@@ -174,6 +221,7 @@ pub fn validate(contract: &TaskContract) -> Result<(), ContractError> {
     if contract.agent.trim().is_empty() {
         return Err(ContractError::EmptyAgent);
     }
+    validate_bounds(contract)?;
     if contract.dependencies.iter().any(|d| d == &contract.id) {
         return Err(ContractError::SelfDependency);
     }
@@ -193,6 +241,75 @@ pub fn validate(contract: &TaskContract) -> Result<(), ContractError> {
             return Err(ContractError::EmptyVerificationCommands);
         }
         _ => {}
+    }
+    Ok(())
+}
+
+fn check_text(field: &'static str, value: &str, max_bytes: usize) -> Result<(), ContractError> {
+    if value.len() > max_bytes {
+        return Err(ContractError::FieldTooLarge(field));
+    }
+    if value.contains('\0') {
+        return Err(ContractError::ContainsNul(field));
+    }
+    Ok(())
+}
+
+/// Characters that can reorder or disguise displayed text: the Arabic letter
+/// mark, left-to-right and right-to-left marks, the embedding and override
+/// controls, and the isolate controls.
+fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Free text may span lines and use tabs; every other control character
+/// (ESC, DEL, C1) and every bidi control is refused. NUL is reported first by
+/// [`check_text`].
+fn check_free_text(field: &'static str, value: &str) -> Result<(), ContractError> {
+    let disallowed =
+        |c: char| (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) || is_bidi_control(c);
+    if value.chars().any(disallowed) {
+        return Err(ContractError::DisallowedCharacter(field));
+    }
+    Ok(())
+}
+
+fn validate_bounds(contract: &TaskContract) -> Result<(), ContractError> {
+    use limits::*;
+    check_text("objective", &contract.objective, MAX_OBJECTIVE_BYTES)?;
+    check_free_text("objective", &contract.objective)?;
+    check_text("agent", &contract.agent, MAX_AGENT_BYTES)?;
+    check_text("project_id", &contract.project_id, MAX_ID_BYTES)?;
+    if contract.max_retries > MAX_RETRIES {
+        return Err(ContractError::FieldTooLarge("max_retries"));
+    }
+    if contract.max_repairs > MAX_REPAIRS {
+        return Err(ContractError::FieldTooLarge("max_repairs"));
+    }
+    if let Some(parent) = &contract.parent_id {
+        check_text("parent_id", parent, MAX_ID_BYTES)?;
+    }
+    if contract.dependencies.len() > MAX_DEPENDENCIES {
+        return Err(ContractError::FieldTooLarge("dependencies"));
+    }
+    for dependency in &contract.dependencies {
+        check_text("dependency", dependency, MAX_ID_BYTES)?;
+    }
+    if let VerificationPolicy::Commands { commands } = &contract.verification {
+        if commands.len() > MAX_VERIFICATION_COMMANDS {
+            return Err(ContractError::FieldTooLarge("verification commands"));
+        }
+        for command in commands {
+            if command.len() > MAX_COMMAND_ARGS {
+                return Err(ContractError::FieldTooLarge("verification command"));
+            }
+            for argument in command {
+                check_text("verification argument", argument, MAX_COMMAND_ARG_BYTES)?;
+            }
+        }
     }
     Ok(())
 }
@@ -297,6 +414,8 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type Mutation = Box<dyn Fn(&mut TaskContract)>;
 
     fn contract() -> TaskContract {
         TaskContract {
@@ -503,5 +622,152 @@ mod tests {
             validate_proposal(&p, &e),
             Validation::Invalid(ContractError::EmptyObjective)
         );
+    }
+
+    #[test]
+    fn contract_at_each_limit_is_accepted() {
+        use limits::*;
+        let mut c = contract();
+        c.objective = "o".repeat(MAX_OBJECTIVE_BYTES);
+        c.agent = "a".repeat(MAX_AGENT_BYTES);
+        c.project_id = "p".repeat(MAX_ID_BYTES);
+        c.parent_id = Some("q".repeat(MAX_ID_BYTES));
+        c.max_retries = MAX_RETRIES;
+        c.max_repairs = MAX_REPAIRS;
+        c.dependencies = (0..MAX_DEPENDENCIES).map(|n| format!("dep-{n}")).collect();
+        c.verification = VerificationPolicy::Commands {
+            commands: vec![
+                vec!["x".repeat(MAX_COMMAND_ARG_BYTES); MAX_COMMAND_ARGS];
+                MAX_VERIFICATION_COMMANDS
+            ],
+        };
+        assert_eq!(validate(&c), Ok(()));
+    }
+
+    #[test]
+    fn contract_fields_over_their_limit_are_rejected() {
+        use limits::*;
+        let cases: Vec<(&str, Mutation)> = vec![
+            (
+                "objective",
+                Box::new(|c| c.objective = "o".repeat(MAX_OBJECTIVE_BYTES + 1)),
+            ),
+            (
+                "agent",
+                Box::new(|c| c.agent = "a".repeat(MAX_AGENT_BYTES + 1)),
+            ),
+            (
+                "project_id",
+                Box::new(|c| c.project_id = "p".repeat(MAX_ID_BYTES + 1)),
+            ),
+            (
+                "parent_id",
+                Box::new(|c| c.parent_id = Some("q".repeat(MAX_ID_BYTES + 1))),
+            ),
+            (
+                "dependencies",
+                Box::new(|c| {
+                    c.dependencies = (0..=MAX_DEPENDENCIES).map(|n| format!("dep-{n}")).collect()
+                }),
+            ),
+            ("max_retries", Box::new(|c| c.max_retries = MAX_RETRIES + 1)),
+            ("max_repairs", Box::new(|c| c.max_repairs = MAX_REPAIRS + 1)),
+            ("max_retries", Box::new(|c| c.max_retries = u32::MAX)),
+            (
+                "dependency",
+                Box::new(|c| c.dependencies = vec!["d".repeat(MAX_ID_BYTES + 1)]),
+            ),
+            (
+                "verification commands",
+                Box::new(|c| {
+                    c.verification = VerificationPolicy::Commands {
+                        commands: vec![vec!["cargo".into()]; MAX_VERIFICATION_COMMANDS + 1],
+                    }
+                }),
+            ),
+            (
+                "verification command",
+                Box::new(|c| {
+                    c.verification = VerificationPolicy::Commands {
+                        commands: vec![vec!["a".into(); MAX_COMMAND_ARGS + 1]],
+                    }
+                }),
+            ),
+            (
+                "verification argument",
+                Box::new(|c| {
+                    c.verification = VerificationPolicy::Commands {
+                        commands: vec![vec!["a".repeat(MAX_COMMAND_ARG_BYTES + 1)]],
+                    }
+                }),
+            ),
+        ];
+        for (field, mutate) in cases {
+            let mut c = contract();
+            mutate(&mut c);
+            assert_eq!(
+                validate(&c),
+                Err(ContractError::FieldTooLarge(field)),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn contract_text_with_a_nul_byte_is_rejected() {
+        let cases: Vec<(&str, Mutation)> = vec![
+            ("objective", Box::new(|c| c.objective = "fix\0it".into())),
+            ("agent", Box::new(|c| c.agent = "co\0dex".into())),
+            ("project_id", Box::new(|c| c.project_id = "/repo\0x".into())),
+            ("parent_id", Box::new(|c| c.parent_id = Some("p\0".into()))),
+            (
+                "dependency",
+                Box::new(|c| c.dependencies = vec!["d\0".into()]),
+            ),
+            (
+                "verification argument",
+                Box::new(|c| {
+                    c.verification = VerificationPolicy::Commands {
+                        commands: vec![vec!["cargo".into(), "te\0st".into()]],
+                    }
+                }),
+            ),
+        ];
+        for (field, mutate) in cases {
+            let mut c = contract();
+            mutate(&mut c);
+            assert_eq!(
+                validate(&c),
+                Err(ContractError::ContainsNul(field)),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn objective_control_and_bidi_characters_are_rejected_but_layout_is_kept() {
+        for bad in [
+            "fix\u{1b}[31m",
+            "fix\u{7f}",
+            "fix\u{85}",
+            "a\u{202e}b",
+            "a\u{2066}b\u{2069}",
+            "a\u{200f}b",
+            "a\u{061c}b",
+            "a\u{0008}b",
+        ] {
+            let mut c = contract();
+            c.objective = bad.into();
+            assert_eq!(
+                validate(&c),
+                Err(ContractError::DisallowedCharacter("objective")),
+                "{bad:?}"
+            );
+        }
+        let mut c = contract();
+        c.objective =
+            "Line one\r\n\tindented line two, caf\u{e9} \u{1f600} \u{5e9}\u{5dc}\u{5d5}\u{5dd}"
+                .into();
+        assert_eq!(validate(&c), Ok(()));
     }
 }

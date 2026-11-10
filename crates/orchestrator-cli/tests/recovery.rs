@@ -98,6 +98,11 @@ fn run_command(fixture: &Fixture, task_id: &str, objective: &str) -> Command {
         .arg("main")
         .arg("--agent-program")
         .arg(&fixture.agent)
+        // The supervisor forwards only an allowlisted environment to agents.
+        .env(
+            "AGENT_ORCH_ENV_PASSTHROUGH",
+            "M2_TASK_FILE,M2_TASK_CONTENT,M2_READY_MARKER,M2_BARRIER_FILE,M2_EXIT_CODE",
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);

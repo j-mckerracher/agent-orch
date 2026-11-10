@@ -4,6 +4,7 @@ description = "Local task persistence via SQLite WAL and JSON files behind a sha
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 orchestrator-core = { path = "../orchestrator-core" }

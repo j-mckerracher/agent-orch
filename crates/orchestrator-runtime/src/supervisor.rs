@@ -36,6 +36,7 @@ use std::sync::{
 use std::time::Duration;
 
 use crate::reconcile::{capture_process_identity, ProcessIdentity};
+use orchestrator_git::env_policy::EnvPolicy;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -69,6 +70,11 @@ pub struct LaunchRequest {
     pub args: Vec<String>,
     /// Working directory; must exist.
     pub working_dir: PathBuf,
+    /// Extra parent environment variable names to forward, for example a
+    /// provider's API key. The child receives only the baseline allowlist,
+    /// these names, and the user's `AGENT_ORCH_ENV_PASSTHROUGH` list; see
+    /// `orchestrator_git::env_policy`. Names only, never values.
+    pub env_names: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -222,7 +228,9 @@ impl ChildSupervisor {
             .stdin(stdin)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
+            .kill_on_drop(true)
+            .env_clear()
+            .envs(EnvPolicy::for_launch(&request.env_names).from_process_env());
 
         #[cfg(unix)]
         // Own process group: PGID 0 means "use the child's own PID as the
@@ -532,6 +540,7 @@ mod tests {
             program: PathBuf::from(program),
             args: Vec::new(),
             working_dir: std::env::current_dir().expect("current directory"),
+            env_names: Vec::new(),
         }
     }
 

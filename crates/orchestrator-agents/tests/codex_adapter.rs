@@ -272,6 +272,7 @@ fn oversized_stdout_and_stderr_lines_are_truncated_with_a_marker() {
             program: fake_exe(),
             args: vec!["oversized".into()],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
         let mut stdout = None;
@@ -311,6 +312,7 @@ fn stream_lines_are_not_returned_after_exit_when_a_descendant_keeps_pipes_open()
                 marker.to_string_lossy().into_owned(),
             ],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
 
@@ -444,6 +446,7 @@ fn supervisor_cancel_kills_descendants() {
             program: fake_exe(),
             args: vec!["hang-spawn".into()],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
         let root = sup.pid();
