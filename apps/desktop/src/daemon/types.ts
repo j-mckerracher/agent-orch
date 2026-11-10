@@ -444,4 +444,112 @@ export interface TaskSubmission {
   autonomy: AutonomyPolicy;
   max_retries: number;
   max_repairs: number;
+  /** Optional; check it with `agents.validate_selection` first. At least one of model and effort. */
+  model_selection?: ModelSelectionWire;
+}
+
+/** `model_selection` of a task contract and params of `agents.validate_selection` (M7-09). */
+export interface ModelSelectionWire {
+  model?: string;
+  effort?: string;
+}
+
+export type CatalogStateWire = "available" | "unknown" | "unavailable" | "unsupported" | "authentication_failed";
+
+export interface CatalogFacet<T> {
+  state: CatalogStateWire;
+  detail: string;
+  items: T[];
+}
+
+export interface CatalogModelOption {
+  id: string;
+  display_name: string;
+  efforts: string[];
+  default_effort: string | null;
+}
+
+/** One `agents.catalog` row. `models.items[].efforts` are per model; `efforts` is adapter-wide. */
+export interface AgentCatalogEntry {
+  agent: string;
+  provider: string | null;
+  state: CatalogStateWire;
+  detail: string;
+  models: CatalogFacet<CatalogModelOption>;
+  efforts: CatalogFacet<string>;
+}
+
+export type SelectionReasonWire =
+  | "agent_unavailable"
+  | "authentication_failed"
+  | "agent_state_unknown"
+  | "agent_unsupported"
+  | "models_unsupported"
+  | "models_unknown"
+  | "unknown_model"
+  | "effort_requires_model"
+  | "effort_unsupported"
+  | "effort_unknown";
+
+/** `agents.validate_selection` result. */
+export type SelectionCheck = { valid: true } | { valid: false; reason: SelectionReasonWire; detail: string };
+
+/** Conversation target on the wire (M7-08). The kind is `workstream`, not `project`. */
+export type ConversationWireTarget = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+
+export type ConversationEntryKind =
+  | "user_message"
+  | "reply_chunk"
+  | "turn_completed"
+  | "turn_failed"
+  | "turn_cancelled";
+
+export interface ConversationWireEntry {
+  sequence: number;
+  id: string;
+  turn_id: string;
+  kind: ConversationEntryKind;
+  author: "user" | "orchestrator" | "system";
+  body: string;
+  error_code: string | null;
+  created_at: string;
+}
+
+export interface ConversationWireTurn {
+  id: string;
+  state: "running" | "completed" | "failed" | "cancelled";
+  error_code: string | null;
+  runtime: { name: string; version: string };
+  reply_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `conversations.send` result: the daemon recorded the message; the turn may still fail. */
+export interface ConversationSendResult {
+  authority: "none";
+  target: ConversationWireTarget;
+  entry: ConversationWireEntry;
+  turn: ConversationWireTurn;
+  epoch: string;
+}
+
+/** `conversations.get` result: cursor paging, no push stream. */
+export interface ConversationWirePage {
+  authority: "none";
+  target: ConversationWireTarget;
+  entries: ConversationWireEntry[];
+  more: boolean;
+  next_after_sequence: number;
+  latest_sequence: number;
+  turn: ConversationWireTurn | null;
+  epoch: string;
+}
+
+export interface ConversationCancelResult {
+  authority: "none";
+  target: ConversationWireTarget;
+  turn: ConversationWireTurn;
+  cancel_applied: boolean;
+  epoch: string;
 }

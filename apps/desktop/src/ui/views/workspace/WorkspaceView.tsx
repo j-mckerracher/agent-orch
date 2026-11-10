@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import type { ProjectRow } from "../../../daemon/types";
@@ -9,18 +9,20 @@ import { Badge, Bubble, Button, EmptyState } from "../../theme";
 import { ErrorNotice } from "../../widgets";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { ModelPicker } from "./ModelPicker";
-import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetKey, type TargetOption } from "./targets";
+import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
+import { useRetained } from "./useRetained";
 import "./workspace.css";
 
-const GLOBAL_OPTION: TargetOption = {
+const globalOption = (live: boolean): TargetOption => ({
   key: "global",
   target: GLOBAL_TARGET,
   label: "Global orchestrator",
   scope: "All projects",
-  placeholder: true,
-};
-const GLOBAL_LIVE_REASON =
-  "The daemon has a coordinator for each project and no Global orchestrator, so nothing typed here can be sent.";
+  placeholder: !live,
+});
+const POLL_MS = 1000;
+const LIVE_COPY =
+  "Messages are recorded by the daemon. A reply appears only if the daemon's conversation runtime produces one; nothing is simulated here.";
 const NOTE_COPY =
   "Notes only, no reply: a message is recorded as a note for the coordinator, which does not respond. It does not create tasks or approvals, and it can be neither approved nor undone from here.";
 const SIMULATED_COPY = "Nothing typed here is sent or recorded anywhere; a send is only simulated in this window.";
@@ -37,20 +39,25 @@ export function WorkspaceView() {
   const snapshot = useStore(drafts);
   const projectList = useStore(data).projects;
   const live = surfaces.conversation.provenance.kind === "daemon";
-  // Live coordinators are per project, so the registered projects are the targets; a workstream
-  // can span projects and omits projects that have no linked task. Only fixtures list workstreams.
+  // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
+  // notes only); fixtures derive project targets from the placeholder workstreams.
   const workstreams = useSurface(
-    () => (live ? new Promise<never>(() => {}) : surfaces.workstreams.workstreams()),
+    () => surfaces.workstreams.workstreams(),
     "workspace-targets",
     surfaces.workstreams.provenance,
   );
   const [simulated, setSimulated] = useState<Record<string, SimulatedEntry[]>>({});
 
-  const options = useMemo(() => buildOptions(workstreams, live ? projectList.data : null), [workstreams, live, projectList.data]);
+  const options = useMemo(
+    () => buildOptions(workstreams, live, live ? projectList.data : null),
+    [workstreams, live, projectList.data],
+  );
   const stored = snapshot.workspace?.target ?? null;
   const known = stored !== null && options.some((option) => option.key === stored);
-  const listLoading = live ? projectList.data === null && projectList.status !== "error" : workstreams.status === "loading";
-  const listError = live ? projectList.error?.message ?? null : workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams.reason : null;
+  const workstreamsLoading = workstreams.status === "loading";
+  const listLoading = live ? workstreamsLoading || (projectList.data === null && projectList.status !== "error") : workstreamsLoading;
+  const workstreamsReason = workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams.reason : null;
+  const listError = live ? (projectList.error?.message ?? workstreamsReason) : workstreamsReason;
   const resolved = resolveKey(stored, known, options, listLoading, live);
 
   if (resolved === null) {
@@ -62,7 +69,7 @@ export function WorkspaceView() {
     );
   }
 
-  const option = options.find((item) => item.key === resolved) ?? fallbackOption(resolved);
+  const option = options.find((item) => item.key === resolved) ?? fallbackOption(resolved, live);
 
   return (
     <div className="ws-root">
@@ -86,18 +93,39 @@ export function WorkspaceView() {
   );
 }
 
-function buildOptions(workstreams: SurfaceState<Workstream[]>, liveProjects: readonly ProjectRow[] | null): TargetOption[] {
-  if (liveProjects !== null) {
-    return [
-      GLOBAL_OPTION,
-      ...liveProjects.map<TargetOption>((project) => ({
-        key: targetKey({ kind: "project", projectId: project.id }),
-        target: { kind: "project", projectId: project.id },
-        label: projectLabel(project.id),
-        scope: project.id,
-        placeholder: false,
-      })),
-    ];
+function buildOptions(
+  workstreams: SurfaceState<Workstream[]>,
+  live: boolean,
+  liveProjects: readonly ProjectRow[] | null,
+): TargetOption[] {
+  const global = globalOption(live);
+  // A live workstream's `id` is the daemon's workstream id; fixture ids never become targets.
+  const daemonWorkstreams: TargetOption[] =
+    live && workstreams.status === "ok"
+      ? workstreams.data.flatMap((ws) => {
+          const id = ws.workstreamId ?? ws.id;
+          return isFixtureId(id)
+            ? []
+            : [
+                {
+                  key: targetKey({ kind: "workstream", workstreamId: id }),
+                  target: { kind: "workstream" as const, workstreamId: id },
+                  label: `${ws.title} orchestrator`,
+                  scope: id,
+                  placeholder: false,
+                },
+              ];
+        })
+      : [];
+  if (live) {
+    const projects = (liveProjects ?? []).map<TargetOption>((project) => ({
+      key: targetKey({ kind: "project", projectId: project.id }),
+      target: { kind: "project", projectId: project.id },
+      label: projectLabel(project.id),
+      scope: project.id,
+      placeholder: false,
+    }));
+    return [global, ...daemonWorkstreams, ...projects];
   }
   const projects: TargetOption[] =
     workstreams.status === "ok"
@@ -109,14 +137,20 @@ function buildOptions(workstreams: SurfaceState<Workstream[]>, liveProjects: rea
           placeholder: false,
         }))
       : [];
-  return [GLOBAL_OPTION, ...projects];
+  return [global, ...projects];
 }
 
-function fallbackOption(key: string): TargetOption {
+function fallbackOption(key: string, live: boolean): TargetOption {
   const target = parseTargetKey(key) ?? GLOBAL_TARGET;
-  return target.kind === "global"
-    ? GLOBAL_OPTION
-    : { key, target, label: projectLabel(target.projectId), scope: target.projectId, placeholder: false };
+  if (target.kind === "global") return globalOption(live);
+  const id = targetId(target) ?? key;
+  return {
+    key,
+    target,
+    label: target.kind === "project" ? projectLabel(id) : `${id} orchestrator`,
+    scope: id,
+    placeholder: false,
+  };
 }
 
 /**
@@ -153,18 +187,25 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
   const gate = useGate();
   const ids = useId();
   const [nonce, setNonce] = useState(0);
+  const [modelNonce, setModelNonce] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<{ key: string; notice: string | null; error: DaemonError | null } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    key: string;
+    notice: string | null;
+    error: DaemonError | null;
+    action?: string;
+  } | null>(null);
   const notice = feedback?.key === option.key ? feedback.notice : null;
   const error = feedback?.key === option.key ? feedback.error : null;
   const logRef = useRef<HTMLDivElement>(null);
   const { target } = option;
 
-  const transcript = useSurface(
+  const loaded = useSurface(
     () => surfaces.conversation.transcript(target),
     `${option.key}#${nonce}`,
     surfaces.conversation.provenance,
   );
+  const transcript = useRetained(loaded, option.key);
 
   const lines = transcript.status === "ok" ? transcript.data.entries.length + simulated.length : simulated.length;
   useEffect(() => {
@@ -172,11 +213,21 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
     if (log) log.scrollTop = log.scrollHeight;
   }, [lines, transcript.status]);
 
+  // The daemon has no push stream: read again while the latest turn is still running.
+  const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
+  const running = live && turn?.state === "running";
+  useEffect(() => {
+    if (!running) return;
+    const timer = setTimeout(() => setNonce((value) => value + 1), POLL_MS);
+    return () => clearTimeout(timer);
+  }, [running, nonce]);
+
   let blocked: string | null = null;
   if (live) {
-    if (target.kind === "global") blocked = GLOBAL_LIVE_REASON;
-    else if (isFixtureId(target.projectId)) blocked = "This is a placeholder project; it has no coordinator to send to.";
-    else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports coordinator messages.";
+    const id = targetId(target);
+    if (id !== null && isFixtureId(id)) blocked = "This is a placeholder target; it has nothing to send to.";
+    else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports conversations.";
+    else if (running) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
   const canSend = blocked === null && !empty && !busy;
@@ -205,6 +256,22 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
     }
   };
 
+  const cancel = async () => {
+    if (!turn || !surfaces.conversation.cancel) return;
+    const key = option.key;
+    try {
+      const result = await surfaces.conversation.cancel(target, turn.id);
+      setFeedback({
+        key,
+        notice: result.applied ? "Cancelled the reply." : "The reply had already finished; nothing was cancelled.",
+        error: null,
+      });
+      setNonce((value) => value + 1);
+    } catch (thrown) {
+      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Cancelling the reply" });
+    }
+  };
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void send();
@@ -219,19 +286,28 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
   const headingId = `${ids}-heading`;
   const hintId = `${ids}-hint`;
   const keysId = `${ids}-keys`;
-  const noteCopy = target.kind === "global" ? GLOBAL_NOTE_COPY : live ? NOTE_COPY : SIMULATED_COPY;
+  const noteCopy = !live
+    ? target.kind === "global"
+      ? GLOBAL_NOTE_COPY
+      : SIMULATED_COPY
+    : target.kind === "project"
+      ? NOTE_COPY
+      : LIVE_COPY;
   const sendId = `${ids}-send-reason`;
-  const modelCatalog = useSurface(
+  const modelLoaded = useSurface(
     () => surfaces.models.catalog(),
-    "workspace-models",
+    `workspace-models#${modelNonce}`,
     surfaces.models.provenance,
   );
+  const modelCatalog = useRetained(modelLoaded, "workspace-models");
+  const retryModels = useCallback(() => setModelNonce((value) => value + 1), []);
+  const runtimeUnavailable = live && turn?.state === "failed" && turn.errorCode === "runtime_unavailable";
 
   return (
     <section className="ws-conversation" aria-labelledby={headingId}>
       <header className="ws-head">
         <h2 id={headingId}>Talking to: {option.label}</h2>
-        {(target.kind === "global" || !live) && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
+        {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
         {target.kind === "project" && <Badge tone="neutral">Notes, no reply</Badge>}
         <p className="ws-scope">{option.scope}</p>
       </header>
@@ -250,6 +326,23 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
           onRetry={() => setNonce((value) => value + 1)}
         />
       </div>
+
+      {runtimeUnavailable && turn && (
+        <p role="status" className="ws-note ws-runtime">
+          Orchestrator runtime unavailable ({turn.runtime.name} {turn.runtime.version}): the daemon recorded your
+          message but cannot produce a reply right now.
+        </p>
+      )}
+      {running && (
+        <p role="status" className="ws-note ws-runtime">
+          Waiting for the orchestrator&apos;s reply…{" "}
+          {surfaces.conversation.cancel && (
+            <Button variant="quiet" onClick={() => void cancel()}>
+              Cancel reply
+            </Button>
+          )}
+        </p>
+      )}
 
       <p className="ws-small" id={hintId}>
         {noteCopy}
@@ -286,7 +379,12 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
         />
         <div className="ws-composer-row">
           <ConversationTargetPicker options={options} selectedKey={option.key} onSelect={onSelect} />
-          <ModelPicker catalog={modelCatalog} provenance={surfaces.models.provenance} />
+          <ModelPicker
+            catalog={modelCatalog}
+            provenance={surfaces.models.provenance}
+            validate={surfaces.models.validate}
+            onRetry={retryModels}
+          />
           <Button
             type="submit"
             variant="primary"
@@ -311,8 +409,8 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
         {notice && <p role="status">{notice}</p>}
         {error && (
           <>
-            <ErrorNotice error={error} action="Sending the message" />
-            {error.indeterminate && (
+            <ErrorNotice error={error} action={feedback?.action ?? "Sending the message"} />
+            {error.indeterminate && !feedback?.action && (
               <p className="ws-small">
                 The daemon may have recorded it. Your draft is kept; sending again reuses the same request key.
               </p>
@@ -394,6 +492,14 @@ function TranscriptBody({
 
 function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string }) {
   const human = entry.role === "user";
+  // A daemon turn outcome is a system line, never a reply from the orchestrator.
+  if (entry.kind === "status") {
+    return (
+      <p role="status" className="ws-state ws-turn-status">
+        {entry.text}
+      </p>
+    );
+  }
   return (
     <Bubble
       from={human ? "human" : "coordinator"}
@@ -401,6 +507,12 @@ function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string
       time={
         <>
           {formatAt(entry.at)}
+          {entry.streaming && (
+            <>
+              {" "}
+              <Badge tone="info">Streaming</Badge>
+            </>
+          )}
           {entry.kind === "proposal" && (
             <>
               {" "}

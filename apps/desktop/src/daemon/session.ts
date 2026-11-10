@@ -77,6 +77,11 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "workstreams.set_gate": "workstreams",
   "workstreams.link_task": "workstreams",
   "workstreams.unlink_task": "workstreams",
+  "agents.catalog": "agents",
+  "agents.validate_selection": "agents",
+  "conversations.send": "coordinator",
+  "conversations.get": "coordinator",
+  "conversations.cancel": "coordinator",
 };
 
 interface Pending {

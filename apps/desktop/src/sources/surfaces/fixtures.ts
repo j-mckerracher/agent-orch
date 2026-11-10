@@ -161,7 +161,7 @@ function conversationSource(ctx: Ctx): ConversationSource {
         "D10",
         envelope,
         ctx,
-        (data) => ({ target, entries: data[target.kind], repliesExpected: true, truncated: false }),
+        (data) => ({ target, entries: data[target.kind === "global" ? "global" : "project"], repliesExpected: true, truncated: false }),
         () => ({ target, entries: [], repliesExpected: true, truncated: false }),
       ),
     send: (target: ConversationTarget, text: string): Promise<SendReceipt> => {

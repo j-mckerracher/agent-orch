@@ -5,6 +5,7 @@ import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
+import { CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { workspaceRegistration } from "./register";
@@ -109,25 +110,69 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await waitFor(() => expect(box).toHaveValue(""));
   });
 
-  it("disables Send for the Global target with a visible reason and never calls the daemon", async () => {
+  it("sends to the Global target through the daemon and shows the runtime-unavailable state, never a reply", async () => {
     const fake = liveDaemon();
+    stubConversation(fake, "runtime_unavailable");
     const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
     await screen.findByRole("heading", { name: /alpha coordinator/ });
     await pickTarget(user, /Global orchestrator/);
-    expect(await screen.findByRole("heading", { name: "Talking to: Global orchestrator" })).toBeInTheDocument();
-    expect(screen.getAllByText(/PLACEHOLDER DATA \(D10\)/).length).toBeGreaterThan(0);
+    const heading = await screen.findByRole("heading", { name: "Talking to: Global orchestrator" });
+    expect(within(heading.parentElement as HTMLElement).queryByText(/PLACEHOLDER/)).toBeNull();
+    expect(screen.queryByText(/Sending is disabled/)).toBeNull();
     const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
     await user.type(box, "hello global");
-    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
-    expect(send).toBeDisabled();
-    expect(screen.getByText(/Sending is disabled\./)).toHaveTextContent(/no Global orchestrator/);
-    expect(await screen.findByText(/Not supported:/)).toBeInTheDocument();
-    await user.type(box, "{Control>}{Enter}{/Control}");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    const params = fake.callsTo("conversations.send")[0]!.params as Record<string, unknown>;
+    expect(params.target).toEqual({ kind: "global" });
+    expect(params.text).toBe("hello global");
+    expect(await screen.findByText("hello global")).toBeInTheDocument();
+    const banner = await screen.findAllByText(/Orchestrator runtime unavailable/);
+    expect(banner.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
-    // The local draft is still retained for the Global target.
-    expect(services.drafts.workspaceDraft("global")).toBe("hello global");
+    expect(screen.queryByText(/Hello from the runtime/)).toBeNull();
+    await waitFor(() => expect(box).toHaveValue(""));
+  });
+
+  it("shows a real reply only when the daemon records one", async () => {
+    const fake = liveDaemon();
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hi");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    expect(await screen.findByText("Hello from the runtime.")).toBeInTheDocument();
+    expect(screen.queryByText(/runtime unavailable/i)).toBeNull();
+  });
+
+  it("polls a running turn, blocks a second send, and cancels through the daemon", async () => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "slow");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+    await user.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "more");
+    expect(screen.getByRole("button", { name: "Send message to Global orchestrator" })).toBeDisabled();
+    expect(screen.getByText(/Sending is disabled\./)).toHaveTextContent(/still working/);
+    const reads = fake.callsTo("conversations.get").length;
+    await waitFor(() => expect(fake.callsTo("conversations.get").length).toBeGreaterThan(reads), { timeout: 3000 });
+    await user.click(screen.getByRole("button", { name: "Cancel reply" }));
+    await waitFor(() => expect(fake.callsTo("conversations.cancel")).toHaveLength(1));
+    const cancelParams = fake.callsTo("conversations.cancel")[0]!.params as Record<string, unknown>;
+    expect(cancelParams.turn_id).toBe(convo.turn?.id);
+    expect(await screen.findByText(/Cancelled the reply/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/Waiting for the orchestrator.s reply…/)).toBeNull());
   });
 
   it("never sends a fixture id to the daemon", async () => {
@@ -147,17 +192,93 @@ describe("workspace view, live (daemon-derived) mode", () => {
     }
   });
 
-  it("disables the model menu with a reason and no placeholder choices", async () => {
+  it("lists real catalog models and per-model efforts and checks the choice with the daemon", async () => {
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["GPT A", "GPT B"]);
+    const effort = screen.getByRole("combobox", { name: "Effort" });
+    expect(within(effort).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default effort", "low", "high"]);
+    expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
+    expect(await screen.findByText("The daemon supports this choice.")).toBeInTheDocument();
+    await user.selectOptions(model, "gpt-b");
+    await waitFor(() =>
+      expect(within(screen.getByRole("combobox", { name: "Effort" })).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Default effort",
+        "medium",
+      ]),
+    );
+    await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "medium");
+    await waitFor(() => {
+      const last = fake.callsTo("agents.validate_selection").at(-1)!.params as Record<string, unknown>;
+      expect(last).toEqual({ agent: "codex", model: "gpt-b", effort: "medium" });
+    });
+    expect(screen.getByText(/task submission only/)).toBeInTheDocument();
+  });
+
+  it("disables a non-launchable provider and never defaults to it", async () => {
+    const fake = liveDaemon();
+    const caps = (agent: string, launchable: boolean) => ({
+      agent,
+      installed: launchable,
+      launchable,
+      capabilities: launchable
+        ? { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true }
+        : null,
+    });
+    fake.stub("agents.capabilities", [caps("pi", false), caps("codex", true)]);
+    fake.stub("agents.catalog", [PI_CATALOG, CODEX_CATALOG]);
+    stubValidate(fake, [PI_CATALOG, CODEX_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const provider = await screen.findByRole("combobox", { name: "Provider" });
+    const pi = within(provider).getByRole("option", { name: /pi \(not launchable\)/ });
+    expect(pi).toBeDisabled();
+    expect(within(provider).getByRole("option", { name: "codex" })).toBeEnabled();
+    await waitFor(() => expect(provider).toHaveValue("codex"));
+    expect(screen.getByRole("button", { name: /^Model settings: codex · GPT A/ })).toBeInTheDocument();
+    await user.selectOptions(provider, "pi");
+    expect(provider).toHaveValue("codex");
+  });
+
+  it("retries a cold catalog shortly and then lists the models", async () => {
+    const fake = liveDaemon();
+    let reads = 0;
+    fake.stub("agents.catalog", () => (++reads === 1 ? [COLD_CATALOG("codex")] : [CODEX_CATALOG]));
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect((await screen.findAllByText(/retry shortly/)).length).toBeGreaterThan(0);
+    const model = screen.getByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["GPT A", "GPT B"]), {
+      timeout: 5000,
+    });
+    expect(fake.callsTo("agents.catalog").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps the model menu honest when the daemon has no catalog method", async () => {
     const fake = liveDaemon();
     const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
     await screen.findByRole("heading", { name: /alpha coordinator/ });
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
-    for (const name of ["Provider", "Model", "Effort"]) expect(screen.getByRole("combobox", { name })).toBeDisabled();
-    expect(screen.getByText(/cannot be chosen/)).toBeInTheDocument();
+    for (const name of ["Model", "Effort"]) expect(screen.getByRole("combobox", { name })).toBeDisabled();
     expect(screen.queryByText(/Codex \(placeholder\)/)).toBeNull();
-    expect(screen.getByText("PLACEHOLDER DATA (D14), unsupported")).toBeInTheDocument();
+    expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
   });
 
   it("labels project targets 'notes, no reply' in the header, the picker and the note copy", async () => {

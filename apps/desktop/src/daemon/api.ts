@@ -10,7 +10,14 @@ import { parseQueueSnapshot, type QueueSnapshotWire } from "./queue";
 import type { DaemonSession } from "./session";
 import type {
   AgentCapabilityEntry,
+  AgentCatalogEntry,
   Approval,
+  ConversationCancelResult,
+  ConversationSendResult,
+  ConversationWirePage,
+  ConversationWireTarget,
+  ModelSelectionWire,
+  SelectionCheck,
   CoordinatorEntry,
   CoordinatorPage,
   DaemonHealth,
@@ -309,4 +316,60 @@ export class DaemonApi {
       idempotency_key: idempotencyKey,
     });
   }
+
+  /** M7-08. Records the message and starts a turn; the turn can still fail (e.g. `runtime_unavailable`). */
+  async conversationsSend(
+    target: ConversationWireTarget,
+    text: string,
+    idempotencyKey: string,
+  ): Promise<ConversationSendResult> {
+    return this.session.request("conversations.send", {
+      target: realTarget(target),
+      text,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Cursor read; there is no push stream. Omit `afterSequence` to read from the start. */
+  async conversationsGet(
+    target: ConversationWireTarget,
+    afterSequence?: number,
+    epoch?: string,
+  ): Promise<ConversationWirePage> {
+    return this.session.request("conversations.get", {
+      target: realTarget(target),
+      ...(afterSequence === undefined ? {} : { after_sequence: afterSequence }),
+      ...(epoch === undefined ? {} : { epoch }),
+    });
+  }
+
+  async conversationsCancel(
+    target: ConversationWireTarget,
+    turnId: string,
+    idempotencyKey: string,
+  ): Promise<ConversationCancelResult> {
+    return this.session.request("conversations.cancel", {
+      target: realTarget(target),
+      turn_id: realId(turnId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */
+  agentsCatalog(): Promise<AgentCatalogEntry[]> {
+    return this.session.request("agents.catalog");
+  }
+
+  /** At least one of model and effort is required by the daemon. */
+  async agentsValidateSelection(agent: string, selection: ModelSelectionWire): Promise<SelectionCheck> {
+    return this.session.request("agents.validate_selection", {
+      agent: realId(agent),
+      ...(selection.model === undefined ? {} : { model: selection.model }),
+      ...(selection.effort === undefined ? {} : { effort: selection.effort }),
+    });
+  }
+}
+
+function realTarget(target: ConversationWireTarget): ConversationWireTarget {
+  return target.kind === "global" ? target : { kind: "workstream", workstream_id: realId(target.workstream_id) };
 }

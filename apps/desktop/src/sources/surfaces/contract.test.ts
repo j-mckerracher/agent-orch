@@ -209,8 +209,17 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
   // `watch` (D13 polling) exists on the live adapter only; the read methods must match.
   it("exposes the same adapter methods as the other adapter set", () => {
     const fixture = createFixtureSurfaces();
+    // `watch` (D13), `cancel` and `validate` are optional: only the live adapters have a daemon to ask.
+    const optional = new Set(["watch", "cancel", "validate"]);
     const shape = (s: SurfaceSources) =>
-      Object.fromEntries(Object.entries(s).map(([name, source]) => [name, Object.keys(source).filter((key) => key !== "watch").sort()]));
+      Object.fromEntries(
+        Object.entries(s).map(([name, source]) => [
+          name,
+          Object.keys(source)
+            .filter((key) => !optional.has(key))
+            .sort(),
+        ]),
+      );
     return harness.build("ok").then((built) => expect(shape(built.surfaces)).toEqual(shape(fixture)));
   });
 });

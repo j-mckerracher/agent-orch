@@ -21,8 +21,10 @@ import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { createDerivedActivity } from "./activity";
+import { createLiveConversation, isLiveTarget, LIVE_METHODS } from "./conversationLive";
 import { createLiveMetrics } from "./liveMetrics";
-import { notOk, observation, okResult, unsupportedValue } from "./result";
+import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
+import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveUsageSource } from "./usageLive";
 import { createLiveWorkstreams } from "./workstreamsLive";
@@ -87,13 +89,12 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     simulateCreate: () => Promise.reject(fixtureOnly("workstream creation")),
   };
 
-  const conversationProvenance = prov("D10", ["coordinator.get", "coordinator.send_message"]);
+  const conversationProvenance = prov("D10", ["coordinator.get", "coordinator.send_message", ...LIVE_METHODS]);
+  const liveConversation = createLiveConversation(connection, conversationProvenance, keys, now);
   const conversation: ConversationSource = {
     provenance: conversationProvenance,
     async transcript(target: ConversationTarget) {
-      if (target.kind === "global") {
-        return notOk(conversationProvenance, "unsupported", "The daemon has a coordinator per project, not a global conversation.");
-      }
+      if (isLiveTarget(target)) return liveConversation.transcript(target);
       if (isFixtureId(target.projectId)) {
         return notOk(conversationProvenance, "unsupported", "Fixture ids have no daemon conversation.");
       }
@@ -124,7 +125,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
       });
     },
     async send(target, text) {
-      if (target.kind === "global") throw new DaemonError("method-unavailable", "The daemon has no global conversation.");
+      if (isLiveTarget(target)) return liveConversation.send(target, text);
       if (isFixtureId(target.projectId)) {
         throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
       }
@@ -145,6 +146,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         throw error;
       }
     },
+    cancel: (target, turnId) => liveConversation.cancel(target, turnId),
   };
 
   const activity = createDerivedActivity(connection, now);
@@ -153,25 +155,8 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
 
   const metrics: SystemMetricsSource = createLiveMetrics(connection, { now });
 
-  const modelsProvenance = prov("D14", ["agents.capabilities"]);
-  const models: ModelCatalogSource = {
-    provenance: modelsProvenance,
-    catalog: () =>
-      guarded(modelsProvenance, now, async () => {
-        const entries = await connection.api().agentsCapabilities();
-        return {
-          providers: entries.map((entry) => ({
-            id: entry.agent,
-            name: entry.agent,
-            installed: entry.installed,
-            launchable: entry.launchable,
-            modelSelection: entry.capabilities === null ? ("unknown" as const) : entry.capabilities.model_selection ? ("supported" as const) : ("unsupported" as const),
-            models: unsupportedValue<{ id: string; label: string }[]>("The daemon lists agents, not their models."),
-            efforts: unsupportedValue<string[]>("The daemon reports no effort settings."),
-          })),
-        };
-      }),
-  };
+  const modelsProvenance = prov("D14", MODELS_METHODS);
+  const models: ModelCatalogSource = createLiveModels(connection, modelsProvenance, now);
 
   const decisionProvenance = prov("D16", ["approvals.list", "tasks.list"]);
   const decisions: DecisionQueueSource = {

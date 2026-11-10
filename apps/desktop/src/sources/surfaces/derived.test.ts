@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../daemon/errors";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
+import { stubConversation } from "../../test/m724Stubs";
 import { ALPHA, BETA, WORKSTREAM_STATE, connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
@@ -125,11 +126,18 @@ describe("derived D10 conversation", () => {
     expect(fake.callsTo("coordinator.get")).toHaveLength(50);
   });
 
-  it("answers a global transcript as unsupported and never calls the daemon", async () => {
+  it("answers a global transcript from conversations.get and never touches the project coordinator", async () => {
     const fake = populate(new FakeDaemon());
+    stubConversation(fake);
     const result = await (await live(fake)).conversation.transcript({ kind: "global" });
-    expect(result.status).toBe("unsupported");
+    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null } });
+    expect(fake.callsTo("conversations.get")).toHaveLength(1);
     expect(fake.callsTo("coordinator.get")).toHaveLength(0);
+  });
+
+  it("says a daemon without conversations.get does not support a global transcript", async () => {
+    const result = await (await live(populate(new FakeDaemon()))).conversation.transcript({ kind: "global" });
+    expect(result.status).toBe("unsupported");
   });
 
   it("records a note through coordinator.send_message and reuses the key after an indeterminate failure", async () => {
@@ -144,11 +152,15 @@ describe("derived D10 conversation", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
-  it("rejects a global send without calling the daemon", async () => {
+  it("sends a global message through conversations.send, not coordinator.send_message", async () => {
     const fake = populate(new FakeDaemon());
+    stubConversation(fake);
     const s = await live(fake);
-    await expect(s.conversation.send({ kind: "global" }, "hi")).rejects.toMatchObject({ kind: "method-unavailable" });
+    const receipt = await s.conversation.send({ kind: "global" }, "hi");
+    expect(receipt).toMatchObject({ simulated: false, turn: { state: "failed", errorCode: "runtime_unavailable" } });
+    expect(receipt.notice).toMatch(/runtime unavailable/i);
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+    expect(fake.callsTo("conversations.send")).toHaveLength(1);
   });
 });
 

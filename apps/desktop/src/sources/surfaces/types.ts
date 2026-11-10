@@ -98,6 +98,8 @@ export interface Workstream {
   /** Optimistic-concurrency token required by `workstreams.update`. */
   revision: number;
   projectIds: string[];
+  /** The daemon's workstream id for `conversations.*`. Absent until the workstream lookup (M7-07) supplies it. */
+  workstreamId?: string;
   tasks: WorkstreamTask[];
   /** Every state is present; a zero here is a real zero over the returned tasks. Meaningless when `unreadReason` is set. */
   counts: Record<TaskState, number>;
@@ -147,13 +149,31 @@ export interface WorkstreamSource {
 }
 
 // D10 -- ConversationSource. Derived: per-project coordinator.get / coordinator.send_message.
-export type ConversationTarget = { kind: "global" } | { kind: "project"; projectId: string };
+export type ConversationTarget =
+  | { kind: "global" }
+  | { kind: "project"; projectId: string }
+  /** M7-24: a daemon workstream (`conversations.*`), distinct from a project coordinator. */
+  | { kind: "workstream"; workstreamId: string };
 export interface ConversationEntry {
   id: string;
-  kind: "message" | "proposal";
-  role: "user" | "coordinator";
+  /** `status` is a daemon-recorded turn outcome (failed, cancelled, empty) and never a reply. */
+  kind: "message" | "proposal" | "status";
+  role: "user" | "coordinator" | "system";
   text: string;
   at: string;
+  /** Live Global and workstream targets only. */
+  turnId?: string;
+  /** Stable machine code of a failed turn, e.g. `runtime_unavailable`. */
+  errorCode?: string;
+  /** True while the daemon has not recorded the end of this reply. */
+  streaming?: boolean;
+}
+/** The latest turn the daemon recorded for a live target. */
+export interface ConversationTurnInfo {
+  id: string;
+  state: "running" | "completed" | "failed" | "cancelled";
+  errorCode: string | null;
+  runtime: { name: string; version: string };
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -162,6 +182,8 @@ export interface ConversationTranscript {
   repliesExpected: boolean;
   /** True when paging stopped before the end of the log. */
   truncated: boolean;
+  /** Live Global and workstream targets only; null when nothing was sent yet. */
+  turn?: ConversationTurnInfo | null;
 }
 export interface SendReceipt {
   /** True for fixture receipts: nothing was recorded anywhere. */
@@ -171,15 +193,20 @@ export interface SendReceipt {
   at: string;
   /** Daemon entry id when recorded; `fixture:` id when simulated. */
   entryId: string;
+  /** Live Global and workstream targets: the turn this message opened. */
+  turn?: ConversationTurnInfo;
 }
 export interface ConversationSource {
   readonly provenance: Provenance;
   transcript(target: ConversationTarget): Promise<SurfaceResult<ConversationTranscript>>;
   /**
-   * Derived: records a note through `coordinator.send_message` for a project
-   * target; rejects for `global` and for `fixture:` ids. Fixture: simulated.
+   * Derived: a project target records a note through `coordinator.send_message`;
+   * a global or workstream target sends through `conversations.send` (M7-24).
+   * Rejects for `fixture:` ids. Fixture: simulated.
    */
   send(target: ConversationTarget, text: string): Promise<SendReceipt>;
+  /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
+  cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
 }
 
 // D11 -- ActivitySource (queue, attention, slots). Derived: tasks.list + approvals.list.
@@ -289,6 +316,9 @@ export interface SystemMetricsSource {
 export interface ModelOption {
   id: string;
   label: string;
+  /** M7-24: efforts this model supports (`agents.catalog`); empty when the agent reports adapter-wide efforts. */
+  efforts?: string[];
+  defaultEffort?: string | null;
 }
 export interface ModelProvider {
   /** Derived: the daemon agent id. */
@@ -298,14 +328,19 @@ export interface ModelProvider {
   launchable: boolean;
   modelSelection: "supported" | "unsupported" | "unknown";
   models: Measured<ModelOption[]>;
+  /** Adapter-wide efforts; per-model efforts are on each `ModelOption`. */
   efforts: Measured<string[]>;
 }
 export interface ModelCatalog {
   providers: ModelProvider[];
 }
+/** `agents.validate_selection` outcome: the daemon's own reason, never a guess. */
+export type ModelSelectionCheck = { valid: true } | { valid: false; reason: string; detail: string };
 export interface ModelCatalogSource {
   readonly provenance: Provenance;
   catalog(): Promise<SurfaceResult<ModelCatalog>>;
+  /** Derived (M7-24): `agents.validate_selection`. Absent on fixture adapters. */
+  validate?(agent: string, selection: { model?: string; effort?: string }): Promise<SurfaceResult<ModelSelectionCheck>>;
 }
 
 // D15 -- SearchSource. A local index over what D9 and D16 loaded; there is no fixture of its own.
