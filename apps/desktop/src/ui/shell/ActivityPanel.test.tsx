@@ -49,7 +49,10 @@ describe("fixture mode", () => {
     const { panel } = await mountPanel(null);
     await waitFor(() => expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("20 of 24"));
     expect(within(panel).getAllByTestId("badge-D11").length).toBeGreaterThanOrEqual(4);
-    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent(/sample data is not counted/);
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
     const queue = within(panel).getByTestId("activity-queue");
     expect(within(queue).getByText("Add refresh-token expiry")).toBeInTheDocument();
     expect(within(queue).getByText("Next to dispatch")).toBeInTheDocument();
@@ -105,7 +108,12 @@ describe("live mode", () => {
     expect(within(waiting).getByTestId("activity-task-t3")).toBeInTheDocument();
     expect(within(waiting).getByText("Waiting on a dependency")).toBeInTheDocument();
     expect(within(within(panel).getByTestId("activity-queue-running")).getByTestId("activity-task-t1")).toBeInTheDocument();
-    expect(within(within(panel).getByTestId("activity-queue-up-next")).getByTestId("activity-task-t2")).toBeInTheDocument();
+    const upNext = within(panel).getByTestId("activity-queue-up-next");
+    expect(within(upNext).queryByTestId("activity-task-t2")).not.toBeInTheDocument();
+    expect(upNext).toHaveTextContent("No queued task is known to be next to dispatch.");
+    const unclassified = within(panel).getByTestId("activity-queue-unclassified");
+    expect(within(unclassified).getByTestId("activity-task-t2")).toBeInTheDocument();
+    expect(within(unclassified).getByText("Waiting (reason not reported)")).toBeInTheDocument();
   });
 
   it("updates queue and attention when a live event arrives", async () => {
@@ -135,6 +143,7 @@ describe("live mode", () => {
     await waitFor(() => expect(fake.callsTo("tasks.cancel")).toHaveLength(1));
     expect(fake.callsTo("tasks.cancel")[0].params).toMatchObject({ task_id: "t1" });
     expect(await within(panel).findByTestId("activity-notice")).toHaveTextContent("not proof");
+    await waitFor(() => expect(within(panel).getByTestId("activity-notice")).toHaveFocus());
   });
 
   it("disables Stop with a reason when the daemon is not connected", async () => {

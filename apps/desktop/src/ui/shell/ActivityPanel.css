@@ -13,9 +13,19 @@
   border-bottom: 0;
 }
 
-.activity-panel .activity-root > summary {
+/* Specificity (0,3,1) beats the primitive's `.ui-disclosure[open] > summary` (0,2,1) whatever the stylesheet order. */
+.activity-panel .ui-disclosure.activity-root > summary {
   border: 1px solid var(--line);
   background: var(--panel);
+}
+
+.activity-panel .ui-disclosure.activity-root > summary:hover {
+  background: var(--soft-strong);
+}
+
+.activity-note:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .activity-badge {

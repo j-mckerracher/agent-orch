@@ -8,8 +8,11 @@
  *   `approvals.list` when a daemon is bound; PLACEHOLDER fixtures in `?fixture=1` mode).
  *   The panel re-reads the source whenever the connection changes or `AppData` refreshes
  *   `tasks`/`approvals` after a live event, and keeps the last answer on screen meanwhile.
- * - The badge is the length of the attention list, the same pending-approval set that
- *   `ReviewCount` and the top bar count. Without a successful read it shows "—", never 0.
+ * - The badge is the `AppData` pending-approval count, the exact value `ReviewCount` and the top
+ *   bar show, so the three agree. Without a loaded list (including fixture mode) it shows
+ *   "—", never 0 and never a sample number; the sample attention rows stay PLACEHOLDER-labelled.
+ * - Queued tasks are grouped honestly: "Up next" only for capacity-waiting or source-named next
+ *   tasks, "Waiting" for known blockers, "Unclassified" when the daemon reports no reason.
  * - Slots, dispatch order, pause, stop-all and queue settings have no daemon data yet
  *   (D11 live: M7-05/M7-20; budget D12: M7-06). Fixture mode labels them PLACEHOLDER; live
  *   mode shows "not available" and disables the controls with a visible reason.
@@ -34,7 +37,7 @@ import type {
   UsageSummary,
   WaitingReason,
 } from "../../sources/surfaces/types";
-import { basename } from "../format";
+import { basename, pendingApprovals } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
@@ -102,7 +105,8 @@ interface StopControl {
   /** Null when stopping is allowed. */
   blockedReason: string | null;
   describedBy: string;
-  onStop: (taskId: string) => Promise<void>;
+  /** Resolves true when the outcome is announced in the panel notice, which then takes focus. */
+  onStop: (taskId: string) => Promise<boolean>;
 }
 
 function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopControl; isNext: boolean }) {
@@ -141,9 +145,10 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
             disabled={busy}
             onClick={async () => {
               setBusy(true);
-              await stop.onStop(entry.taskId);
+              const noticeTookFocus = await stop.onStop(entry.taskId);
               setBusy(false);
-              settled.current = true;
+              // A stopped row may unmount at the next refresh, so the notice owns focus then.
+              settled.current = !noticeTookFocus;
               setConfirming(false);
             }}
           >
@@ -261,7 +266,15 @@ export function ActivityPanel() {
   const [receipts, setReceipts] = useState<SurfaceReceipt[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<DaemonError | null>(null);
-
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const [noticeFocus, setNoticeFocus] = useState(0);
+  const announce = (text: string) => {
+    setNotice(text);
+    setNoticeFocus((n) => n + 1);
+  };
+  useEffect(() => {
+    if (noticeFocus > 0) noticeRef.current?.focus();
+  }, [noticeFocus]);
   const source = surfaces.activity;
   const fixture = source.provenance.kind === "fixture";
   const connectionDeps = [connection.generation, connection.status, connection.history.reason] as const;
@@ -279,9 +292,11 @@ export function ActivityPanel() {
   const attention = snapshot?.attention ?? [];
   const waitingEntries = queued.filter((e) => e.waiting && ["dependency", "approval", "paused"].includes(e.waiting.reason));
   const nextId = snapshot?.upNext.status === "ok" ? snapshot.upNext.value : undefined;
+  // "Up next" claims readiness, so it holds only tasks known to wait for capacity or named by the source.
   const upNextEntries = queued
-    .filter((e) => !waitingEntries.includes(e))
+    .filter((e) => !waitingEntries.includes(e) && (e.waiting?.reason === "capacity" || e.taskId === nextId))
     .sort((a, b) => Number(b.taskId === nextId) - Number(a.taskId === nextId));
+  const unclassifiedEntries = queued.filter((e) => !waitingEntries.includes(e) && !upNextEntries.includes(e));
 
   const stopBlockedReason = fixture
     ? null
@@ -297,24 +312,27 @@ export function ActivityPanel() {
       if (fixture) {
         const receipt = await source.simulateStop(taskId);
         setReceipts((all) => [...all, receipt]);
-        return;
+        return false;
       }
       if (isFixtureId(taskId)) {
-        setNotice("Sample tasks cannot be stopped.");
-        return;
+        announce("Sample tasks cannot be stopped.");
+        return true;
       }
       const result = await data.cancelTask(taskId);
-      if (result.ok) {
-        setNotice(
-          `Stop request acknowledged; the daemon now records ${taskId} as ${result.value.state}. This is not proof that any process has stopped.`,
-        );
-      } else {
+      if (!result.ok) {
         setError(result.error);
+        return false;
       }
+      announce(
+        `Stop request acknowledged; the daemon now records ${taskId} as ${result.value.state}. This is not proof that any process has stopped.`,
+      );
+      return true;
     },
   };
 
-  const attentionCount = snapshot ? attention.length : null;
+  // The badge uses the same pending-approval count as the Review nav and top bar, so the three
+  // cannot disagree. Fixture mode has no AppData list, so it shows "—" rather than a sample number.
+  const attentionCount = appData.approvals.data ? pendingApprovals(appData.approvals.data).length : null;
   const badge = attentionCount === null ? "—" : String(attentionCount);
   const statusLine = snapshot
     ? `${running.length} running, ${queued.length} queued, ${attention.length} require attention.`
@@ -344,7 +362,11 @@ export function ActivityPanel() {
     <span className="activity-badge" data-testid="activity-badge">
       <span aria-hidden="true">{badge}</span>
       <span className="activity-visually-hidden">
-        {attentionCount === null ? "attention count not available" : `${attentionCount} require attention`}
+        {attentionCount === null
+          ? fixture
+            ? "attention count not available (sample data is not counted)"
+            : "attention count not available"
+          : `${attentionCount} require attention`}
       </span>
     </span>
   );
@@ -366,7 +388,7 @@ export function ActivityPanel() {
           </p>
         )}
         {notice && (
-          <p role="status" className="activity-note" data-testid="activity-notice">
+          <p ref={noticeRef} tabIndex={-1} role="status" className="activity-note" data-testid="activity-notice">
             {notice}
           </p>
         )}
@@ -381,12 +403,19 @@ export function ActivityPanel() {
               <TaskGroup
                 title="Up next"
                 entries={upNextEntries}
-                empty="No queued task is ready to dispatch."
+                empty="No queued task is known to be next to dispatch."
                 note={snapshot.upNext.status === "ok" ? undefined : `Dispatch order is not available: ${snapshot.upNext.reason}`}
                 stop={stop}
                 nextId={nextId}
               />
               <TaskGroup title="Waiting" entries={waitingEntries} empty="No task is waiting on a dependency or approval." stop={stop} />
+              <TaskGroup
+                title="Unclassified"
+                entries={unclassifiedEntries}
+                empty="Every queued task has a reported wait reason."
+                note="The daemon does not say why these queued tasks are not running or when they will dispatch."
+                stop={stop}
+              />
             </>
           ) : (
             <p className="activity-empty">Queue not available.</p>
