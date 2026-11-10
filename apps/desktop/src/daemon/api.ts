@@ -6,6 +6,7 @@
  * a fixture record into a real action by mistake.
  */
 import { DaemonError } from "./errors";
+import { parseQueueSnapshot, type QueueSnapshotWire } from "./queue";
 import type { DaemonSession } from "./session";
 import type {
   AgentCapabilityEntry,
@@ -137,6 +138,11 @@ export class DaemonApi {
       ...(request.workspace_id === undefined ? {} : { workspace_id: realId(request.workspace_id) }),
       idempotency_key: idempotencyKey,
     });
+  }
+
+  /** Read-only scheduler capacity and queue view (`queue` capability); takes no parameters. */
+  async queueSnapshot(): Promise<QueueSnapshotWire> {
+    return parseQueueSnapshot(await this.session.request("queue.snapshot"));
   }
 
   /** Legal only for a Failed or VerificationFailed task within its retry or repair budget. */

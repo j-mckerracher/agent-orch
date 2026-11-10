@@ -85,7 +85,7 @@ describe("live mode", () => {
     expect(panel).not.toHaveTextContent("20 of 24");
     expect(panel).not.toHaveTextContent("$26");
     expect(within(panel).queryAllByTestId("badge-D11")).toHaveLength(0);
-    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("not available");
+    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("1 of 2 slots in use · 1 available");
     for (const name of ["Pause new dispatch", "Stop menu", "Queue settings"]) {
       const button = within(panel).getByRole("button", { name });
       expect(button).toBeDisabled();
@@ -109,11 +109,58 @@ describe("live mode", () => {
     expect(within(waiting).getByText("Waiting on a dependency")).toBeInTheDocument();
     expect(within(within(panel).getByTestId("activity-queue-running")).getByTestId("activity-task-t1")).toBeInTheDocument();
     const upNext = within(panel).getByTestId("activity-queue-up-next");
-    expect(within(upNext).queryByTestId("activity-task-t2")).not.toBeInTheDocument();
-    expect(upNext).toHaveTextContent("No queued task is known to be next to dispatch.");
-    const unclassified = within(panel).getByTestId("activity-queue-unclassified");
-    expect(within(unclassified).getByTestId("activity-task-t2")).toBeInTheDocument();
-    expect(within(unclassified).getByText("Waiting (reason not reported)")).toBeInTheDocument();
+    expect(within(upNext).getByTestId("activity-task-t2")).toBeInTheDocument();
+    expect(within(upNext).getByText("Next to dispatch")).toBeInTheDocument();
+  });
+
+  it("shows real slot limits and capacity reasons when more tasks are queued than slots", async () => {
+    const fake = new FakeDaemon();
+    fake.projects = [{ id: REPO }];
+    fake.tasks = [
+      mkTask("r1", REPO, { state: "Running" }),
+      mkTask("r2", REPO, { state: "Running" }),
+      mkTask("q1", REPO, { state: "Queued" }),
+      mkTask("q2", REPO, { state: "Queued" }),
+      mkTask("q3", REPO, { state: "Queued", contract: { dependencies: ["r1"] } }),
+    ];
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("2 of 2 slots in use · 0 available"));
+    const upNext = within(panel).getByTestId("activity-queue-up-next");
+    expect(within(upNext).getByTestId("activity-task-q1")).toBeInTheDocument();
+    expect(within(upNext).getByTestId("activity-task-q2")).toBeInTheDocument();
+    expect(within(upNext).getAllByText("Waiting for capacity")).toHaveLength(2);
+    expect(within(upNext).getAllByText("All 2 worker slots are in use.")).toHaveLength(2);
+    expect(within(within(panel).getByTestId("activity-queue-waiting")).getByTestId("activity-task-q3")).toBeInTheDocument();
+    expect(within(panel).getByTestId("activity-status")).toHaveTextContent("2 running, 3 queued");
+  });
+
+  it("shows slots as unavailable, never zero or sample numbers, when queue.snapshot is malformed", async () => {
+    const fake = liveDaemon();
+    fake.stub("queue.snapshot", {});
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("not available"));
+    expect(within(panel).getByTestId("activity-slots-value")).not.toHaveTextContent(/\b0 of\b/);
+    expect(panel).not.toHaveTextContent("20 of 24");
+  });
+
+  it("shows an unavailable attention list, not an empty one, when only approvals.list fails", async () => {
+    const fake = liveDaemon();
+    fake.failNext("approvals.list", { code: -32603, message: "approvals boom" }, 20);
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-attention-degraded")).toHaveTextContent(/approvals boom/));
+    expect(within(panel).getByTestId("activity-attention")).not.toHaveTextContent("Nothing needs attention.");
+    expect(within(panel).getByTestId("activity-status")).toHaveTextContent("attention not available");
+    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("of");
+    expect(within(panel).getByTestId("activity-task-t1")).toBeInTheDocument();
+  });
+
+  it("keeps queue and slots and says task details are missing when only tasks.list fails", async () => {
+    const fake = liveDaemon();
+    fake.failNext("tasks.list", { code: -32603, message: "tasks boom" }, 20);
+    const { panel } = await mountPanel(fake);
+    await waitFor(() => expect(within(panel).getByTestId("activity-tasks-degraded")).toHaveTextContent(/tasks boom/));
+    expect(within(panel).getByTestId("activity-task-t1")).toBeInTheDocument();
+    expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("of");
   });
 
   it("updates queue and attention when a live event arrives", async () => {

@@ -2,15 +2,16 @@
  * Daemon-derived adapters for D9-D16 (M7-03). They read only methods the
  * daemon already has: projects.list, tasks.list, approvals.list,
  * agents.capabilities, coordinator.get and coordinator.send_message. No
- * method is added.
+ * method is added. D11 is built in `activity.ts` from `queue.snapshot` (M7-20).
  *
  * Rules:
  * - This file never imports fixtures. A failed live call is `unavailable` (or
  *   `unsupported` when the daemon lacks the method) with daemon provenance; it
  *   is never answered with fixture data.
- * - Values the daemon does not record (slots, spend, host metrics, models,
- *   objectives, priorities, deadlines) are `unsupported` or `unknown`, never
- *   zero or an invented number.
+ * - Values the daemon does not record (spend, models, objectives, priorities,
+ *   deadlines) are `unsupported` or `unknown`, never zero or an invented
+ *   number. Slots and queue order are read live by `activity.ts`. Host metrics
+ *   are not read here: D13 stays `unsupported` in this file.
  * - `simulate*` calls reject: they exist for fixture adapters only.
  */
 import type { ConnectionManager } from "../../daemon/connection";
@@ -19,19 +20,16 @@ import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { basename } from "../../ui/format";
+import { createDerivedActivity } from "./activity";
 import { countStates, notOk, observation, okResult, unsupportedValue } from "./result";
 import { createSearchSource } from "./search";
 import type {
-  ActivitySnapshot,
-  ActivitySource,
-  AttentionItem,
   ConversationSource,
   ConversationTarget,
   DecisionItem,
   DecisionQueueSource,
   ModelCatalogSource,
   Provenance,
-  QueueEntry,
   SurfaceId,
   SurfaceResult,
   SurfaceSources,
@@ -75,25 +73,6 @@ function approvalKind(approval: Approval): string {
 
 function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
   return new Map(tasks.map((task) => [task.contract.id, task.contract.project_id]));
-}
-
-function queueEntry(task: TaskRecord, byId: Map<string, TaskRecord>): QueueEntry {
-  const waitingState = task.state === "Created" || task.state === "Queued";
-  let waiting: QueueEntry["waiting"] = null;
-  if (waitingState) {
-    const unmet = task.contract.dependencies.find((dependency) => byId.get(dependency)?.state !== "Succeeded");
-    waiting = unmet
-      ? { reason: "dependency", detail: `Waiting for ${unmet}.` }
-      : { reason: "unknown", detail: "The daemon does not report why this task is waiting." };
-  }
-  return {
-    taskId: task.contract.id,
-    projectId: task.contract.project_id,
-    objective: task.contract.objective,
-    agent: task.contract.agent,
-    state: task.state,
-    waiting,
-  };
 }
 
 export function createDerivedSurfaces(connection: ConnectionManager, now: () => number = Date.now): SurfaceSources {
@@ -190,36 +169,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     },
   };
 
-  const activityProvenance = prov("D11", ["tasks.list", "approvals.list"]);
-  const activity: ActivitySource = {
-    provenance: activityProvenance,
-    activity: () =>
-      guarded<ActivitySnapshot>(activityProvenance, now, async () => {
-        const api = connection.api();
-        const [tasks, approvals] = await Promise.all([api.tasksList(), api.approvalsList()]);
-        const byId = new Map(tasks.map((task) => [task.contract.id, task]));
-        const projects = projectOf(tasks);
-        const attention = approvals
-          .filter((approval) => approval.state.state === "requested")
-          .map<AttentionItem>((approval) => ({
-            approvalId: approval.id,
-            taskId: approval.action.task_id,
-            projectId: projects.get(approval.action.task_id) ?? null,
-            kind: approvalKind(approval),
-            priority: "unknown",
-          }));
-        return {
-          running: tasks.filter((task) => task.state === "Running" || task.state === "Verifying").map((task) => queueEntry(task, byId)),
-          queued: tasks.filter((task) => task.state === "Created" || task.state === "Queued").map((task) => queueEntry(task, byId)),
-          attention,
-          slots: unsupportedValue("The daemon does not expose scheduler slot limits."),
-          upNext: unsupportedValue("The daemon does not expose a dispatch order."),
-          dispatchPaused: unsupportedValue("The daemon has no global dispatch pause."),
-        };
-      }),
-    simulatePauseDispatch: () => Promise.reject(fixtureOnly("pause of dispatch")),
-    simulateStop: () => Promise.reject(fixtureOnly("stop")),
-  };
+  const activity = createDerivedActivity(connection, now);
 
   const usageProvenance = prov("D12", []);
   const usage: UsageSource = {

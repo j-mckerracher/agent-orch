@@ -14,6 +14,7 @@ import type {
   SessionEntry,
   TaskRecord,
 } from "../daemon/types";
+import { DEFAULT_QUEUE_SETTINGS, fakeQueueSnapshot, type FakeQueueSettings } from "./queueSnapshot";
 
 export type Failure = { code: number; message: string } | "hang";
 
@@ -120,10 +121,15 @@ export class FakeDaemon implements DaemonConnector {
   tasks: TaskRecord[] = [];
   events: DaemonEvent[] = [];
   approvals: Approval[] = [];
+  /** Scheduler limits and restart gate reported by `queue.snapshot`. */
+  queue: FakeQueueSettings = { ...DEFAULT_QUEUE_SETTINGS };
   pageSize = 256;
   /** Makes `sessions.events` ignore `after_sequence`, as an overlapping page would. */
   ignoreAfterSequence = false;
   capabilitiesOverride: Capability[] | null = null;
+  /** Capability names an older daemon does not know: a handshake naming one is rejected, as `auth.rs` does. */
+  unknownCapabilities: Capability[] = [];
+  openRequests: Capability[][] = [];
   /** Journal identity advertised in the Welcome; null omits it, as an older daemon would. */
   journalEpoch: string | null = "epoch-1";
   openFailures: DaemonError[] = [];
@@ -160,6 +166,9 @@ export class FakeDaemon implements DaemonConnector {
   }
 
   async open(requested: readonly Capability[]): Promise<OpenedChannel> {
+    this.openRequests.push([...requested]);
+    const unknown = requested.filter((capability) => this.unknownCapabilities.includes(capability));
+    if (unknown.length > 0) throw new DaemonError("capability-unavailable", "requested capability is unavailable", -32002);
     const failure = this.openFailures.shift() ?? this.openError;
     if (failure) throw failure;
     const channel = new FakeChannel(this);
@@ -290,6 +299,10 @@ export class FakeDaemon implements DaemonConnector {
       }
       case "approvals.list":
         return reply(this.approvals);
+      case "queue.snapshot": {
+        const stub = this.stubs.get("queue.snapshot");
+        return reply(stub ? stub(params) : fakeQueueSnapshot(this.tasks, this.queue, this.events.length, this.journalEpoch ?? "epoch-1"));
+      }
       case "events.subscribe": {
         if (channel.subscriptionId) return fail(-32011, "already subscribed");
         if (typeof params.epoch === "string" && this.journalEpoch !== null && params.epoch !== this.journalEpoch) {

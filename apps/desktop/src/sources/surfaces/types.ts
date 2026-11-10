@@ -159,6 +159,12 @@ export interface ActivitySnapshot {
   slots: Measured<SlotUsage>;
   upNext: Measured<string>;
   dispatchPaused: Measured<boolean>;
+  /**
+   * Reads that failed while the queue snapshot succeeded. A listed part is unknown, not empty:
+   * `tasks` means objectives, queued agents and Verifying tasks are missing; `approvals` means
+   * `attention` is not known and holds nothing.
+   */
+  degraded?: { tasks?: string; approvals?: string };
 }
 export interface ActivitySource {
   readonly provenance: Provenance;

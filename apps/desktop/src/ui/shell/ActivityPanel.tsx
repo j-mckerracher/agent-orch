@@ -334,8 +334,9 @@ export function ActivityPanel() {
   // cannot disagree. Fixture mode has no AppData list, so it shows "—" rather than a sample number.
   const attentionCount = appData.approvals.data ? pendingApprovals(appData.approvals.data).length : null;
   const badge = attentionCount === null ? "—" : String(attentionCount);
+  const attentionKnown = !snapshot?.degraded?.approvals;
   const statusLine = snapshot
-    ? `${running.length} running, ${queued.length} queued, ${attention.length} require attention.`
+    ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${attention.length} require attention` : "attention not available"}.`
     : activity.status === "loading"
       ? "Loading workspace activity."
       : `Workspace activity is ${activity.status}.`;
@@ -399,6 +400,11 @@ export function ActivityPanel() {
           {fixture && <Placeholder id="D11" />}
           {snapshot ? (
             <>
+              {snapshot.degraded?.tasks && (
+                <p className="activity-note" data-testid="activity-tasks-degraded">
+                  Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
+                </p>
+              )}
               <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} defaultOpen />
               <TaskGroup
                 title="Up next"
@@ -429,7 +435,11 @@ export function ActivityPanel() {
               <NavLink to={{ name: "global", view: "review" }} className="activity-review-all">
                 Review all decisions
               </NavLink>
-              {attention.length === 0 ? (
+              {!attentionKnown ? (
+                <p className="activity-empty" data-testid="activity-attention-degraded">
+                  Attention list not available: {snapshot.degraded?.approvals}
+                </p>
+              ) : attention.length === 0 ? (
                 <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
               ) : (
                 <ul className="activity-list">
