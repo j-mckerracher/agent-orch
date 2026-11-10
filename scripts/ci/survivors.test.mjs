@@ -42,6 +42,47 @@ test("Windows listing: path separators and case do not matter, a single object i
   assert.deepEqual(parseCim(""), []);
 });
 
+// The Priority 12 round 3 Windows survivor: the operator's own monitor shell named the run directory.
+const MONITOR_COMMAND = String.raw`"C:\Program Files (x86)\PowerShell\7\pwsh.exe" -NoProfile -Command "$ev='C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\evidence'; Get-ChildItem -LiteralPath $ev -File"`;
+const WINDOWS_TABLE = JSON.stringify([
+  { ProcessId: 4, ParentProcessId: 0, Name: "System", ExecutablePath: null, CommandLine: null },
+  { ProcessId: 30392, ParentProcessId: 4, Name: "pwsh.exe", ExecutablePath: null, CommandLine: "pwsh.exe" },
+  { ProcessId: 50416, ParentProcessId: 30392, Name: "pwsh.exe", ExecutablePath: null, CommandLine: MONITOR_COMMAND },
+  { ProcessId: 700, ParentProcessId: 30392, Name: "node.exe", ExecutablePath: null, CommandLine: "node run-gates.mjs --target-dir C:\\Windows\\Temp\\p12r3-bfe455a7" },
+  { ProcessId: 701, ParentProcessId: 700, Name: "cargo.exe", ExecutablePath: null, CommandLine: "cargo test C:\\Windows\\Temp\\p12r3-bfe455a7\\target" },
+  { ProcessId: 702, ParentProcessId: 701, Name: "daemon.exe", ExecutablePath: null, CommandLine: "C:\\Windows\\Temp\\p12r3-bfe455a7\\target\\debug\\daemon.exe" },
+  { ProcessId: 703, ParentProcessId: 99999, Name: "daemon.exe", ExecutablePath: null, CommandLine: "C:\\Windows\\Temp\\p12r3-bfe455a7\\target\\debug\\daemon.exe --detached" },
+]);
+
+test("with a launched child, the operator's monitor that names the run directory is not a survivor", () => {
+  const procs = parseCim(WINDOWS_TABLE);
+  const roots = ["C:\\Windows\\Temp\\p12r3-bfe455a7"];
+  assert.deepEqual(findSurvivors(procs, roots, 700).map((p) => p.pid).sort((a, b) => a - b), [701, 702, 703, 50416]);
+  assert.deepEqual(findSurvivors(procs, roots, 700, { launched: [701] }).map((p) => p.pid), [701, 702, 703]);
+  assert.deepEqual(findSurvivors(procs, roots, 700, { launched: [999] }).map((p) => p.pid), [703]);
+});
+
+test("a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not", () => {
+  const procs = parsePs(`
+    1     0 /sbin/launchd
+  100     1 /bin/zsh
+  101   100 node /w/run-gates.mjs --target-dir /w/target
+  102   100 sh -c watch /w/target/evidence
+  200   101 cargo test /w/target
+  201   200 /w/target/debug/daemon
+  300     1 /w/target/debug/daemon --orphan
+  400   102 tail -f /w/target/evidence/log
+`);
+  assert.deepEqual(findSurvivors(procs, ["/w/target"], 101, { launched: [200] }).map((p) => p.pid), [200, 201, 300]);
+  assert.deepEqual(findSurvivors(procs, ["/w/target"], 101, { launched: [] }).map((p) => p.pid), [300]);
+});
+
+test("scanSurvivors passes the launched pids to the scan", async () => {
+  const procs = parsePs("1 0 /sbin/launchd\n50 1 /bin/zsh\n100 50 sh -c watch /w/target\n200 1 /w/target/bin\n201 200 /w/target/bin2");
+  const found = await scanSurvivors(["/w/target"], { list: () => procs, attempts: 1, ownPid: 5, launched: [200] });
+  assert.deepEqual(found.map((p) => p.pid), [200, 201]);
+});
+
 test("scanSurvivors retries while a process is still listed, then reports what remains", async () => {
   const procs = parsePs(PS);
   let calls = 0;

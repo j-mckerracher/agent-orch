@@ -62,6 +62,18 @@ test("gates take their counts from expected.mjs", () => {
   const mac = byName("darwin");
   assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
   assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);
+  assert.equal(win["tauri-tests"].passed, WINDOWS.tauri.passed);
+});
+
+test("the Windows-only p12 gate needs both binaries and takes its paths from the harness", () => {
+  const win = gatesFor("win32");
+  const p12 = win.find((g) => g.name === "p12-windows-checks");
+  assert.equal(p12.mode, "p12");
+  assert.deepEqual(p12.needs, ["daemon-build", "cli-build"]);
+  for (const placeholder of ["{target}", "{testTmp}", "{evidence}"]) assert.ok(p12.args.includes(placeholder) || p12.args.some((a) => a.includes(placeholder)), placeholder);
+  assert.ok(win.findIndex((g) => g.name === "cli-build") < win.indexOf(p12));
+  assert.equal(win.length, 23);
+  assert.ok(!gatesFor("darwin").some((g) => g.name === "p12-windows-checks" || g.name === "cli-build"));
 });
 
 test("the clippy baseline pattern matches only the listed lines, under either separator", () => {

@@ -1,19 +1,29 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { runBounded } from "./bounded.mjs";
+import { removeDir } from "./remove-dir.mjs";
 
 const node = process.execPath;
-// Windows releases a killed process's directory handle after the kill call returns, so removal
-// retries a busy directory for up to 10 s. A directory that is still busy after that fails the test.
+// Windows keeps a directory busy for a moment after a process that had it as its working directory
+// exited or was killed. `removeDir` retries that for up to 10 s; a directory still busy after that
+// fails the test, but never hides the error the test body already threw.
 const withDir = async (body) => {
   const dir = mkdtempSync(join(os.tmpdir(), "bounded-"));
+  let failed = false;
   try {
     return await body(dir);
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
+    try {
+      await removeDir(dir, { attempts: 50, delayMs: 200 });
+    } catch (error) {
+      if (!failed) throw error;
+    }
   }
 };
 const run = (dir, script, extra = {}) =>
@@ -47,7 +57,7 @@ test("a descendant holding the output pipes cannot stall the run after the proce
   withDir(async (dir) => {
     const script = `
       const { spawn } = require("node:child_process");
-      const g = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: ["ignore", "inherit", "inherit"] });
+      const g = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { cwd: require("node:os").tmpdir(), detached: true, stdio: ["ignore", "inherit", "inherit"] });
       console.log("grandchild " + g.pid);
       g.unref();`;
     const started = Date.now();
@@ -59,8 +69,8 @@ test("a descendant holding the output pipes cannot stall the run after the proce
       assert.ok(Date.now() - started < 15000, "returned long before the grandchild's 60 s");
       assert.ok(pid > 0 && alive(pid), "the descendant is still running, for the survivor scan to find");
     } finally {
-      // The grandchild inherits `dir` as its working directory, which Windows will not remove
-      // while the process lives: kill it and wait for it to be gone before the directory is removed.
+      // The grandchild is started outside `dir`, but is still killed and awaited so no process of
+      // this test outlives it, and so the pipes it inherited are closed before `dir` is removed.
       if (pid > 0) {
         try {
           process.kill(pid, "SIGKILL");
@@ -79,6 +89,8 @@ test("a timeout kills the process and ends the run promptly", () =>
     assert.equal(r.timedOut, true);
     assert.notEqual(r.code, 0);
     assert.ok(Date.now() - started < 15000);
+    assert.ok(r.pid > 0);
+    await waitUntilGone(r.pid);
   }));
 
 test("a command that cannot start reports the error", () =>

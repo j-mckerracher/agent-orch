@@ -1,8 +1,41 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
-  checkBuild, checkLifecycle, checkLint, checkTests, checkVitest, diagnostics, runningSequence, testTotals,
+  checkBuild, checkLifecycle, checkLint, checkP12, checkTests, checkVitest, diagnostics, parseP12Verdict, runningSequence, testTotals,
 } from "./parse.mjs";
+
+// The stdout of the Priority 12 round 3 native Windows run (user name already replaced by `<user>`).
+const windowsR3 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "p12-windows-checks.windows-r3.stdout.txt"), "utf8");
+
+test("the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts", () => {
+  for (const text of [windowsR3, windowsR3.replace(/\n/g, "\r\n")]) {
+    assert.match(windowsR3, /^p12-windows-checks: platform windows$/m);
+    assert.deepEqual(parseP12Verdict(text), { verdict: "FAIL", detail: "(2 of 8 failed)", lines: 1 });
+    const problems = checkP12(text);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /FAIL \(2 of 8 failed\); failing: acl-files-present, acl-\.orchestrator\.lock/);
+  }
+});
+
+test("the verdict is case-sensitive, taken from a line start, and must be unique and known", () => {
+  const checks = "CHECK a: PASS - x\nCHECK b: NOT RUN - y\n";
+  assert.deepEqual(checkP12(`${checks}P12-WINDOWS-CHECKS: PASS\n`), []);
+  assert.deepEqual(checkP12(`p12-windows-checks: platform windows\n${checks}P12-WINDOWS-CHECKS: PASS\r\n`), []);
+  assert.match(checkP12(`${checks}p12-windows-checks: PASS\n`)[0], /no 'P12-WINDOWS-CHECKS:' verdict line/);
+  assert.match(checkP12(`${checks}  P12-WINDOWS-CHECKS: PASS\n`)[0], /no 'P12-WINDOWS-CHECKS:'/);
+  assert.match(checkP12("")[0], /no 'P12-WINDOWS-CHECKS:'/);
+  assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: PASS\nP12-WINDOWS-CHECKS: PASS\n`)[0], /appears 2 times/);
+  assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: MAYBE\n`)[0], /unrecognised verdict 'MAYBE'/);
+  assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: INCOMPLETE (1 check(s) could not run)\n`)[0], /INCOMPLETE \(1 check/);
+});
+
+test("a PASS verdict that contradicts its CHECK lines is a problem", () => {
+  assert.match(checkP12("CHECK a: FAIL - x\nP12-WINDOWS-CHECKS: PASS\n")[0], /PASS but these checks failed: a/);
+  assert.match(checkP12("CHECK a: NOT RUN - x\nP12-WINDOWS-CHECKS: PASS\n")[0], /PASS but no check ran/);
+});
 
 const block = (n, names, extra = "") =>
   `running ${n} test${n === 1 ? "" : "s"}\n${names.map((x) => `test ${x} ... ok`).join("\n")}\n\ntest result: ok. ${n} passed; 0 failed; ${extra || "0 ignored"}; 0 measured; 0 filtered out; finished in 0.10s\n`;

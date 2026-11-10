@@ -145,3 +145,32 @@ export const checkVitest = (stdout, { files, tests }) => {
 
 export const checkPattern = (stdout, pattern) =>
   new RegExp(pattern, "m").test(normalize(stdout)) ? [] : [`output does not match /${pattern}/`];
+
+// The Priority 12 by-hand checks (scripts/ci/p12-windows-checks.ps1) end with one verdict line:
+// `P12-WINDOWS-CHECKS: PASS | FAIL (n of m failed) | INCOMPLETE (...)`. The match is case-sensitive:
+// the script's own banner lines start with the lower-case `p12-windows-checks:` and a
+// case-insensitive filter (PowerShell's `-match`) counted them as verdicts, so the Priority 12
+// round 3 harness read an empty verdict and reported INCONCLUSIVE.
+export const parseP12Verdict = (text) => {
+  const lines = [...normalize(text).matchAll(/^P12-WINDOWS-CHECKS: (.*\S)[ \t]*$/gm)].map((m) => m[1]);
+  const last = lines.at(-1) ?? "";
+  const m = /^(PASS|FAIL|INCOMPLETE)\b[ \t]*(.*)$/.exec(last);
+  return { verdict: m ? m[1] : "", detail: m ? m[2] : last, lines: lines.length };
+};
+
+export const checkP12 = (stdout) => {
+  const problems = [];
+  const { verdict, detail, lines } = parseP12Verdict(stdout);
+  const checks = [...normalize(stdout).matchAll(/^CHECK (\S+): (PASS|FAIL|NOT RUN) - /gm)].map((m) => ({ name: m[1], status: m[2] }));
+  const failing = checks.filter((c) => c.status === "FAIL").map((c) => c.name);
+  if (lines === 0) problems.push("no 'P12-WINDOWS-CHECKS:' verdict line");
+  else if (lines > 1) problems.push(`'P12-WINDOWS-CHECKS:' verdict appears ${lines} times, expected 1`);
+  if (lines > 0 && verdict === "") problems.push(`unrecognised verdict '${detail}'`);
+  if (verdict === "FAIL") problems.push(`P12-WINDOWS-CHECKS: FAIL ${detail}${failing.length ? `; failing: ${failing.join(", ")}` : ""}`);
+  if (verdict === "INCOMPLETE") problems.push(`P12-WINDOWS-CHECKS: INCOMPLETE ${detail}`);
+  if (verdict === "PASS") {
+    if (failing.length) problems.push(`verdict is PASS but these checks failed: ${failing.join(", ")}`);
+    if (checks.every((c) => c.status === "NOT RUN")) problems.push("verdict is PASS but no check ran");
+  }
+  return problems;
+};

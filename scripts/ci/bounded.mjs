@@ -56,6 +56,7 @@ export const runBounded = ({
       Promise.all([new Promise((r) => out.on("finish", r)), new Promise((r) => err.on("finish", r))]).then(() =>
         done({
           code, signal, timedOut, pipesAbandoned: Boolean(pipesAbandoned), spawnError: spawnError ? String(spawnError) : null,
+          pid: child.pid ?? null,
           durationMs: Date.now() - started,
           stdout: Buffer.concat(chunks.out).toString("utf8"),
           stderr: Buffer.concat(chunks.err).toString("utf8"),

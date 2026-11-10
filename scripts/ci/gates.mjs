@@ -89,12 +89,30 @@ export function gatesFor(platform) {
   );
 
   if (win) {
-    gates.push({
-      name: "windows-transport-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
-      args: ["test", "--locked", "-p", "orchestrator-ipc", "windows_transport"],
-      expect: counts["windows-transport"], passed: WINDOWS.windowsTransport.passed, ignored: 0,
-      runningSequence: WINDOWS.windowsTransport.sequence, filteredOut: WINDOWS.windowsTransport.filteredOut,
-    });
+    gates.push(
+      {
+        name: "windows-transport-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
+        args: ["test", "--locked", "-p", "orchestrator-ipc", "windows_transport"],
+        expect: counts["windows-transport"], passed: WINDOWS.windowsTransport.passed, ignored: 0,
+        runningSequence: WINDOWS.windowsTransport.sequence, filteredOut: WINDOWS.windowsTransport.filteredOut,
+      },
+      {
+        // The binary p12-windows-checks needs. Cached output is legitimate here (the test gates may have built
+        // the library), so the shape is the `Finished` line and the artifact, not a `Compiling` line.
+        name: "cli-build", mode: "exit", cwd: ".", exe: "cargo", timeout: 1800, needs: ["daemon-build"],
+        args: ["build", "--locked", "-p", "orchestrator-cli"], pattern: "^\\s*Finished\\b",
+        artifacts: [{ target: "debug/orchestrator-cli.exe", record: "cli-binary.txt" }],
+      },
+      {
+        // The Priority 12 by-hand checks (data-directory ACLs, command-line refusal). Placeholders in args are
+        // expanded by run-gates.mjs. The verdict line is parsed by parse.mjs#checkP12; any verdict but PASS fails.
+        name: "p12-windows-checks", mode: "p12", cwd: ".", exe: "pwsh.exe", timeout: 900, needs: ["daemon-build", "cli-build"],
+        args: [
+          "-NoProfile", "-File", "scripts\\ci\\p12-windows-checks.ps1",
+          "-TargetDir", "{target}", "-RunRoot", "{testTmp}\\p12", "-EvidenceDir", "{evidence}",
+        ],
+      },
+    );
   }
 
   gates.push(

@@ -35,19 +35,21 @@ The Windows list is the published runbook
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
+| `cli-build` | `cargo build --locked -p orchestrator-cli` (shape: a `Finished` line and the binary; cached output is fine) | Windows |
+| `p12-windows-checks` | `pwsh.exe -NoProfile -File scripts\ci\p12-windows-checks.ps1 -TargetDir {target} -RunRoot {testTmp}\p12 -EvidenceDir {evidence}`; the last `P12-WINDOWS-CHECKS:` line must be `PASS` (see below) | Windows |
 | `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 57 = 52+4+0+1, macOS 88 = 73+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
 | `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
 | `git-lib-tests` | `cargo test --locked -p orchestrator-git --lib` (49 on both: Windows 47 portable + 2 `cfg(windows)`, macOS 47 portable + 2 `cfg(unix)`) | both |
 | `cli-cleanup-safety-tests` | `cargo test --locked -p orchestrator-cli --test cleanup_safety` (Windows 3, macOS 4: one test is `cfg(unix)`; a fifth is `cfg(all(unix, feature = "fault-injection"))` and runs nowhere by default) | both |
-| `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[9,0]`: 3 portable + 6 DACL; macOS `[6,0]`: 3 portable + 3 Unix; the `0` is the doc-test binary) | both |
+| `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[11,0]`: 4 portable + 7 DACL; macOS `[8,0]`: 4 portable + 4 Unix; the `0` is the doc-test binary) | both |
 | `runtime-command-line-tests` | `cargo test --locked -p orchestrator-runtime --lib command_line` (8 tests; the pure Windows rules run on every host) | both |
 | `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (723 passed, 1 ignored) | macOS |
+| `workspace-tests` | `cargo test --locked --workspace` (726 passed, 1 ignored) | macOS |
 | `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 290 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
-| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 13, macOS 15), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
+| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 14, macOS 16), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
 
 Windows and macOS counts differ because tests are gated by `cfg`. Expected counts are never edited
@@ -59,7 +61,11 @@ After every gate the harness lists processes (read-only: `ps` on macOS, `Get-Cim
 Win32_Process` on Windows) and fails the gate if any process outside the harness and its
 ancestors has this run's target or test-temp directory in its image path or command line. This is
 the per-gate survivor scan of the Windows runbook (`Find-OwnedSurvivors`); it retries for about
-5 s because an exiting process can still be listed, and it never stops a process. One difference:
+5 s because an exiting process can still be listed, and it never stops a process. A process counts only
+if it belongs to the gate: it descends from the process the harness launched for that gate, or it is an
+orphan (its parent is gone or is PID 0/1). A process whose parent is alive and not a descendant of the
+gate is not the gate's, even if its command line names the evidence or target directory: the Priority 12
+round 3 scan flagged the operator's own monitor `pwsh` that way. One difference:
 the runbook also matches 8.3 short-name aliases of its run root; this harness matches the paths as
 given, which on a GitHub runner (`D:\a\_temp\...`) have no alias. A gate whose process exits
 while a descendant keeps its output pipes open ends 5 s after the exit (the gate fails and the
@@ -111,6 +117,38 @@ plus 2 `cfg(unix)` on macOS or 2 `cfg(windows)` on Windows); round 3 replaced th
 over-`MAX_PATH` worktree test with three portable tests and added one `cfg(windows)` test (46 measured
 becomes 49 derived on Windows: -1 replaced, +3 portable, +1 `cfg(windows)`). `cleanup_safety` 3 on Windows and 4 on macOS.
 The macOS `workspace-tests` count is 723 passed (the two added `orchestrator-git` tests).
+
+**Priority 12 round 4** (the native Windows FAIL of round 3) fixed six defects, each read from the raw Windows
+logs:
+
+- `bounded.test.mjs` `EBUSY` on cleanup: Node's synchronous `rmSync` ignores `maxRetries` for `EBUSY`, so the
+  round 3 retry option did nothing. Cleanup is now `scripts/ci/remove-dir.mjs`, an awaited retry loop over the
+  asynchronous `rm`, the test's grandchild no longer starts with the temp directory as its working directory,
+  and the timeout test waits until the grandchild is gone before it removes anything. `runBounded` now returns
+  the pid it launched.
+- The by-hand checks' verdict was read as an empty string: the runbook's filter was case-insensitive, so the
+  script's two banner lines (`p12-windows-checks: ...`) counted as verdicts. The banners now start with `INFO`,
+  the harness has a `p12-windows-checks` gate, and `parse.mjs#checkP12` reads the last
+  `P12-WINDOWS-CHECKS: ` line, case-sensitively, from a real round 3 Windows output kept in
+  `scripts/ci/fixtures/`. A runbook that filters by hand must use `-cmatch` and take the last line.
+- The survivor scan no longer counts a process that is not the gate's (see Survivor check).
+- `.orchestrator.lock` is created owner-only (`restrict_to_owner`, no inherited ACE), also when a stale lock is
+  taken over; before, it inherited `<user>:(I)(F)` from the data directory. The transient
+  `.orchestrator.lock.takeover-<n>` directory is not changed.
+- `p12-windows-checks.ps1` no longer waits for `daemon.log`: only the desktop host creates it (it redirects the
+  daemon's output there), so the bare daemon never did. The script says so with an `INFO` line instead of a
+  failing check; the host's `daemon.log` DACL is covered by a `tauri-tests` test and unproven on a real host.
+- The script and the harness redact the Windows domain, host, DNS domain, account, profile path and any e-mail
+  address in what they write (`scripts/ci/redact.mjs`, `Protect-Text`), and a `privacy-scan` harness check fails
+  the run if one is left in the evidence. Raw `cargo`/`npm` output is not rewritten, and the account name is
+  not checked in it (cargo prints the profile path); review it before publishing.
+
+Counts moved: `private-fs-tests` Windows `[11,0]` (+2: the DACL test of an inherited-only owner ACE and the
+`is_owner_only` test) and macOS `[8,0]` (+2); `tauri-tests` Windows 14 and macOS 16 (+1, the `daemon.log`
+owner-only test, portable); macOS `workspace-tests` 726 (+1 `orchestrator-store`, +2 `orchestrator-private-fs`,
+measured); `orchestrator-store` gains 1 portable test (not a harness gate; its Windows count is the runbook's plus 1,
+derived); `--list` shows 23 Windows gates (`cli-build` and `p12-windows-checks` are new) and 22 on macOS. The Windows figures are
+derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
 
 ### Maximum path lengths on Windows
 
@@ -229,8 +267,9 @@ the M6-02 owner.
    workload, Windows SDK, network access (NSIS download). Record versions; a missing tool is
    `BLOCKED`.
 3. `node --test "scripts/**/*.test.mjs"`: the parser tests (including CRLF output) must pass.
-4. `node scripts/ci/run-gates.mjs --list` must show the 21 Windows gates, including
-   `windows-transport-tests`, `git-lib-tests`, `private-fs-tests` and `desktop-package-win`.
+4. `node scripts/ci/run-gates.mjs --list` must show the 23 Windows gates, including
+   `windows-transport-tests`, `git-lib-tests`, `private-fs-tests`, `cli-build`, `p12-windows-checks` and
+   `desktop-package-win`.
 5. `$env:CI = "true"; node scripts/ci/run-gates.mjs --evidence-dir <new> --target-dir <new empty> --test-tmp <new>`
    Expected: every gate `PASS` with the derived counts in the gate table. A count mismatch is a
    finding: report it; do not edit `scripts/ci/expected.mjs` to fit.
@@ -254,7 +293,11 @@ the M6-02 owner.
    It prints `icacls` for the data directory and every file in it, asserts only the current user with no
    inherited ACE and no `CodexSandboxUsers`, `SYSTEM`, Administrators, Users, Everyone or Authenticated Users, runs
    the CLI against an over-limit objective for a `.cmd` agent launcher (8,191 units), and ends with
-   `P12-WINDOWS-CHECKS: PASS`, `FAIL (n of m failed)` or `INCOMPLETE`. It writes `manual-p12.txt`. The redacted
+   `P12-WINDOWS-CHECKS: PASS`, `FAIL (n of m failed)` or `INCOMPLETE`. The harness runs it as the
+   `p12-windows-checks` gate; run it by hand only if you also read the last `P12-WINDOWS-CHECKS:` line
+   case-sensitively (`-cmatch '^P12-WINDOWS-CHECKS: '`). It does not check `daemon.log` (only the desktop host
+   creates it; printed as `INFO acl-daemon.log: NOT CHECKED`). It writes `manual-p12.txt` and redacts the user,
+   domain, host and e-mail in every line it prints. The redacted
    launch failure in the real window is the one check it cannot do (`NOT RUN`). A literal 65,000-character
    objective cannot be given to the CLI on Windows: `CreateProcess` refuses a command line over 32,767 units
    before the CLI starts, so that path is only reachable through the daemon (`tasks.submit`), which the

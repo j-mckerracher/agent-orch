@@ -4,10 +4,12 @@
 
 .DESCRIPTION
   Check 1 (acl-*): starts the built orchestrator-daemon.exe on a new data directory, prints `icacls` for the
-  directory, every file in it and the parent, then asserts that each holds exactly one ACE, for the current
-  user SID only, not inherited, with the directory protected, and that no CodexSandboxUsers, SYSTEM,
-  Administrators, Users, Everyone or Authenticated Users appear. The daemon is stopped by the pid this script
-  started.
+  directory and every file in it (daemon.token, store.sqlite and its -shm/-wal, .orchestrator.lock), then
+  asserts that each holds exactly one ACE, for the current user SID only, not inherited, with the DACL
+  protected, and that no CodexSandboxUsers, SYSTEM, Administrators, Users, Everyone or Authenticated Users
+  appear. The daemon is stopped by the pid this script started. daemon.log is NOT checked: only the desktop
+  host creates it (it redirects the daemon's output there), so the bare daemon never does; that is printed
+  as an INFO line, not hidden.
 
   Check 3 (cmdline-*): runs the built orchestrator-cli.exe with an objective that fits the CLI's own command
   line but not the 8,191-unit cmd.exe limit of a `.cmd` agent launcher (a stand-in codex.cmd that the script
@@ -32,8 +34,8 @@
   A directory for this script's data directories and throwaway repository. Keep it SHORT (see
   docs/release-ci.md, maximum path length). Default: a new directory under $env:TEMP.
 .PARAMETER EvidenceDir
-  When set, the output is also written to <EvidenceDir>\manual-p12.txt with the user name and profile path
-  replaced.
+  When set, the output is also written to <EvidenceDir>\manual-p12.txt. All output (stdout too) has the user name,
+  Windows domain, host name, DNS domain, profile path and any e-mail address replaced by placeholders.
 .PARAMETER ObjectiveLength
   Characters of the objective for the command-line check. Default 9000, over the 8,191 of a .cmd launcher.
 #>
@@ -49,7 +51,33 @@ $ErrorActionPreference = 'Continue'
 $script:Lines = New-Object System.Collections.Generic.List[string]
 $script:Results = New-Object System.Collections.Generic.List[object]
 
+# Replaces who and where the run happened with placeholders, so nothing that names the operator, their
+# Windows domain, their machine or an e-mail address reaches stdout or the evidence. Whole-name matches
+# only, so a short account name does not corrupt unrelated words. Mirrors scripts/ci/redact.mjs.
+function Protect-Text([string]$Text) {
+  if ([string]::IsNullOrEmpty($Text)) { return $Text }
+  $Text = [regex]::Replace($Text, '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<email>')
+  $pairs = New-Object System.Collections.Generic.List[object]
+  $id = $null
+  try { $id = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { }
+  if ($id) { $pairs.Add(@($id, '<user>')) }
+  if ($env:USERDOMAIN -and $env:USERNAME) { $pairs.Add(@("$($env:USERDOMAIN)\$($env:USERNAME)", '<user>')) }
+  if ($env:USERPROFILE) { $pairs.Add(@($env:USERPROFILE, '<profile>')) }
+  if ($env:USERDNSDOMAIN) { $pairs.Add(@($env:USERDNSDOMAIN, '<dnsdomain>')) }
+  if ($env:USERDOMAIN) { $pairs.Add(@($env:USERDOMAIN, '<domain>')) }
+  if ($env:COMPUTERNAME) { $pairs.Add(@($env:COMPUTERNAME, '<host>')) }
+  if ($env:USERNAME) { $pairs.Add(@($env:USERNAME, '<user>')) }
+  foreach ($pair in $pairs) {
+    if ($pair[0].Length -lt 3) { continue }
+    $pattern = '(?<![A-Za-z0-9])' + [regex]::Escape($pair[0]) + '(?![A-Za-z0-9])'
+    $Text = [regex]::Replace($Text, $pattern, $pair[1], [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+  }
+  $Text = [regex]::Replace($Text, '(?<![A-Za-z0-9._\\/:-])[A-Z][A-Z0-9._-]{2,14}\\<user>', '<user>')
+  return $Text
+}
+
 function Say([string]$Text) {
+  $Text = Protect-Text $Text
   $script:Lines.Add($Text)
   Write-Output $Text
 }
@@ -91,8 +119,8 @@ if ($RunRoot -eq "") {
   $RunRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("p12-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 }
 $null = New-Item -ItemType Directory -Force -Path $RunRoot -ErrorAction SilentlyContinue
-Say "p12-windows-checks: run root length $($RunRoot.Length) characters"
-Say "p12-windows-checks: platform $(if ($onWindows) { 'windows' } else { 'not windows (ACL checks are NOT RUN)' })"
+Say "INFO run-root length $($RunRoot.Length) characters"
+Say "INFO platform $(if ($onWindows) { 'windows' } else { 'not windows (ACL checks are NOT RUN)' })"
 
 # ---- Check 1: data-directory ACLs -----------------------------------------------------------------
 Check 'acl' {
@@ -104,7 +132,9 @@ Check 'acl' {
     $proc = Start-Captured $daemon ("--data-dir " + (Quote $dir)) (Join-Path $RunRoot 'acl-daemon.out') (Join-Path $RunRoot 'acl-daemon.err')
     Say "acl: started daemon pid $($proc.Id)"
     $deadline = (Get-Date).AddSeconds(30)
-    $wanted = 'daemon.token', 'store.sqlite', 'daemon.log'
+    # daemon.log is created by the desktop host, not by the bare daemon this script starts (the host
+    # redirects the daemon's output into it). It is reported as NOT CHECKED below, not waited for.
+    $wanted = 'daemon.token', 'store.sqlite'
     while ((Get-Date) -lt $deadline) {
       if (($wanted | Where-Object { -not (Test-Path (Join-Path $dir $_)) }).Count -eq 0) { break }
       if ($proc.HasExited) { break }
@@ -116,6 +146,7 @@ Check 'acl' {
     } else {
       Record 'acl-files-present' 'PASS' ($wanted -join ', ')
     }
+    Say 'INFO acl-daemon.log: NOT CHECKED here; only the desktop host creates daemon.log. Its owner-only DACL is covered by the tauri-tests test a_new_and_an_existing_log_are_owner_only_on_every_platform and is UNPROVEN on a real host'
 
     $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
     $forbidden = 'CodexSandboxUsers', 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators', 'BUILTIN\Users', 'Everyone', 'Authenticated Users'
@@ -226,8 +257,6 @@ if ($EvidenceDir -ne "") {
   try {
     $null = New-Item -ItemType Directory -Force -Path $EvidenceDir
     $text = ($script:Lines -join "`r`n")
-    if ($env:USERPROFILE) { $text = $text.Replace($env:USERPROFILE, '<profile>') }
-    if ($env:USERNAME) { $text = $text.Replace($env:USERNAME, '<user>') }
     Set-Content -LiteralPath (Join-Path $EvidenceDir 'manual-p12.txt') -Value $text
   } catch {
     Write-Output "p12-windows-checks: could not write manual-p12.txt: $($_.Exception.Message)"

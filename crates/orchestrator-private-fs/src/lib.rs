@@ -86,6 +86,29 @@ pub fn restrict_to_owner(path: &Path) -> io::Result<()> {
     }
 }
 
+/// True when only the owner can reach `path`: no group or other mode bits on
+/// Unix, and on Windows a protected DACL whose only ACE allows the current
+/// user. An unprotected DACL is not owner-only even when every ACE it inherited
+/// names the user, because a change to the parent would then widen the path.
+/// A missing path is an error.
+pub fn is_owner_only(path: &Path) -> io::Result<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Ok(std::fs::metadata(path)?.permissions().mode() & 0o077 == 0)
+    }
+    #[cfg(windows)]
+    {
+        std::fs::metadata(path)?;
+        windows::is_owner_only(path, &windows::current_user_sid()?)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        Ok(false)
+    }
+}
+
 /// A file created with the owner-only mode already needs nothing on Unix; on
 /// Windows it still has the parent's inherited ACL until the DACL is applied.
 fn restrict_new_file(path: &Path) -> io::Result<()> {
@@ -135,6 +158,19 @@ mod tests {
         std::fs::write(&file, b"kept").unwrap();
         create_private_file(&file).unwrap();
         assert_eq!(std::fs::read(&file).unwrap(), b"kept");
+    }
+
+    #[test]
+    fn a_created_private_file_and_directory_report_owner_only_and_a_missing_path_errors() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("data");
+        create_private_dir(&dir).unwrap();
+        let file = dir.join("daemon.token");
+        create_private_file(&file).unwrap();
+        assert!(is_owner_only(&dir).unwrap());
+        assert!(is_owner_only(&file).unwrap());
+        let missing = is_owner_only(&dir.join("absent")).unwrap_err();
+        assert_eq!(missing.kind(), io::ErrorKind::NotFound);
     }
 
     #[test]
@@ -202,6 +238,17 @@ mod unix_tests {
         assert_eq!(mode(&dir), 0o700);
         assert_eq!(mode(&file), 0o600);
         assert_eq!(std::fs::read(&file).unwrap(), b"kept");
+    }
+
+    #[test]
+    fn group_or_other_access_is_not_owner_only() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("f");
+        std::fs::write(&file, b"x").unwrap();
+        for (mode, expected) in [(0o600, true), (0o400, true), (0o640, false), (0o604, false)] {
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(mode)).unwrap();
+            assert_eq!(is_owner_only(&file).unwrap(), expected, "{mode:o}");
+        }
     }
 
     #[test]

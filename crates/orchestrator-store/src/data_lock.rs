@@ -76,6 +76,14 @@ fn create_lock(
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let mut file = options.open(path)?;
+    // On Windows the new file starts with an inherited, unprotected DACL. Make
+    // it owner-only before anything is written; a lock that cannot be
+    // protected is removed rather than left behind with a wider ACL.
+    if let Err(error) = orchestrator_private_fs::restrict_to_owner(path) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
     // The new file is unverified if its identity cannot be read or the
     // platform has none: fail with the real cause and leave the file in place
     // for inspection. A guard is only ever returned with a verified identity.
@@ -755,6 +763,23 @@ fn process_start_identity(_pid: u32) -> io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lock_file_is_owner_only_when_created_and_when_taken_over() {
+        let directory = tempfile::tempdir().unwrap();
+        let data = directory.path().join("data");
+        let path = data.join(LOCK_FILE_NAME);
+
+        let lock = DataDirectoryLock::acquire(&data).unwrap();
+        assert!(orchestrator_private_fs::is_owner_only(&path).unwrap());
+        drop(lock);
+
+        // A stale lock written without protection (inherited ACL on Windows,
+        // the process umask on Unix) is replaced by an owner-only one.
+        fs::write(&path, format!("pid={}\nstart=x\ntoken=t\n", i32::MAX)).unwrap();
+        let _lock = DataDirectoryLock::acquire(&data).unwrap();
+        assert!(orchestrator_private_fs::is_owner_only(&path).unwrap());
+    }
 
     #[cfg(unix)]
     #[test]

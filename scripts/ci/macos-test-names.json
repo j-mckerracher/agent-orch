@@ -148,6 +148,7 @@
    "no_daemon_and_no_executable_is_daemon_unavailable",
    "a_daemon_executable_that_cannot_start_is_daemon_unavailable",
    "a_daemon_that_cannot_be_started_shows_the_redacted_end_of_the_log",
+   "a_new_and_an_existing_log_are_owner_only_on_every_platform",
    "an_oversized_log_is_rotated_and_a_small_one_is_kept",
    "the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection",
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -222,8 +223,10 @@
    "a_missing_path_is_not_an_error_to_restrict",
    "creating_a_file_never_truncates_an_existing_one",
    "the_dacl_reader_accepts_only_one_owner_allow_ace",
+   "a_created_private_file_and_directory_report_owner_only_and_a_missing_path_errors",
    "a_new_directory_tree_and_file_are_owner_only",
    "existing_wide_open_paths_are_tightened_without_losing_content",
+   "group_or_other_access_is_not_owner_only",
    "restricting_never_widens"
   ],
   "runtime-command-line": [

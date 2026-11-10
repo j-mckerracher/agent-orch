@@ -56,7 +56,7 @@ pub(crate) fn restrict_to_owner(path: &Path) -> io::Result<()> {
 }
 
 /// True when `path` has a protected DACL whose only ACE allows the user.
-fn is_owner_only(path: &Path, sid: &str) -> io::Result<bool> {
+pub(crate) fn is_owner_only(path: &Path, sid: &str) -> io::Result<bool> {
     let sddl = read_dacl_sddl(path)?;
     Ok(sole_owner_ace(&sddl, |trustee| same_sid(trustee, sid)) == Some(true))
 }
@@ -377,6 +377,23 @@ mod tests {
         let before = sddl(&file);
         restrict_to_owner(&file).unwrap();
         assert_eq!(sddl(&file), before);
+    }
+
+    #[test]
+    fn a_file_with_only_an_inherited_owner_ace_is_not_owner_only_until_restricted() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("data");
+        create_private_dir(&dir).unwrap();
+        // Written with std, as `.orchestrator.lock` was: the DACL is inherited
+        // from the directory and unprotected (`<user>:(I)(F)` in `icacls`).
+        let file = dir.join(".orchestrator.lock");
+        std::fs::write(&file, b"pid=1\n").unwrap();
+        assert!(!crate::is_owner_only(&file).unwrap(), "{}", sddl(&file));
+        assert!(!owner_only(&file));
+        restrict_to_owner(&file).unwrap();
+        assert!(crate::is_owner_only(&file).unwrap(), "{}", sddl(&file));
+        assert!(owner_only(&file), "{}", sddl(&file));
+        assert_eq!(std::fs::read(&file).unwrap(), b"pid=1\n");
     }
 
     #[test]

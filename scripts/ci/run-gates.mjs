@@ -19,8 +19,9 @@ import { fileURLToPath } from "node:url";
 import { runBounded } from "./bounded.mjs";
 import { UNPROVEN_ROWS, gatesFor } from "./gates.mjs";
 import {
-  checkBuild, checkLifecycle, checkLint, checkPattern, checkTests, checkVitest, diagnostics, normalize,
+  checkBuild, checkLifecycle, checkLint, checkP12, checkPattern, checkTests, checkVitest, diagnostics, normalize,
 } from "./parse.mjs";
+import { findPrivate, identityFromEnv, redactText } from "./redact.mjs";
 import { describeSurvivors, scanSurvivors } from "./survivors.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -84,8 +85,20 @@ const capture = (command, commandArgs, cwd = source) => {
 
 const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 
+// Everything the harness writes itself is redacted (account, domain, host, e-mail); raw tool output is not
+// rewritten and is covered by the privacy-scan check below instead.
+const identity = identityFromEnv();
+const redactDeep = (value) => {
+  if (typeof value === "string") return redactText(value, identity);
+  if (Array.isArray(value)) return value.map(redactDeep);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactDeep(v)]));
+  return value;
+};
+const writeText = (name, text) => writeFileSync(join(evidence, name), redactText(text, identity));
+const expandPlaceholders = (arg) => arg.replaceAll("{target}", target).replaceAll("{testTmp}", testTmp).replaceAll("{evidence}", evidence);
+
 const results = [];
-const writeJson = (name, value) => writeFileSync(join(evidence, name), `${JSON.stringify(value, null, 2)}\n`);
+const writeJson = (name, value) => writeFileSync(join(evidence, name), `${JSON.stringify(redactDeep(value), null, 2)}\n`);
 
 const git = (...gitArgs) => capture("git", gitArgs);
 
@@ -106,7 +119,7 @@ const envLines = [
   `CI: ${baseEnv.CI}`,
   `source: ${source}`,
 ];
-writeFileSync(join(evidence, "environment.txt"), `${envLines.join("\n")}\n`);
+writeText("environment.txt", `${envLines.join("\n")}\n`);
 
 // ---- harness checks (not gates) ----
 const harness = [];
@@ -174,7 +187,7 @@ for (const gate of gates) {
     console.log(`SKIPPED ${gate.name}: ${problems[0]}`);
   } else {
     const run = await runBounded({
-      exe: gate.exe, commandArgs: gate.args, cwd: resolve(source, gate.cwd), env: resolveEnv(gate),
+      exe: gate.exe, commandArgs: gate.args.map(expandPlaceholders), cwd: resolve(source, gate.cwd), env: resolveEnv(gate),
       timeoutMs: (gate.timeout ?? 1800) * 1000, stdoutFile: `${base}.stdout.txt`, stderrFile: `${base}.stderr.txt`,
     });
     const problems = [];
@@ -196,6 +209,7 @@ for (const gate of gates) {
         newDiagnostics = diagnostics(run.stderr).filter((d) => !(baseline && baseline.test(d.location ?? "")));
         for (const d of newDiagnostics) baselineNew.push({ gate: gate.name, ...d });
       } else if (gate.mode === "vitest") problems.push(...checkVitest(both, gate));
+      else if (gate.mode === "p12") problems.push(...checkP12(run.stdout));
       else if (gate.mode === "exit" && gate.pattern) problems.push(...checkPattern(both, gate.pattern));
       for (const artifact of gate.artifacts ?? []) {
         const path = join(target, artifact.target);
@@ -208,8 +222,8 @@ for (const gate of gates) {
     }
     // Read-only, after EVERY gate: nothing is stopped. A survivor fails the gate.
     try {
-      const survivors = await scanSurvivors([target, testTmp]);
-      writeFileSync(`${base}.survivors.txt`, survivors.length ? `${describeSurvivors(survivors)}\n` : "none\n");
+      const survivors = await scanSurvivors([target, testTmp], { launched: [run.pid] });
+      writeText(`${gate.name}.survivors.txt`, survivors.length ? `${describeSurvivors(survivors)}\n` : "none\n");
       if (survivors.length) problems.push(`${survivors.length} process(es) of this run survived the gate; see ${gate.name}.survivors.txt`);
     } catch (error) {
       problems.push(`survivor scan failed: ${error.message}`);
@@ -235,6 +249,26 @@ const diffAfter = git("diff");
 writeFileSync(join(evidence, "source-diff-after.txt"), diffAfter.out);
 harnessCheck("source-diff-after", diffAfter.out ? ["tracked files changed during the run (see source-diff-after.txt)"] : []);
 
+// Fail closed: nothing that names the operator, their Windows domain, machine or an e-mail address may be
+// left in evidence that is about to be committed. It reports file:line:kind and never the value. The user
+// name is not checked in raw tool output (cargo and npm print the profile path); that output is not
+// rewritten here, so it must still be reviewed before it is published.
+const privacyFindings = [];
+const scanDir = (dir) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) { scanDir(path); continue; }
+    const raw = /\.(stdout|stderr)\.txt$/.test(entry.name);
+    for (const f of findPrivate(readFileSync(path, "utf8"), { identity, includeUser: !raw })) {
+      privacyFindings.push(`${path.slice(evidence.length + 1)}:${f.line}: ${f.kind}`);
+    }
+  }
+};
+scanDir(evidence);
+harnessCheck("privacy-scan", privacyFindings.length
+  ? [`${privacyFindings.length} private value(s) left in the evidence; redact before committing: ${privacyFindings.slice(0, 20).join(", ")}`]
+  : []);
+
 // ---- summary ----
 const rows = [...results, ...harness].map((r) => {
   const note = r.problems?.length ? r.problems.join("; ").replace(/\n/g, " ").replace(/\|/g, "/") : (r.notes ?? "");
@@ -258,7 +292,7 @@ const summary = [
     ? ["### Not covered by this result (UNPROVEN by construction)", "", ...UNPROVEN_ROWS.map((r) => `- ${r}`), ""]
     : ["### macOS notes", "", "- Windows-only gates (`windows-transport-tests`, the installer) run on the Windows job; Windows runtime behaviour is not proven by this job.", ""]),
 ].join("\n");
-writeFileSync(join(evidence, "summary.md"), summary);
-if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
-console.log(summary);
+writeText("summary.md", summary);
+if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${redactText(summary, identity)}\n`);
+console.log(redactText(summary, identity));
 process.exit(overall ? 0 : 1);

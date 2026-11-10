@@ -184,6 +184,24 @@ mod tests {
     }
 
     #[test]
+    fn a_new_and_an_existing_log_are_owner_only_on_every_platform() {
+        let root = TempDir::new().unwrap();
+        let data = root.path().join("data");
+        create_private_dir(&data).unwrap();
+
+        let fresh = data.join(DAEMON_LOG);
+        drop(open_private_log(&fresh).unwrap());
+        assert!(orchestrator_private_fs::is_owner_only(&fresh).unwrap());
+
+        // Written by something else: inherited ACL on Windows, umask on Unix.
+        let existing = data.join(DAEMON_LOG_ROTATED);
+        fs::write(&existing, b"kept").unwrap();
+        drop(open_private_log(&existing).unwrap());
+        assert!(orchestrator_private_fs::is_owner_only(&existing).unwrap());
+        assert_eq!(fs::read(&existing).unwrap(), b"kept");
+    }
+
+    #[test]
     fn a_launch_failure_quotes_only_the_redacted_end_of_the_log() {
         let dir = TempDir::new().unwrap();
         let message = || "the daemon exited right after starting".to_owned();
