@@ -1,13 +1,27 @@
 // S6 — Diff review and approval. REAL: approvals.list, workspaces.diff,
 // approvals.resolve (approve/reject only), delivery.request. DUMMY behind
 // injected interfaces: ReviewEvidenceSource (D7), ChangeRequestSource (D8).
+import type { ReactNode } from "react";
 import type { ReviewClient } from "./client";
 import { digestHex, deliveryKindOf } from "./binding";
 import { ChangeRequestPanel } from "./ChangeRequestPanel";
 import { EvidencePanel, PlaceholderTag } from "./EvidencePanel";
 import type { ChangeRequestSource, ReviewEvidenceSource } from "./sources";
-import { useReview, type MutationView, type ReviewScope } from "./useReview";
+import type { ReviewSession } from "./reviewSession";
+import { useReview, type MutationView, type ReviewScope, type ReviewState } from "./useReview";
 import "./review.css";
+
+/** Slots the global Review & Decisions view fills; they only read review state, never mutate it. */
+export interface ReviewEmbedSlots {
+  /** Rendered first: the view heading and scope row. */
+  header?: (state: ReviewState) => ReactNode;
+  /** Replaces the plain "Pending decision" selector. */
+  queue: (state: ReviewState) => ReactNode;
+  /** Rendered between the candidate identity and the diff. */
+  facts?: (state: ReviewState) => ReactNode;
+  /** Rendered after the delivery section. */
+  behavior?: (state: ReviewState) => ReactNode;
+}
 
 export interface ReviewScreenProps {
   client: ReviewClient;
@@ -18,6 +32,13 @@ export interface ReviewScreenProps {
   scope: ReviewScope;
   onBack: (scope: ReviewScope) => void;
   newKey?: () => string;
+  /**
+   * Inside the app shell's `<main>`: no landmark of its own, no back header, and a
+   * queue-plus-detail layout. The accepted decision, delivery and idempotency logic is the same.
+   */
+  embedded?: ReviewEmbedSlots;
+  /** Keeps resolved decisions and receipts across remounts (the global view shares one per connection). */
+  session?: ReviewSession;
 }
 
 function receiptTag(client: ReviewClient) {
@@ -55,63 +76,16 @@ function MutationStatus<T>({
   );
 }
 
-export function ReviewScreen({ client, evidenceSource, changeRequestSource, scope, onBack, newKey }: ReviewScreenProps) {
-  const r = useReview({ client, evidenceSource, scope, newKey });
+export function ReviewScreen({ client, evidenceSource, changeRequestSource, scope, onBack, newKey, embedded, session }: ReviewScreenProps) {
+  const r = useReview({ client, evidenceSource, scope, newKey, session });
   const { approval, task } = r;
   const back: ReviewScope = scope.taskId ? scope : { projectId: task?.contract.project_id ?? scope.projectId, taskId: scope.taskId };
   const backLabel = scope.taskId ? `Back to task ${scope.taskId}` : scope.projectId ? `Back to project ${scope.projectId}` : "Back";
+  const Root = embedded ? "div" : "main";
 
-  return (
-    <main className="review-screen">
-      {client.provenance === "fixture" && (
-        <p className="fixture-daemon">
-          <span className="placeholder-tag">FIXTURE DAEMON — PLACEHOLDER DATA</span> No daemon is contacted; the
-          connection strip above does not describe this data.
-        </p>
-      )}
-      <header>
-        <button type="button" onClick={() => onBack(back)}>
-          ← {backLabel}
-        </button>
-        <h1>Review candidate</h1>
-        <button type="button" onClick={() => void r.refresh()} disabled={r.loading}>
-          Refresh
-        </button>
-      </header>
-
-      {r.listState === "loading" && <p role="status">Loading pending decisions…</p>}
-      {r.listState === "error" && r.listError && (
-        <p role="alert">
-          Pending decisions are unavailable ({r.listError.kind}): {r.listError.message}. No data is shown instead; retry
-          with Refresh.
-        </p>
-      )}
-      {r.listState === "ready" && r.items.length === 0 && (
-        <p role="status">
-          No pending decisions{scope.taskId ? " for this task" : scope.projectId ? " for this project" : ""}.
-          {r.hiddenCount > 0 ? ` ${r.hiddenCount} non-delivery decision(s) are not reviewed here.` : ""}
-        </p>
-      )}
-      {r.notice && <p role="alert">{r.notice}</p>}
-      {r.stale && (
-        <p role="alert">
-          Stale review: the task changed or the connection was interrupted since this loaded. Actions are disabled until
-          you Refresh. Earlier acceptance is not reused.
-        </p>
-      )}
-
-      {r.items.length > 0 && (
-        <label>
-          Pending decision{" "}
-          <select aria-label="Pending decision" value={approval?.id ?? ""} onChange={(e) => r.select(e.target.value)}>
-            {r.items.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} — task {a.action.task_id} — {a.state.state}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+  const detail = (
+    <>
+      {embedded && <h2 className="rd-detail-title">Candidate and action panel</h2>}
 
       {approval && (
         <section aria-label="Candidate identity" className="panel">
@@ -137,6 +111,8 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
           </dl>
         </section>
       )}
+
+      {approval && embedded?.facts?.(r)}
 
       {approval && (
         <section aria-label="Diff" className="diff-region">
@@ -250,9 +226,76 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
               describe={(d) => `daemon outcome "${d.outcome}" (step ${d.step_id})`}
             />
           </section>
+          {embedded?.behavior?.(r)}
         </>
       )}
-    </main>
+    </>
+  );
+
+  return (
+    <Root className={embedded ? "review-screen review-embedded" : "review-screen"}>
+      {embedded?.header?.(r)}
+      {client.provenance === "fixture" && (
+        <p className="fixture-daemon">
+          <span className="placeholder-tag">FIXTURE DAEMON — PLACEHOLDER DATA</span> No daemon is contacted; the
+          connection strip above does not describe this data.
+        </p>
+      )}
+      {!embedded && (
+        <header>
+          <button type="button" onClick={() => onBack(back)}>
+            ← {backLabel}
+          </button>
+          <h1>Review candidate</h1>
+          <button type="button" onClick={() => void r.refresh()} disabled={r.loading}>
+            Refresh
+          </button>
+        </header>
+      )}
+
+      {r.listState === "loading" && <p role="status">Loading pending decisions…</p>}
+      {r.listState === "error" && r.listError && (
+        <p role="alert">
+          Pending decisions are unavailable ({r.listError.kind}): {r.listError.message}. No data is shown instead; retry
+          with Refresh.
+        </p>
+      )}
+      {r.listState === "ready" && r.items.length === 0 && (
+        <p role="status">
+          No pending decisions{scope.taskId ? " for this task" : scope.projectId ? " for this project" : ""}.
+          {!embedded && r.hiddenCount > 0 ? ` ${r.hiddenCount} non-delivery decision(s) are not reviewed here.` : ""}
+        </p>
+      )}
+      {r.notice && <p role="alert">{r.notice}</p>}
+      {r.stale && (
+        <p role="alert">
+          Stale review: the task changed or the connection was interrupted since this loaded. Actions are disabled until
+          you Refresh. Earlier acceptance is not reused.
+        </p>
+      )}
+
+      {!embedded && r.items.length > 0 && (
+        <label>
+          Pending decision{" "}
+          <select aria-label="Pending decision" value={approval?.id ?? ""} onChange={(e) => r.select(e.target.value)}>
+            {r.items.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.id} — task {a.action.task_id} — {a.state.state}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {embedded ? (
+        <div className="rd-layout">
+          <div className="rd-queue">{embedded.queue(r)}</div>
+          <div className="rd-detail">{detail}</div>
+        </div>
+      ) : (
+        detail
+      )}
+    </Root>
   );
 }
 

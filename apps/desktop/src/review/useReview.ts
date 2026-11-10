@@ -17,16 +17,14 @@ import {
 } from "./binding";
 import { isSafeRelativePath, parseUnifiedDiff, type DiffFile } from "./diff";
 import type { ReviewEvidenceResult, ReviewEvidenceSource } from "./sources";
+import { createReviewSession, type MutationView, type Mutations, type ReviewSession } from "./reviewSession";
 
 export interface ReviewScope {
   projectId?: string;
   taskId?: string;
 }
 
-export type MutationView<T> =
-  | { phase: "pending" }
-  | { phase: "succeeded"; receipt: T }
-  | { phase: "failed"; kind: DaemonErrorKind; message: string; indeterminate: boolean; epoch: number };
+export type { MutationView } from "./reviewSession";
 
 export interface ScopedDiff {
   path: string;
@@ -36,16 +34,13 @@ export interface ScopedDiff {
   error?: string;
 }
 
-interface Mutations {
-  decision?: MutationView<Approval>;
-  delivery?: MutationView<DeliveryResult>;
-}
-
 export interface UseReviewOptions {
   client: ReviewClient;
   evidenceSource: ReviewEvidenceSource;
   scope: ReviewScope;
   newKey?: () => string;
+  /** Share resolved decisions, receipts and idempotency keys across remounts. Default: private to this mount. */
+  session?: ReviewSession;
 }
 
 const selfEventKey = (approvalId: string, kind: string) => `${kind}|${approvalId}`;
@@ -82,7 +77,12 @@ function consumeSelfEvent(expected: Map<string, number>, event: DaemonEvent): bo
 
 const defaultNewKey = () => crypto.randomUUID();
 
-export function useReview({ client, evidenceSource, scope, newKey = defaultNewKey }: UseReviewOptions) {
+export type ReviewState = ReturnType<typeof useReview>;
+
+export function useReview({ client, evidenceSource, scope, newKey = defaultNewKey, session: sharedSession }: UseReviewOptions) {
+  const privateSession = useRef<ReviewSession | null>(null);
+  const session = sharedSession ?? (privateSession.current ??= createReviewSession());
+  const { resolved, mutations } = useSyncExternalStore(session.subscribe, session.state);
   const subscribeConnection = useCallback(
     (onChange: () => void) => client.subscribe((notice) => notice.type === "connection" && onChange()),
     [client],
@@ -93,12 +93,9 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [listError, setListError] = useState<{ kind: DaemonErrorKind; message: string } | null>(null);
   const [pending, setPending] = useState<Approval[]>([]);
-  const [hiddenCount, setHiddenCount] = useState(0);
-  const [resolved, setResolvedState] = useState<Record<string, Approval>>({});
-  // Decisions resolved in this session. approvals.list returns only pending
-  // approvals, so these stay selectable to continue to delivery. The ref is the
-  // synchronous source for refresh(); the state drives rendering.
-  const resolvedRef = useRef<Record<string, Approval>>({});
+  const [hidden, setHidden] = useState<Approval[]>([]);
+  // Decisions resolved in this session live in the review session: approvals.list returns
+  // only pending approvals, so these stay selectable to continue to delivery.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [task, setTask] = useState<TaskRecord | null>(null);
   const [diff, setDiff] = useState<DiffState>({ status: "loading" });
@@ -109,9 +106,8 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
   const [refreshEpoch, setRefreshEpoch] = useState(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scoped, setScoped] = useState<ScopedDiff | null>(null);
-  const [mutations, setMutations] = useState<Record<string, Mutations>>({});
 
-  const keys = useRef(new Map<string, string>());
+  const keys = session.keys;
   const expectedSelfEvents = useRef(new Map<string, number>());
   const inFlight = useRef(false);
   const loadSeq = useRef(0);
@@ -129,14 +125,14 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
 
   const stableKey = useCallback(
     (fingerprint: string) => {
-      let key = keys.current.get(fingerprint);
+      let key = keys.get(fingerprint);
       if (!key) {
         key = newKey();
-        keys.current.set(fingerprint, key);
+        keys.set(fingerprint, key);
       }
       return key;
     },
-    [newKey],
+    [keys, newKey],
   );
 
   const loadContext = useCallback(
@@ -190,7 +186,6 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
       setContextLoading(true);
       try {
         let all: Approval[];
-        let hidden = 0;
         try {
           all = await client.call<Approval[]>("approvals.list", {});
           if (scope.taskId === undefined && scope.projectId !== undefined) {
@@ -210,16 +205,15 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         if (seq !== loadSeq.current) return;
         const scoped = scope.taskId ? all.filter((a) => a.action.task_id === scope.taskId) : all;
         const reviewable = scoped.filter((a) => a.action.kind.type === "delivery");
-        hidden = scoped.length - reviewable.length;
         setPending(reviewable);
-        setHiddenCount(hidden);
+        setHidden(scoped.filter((a) => a.action.kind.type !== "delivery"));
         setListError(null);
         setListState("ready");
 
         const wanted = preferId ?? snapshot.current?.id ?? null;
         const visible = [
           ...reviewable,
-          ...Object.values(resolvedRef.current).filter((r) => !reviewable.some((a) => a.id === r.id)),
+          ...Object.values(session.state().resolved).filter((r) => !reviewable.some((a) => a.id === r.id)),
         ];
         const next = visible.find((a) => a.id === wanted) ?? (preferId ? null : visible[0] ?? null);
         const previous = snapshot.current;
@@ -265,7 +259,7 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         }
       }
     },
-    [client, scope.projectId, scope.taskId, loadContext],
+    [client, scope.projectId, scope.taskId, loadContext, session],
   );
 
   // Initial load, and a fresh baseline whenever the client or scope changes.
@@ -400,24 +394,23 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
 
   const track = useCallback(
     async <T,>(approvalId: string, slot: keyof Mutations, run: () => Promise<T>): Promise<T | undefined> => {
-      setMutations((m) => ({ ...m, [approvalId]: { ...m[approvalId], [slot]: { phase: "pending" } } }));
+      const put = (view: MutationView<T>) =>
+        session.update((s) => ({
+          ...s,
+          mutations: { ...s.mutations, [approvalId]: { ...s.mutations[approvalId], [slot]: view } },
+        }));
+      put({ phase: "pending" });
       try {
         const receipt = await run();
-        setMutations((m) => ({ ...m, [approvalId]: { ...m[approvalId], [slot]: { phase: "succeeded", receipt } } }));
+        put({ phase: "succeeded", receipt });
         return receipt;
       } catch (error) {
         const e = asDaemonError(error);
-        setMutations((m) => ({
-          ...m,
-          [approvalId]: {
-            ...m[approvalId],
-            [slot]: { phase: "failed", kind: e.kind, message: e.message, indeterminate: e.indeterminate, epoch: refreshEpochRef.current },
-          },
-        }));
+        put({ phase: "failed", kind: e.kind, message: e.message, indeterminate: e.indeterminate, epoch: refreshEpochRef.current });
         return undefined;
       }
     },
-    [],
+    [session],
   );
   const refreshEpochRef = useRef(refreshEpoch);
   refreshEpochRef.current = refreshEpoch;
@@ -444,12 +437,11 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
       // A failed (or indeterminate) request may still emit an event; treat it as external.
       if (!receipt) releaseSelfEvent(expectedSelfEvents.current, eventKey);
       if (receipt) {
-        resolvedRef.current = { ...resolvedRef.current, [target.id]: receipt };
-        setResolvedState(resolvedRef.current);
+        session.update((s) => ({ ...s, resolved: { ...s.resolved, [target.id]: receipt } }));
         await refreshRef.current(target.id);
       }
     },
-    [client, stableKey, track],
+    [client, session, stableKey, track],
   );
 
   const requestDelivery = useCallback(async () => {
@@ -478,7 +470,8 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
     listState,
     listError,
     items,
-    hiddenCount,
+    hiddenCount: hidden.length,
+    hidden,
     approval,
     task,
     diff,
