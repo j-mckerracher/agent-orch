@@ -1,5 +1,6 @@
 import { matchesFilter, pendingApprovals } from "../format";
 import { useServices, useStore } from "../services";
+import { ThemeToggle } from "../theme";
 import { NavLink } from "./NavLink";
 import type { ShellSlots } from "./slots";
 
@@ -53,7 +54,7 @@ export const defaultShellSlots: ShellSlots = {
   reviewCount: <ReviewCount />,
   workstreamsCount: null,
   workstreamsTree: placeholder("slot-workstreams-tree", "The workstream list is not available yet."),
-  themeToggle: null,
+  themeToggle: <ThemeToggle />,
   topUsage: <span data-testid="slot-top-usage">Usage: not available</span>,
   topSearch: (
     <div role="search" data-testid="slot-top-search">

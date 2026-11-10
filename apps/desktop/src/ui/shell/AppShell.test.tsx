@@ -276,6 +276,24 @@ describe("slots", () => {
     expect(within(screen.getByRole("region", { name: "Device resources" })).getByTestId("s-resources")).toBeInTheDocument();
   });
 
+  it("renders the M7-01 theme toggle in the shell by default and switches the theme", async () => {
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
+    const { user } = await mount(daemon());
+    const toggle = within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: /dark mode/i });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("loads the theme tokens and initialiser in the real app entry", () => {
+    expect(readFileSync("src/ui/app.css", "utf8")).toContain('@import "./theme/tokens.css"');
+    expect(readFileSync("index.html", "utf8")).toContain("/src/ui/theme/init.ts");
+  });
+
   it("removes the activity and resource regions when their slots are null", async () => {
     await mount(daemon(), { shellSlots: { activity: null, resources: null } });
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
