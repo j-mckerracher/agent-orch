@@ -43,11 +43,26 @@ describe("live workstreams adapter", () => {
     fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "workstreams");
     const source = await live(fake);
     const result = await source.workstreams();
-    expect(result.status).not.toBe("ok");
+    expect(result.status).toBe("unsupported");
     expect(result.provenance.kind).toBe("daemon");
     expect(fake.callsTo("workstreams.list")).toHaveLength(0);
     await expect(source.create("x")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
     expect(fake.callsTo("workstreams.create")).toHaveLength(0);
+  });
+
+  it("stays connected and shows queue, host and workstreams as unsupported on a daemon that refuses them", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.unknownCapabilities = ["queue", "host", "workstreams"];
+    const connected = await connect(fake);
+    stops.push(connected.stop);
+    expect(connected.connection.getSnapshot().status).toBe("connected");
+    expect(fake.openRequests).toHaveLength(2);
+    expect(await connected.surfaces.workstreams.workstreams()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
+    expect(await connected.surfaces.metrics.metrics()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
+    expect(await connected.surfaces.activity.activity()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
+    expect(fake.callsTo("workstreams.list")).toHaveLength(0);
+    expect(fake.callsTo("host.metrics")).toHaveLength(0);
+    expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
   });
 
   it("creates a workstream and returns the daemon's id and revision", async () => {

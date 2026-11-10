@@ -16,7 +16,7 @@
  *   while the window is hidden.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
+import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import type { HostMeterWire, HostMetricsWire } from "../../daemon/hostMetrics";
 import { measured, notOk, observation, okResult, oldest } from "./result";
 import type { Measured, MeterValue, Observation, Provenance, SurfaceResult, SystemMetrics, SystemMetricsSource } from "./types";
@@ -173,8 +173,7 @@ export function createLiveMetrics(connection: ConnectionManager, options: LiveMe
       // Only a DaemonError message is the daemon's own words; any other error text is a JS detail and stays out of the UI.
       const detail = error instanceof DaemonError ? ` (${failed.kind}: ${failed.message})` : "";
       const reason = `${presentError(failed).reason}${detail}`;
-      const missing = failed.kind === "method-unavailable" || failed.kind === "capability-unavailable" || failed.kind === "capability-not-negotiated";
-      return notOk(PROVENANCE, missing ? "unsupported" : "unavailable", reason);
+      return notOk(PROVENANCE, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
     }
     intervalMs = pollIntervalMs(wire);
     try {

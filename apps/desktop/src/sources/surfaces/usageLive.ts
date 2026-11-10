@@ -11,7 +11,7 @@
  *   live mode cannot fall back to placeholder numbers.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
+import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import type {
   UsageBucketWire,
   UsageCostWire,
@@ -191,9 +191,7 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
 function failure<T>(provenance: Provenance, error: unknown) {
   const failed = asDaemonError(error);
   const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  const unsupported =
-    failed.kind === "method-unavailable" || failed.kind === "capability-unavailable" || failed.kind === "capability-not-negotiated";
-  return notOk<T>(provenance, unsupported ? "unsupported" : "unavailable", reason);
+  return notOk<T>(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
 }
 
 export function createLiveUsageSource(

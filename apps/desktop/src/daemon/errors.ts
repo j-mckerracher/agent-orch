@@ -97,6 +97,19 @@ export function asDaemonError(error: unknown): DaemonError {
   return new DaemonError("protocol", error instanceof Error ? error.message : "unexpected failure");
 }
 
+/**
+ * True when the daemon lacks the feature: it does not implement the method, does not offer the
+ * capability, or the connection retried the handshake without an optional capability. Panels show
+ * `unsupported` for these and retrying will not help.
+ */
+export function isMissingFeature(error: DaemonError): boolean {
+  return (
+    error.kind === "method-unavailable" ||
+    error.kind === "capability-unavailable" ||
+    error.kind === "capability-not-negotiated"
+  );
+}
+
 export interface ErrorPresentation {
   reason: string;
   nextStep: string;

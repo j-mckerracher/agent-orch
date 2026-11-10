@@ -17,7 +17,7 @@
  */
 import type { ConnectionManager } from "../../daemon/connection";
 import { isFixtureId } from "../../daemon/api";
-import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
+import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { createDerivedActivity } from "./activity";
@@ -55,10 +55,7 @@ function fixtureOnly(what: string): DaemonError {
 function failure<T>(provenance: Provenance, error: unknown): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  if (failed.kind === "method-unavailable" || failed.kind === "capability-unavailable") {
-    return notOk(provenance, "unsupported", reason);
-  }
-  return notOk(provenance, "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
 }
 
 async function guarded<T>(provenance: Provenance, now: () => number, read: () => Promise<T>): Promise<SurfaceResult<T>> {

@@ -19,7 +19,7 @@
  * - `simulate*` calls reject: they exist for fixture adapters only. This adapter has no mutation.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
+import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import type { QueueQueuedEntry, QueueSnapshotWire } from "../../daemon/queue";
 import type { Approval, TaskRecord } from "../../daemon/types";
 import { measured, notOk, observation, okResult, unsupportedValue } from "./result";
@@ -55,9 +55,7 @@ function reasonOf(failed: DaemonError): string {
 function failure<T>(error: unknown): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = reasonOf(failed);
-  const missing =
-    failed.kind === "method-unavailable" || failed.kind === "capability-unavailable" || failed.kind === "capability-not-negotiated";
-  return notOk(PROVENANCE, missing ? "unsupported" : "unavailable", reason);
+  return notOk(PROVENANCE, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
 }
 
 /** A read that failed after the snapshot succeeded, kept as its reason so only that part degrades. */

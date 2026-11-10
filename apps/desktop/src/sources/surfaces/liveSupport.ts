@@ -3,7 +3,7 @@
  * Same mapping as the guarded reads in `derived.ts`, kept here so those adapters
  * do not import `derived.ts` back.
  */
-import { asDaemonError, presentError } from "../../daemon/errors";
+import { asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import { notOk, observation, okResult } from "./result";
 import type { Provenance, SurfaceResult } from "./types";
 
@@ -11,10 +11,7 @@ import type { Provenance, SurfaceResult } from "./types";
 export function liveFailure<T>(provenance: Provenance, error: unknown, override?: string): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = override ?? `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  if (failed.kind === "method-unavailable" || failed.kind === "capability-unavailable") {
-    return notOk(provenance, "unsupported", reason);
-  }
-  return notOk(provenance, "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
 }
 
 export async function liveRead<T>(
