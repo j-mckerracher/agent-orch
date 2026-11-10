@@ -154,15 +154,66 @@ describe("ResourceStrip with D13 fixtures", () => {
 });
 
 describe("ResourceStrip in live mode", () => {
-  it("reports unsupported from the derived source with no placeholder badge and none of the illustrative numbers", async () => {
+  it("reports unsupported when the daemon has no host.metrics, with no placeholder badge and none of the illustrative numbers", async () => {
     const services = createServices({ connector: new FakeDaemon(), connection: { backoffMs: [5], requestTimeoutMs: 100 } });
     created.push(services);
+    services.connection.start();
     renderStrip(services);
-    expect(await screen.findAllByText("The daemon reports no host metrics.")).toHaveLength(4);
+    expect(await screen.findAllByText(/method-unavailable: method unavailable: host\.metrics/)).toHaveLength(4);
     expect(screen.queryByTestId("badge-D13")).toBeNull();
     expect(screen.queryAllByRole("meter")).toHaveLength(0);
     const strip = screen.getByTestId("resource-strip");
     expect(strip).not.toHaveTextContent(/PLACEHOLDER|44|18\.5|71/);
+  });
+});
+
+describe("ResourceStrip with a watched source", () => {
+  const liveResult = (value: number): SurfaceResult<SystemMetrics> => {
+    const state = ok({
+      cpu: {
+        status: "ok",
+        observedAt: new Date(NOW - 1000).toISOString(),
+        ageMs: 1000,
+        value: { value, unit: "%", kind: "utilization", label: "CPU" },
+      },
+    });
+    if (state.status !== "ok") throw new Error("unreachable");
+    return { status: "ok", provenance: daemonProvenance, observedAt: state.observedAt, ageMs: state.ageMs, data: state.data };
+  };
+
+  function watchedServices() {
+    const services = fixtureServices();
+    let push: (result: SurfaceResult<SystemMetrics>) => void = () => undefined;
+    const stop = vi.fn();
+    const watch = vi.fn((onResult: (result: SurfaceResult<SystemMetrics>) => void) => {
+      push = onResult;
+      return stop;
+    });
+    const metrics = vi.fn();
+    const watched: Services = {
+      ...services,
+      surfaces: { ...services.surfaces, metrics: { provenance: daemonProvenance, metrics, watch } },
+    };
+    return { services: watched, watch, stop, metrics, push: (result: SurfaceResult<SystemMetrics>) => push(result) };
+  }
+
+  it("shows each pushed reading with no placeholder badge, and never reads once itself", async () => {
+    const { services, push, metrics } = watchedServices();
+    renderStrip(services);
+    act(() => push(liveResult(42)));
+    expect(await screen.findByRole("meter", { name: "CPU utilization" })).toHaveAttribute("aria-valuenow", "42");
+    act(() => push(liveResult(57)));
+    expect(await screen.findByRole("meter", { name: "CPU utilization" })).toHaveAttribute("aria-valuenow", "57");
+    expect(screen.queryByTestId("badge-D13")).toBeNull();
+    expect(metrics).not.toHaveBeenCalled();
+  });
+
+  it("stops watching when unmounted", () => {
+    const { services, watch, stop } = watchedServices();
+    const { unmount } = renderStrip(services);
+    expect(watch).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });
 

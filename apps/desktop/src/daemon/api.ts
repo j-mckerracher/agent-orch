@@ -28,6 +28,7 @@ import type {
   WorkspaceDiff,
   WorkspaceDiffRequest,
 } from "./types";
+import type { HostMetricsWire } from "./hostMetrics";
 
 export const FIXTURE_ID_PREFIX = "fixture:";
 
@@ -149,6 +150,11 @@ export class DaemonApi {
 
   agentsCapabilities(): Promise<AgentCapabilityEntry[]> {
     return this.session.request("agents.capabilities");
+  }
+
+  /** Cached host meters (capability `host`); the daemon never probes on the call. */
+  hostMetrics(): Promise<HostMetricsWire> {
+    return this.session.request("host.metrics");
   }
 
   /** Records a user message; the daemon never acts on it. */

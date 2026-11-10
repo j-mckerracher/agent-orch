@@ -45,6 +45,7 @@ const derivedHarness: Harness = {
     if (scenario === "empty") {
       fake.stub("agents.capabilities", []);
       fake.stub("coordinator.get", { project_id: ALPHA, entries: [], more: false, next_after_sequence: 0 });
+      fake.stub("host.metrics", { schema_version: 1, sample_interval_ms: 2000, meters: [] });
     }
     if (scenario === "unsupported") {
       for (const method of READ_METHODS) fake.failNext(method, { code: -32601, message: "method unavailable" }, 20);
@@ -70,11 +71,11 @@ const READS: Read[] = [
   ["D16", (b) => b.surfaces.decisions.queue()],
 ];
 
-/** The daemon has no usage or metrics data, so its adapters are `unsupported` in every scenario. */
+/** The daemon has no usage data, so its D12 adapter is `unsupported` in every scenario. */
 function expectedStatus(kind: Kind, id: string, scenario: Scenario): string {
-  if (kind === "daemon" && (id === "D12" || id === "D13")) return "unsupported";
+  if (kind === "daemon" && id === "D12") return "unsupported";
   if (scenario === "ok") return "ok";
-  if (scenario === "empty") return id === "D12" || id === "D13" ? "unknown" : "ok";
+  if (scenario === "empty") return id === "D12" || (kind === "fixture" && id === "D13") ? "unknown" : "ok";
   if (scenario === "unsupported") return "unsupported";
   return "unavailable";
 }
@@ -88,6 +89,10 @@ function emptyCollection(id: string, data: unknown): boolean {
       return d.entries!.length === 0;
     case "D11":
       return d.running!.length === 0 && d.queued!.length === 0 && d.attention!.length === 0;
+    case "D13": {
+      const meters = data as Record<string, { status: string }>;
+      return ["cpu", "memory", "disk", "gpu"].every((key) => meters[key]!.status !== "ok");
+    }
     case "D14":
       return d.providers!.length === 0;
     case "D15":
@@ -169,10 +174,11 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
     expect(result.data.skipped).toEqual([]);
   });
 
+  // `watch` (D13 polling) exists on the live adapter only; the read methods must match.
   it("exposes the same adapter methods as the other adapter set", () => {
     const fixture = createFixtureSurfaces();
     const shape = (s: SurfaceSources) =>
-      Object.fromEntries(Object.entries(s).map(([name, source]) => [name, Object.keys(source).sort()]));
+      Object.fromEntries(Object.entries(s).map(([name, source]) => [name, Object.keys(source).filter((key) => key !== "watch").sort()]));
     return harness.build("ok").then((built) => expect(shape(built.surfaces)).toEqual(shape(fixture)));
   });
 });

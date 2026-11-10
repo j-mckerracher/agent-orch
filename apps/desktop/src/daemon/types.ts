@@ -17,6 +17,7 @@ export type Capability =
   | "workspaces"
   | "delivery"
   | "agents"
+  | "host"
   | "coordinator"
   | "review";
 
@@ -30,6 +31,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "workspaces",
   "delivery",
   "agents",
+  "host",
   "coordinator",
   "review",
 ];

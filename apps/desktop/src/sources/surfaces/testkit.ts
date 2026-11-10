@@ -20,6 +20,7 @@ export function populate(fake: FakeDaemon): FakeDaemon {
     mkTask("t-done", BETA, { state: "Succeeded" }),
   ];
   fake.approvals = [mkApproval("a-1", "t-run"), mkApproval("a-2", "t-done", "approved")];
+  fake.stub("host.metrics", HOST_METRICS_WIRE);
   fake.stub("agents.capabilities", [
     {
       agent: "codex",
@@ -67,9 +68,22 @@ export function populate(fake: FakeDaemon): FakeDaemon {
   return fake;
 }
 
+/** A `host.metrics` result observed 2 s before NOW: every meter ok except GPU (unsupported). */
+export const HOST_METRICS_WIRE = {
+  schema_version: 1,
+  sample_interval_ms: 2000,
+  meters: [
+    { meter: "cpu", state: "ok", kind: "utilization", unit: "percent", scope: "all logical CPUs", value: 12.5, total: null, observed_at: "2026-01-01T11:59:58.000Z", sample_interval_ms: 2000, reason: null },
+    { meter: "memory", state: "ok", kind: "capacity", unit: "bytes", scope: "physical memory", value: 8e9, total: 32e9, observed_at: "2026-01-01T11:59:58.000Z", sample_interval_ms: 2000, reason: null },
+    { meter: "disk", state: "ok", kind: "capacity", unit: "bytes", scope: "/", value: 100e9, total: 500e9, observed_at: "2026-01-01T11:59:58.000Z", sample_interval_ms: 2000, reason: null },
+    { meter: "gpu", state: "unsupported", kind: "utilization", unit: "percent", scope: null, value: null, total: null, observed_at: null, sample_interval_ms: 2000, reason: "No vetted GPU source on this platform." },
+  ],
+};
+
 export const READ_METHODS = [
   "projects.list",
   "tasks.list",
+  "host.metrics",
   "approvals.list",
   "agents.capabilities",
   "coordinator.get",
