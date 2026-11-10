@@ -10,10 +10,13 @@ const ids = (text: string): string[] =>
     .map((part) => part.trim())
     .filter(Boolean);
 
+/** Mirrors `MAX_RETRIES` and `MAX_REPAIRS` in the engine's contract limits. */
+const MAX_ATTEMPTS = 10;
+
 function limit(text: string, label: string, errors: string[]): number {
   const value = Number(text);
-  if (text.trim() === "" || !Number.isInteger(value) || value < 0 || value > 100) {
-    errors.push(`${label} must be a whole number from 0 to 100.`);
+  if (text.trim() === "" || !Number.isInteger(value) || value < 0 || value > MAX_ATTEMPTS) {
+    errors.push(`${label} must be a whole number from 0 to ${MAX_ATTEMPTS}.`);
     return 0;
   }
   return value;

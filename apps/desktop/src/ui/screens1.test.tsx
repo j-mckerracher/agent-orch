@@ -199,6 +199,13 @@ describe("S2 project detail and submission", () => {
     expect(params.idempotency_key).toBeTruthy();
   });
 
+  it("does not offer ReadOnly autonomy, which the daemon rejects", async () => {
+    await mount(seeded(), { route });
+    const autonomy = await screen.findByLabelText("Autonomy");
+    const offered = within(autonomy).getAllByRole("option").map((option) => option.textContent);
+    expect(offered).toEqual(["WorkspaceWrites", "ApprovalRequired"]);
+  });
+
   it("explains local validation failures and does not call the daemon", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route });

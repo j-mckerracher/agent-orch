@@ -150,11 +150,20 @@ pub enum ContractError {
     /// A text field contains a NUL byte, which no process argument, path, or
     /// identifier can carry; the payload names the field.
     ContainsNul(&'static str),
+    /// A free-text field contains a control character other than newline,
+    /// carriage return or tab, or a bidirectional formatting character that
+    /// can reorder displayed text; the payload names the field.
+    DisallowedCharacter(&'static str),
 }
 
 /// Size bounds for untrusted contract fields. The 1 MiB IPC frame is the
 /// only other limit; these keep one contract from filling the store or the
-/// UI and keep argument vectors within what operating systems accept.
+/// UI. They do not guarantee that an argument vector fits the operating
+/// system: Windows `CreateProcess` caps a whole command line at 32,767
+/// characters, so a prompt near `MAX_OBJECTIVE_BYTES` (passed as one
+/// argument to Codex and Claude Code) or many large verification arguments
+/// make the launch fail with a spawn error after validation succeeds. That
+/// fails closed. Unix limits are far larger.
 pub mod limits {
     /// Objective text, in bytes.
     pub const MAX_OBJECTIVE_BYTES: usize = 64 * 1024;
@@ -171,6 +180,10 @@ pub mod limits {
     pub const MAX_COMMAND_ARGS: usize = 64;
     /// One verification argument, in bytes.
     pub const MAX_COMMAND_ARG_BYTES: usize = 4096;
+    /// Retries after a failed run. Each retry launches a billed agent.
+    pub const MAX_RETRIES: u32 = 10;
+    /// Repair attempts after failed verification.
+    pub const MAX_REPAIRS: u32 = 10;
 }
 
 impl std::fmt::Display for ContractError {
@@ -186,8 +199,12 @@ impl std::fmt::Display for ContractError {
                     "Commands verification policy must carry at least one command"
                 )
             }
-            ContractError::FieldTooLarge(field) => write!(f, "{field} exceeds its size limit"),
+            ContractError::FieldTooLarge(field) => write!(f, "{field} exceeds its limit"),
             ContractError::ContainsNul(field) => write!(f, "{field} contains a NUL byte"),
+            ContractError::DisallowedCharacter(field) => write!(
+                f,
+                "{field} contains a control or bidirectional formatting character"
+            ),
         }
     }
 }
@@ -238,11 +255,40 @@ fn check_text(field: &'static str, value: &str, max_bytes: usize) -> Result<(), 
     Ok(())
 }
 
+/// Characters that can reorder or disguise displayed text: the Arabic letter
+/// mark, left-to-right and right-to-left marks, the embedding and override
+/// controls, and the isolate controls.
+fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Free text may span lines and use tabs; every other control character
+/// (ESC, DEL, C1) and every bidi control is refused. NUL is reported first by
+/// [`check_text`].
+fn check_free_text(field: &'static str, value: &str) -> Result<(), ContractError> {
+    let disallowed =
+        |c: char| (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) || is_bidi_control(c);
+    if value.chars().any(disallowed) {
+        return Err(ContractError::DisallowedCharacter(field));
+    }
+    Ok(())
+}
+
 fn validate_bounds(contract: &TaskContract) -> Result<(), ContractError> {
     use limits::*;
     check_text("objective", &contract.objective, MAX_OBJECTIVE_BYTES)?;
+    check_free_text("objective", &contract.objective)?;
     check_text("agent", &contract.agent, MAX_AGENT_BYTES)?;
     check_text("project_id", &contract.project_id, MAX_ID_BYTES)?;
+    if contract.max_retries > MAX_RETRIES {
+        return Err(ContractError::FieldTooLarge("max_retries"));
+    }
+    if contract.max_repairs > MAX_REPAIRS {
+        return Err(ContractError::FieldTooLarge("max_repairs"));
+    }
     if let Some(parent) = &contract.parent_id {
         check_text("parent_id", parent, MAX_ID_BYTES)?;
     }
@@ -586,6 +632,8 @@ mod tests {
         c.agent = "a".repeat(MAX_AGENT_BYTES);
         c.project_id = "p".repeat(MAX_ID_BYTES);
         c.parent_id = Some("q".repeat(MAX_ID_BYTES));
+        c.max_retries = MAX_RETRIES;
+        c.max_repairs = MAX_REPAIRS;
         c.dependencies = (0..MAX_DEPENDENCIES).map(|n| format!("dep-{n}")).collect();
         c.verification = VerificationPolicy::Commands {
             commands: vec![
@@ -622,6 +670,9 @@ mod tests {
                     c.dependencies = (0..=MAX_DEPENDENCIES).map(|n| format!("dep-{n}")).collect()
                 }),
             ),
+            ("max_retries", Box::new(|c| c.max_retries = MAX_RETRIES + 1)),
+            ("max_repairs", Box::new(|c| c.max_repairs = MAX_REPAIRS + 1)),
+            ("max_retries", Box::new(|c| c.max_retries = u32::MAX)),
             (
                 "dependency",
                 Box::new(|c| c.dependencies = vec!["d".repeat(MAX_ID_BYTES + 1)]),
@@ -691,5 +742,32 @@ mod tests {
                 "{field}"
             );
         }
+    }
+
+    #[test]
+    fn objective_control_and_bidi_characters_are_rejected_but_layout_is_kept() {
+        for bad in [
+            "fix\u{1b}[31m",
+            "fix\u{7f}",
+            "fix\u{85}",
+            "a\u{202e}b",
+            "a\u{2066}b\u{2069}",
+            "a\u{200f}b",
+            "a\u{061c}b",
+            "a\u{0008}b",
+        ] {
+            let mut c = contract();
+            c.objective = bad.into();
+            assert_eq!(
+                validate(&c),
+                Err(ContractError::DisallowedCharacter("objective")),
+                "{bad:?}"
+            );
+        }
+        let mut c = contract();
+        c.objective =
+            "Line one\r\n\tindented line two, caf\u{e9} \u{1f600} \u{5e9}\u{5dc}\u{5d5}\u{5dd}"
+                .into();
+        assert_eq!(validate(&c), Ok(()));
     }
 }

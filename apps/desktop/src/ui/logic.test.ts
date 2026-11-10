@@ -50,12 +50,18 @@ describe("buildSubmission", () => {
     expect(buildSubmission("/repo", draft({ verification: "Commands", commands: "  \n" })).ok).toBe(false);
   });
 
+  it("accepts the daemon's cap of 10 retries and repairs and no more", () => {
+    expect(buildSubmission("/repo", draft({ maxRetries: "10", maxRepairs: "10" })).ok).toBe(true);
+    expect(buildSubmission("/repo", draft({ maxRetries: "11" })).ok).toBe(false);
+  });
+
   it("rejects bad limits, duplicate dependencies and placeholder ids", () => {
     for (const patch of [
       { maxRetries: "-1" },
       { maxRepairs: "1.5" },
       { maxRetries: "" },
-      { maxRepairs: "101" },
+      { maxRepairs: "11" },
+      { maxRetries: "101" },
       { dependencies: "a, a" },
       { dependencies: "fixture:task-queued" },
       { parentId: "fixture:task-queued" },

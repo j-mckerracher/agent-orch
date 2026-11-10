@@ -170,7 +170,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <label>
             Autonomy
             <select value={draft.autonomy} onChange={(e) => set({ autonomy: e.target.value as AutonomyPolicy })}>
-              <option>ReadOnly</option>
               <option>WorkspaceWrites</option>
               <option>ApprovalRequired</option>
             </select>
