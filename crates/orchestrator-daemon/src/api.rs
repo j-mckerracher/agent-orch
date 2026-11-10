@@ -50,6 +50,7 @@ pub(crate) struct DaemonApi {
     idempotency_gate: Mutex<()>,
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
+    host: host::HostService,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -177,6 +178,7 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
+            host: host::HostService::new(data_dir),
         })
     }
 
@@ -185,6 +187,7 @@ impl DaemonApi {
     pub(crate) fn with_executor(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
         let mut api = Self::with_config(data_dir, config.clone())?;
         api.executor = Some(Executor::start(api.store.clone(), config)?);
+        api.host.start();
         Ok(api)
     }
 
@@ -214,6 +217,7 @@ impl RpcHandler for DaemonApi {
             Capability::Agents,
             Capability::Coordinator,
             Capability::Review,
+            Capability::Host,
         ]
     }
 
@@ -240,6 +244,7 @@ impl RpcHandler for DaemonApi {
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
+            "host.metrics" => self.host_metrics(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1112,6 +1117,8 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
 
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "api_host.rs"]
+mod host;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;

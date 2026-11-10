@@ -24,6 +24,7 @@ members = [
     "crates/orchestrator-engine",
     "crates/orchestrator-ipc",
     "crates/orchestrator-daemon",
+    "crates/orchestrator-host-metrics",
     "crates/orchestrator-cli",
 ]
 

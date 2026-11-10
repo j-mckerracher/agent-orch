@@ -81,6 +81,9 @@ mod coordinator_review_tests;
 #[path = "event_stream_tests.rs"]
 mod event_stream_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "host_tests.rs"]
+mod host_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "idle_subscription_tests.rs"]
 mod idle_subscription_tests;
 #[cfg(all(test, unix))]
