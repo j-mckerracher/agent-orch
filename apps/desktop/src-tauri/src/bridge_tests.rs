@@ -254,3 +254,25 @@ fn a_daemon_that_exits_at_once_is_reported_with_its_log_location() {
     assert!(error.message.contains(launch::DAEMON_LOG), "{error:?}");
     assert!(data.join(launch::DAEMON_LOG).is_file());
 }
+
+// The test binary is the "daemon": it rejects `--data-dir` and exits at once on
+// every platform, after the log already holds a line with a credential.
+#[test]
+fn a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log() {
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(
+        data.join(launch::DAEMON_LOG),
+        "{\"event\":\"daemon_failed\",\"error\":\"token=SECRETVALUE0123456789\"}\n",
+    )
+    .unwrap();
+    let bridge = Bridge::new(Some(data), Some(std::env::current_exe().unwrap()));
+    let (emit, _frames) = collector();
+    let error = bridge
+        .open("main", &[Capability::Events], emit)
+        .unwrap_err();
+    assert_eq!(error.code, "daemon-unavailable");
+    assert!(error.message.contains("daemon_failed"), "{error:?}");
+    assert!(!error.message.contains("SECRETVALUE"), "{error:?}");
+}

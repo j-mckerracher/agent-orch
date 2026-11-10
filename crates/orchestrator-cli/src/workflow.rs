@@ -34,6 +34,8 @@ use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 #[cfg(test)]
 use orchestrator_engine::reconcile::delivery_blocks;
+#[cfg(test)]
+use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::reconcile::{reconcile_before_scheduling, reconcile_cancellation_owners};
 use orchestrator_git::{create_task_worktree, Repository};
 #[cfg(test)]
@@ -2752,8 +2754,13 @@ mod tests {
         assert_eq!(store.get(&owner.task_id).unwrap().state, TaskState::Running);
 
         // Scheduling blocks on the owner, but the dead session is reconciled first.
-        let error = reconcile_before_scheduling(&store).unwrap_err();
+        let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
+        let error = reconcile_before_scheduling_with(&store, &diagnostics).unwrap_err();
         assert!(error.contains("recover-owner"), "{error}");
+        let lines = diagnostics.lines().join("\n");
+        assert!(lines.contains("\"event\":\"reconcile_interrupted_task\""), "{lines}");
+        assert!(lines.contains("\"event\":\"reconcile_blocking_record\""), "{lines}");
+        assert!(lines.contains("task-running-dead-owner"), "{lines}");
         let record = store.get(&owner.task_id).unwrap();
         assert_eq!(record.state, TaskState::Failed);
         assert_eq!(record.attempts[0].state, AttemptState::Failed);
@@ -2829,6 +2836,30 @@ mod tests {
             error.contains("Running without an unfinished session"),
             "{error}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blocking_records_go_through_the_redacting_diagnostics_sink() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = open_store(directory.path()).unwrap();
+        // A token-shaped task id lands in the blocker text.
+        let secret = "a1b2c3d4e5f60718".repeat(4);
+        let task_id = secret.clone();
+        // Shape rules miss the copies glued into longer words; the exact-value
+        // pass catches those too.
+        orchestrator_diagnostics::register_secret(&secret);
+        let owner = register_test_owner(&store, &task_id, None);
+        store
+            .update_session_state(&owner.task_id, &owner.session_id, SessionState::Exited)
+            .unwrap();
+        let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
+        let error = reconcile_before_scheduling_with(&store, &diagnostics).unwrap_err();
+        assert!(error.contains("Running without an unfinished session"), "{error}");
+        let lines = diagnostics.lines().join("\n");
+        assert!(lines.contains("\"event\":\"reconcile_blocking_record\""), "{lines}");
+        assert!(lines.contains("\"component\":\"engine\""), "{lines}");
+        assert!(!lines.contains(&secret), "{lines}");
     }
 
     /// A real repository (canonical path) plus a data directory and store; the

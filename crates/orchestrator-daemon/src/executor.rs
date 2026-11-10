@@ -40,14 +40,18 @@ use orchestrator_agents::{
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
-use orchestrator_engine::reconcile::reconcile_before_scheduling;
+use orchestrator_diagnostics::Diagnostics;
+use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
-use orchestrator_store::{CancellationOwner, CancellationStatus, SqliteStore, Store};
+use orchestrator_store::{
+    CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
+};
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
 const BLOCKED_RETRY: Duration = Duration::from_secs(5);
+const LOG: &str = "executor";
 
 /// Launch settings. `*_program` overrides the executable resolved from PATH.
 #[derive(Clone)]
@@ -60,6 +64,8 @@ pub(crate) struct ExecutorConfig {
     pub(crate) poll: Duration,
     /// Upper bound for one `agents.capabilities` probe of an agent binary.
     pub(crate) probe_timeout: Duration,
+    /// Where failures and recovery actions are reported (stderr in the daemon).
+    pub(crate) diagnostics: Diagnostics,
 }
 
 impl ExecutorConfig {
@@ -73,6 +79,7 @@ impl ExecutorConfig {
             poll: Duration::from_millis(500),
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
+            diagnostics: Diagnostics::stderr(),
         }
     }
 }
@@ -135,12 +142,92 @@ impl Executor {
     /// Stops the scheduler thread. Running agents keep their own threads and
     /// are reconciled by the next daemon start if this process exits first.
     pub(crate) fn shutdown(&self) {
+        let diag = &self.inner.config.diagnostics;
+        match running_task_ids(&self.inner.store, diag, "shutdown") {
+            Some(running) if running.is_empty() => {}
+            running => {
+                // An unreadable store is reported as unknown, never as no agents.
+                let task_ids = running.map_or_else(|| "unknown".to_owned(), |ids| ids.join(","));
+                diag.warn(
+                    LOG,
+                    "shutdown_with_running_agents",
+                    &[
+                        ("task_ids", &task_ids),
+                        (
+                            "recovery",
+                            "agents are reconciled and their worktrees kept on the next daemon start",
+                        ),
+                    ],
+                );
+            }
+        }
         self.inner.stop.store(true, Ordering::SeqCst);
         self.inner.request_pass();
         if let Some(handle) = lock(&self.scheduler).take() {
             let _ = handle.join();
         }
     }
+}
+
+/// Ids of tasks recorded as Running, or `None` after logging why the store
+/// could not be listed. Callers must not treat `None` as "nothing running".
+fn running_task_ids(
+    store: &SqliteStore,
+    diagnostics: &Diagnostics,
+    context: &str,
+) -> Option<Vec<String>> {
+    running_ids_from(store.list(), diagnostics, context)
+}
+
+fn running_ids_from(
+    listing: Result<Vec<TaskRecord>, StoreError>,
+    diagnostics: &Diagnostics,
+    context: &str,
+) -> Option<Vec<String>> {
+    match listing {
+        Ok(tasks) => Some(
+            tasks
+                .into_iter()
+                .filter(|task| task.state == TaskState::Running)
+                .map(|task| task.contract.id)
+                .collect(),
+        ),
+        Err(error) => {
+            diagnostics.error(
+                LOG,
+                "running_tasks_unreadable",
+                &[
+                    ("context", context),
+                    ("error", &error.to_string()),
+                    (
+                        "effect",
+                        "running agents cannot be listed; their state is reported as unknown",
+                    ),
+                ],
+            );
+            None
+        }
+    }
+}
+
+/// Ids in `before` that are no longer in `after`, or `None` when either
+/// listing failed.
+fn interrupted_between(
+    before: Option<&[String]>,
+    after: Option<&[String]>,
+) -> Option<Vec<String>> {
+    let (before, after) = (before?, after?);
+    Some(
+        before
+            .iter()
+            .filter(|id| !after.contains(id))
+            .cloned()
+            .collect(),
+    )
+}
+
+fn join_or_unknown(ids: Option<&[String]>) -> String {
+    ids.map_or_else(|| "unknown".to_owned(), |ids| ids.join(","))
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -154,21 +241,38 @@ impl Inner {
     }
 
     fn run(self: Arc<Self>) {
+        let diag = &self.config.diagnostics;
         let mut gate_open = false;
         let mut last_started_project = None;
         while !self.stop.load(Ordering::SeqCst) {
             *lock(&self.dirty) = false;
             if !gate_open {
-                terminate_orphaned_agents(&self.store);
-                match reconcile_before_scheduling(&self.store) {
+                terminate_orphaned_agents(&self.store, diag);
+                let running_before = running_task_ids(&self.store, diag, "before_recovery_gate");
+                match reconcile_before_scheduling_with(&self.store, diag) {
                     Ok(()) => {
                         gate_open = true;
                         *lock(&self.blocked) = None;
+                        let running_after =
+                            running_task_ids(&self.store, diag, "after_recovery_gate");
+                        let interrupted =
+                            interrupted_between(running_before.as_deref(), running_after.as_deref());
+                        let interrupted_ids = join_or_unknown(interrupted.as_deref());
+                        let still_running = join_or_unknown(running_after.as_deref());
+                        let fields = [
+                            ("interrupted_task_ids", interrupted_ids.as_str()),
+                            ("still_running_task_ids", still_running.as_str()),
+                        ];
+                        if interrupted.is_some() && running_after.is_some() {
+                            diag.info(LOG, "recovery_gate_open", &fields);
+                        } else {
+                            diag.warn(LOG, "recovery_gate_open", &fields);
+                        }
                     }
                     Err(reason) => {
                         let mut blocked = lock(&self.blocked);
                         if blocked.as_deref() != Some(reason.as_str()) {
-                            eprintln!("orchestrator-daemon: scheduling blocked: {reason}");
+                            diag.error(LOG, "recovery_gate_blocked", &[("reason", &reason)]);
                         }
                         *blocked = Some(reason);
                     }
@@ -194,6 +298,7 @@ impl Inner {
     }
 
     fn schedule_pass(self: &Arc<Self>, last_started_project: &mut Option<String>) {
+        let diag = &self.config.diagnostics;
         let (tasks, workspaces, projects) = match (
             self.store.list(),
             self.store.list_workspaces(),
@@ -201,7 +306,11 @@ impl Inner {
         ) {
             (Ok(tasks), Ok(workspaces), Ok(projects)) => (tasks, workspaces, projects),
             (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
-                eprintln!("orchestrator-daemon: cannot read scheduler state: {error}");
+                diag.error(
+                    LOG,
+                    "scheduler_state_unreadable",
+                    &[("error", &error.to_string())],
+                );
                 return;
             }
         };
@@ -229,7 +338,11 @@ impl Inner {
         ) {
             Ok(scheduler) => scheduler,
             Err(error) => {
-                eprintln!("orchestrator-daemon: scheduler refused its snapshot: {error}");
+                diag.error(
+                    LOG,
+                    "scheduler_snapshot_refused",
+                    &[("error", &error.to_string())],
+                );
                 return;
             }
         };
@@ -258,9 +371,14 @@ impl Inner {
             agent: task.contract.agent.clone(),
             objective: task.contract.objective.clone(),
             worktree: PathBuf::new(),
+            diag: self.config.diagnostics.clone(),
         };
         if let Err(error) = self.prepare(task, number, job) {
-            eprintln!("orchestrator-daemon: cannot launch task {task_id}: {error}");
+            self.config.diagnostics.error(
+                LOG,
+                "launch_failed",
+                &[("task_id", &task_id), ("error", &error)],
+            );
         }
     }
 
@@ -365,25 +483,90 @@ struct Job {
     agent: String,
     objective: String,
     worktree: PathBuf,
+    diag: Diagnostics,
+}
+
+impl Job {
+    fn event_fields<'a>(&'a self, extra: &[(&'a str, &'a str)]) -> Vec<(&'a str, &'a str)> {
+        let mut fields = vec![
+            ("task_id", self.task_id.as_str()),
+            ("attempt_id", self.attempt_id.as_str()),
+        ];
+        fields.extend_from_slice(extra);
+        fields
+    }
+}
+
+/// Paths `git status` reports as changed or untracked in a worktree, or `None`
+/// when it cannot be inspected. Used only to say how much work a failed or
+/// interrupted run left behind; the worktree itself is never removed.
+fn uncommitted_paths(worktree: &Path) -> Option<usize> {
+    if worktree.as_os_str().is_empty() {
+        return None;
+    }
+    git_checked(worktree, &["status", "--porcelain", "--untracked-files=all"])
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).lines().count())
+}
+
+/// The preserved-work facts every failure event carries.
+fn preserved_work(job: &Job) -> (String, String) {
+    let worktree = job.worktree.display().to_string();
+    let uncommitted = uncommitted_paths(&job.worktree)
+        .map_or_else(|| "unknown".to_owned(), |count| count.to_string());
+    (worktree, uncommitted)
 }
 
 fn supervise(inner: &Inner, job: Job) {
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        supervise_inner(inner, &job)
+    }));
+    if outcome.is_err() {
+        // The panic hook has already recorded the message and location.
+        let (worktree, uncommitted) = preserved_work(&job);
+        job.diag.error(
+            LOG,
+            "supervisor_panicked",
+            &job.event_fields(&[
+                ("task_state", "running"),
+                ("worktree", &worktree),
+                ("uncommitted_paths", &uncommitted),
+                (
+                    "recovery",
+                    "task stays Running until the next daemon start reconciles it; worktree kept",
+                ),
+            ]),
+        );
+    }
+}
+
+fn supervise_inner(inner: &Inner, job: &Job) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            eprintln!(
-                "orchestrator-daemon: task {}: no async runtime: {error}",
-                job.task_id
+            job.diag.error(
+                LOG,
+                "async_runtime_unavailable",
+                &job.event_fields(&[("error", &error.to_string())]),
             );
-            fail_before_agent_exit(&inner.store, &job);
+            fail_before_agent_exit(&inner.store, job);
             return;
         }
     };
-    if let Err(error) = runtime.block_on(run_agent(inner, &job)) {
-        eprintln!("orchestrator-daemon: task {}: {error}", job.task_id);
+    if let Err(error) = runtime.block_on(run_agent(inner, job)) {
+        let (worktree, uncommitted) = preserved_work(job);
+        job.diag.error(
+            LOG,
+            "supervision_error",
+            &job.event_fields(&[
+                ("error", &error),
+                ("worktree", &worktree),
+                ("uncommitted_paths", &uncommitted),
+            ]),
+        );
     }
 }
 
@@ -446,7 +629,18 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         Ok(handle) => handle,
         Err(error) => {
             fail_before_agent_exit(store, job);
-            return Err(format!("launch failed: {error}"));
+            let (worktree, uncommitted) = preserved_work(job);
+            job.diag.error(
+                LOG,
+                "agent_launch_failed",
+                &job.event_fields(&[
+                    ("agent", &job.agent),
+                    ("error", &error),
+                    ("worktree", &worktree),
+                    ("uncommitted_paths", &uncommitted),
+                ]),
+            );
+            return Ok(());
         }
     };
     // A Running session without a recorded identity cannot be reconciled
@@ -459,7 +653,7 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
                 .map_err(|error| format!("cannot persist process identity: {error}"))
         });
     if let Err(message) = identity {
-        reap(&mut *handle).await;
+        reap(&mut *handle, job).await;
         fail_before_agent_exit(store, job);
         return Err(message);
     }
@@ -476,20 +670,21 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let owner = match capture_exact_process_identity(std::process::id()) {
         Ok(identity) => owner.with_exact_process_identity(identity),
         Err(error) => {
-            eprintln!(
-                "orchestrator-daemon: task {}: owner identity unavailable: {error}",
-                job.task_id
+            job.diag.warn(
+                LOG,
+                "owner_identity_unavailable",
+                &job.event_fields(&[("error", &error.to_string())]),
             );
             owner
         }
     };
     if let Err(error) = store.register_cancellation_owner(&owner) {
-        reap(&mut *handle).await;
+        reap(&mut *handle, job).await;
         fail_after_agent_exit(store, job);
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
-    let monitored = monitor_agent(handle, store, &owner).await;
+    let monitored = monitor_agent(handle, store, &owner, job).await;
     let current = store
         .get(&job.task_id)
         .map_err(|error| format!("cannot reload task after agent exit: {error}"))?;
@@ -503,9 +698,21 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
 }
 
 /// Cancels and reaps a handle that cannot be supervised further.
-async fn reap(handle: &mut dyn AgentHandle) {
-    let _ = handle.cancel().await;
-    let _ = handle.wait().await;
+async fn reap(handle: &mut dyn AgentHandle, job: &Job) {
+    if let Err(error) = handle.cancel().await {
+        job.diag.error(
+            LOG,
+            "reap_cancel_failed",
+            &job.event_fields(&[("error", &error.to_string())]),
+        );
+    }
+    if let Err(error) = handle.wait().await {
+        job.diag.error(
+            LOG,
+            "reap_wait_failed",
+            &job.event_fields(&[("error", &error.to_string())]),
+        );
+    }
 }
 
 struct MonitorOutcome {
@@ -523,12 +730,14 @@ async fn monitor_agent(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
+    job: &Job,
 ) -> Result<MonitorOutcome, String> {
     let mut requested = false;
     let mut attempted = false;
     let mut succeeded = false;
     let mut cancel_error = None;
     let mut supervision_error = None;
+    let mut request_unreadable_logged = false;
 
     loop {
         if !attempted {
@@ -536,6 +745,8 @@ async fn monitor_agent(
                 Ok(Some(CancellationStatus::Pending)) => {
                     requested = true;
                     attempted = true;
+                    job.diag
+                        .info(LOG, "cancellation_requested", &job.event_fields(&[]));
                     match handle.cancel().await {
                         Ok(()) => {
                             let exit = handle.wait().await.map_err(|error| {
@@ -549,7 +760,14 @@ async fn monitor_agent(
                                 supervision_error: None,
                             });
                         }
-                        Err(error) => cancel_error = Some(error.to_string()),
+                        Err(error) => {
+                            job.diag.error(
+                                LOG,
+                                "cancellation_failed",
+                                &job.event_fields(&[("error", &error.to_string())]),
+                            );
+                            cancel_error = Some(error.to_string());
+                        }
                     }
                 }
                 Ok(Some(CancellationStatus::Confirmed)) => {
@@ -561,7 +779,17 @@ async fn monitor_agent(
                 Ok(Some(CancellationStatus::Rejected | CancellationStatus::Failed)) => {
                     attempted = true;
                 }
-                Ok(None) | Err(_) => {}
+                Ok(None) => {}
+                Err(error) => {
+                    if !request_unreadable_logged {
+                        request_unreadable_logged = true;
+                        job.diag.error(
+                            LOG,
+                            "cancellation_request_unreadable",
+                            &job.event_fields(&[("error", &error.to_string())]),
+                        );
+                    }
+                }
             }
         }
         let event = tokio::select! {
@@ -626,6 +854,17 @@ async fn monitor_agent(
     })
 }
 
+fn describe_exit(exit: &AgentExit) -> (&'static str, String, String) {
+    let show = |code: &Option<i32>| code.map_or_else(|| "none".to_owned(), |c| c.to_string());
+    match exit {
+        AgentExit::Completed { code, .. } => ("completed", show(code), String::new()),
+        AgentExit::Failed { code, reason } => {
+            ("failed", show(code), reason.clone().unwrap_or_default())
+        }
+        AgentExit::Cancelled { code, .. } => ("cancelled", show(code), String::new()),
+    }
+}
+
 /// Maps a reaped agent to exactly one terminal record set. Success requires a
 /// completed turn and exit code zero; every other outcome fails the attempt.
 fn finish(
@@ -634,6 +873,18 @@ fn finish(
     owner: &CancellationOwner,
     monitored: MonitorOutcome,
 ) -> Result<(), String> {
+    let (outcome, code, reason) = describe_exit(&monitored.exit);
+    job.diag.info(
+        LOG,
+        "agent_exited",
+        &job.event_fields(&[
+            ("outcome", outcome),
+            ("exit_code", &code),
+            ("reason", &reason),
+            ("supervision_error", monitored.supervision_error.as_deref().unwrap_or("")),
+            ("cancellation_error", monitored.cancellation_error.as_deref().unwrap_or("")),
+        ]),
+    );
     let resolution = if monitored.cancellation_error.is_some() {
         CancellationStatus::Failed
     } else {
@@ -646,9 +897,18 @@ fn finish(
     };
     if let AgentExit::Cancelled { .. } = monitored.exit {
         if monitored.cancellation_requested && monitored.cancellation_succeeded {
-            return store
+            let confirmed = store
                 .confirm_cancellation(owner)
                 .map_err(|error| format!("cannot confirm cancellation: {error}"));
+            if confirmed.is_ok() {
+                let (worktree, uncommitted) = preserved_work(job);
+                job.diag.info(
+                    LOG,
+                    "cancellation_confirmed",
+                    &job.event_fields(&[("worktree", &worktree), ("uncommitted_paths", &uncommitted)]),
+                );
+            }
+            return confirmed;
         }
         fail_after_agent_exit(store, job);
         return close(if monitored.cancellation_requested {
@@ -673,6 +933,17 @@ fn finish(
                 store
                     .transition(&job.task_id, TaskEvent::ExecutionFailed)
                     .map_err(|e| format!("cannot fail task: {e}"))?;
+                let (worktree, uncommitted) = preserved_work(job);
+                job.diag.error(
+                    LOG,
+                    "candidate_commit_failed",
+                    &job.event_fields(&[
+                        ("error", &error),
+                        ("worktree", &worktree),
+                        ("uncommitted_paths", &uncommitted),
+                        ("recovery", "worktree kept with the agent's changes; retry the task"),
+                    ]),
+                );
                 close(resolution)?;
                 return Err(format!("cannot record candidate commit: {error}"));
             }
@@ -682,6 +953,7 @@ fn finish(
             store
                 .transition(&job.task_id, TaskEvent::CandidateReady)
                 .map_err(|error| format!("cannot record candidate: {error}"))?;
+            job.diag.info(LOG, "candidate_ready", &job.event_fields(&[]));
             close(resolution)
         }
         _ => {
@@ -701,6 +973,8 @@ fn fail_after_agent_exit(store: &SqliteStore, job: &Job) {
 
 /// Ends the session, attempt and task of a launch that produced no candidate.
 /// Each write is attempted independently so one refusal cannot hide the rest.
+/// The worktree is left in place and named in the event, so nothing the agent
+/// wrote is discarded.
 fn fail_records(store: &SqliteStore, job: &Job, session: SessionState) {
     let results = [
         store
@@ -714,12 +988,26 @@ fn fail_records(store: &SqliteStore, job: &Job, session: SessionState) {
             .map(|_| ())
             .map_err(|error| format!("task: {error}")),
     ];
+    let mut write_failed = false;
     for error in results.into_iter().filter_map(Result::err) {
-        eprintln!(
-            "orchestrator-daemon: task {}: cannot fail {error}",
-            job.task_id
+        write_failed = true;
+        job.diag.error(
+            LOG,
+            "failure_record_not_written",
+            &job.event_fields(&[("error", &error)]),
         );
     }
+    let (worktree, uncommitted) = preserved_work(job);
+    job.diag.error(
+        LOG,
+        "task_attempt_failed",
+        &job.event_fields(&[
+            ("records_complete", if write_failed { "false" } else { "true" }),
+            ("worktree", &worktree),
+            ("uncommitted_paths", &uncommitted),
+            ("recovery", "worktree kept; retry the task or inspect the worktree"),
+        ]),
+    );
 }
 
 fn git(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String> {
@@ -782,7 +1070,7 @@ fn commit_candidate(worktree: &Path, task_id: &str) -> Result<(), String> {
 /// match, then lets the reconcile gate record the interruption. Unix only: on
 /// Windows the supervising Job Object has already killed the tree.
 #[cfg(unix)]
-fn terminate_orphaned_agents(store: &SqliteStore) {
+fn terminate_orphaned_agents(store: &SqliteStore, diag: &Diagnostics) {
     use orchestrator_core::identity::{ProcessClassification, ProcessObservation};
     use orchestrator_runtime::reconcile::{observe_owner_process, observe_process};
     use orchestrator_runtime::supervisor::process_group_alive;
@@ -830,16 +1118,64 @@ fn terminate_orphaned_agents(store: &SqliteStore) {
                     break;
                 }
             }
-            eprintln!(
-                "orchestrator-daemon: terminated orphaned agent of task {} session {}",
-                task.contract.id, session.id
+            diag.warn(
+                LOG,
+                "orphan_terminated",
+                &[
+                    ("task_id", &task.contract.id),
+                    ("session_id", &session.id),
+                    ("pid", &identity.pid.to_string()),
+                    (
+                        "recovery",
+                        "agent of a gone daemon stopped; reconcile records the interruption and keeps the worktree",
+                    ),
+                ],
             );
         }
     }
 }
 
 #[cfg(not(unix))]
-fn terminate_orphaned_agents(_store: &SqliteStore) {}
+fn terminate_orphaned_agents(_store: &SqliteStore, _diag: &Diagnostics) {}
+
+/// Portable (also built on Windows) tests for the running-task listing.
+#[cfg(test)]
+mod running_listing_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_listing_is_logged_and_never_reads_as_nothing_running() {
+        let diag = Diagnostics::memory();
+        let result = running_ids_from(Err(StoreError::WorkerStopped), &diag, "shutdown");
+        assert_eq!(result, None);
+        let lines = diag.lines().join("\n");
+        assert!(lines.contains("\"level\":\"error\""), "{lines}");
+        assert!(lines.contains("\"event\":\"running_tasks_unreadable\""), "{lines}");
+        assert!(lines.contains("\"context\":\"shutdown\""), "{lines}");
+    }
+
+    #[test]
+    fn a_readable_empty_listing_is_quiet_and_empty() {
+        let diag = Diagnostics::memory();
+        assert_eq!(running_ids_from(Ok(Vec::new()), &diag, "x"), Some(Vec::new()));
+        assert!(diag.lines().is_empty());
+    }
+
+    #[test]
+    fn interrupted_tasks_are_unknown_when_either_listing_failed() {
+        let one = vec!["a".to_owned(), "b".to_owned()];
+        let two = vec!["b".to_owned()];
+        assert_eq!(
+            interrupted_between(Some(&one), Some(&two)),
+            Some(vec!["a".to_owned()])
+        );
+        assert_eq!(interrupted_between(None, Some(&two)), None);
+        assert_eq!(interrupted_between(Some(&one), None), None);
+        assert_eq!(join_or_unknown(None), "unknown");
+        assert_eq!(join_or_unknown(Some(&one)), "a,b");
+        assert_eq!(join_or_unknown(Some(&[])), "");
+    }
+}
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]

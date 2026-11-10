@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use orchestrator_core::identity::ProcessClassification;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState};
+use orchestrator_diagnostics::Diagnostics;
 use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
 use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
 use orchestrator_git::reconcile::{
@@ -32,6 +33,15 @@ use orchestrator_store::{CancellationStatus, SqliteStore, Store};
 /// Reconciles every unfinished record against actual process, Git and delivery
 /// state. `Ok` means scheduling may resume; `Err` carries every blocker.
 pub fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
+    reconcile_before_scheduling_with(store, &Diagnostics::stderr())
+}
+
+/// Same gate, reporting through `diagnostics` so records that name a workspace
+/// path or a blocker pass the redactor like every other daemon line.
+pub fn reconcile_before_scheduling_with(
+    store: &SqliteStore,
+    diagnostics: &Diagnostics,
+) -> Result<(), String> {
     // Read the live owners before the task snapshot. An owner that finishes
     // after this call has already closed or is still skipped here, and the
     // later task read can only be newer than the owner set. Reading tasks
@@ -288,10 +298,16 @@ pub fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
                 // its worktree and takes the existing failure resolution, so
                 // one ordinary crash cannot block every later run. The advisory
                 // classification below never means success, cleanup or delivery.
-                eprintln!(
-                    "interrupted task {task_id} session {session_id}: workspace {workspace:?}, \
-                     advisory classification {recovery:?}; the worktree is preserved and this is \
-                     never recorded as success"
+                // The worktree is preserved and this is never recorded as success.
+                diagnostics.warn(
+                    "engine",
+                    "reconcile_interrupted_task",
+                    &[
+                        ("task_id", task_id.as_str()),
+                        ("session_id", session_id.as_str()),
+                        ("workspace", &format!("{workspace:?}")),
+                        ("advisory_classification", &format!("{recovery:?}")),
+                    ],
                 );
                 store
                     .update_session_state(task_id, session_id, SessionState::Exited)
@@ -364,7 +380,11 @@ pub fn reconcile_before_scheduling(store: &SqliteStore) -> Result<(), String> {
         return Ok(());
     }
     for blocker in &blockers {
-        eprintln!("blocking record: {blocker}");
+        diagnostics.warn(
+            "engine",
+            "reconcile_blocking_record",
+            &[("blocker", blocker.as_str())],
+        );
     }
     Err(format!(
         "cannot schedule while reconciliation records are unresolved: {}",

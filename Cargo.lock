@@ -831,6 +831,7 @@ dependencies = [
  "clap",
  "orchestrator-agents",
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-engine",
  "orchestrator-git",
  "orchestrator-runtime",
@@ -858,6 +859,7 @@ dependencies = [
  "libc",
  "orchestrator-agents",
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-engine",
  "orchestrator-git",
  "orchestrator-ipc",
@@ -872,10 +874,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchestrator-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "orchestrator-engine"
 version = "0.1.0"
 dependencies = [
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-git",
  "orchestrator-runtime",
  "orchestrator-store",

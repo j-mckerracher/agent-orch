@@ -298,6 +298,9 @@ export function createDaemonSources(connection: ConnectionManager, now: () => nu
       }),
   };
 
+  // D3 stays a labelled placeholder: the daemon has no recovery RPC (the
+  // recovery gate, interrupted runs and preserved worktrees are reported only
+  // in its structured `daemon.log` events). It must never report "recovered".
   const recovery: RecoveryStatusSource = {
     provenance: { kind: "fixture", id: "D3", fixture: "recovery-unavailable" },
     recoveryFor: () =>

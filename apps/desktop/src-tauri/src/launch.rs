@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 pub const DAEMON_LOG: &str = "daemon.log";
+const DAEMON_TOKEN: &str = "daemon.token";
 const DAEMON_LOG_ROTATED: &str = "daemon.log.1";
 /// Largest `daemon.log` carried into a new launch; a bigger one becomes `daemon.log.1`.
 pub const DAEMON_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
@@ -61,6 +62,32 @@ pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
         .stderr(log);
     detach(&mut command);
     command.spawn()
+}
+
+/// How much of the end of `daemon.log` a launch failure quotes.
+const LOG_EXCERPT_BYTES: u64 = 2048;
+
+/// A launch-failure message plus the redacted end of `daemon.log`, so the user
+/// sees why the daemon stopped without opening the file. Never quotes the log
+/// unredacted: it can hold paths and messages a credential was part of. The
+/// message itself is redacted too, since it can embed an error or a path.
+pub fn explain_with_log(message: String, data_dir: &Path) -> String {
+    watch_token(data_dir);
+    let explained =
+        match orchestrator_diagnostics::tail_redacted(&data_dir.join(DAEMON_LOG), LOG_EXCERPT_BYTES)
+        {
+            Ok(tail) if !tail.is_empty() => {
+                format!("{message}\nlast daemon output:\n{tail}")
+            }
+            _ => message,
+        };
+    orchestrator_diagnostics::redact(&explained)
+}
+
+/// Lets the redactor mask the daemon's IPC token by exact value, wherever it
+/// shows up in text this host shows or logs.
+fn watch_token(data_dir: &Path) {
+    orchestrator_diagnostics::watch_secret_file(data_dir.join(DAEMON_TOKEN));
 }
 
 /// Best effort: a failed rotation only leaves the log growing as before.
@@ -179,5 +206,45 @@ mod tests {
         drop(open_private_log(&old_log).unwrap());
         assert_eq!((mode(&existing), mode(&old_log)), (0o700, 0o600));
         assert_eq!(fs::read(&old_log).unwrap(), b"kept");
+    }
+
+    #[test]
+    fn a_launch_failure_quotes_only_the_redacted_end_of_the_log() {
+        let dir = TempDir::new().unwrap();
+        let message = || "the daemon exited right after starting".to_owned();
+        assert_eq!(explain_with_log(message(), dir.path()), message());
+
+        let mut text = format!("old line token={}\n", "ABCDEF0123456789");
+        text.push_str(&"x".repeat(LOG_EXCERPT_BYTES as usize));
+        text.push_str("\n{\"event\":\"daemon_failed\",\"error\":\"password=hunter2hunter2\"}\n");
+        fs::write(dir.path().join(DAEMON_LOG), text).unwrap();
+
+        let explained = explain_with_log(message(), dir.path());
+        assert!(explained.starts_with(&message()));
+        assert!(explained.contains("daemon_failed"), "{explained}");
+        assert!(!explained.contains("hunter2hunter2"), "{explained}");
+        assert!(!explained.contains("old line"), "only the tail is quoted");
+        assert!(explained.len() < 3 * LOG_EXCERPT_BYTES as usize);
+    }
+
+    #[test]
+    fn the_whole_message_is_redacted_and_the_daemon_token_is_masked_exactly() {
+        let dir = TempDir::new().unwrap();
+        let token = "launchtest-Vx3Qm9Zr5Kb2Wd7Yn1Hs";
+        fs::write(dir.path().join(DAEMON_TOKEN), format!("{token}\n")).unwrap();
+        // The token is glued to other text in the log and in the message.
+        fs::write(
+            dir.path().join(DAEMON_LOG),
+            format!("{{\"event\":\"daemon_failed\",\"error\":\"bad tok{token}x\"}}\n"),
+        )
+        .unwrap();
+
+        let explained = explain_with_log(
+            format!("cannot start (Authorization: Bearer abcdefghijklmnop, id{token})"),
+            dir.path(),
+        );
+        assert!(!explained.contains(token), "{explained}");
+        assert!(!explained.contains("abcdefghijklmnop"), "{explained}");
+        assert!(explained.contains("daemon_failed"), "{explained}");
     }
 }

@@ -19,6 +19,8 @@ serde_json = "=1.0.154"
 # The authenticated local transport; the host forwards frames, it never owns
 # orchestration logic.
 orchestrator-ipc = { path = "../../../crates/orchestrator-ipc" }
+# Redaction for the daemon log excerpt shown in launch failures.
+orchestrator-diagnostics = { path = "../../../crates/orchestrator-diagnostics" }
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }

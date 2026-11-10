@@ -63,8 +63,9 @@ fn print_timings() {
     });
 }
 
+/// The last `LOG_TAIL_LINES` lines of the daemon log, redacted.
 fn log_tail(log: &Path) -> String {
-    let text = fs::read_to_string(log).unwrap_or_default();
+    let text = orchestrator_diagnostics::tail_redacted(log, 64 * 1024).unwrap_or_default();
     let lines: Vec<&str> = text.lines().collect();
     lines[lines.len().saturating_sub(LOG_TAIL_LINES)..].join("\n")
 }
@@ -111,6 +112,11 @@ impl Daemon {
     /// authenticate. Panics, with the daemon log, if it exits or is not ready
     /// within `READY`.
     pub fn start(layout: &Layout) -> Self {
+        Self::start_with_env(layout, &[])
+    }
+
+    /// Like [`Daemon::start`], with extra environment for the daemon process.
+    pub fn start_with_env(layout: &Layout, env: &[(&str, &Path)]) -> Self {
         TIMINGS.with(|timings| timings.borrow_mut().clear());
         let log = File::options()
             .create(true)
@@ -120,6 +126,7 @@ impl Daemon {
         let child = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")
             .arg(&layout.data)
+            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
             .stderr(log)

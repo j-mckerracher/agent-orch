@@ -41,6 +41,7 @@ fn main() {
         return agent(Path::new(&pid_file));
     }
     let root = tempfile::TempDir::new().unwrap();
+    install_redacting_panic_hook();
     // macOS temp dirs are symlinks; Windows canonical paths gain a `\\?\` prefix
     // that does not belong in pipe names, so only Unix canonicalizes.
     #[cfg(unix)]
@@ -132,7 +133,24 @@ fn fail(what: &str) -> ! {
     panic!("{what}\n{}", diagnostics())
 }
 
+/// Everything a failing run prints passes through the redactor: the daemon log,
+/// task state and panic text can all quote paths or messages with credentials.
+fn install_redacting_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let mut text = info.to_string();
+        if !text.contains("--- lifecycle diagnostics ---") {
+            text.push('\n');
+            text.push_str(&diagnostics());
+        }
+        eprintln!("{}", orchestrator_diagnostics::redact(&text));
+    }));
+}
+
 fn diagnostics() -> String {
+    orchestrator_diagnostics::redact(&raw_diagnostics())
+}
+
+fn raw_diagnostics() -> String {
     use std::fmt::Write;
     let guard = EVIDENCE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(evidence) = guard.as_ref() else {
@@ -346,6 +364,11 @@ fn scenario(base: &Path) {
         .as_str()
         .expect("registered project id")
         .to_owned();
+    let ipc_token = fs::read_to_string(data.join("daemon.token"))
+        .unwrap()
+        .trim()
+        .to_owned();
+    assert_eq!(ipc_token.len(), 64);
 
     step("2 submit a task; the daemon launches the agent process");
     let task = call(&data, "tasks.submit", |client| {
@@ -504,4 +527,18 @@ fn scenario(base: &Path) {
         !data.join("daemon.token").exists(),
         "token removed on orderly shutdown"
     );
+
+    step("8 the daemon log is structured, records the run's lifecycle and holds no credential");
+    let log = fs::read_to_string(&daemon_log).unwrap();
+    assert!(!log.contains(&ipc_token), "ipc token written to daemon.log");
+    let events: Vec<Value> = log
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    for expected in ["daemon_start", "cancellation_confirmed", "daemon_stop"] {
+        assert!(
+            events.iter().any(|event| event["event"] == expected),
+            "no `{expected}` event in daemon.log"
+        );
+    }
 }

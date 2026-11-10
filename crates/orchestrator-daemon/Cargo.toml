@@ -14,6 +14,7 @@ orchestrator-git = { path = "../orchestrator-git" }
 orchestrator-runtime = { path = "../orchestrator-runtime" }
 orchestrator-agents = { path = "../orchestrator-agents" }
 orchestrator-engine = { path = "../orchestrator-engine" }
+orchestrator-diagnostics = { path = "../orchestrator-diagnostics" }
 tokio = { version = "=1.54.1", features = ["rt", "time", "macros"] }
 uuid = { version = "=1.18.1", features = ["v4"] }
 libc = "=0.2.191"
