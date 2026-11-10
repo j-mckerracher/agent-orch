@@ -265,7 +265,7 @@ pub async fn run_task(
         .map_err(|error| format!("cannot use repository {}: {error}", repo_path.display()))?;
     let data_target = canonical_target(data_dir)?;
     ensure_outside_primary(&repository, &data_target)?;
-    fs::create_dir_all(&data_target.path).map_err(|error| {
+    orchestrator_store::create_private_dir(&data_target.path).map_err(|error| {
         format!(
             "cannot create data directory {}: {error}",
             data_target.path.display()

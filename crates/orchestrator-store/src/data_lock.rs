@@ -32,9 +32,10 @@ pub struct DataDirectoryLock {
 }
 
 impl DataDirectoryLock {
-    /// Creates `data_dir` and acquires its exclusive process lock.
+    /// Creates `data_dir` (owner-only on Unix; an existing one loses group and
+    /// other access) and acquires its exclusive process lock.
     pub fn acquire(data_dir: impl AsRef<Path>) -> Result<Self, DataDirectoryLockError> {
-        fs::create_dir_all(data_dir.as_ref())?;
+        crate::private::create_private_dir(data_dir.as_ref())?;
         let path = data_dir.as_ref().join(LOCK_FILE_NAME);
         let pid = std::process::id();
         let start_identity = process_start_identity(pid)?
@@ -70,7 +71,11 @@ fn create_lock(
     contents: &str,
     identity_of: FileIdentityFn,
 ) -> io::Result<DataDirectoryLock> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(path)?;
     // The new file is unverified if its identity cannot be read or the
     // platform has none: fail with the real cause and leave the file in place
     // for inspection. A guard is only ever returned with a verified identity.
@@ -750,6 +755,26 @@ fn process_start_identity(_pid: u32) -> io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn acquire_creates_a_private_directory_and_lock_and_tightens_an_existing_one() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let root = tempfile::tempdir().unwrap();
+
+        let fresh = root.path().join("fresh/data");
+        let lock = DataDirectoryLock::acquire(&fresh).unwrap();
+        assert_eq!(mode(&fresh), 0o700);
+        assert_eq!(mode(&fresh.join(LOCK_FILE_NAME)), 0o600);
+        drop(lock);
+
+        let existing = root.path().join("existing");
+        fs::create_dir(&existing).unwrap();
+        fs::set_permissions(&existing, fs::Permissions::from_mode(0o755)).unwrap();
+        let _lock = DataDirectoryLock::acquire(&existing).unwrap();
+        assert_eq!(mode(&existing), 0o700);
+    }
 
     #[test]
     fn range_lock_does_not_block_other_handles_reading_the_record() {
