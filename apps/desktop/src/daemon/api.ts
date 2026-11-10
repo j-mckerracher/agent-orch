@@ -28,6 +28,15 @@ import type {
   TaskSubmission,
   WorkspaceDiff,
   WorkspaceDiffRequest,
+  GateDraft,
+  ObjectiveWire,
+  WorkstreamDetailWire,
+  WorkstreamReviseObjectiveRequest,
+  WorkstreamSetGateRequest,
+  WorkstreamStateWire,
+  WorkstreamTaskLinkWire,
+  WorkstreamUpdateRequest,
+  WorkstreamWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { UsageSummaryRequest } from "./usageWire";
@@ -222,6 +231,81 @@ export class DaemonApi {
       approval_id: realId(approvalId),
       candidate_commit: candidateCommit,
       feedback,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  workstreamsList(state?: WorkstreamStateWire): Promise<WorkstreamWire[]> {
+    return this.session.request("workstreams.list", state === undefined ? {} : { state });
+  }
+
+  async workstreamsGet(workstreamId: string): Promise<WorkstreamDetailWire> {
+    return this.session.request("workstreams.get", { workstream_id: realId(workstreamId) });
+  }
+
+  workstreamsCreate(title: string, summary: string | undefined, idempotencyKey: string): Promise<WorkstreamWire> {
+    return this.session.request("workstreams.create", {
+      title,
+      ...(summary === undefined ? {} : { summary }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsUpdate(request: WorkstreamUpdateRequest, idempotencyKey: string): Promise<WorkstreamWire> {
+    return this.session.request("workstreams.update", {
+      ...request,
+      workstream_id: realId(request.workstream_id),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsAddObjective(
+    workstreamId: string,
+    objective: { title: string; description?: string; gates?: GateDraft[] },
+    idempotencyKey: string,
+  ): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.add_objective", {
+      ...objective,
+      workstream_id: realId(workstreamId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsReviseObjective(request: WorkstreamReviseObjectiveRequest, idempotencyKey: string): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.revise_objective", {
+      ...request,
+      objective_id: realId(request.objective_id),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsSetGate(request: WorkstreamSetGateRequest, idempotencyKey: string): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.set_gate", {
+      ...request,
+      objective_id: realId(request.objective_id),
+      ...(request.evidence_task_id === undefined ? {} : { evidence_task_id: realId(request.evidence_task_id) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsLinkTask(
+    workstreamId: string,
+    taskId: string,
+    objectiveId: string | undefined,
+    idempotencyKey: string,
+  ): Promise<WorkstreamTaskLinkWire> {
+    return this.session.request("workstreams.link_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      ...(objectiveId === undefined ? {} : { objective_id: realId(objectiveId) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsUnlinkTask(workstreamId: string, taskId: string, idempotencyKey: string): Promise<{ removed: boolean }> {
+    return this.session.request("workstreams.unlink_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
       idempotency_key: idempotencyKey,
     });
   }

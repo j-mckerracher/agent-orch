@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../daemon/errors";
 import type { DaemonConnector } from "../../daemon/session";
 import { FakeDaemon, mkTask } from "../../test/fakeDaemon";
+import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { createServices } from "../../ui/createServices";
 import { ServicesProvider, useSurface, type Services } from "../../ui/services";
 
@@ -61,6 +62,7 @@ describe("useSurface", () => {
     const fake = new FakeDaemon();
     fake.projects = [{ id: "/repos/a" }];
     fake.tasks = [mkTask("t1", "/repos/a")];
+    installFakeWorkstreams(fake);
     const services = make(fake);
     const { result } = renderHook(
       () => useSurface(() => services.surfaces.workstreams.workstreams(), "ws", services.surfaces.workstreams.provenance),

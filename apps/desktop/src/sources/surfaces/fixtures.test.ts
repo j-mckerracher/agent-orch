@@ -80,7 +80,7 @@ describe("fixture surfaces (D9-D16)", () => {
   it("shows an unknown objective and an unsupported GPU rather than inventing values", async () => {
     const s = createFixtureSurfaces({ now: clock });
     const ws = await s.workstreams.workstreams();
-    expect(ws.status === "ok" && ws.data.find((w) => w.id === "fixture:ws-infra")?.objective.status).toBe("unknown");
+    expect(ws.status === "ok" && ws.data.find((w) => w.id === "fixture:ws-infra")?.objectives.status).toBe("unknown");
     const models = await s.models.catalog();
     expect(models.status === "ok" && models.data.providers.map((p) => p.modelSelection)).toEqual(["supported", "unknown"]);
   });

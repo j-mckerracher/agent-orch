@@ -7,6 +7,7 @@ import App from "../../App";
 import { createFixtureSources } from "../../sources/fixtures";
 import { DaemonError } from "../../daemon/errors";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../../test/fakeDaemon";
+import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import type { Route } from "../router";
@@ -29,6 +30,8 @@ async function mount(fake: FakeDaemon | null, options: { waitConnected?: boolean
   return { services, user };
 }
 
+const streams = new WeakMap<FakeDaemon, ReturnType<typeof installFakeWorkstreams>>();
+
 function daemon() {
   const fake = new FakeDaemon();
   fake.projects = [{ id: REPO }, { id: "/work/other" }];
@@ -38,6 +41,18 @@ function daemon() {
     mkTask("t3", "/work/other", { state: "Verifying" }),
   ];
   fake.approvals = [mkApproval("a1", "t1"), mkApproval("a2", "t2", "approved")];
+  const state = installFakeWorkstreams(fake, {
+    workstreams: [
+      { id: "ws-a", title: "Alpha stream", summary: "", state: "active", revision: 1 },
+      { id: "ws-b", title: "Other stream", summary: "", state: "active", revision: 1 },
+    ],
+    links: [
+      { task_id: "t1", workstream_id: "ws-a", objective_id: null },
+      { task_id: "t2", workstream_id: "ws-a", objective_id: null },
+      { task_id: "t3", workstream_id: "ws-b", objective_id: null },
+    ],
+  });
+  streams.set(fake, state);
   return fake;
 }
 
@@ -75,6 +90,9 @@ describe("top bar counts", () => {
     fake.tasks.push(mkTask("t4", "/work/third", { state: "Running" }));
     fake.projects.push({ id: "/work/third" });
     fake.approvals.push(mkApproval("a3", "t4"));
+    const state = streams.get(fake)!;
+    state.workstreams.push({ id: "ws-c", title: "Third stream", summary: "", state: "active", revision: 1 });
+    state.links.push({ task_id: "t4", workstream_id: "ws-c", objective_id: null });
     await act(async () => fake.emit(mkEvent(1, "t4", null, "TaskAdmitted")));
     await waitFor(() => expect(counts).toHaveTextContent("4 tasks"));
     expect(counts).toHaveTextContent("3 running");

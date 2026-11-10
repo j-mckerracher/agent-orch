@@ -394,3 +394,49 @@
     padding: 16px 12px 24px;
   }
 }
+
+/* Live workstream controls (M7-23). */
+.ws-objective-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.ws-objective-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.ws-form,
+.ws-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.ws-form label,
+.ws-inline-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-view select,
+.ws-view textarea {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.ws-view select:disabled,
+.ws-view textarea:disabled {
+  opacity: 0.7;
+}

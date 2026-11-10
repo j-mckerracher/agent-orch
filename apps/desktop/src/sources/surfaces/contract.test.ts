@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
+import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { createFixtureSurfaces } from "./fixtures";
 import { ALPHA, READ_METHODS, clock, connect, populate } from "./testkit";
 import type { ConversationTarget, SurfaceResult, SurfaceSources } from "./types";
@@ -72,6 +73,7 @@ const derivedHarness: Harness = {
     if (scenario === "ok" || scenario === "empty") fake.stub("usage.summary", usageWire(scenario === "ok"));
     if (scenario === "empty") {
       fake.stub("agents.capabilities", []);
+      installFakeWorkstreams(fake);
       fake.stub("coordinator.get", { project_id: ALPHA, entries: [], more: false, next_after_sequence: 0 });
       fake.stub("host.metrics", { schema_version: 1, sample_interval_ms: 2000, meters: [] });
     }
@@ -189,7 +191,7 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
       );
       const total = Object.values(workstream.counts).reduce((a, b) => a + b, 0);
       expect(total).toBe(workstream.tasks.length);
-      expect(workstream.objective.status === "ok" || "reason" in workstream.objective).toBe(true);
+      expect(workstream.objectives.status === "ok" || "reason" in workstream.objectives).toBe(true);
     }
   });
 

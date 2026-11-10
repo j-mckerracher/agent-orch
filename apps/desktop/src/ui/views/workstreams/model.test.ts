@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { layoutGraph, MAX_GRAPH_NODES, textDependencies } from "./graph";
+import { countStates } from "../../../sources/surfaces/result";
+import type { Workstream, WorkstreamTask } from "../../../sources/surfaces/types";
 import { deriveLiveGroups, requiredEvidence, type WsTask } from "./model";
 
 const A = "/work/alpha";
@@ -9,6 +11,7 @@ const B = "/work/beta";
 const ws = (id: string, dependencies: string[] = []): WsTask => ({
   id,
   projectId: A,
+  objectiveId: null,
   objective: `do ${id}`,
   state: "Queued",
   agent: "codex",
@@ -20,28 +23,89 @@ const ws = (id: string, dependencies: string[] = []): WsTask => ({
   openable: true,
 });
 
+const link = (id: string, projectId: string, objectiveId: string | null = null, state: WorkstreamTask["state"] = "Queued"): WorkstreamTask => ({
+  id,
+  projectId,
+  objectiveId,
+  objective: "",
+  state,
+  agent: "unknown",
+  dependencies: [],
+});
+
+const stream = (id: string, tasks: WorkstreamTask[], extra: Partial<Workstream> = {}): Workstream => ({
+  id,
+  title: `stream ${id}`,
+  summary: "",
+  state: "active",
+  revision: 1,
+  projectIds: [...new Set(tasks.map((task) => task.projectId))],
+  tasks,
+  counts: countStates(tasks.map((task) => task.state)),
+  objectives: { status: "ok", value: [], observedAt: "2026-01-01T00:00:00.000Z", ageMs: 0 },
+  ...extra,
+});
+
 describe("deriveLiveGroups", () => {
-  it("makes one workstream per project with its tasks, workers and counts", () => {
+  it("keeps the daemon's workstreams, joins the fresher task record and counts the joined states", () => {
     const t1 = mkTask("t1", A, { state: "Running", sessions: [mkSession("s1", { adapter: "codex", state: "Running" })] });
     const t2 = mkTask("t2", B, { state: "Failed", attempts: [{ attempt_number: 1, state: "Failed" }, { attempt_number: 2, state: "Failed" }] as never });
-    const groups = deriveLiveGroups([{ id: A }, { id: B }], [t1, t2], null, []);
-    expect(groups.map((group) => group.title)).toEqual(["alpha", "beta"]);
+    const { groups, unlinked } = deriveLiveGroups(
+      [stream("w1", [link("t1", A, "o1")], { revision: 4, state: "suspended" }), stream("w2", [link("t2", B, null, "Queued")])],
+      [t1, t2],
+      null,
+      [],
+    );
+    expect(groups.map((group) => [group.id, group.state, group.revision])).toEqual([
+      ["w1", "suspended", 4],
+      ["w2", "active", 1],
+    ]);
+    expect(groups[0]!.tasks[0]).toMatchObject({ objectiveId: "o1", state: "Running", objective: "objective of t1" });
     expect(groups[0]!.tasks[0]!.workers).toEqual([{ sessionId: "s1", adapter: "codex", state: "Running" }]);
     expect(groups[1]!.tasks[0]!.attempt).toBe(2);
+    expect(groups[1]!.counts).toMatchObject({ Failed: 1, Queued: 0 });
     expect(groups[0]!.counts.Running).toBe(1);
-    expect(groups[1]!.counts.Failed).toBe(1);
-    expect(groups[0]!.objective.status).toBe("unsupported");
+    expect(unlinked).toEqual([]);
   });
 
-  it("gives tasks of an unregistered project their own workstream and keeps empty projects", () => {
-    const groups = deriveLiveGroups([{ id: A }], [mkTask("t9", "/work/other")], null, []);
-    expect(groups.map((group) => group.id)).toEqual([A, "/work/other"]);
-    expect(groups[0]!.tasks).toEqual([]);
+  it("falls back to the daemon link when AppData has no record, and reports tasks no workstream links", () => {
+    const { groups, unlinked } = deriveLiveGroups(
+      [stream("w1", [link("t1", A, null, "Succeeded")]), stream("w2", [])],
+      [mkTask("t9", B)],
+      null,
+      [],
+    );
+    expect(groups[0]!.tasks[0]).toMatchObject({ id: "t1", state: "Succeeded", workers: [], attempt: null, openable: true });
+    expect(groups[1]!.tasks).toEqual([]);
+    expect(unlinked.map((task) => [task.id, task.projectId, task.objectiveId])).toEqual([["t9", B, null]]);
+  });
+
+  it("does not guess unlinked tasks while a workstream is unread, since its tasks would look unlinked", () => {
+    const unread = stream("w2", [], {
+      unreadReason: "Details could not be read.",
+      objectives: { status: "unknown", reason: "Details could not be read." },
+    });
+    const { groups, unlinked, unlinkedKnown } = deriveLiveGroups(
+      [stream("w1", [link("t1", A)]), unread],
+      [mkTask("t1", A), mkTask("t2", B)],
+      null,
+      [],
+    );
+    expect(groups.map((group) => group.unreadReason)).toEqual([null, "Details could not be read."]);
+    expect(unlinkedKnown).toBe(false);
+    expect(unlinked).toEqual([]);
+  });
+
+  it("reports no unlinked tasks while the task list is unloaded, and passes objectives through unchanged", () => {
+    const objectives = { status: "unknown" as const, reason: "later" };
+    const { groups, unlinked } = deriveLiveGroups([stream("w1", [], { objectives })], null, null, null);
+    expect(unlinked).toEqual([]);
+    expect(groups[0]!.objectives).toBe(objectives);
   });
 
   it("marks a task with a pending approval and ignores decided ones", () => {
-    const groups = deriveLiveGroups(
-      [{ id: A }],
+    const { groups } = deriveLiveGroups(
+      [stream("w1", [link("t1", A), link("t2", A)])],
       [mkTask("t1", A), mkTask("t2", A)],
       null,
       [mkApproval("a1", "t1"), mkApproval("a2", "t2", "approved")],

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
+import type { ProjectRow } from "../../../daemon/types";
 import type { ConversationEntry, ConversationTranscript, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
@@ -32,20 +33,25 @@ interface SimulatedEntry {
 }
 
 export function WorkspaceView() {
-  const { surfaces, drafts } = useServices();
+  const { surfaces, drafts, data } = useServices();
   const snapshot = useStore(drafts);
+  const projectList = useStore(data).projects;
   const live = surfaces.conversation.provenance.kind === "daemon";
+  // Live coordinators are per project, so the registered projects are the targets; a workstream
+  // can span projects and omits projects that have no linked task. Only fixtures list workstreams.
   const workstreams = useSurface(
-    () => surfaces.workstreams.workstreams(),
+    () => (live ? new Promise<never>(() => {}) : surfaces.workstreams.workstreams()),
     "workspace-targets",
     surfaces.workstreams.provenance,
   );
   const [simulated, setSimulated] = useState<Record<string, SimulatedEntry[]>>({});
 
-  const options = useMemo(() => buildOptions(workstreams), [workstreams]);
+  const options = useMemo(() => buildOptions(workstreams, live ? projectList.data : null), [workstreams, live, projectList.data]);
   const stored = snapshot.workspace?.target ?? null;
   const known = stored !== null && options.some((option) => option.key === stored);
-  const resolved = resolveKey(stored, known, options, workstreams.status === "loading", live);
+  const listLoading = live ? projectList.data === null && projectList.status !== "error" : workstreams.status === "loading";
+  const listError = live ? projectList.error?.message ?? null : workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams.reason : null;
+  const resolved = resolveKey(stored, known, options, listLoading, live);
 
   if (resolved === null) {
     return (
@@ -61,9 +67,9 @@ export function WorkspaceView() {
   return (
     <div className="ws-root">
       <h1 className="ws-visually-hidden">Orchestrator Workspace</h1>
-      {workstreams.status !== "ok" && workstreams.status !== "loading" && (
+      {listError !== null && (
         <p role="status" className="ws-note">
-          Project conversations could not be listed: {workstreams.reason}
+          Project conversations could not be listed: {listError}
         </p>
       )}
       <Conversation
@@ -80,7 +86,19 @@ export function WorkspaceView() {
   );
 }
 
-function buildOptions(workstreams: SurfaceState<Workstream[]>): TargetOption[] {
+function buildOptions(workstreams: SurfaceState<Workstream[]>, liveProjects: readonly ProjectRow[] | null): TargetOption[] {
+  if (liveProjects !== null) {
+    return [
+      GLOBAL_OPTION,
+      ...liveProjects.map<TargetOption>((project) => ({
+        key: targetKey({ kind: "project", projectId: project.id }),
+        target: { kind: "project", projectId: project.id },
+        label: projectLabel(project.id),
+        scope: project.id,
+        placeholder: false,
+      })),
+    ];
+  }
   const projects: TargetOption[] =
     workstreams.status === "ok"
       ? workstreams.data.map((ws) => ({

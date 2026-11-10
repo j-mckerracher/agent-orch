@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../daemon/errors";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
-import { ALPHA, BETA, connect, populate } from "./testkit";
+import { ALPHA, BETA, WORKSTREAM_STATE, connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
 afterEach(() => {
@@ -17,33 +17,84 @@ async function live(fake: FakeDaemon, start = true) {
 const asKind = (kind: string) => expect.objectContaining({ kind });
 
 describe("derived D9 workstreams", () => {
-  it("groups tasks by project, counts every state, and says objectives are unsupported", async () => {
+  it("maps daemon workstreams, objectives, gates and links, joined with task records", async () => {
     const fake = populate(new FakeDaemon());
-    fake.tasks.push(mkTask("t-orphan", "/repos/gamma", { state: "Failed" }));
     const s = await live(fake);
     const result = await s.workstreams.workstreams();
     expect(result).toMatchObject({
       status: "ok",
-      provenance: { kind: "daemon", id: "D9", methods: ["projects.list", "tasks.list"] },
+      provenance: { kind: "daemon", id: "D9", methods: ["workstreams.list", "workstreams.get", "tasks.list"] },
       ageMs: 0,
     });
     if (result.status !== "ok") return;
-    expect(result.data.map((w) => [w.id, w.title, w.grouping])).toEqual([
-      [ALPHA, "alpha", "project"],
-      [BETA, "beta", "project"],
-      ["/repos/gamma", "gamma", "project"],
+    expect(result.data.map((w) => [w.id, w.title, w.state, w.revision])).toEqual([
+      ["ws-1", "Session hardening", "active", 2],
+      ["ws-2", "Docs refresh", "suspended", 1],
     ]);
-    expect(result.data[0]!.counts).toMatchObject({ Running: 1, Queued: 1, Succeeded: 0 });
-    expect(result.data[1]!.counts).toMatchObject({ Queued: 1, Succeeded: 1 });
-    expect(result.data[2]!.counts.Failed).toBe(1);
-    expect(result.data[0]!.objective.status).toBe("unsupported");
+    const first = result.data[0]!;
+    expect(first.summary).toBe("Make sessions durable");
+    expect(first.projectIds).toEqual([ALPHA, BETA]);
+    expect(first.tasks.map((t) => [t.id, t.projectId, t.objectiveId, t.state])).toEqual([
+      ["t-run", ALPHA, "obj-1", "Running"],
+      ["t-wait", ALPHA, "obj-1", "Queued"],
+      ["t-done", BETA, null, "Succeeded"],
+    ]);
+    expect(first.tasks[1]).toMatchObject({ objective: "Document the session model", dependencies: ["t-run"] });
+    expect(first.counts).toMatchObject({ Running: 1, Queued: 1, Succeeded: 1, Failed: 0 });
+    expect(first.objectives).toMatchObject({
+      status: "ok",
+      value: [
+        {
+          id: "obj-1",
+          title: "Durable sessions",
+          description: "Sessions survive restarts",
+          revision: 3,
+          gates: [
+            { id: "gate-1", label: "Restart test passes", state: "verified", evidenceTaskId: "t-done" },
+            { id: "gate-2", label: "Docs updated", state: "pending", evidenceTaskId: null },
+          ],
+        },
+      ],
+    });
+    // The empty workstream is a real, known-empty answer, not an unsupported one.
+    expect(result.data[1]).toMatchObject({ tasks: [], projectIds: [], objectives: { status: "ok", value: [] } });
+    expect(result.data[1]!.counts.Running).toBe(0);
   });
 
-  it("lists a project with no tasks as a workstream with all-zero counts", async () => {
-    const fake = new FakeDaemon();
-    fake.projects = [{ id: ALPHA }];
+  it("keeps the daemon's task state and marks a linked task that tasks.list no longer returns", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.tasks = fake.tasks.filter((task) => task.contract.id !== "t-wait");
+    WORKSTREAM_STATE.get(fake)!.links.push({ task_id: "t-ghost", workstream_id: "ws-2", objective_id: null });
+    const s = await live(fake);
+    const result = await s.workstreams.workstreams();
+    const ws1 = result.status === "ok" ? result.data[0]! : null;
+    expect(ws1?.tasks.map((t) => [t.id, t.objective, t.agent, t.state])).toEqual([
+      ["t-run", "objective of t-run", "fake-agent", "Running"],
+      ["t-wait", "", "unknown", "Created"],
+      ["t-done", "objective of t-done", "fake-agent", "Succeeded"],
+    ]);
+    const ws2 = result.status === "ok" ? result.data[1]! : null;
+    expect(ws2?.tasks).toEqual([
+      { id: "t-ghost", projectId: "", objectiveId: null, objective: "", state: "Created", agent: "unknown", dependencies: [] },
+    ]);
+  });
+
+  it("reports a failed read as unavailable with daemon provenance, never as fixture data", async () => {
+    const fake = populate(new FakeDaemon());
+    // Every detail read fails: nothing is known, so the read fails instead of listing unknown rows.
+    fake.failNext("workstreams.get", { code: -32603, message: "boom" }, 2);
     const result = await (await live(fake)).workstreams.workstreams();
-    expect(result.status === "ok" && result.data).toMatchObject([{ id: ALPHA, tasks: [] }]);
+    expect(result).toMatchObject({ status: "unavailable", provenance: { kind: "daemon", id: "D9" } });
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("keeps the readable workstreams when one detail read fails, and marks that row unknown", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.failNext("workstreams.get", { code: -32603, message: "boom" });
+    const result = await (await live(fake)).workstreams.workstreams();
+    if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+    expect(result.data.map((item) => item.unreadReason !== undefined)).toEqual([true, false]);
+    expect(result.data[0]!.objectives.status).toBe("unknown");
   });
 });
 

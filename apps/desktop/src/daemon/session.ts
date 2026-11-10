@@ -68,6 +68,15 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "review.request_approval": "review",
   "review.evidence": "review",
   "review.request_changes": "review",
+  "workstreams.list": "workstreams",
+  "workstreams.get": "workstreams",
+  "workstreams.create": "workstreams",
+  "workstreams.update": "workstreams",
+  "workstreams.add_objective": "workstreams",
+  "workstreams.revise_objective": "workstreams",
+  "workstreams.set_gate": "workstreams",
+  "workstreams.link_task": "workstreams",
+  "workstreams.unlink_task": "workstreams",
 };
 
 interface Pending {

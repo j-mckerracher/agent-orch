@@ -5,6 +5,7 @@ import type { GlobalView } from "../router";
 import { NavLink } from "./NavLink";
 import { TopSearch } from "./Search";
 import { UsagePill } from "./UsagePill";
+import { useWorkstreamsVersion } from "../views/workstreams/model";
 import type { ShellSlots } from "./slots";
 import "./topbar.css";
 
@@ -62,13 +63,17 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
 /** Same task and approval lists as the nav, lists and Review count, so the numbers cannot drift. */
 function LiveCounts() {
   const { data, surfaces } = useServices();
-  const { projects, tasks, approvals } = useStore(data);
+  const { tasks, approvals } = useStore(data);
   const taskList = tasks.data;
-  // Workstreams (D9) change only when projects or task-to-project membership change.
-  const membership = `${projects.data?.map((project) => project.id).join("\n") ?? "-"}|${
-    taskList?.map((task) => `${task.contract.id}@${task.contract.project_id}`).join("\n") ?? "-"
-  }`;
-  const workstreams = useSurface(() => surfaces.workstreams.workstreams(), `top-counts:${membership}`, surfaces.workstreams.provenance);
+  // The daemon emits no workstream events, so D9 re-reads when a workstream mutation lands
+  // (the version) or when the set of tasks changes, never on a timer.
+  const reloads = useWorkstreamsVersion();
+  const membership = taskList?.map((task) => `${task.contract.id}@${task.contract.project_id}`).join("\n") ?? "-";
+  const workstreams = useSurface(
+    () => surfaces.workstreams.workstreams(),
+    `top-counts:${reloads}:${membership}`,
+    surfaces.workstreams.provenance,
+  );
   const approvalList = approvals.data ?? [];
   return (
     <CountsLine

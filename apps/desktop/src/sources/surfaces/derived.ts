@@ -2,8 +2,9 @@
  * Daemon-derived adapters for D9-D16 (M7-03). They read only methods the
  * daemon already has: projects.list, tasks.list, approvals.list,
  * agents.capabilities, coordinator.get, coordinator.send_message, queue.snapshot
- * (D11, `activity.ts`), usage.summary (D12, `usageLive.ts`) and host.metrics (D13,
- * `liveMetrics.ts`). No method is added.
+ * (D11, `activity.ts`), usage.summary (D12, `usageLive.ts`), host.metrics (D13,
+ * `liveMetrics.ts`) and the workstreams.* methods (D9, `workstreamsLive.ts`).
+ * No method is added.
  *
  * Rules:
  * - This file never imports fixtures. A failed live call is `unavailable` (or
@@ -19,12 +20,12 @@ import { isFixtureId } from "../../daemon/api";
 import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
-import { basename } from "../../ui/format";
 import { createDerivedActivity } from "./activity";
 import { createLiveMetrics } from "./liveMetrics";
-import { countStates, notOk, observation, okResult, unsupportedValue } from "./result";
+import { notOk, observation, okResult, unsupportedValue } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveUsageSource } from "./usageLive";
+import { createLiveWorkstreams } from "./workstreamsLive";
 import type {
   ConversationSource,
   ConversationTarget,
@@ -37,7 +38,6 @@ import type {
   SurfaceSources,
   SystemMetricsSource,
   UsageSource,
-  Workstream,
   WorkstreamSource,
 } from "./types";
 
@@ -80,34 +80,10 @@ function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
 export function createDerivedSurfaces(connection: ConnectionManager, now: () => number = Date.now): SurfaceSources {
   const keys = new IdempotencyTracker();
 
-  const wsProvenance = prov("D9", ["projects.list", "tasks.list"]);
+  const wsProvenance = prov("D9", ["workstreams.list", "workstreams.get", "tasks.list"]);
   const workstreams: WorkstreamSource = {
     provenance: wsProvenance,
-    workstreams: () =>
-      guarded(wsProvenance, now, async () => {
-        const api = connection.api();
-        const [projects, tasks] = await Promise.all([api.projectsList(), api.tasksList()]);
-        const ids = [...projects.map((project) => project.id)];
-        for (const task of tasks) if (!ids.includes(task.contract.project_id)) ids.push(task.contract.project_id);
-        return ids.map<Workstream>((id) => {
-          const own = tasks.filter((task) => task.contract.project_id === id);
-          return {
-            id,
-            title: basename(id),
-            grouping: "project",
-            projectIds: [id],
-            tasks: own.map((task) => ({
-              id: task.contract.id,
-              objective: task.contract.objective,
-              state: task.state,
-              agent: task.contract.agent,
-              dependencies: task.contract.dependencies,
-            })),
-            counts: countStates(own.map((task) => task.state)),
-            objective: unsupportedValue("The daemon records no objective or revision for a project."),
-          };
-        });
-      }),
+    ...createLiveWorkstreams(connection, now, keys, guarded, wsProvenance),
     simulateCreate: () => Promise.reject(fixtureOnly("workstream creation")),
   };
 

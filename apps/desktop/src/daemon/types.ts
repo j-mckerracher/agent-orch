@@ -20,7 +20,8 @@ export type Capability =
   | "agents"
   | "host"
   | "coordinator"
-  | "review";
+  | "review"
+  | "workstreams";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -36,6 +37,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "host",
   "coordinator",
   "review",
+  "workstreams",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -355,6 +357,78 @@ export interface ReviewChangesResult {
   change_request: ChangeRequestRecord;
   review_state: "changes_requested";
   approval_state: "requested";
+}
+
+export type WorkstreamStateWire = "active" | "suspended" | "archived";
+export type GateStateWire = "pending" | "verified" | "failed";
+
+/** `workstreams.*` records, mirroring `crates/orchestrator-core/src/workstream.rs`. */
+export interface WorkstreamWire {
+  id: string;
+  title: string;
+  summary: string;
+  state: WorkstreamStateWire;
+  revision: number;
+}
+
+export interface AcceptanceGateWire {
+  id: string;
+  description: string;
+  state: GateStateWire;
+  evidence_task_id: string | null;
+}
+
+export interface ObjectiveWire {
+  id: string;
+  workstream_id: string;
+  title: string;
+  description: string;
+  gates: AcceptanceGateWire[];
+  revision: number;
+}
+
+/** A task linked to a workstream, optionally under one of its objectives. */
+export interface WorkstreamTaskLinkWire {
+  task_id: string;
+  workstream_id: string;
+  objective_id: string | null;
+  project_id: string;
+  task_state: TaskState;
+}
+
+export interface WorkstreamDetailWire {
+  workstream: WorkstreamWire;
+  objectives: ObjectiveWire[];
+  tasks: WorkstreamTaskLinkWire[];
+  project_ids: string[];
+}
+
+export interface WorkstreamUpdateRequest {
+  workstream_id: string;
+  expected_revision: number;
+  title?: string;
+  summary?: string;
+  state?: WorkstreamStateWire;
+}
+
+export interface GateDraft {
+  description: string;
+}
+
+export interface WorkstreamReviseObjectiveRequest {
+  objective_id: string;
+  expected_revision: number;
+  title?: string;
+  description?: string;
+  add_gates?: GateDraft[];
+}
+
+export interface WorkstreamSetGateRequest {
+  objective_id: string;
+  expected_revision: number;
+  gate_id: string;
+  state: GateStateWire;
+  evidence_task_id?: string;
 }
 
 /** Body of `tasks.submit` `contract`; the daemon assigns the task id. */
