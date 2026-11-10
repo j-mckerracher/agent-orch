@@ -51,11 +51,18 @@ pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 pub mod sqlite;
 mod sqlite_approvals;
 mod sqlite_attempts;
+mod sqlite_conversations;
 mod sqlite_delivery;
 mod sqlite_ops;
 mod sqlite_review;
 mod sqlite_verification;
 mod sqlite_workstreams;
+pub use sqlite_conversations::{
+    BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
+    ConversationTurn, TurnOutcome, TurnState, INTERRUPTED_BY_RESTART,
+    MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
+    MAX_WORKSTREAM_ID_BYTES,
+};
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};

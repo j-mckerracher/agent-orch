@@ -397,6 +397,10 @@ fn method_capability(method: &str) -> Option<Capability> {
         | "workstreams.set_gate"
         | "workstreams.link_task"
         | "workstreams.unlink_task" => Some(Capability::Workstreams),
+        // M7-08 (proposed names): conversations share the coordinator capability.
+        "conversations.send" | "conversations.get" | "conversations.cancel" => {
+            Some(Capability::Coordinator)
+        }
         _ => None,
     }
 }

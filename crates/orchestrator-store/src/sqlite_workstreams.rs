@@ -855,7 +855,11 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-            assert_eq!(applied as usize, ALL_MIGRATIONS.iter().count() - 1);
+            let legacy_count = ALL_MIGRATIONS
+                .iter()
+                .filter(|migration| migration.version < WORKSTREAMS_MIGRATION)
+                .count();
+            assert_eq!(applied as usize, legacy_count);
             pool.close().await;
         });
     }
@@ -876,8 +880,14 @@ mod tests {
                 .await?)
             })
             .unwrap();
-        assert_eq!(versions.last(), Some(&WORKSTREAMS_MIGRATION));
-        assert_eq!(versions.len(), ALL_MIGRATIONS.iter().count());
+        assert!(versions.contains(&WORKSTREAMS_MIGRATION));
+        assert_eq!(
+            versions,
+            ALL_MIGRATIONS
+                .iter()
+                .map(|migration| migration.version)
+                .collect::<Vec<_>>()
+        );
 
         assert_eq!(store.get_project("p1").unwrap().root_path, "/work/p1");
         let tasks = store.list().unwrap();
