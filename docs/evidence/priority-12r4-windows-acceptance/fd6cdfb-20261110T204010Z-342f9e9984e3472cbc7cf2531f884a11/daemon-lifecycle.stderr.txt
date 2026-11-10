@@ -1,0 +1,2 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running tests\lifecycle.rs (Z:\342f9e99\tg\debug\deps\lifecycle-df97ab7e9ecea884.exe)

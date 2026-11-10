@@ -1,0 +1,10 @@
+{
+  "gate": "tauri-build",
+  "command": "cargo build --locked",
+  "cwd": "apps/desktop/src-tauri",
+  "platform": "win32",
+  "verdict": "SKIPPED",
+  "problems": [
+    "prerequisite gate(s) did not pass: desktop-build"
+  ]
+}

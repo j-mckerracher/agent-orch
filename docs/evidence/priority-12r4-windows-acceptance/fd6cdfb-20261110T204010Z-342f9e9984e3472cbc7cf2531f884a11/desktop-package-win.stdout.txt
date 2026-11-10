@@ -1,0 +1,10 @@
+
+> agent-orch-desktop@0.1.0 package:win
+> node scripts/package.mjs nsis
+
+staged Z:\342f9e99\src\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+src/test/render.tsx(22,23): error TS2883: The inferred type of 'mount' cannot be named without a reference to '"C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries"' from 'C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries'. This is likely not portable. A type annotation is necessary.

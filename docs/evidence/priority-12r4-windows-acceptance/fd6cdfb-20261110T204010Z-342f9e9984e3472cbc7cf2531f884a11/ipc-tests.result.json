@@ -1,0 +1,11 @@
+{
+  "gate": "ipc-tests",
+  "command": "cargo test --locked -p orchestrator-ipc",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 47,
+  "problems": [],
+  "newDiagnostics": 0
+}

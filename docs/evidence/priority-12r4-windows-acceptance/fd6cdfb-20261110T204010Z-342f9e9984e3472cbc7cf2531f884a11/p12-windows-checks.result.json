@@ -1,0 +1,11 @@
+{
+  "gate": "p12-windows-checks",
+  "command": "pwsh.exe -NoProfile -File scripts\\ci\\p12-windows-checks.ps1 -TargetDir {target} -RunRoot {testTmp}\\p12 -EvidenceDir {evidence}",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 5,
+  "problems": [],
+  "newDiagnostics": 0
+}

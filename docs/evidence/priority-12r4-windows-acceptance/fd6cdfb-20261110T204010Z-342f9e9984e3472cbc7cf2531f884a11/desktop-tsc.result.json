@@ -1,0 +1,13 @@
+{
+  "gate": "desktop-tsc",
+  "command": "npx tsc -b",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 1,
+  "durationSeconds": 11,
+  "problems": [
+    "exit code 1"
+  ],
+  "newDiagnostics": 0
+}

@@ -1,0 +1,11 @@
+{
+  "gate": "desktop-npm-ci",
+  "command": "npm ci",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 28,
+  "problems": [],
+  "newDiagnostics": 0
+}

@@ -1,0 +1,11 @@
+{
+  "gate": "cli-command-line-tests",
+  "command": "cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 27,
+  "problems": [],
+  "newDiagnostics": 0
+}

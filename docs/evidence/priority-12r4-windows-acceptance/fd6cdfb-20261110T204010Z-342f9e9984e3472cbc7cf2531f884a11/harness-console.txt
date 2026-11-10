@@ -1,0 +1,1033 @@
+::group::daemon-build: cargo build --locked -p orchestrator-daemon
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.229
+   Compiling pin-project-lite v0.2.17
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling litemap v0.8.3
+   Compiling futures-core v0.3.34
+   Compiling version_check v0.9.5
+   Compiling utf_types v1.0.0
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+   Compiling cfg-if v1.0.5
+   Compiling bytes v1.12.1
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling windows-sys v0.61.2
+   Compiling typenum v1.20.1
+   Compiling generic-array v0.14.9
+   Compiling shlex v2.0.1
+   Compiling scopeguard v1.2.0
+   Compiling find-msvc-tools v0.1.15
+   Compiling parking_lot_core v0.9.12
+   Compiling zmij v1.0.23
+   Compiling lock_api v0.4.14
+   Compiling vcpkg v0.2.15
+   Compiling futures-sink v0.3.34
+   Compiling pkg-config v0.3.34
+   Compiling cc v1.11.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling equivalent v1.0.3
+   Compiling serde_json v1.0.154
+   Compiling slab v0.4.12
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling once_cell v1.21.4
+   Compiling allocator-api2 v0.2.21
+   Compiling thiserror v2.0.21
+   Compiling foldhash v0.2.0
+   Compiling percent-encoding v2.3.2
+   Compiling itoa v1.0.18
+   Compiling autocfg v1.5.1
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling futures-util v0.3.34
+   Compiling digest v0.10.7
+   Compiling num-traits v0.2.19
+   Compiling parking_lot v0.12.5
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling cpufeatures v0.2.17
+   Compiling event-listener v5.4.2
+   Compiling synstructure v0.14.0
+   Compiling sha2 v0.10.9
+   Compiling futures-intrusive v0.5.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling indexmap v2.14.2
+   Compiling crc v3.4.0
+   Compiling hashlink v0.11.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling base64 v0.22.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling spin v0.9.9
+   Compiling futures-executor v0.3.34
+   Compiling futures-channel v0.3.34
+   Compiling tokio v1.54.1
+   Compiling flume v0.12.0
+   Compiling tracing-attributes v0.1.31
+   Compiling hex v0.4.3
+   Compiling dotenvy v0.15.7
+   Compiling heck v0.5.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling atoi v2.0.0
+   Compiling getrandom v0.3.4
+   Compiling tracing v0.1.44
+   Compiling orchestrator-private-fs v0.1.0 (Z:\342f9e99\src\crates\orchestrator-private-fs)
+   Compiling libc v0.2.191
+   Compiling async-trait v0.1.89
+   Compiling orchestrator-diagnostics v0.1.0 (Z:\342f9e99\src\crates\orchestrator-diagnostics)
+   Compiling subtle v2.6.1
+   Compiling zerofrom v0.1.8
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+   Compiling yoke v0.8.4
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (Z:\342f9e99\src\crates\orchestrator-core)
+   Compiling uuid v1.18.1
+   Compiling orchestrator-ipc v0.1.0 (Z:\342f9e99\src\crates\orchestrator-ipc)
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling orchestrator-runtime v0.1.0 (Z:\342f9e99\src\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (Z:\342f9e99\src\crates\orchestrator-agents)
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (Z:\342f9e99\src\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (Z:\342f9e99\src\crates\orchestrator-engine)
+   Compiling orchestrator-daemon v0.1.0 (Z:\342f9e99\src\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 04s
+PASS daemon-build (125 s)
+::endgroup::
+::group::ipc-tests: cargo test --locked -p orchestrator-ipc
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling getrandom v0.4.3
+   Compiling windows-sys v0.61.2
+   Compiling memchr v2.8.3
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling syn v3.0.9
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tempfile v3.27.0
+   Compiling thiserror v2.0.21
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-ipc v0.1.0 (Z:\342f9e99\src\crates\orchestrator-ipc)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.68s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+
+running 46 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test coordinator_review_tests::capability_set_names_are_unique_and_round_trip ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test auth::tests::reports_no_common_version ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test coordinator_review_tests::methods_are_unavailable_without_the_negotiated_capability ... ok
+test coordinator_review_tests::a_handler_without_review_never_exposes_review_methods ... ok
+test coordinator_review_tests::client_wrappers_send_the_documented_methods_and_parameters ... ok
+test event_stream_tests::reconnect_still_requires_the_current_token ... ok
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test coordinator_review_tests::server_gates_each_method_on_its_own_capability ... ok
+test relay::tests::closing_a_relay_is_not_a_daemon_shutdown_and_a_new_relay_resumes_the_stream ... ok
+test relay::tests::no_daemon_is_unavailable_not_an_authentication_failure ... ok
+test relay::tests::the_welcome_reports_only_the_capabilities_the_daemon_grants ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... ok
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... ok
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... ok
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test event_stream_tests::resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe ... ok
+test event_stream_tests::replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test relay::tests::a_daemon_that_stops_ends_the_relay_with_a_remote_close ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test idle_subscription_tests::unsubscribed_connection_does_not_keep_the_server_alive ... ok
+test idle_subscription_tests::a_call_longer_than_the_idle_timeout_does_not_stop_the_server ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+test idle_subscription_tests::server_idles_out_after_its_last_subscriber_leaves ... ok
+test idle_subscription_tests::live_subscription_keeps_an_otherwise_idle_server_running ... ok
+
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.66s
+
+   Doc-tests orchestrator_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+PASS ipc-tests (47 s)
+::endgroup::
+::group::daemon-tests: cargo test --locked -p orchestrator-daemon
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (Z:\342f9e99\src\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.79s
+     Running unittests src\main.rs (Z:\342f9e99\tg\debug\deps\orchestrator_daemon-e34c539026ecf227.exe)
+
+running 52 tests
+test api::review_tests::capabilities_include_coordinator_and_review ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-10T20:44:28Z"}
+test api::review_tests::coordinator_messages_are_idempotent_ordered_and_user_authored ... ok
+test api::review_tests::evidence_for_unknown_task_or_approval_is_not_found ... ok
+test api::review_tests::coordinator_enforces_project_existence_and_size_limits ... ok
+test api::review_tests::coordinator_get_pages_at_one_hundred_entries ... ok
+test api::review_tests::evidence_marks_an_unverified_unknown_candidate_stale ... ok
+test api::review_tests::evidence_without_an_approval_is_missing_and_pinned_to_head ... ok
+test api::review_tests::evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale ... ok
+test api::review_tests::evidence_snapshot_is_size_bounded_and_path_filterable ... ok
+test api::review_tests::approval_from_review_request_delivers_end_to_end ... ok
+test api::review_tests::proposals_cannot_smuggle_authority_fields ... ok
+test api::tests::agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one ... ok
+test api::review_tests::invalid_proposals_report_stable_codes ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::review_tests::new_methods_reject_malformed_parameters ... ok
+test api::tests::idempotency_store_failures_report_their_cause_too ... ok
+test api::tests::internal_error_causes_reach_the_injected_redacting_sink ... ok
+test api::review_tests::evidence_is_current_for_a_fresh_approval_and_stale_after_the_workspace_moves ... ok
+test api::tests::internal_causes_do_not_leak_into_the_next_request ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T20:44:44Z"}
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-10T20:44:44Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-10T20:44:44Z"}
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... ok
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+test api::review_tests::request_approval_refuses_unsafe_requests ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T20:44:48Z"}
+test api::review_tests::request_approval_binds_the_delivery_digest_and_is_replayable ... ok
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T20:44:51Z"}
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T20:44:52Z"}
+test api::review_tests::request_approval_requires_passed_verification_of_the_current_head ... ok
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-10T20:44:53Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-10T20:44:53Z"}
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... ok
+test api::review_tests::request_changes_blocks_approval_but_not_rejection ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-10T20:44:54Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-10T20:44:54Z"}
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... ok
+test executor::running_listing_tests::a_failed_listing_is_logged_and_never_reads_as_nothing_running ... ok
+test executor::running_listing_tests::a_readable_empty_listing_is_quiet_and_empty ... ok
+test executor::running_listing_tests::interrupted_tasks_are_unknown_when_either_listing_failed ... ok
+test api::tests::windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent ... ok
+test tests::lock_conflict_reports_live_holder_pid ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-10T20:44:54Z"}
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... ok
+test api::review_tests::request_changes_refuses_a_decided_approval ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T20:44:54Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T20:44:54Z"}
+test api::review_tests::valid_proposal_is_validated_without_authority_or_side_effects ... ok
+test api::review_tests::request_changes_refuses_stale_duplicate_and_unknown_requests ... ok
+test api::tests::safety::submit_rejects_oversized_and_nul_contract_fields ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-10T20:44:55Z"}
+test api::tests::safety::submit_refuses_read_only_autonomy_because_the_agent_would_write ... ok
+test api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-10T20:44:57Z"}
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.32s
+
+     Running tests\coordinator_review.rs (Z:\342f9e99\tg\debug\deps\coordinator_review-b5ea58e4bb442c1c.exe)
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.04s
+
+     Running tests\daemon.rs (Z:\342f9e99\tg\debug\deps\daemon-dfe7eb75e3bb0fd4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics_log.rs (Z:\342f9e99\tg\debug\deps\diagnostics_log-4ea62be8b7680d03.exe)
+
+running 1 test
+test a_failed_launch_is_explained_in_the_log_without_the_credential ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.71s
+
+     Running tests\lifecycle.rs (Z:\342f9e99\tg\debug\deps\lifecycle-df97ab7e9ecea884.exe)
+Initialized empty Git repository in C:/Users/<user>/AppData/Local/Temp/342f9e99/tt/.tmp6H69qu/repo/.git/
+[main (root-commit) ccc0fe9] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+PASS daemon-tests (117 s)
+::endgroup::
+::group::daemon-lifecycle: cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.77s
+     Running tests\lifecycle.rs (Z:\342f9e99\tg\debug\deps\lifecycle-df97ab7e9ecea884.exe)
+Initialized empty Git repository in C:/Users/<user>/AppData/Local/Temp/342f9e99/tt/.tmpYUZxyy/repo/.git/
+[main (root-commit) 15f8e77] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+PASS daemon-lifecycle (13 s)
+::endgroup::
+::group::coordinator-review-tests: cargo test --locked -p orchestrator-daemon --test coordinator_review
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+     Running tests\coordinator_review.rs (Z:\342f9e99\tg\debug\deps\coordinator_review-b5ea58e4bb442c1c.exe)
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.87s
+
+PASS coordinator-review-tests (18 s)
+::endgroup::
+::group::git-lib-tests: cargo test --locked -p orchestrator-git --lib
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.85s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_git-4a1ff5d2331e70c7.exe)
+
+running 49 tests
+test env_policy::tests::a_wildcard_entry_is_rejected_with_a_clear_reason ... ok
+test env_policy::tests::baseline_keeps_process_start_and_network_names_only ... ok
+test env_policy::tests::credentials_and_agent_sockets_are_not_in_the_baseline ... ok
+test env_policy::tests::orchestrator_configuration_is_never_forwarded_even_when_listed ... ok
+test env_policy::tests::locale_names_are_exact_not_a_prefix ... ok
+test env_policy::tests::non_ascii_name_boundaries_do_not_panic ... ok
+test env_policy::tests::non_unicode_names_are_dropped ... ok
+test env_policy::tests::passthrough_list_splits_and_rejects_bad_entries ... ok
+test env_policy::tests::provider_names_extend_the_baseline ... ok
+test env_policy::tests::rejected_entries_never_report_a_value ... ok
+test env_policy::tests::unix_names_are_case_sensitive_and_windows_names_are_not ... ok
+test git_path::tests::for_git_is_a_no_op_off_windows ... ok
+test git_path::tests::near_reserved_names_are_plain ... ok
+test git_path::tests::verbatim_drive_and_unc_paths_become_plain_paths ... ok
+test git_path::tests::verbatim_paths_with_other_meaning_are_left_alone ... ok
+test delivery::tests::identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact ... ok
+test delivery::tests::missing_platform_identity_fails_acquisition_and_keeps_the_artifact ... ok
+test delivery::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test delivery::tests::verified_identity_lock_is_removed_on_drop ... ok
+test verification::tests::validation_commands_do_not_inherit_unlisted_environment ... ok
+test worktree::tests::a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists ... ok
+test worktree::tests::a_worktree_path_over_the_limit_is_refused_naming_the_limit ... ok
+test verification::tests::rejects_worktree_owned_by_another_task ... ok
+test verification::tests::rejects_branch_not_derived_from_task_id ... ok
+test verification::tests::rejects_mutable_branch_reference_as_attempt_commit ... ok
+test verification::tests::rejects_candidate_after_branch_moves ... ok
+test worktree::tests::checkout_files_longer_than_max_path_are_created ... ok
+test verification::tests::default_trust_policy_does_not_run_untrusted_command ... ok
+test worktree::tests::long_stderr_keeps_the_final_cause_within_the_bound ... ok
+test worktree::tests::name_collision_is_recognized_only_for_gits_own_conflict_lines ... ok
+test verification::tests::timed_out_command_is_killed_and_recorded ... ok
+test verification::tests::trusted_command_does_not_authorize_different_argv ... ok
+test verification::tests::trusted_nonzero_exit_is_recorded_as_failed ... ok
+test verification::tests::trusted_command_runs_and_records_output_and_exit_code ... ok
+test worktree::tests::stderr_detail_neutralizes_terminal_control_characters ... ok
+test verification::tests::fails_and_names_changed_protected_path ... ok
+test verification::tests::question_mark_matches_one_unicode_path_character ... ok
+test worktree::tests::dirty_primary_checkout_preserved ... ok
+test worktree::tests::empty_task_id_rejected ... ok
+test worktree::tests::collision_allocates_suffix ... ok
+test worktree::tests::resolve_base_ref_refuses_option_like_and_control_character_refs ... ok
+test worktree::tests::worktrees_root_inside_repository_rejected ... ok
+test worktree::tests::resolve_base_commit_rejects_invalid_ref ... ok
+test worktree::tests::git_add_failure_preserves_repo_state_and_reports_partial_state ... ok
+test worktree::tests::git_add_failure_reports_git_stderr_cause ... ok
+test worktree::tests::verbatim_worktrees_root_creates_a_worktree ... ok
+test worktree::tests::worktree_at_the_longest_accepted_path_is_created ... ok
+test worktree::tests::open_accepts_repo_and_isolates_primary ... ok
+test worktree::tests::preexisting_branch_skipped ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.58s
+
+PASS git-lib-tests (28 s)
+::endgroup::
+::group::cli-cleanup-safety-tests: cargo test --locked -p orchestrator-cli --test cleanup_safety
+   Compiling windows-sys v0.61.2
+   Compiling crypto-common v0.1.6
+   Compiling anstyle v1.0.14
+   Compiling utf8parse v0.2.2
+   Compiling once_cell_polyfill v1.70.2
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.5
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.1.1
+   Compiling clap_derive v4.6.7
+   Compiling digest v0.10.7
+   Compiling anstyle-parse v1.0.0
+   Compiling sha2 v0.10.9
+   Compiling sqlx-core v0.9.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling anstyle-wincon v3.0.11
+   Compiling orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+   Compiling anstyle-query v1.1.5
+   Compiling orchestrator-private-fs v0.1.0 (Z:\342f9e99\src\crates\orchestrator-private-fs)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling clap_builder v4.6.7
+   Compiling tokio v1.54.1
+   Compiling sqlx-sqlite v0.9.0
+   Compiling clap v4.6.7
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (Z:\342f9e99\src\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (Z:\342f9e99\src\crates\orchestrator-agents)
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (Z:\342f9e99\src\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (Z:\342f9e99\src\crates\orchestrator-engine)
+   Compiling orchestrator-cli v0.1.0 (Z:\342f9e99\src\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 06s
+     Running tests\cleanup_safety.rs (Z:\342f9e99\tg\debug\deps\cleanup_safety-1c90eae2393b8fa5.exe)
+
+running 3 tests
+test cleanup_refuses_clean_worktree_while_run_owner_is_live ... ok
+test cleanup_follows_existing_contract_for_provably_exited_run_owner ... ok
+test cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree has been running for over 60 seconds
+test cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 65.93s
+
+PASS cli-cleanup-safety-tests (134 s)
+::endgroup::
+::group::private-fs-tests: cargo test --locked -p orchestrator-private-fs
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-private-fs v0.1.0 (Z:\342f9e99\src\crates\orchestrator-private-fs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.87s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_private_fs-4c0ee0fad3543979.exe)
+
+running 11 tests
+test tests::the_dacl_reader_accepts_only_one_owner_allow_ace ... ok
+test windows::tests::the_owner_sid_text_matches_itself ... ok
+test tests::a_missing_path_is_not_an_error_to_restrict ... ok
+test windows::tests::a_missing_path_is_not_an_error_and_a_private_path_is_not_rewritten ... ok
+test tests::creating_a_file_never_truncates_an_existing_one ... ok
+test windows::tests::the_directory_ace_is_inherited_by_files_created_later ... ok
+test tests::a_created_private_file_and_directory_report_owner_only_and_a_missing_path_errors ... ok
+test windows::tests::existing_wide_open_paths_are_tightened_without_losing_content ... ok
+test windows::tests::tightening_a_directory_also_tightens_files_it_already_holds ... ok
+test windows::tests::a_new_directory_tree_and_file_are_owner_only ... ok
+test windows::tests::a_file_with_only_an_inherited_owner_ace_is_not_owner_only_until_restricted ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests orchestrator_private_fs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+PASS private-fs-tests (13 s)
+::endgroup::
+::group::runtime-command-line-tests: cargo test --locked -p orchestrator-runtime --lib command_line
+   Compiling windows-sys v0.61.2
+   Compiling syn v3.0.9
+   Compiling mio v1.2.4
+   Compiling tempfile v3.27.0
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling tokio v1.54.1
+   Compiling thiserror v2.0.21
+   Compiling orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+   Compiling serde v1.0.229
+   Compiling orchestrator-core v0.1.0 (Z:\342f9e99\src\crates\orchestrator-core)
+   Compiling orchestrator-runtime v0.1.0 (Z:\342f9e99\src\crates\orchestrator-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.37s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_runtime-58cc1108f4014b9d.exe)
+
+running 8 tests
+test command_line::tests::the_windows_count_follows_the_quoting_std_applies ... ok
+test command_line::tests::a_normal_objective_is_accepted_on_every_platform ... ok
+test command_line::tests::the_unix_rules_cap_one_argument_and_the_total ... ok
+test command_line::tests::a_cmd_script_launcher_has_the_smaller_cmd_exe_limit ... ok
+test command_line::tests::escaping_counts_toward_the_windows_limit ... ok
+test command_line::tests::the_windows_limit_is_exact_at_the_boundary ... ok
+test command_line::tests::a_65000_character_objective_is_refused_on_windows_with_an_actionable_message ... ok
+test command_line::tests::a_too_long_command_line_is_refused_before_any_process_is_started ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+
+PASS runtime-command-line-tests (35 s)
+::endgroup::
+::group::cli-command-line-tests: cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective
+   Compiling orchestrator-cli v0.1.0 (Z:\342f9e99\src\crates\orchestrator-cli)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix --lib -p orchestrator-cli --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.67s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_cli-192dc354e21d2fea.exe)
+
+running 2 tests
+test workflow::tests::a_65000_character_objective_is_refused_before_any_record_on_windows ... ok
+test workflow::tests::an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.10s
+
+PASS cli-command-line-tests (27 s)
+::endgroup::
+::group::windows-transport-tests: cargo test --locked -p orchestrator-ipc windows_transport
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src\lib.rs (Z:\342f9e99\tg\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+
+running 13 tests
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 5.04s
+
+PASS windows-transport-tests (6 s)
+::endgroup::
+::group::cli-build: cargo build --locked -p orchestrator-cli
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.62s
+PASS cli-build (1 s)
+::endgroup::
+::group::p12-windows-checks: pwsh.exe -NoProfile -File scripts\ci\p12-windows-checks.ps1 -TargetDir {target} -RunRoot {testTmp}\p12 -EvidenceDir {evidence}
+INFO run-root length 18 characters
+INFO platform windows
+acl: started daemon pid 18772
+CHECK acl-files-present: PASS - daemon.token, store.sqlite
+INFO acl-daemon.log: NOT CHECKED here; only the desktop host creates daemon.log. Its owner-only DACL is covered by the tauri-tests test a_new_and_an_existing_log_are_owner_only_on_every_platform and is UNPROVEN on a real host
+---- icacls data-dir
+Z:\342f9e99\tt\p12\acl-data <user>:(OI)(CI)(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-data-dir: PASS - only the current user, full control, protected, nothing inherited
+---- icacls .orchestrator.lock
+Z:\342f9e99\tt\p12\acl-data\.orchestrator.lock <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-.orchestrator.lock: PASS - only the current user, full control, protected, nothing inherited
+---- icacls daemon.token
+Z:\342f9e99\tt\p12\acl-data\daemon.token <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-daemon.token: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite
+Z:\342f9e99\tt\p12\acl-data\store.sqlite <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite-shm
+Z:\342f9e99\tt\p12\acl-data\store.sqlite-shm <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite-shm: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite-wal
+Z:\342f9e99\tt\p12\acl-data\store.sqlite-wal <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite-wal: PASS - only the current user, full control, protected, nothing inherited
+---- icacls parent (information only, not asserted)
+Z:\342f9e99\tt\p12 <host>\CodexSandboxUsers:(I)(OI)(CI)(M)
+                   (I)(OI)(CI)(M)
+The trust relationship between this workstation and the primary domain failed.
+                   NT AUTHORITY\SYSTEM:(I)(OI)(CI)(F)
+                   BUILTIN\Administrators:(I)(OI)(CI)(F)
+                   <user>:(I)(OI)(CI)(F)
+The trust relationship between this workstation and the primary domain failed.
+                   (I)(F)
+The trust relationship between this workstation and the primary domain failed.
+                   (I)(OI)(CI)(IO)(F)
+
+Successfully processed 1 files; Failed processing 0 files
+acl: stopped daemon pid 18772
+cmdline: exit code 1 after 735 ms; first line: agent-orch: the command line for Z:\342f9e99\tt\p12\fake-codex.cmd is 9103 characters long, but this system allows at most 8191; argument 5 alone is 9002 of it. Nothing was started and nothing was tru
+CHECK cmdline-refused: PASS - refused before any record, with the limit named and no objective echoed
+INFO cmdline-65k-literal: the OS refused to start it, as expected: This command cannot be run due to the error: The filename or extension is too long.
+CHECK launch-failure-window: NOT RUN - needs a person to drive the desktop window; the tauri-tests gate covers the redaction logic
+P12-WINDOWS-CHECKS: PASS
+PASS p12-windows-checks (5 s)
+::endgroup::
+::group::clippy-scoped: cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets
+    Checking windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+    Checking serde_core v1.0.229
+    Checking cfg-if v1.0.5
+   Compiling smallvec v1.16.5
+    Checking memchr v2.8.3
+   Compiling utf_types v1.0.0
+   Compiling zerofrom v0.1.8
+   Compiling writeable v0.6.4
+    Checking windows-sys v0.61.2
+   Compiling litemap v0.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling yoke v0.8.4
+   Compiling utf8_iter v1.1.0
+   Compiling scopeguard v1.2.0
+   Compiling typenum v1.20.1
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling lock_api v0.4.14
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling futures-sink v0.3.34
+    Checking thiserror v2.0.21
+    Checking tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling generic-array v0.14.9
+   Compiling equivalent v1.0.3
+    Checking icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+    Checking serde v1.0.229
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling parking_lot_core v0.9.12
+   Compiling mio v1.2.4
+    Checking icu_provider v2.4.0
+   Compiling socket2 v0.6.5
+    Checking zmij v1.0.23
+   Compiling slab v0.4.12
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+    Checking bytes v1.12.1
+   Compiling percent-encoding v2.3.2
+   Compiling futures-task v0.3.34
+    Checking itoa v1.0.18
+   Compiling once_cell v1.21.4
+   Compiling futures-io v0.3.34
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling form_urlencoded v1.2.2
+    Checking serde_json v1.0.154
+   Compiling tracing-core v0.1.36
+   Compiling hashbrown v0.16.1
+   Compiling futures-util v0.3.34
+   Compiling tokio v1.54.1
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling cpufeatures v0.2.17
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling futures-intrusive v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling idna_adapter v1.2.2
+   Compiling crossbeam-queue v0.3.14
+   Compiling tracing v0.1.44
+   Compiling idna v1.1.0
+   Compiling event-listener v5.4.2
+   Compiling crc v3.4.0
+   Compiling either v1.19.0
+   Compiling hashlink v0.11.1
+   Compiling indexmap v2.14.2
+   Compiling spin v0.9.9
+   Compiling num-traits v0.2.19
+   Compiling url v2.5.8
+   Compiling base64 v0.22.1
+   Compiling futures-executor v0.3.34
+   Compiling atoi v2.0.0
+   Compiling flume v0.12.0
+   Compiling futures-channel v0.3.34
+    Checking tokio-stream v0.1.19
+    Checking libsqlite3-sys v0.37.0
+    Checking orchestrator-core v0.1.0 (Z:\342f9e99\src\crates\orchestrator-core)
+    Checking orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+    Checking getrandom v0.3.4
+   Compiling sqlx-core v0.9.0
+    Checking orchestrator-private-fs v0.1.0 (Z:\342f9e99\src\crates\orchestrator-private-fs)
+    Checking subtle v2.6.1
+    Checking getrandom v0.4.3
+    Checking uuid v1.18.1
+    Checking orchestrator-diagnostics v0.1.0 (Z:\342f9e99\src\crates\orchestrator-diagnostics)
+    Checking fastrand v2.5.0
+    Checking libc v0.2.191
+    Checking orchestrator-ipc v0.1.0 (Z:\342f9e99\src\crates\orchestrator-ipc)
+    Checking tempfile v3.27.0
+    Checking orchestrator-runtime v0.1.0 (Z:\342f9e99\src\crates\orchestrator-runtime)
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:414:9
+    |
+414 | /         match std::mem::take(&mut self.job.0) {
+415 | |             Some(job) => windows_impl::terminate_job(job),
+416 | |             None => {}
+417 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+    = note: `#[warn(clippy::single_match)]` on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:437:9
+    |
+437 | /         match std::mem::take(&mut self.job.0) {
+438 | |             Some(job) => windows_impl::terminate_job(job),
+439 | |             None => {}
+440 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+
+warning: `orchestrator-runtime` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p orchestrator-runtime -- ` to apply 2 suggestions)
+    Checking orchestrator-agents v0.1.0 (Z:\342f9e99\src\crates\orchestrator-agents)
+    Checking sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (Z:\342f9e99\src\crates\orchestrator-store)
+    Checking orchestrator-engine v0.1.0 (Z:\342f9e99\src\crates\orchestrator-engine)
+    Checking orchestrator-daemon v0.1.0 (Z:\342f9e99\src\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 04s
+PASS clippy-scoped (66 s)
+::endgroup::
+::group::desktop-npm-ci: npm ci
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'jsdom@31.0.0',
+npm warn EBADENGINE   required: { node: '^22.22.2 || ^24.15.0 || >=26.0.0' },
+npm warn EBADENGINE   current: { node: 'v22.20.0', npm: '11.3.0' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'w3c-xmlserializer@6.0.0',
+npm warn EBADENGINE   required: { node: '^22.22.2 || ^24.15.0 || >=26.0.0' },
+npm warn EBADENGINE   current: { node: 'v22.20.0', npm: '11.3.0' }
+npm warn EBADENGINE }
+
+added 155 packages, and audited 156 packages in 24s
+
+33 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+PASS desktop-npm-ci (28 s)
+::endgroup::
+::group::desktop-tsc: npx tsc -b
+src/test/render.tsx(22,23): error TS2883: The inferred type of 'mount' cannot be named without a reference to '"C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries"' from 'C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries'. This is likely not portable. A type annotation is necessary.
+FAIL desktop-tsc (11 s): exit code 1
+::endgroup::
+::error title=desktop-tsc FAIL::exit code 1
+::group::desktop-build: npm run build
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+src/test/render.tsx(22,23): error TS2883: The inferred type of 'mount' cannot be named without a reference to '"C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries"' from 'C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries'. This is likely not portable. A type annotation is necessary.
+FAIL desktop-build (10 s): exit code 1
+::endgroup::
+::error title=desktop-build FAIL::exit code 1
+::group::desktop-vitest: npx vitest run
+
+ RUN  v5.1.0 Z:/342f9e99/src/apps/desktop
+
+
+ Test Files  15 passed (15)
+      Tests  290 passed (290)
+   Start at  13:53:09
+   Duration  34.37s (environment 71%, setup 15%, tests 10%, import 3%, transform 2%)
+
+Environment  jsdom was created 15 times · 186.54s total, 71% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+PASS desktop-vitest (58 s)
+::endgroup::
+::group::tauri-build: cargo build --locked
+SKIPPED tauri-build: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-build SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::tauri-tests: cargo test --locked
+SKIPPED tauri-tests: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-tests SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::tauri-clippy-clean: cargo clean -p agent-orch-desktop
+     Removed 0 files
+PASS tauri-clippy-clean (9 s)
+::endgroup::
+::group::tauri-clippy: cargo clippy --locked --all-targets --verbose
+SKIPPED tauri-clippy: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-clippy SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::desktop-package-win: npm run package:win
+
+> agent-orch-desktop@0.1.0 package:win
+> node scripts/package.mjs nsis
+
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling serde_core v1.0.229
+   Compiling version_check v0.9.5
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde v1.0.229
+   Compiling windows-link v0.2.1
+   Compiling parking_lot_core v0.9.12
+   Compiling zmij v1.0.23
+   Compiling crossbeam-utils v0.8.23
+   Compiling windows-sys v0.61.2
+   Compiling shlex v2.0.1
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+   Compiling autocfg v1.5.1
+   Compiling serde_json v1.0.154
+   Compiling generic-array v0.14.9
+   Compiling find-msvc-tools v0.1.15
+   Compiling utf_types v1.0.0
+   Compiling litemap v0.8.3
+   Compiling pkg-config v0.3.34
+   Compiling memchr v2.8.3
+   Compiling vcpkg v0.2.15
+   Compiling pin-project-lite v0.2.17
+   Compiling num-traits v0.2.19
+   Compiling utf8_iter v1.1.0
+   Compiling futures-core v0.3.34
+   Compiling cc v1.11.1
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.5
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling thiserror v2.0.21
+   Compiling futures-sink v0.3.34
+   Compiling equivalent v1.0.3
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling once_cell v1.21.4
+   Compiling futures-task v0.3.34
+   Compiling bytes v1.12.1
+   Compiling synstructure v0.14.0
+   Compiling slab v0.4.12
+   Compiling percent-encoding v2.3.2
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling futures-io v0.3.34
+   Compiling form_urlencoded v1.2.2
+   Compiling hashbrown v0.16.1
+   Compiling tokio v1.54.1
+   Compiling futures-util v0.3.34
+   Compiling tracing-core v0.1.36
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling libsqlite3-sys v0.37.0
+   Compiling crc-catalog v2.5.0
+   Compiling itoa v1.0.18
+   Compiling hashbrown v0.17.1
+   Compiling tracing-attributes v0.1.31
+   Compiling log v0.4.35
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling parking v2.2.1
+   Compiling cpufeatures v0.2.17
+   Compiling event-listener v5.4.2
+   Compiling sha2 v0.10.9
+   Compiling indexmap v2.14.2
+   Compiling crc v3.4.0
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling tokio-stream v0.1.19
+   Compiling crossbeam-queue v0.3.14
+   Compiling yoke v0.8.4
+   Compiling hashlink v0.11.1
+   Compiling futures-intrusive v0.5.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling spin v0.9.9
+   Compiling either v1.19.0
+   Compiling base64 v0.22.1
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling flume v0.12.0
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling atoi v2.0.0
+   Compiling futures-executor v0.3.34
+   Compiling futures-channel v0.3.34
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling hex v0.4.3
+   Compiling dotenvy v0.15.7
+   Compiling heck v0.5.0
+   Compiling sqlx-core v0.9.0
+   Compiling orchestrator-core v0.1.0 (Z:\342f9e99\src\crates\orchestrator-core)
+   Compiling getrandom v0.3.4
+   Compiling orchestrator-git v0.1.0 (Z:\342f9e99\src\crates\orchestrator-git)
+   Compiling orchestrator-private-fs v0.1.0 (Z:\342f9e99\src\crates\orchestrator-private-fs)
+   Compiling libc v0.2.191
+   Compiling orchestrator-diagnostics v0.1.0 (Z:\342f9e99\src\crates\orchestrator-diagnostics)
+   Compiling async-trait v0.1.89
+   Compiling orchestrator-runtime v0.1.0 (Z:\342f9e99\src\crates\orchestrator-runtime)
+   Compiling uuid v1.18.1
+   Compiling subtle v2.6.1
+   Compiling sqlx-sqlite v0.9.0
+   Compiling orchestrator-ipc v0.1.0 (Z:\342f9e99\src\crates\orchestrator-ipc)
+   Compiling orchestrator-agents v0.1.0 (Z:\342f9e99\src\crates\orchestrator-agents)
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (Z:\342f9e99\src\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (Z:\342f9e99\src\crates\orchestrator-engine)
+   Compiling orchestrator-daemon v0.1.0 (Z:\342f9e99\src\crates\orchestrator-daemon)
+    Finished `release` profile [optimized] target(s) in 2m 55s
+staged Z:\342f9e99\src\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+src/test/render.tsx(22,23): error TS2883: The inferred type of 'mount' cannot be named without a reference to '"C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries"' from 'C:/Users/<user>/AppData/Local/Temp/342f9e99/src/apps/desktop/node_modules/@testing-library/dom/types/queries'. This is likely not portable. A type annotation is necessary.
+beforeBuildCommand `npm run build` failed with exit code 1
+       Error beforeBuildCommand `npm run build` failed with exit code 1
+FAIL desktop-package-win (191 s): exit code 1
+::endgroup::
+::error title=desktop-package-win FAIL::exit code 1
+## Native gates: win32 (FAIL)
+
+Source fd6cdfbd3eab4dc14977432a85dbb0c15c931511 (tree da64d184471356ab17fcf0d9b6328087a682c3c6).
+
+| Gate | Verdict | Exit | Seconds | Notes |
+|---|---|---|---|---|
+| daemon-build | PASS | 0 | 125 |  |
+| ipc-tests | PASS | 0 | 47 |  |
+| daemon-tests | PASS | 0 | 117 |  |
+| daemon-lifecycle | PASS | 0 | 13 |  |
+| coordinator-review-tests | PASS | 0 | 18 |  |
+| git-lib-tests | PASS | 0 | 28 |  |
+| cli-cleanup-safety-tests | PASS | 0 | 134 |  |
+| private-fs-tests | PASS | 0 | 13 |  |
+| runtime-command-line-tests | PASS | 0 | 35 |  |
+| cli-command-line-tests | PASS | 0 | 27 |  |
+| windows-transport-tests | PASS | 0 | 6 |  |
+| cli-build | PASS | 0 | 1 |  |
+| p12-windows-checks | PASS | 0 | 5 |  |
+| clippy-scoped | PASS | 0 | 66 |  |
+| desktop-npm-ci | PASS | 0 | 28 |  |
+| desktop-tsc | FAIL | 1 | 11 | exit code 1 |
+| desktop-build | FAIL | 1 | 10 | exit code 1 |
+| desktop-vitest | PASS | 0 | 58 |  |
+| tauri-build | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| tauri-tests | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| tauri-clippy-clean | PASS | 0 | 9 |  |
+| tauri-clippy | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| desktop-package-win | FAIL | 1 | 191 | exit code 1 |
+| git-config | PASS |  |  | core.autocrlf=false core.longpaths=true |
+| gitattributes-before | PASS |  |  |  |
+| source-status-before | PASS |  |  |  |
+| gitattributes-after | PASS |  |  |  |
+| source-status-after | PASS |  |  |  |
+| source-diff-after | PASS |  |  |  |
+| privacy-scan | PASS |  |  |  |
+
+### Not covered by this result (UNPROVEN by construction)
+
+- unproven-second-user: named-pipe denial to a second local user
+- unproven-remote-client: rejection of a genuinely remote client
+- unproven-slow-reader-64kib: a daemon write above the 64 KiB pipe buffer to a slow reader
+- unproven-e2e-windows: the desktop e2e suite needs a Unix socket and is not run on Windows
+- unproven-tauri-webview-click-path: webview and React click path through the approval flow
+- unproven-gui-install-launch: installing the installer and launching the app
+- unproven-gui-task-survives-close: a daemon-owned task surviving window close and reopen
+- unproven-gui-event-reconnect: event-stream reconnect at the saved cursor after reopen
+- unproven-stale-token-relaunch-timing: stale-token relaunch timing on Windows
+- unproven-daemon-idle-behaviour: 60 s idle exit and subscription keep-alive on the real app
+- unproven-daemon-kill-and-sidecar-failure: daemon kill and sidecar start failure
+

@@ -1,0 +1,322 @@
+TAP version 13
+# Subtest: captures stdout, stderr and the exit code, and also the file bytes
+ok 1 - captures stdout, stderr and the exit code, and also the file bytes
+  ---
+  duration_ms: 319.5916
+  type: 'test'
+  ...
+# Subtest: a descendant holding the output pipes cannot stall the run after the process exits
+ok 2 - a descendant holding the output pipes cannot stall the run after the process exits
+  ---
+  duration_ms: 541.1148
+  type: 'test'
+  ...
+# Subtest: a timeout kills the process and ends the run promptly
+ok 3 - a timeout kills the process and ends the run promptly
+  ---
+  duration_ms: 1337.841
+  type: 'test'
+  ...
+# Subtest: a command that cannot start reports the error
+ok 4 - a command that cannot start reports the error
+  ---
+  duration_ms: 7.1325
+  type: 'test'
+  ...
+# Subtest: each expected total equals its running-sequence sum (filtered tests excluded)
+ok 5 - each expected total equals its running-sequence sum (filtered tests excluded)
+  ---
+  duration_ms: 3.0572
+  type: 'test'
+  ...
+# Subtest: each expected total equals the length of its name list, so a merge updates both
+ok 6 - each expected total equals the length of its name list, so a merge updates both
+  ---
+  duration_ms: 11.7799
+  type: 'test'
+  ...
+# Subtest: gates take their counts from expected.mjs
+ok 7 - gates take their counts from expected.mjs
+  ---
+  duration_ms: 29.5904
+  type: 'test'
+  ...
+# Subtest: the Windows-only p12 gate needs both binaries and takes its paths from the harness
+ok 8 - the Windows-only p12 gate needs both binaries and takes its paths from the harness
+  ---
+  duration_ms: 26.2604
+  type: 'test'
+  ...
+# Subtest: the clippy baseline pattern matches only the listed lines, under either separator
+ok 9 - the clippy baseline pattern matches only the listed lines, under either separator
+  ---
+  duration_ms: 1.727
+  type: 'test'
+  ...
+# Subtest: the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+ok 10 - the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+  ---
+  duration_ms: 6.291
+  type: 'test'
+  ...
+# Subtest: the verdict is case-sensitive, taken from a line start, and must be unique and known
+ok 11 - the verdict is case-sensitive, taken from a line start, and must be unique and known
+  ---
+  duration_ms: 1.1928
+  type: 'test'
+  ...
+# Subtest: a PASS verdict that contradicts its CHECK lines is a problem
+ok 12 - a PASS verdict that contradicts its CHECK lines is a problem
+  ---
+  duration_ms: 0.4526
+  type: 'test'
+  ...
+# Subtest: sequence and totals are read across binaries, with CRLF output
+ok 13 - sequence and totals are read across binaries, with CRLF output
+  ---
+  duration_ms: 2.5534
+  type: 'test'
+  ...
+# Subtest: a wrong count, sequence or missing name is a problem in either direction
+ok 14 - a wrong count, sequence or missing name is a problem in either direction
+  ---
+  duration_ms: 0.9054
+  type: 'test'
+  ...
+# Subtest: a failed or ignored test is not ok
+ok 15 - a failed or ignored test is not ok
+  ---
+  duration_ms: 0.7882
+  type: 'test'
+  ...
+# Subtest: name matching is by whole path segment, not substring
+ok 16 - name matching is by whole path segment, not substring
+  ---
+  duration_ms: 0.6031
+  type: 'test'
+  ...
+# Subtest: lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+ok 17 - lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+  ---
+  duration_ms: 1.5367
+  type: 'test'
+  ...
+# Subtest: build and lint outputs must show real work and a Finished line
+ok 18 - build and lint outputs must show real work and a Finished line
+  ---
+  duration_ms: 1.9308
+  type: 'test'
+  ...
+# Subtest: diagnostics keep the message and location
+ok 19 - diagnostics keep the message and location
+  ---
+  duration_ms: 1.7853
+  type: 'test'
+  ...
+# Subtest: vitest summary lines
+ok 20 - vitest summary lines
+  ---
+  duration_ms: 1.2632
+  type: 'test'
+  ...
+# Subtest: the domain account, profile, host, DNS domain, user and e-mail are all replaced
+ok 21 - the domain account, profile, host, DNS domain, user and e-mail are all replaced
+  ---
+  duration_ms: 7.442
+  type: 'test'
+  ...
+# Subtest: a domain in front of an account is removed even when the environment does not name it
+ok 22 - a domain in front of an account is removed even when the environment does not name it
+  ---
+  duration_ms: 2.5035
+  type: 'test'
+  ...
+# Subtest: names are matched whole-word, and short names are left alone
+ok 23 - names are matched whole-word, and short names are left alone
+  ---
+  duration_ms: 0.8015
+  type: 'test'
+  ...
+# Subtest: findPrivate reports the line and kind, never the value
+ok 24 - findPrivate reports the line and kind, never the value
+  ---
+  duration_ms: 1.7929
+  type: 'test'
+  ...
+# Subtest: raw tool output may name the profile but not the rest of the identity
+ok 25 - raw tool output may name the profile but not the rest of the identity
+  ---
+  duration_ms: 0.5173
+  type: 'test'
+  ...
+# Subtest: a busy directory is retried until it can be removed
+ok 26 - a busy directory is retried until it can be removed
+  ---
+  duration_ms: 4.0535
+  type: 'test'
+  ...
+# Subtest: the last busy error is thrown once the attempts are used up
+ok 27 - the last busy error is thrown once the attempts are used up
+  ---
+  duration_ms: 3.2856
+  type: 'test'
+  ...
+# Subtest: an error that is not a busy directory is thrown at once
+ok 28 - an error that is not a busy directory is thrown at once
+  ---
+  duration_ms: 0.5478
+  type: 'test'
+  ...
+# Subtest: a real directory tree is removed on the first attempt and a missing one is not an error
+ok 29 - a real directory tree is removed on the first attempt and a missing one is not an error
+  ---
+  duration_ms: 33.9799
+  type: 'test'
+  ...
+# Subtest: parsePs reads pid, ppid and the whole command line, spaces included
+ok 30 - parsePs reads pid, ppid and the whole command line, spaces included
+  ---
+  duration_ms: 6.3102
+  type: 'test'
+  ...
+# Subtest: survivors are processes under this run's directories; the harness and its ancestors are not
+ok 31 - survivors are processes under this run's directories; the harness and its ancestors are not
+  ---
+  duration_ms: 1.2878
+  type: 'test'
+  ...
+# Subtest: Windows listing: path separators and case do not matter, a single object is accepted
+ok 32 - Windows listing: path separators and case do not matter, a single object is accepted
+  ---
+  duration_ms: 0.6892
+  type: 'test'
+  ...
+# Subtest: with a launched child, the operator's monitor that names the run directory is not a survivor
+ok 33 - with a launched child, the operator's monitor that names the run directory is not a survivor
+  ---
+  duration_ms: 1.4266
+  type: 'test'
+  ...
+# Subtest: a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+ok 34 - a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+  ---
+  duration_ms: 0.5895
+  type: 'test'
+  ...
+# Subtest: scanSurvivors passes the launched pids to the scan
+ok 35 - scanSurvivors passes the launched pids to the scan
+  ---
+  duration_ms: 5.3373
+  type: 'test'
+  ...
+# Subtest: scanSurvivors retries while a process is still listed, then reports what remains
+ok 36 - scanSurvivors retries while a process is still listed, then reports what remains
+  ---
+  duration_ms: 38.5384
+  type: 'test'
+  ...
+# Subtest: a listing failure is an error, not an empty result
+ok 37 - a listing failure is an error, not an empty result
+  ---
+  duration_ms: 4.0528
+  type: 'test'
+  ...
+# Subtest: the real listing finds a live process by a path unique to it, and not this harness
+ok 38 - the real listing finds a live process by a path unique to it, and not this harness
+  ---
+  duration_ms: 2070.8581
+  type: 'test'
+  ...
+# Subtest: a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+ok 39 - a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+  ---
+  duration_ms: 3.7429
+  type: 'test'
+  ...
+# Subtest: relative, drive-relative, empty and unset values are rejected on both path flavours
+ok 40 - relative, drive-relative, empty and unset values are rejected on both path flavours
+  ---
+  duration_ms: 1.3822
+  type: 'test'
+  ...
+# Subtest: the Windows child never inherits the signing certificate or password
+ok 41 - the Windows child never inherits the signing certificate or password
+  ---
+  duration_ms: 1.9946
+  type: 'test'
+  ...
+# Subtest: the macOS child keeps non-empty signing variables only when signing, drops empty ones
+ok 42 - the macOS child keeps non-empty signing variables only when signing, drops empty ones
+  ---
+  duration_ms: 0.6559
+  type: 'test'
+  ...
+# Subtest: takeWindowsSecrets moves the secrets out of the environment object
+ok 43 - takeWindowsSecrets moves the secrets out of the environment object
+  ---
+  duration_ms: 0.5349
+  type: 'test'
+  ...
+# Subtest: a process that took the secrets cannot pass them to a child it spawns afterwards
+ok 44 - a process that took the secrets cannot pass them to a child it spawns afterwards
+  ---
+  duration_ms: 330.0738
+  type: 'test'
+  ...
+# Subtest: no secrets: a clean unsigned skip with a clear message
+ok 45 - no secrets: a clean unsigned skip with a clear message
+  ---
+  duration_ms: 4.3066
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING turns an absent configuration into an error
+ok 46 - REQUIRE_SIGNING turns an absent configuration into an error
+  ---
+  duration_ms: 2.3776
+  type: 'test'
+  ...
+# Subtest: a partial configuration is an error that names the missing variables only
+ok 47 - a partial configuration is an error that names the missing variables only
+  ---
+  duration_ms: 0.519
+  type: 'test'
+  ...
+# Subtest: signing without notarization is allowed unless required
+ok 48 - signing without notarization is allowed unless required
+  ---
+  duration_ms: 2.03
+  type: 'test'
+  ...
+# Subtest: full macOS and Windows configurations
+ok 49 - full macOS and Windows configurations
+  ---
+  duration_ms: 0.7041
+  type: 'test'
+  ...
+# Subtest: a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+ok 50 - a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+  ---
+  duration_ms: 1.0368
+  type: 'test'
+  ...
+# Subtest: a tag build with signing secrets signs; macOS also needs notarization unless opted out
+ok 51 - a tag build with signing secrets signs; macOS also needs notarization unless opted out
+  ---
+  duration_ms: 0.6571
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING takes precedence over the unsigned opt-in
+ok 52 - REQUIRE_SIGNING takes precedence over the unsigned opt-in
+  ---
+  duration_ms: 0.2883
+  type: 'test'
+  ...
+1..52
+# tests 52
+# suites 0
+# pass 52
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2592.8918

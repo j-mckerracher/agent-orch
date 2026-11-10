@@ -1,0 +1,14 @@
+platform: win32 10.0.26200 x64
+node: v22.20.0
+npm: 11.3.0
+git: git version 2.46.2.windows.1
+cargo: cargo 1.96.0 (30a34c682 2026-05-25)
+rustc: rustc 1.96.0 (ac68faa20 2026-05-25) | binary: rustc | commit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96 | commit-date: 2026-05-25 | host: x86_64-pc-windows-msvc | release: 1.96.0 | LLVM version: 22.1.2
+HEAD: fd6cdfbd3eab4dc14977432a85dbb0c15c931511
+tree: da64d184471356ab17fcf0d9b6328087a682c3c6
+core.autocrlf: file:.git/config	false
+core.longpaths: file:.git/config	true
+CARGO_TARGET_DIR: Z:\342f9e99\tg
+TEST_TMP: Z:\342f9e99\tt
+CI: true
+source: Z:\342f9e99\src
