@@ -16,7 +16,7 @@
  *   while the window is hidden.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { asDaemonError, presentError } from "../../daemon/errors";
+import { DaemonError, asDaemonError, presentError } from "../../daemon/errors";
 import type { HostMeterWire, HostMetricsWire } from "../../daemon/hostMetrics";
 import { measured, notOk, observation, okResult, oldest } from "./result";
 import type { Measured, MeterValue, Observation, Provenance, SurfaceResult, SystemMetrics, SystemMetricsSource } from "./types";
@@ -120,11 +120,13 @@ export function mapHostMetrics(wire: HostMetricsWire, nowMs: number): SurfaceRes
   if (wire.schema_version !== SCHEMA_VERSION) {
     return notOk(PROVENANCE, "unsupported", `host.metrics schema ${String(wire.schema_version)} is not understood (expected ${SCHEMA_VERSION}).`);
   }
+  // A null or non-object entry is treated as a meter the daemon did not list.
+  const meters = wire.meters.filter((item): item is HostMeterWire => typeof item === "object" && item !== null);
   const data: SystemMetrics = {
-    cpu: mapSingle(wire.meters, "cpu", nowMs),
-    memory: mapSingle(wire.meters, "memory", nowMs),
-    disk: mapSingle(wire.meters, "disk", nowMs),
-    gpu: mapGpu(wire.meters, nowMs),
+    cpu: mapSingle(meters, "cpu", nowMs),
+    memory: mapSingle(meters, "memory", nowMs),
+    disk: mapSingle(meters, "disk", nowMs),
+    gpu: mapGpu(meters, nowMs),
   };
   const observed = Object.values(data).flatMap((item) => (item.status === "ok" ? [{ observedAt: item.observedAt, ageMs: item.ageMs }] : []));
   return okResult(PROVENANCE, data, oldest(observed) ?? observation(nowMs));
@@ -163,15 +165,22 @@ export function createLiveMetrics(connection: ConnectionManager, options: LiveMe
   let intervalMs = DEFAULT_POLL_MS;
 
   async function read(): Promise<SurfaceResult<SystemMetrics>> {
+    let wire: HostMetricsWire;
     try {
-      const wire = await connection.api().hostMetrics();
-      intervalMs = pollIntervalMs(wire);
-      return mapHostMetrics(wire, now());
+      wire = await connection.api().hostMetrics();
     } catch (error) {
       const failed = asDaemonError(error);
-      const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
+      // Only a DaemonError message is the daemon's own words; any other error text is a JS detail and stays out of the UI.
+      const detail = error instanceof DaemonError ? ` (${failed.kind}: ${failed.message})` : "";
+      const reason = `${presentError(failed).reason}${detail}`;
       const missing = failed.kind === "method-unavailable" || failed.kind === "capability-unavailable" || failed.kind === "capability-not-negotiated";
       return notOk(PROVENANCE, missing ? "unsupported" : "unavailable", reason);
+    }
+    intervalMs = pollIntervalMs(wire);
+    try {
+      return mapHostMetrics(wire, now());
+    } catch {
+      return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with data this app cannot read.");
     }
   }
 

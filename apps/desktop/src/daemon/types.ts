@@ -39,6 +39,13 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
 export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
 
+/**
+ * Capabilities a daemon may lack without making the app unusable. The handshake asks for them, and
+ * `ConnectionManager` repeats it without them when the daemon refuses; the matching feature then
+ * degrades to `unsupported`. Older daemons reject any capability name they do not know.
+ */
+export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["host"];
+
 export interface Welcome {
   version: number;
   capabilities: Capability[];

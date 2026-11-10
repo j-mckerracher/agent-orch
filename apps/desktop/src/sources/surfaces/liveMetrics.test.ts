@@ -119,6 +119,16 @@ describe("mapHostMetrics", () => {
     expect(mapped.gpu).toMatchObject({ status: "unknown", reason: expect.stringContaining("no gpu meter") });
   });
 
+  it("tolerates null and non-object entries in meters without throwing", () => {
+    const junk = [null, 7, "cpu", undefined] as unknown as HostMeterWire[];
+    const mapped = data(mapHostMetrics(wire([...junk, meter({ value: 12 }), ...junk]), NOW));
+    expect(okValue(mapped.cpu).value).toBe(12);
+    expect(mapped.memory).toMatchObject({ status: "unknown", reason: expect.stringContaining("no memory meter") });
+    expect(mapped.gpu).toMatchObject({ status: "unknown", reason: expect.stringContaining("no gpu meter") });
+    const onlyJunk = data(mapHostMetrics(wire(junk), NOW));
+    for (const item of Object.values(onlyJunk)) expect(item.status).toBe("unknown");
+  });
+
   it("shows absolute GB with no scale when a capacity meter has no total", () => {
     const mapped = data(mapHostMetrics(wire([meter({ meter: "memory", kind: "capacity", unit: "bytes", value: 8e9, total: null })]), NOW));
     expect(okValue(mapped.memory)).toMatchObject({ value: 8, unit: "GB", kind: "capacity" });
@@ -213,6 +223,38 @@ describe("createLiveMetrics against the fake daemon", () => {
     fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "host");
     const result = await createLiveMetrics(await connect(fake), { now: clock }).metrics();
     expect(result).toMatchObject({ status: "unsupported", reason: expect.stringContaining("capability-not-negotiated") });
+  });
+
+  it("degrades to unsupported, not incompatible, on an older daemon that lacks the host capability", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["host"];
+    const connection = await connect(fake);
+    expect(connection.getSnapshot().status).toBe("connected");
+    const result = await createLiveMetrics(connection, { now: clock }).metrics();
+    expect(result).toMatchObject({ status: "unsupported", provenance: { kind: "daemon", id: "D13" } });
+    expect(fake.callsTo("host.metrics")).toEqual([]);
+  });
+
+  it("answers a null meter entry through the source as ok data, with no JS error text", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("host.metrics", { ...HOST_METRICS_WIRE, meters: [null, ...HOST_METRICS_WIRE.meters] });
+    const result = await createLiveMetrics(await connect(fake), { now: clock }).metrics();
+    expect(result.status).toBe("ok");
+    expect(JSON.stringify(result)).not.toMatch(/TypeError|Cannot read|null \(reading/);
+  });
+
+  it("never leaks a JS error message when mapping throws", async () => {
+    const fake = new FakeDaemon();
+    const poisoned = {
+      ...HOST_METRICS_WIRE,
+      get meters(): HostMeterWire[] {
+        throw new TypeError("Cannot read properties of null (reading 'meter')");
+      },
+    };
+    fake.stub("host.metrics", poisoned);
+    const result = await createLiveMetrics(await connect(fake), { now: clock }).metrics();
+    expect(result).toMatchObject({ status: "unknown", provenance: { kind: "daemon", id: "D13" } });
+    expect(JSON.stringify(result)).not.toMatch(/TypeError|Cannot read|reading 'meter'|protocol:/);
   });
 
   it("is unavailable when disconnected and when the daemon fails", async () => {

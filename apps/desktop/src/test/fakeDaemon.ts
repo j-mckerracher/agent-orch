@@ -124,6 +124,9 @@ export class FakeDaemon implements DaemonConnector {
   /** Makes `sessions.events` ignore `after_sequence`, as an overlapping page would. */
   ignoreAfterSequence = false;
   capabilitiesOverride: Capability[] | null = null;
+  /** Capabilities this daemon does not know; opening with one is refused like an older daemon would. */
+  unknownCapabilities: Capability[] = [];
+  openRequests: Capability[][] = [];
   /** Journal identity advertised in the Welcome; null omits it, as an older daemon would. */
   journalEpoch: string | null = "epoch-1";
   openFailures: DaemonError[] = [];
@@ -160,8 +163,12 @@ export class FakeDaemon implements DaemonConnector {
   }
 
   async open(requested: readonly Capability[]): Promise<OpenedChannel> {
+    this.openRequests.push([...requested]);
     const failure = this.openFailures.shift() ?? this.openError;
     if (failure) throw failure;
+    if (requested.some((capability) => this.unknownCapabilities.includes(capability))) {
+      throw new DaemonError("capability-unavailable", "the daemon does not offer a requested capability", -32002);
+    }
     const channel = new FakeChannel(this);
     this.channels.push(channel);
     return {
