@@ -1,6 +1,7 @@
 /** Test-only helpers shared by the D9-D16 test files. Not imported by app code. */
 import { ConnectionManager } from "../../daemon/connection";
 import { FakeDaemon, mkApproval, mkTask, until } from "../../test/fakeDaemon";
+import { installFakeWorkstreams, type FakeWorkstreams } from "../../test/fakeWorkstreams";
 import { createDerivedSurfaces } from "./derived";
 import type { SurfaceSources } from "./types";
 
@@ -10,7 +11,11 @@ export const clock = () => NOW;
 export const ALPHA = "/repos/alpha";
 export const BETA = "/repos/beta";
 
-/** Two projects, four tasks (one unknown-project task is added by tests that need it), two approvals. */
+/** The stateful `workstreams.*` fake installed by `populate`, for tests that inspect or seed it. */
+export const WORKSTREAM_STATE = new WeakMap<FakeDaemon, FakeWorkstreams>();
+
+/**
+ * Two projects, four tasks (one unknown-project task is added by tests that need it), two approvals. */
 export function populate(fake: FakeDaemon): FakeDaemon {
   fake.projects = [{ id: ALPHA }, { id: BETA }];
   fake.tasks = [
@@ -20,6 +25,35 @@ export function populate(fake: FakeDaemon): FakeDaemon {
     mkTask("t-done", BETA, { state: "Succeeded" }),
   ];
   fake.approvals = [mkApproval("a-1", "t-run"), mkApproval("a-2", "t-done", "approved")];
+  // ws-1 spans both projects and has one objective with a verified and a pending gate;
+  // ws-2 is suspended and empty; t-free is linked to nothing.
+  WORKSTREAM_STATE.set(
+    fake,
+    installFakeWorkstreams(fake, {
+      workstreams: [
+        { id: "ws-1", title: "Session hardening", summary: "Make sessions durable", state: "active", revision: 2 },
+        { id: "ws-2", title: "Docs refresh", summary: "", state: "suspended", revision: 1 },
+      ],
+      objectives: [
+        {
+          id: "obj-1",
+          workstream_id: "ws-1",
+          title: "Durable sessions",
+          description: "Sessions survive restarts",
+          revision: 3,
+          gates: [
+            { id: "gate-1", description: "Restart test passes", state: "verified", evidence_task_id: "t-done" },
+            { id: "gate-2", description: "Docs updated", state: "pending", evidence_task_id: null },
+          ],
+        },
+      ],
+      links: [
+        { task_id: "t-run", workstream_id: "ws-1", objective_id: "obj-1" },
+        { task_id: "t-wait", workstream_id: "ws-1", objective_id: "obj-1" },
+        { task_id: "t-done", workstream_id: "ws-1", objective_id: null },
+      ],
+    }),
+  );
   fake.stub("agents.capabilities", [
     {
       agent: "codex",
@@ -73,6 +107,7 @@ export const READ_METHODS = [
   "approvals.list",
   "agents.capabilities",
   "coordinator.get",
+  "workstreams.list",
 ] as const;
 
 export async function connect(fake: FakeDaemon, start = true) {

@@ -135,7 +135,19 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
         () => [],
       ),
     simulateCreate: (title) => Promise.resolve(receipt("D9", envelope, ctx, counter, `workstream "${title}"`)),
+    // Real mutations never run against placeholder data; the view offers simulateCreate in fixture mode.
+    create: () => notMutable(),
+    update: () => notMutable(),
+    addObjective: () => notMutable(),
+    reviseObjective: () => notMutable(),
+    setGate: () => notMutable(),
+    linkTask: () => notMutable(),
+    unlinkTask: () => notMutable(),
   };
+}
+
+function notMutable(): Promise<never> {
+  return Promise.reject(new Error("Fixture workstreams cannot be changed; nothing was sent to the daemon."));
 }
 
 function conversationSource(ctx: Ctx): ConversationSource {

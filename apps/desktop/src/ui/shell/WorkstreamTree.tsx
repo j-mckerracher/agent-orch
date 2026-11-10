@@ -59,8 +59,8 @@ function WorkerRows({ task }: { task: WsTask }) {
 }
 
 /**
- * Sidebar tree for the `workstreamsTree` shell slot (OX-A4). Groups are workstreams, which
- * under decision D-4 are registered projects; leaves are their tasks with one worker row
+ * Sidebar tree for the `workstreamsTree` shell slot (OX-A4). Groups are the daemon's workstreams
+ * (M7-23); leaves are their linked tasks with one worker row
  * ("adapter · state") per recorded session. It follows the ARIA tree pattern: one tab stop
  * (roving tabindex), arrows move, Right/Left expand and collapse, Home/End jump, and
  * Enter/Space toggles a group or opens a task. Expanded state lives here, so groups the
@@ -90,7 +90,7 @@ export function WorkstreamTree() {
 
   const { groups } = model;
   if (groups.length === 0) {
-    return <p className="shell-placeholder">No projects are registered, so there are no workstreams.</p>;
+    return <p className="shell-placeholder">No workstreams exist yet. Create one in the Workstreams view.</p>;
   }
   const isOpen = (group: WsGroup, index: number) => expanded[group.id] ?? index === 0;
   const items: TreeItem[] = groups.flatMap((group, index) => [
@@ -167,10 +167,11 @@ export function WorkstreamTree() {
   return (
     <div className="ws-tree" data-testid="workstream-tree" data-mode={model.mode}>
       <p className="ws-tree-caption">
-        Grouped by project {model.mode === "fixture" && <PlaceholderBadge provenance={model.provenance} />}
+        Workstreams {model.mode === "fixture" && <PlaceholderBadge provenance={model.provenance} />}
+        {model.unlinked.length > 0 && <span> · {taskCount(model.unlinked.length)} not in any workstream</span>}
         {model.stale && <span> · stale: connection lost</span>}
       </p>
-      <ul role="tree" aria-label="Workstreams grouped by project" className="ws-tree-root" onKeyDown={onKeyDown}>
+      <ul role="tree" aria-label="Workstreams" className="ws-tree-root" onKeyDown={onKeyDown}>
         {groups.map((group, index) => {
           const key = groupKey(group);
           const groupOpen = isOpen(group, index);

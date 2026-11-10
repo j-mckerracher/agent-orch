@@ -8,7 +8,18 @@ import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
 import { PlaceholderBadge, SimulatedReceipts } from "../../widgets";
 import { DependencyGraph } from "./DependencyGraph";
 import { useReviewEvidence } from "./evidence";
-import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup } from "./model";
+import {
+  ARCHIVED_REASON,
+  AddObjectiveForm,
+  LifecycleControls,
+  LinkTaskForm,
+  ObjectiveCard,
+  OutcomeNotice,
+  UnlinkButton,
+  useMutationRunner,
+  type Controls,
+} from "./Manage";
+import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "./model";
 import { STATE_TONE } from "./tone";
 import "./workstreams.css";
 
@@ -17,9 +28,12 @@ interface Receipt {
   notice: string;
 }
 
-const LIVE_REASON =
-  "Disabled: the daemon has no workstream objectives, revisions or plan editing. Only tasks and their dependencies are real.";
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
+const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
+const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
+const PLAN_REASON =
+  "Disabled: the daemon has no method to split a task or reassign it. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
+const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
 
 function assignment(task: WsGroup["tasks"][number]): string {
   const latest = task.workers[task.workers.length - 1];
@@ -33,6 +47,7 @@ export function WorkstreamsView() {
   const { surfaces } = useServices();
   const headingId = useId();
   const reasonId = useId();
+  const mutations = useMutationRunner();
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [title, setTitle] = useState("");
@@ -59,17 +74,29 @@ export function WorkstreamsView() {
       </p>
     );
   } else {
-    const { groups, mode } = model;
+    const { groups, mode, unlinked } = model;
     const fixture = mode === "fixture";
-    const reason = fixture ? FIXTURE_REASON : LIVE_REASON;
     const needle = filter.trim().toLowerCase();
     const visible = groups.filter((group) => group.title.toLowerCase().includes(needle));
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
     const marker = fixture ? <PlaceholderBadge provenance={model.provenance} /> : null;
+    const live = !fixture;
+    const writeOff = mutations.busy || model.stale;
 
     const create = async (event: FormEvent) => {
       event.preventDefault();
-      if (!fixture || title.trim() === "") return;
+      if (title.trim() === "") return;
+      if (live) {
+        const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
+          surfaces.workstreams.create(title.trim()),
+        );
+        if (made) {
+          setTitle("");
+          setSelected(made.id);
+          setFilter("");
+        }
+        return;
+      }
       setCreateError(null);
       try {
         const receipt = await surfaces.workstreams.simulateCreate(title.trim());
@@ -85,7 +112,7 @@ export function WorkstreamsView() {
         <p className="ws-source" data-testid="ws-source">
           {fixture
             ? "Workstreams, objectives, revisions and gates are placeholder data. Nothing here is a daemon record."
-            : "Interim grouping (decision D-4): one workstream per registered project. Tasks, states, workers and dependencies are live daemon data."}
+            : "Workstreams, objectives, gates and task links are daemon records; task states, workers and dependencies are live daemon data."}
           {model.stale && <strong> Stale: the connection was lost; this is the last data received.</strong>}
         </p>
         <form className="ws-create" onSubmit={create} aria-label="Create workstream">
@@ -94,22 +121,22 @@ export function WorkstreamsView() {
             <input
               type="text"
               value={title}
-              disabled={!fixture}
+              disabled={writeOff}
               onChange={(event) => setTitle(event.target.value)}
-              aria-describedby={fixture ? undefined : reasonId}
+              aria-describedby={model.stale ? reasonId : undefined}
             />
           </label>
           <Button
             type="submit"
             variant="primary"
-            disabled={!fixture || title.trim() === ""}
-            aria-describedby={fixture ? undefined : reasonId}
+            disabled={writeOff || title.trim() === ""}
+            aria-describedby={model.stale ? reasonId : undefined}
           >
             {fixture ? "Create workstream (simulated)" : "Create workstream"}
           </Button>
-          {!fixture && (
+          {model.stale && (
             <span className="ws-reason" id={reasonId}>
-              Disabled: the daemon cannot create workstreams; a workstream is a registered project. Add a project instead.
+              {STALE_REASON}
             </span>
           )}
         </form>
@@ -119,18 +146,23 @@ export function WorkstreamsView() {
           </p>
         )}
         {receipts.length > 0 && <SimulatedReceipts label="Simulated workstream creations" receipts={receipts} />}
+        {live && <OutcomeNotice outcome={mutations.outcome} />}
 
         {groups.length === 0 ? (
           <EmptyState
             title="No workstreams"
-            description="No projects are registered. Registering a project creates its workstream."
+            description={
+              fixture
+                ? "There are no placeholder workstreams."
+                : "No workstreams exist yet. Create one above, then link tasks to it."
+            }
           />
         ) : (
           <div className="ws-layout">
             <Panel
               title={
                 <>
-                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "initiative" : "initiatives"}
+                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "workstream" : "workstreams"}
                 </>
               }
               headingLevel={2}
@@ -138,7 +170,6 @@ export function WorkstreamsView() {
               className="ws-list"
               aria-label="Workstream list"
             >
-              <p className="ws-subtle">Grouped by project.</p>
               <label className="ws-filter">
                 Filter workstreams
                 <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} />
@@ -159,7 +190,10 @@ export function WorkstreamsView() {
                       <span className="ws-item-title">
                         {index + 1}. {group.title}
                       </span>
-                      <small>{taskCount(group.tasks.length)}</small>
+                      <small>
+                        {taskCount(group.tasks.length)}
+                        {group.state !== "active" && ` · ${group.state}`}
+                      </small>
                     </button>
                   </li>
                 ))}
@@ -168,15 +202,30 @@ export function WorkstreamsView() {
                 <Button disabled aria-describedby={`${reasonId}-list`}>
                   Prioritize
                 </Button>
-                <Button disabled aria-describedby={`${reasonId}-list`}>
-                  Archive
-                </Button>
               </div>
               <p className="ws-reason" id={`${reasonId}-list`}>
-                Disabled: no daemon method orders or archives workstreams.
+                {LIST_REASON}
               </p>
+              {live && unlinked.length > 0 && (
+                <p className="ws-subtle" data-testid="ws-unlinked">
+                  {taskCount(unlinked.length)} not in any workstream.
+                </p>
+              )}
             </Panel>
-            {current && <Detail group={current} fixture={fixture} reason={reason} marker={marker} reasonId={`${reasonId}-actions`} />}
+            {current && (
+              <Detail
+                group={current}
+                fixture={fixture}
+                marker={marker}
+                unlinked={unlinked}
+                reasonId={`${reasonId}-actions`}
+                controls={{
+                  run: mutations.run,
+                  busy: mutations.busy,
+                  locked: model.stale ? STALE_REASON : current.state === "archived" ? ARCHIVED_REASON : null,
+                }}
+              />
+            )}
           </div>
         )}
       </>
@@ -194,52 +243,67 @@ export function WorkstreamsView() {
   );
 }
 
+function ReadOnlyObjectives({ group }: { group: WsGroup }) {
+  const objectives = group.objectives;
+  if (objectives.status !== "ok") {
+    return (
+      <p data-testid="ws-objective">
+        Objectives {objectives.status}: {objectives.reason}
+      </p>
+    );
+  }
+  if (objectives.value.length === 0) return <p data-testid="ws-objective">No objectives.</p>;
+  return (
+    <>
+      {objectives.value.map((objective) => (
+        <section key={objective.id} className="ws-objective-card" aria-label={`Objective ${objective.title}`} data-testid="ws-objective">
+          <h3>{objective.title}</h3>
+          {objective.description !== "" && <p>{objective.description}</p>}
+          <p className="ws-subtle">
+            Revision {objective.revision} · {objective.gates.filter((gate) => gate.state === "verified").length} of{" "}
+            {objective.gates.length} gates verified
+          </p>
+          <ul className="ws-gates" aria-label={`Acceptance gates of ${objective.title}`}>
+            {objective.gates.map((gate) => (
+              <li key={gate.id} data-testid="ws-gate">
+                <Pill tone={gate.state === "verified" ? "ok" : gate.state === "failed" ? "bad" : "warn"}>{gate.state}</Pill>{" "}
+                {gate.label}
+                {gate.evidenceTaskId !== null && <small> · evidence: {gate.evidenceTaskId}</small>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+}
+
 function Detail({
   group,
   fixture,
-  reason,
   marker,
+  unlinked,
   reasonId,
+  controls,
 }: {
   group: WsGroup;
   fixture: boolean;
-  reason: string;
   marker: ReactNode;
+  unlinked: WsTask[];
   reasonId: string;
+  controls: Controls;
 }) {
   const decision = group.tasks.find((task) => task.pendingDecision);
   const evidence = useReviewEvidence(group.tasks, !fixture);
-  const objective = group.objective;
-  const gates = objective.status === "ok" ? objective.value.gates : [];
+  const objectives = group.objectives.status === "ok" ? group.objectives.value : [];
   return (
     <section className="ws-detail" aria-label={`Workstream ${group.title}`} data-testid="ws-detail">
-      <Panel title={group.title} headingLevel={2} actions={marker} className="ws-objective">
-        {objective.status === "ok" ? (
-          <>
-            <p data-testid="ws-objective">{objective.value.text}</p>
-            <p className="ws-subtle">
-              Revision {objective.value.revision} ·{" "}
-              {gates.length === 0
-                ? "no acceptance gates"
-                : `${gates.filter((gate) => gate.passed).length} of ${gates.length} gates passed`}
-            </p>
-            {gates.length > 0 && (
-              <ul className="ws-gates" aria-label="Acceptance gates">
-                {gates.map((gate) => (
-                  <li key={gate.id}>
-                    <Pill tone={gate.passed ? "ok" : "warn"}>{gate.passed ? "passed" : "open"}</Pill> {gate.label}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        ) : (
-          <p data-testid="ws-objective">
-            Objective {objective.status}: {objective.reason}
-          </p>
-        )}
+      <Panel title={group.title} headingLevel={2} actions={marker} className="ws-summary">
         <p className="ws-tags">
-          <Badge>Project: {group.projectIds.map(basename).join(", ")}</Badge>{" "}
+          <Pill tone={LIFECYCLE_TONE[group.state]} data-testid="ws-lifecycle">
+            {group.state}
+          </Pill>{" "}
+          {group.projectIds.length > 0 && <Badge>Projects: {group.projectIds.map(basename).join(", ")}</Badge>}{" "}
           <Badge>{taskCount(group.tasks.length)}</Badge>{" "}
           {TASK_STATES.filter((state) => group.counts[state] > 0).map((state) => (
             <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
@@ -247,33 +311,53 @@ function Detail({
             </Pill>
           ))}
         </p>
-        <div className="ws-row" role="group" aria-label="Workstream actions">
-          <Button disabled aria-describedby={reasonId}>
-            Revise objective
-          </Button>
-          <Button disabled aria-describedby={reasonId}>
-            Add objective
-          </Button>
-          <Button disabled aria-describedby={reasonId}>
-            Suspend new dispatch
-          </Button>
-          {decision ? (
-            <NavLink
-              className="ws-link-button"
-              to={{ name: "review", projectId: decision.projectId, taskId: decision.id }}
-            >
-              Resolve contract decision
-            </NavLink>
-          ) : (
-            <Button disabled aria-describedby={reasonId}>
+        {group.summary !== "" && <p data-testid="ws-summary">{group.summary}</p>}
+        {fixture ? (
+          <div className="ws-row" role="group" aria-label="Workstream actions">
+            {["Revise objective", "Add objective", "Suspend new dispatch"].map((label) => (
+              <Button key={label} disabled aria-describedby={reasonId}>
+                {label}
+              </Button>
+            ))}
+            <p className="ws-reason" id={reasonId}>
+              {FIXTURE_REASON}
+            </p>
+          </div>
+        ) : (
+          <LifecycleControls group={group} controls={controls} />
+        )}
+        {decision ? (
+          <NavLink className="ws-link-button" to={{ name: "review", projectId: decision.projectId, taskId: decision.id }}>
+            Resolve contract decision
+          </NavLink>
+        ) : (
+          <>
+            <Button disabled aria-describedby={`${reasonId}-decision`}>
               Resolve contract decision
             </Button>
-          )}
-        </div>
-        <p className="ws-reason" id={reasonId}>
-          {reason}
-          {!decision && " Resolve contract decision becomes a link when a task has a pending approval."}
-        </p>
+            <p className="ws-reason" id={`${reasonId}-decision`}>
+              Resolve contract decision becomes a link when a task has a pending approval.
+            </p>
+          </>
+        )}
+      </Panel>
+
+      <Panel title="Objectives" headingLevel={2} actions={marker} className="ws-objectives">
+        {fixture ? (
+          <ReadOnlyObjectives group={group} />
+        ) : group.objectives.status !== "ok" ? (
+          <p data-testid="ws-objective">
+            Objectives {group.objectives.status}: {group.objectives.reason}
+          </p>
+        ) : (
+          <>
+            {objectives.length === 0 && <p data-testid="ws-objective">No objectives yet.</p>}
+            {objectives.map((objective) => (
+              <ObjectiveCard key={objective.id} objective={objective} tasks={group.tasks} controls={controls} />
+            ))}
+            <AddObjectiveForm group={group} controls={controls} />
+          </>
+        )}
       </Panel>
 
       <Panel title="Task dependencies" headingLevel={2} actions={marker}>
@@ -294,9 +378,11 @@ function Detail({
                 <tr>
                   <th scope="col">Task</th>
                   <th scope="col">Project</th>
+                  <th scope="col">Objective</th>
                   <th scope="col">Task state</th>
                   <th scope="col">Assignment</th>
                   <th scope="col">Required next evidence</th>
+                  {!fixture && <th scope="col">Link</th>}
                 </tr>
               </thead>
               <tbody>
@@ -314,27 +400,33 @@ function Detail({
                       )}
                     </th>
                     <td title={task.projectId}>{basename(task.projectId)}</td>
+                    <td>{objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"}</td>
                     <td>
                       <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>
                     </td>
                     <td>{assignment(task)}</td>
                     <td>{evidence.get(task.id) ?? task.requiredEvidence}</td>
+                    {!fixture && (
+                      <td>
+                        <UnlinkButton group={group} task={task} controls={controls} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+        {!fixture && <LinkTaskForm group={group} unlinked={unlinked} controls={controls} />}
         <div className="ws-row" role="group" aria-label="Plan editing">
-          {["Add task", "Split task", "Remove task", "Reassign"].map((label) => (
+          {(fixture ? ["Add task", "Split task", "Remove task", "Reassign"] : ["Split task", "Reassign"]).map((label) => (
             <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>
               {label}
             </Button>
           ))}
         </div>
         <p className="ws-reason" id={`${reasonId}-plan`}>
-          Disabled: {fixture ? "plan editing is not wired in this preview" : "the daemon has no plan-editing or bulk-action method"}
-          .
+          {fixture ? FIXTURE_REASON : PLAN_REASON}
         </p>
       </Panel>
     </section>

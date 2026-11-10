@@ -1,22 +1,28 @@
 /**
- * Workstream view model (M7-11, OX-S4, decision D-4).
+ * Workstream view model (M7-11, OX-S4; live binding M7-23).
  *
- * Interim model: one workstream per registered project, tasks as its children. Two
- * origins feed the same shape and the UI never mixes them:
- * - live (`D9` provenance `daemon`): derived here from the AppData snapshots
- *   (`projects.list`, `tasks.list`, `sessions.list`, `approvals.list`), so the tree and
- *   the view follow live events. Objectives and revisions have no daemon record and are
- *   `unsupported`; nothing is invented.
+ * Two origins feed the same shape and the UI never mixes them:
+ * - live (`D9` provenance `daemon`): the workstreams, objectives, gates and task links come
+ *   from `workstreams.list` / `workstreams.get`. Task state, workers, attempts and pending
+ *   decisions are joined from the AppData snapshots so the tree follows live events. Tasks the
+ *   daemon has not linked to any workstream are reported separately, never hidden.
  * - fixture (`D9` provenance `fixture`): read from the injected `WorkstreamSource`; every
  *   value is PLACEHOLDER DATA and `fixture:` ids are never routed or sent anywhere.
+ * A failed live load is shown as such; it never falls back to fixture data.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isFixtureId } from "../../../daemon/api";
-import type { Approval, ProjectRow, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
-import { countStates, unsupportedValue } from "../../../sources/surfaces/result";
-import type { Measured, Workstream, WorkstreamObjective } from "../../../sources/surfaces/types";
+import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
+import { countStates } from "../../../sources/surfaces/result";
+import type {
+  Measured,
+  Workstream,
+  WorkstreamLifecycle,
+  WorkstreamObjective,
+  WorkstreamTask,
+} from "../../../sources/surfaces/types";
 import type { Provenance } from "../../../sources/types";
-import { basename, pendingApprovals } from "../../format";
+import { pendingApprovals } from "../../format";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 
 export interface WsWorker {
@@ -28,6 +34,8 @@ export interface WsWorker {
 export interface WsTask {
   id: string;
   projectId: string;
+  /** The objective this task is linked under; null when linked to the workstream only. */
+  objectiveId: string | null;
   objective: string;
   state: TaskState;
   /** The adapter the contract asks for; sessions record the adapter that actually ran. */
@@ -47,10 +55,15 @@ export interface WsTask {
 export interface WsGroup {
   id: string;
   title: string;
+  summary: string;
+  /** Advisory only: the scheduler does not consult it. */
+  state: WorkstreamLifecycle;
+  /** The revision the next `workstreams.update` must quote. */
+  revision: number;
   projectIds: string[];
   tasks: WsTask[];
   counts: Record<TaskState, number>;
-  objective: Measured<WorkstreamObjective>;
+  objectives: Measured<WorkstreamObjective[]>;
 }
 
 export type WsModel =
@@ -58,9 +71,15 @@ export type WsModel =
   | { status: "offline" }
   | { status: "error"; message: string }
   | { status: "unavailable" | "unsupported" | "unknown"; reason: string; provenance: Provenance }
-  | { status: "ready"; mode: "live" | "fixture"; provenance: Provenance; groups: WsGroup[]; stale: boolean };
-
-const NO_OBJECTIVE = "The daemon records no objective or revision for a project (interim grouping, decision D-4).";
+  | {
+      status: "ready";
+      mode: "live" | "fixture";
+      provenance: Provenance;
+      groups: WsGroup[];
+      /** Daemon tasks linked to no workstream (live only); candidates for `workstreams.link_task`. */
+      unlinked: WsTask[];
+      stale: boolean;
+    };
 
 /** "1 task", "2 tasks". */
 export function taskCount(count: number): string {
@@ -121,46 +140,88 @@ function workersOf(task: TaskRecord, sessions: readonly SessionEntry[] | null): 
   return own.map((session) => ({ sessionId: session.id, adapter: session.adapter, state: session.state }));
 }
 
-/** Pure derivation of the live model. Tasks of unregistered projects get their own group, as D9 does. */
-export function deriveLiveGroups(
-  projects: readonly ProjectRow[],
-  tasks: readonly TaskRecord[],
+/**
+ * One task row. The D9 link supplies membership; a loaded AppData record, when present, is
+ * fresher and supplies state, contract fields, workers and attempts.
+ */
+function wsTaskOf(
+  base: WorkstreamTask,
+  record: TaskRecord | undefined,
   sessions: readonly SessionEntry[] | null,
   approvals: readonly Approval[] | null,
-): WsGroup[] {
-  const ids = projects.map((project) => project.id);
-  for (const task of tasks) if (!ids.includes(task.contract.project_id)) ids.push(task.contract.project_id);
-  const byId = new Map(tasks.map((task) => [task.contract.id, task]));
-  return ids.map<WsGroup>((id) => {
-    const own = tasks.filter((task) => task.contract.project_id === id);
+  states: ReadonlyMap<string, { state: TaskState }>,
+): WsTask {
+  const state = record?.state ?? base.state;
+  const dependencies = record?.contract.dependencies ?? base.dependencies;
+  return {
+    id: base.id,
+    projectId: base.projectId,
+    objectiveId: base.objectiveId,
+    objective: record?.contract.objective ?? base.objective,
+    state,
+    agent: record?.contract.agent ?? base.agent,
+    dependencies,
+    workers: record ? workersOf(record, sessions) : [],
+    attempt:
+      record?.attempts.reduce<number | null>(
+        (latest, current) => (latest === null || current.attempt_number > latest ? current.attempt_number : latest),
+        null,
+      ) ?? null,
+    requiredEvidence: requiredEvidence({ id: base.id, state, dependencies }, states, approvals),
+    pendingDecision: pendingApprovals(approvals ?? []).some((approval) => approval.action.task_id === base.id),
+    openable: !isFixtureId(base.id),
+  };
+}
+
+/** Pure derivation of the live model from the D9 workstreams and the AppData snapshots. */
+export function deriveLiveGroups(
+  workstreams: readonly Workstream[],
+  tasks: readonly TaskRecord[] | null,
+  sessions: readonly SessionEntry[] | null,
+  approvals: readonly Approval[] | null,
+): { groups: WsGroup[]; unlinked: WsTask[] } {
+  const records = new Map((tasks ?? []).map((task) => [task.contract.id, task]));
+  const states = new Map<string, { state: TaskState }>(
+    workstreams.flatMap((ws) => ws.tasks.map((task) => [task.id, { state: task.state }] as const)),
+  );
+  for (const [id, record] of records) states.set(id, { state: record.state });
+
+  const groups = workstreams.map<WsGroup>((ws) => {
+    const own = ws.tasks.map((task) => wsTaskOf(task, records.get(task.id), sessions, approvals, states));
     return {
-      id,
-      title: basename(id),
-      projectIds: [id],
-      tasks: own.map<WsTask>((task) => ({
-        id: task.contract.id,
-        projectId: id,
-        objective: task.contract.objective,
-        state: task.state,
-        agent: task.contract.agent,
-        dependencies: task.contract.dependencies,
-        workers: workersOf(task, sessions),
-        attempt: task.attempts.reduce<number | null>(
-          (latest, current) => (latest === null || current.attempt_number > latest ? current.attempt_number : latest),
-          null,
-        ),
-        requiredEvidence: requiredEvidence(
-          { id: task.contract.id, state: task.state, dependencies: task.contract.dependencies },
-          byId,
-          approvals,
-        ),
-        pendingDecision: pendingApprovals(approvals ?? []).some((approval) => approval.action.task_id === task.contract.id),
-        openable: !isFixtureId(task.contract.id),
-      })),
+      id: ws.id,
+      title: ws.title,
+      summary: ws.summary,
+      state: ws.state,
+      revision: ws.revision,
+      projectIds: ws.projectIds,
+      tasks: own,
       counts: countStates(own.map((task) => task.state)),
-      objective: unsupportedValue(NO_OBJECTIVE),
+      objectives: ws.objectives,
     };
   });
+
+  const linked = new Set(workstreams.flatMap((ws) => ws.tasks.map((task) => task.id)));
+  const unlinked = (tasks ?? [])
+    .filter((record) => !linked.has(record.contract.id))
+    .map((record) =>
+      wsTaskOf(
+        {
+          id: record.contract.id,
+          projectId: record.contract.project_id,
+          objectiveId: null,
+          objective: record.contract.objective,
+          state: record.state,
+          agent: record.contract.agent,
+          dependencies: record.contract.dependencies,
+        },
+        record,
+        sessions,
+        approvals,
+        states,
+      ),
+    );
+  return { groups, unlinked };
 }
 
 /** Maps the fixture D9 workstreams to the same shape. Placeholder tasks have no detail route. */
@@ -169,10 +230,14 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
   return workstreams.map<WsGroup>((ws) => ({
     id: ws.id,
     title: ws.title,
+    summary: ws.summary,
+    state: ws.state,
+    revision: ws.revision,
     projectIds: ws.projectIds,
     tasks: ws.tasks.map<WsTask>((task) => ({
       id: task.id,
-      projectId: ws.projectIds[0] ?? ws.id,
+      projectId: task.projectId,
+      objectiveId: task.objectiveId,
       objective: task.objective,
       state: task.state,
       agent: task.agent,
@@ -184,8 +249,30 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
       openable: false,
     })),
     counts: ws.counts,
-    objective: ws.objective,
+    objectives: ws.objectives,
   }));
+}
+
+/*
+ * Every consumer of D9 (this view, the sidebar tree, the top-bar counts) reloads when a
+ * workstream mutation lands, so none of them keeps showing the pre-mutation revision.
+ */
+let version = 0;
+const listeners = new Set<() => void>();
+
+export function reloadWorkstreams(): void {
+  version += 1;
+  for (const listener of listeners) listener();
+}
+
+export function useWorkstreamsVersion(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => version,
+  );
 }
 
 /**
@@ -196,39 +283,47 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
 export function useWorkstreamModel(): WsModel {
   const { data, surfaces } = useServices();
   const gate = useGate();
-  const { projects, tasks, sessions, approvals } = useStore(data);
+  const { tasks, sessions, approvals } = useStore(data);
   const source = surfaces.workstreams;
   const provenance = source.provenance;
   const fixture = provenance.kind === "fixture";
-  const fixtureState = useSurface(
-    () => (fixture ? source.workstreams() : new Promise<never>(() => {})),
-    "ws-model",
-    provenance,
-  );
+  const reloads = useWorkstreamsVersion();
+  // The daemon emits no workstream events: re-read on a mutation or when the task set changes.
+  const membership = tasks.data?.map((task) => task.contract.id).join("\n") ?? "-";
+  const state = useSurface(() => source.workstreams(), `ws-model:${reloads}:${membership}`, provenance);
 
-  const live = useMemo(
-    () =>
-      projects.data && tasks.data ? deriveLiveGroups(projects.data, tasks.data, sessions.data, approvals.data) : null,
-    [projects.data, tasks.data, sessions.data, approvals.data],
-  );
-  const fixtureGroups = useMemo(
-    () => (fixtureState.status === "ok" ? groupsFromSource(fixtureState.data) : null),
-    [fixtureState],
-  );
+  // The last good live answer stays on screen, labelled stale, while the connection is down.
+  const [kept, setKept] = useState<Workstream[] | null>(null);
+  useEffect(() => {
+    if (!fixture && state.status === "ok") setKept(state.data);
+  }, [fixture, state]);
 
-  if (fixture) {
-    if (fixtureState.status === "loading") return { status: "loading" };
-    if (fixtureState.status !== "ok") {
-      return { status: fixtureState.status, reason: fixtureState.reason, provenance: fixtureState.provenance };
-    }
-    return { status: "ready", mode: "fixture", provenance, groups: fixtureGroups ?? [], stale: false };
+  const loaded =
+    state.status === "ok" ? state.data : !fixture && (state.status === "loading" || !gate.connected) ? kept : null;
+  const derived = useMemo(() => {
+    if (!loaded) return null;
+    return fixture
+      ? { groups: groupsFromSource(loaded), unlinked: [] as WsTask[] }
+      : deriveLiveGroups(loaded, tasks.data, sessions.data, approvals.data);
+  }, [loaded, fixture, tasks.data, sessions.data, approvals.data]);
+
+  if (derived) {
+    return {
+      status: "ready",
+      mode: fixture ? "fixture" : "live",
+      provenance,
+      groups: derived.groups,
+      unlinked: derived.unlinked,
+      stale: !fixture && !gate.connected,
+    };
   }
-  if (live) return { status: "ready", mode: "live", provenance, groups: live, stale: !gate.connected };
-  const failed = [projects, tasks].find((loadable) => loadable.status === "error" && loadable.error);
-  if (failed?.error) return { status: "error", message: failed.error.message };
+  if (state.status === "loading" || state.status === "ok") return { status: "loading" };
+  if (fixture || state.status === "unsupported") {
+    return { status: state.status, reason: state.reason, provenance: state.provenance };
+  }
   const settling = ["idle", "connecting", "reconnecting"].includes(gate.connection.status);
-  if (!gate.connected && !settling && projects.status !== "loading" && tasks.status !== "loading") {
-    return { status: "offline" };
-  }
-  return { status: "loading" };
+  if (!gate.connected) return settling ? { status: "loading" } : { status: "offline" };
+  return state.status === "unknown"
+    ? { status: "unknown", reason: state.reason, provenance: state.provenance }
+    : { status: "error", message: state.reason };
 }

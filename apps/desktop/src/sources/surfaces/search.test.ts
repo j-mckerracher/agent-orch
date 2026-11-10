@@ -20,6 +20,13 @@ function wsSource(result: SurfaceResult<Workstream[]>): WorkstreamSource {
     provenance: result.provenance,
     workstreams: () => Promise.resolve(result),
     simulateCreate: () => Promise.reject(new Error("unused")),
+    create: () => Promise.reject(new Error("unused")),
+    update: () => Promise.reject(new Error("unused")),
+    addObjective: () => Promise.reject(new Error("unused")),
+    reviseObjective: () => Promise.reject(new Error("unused")),
+    setGate: () => Promise.reject(new Error("unused")),
+    linkTask: () => Promise.reject(new Error("unused")),
+    unlinkTask: () => Promise.reject(new Error("unused")),
   };
 }
 function dqSource(result: SurfaceResult<DecisionQueue>): DecisionQueueSource {
@@ -33,11 +40,13 @@ function dqSource(result: SurfaceResult<DecisionQueue>): DecisionQueueSource {
 const workstream = (id: string, title: string, tasks: Array<[string, string]>): Workstream => ({
   id,
   title,
-  grouping: "project",
+  summary: "",
+  state: "active",
+  revision: 1,
   projectIds: [id],
-  tasks: tasks.map(([taskId, objective]) => ({ id: taskId, objective, state: "Queued", agent: "codex", dependencies: [] })),
+  tasks: tasks.map(([taskId, objective]) => ({ id: taskId, projectId: id, objectiveId: null, objective, state: "Queued", agent: "codex", dependencies: [] })),
   counts: countStates(tasks.map(() => "Queued")),
-  objective: { status: "unsupported", reason: "n/a" },
+  objectives: { status: "ok", value: [], observedAt: new Date(NOW).toISOString(), ageMs: 0 },
 });
 const emptyQueue: DecisionQueue = { items: [], actions: { postpone: { available: false, reason: "r" }, dismiss: { available: false, reason: "r" }, escalate: { available: false, reason: "r" } } };
 

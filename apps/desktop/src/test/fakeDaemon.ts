@@ -310,10 +310,27 @@ export class FakeDaemon implements DaemonConnector {
       }
       default: {
         const stub = this.stubs.get(message.method);
-        if (stub) return reply(stub(params));
+        if (stub) {
+          try {
+            return reply(stub(params));
+          } catch (error) {
+            if (error instanceof StubRpcError) return fail(error.code, error.message);
+            throw error;
+          }
+        }
         return fail(-32601, `method unavailable: ${message.method}`);
       }
     }
+  }
+}
+
+/** Thrown from a stub to answer with a JSON-RPC error (for example -32011 conflict). */
+export class StubRpcError extends Error {
+  constructor(
+    readonly code: number,
+    message: string,
+  ) {
+    super(message);
   }
 }
 

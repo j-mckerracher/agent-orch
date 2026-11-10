@@ -29,8 +29,8 @@
  * - Simulated actions exist on fixture adapters only. Derived adapters reject
  *   them with `DaemonError("method-unavailable")` so no fixture action is
  *   silently inert and none can reach a real mutation.
- * - The one derived mutation is D10 `send` (`coordinator.send_message`). Ids
- *   prefixed `fixture:` are refused (`invalid-params`) before any request.
+ * - The derived mutations are D10 `send` (`coordinator.send_message`) and the D9 `workstreams.*`
+ *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
 import type { ApprovalState, TaskState } from "../../daemon/types";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
@@ -59,36 +59,86 @@ export type Measured<T> =
 
 export type SurfaceReceipt = SimulatedReceipt & { id: string };
 
-// D9 -- WorkstreamSource. Derived: one workstream per project (projects.list + tasks.list).
+// D9 -- WorkstreamSource. Derived: workstreams.list / workstreams.get joined with tasks.list (M7-07 methods).
 export interface WorkstreamTask {
   id: string;
+  /** Owning project of the linked task, as the daemon reports it. */
+  projectId: string;
+  /** The objective this task is linked under; null when linked to the workstream only. */
+  objectiveId: string | null;
+  /** Task contract objective text; empty when `tasks.list` no longer returns the linked task. */
   objective: string;
   state: TaskState;
   agent: string;
   dependencies: string[];
 }
-export interface WorkstreamObjective {
-  text: string;
-  revision: number;
-  gates: Array<{ id: string; label: string; passed: boolean }>;
+export type WorkstreamLifecycle = "active" | "suspended" | "archived";
+export type GateState = "pending" | "verified" | "failed";
+export interface WorkstreamGate {
+  id: string;
+  label: string;
+  state: GateState;
+  /** Task whose result evidences the gate, when the daemon recorded one. */
+  evidenceTaskId: string | null;
 }
-export interface Workstream {
-  /** Derived: the project id (canonical repository path). Fixture: `fixture:` id. */
+export interface WorkstreamObjective {
   id: string;
   title: string;
-  grouping: "project" | "objective";
+  description: string;
+  revision: number;
+  gates: WorkstreamGate[];
+}
+export interface Workstream {
+  /** Derived: the daemon workstream id. Fixture: `fixture:` id. */
+  id: string;
+  title: string;
+  summary: string;
+  /** Advisory: the scheduler does not consult it, so suspending does not stop dispatch. */
+  state: WorkstreamLifecycle;
+  /** Optimistic-concurrency token required by `workstreams.update`. */
+  revision: number;
   projectIds: string[];
   tasks: WorkstreamTask[];
   /** Every state is present; a zero here is a real zero over the returned tasks. */
   counts: Record<TaskState, number>;
-  /** Objectives and revisions have no daemon record: derived adapters answer `unsupported`. */
-  objective: Measured<WorkstreamObjective>;
+  /** A workstream holds any number of objectives; a live workstream with none is `ok` with `[]`. */
+  objectives: Measured<WorkstreamObjective[]>;
+}
+/** The daemon's acknowledgement of one workstream mutation. */
+export interface WorkstreamMutation {
+  id: string;
+  /** Revision after the change, when the daemon returned one. */
+  revision: number | null;
+  at: string;
 }
 export interface WorkstreamSource {
   readonly provenance: Provenance;
   workstreams(): Promise<SurfaceResult<Workstream[]>>;
-  /** Fixture only. Derived adapters reject: the daemon cannot create workstreams. */
+  /** Fixture only. Derived adapters reject: use `create`. */
   simulateCreate(title: string): Promise<SurfaceReceipt>;
+  /*
+   * Real mutations (`workstreams.*`). Fixture adapters reject them and derived adapters refuse
+   * `fixture:` ids before any request. Every mutation carries an idempotency key; writes carry
+   * the revision the caller last read, and a stale one is a `conflict` the caller resolves by re-reading.
+   */
+  create(title: string, summary?: string): Promise<WorkstreamMutation>;
+  update(
+    target: { id: string; revision: number },
+    change: { title?: string; summary?: string; state?: WorkstreamLifecycle },
+  ): Promise<WorkstreamMutation>;
+  addObjective(workstreamId: string, objective: { title: string; description?: string; gates?: string[] }): Promise<WorkstreamMutation>;
+  reviseObjective(
+    target: { id: string; revision: number },
+    change: { title?: string; description?: string; addGates?: string[] },
+  ): Promise<WorkstreamMutation>;
+  setGate(
+    target: { id: string; revision: number },
+    gateId: string,
+    state: GateState,
+    evidenceTaskId?: string,
+  ): Promise<WorkstreamMutation>;
+  linkTask(workstreamId: string, taskId: string, objectiveId?: string): Promise<WorkstreamMutation>;
+  unlinkTask(workstreamId: string, taskId: string): Promise<WorkstreamMutation>;
 }
 
 // D10 -- ConversationSource. Derived: per-project coordinator.get / coordinator.send_message.

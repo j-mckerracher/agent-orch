@@ -13,8 +13,8 @@ const WORKSTREAMS: Route = { name: "global", view: "workstreams" };
 const AGENTS: Route = { name: "global", view: "agents" };
 const REVIEW: Route = { name: "global", view: "review" };
 
-type GroupKey = "workstream" | "task" | "session" | "decision";
-const GROUP_ORDER: readonly GroupKey[] = ["workstream", "task", "session", "decision"];
+type GroupKey = "project" | "workstream" | "task" | "session" | "decision";
+const GROUP_ORDER: readonly GroupKey[] = ["project", "workstream", "task", "session", "decision"];
 
 interface Option {
   key: string;
@@ -25,10 +25,12 @@ interface Option {
   route: Route;
 }
 
-function groupLabel(group: GroupKey, fixture: boolean): string {
+function groupLabel(group: GroupKey): string {
   switch (group) {
+    case "project":
+      return "Projects";
     case "workstream":
-      return fixture ? "Workstreams" : "Projects";
+      return "Workstreams";
     case "task":
       return "Tasks";
     case "session":
@@ -51,7 +53,8 @@ function routeFor(hit: SearchHit, store: AppDataSnapshot): Route {
   const fixture = hit.origin === "fixture" || isFixtureId(hit.id);
   switch (hit.kind) {
     case "workstream":
-      return fixture ? WORKSTREAMS : { name: "project", projectId: hit.id };
+      // A live workstream id is not a project id, so it opens the Workstreams view.
+      return WORKSTREAMS;
     case "task": {
       const projectId = fixture ? null : projectOfTask(store, hit.id);
       return projectId ? { name: "task", projectId, taskId: hit.id } : fixture ? WORKSTREAMS : AGENTS;
@@ -62,6 +65,21 @@ function routeFor(hit: SearchHit, store: AppDataSnapshot): Route {
       return approval && projectId ? { name: "review", projectId, taskId: approval.action.task_id } : REVIEW;
     }
   }
+}
+
+/** Live workstreams are not projects, so the registered projects are matched from the loaded list. */
+function projectOptions(store: AppDataSnapshot, query: string): Option[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return (store.projects.data ?? [])
+    .filter((project) => terms.every((term) => project.id.toLowerCase().includes(term)))
+    .map((project) => ({
+      key: `project:${project.id}`,
+      group: "project" as const,
+      title: project.id.split(/[\\/]/).filter(Boolean).pop() ?? project.id,
+      detail: project.id,
+      fixture: false,
+      route: { name: "project", projectId: project.id },
+    }));
 }
 
 /** Sessions are not part of D15; match the already-loaded `sessions.list` rows here. */
@@ -165,11 +183,12 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
         });
       }
     }
+    if (surfaces.search.provenance.kind !== "fixture") options.push(...projectOptions(store, state.query));
     options.push(...sessionOptions(store, state.query));
     return GROUP_ORDER.map((group) => ({ group, options: options.filter((option) => option.group === group) })).filter(
       (entry) => entry.options.length > 0,
     );
-  }, [state, store, trimmed]);
+  }, [state, store, trimmed, surfaces]);
   const flat = groups.flatMap((entry) => entry.options);
   const activeOption = flat[active];
   const optionId = (option: Option) => `${ids}-opt-${flat.indexOf(option)}`;
@@ -278,7 +297,7 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
                 return (
                   <div key={group} role="group" aria-labelledby={titleId}>
                     <div id={titleId} className="top-search-group-title" role="presentation">
-                      {groupLabel(group, options[0].fixture)} ({options.length})
+                      {groupLabel(group)} ({options.length})
                     </div>
                     {options.map((option) => (
                       <div
