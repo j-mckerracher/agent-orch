@@ -1,0 +1,23 @@
+{
+  "fixture": "decision-queue",
+  "scenarios": {
+    "success": {
+      "ageMs": 4000,
+      "data": {
+        "items": [
+          { "id": "fixture:approval-1", "taskId": "fixture:task-auth-1", "projectId": "fixture:project-alpha", "kind": "LocalReviewMerge", "candidateCommit": "fixture0001", "state": "requested", "priority": "P1", "latestResponseAt": "2026-01-01T17:00:00Z" },
+          { "id": "fixture:approval-2", "taskId": "fixture:task-docs-1", "projectId": "fixture:project-alpha", "kind": "ReportPublish", "candidateCommit": "fixture0002", "state": "requested", "priority": "P2", "latestResponseAt": null },
+          { "id": "fixture:approval-3", "taskId": "fixture:task-infra-1", "projectId": "fixture:project-beta", "kind": "LocalReviewMerge", "candidateCommit": "fixture0003", "state": "approved", "priority": "P2", "latestResponseAt": null }
+        ],
+        "actions": {
+          "postpone": { "available": true, "reason": "Fixture only: simulated, nothing is recorded." },
+          "dismiss": { "available": true, "reason": "Fixture only: simulated, nothing is recorded." },
+          "escalate": { "available": false, "reason": "Escalation is not defined for any source yet." }
+        }
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the decision queue is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: the decision queue is not supported." },
+    "unknown": { "reason": "Fixture scenario: the decision queue is unknown." }
+  }
+}

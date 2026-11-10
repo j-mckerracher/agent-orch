@@ -8,14 +8,32 @@
  * live in this directory, never import the daemon client, and mint ids
  * prefixed `fixture:` that `DaemonApi` refuses to send. D3 (recovery status)
  * has no daemon RPC and always uses the fixture adapter.
+ *
+ * D9-D16 (M7-03) live in `surfaces/types.ts`; they share `Provenance` and
+ * `SimulatedReceipt` from here.
  */
 import type { AttemptState, TaskState } from "../daemon/types";
 
-export type SourceId = "D1" | "D2" | "D3" | "D4" | "D5" | "D6";
+export type SourceId =
+  | "D1"
+  | "D2"
+  | "D3"
+  | "D4"
+  | "D5"
+  | "D6"
+  | "D9"
+  | "D10"
+  | "D11"
+  | "D12"
+  | "D13"
+  | "D14"
+  | "D15"
+  | "D16";
 
 export type Provenance =
   | { kind: "fixture"; id: SourceId; fixture: string }
-  | { kind: "daemon"; id: SourceId };
+  /** `methods` lists the daemon methods a derived adapter reads; empty means it reads none. */
+  | { kind: "daemon"; id: SourceId; methods?: readonly string[] };
 
 export type SourceResult<T> =
   | { state: "ready"; data: T }
