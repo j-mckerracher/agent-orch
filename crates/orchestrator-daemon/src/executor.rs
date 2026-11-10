@@ -34,9 +34,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, ClaudeCodeAdapter,
-    CodexAdapter,
+    pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
+    ClaudeCodeAdapter, CodexAdapter,
 };
+use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
@@ -60,6 +61,45 @@ pub(crate) struct ExecutorConfig {
     pub(crate) poll: Duration,
     /// Upper bound for one `agents.capabilities` probe of an agent binary.
     pub(crate) probe_timeout: Duration,
+    /// Upper bound for each CLI probe behind `agents.catalog` and submit-time
+    /// selection checks. Launch-time checks use `LAUNCH_CATALOG_TIMEOUT`.
+    pub(crate) catalog_timeout: Duration,
+}
+
+/// No client waits on a launch, so its catalog check can wait for a slow CLI.
+const LAUNCH_CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
+
+impl ExecutorConfig {
+    /// Reads one agent's catalog from its installed CLI. An agent the daemon
+    /// cannot launch with a selection is reported `unsupported`.
+    pub(crate) async fn read_catalog(
+        &self,
+        agent: &str,
+        working_dir: &Path,
+        limit: Duration,
+    ) -> AgentCatalog {
+        match agent {
+            CODEX_AGENT => {
+                let mut adapter = CodexAdapter::new();
+                if let Some(program) = &self.codex_program {
+                    adapter = adapter.with_program(program);
+                }
+                adapter.catalog(working_dir, limit).await
+            }
+            CLAUDE_AGENT => {
+                let mut adapter = ClaudeCodeAdapter::new();
+                if let Some(program) = &self.claude_program {
+                    adapter = adapter.with_program(program);
+                }
+                adapter.catalog(working_dir, limit).await
+            }
+            "pi" => pi_catalog(),
+            other => AgentCatalog::unsupported_agent(
+                other,
+                "the daemon has no launcher for this agent, so selection is unsupported",
+            ),
+        }
+    }
 }
 
 impl ExecutorConfig {
@@ -73,6 +113,7 @@ impl ExecutorConfig {
             poll: Duration::from_millis(500),
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
+            catalog_timeout: Duration::from_millis(1500),
         }
     }
 }
@@ -257,6 +298,7 @@ impl Inner {
             session_id: format!("{task_id}-session-{number}"),
             agent: task.contract.agent.clone(),
             objective: task.contract.objective.clone(),
+            model_selection: task.contract.model_selection.clone(),
             worktree: PathBuf::new(),
         };
         if let Err(error) = self.prepare(task, number, job) {
@@ -364,6 +406,7 @@ struct Job {
     session_id: String,
     agent: String,
     objective: String,
+    model_selection: Option<ModelSelection>,
     worktree: PathBuf,
 }
 
@@ -388,6 +431,20 @@ fn supervise(inner: &Inner, job: Job) {
 }
 
 async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+    let (model, effort) = match &job.model_selection {
+        Some(selection) => (selection.model.as_deref(), selection.effort.as_deref()),
+        None => (None, None),
+    };
+    if job.model_selection.is_some() {
+        // The catalog may have changed since submission (signed out, CLI
+        // replaced), so the selection is checked again against a fresh read.
+        inner
+            .config
+            .read_catalog(&job.agent, &job.worktree, LAUNCH_CATALOG_TIMEOUT)
+            .await
+            .validate(model, effort)
+            .map_err(|error| format!("model selection refused: {error}"))?;
+    }
     let (program, args, detect) = match job.agent.as_str() {
         CODEX_AGENT => {
             let program = inner
@@ -395,10 +452,11 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex"));
-            let args = ["exec", "--json", "--approve-for-me", "--"]
+            let args = ["exec", "--json", "--approve-for-me"]
                 .into_iter()
                 .map(str::to_owned)
-                .chain([job.objective.clone()])
+                .chain(CodexAdapter::selection_args(model, effort))
+                .chain(["--".to_owned(), job.objective.clone()])
                 .collect::<Vec<_>>();
             let adapter = CodexAdapter::new().with_program(program.clone());
             let caps = adapter.detect().await.map_err(|error| error.to_string())?;
@@ -417,7 +475,7 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
             adapter.detect().await.map_err(|error| error.to_string())?;
             (
                 program,
-                ClaudeCodeAdapter::args_for_prompt(&job.objective),
+                ClaudeCodeAdapter::args_for_prompt_with_selection(&job.objective, model, effort),
                 AdapterChoice::Claude(adapter),
             )
         }

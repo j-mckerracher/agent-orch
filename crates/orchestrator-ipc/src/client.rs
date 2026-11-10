@@ -247,6 +247,23 @@ impl Client {
         self.call_feature(Capability::Agents, "agents.capabilities", Value::Null)
     }
 
+    pub fn agents_catalog(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Agents, "agents.catalog", Value::Null)
+    }
+
+    pub fn agents_validate_selection(
+        &mut self,
+        agent: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Agents,
+            "agents.validate_selection",
+            json!({"agent": agent, "model": model, "effort": effort}),
+        )
+    }
+
     pub fn workspaces_diff(
         &mut self,
         task_id: &str,

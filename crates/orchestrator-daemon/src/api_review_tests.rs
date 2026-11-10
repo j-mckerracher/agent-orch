@@ -52,6 +52,7 @@ fn contract(id: &str, project_id: &str, delivery: DeliveryPolicy) -> TaskContrac
         autonomy: AutonomyPolicy::WorkspaceWrites,
         max_retries: 0,
         max_repairs: 0,
+        model_selection: None,
     }
 }
 

@@ -45,6 +45,7 @@ fn new_store() -> (TempDir, SqliteStore) {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .expect("create task");
     (directory, store)

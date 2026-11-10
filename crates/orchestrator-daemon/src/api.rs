@@ -13,7 +13,8 @@ use orchestrator_core::approval::{
 };
 use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
-    self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+    self, AutonomyPolicy, DeliveryPolicy, ModelSelection, TaskContract, TaskKind,
+    VerificationPolicy,
 };
 use orchestrator_core::identity::ProcessClassification;
 use orchestrator_core::records::{Project, Workspace};
@@ -50,6 +51,8 @@ pub(crate) struct DaemonApi {
     idempotency_gate: Mutex<()>,
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
+    /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
+    catalog_cache: models::CatalogCache,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -74,6 +77,8 @@ struct TaskSubmission {
     autonomy: AutonomyPolicy,
     max_retries: u32,
     max_repairs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_selection: Option<ModelSelection>,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +182,7 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
+            catalog_cache: Mutex::new(Default::default()),
         })
     }
 
@@ -227,6 +233,8 @@ impl RpcHandler for DaemonApi {
             "tasks.cancel" => self.cancel_task(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
+            "agents.catalog" => self.agents_catalog(params),
+            "agents.validate_selection" => self.agents_validate_selection(params),
             "sessions.list" => self.list_sessions(params),
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
@@ -344,11 +352,15 @@ impl DaemonApi {
                     autonomy: request.contract.autonomy,
                     max_retries: request.contract.max_retries,
                     max_repairs: request.contract.max_repairs,
+                    model_selection: request.contract.model_selection.clone(),
                 };
                 self.store
                     .get_project(&contract.project_id)
                     .map_err(map_store_error)?;
                 contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
+                if let Some(selection) = &contract.model_selection {
+                    self.check_selection(&contract.agent, selection)?;
+                }
                 self.validate_scheduler(&contract)?;
                 self.store.create(&contract).map_err(map_store_error)?;
                 self.store
@@ -598,10 +610,15 @@ impl DaemonApi {
             None => self.store.list().map_err(map_store_error)?,
         };
         let sessions = tasks.into_iter().flat_map(|task| {
-            let task_id = task.contract.id;
-            task.sessions
-                .into_iter()
-                .map(move |session| json!({"task_id": &task_id, "session": session}))
+            let task_id = task.contract.id.clone();
+            let effective = models::effective_configuration(&task.contract);
+            task.sessions.into_iter().map(move |session| {
+                json!({
+                    "task_id": &task_id,
+                    "session": session,
+                    "effective_configuration": &effective,
+                })
+            })
         });
         Ok(Value::Array(sessions.collect()))
     }
@@ -609,12 +626,17 @@ impl DaemonApi {
     fn get_session(&self, params: Value) -> Result<Value, RpcError> {
         let params: SessionParams = parse_params(params)?;
         let task = self.store.get(&params.task_id).map_err(map_store_error)?;
+        let effective = models::effective_configuration(&task.contract);
         let session = task
             .sessions
             .into_iter()
             .find(|session| session.id == params.session_id)
             .ok_or(RpcError::NotFound)?;
-        Ok(json!({"task_id": params.task_id, "session": session}))
+        Ok(json!({
+            "task_id": params.task_id,
+            "session": session,
+            "effective_configuration": effective,
+        }))
     }
 
     fn session_events(&self, params: Value) -> Result<Value, RpcError> {
@@ -1112,6 +1134,8 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
 
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "api_models.rs"]
+mod models;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;

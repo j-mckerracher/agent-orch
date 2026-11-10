@@ -192,6 +192,7 @@ fn blocker_contract() -> TaskContract {
         autonomy: AutonomyPolicy::WorkspaceWrites,
         max_retries: 0,
         max_repairs: 0,
+        model_selection: None,
     }
 }
 
@@ -756,6 +757,41 @@ fn daemon_reports_agent_capabilities_without_paths() {
         assert!(!text.contains(&path.display().to_string()), "{text}");
     }
     assert!(!text.contains('/'), "{text}");
+    client.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+}
+
+#[test]
+fn daemon_serves_the_agent_catalog_and_selection_check_over_ipc() {
+    let fixture = RunningAgentFixture::new();
+    let mut daemon = fixture.start_daemon();
+    wait_for_ipc(&fixture.data, &mut daemon);
+    let mut client = connect_when_ready(&fixture.data);
+
+    let catalog = client.agents_catalog().unwrap();
+    let agents: Vec<_> = catalog
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["agent"].as_str().unwrap())
+        .collect();
+    assert_eq!(agents, ["codex", "claude-code", "pi"]);
+    let pi = &catalog[2];
+    assert_eq!(pi["state"], "unsupported");
+    assert_eq!(pi["models"]["items"], serde_json::json!([]));
+    let text = catalog.to_string();
+    for path in [&fixture.data, &fixture.agent, &fixture.repo] {
+        assert!(!text.contains(&path.display().to_string()), "{text}");
+    }
+
+    let refused = client
+        .agents_validate_selection("pi", Some("any-model"), None)
+        .unwrap();
+    assert_eq!(refused["valid"], false);
+    assert_eq!(refused["reason"], "agent_unsupported");
+    assert!(client
+        .agents_validate_selection("codex", None, None)
+        .is_err());
     client.shutdown().unwrap();
     assert!(daemon.finish().status.success());
 }

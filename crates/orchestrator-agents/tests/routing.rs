@@ -225,9 +225,17 @@ fn codex_unavailable_capabilities_are_rejected() {
             Capability::InteractiveInput,
             Capability::SessionResumption,
             Capability::Approvals,
-            Capability::ModelSelection,
         ],
     );
+}
+
+#[test]
+fn codex_routes_model_selection_and_claude_code_does_not() {
+    let required = BTreeSet::from([Capability::ModelSelection]);
+    let codex = CodexAdapter::new();
+    let selected = select_adapter(&[&codex as &dyn RoutableAdapter], &required)
+        .expect("codex validates models against its catalog");
+    assert_eq!(selected.kind(), AgentKind::Codex);
 }
 
 #[test]

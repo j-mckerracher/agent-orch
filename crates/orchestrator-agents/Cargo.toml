@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 orchestrator-runtime = { path = "../orchestrator-runtime" }
 # Pinned per the workspace root rule (direct dependencies pinned with `=`).
-tokio = { version = "=1.54.1", features = ["rt", "process", "time"] }
+tokio = { version = "=1.54.1", features = ["rt", "process", "time", "io-util"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 thiserror = "=2.0.21"

@@ -38,6 +38,7 @@ fn new_store() -> (tempfile::TempDir, SqliteStore) {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     (directory, store)
