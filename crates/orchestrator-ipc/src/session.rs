@@ -5,7 +5,7 @@ use crate::{Health, IpcError, IpcEvent, RpcError, RpcHandler};
 use serde_json::{json, Value};
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -16,6 +16,9 @@ pub(crate) struct State {
     pub(crate) idle_timeout: Duration,
     pub(crate) stream_timeout: Duration,
     pub(crate) last_request: Mutex<Instant>,
+    /// Authenticated connections whose event subscription is still delivering.
+    /// While any exists the server is in use and must not idle out.
+    pub(crate) live_subscriptions: AtomicUsize,
     pub(crate) stopping: AtomicBool,
     pub(crate) handler: Option<Arc<dyn RpcHandler>>,
     pub(crate) capabilities: Vec<Capability>,
@@ -50,10 +53,52 @@ impl State {
             idle_timeout,
             stream_timeout,
             last_request: Mutex::new(started),
+            live_subscriptions: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
             handler,
             capabilities,
         }
+    }
+
+    pub(crate) fn touch(&self) {
+        *self
+            .last_request
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+    }
+}
+
+/// Counts one live event subscription as server activity. Dropping it, when
+/// the subscription ends or its connection closes for any reason, restarts the
+/// idle clock so a daemon whose last UI just left still gets the full idle
+/// period instead of exiting at once.
+struct LiveSubscription(Arc<State>);
+
+impl LiveSubscription {
+    fn new(state: &Arc<State>) -> Self {
+        state.live_subscriptions.fetch_add(1, Ordering::AcqRel);
+        state.touch();
+        Self(state.clone())
+    }
+}
+
+impl Drop for LiveSubscription {
+    fn drop(&mut self) {
+        self.0.live_subscriptions.fetch_sub(1, Ordering::AcqRel);
+        self.0.touch();
+    }
+}
+
+fn sync_live(
+    live: &mut Option<LiveSubscription>,
+    subscription: &Option<Subscription>,
+    state: &Arc<State>,
+) {
+    let active = subscription.as_ref().is_some_and(|s| !s.ended);
+    match (active, live.is_some()) {
+        (true, false) => *live = Some(LiveSubscription::new(state)),
+        (false, true) => *live = None,
+        _ => {}
     }
 }
 
@@ -111,6 +156,7 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
         .unwrap_or_else(|error| error.into_inner()) = Instant::now();
 
     let mut subscription = None;
+    let mut live = None;
     while !state.stopping.load(Ordering::Acquire) {
         let request = match protocol::read_optional::<RpcRequest>(&mut stream) {
             Ok(Some(request)) if request.jsonrpc == "2.0" => Some(request),
@@ -138,6 +184,7 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
                 break;
             }
         }
+        sync_live(&mut live, &subscription, &state);
     }
 }
 
