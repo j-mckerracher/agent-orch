@@ -1,0 +1,201 @@
+/* Agents & Sessions (M7-14). Reads theme tokens only; no hard-coded colours. */
+
+.agents-view {
+  display: block;
+  max-width: 1180px;
+}
+
+.agents-head p {
+  margin: 4px 0;
+  color: var(--muted);
+}
+
+.agents-head .agents-eyebrow {
+  margin: 0;
+  font: 600 11px/1.4 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+.agents-status {
+  margin: 12px 0;
+}
+
+.agents-plain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.agents-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agents-status-list .agents-sub {
+  display: inline;
+}
+
+.agents-scroll {
+  overflow-x: auto;
+}
+
+.agents-view table {
+  font-size: 13px;
+}
+
+.agents-view th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.agents-view tbody th {
+  color: var(--ink);
+}
+
+.agents-flags {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.agents-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin: 16px 0;
+}
+
+.agents-card {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.agents-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agents-card-head h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.agents-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agents-tabs [role="tab"] {
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px/1.4 var(--font-sans);
+  cursor: pointer;
+}
+
+.agents-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.agents-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+button.agents-row {
+  cursor: pointer;
+}
+
+button.agents-row[aria-pressed="true"] {
+  border: 2px solid var(--accent);
+  background: var(--soft);
+}
+
+.agents-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agents-row-state {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.agents-controls {
+  margin-top: 14px;
+}
+
+.agents-controls h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.agents-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.agents-reason {
+  flex: 1 1 14rem;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .agents-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
