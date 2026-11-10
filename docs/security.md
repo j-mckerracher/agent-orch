@@ -8,6 +8,10 @@ orchestrator and states which threats are addressed by the domain contracts in
 and is deliberately narrower than the full plan: v1 is trusted local execution
 requiring user authorization, not secure containment.
 
+The M6-01 review of dependencies, environment allowlists, untrusted inputs,
+and delivery boundaries is in
+[`security/m6-01-threat-model-and-dependency-review.md`](security/m6-01-threat-model-and-dependency-review.md).
+
 ## 1. Threat model statement
 
 The application launches coding agents that execute arbitrary code under the
