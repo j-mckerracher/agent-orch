@@ -43,7 +43,9 @@ use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, Task
 use orchestrator_engine::reconcile::reconcile_before_scheduling;
 use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
-use orchestrator_store::{CancellationOwner, CancellationStatus, SqliteStore, Store};
+use orchestrator_store::{
+    CancellationOwner, CancellationStatus, SqliteStore, Store, UsageReceipt, UsageSource,
+};
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -530,6 +532,52 @@ struct MonitorOutcome {
     supervision_error: Option<String>,
 }
 
+/// Persists usage the agent reported so far. A usage failure is logged and
+/// never fails or delays the run; the receipt key makes a repeat harmless.
+fn record_usage(
+    handle: &mut dyn AgentHandle,
+    store: &SqliteStore,
+    owner: &CancellationOwner,
+    started_ms: u64,
+) {
+    for report in handle.take_usage() {
+        let now = unix_now_ms();
+        let receipt = UsageReceipt {
+            task_id: owner.task_id.clone(),
+            session_id: owner.session_id.clone(),
+            source: UsageSource::ProviderReported,
+            receipt_key: report.receipt_key,
+            window_start_ms: started_ms,
+            window_end_ms: report
+                .occurred_at_ms
+                .unwrap_or(now)
+                .clamp(started_ms, now.max(started_ms)),
+            reported_at_ms: now,
+            input_tokens: report.input_tokens,
+            cache_read_tokens: report.cache_read_tokens,
+            cache_write_tokens: report.cache_write_tokens,
+            output_tokens: report.output_tokens,
+            reasoning_tokens: report.reasoning_tokens,
+            cost: report.cost.map(|cost| (cost.nanos, cost.currency)),
+            model: report.model,
+        };
+        if let Err(error) = store.record_usage_receipt(&receipt) {
+            eprintln!(
+                "orchestrator-daemon: cannot record usage for session {}: {error}",
+                owner.session_id
+            );
+        }
+    }
+}
+
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 /// Drives the agent to exit. A cancellation request is consumed at most once,
 /// and `cancellation_succeeded` is set only after the handle's cancel returned
 /// Ok. Neither depends on any client connection.
@@ -543,6 +591,7 @@ async fn monitor_agent(
     let mut succeeded = false;
     let mut cancel_error = None;
     let mut supervision_error = None;
+    let started_ms = unix_now_ms();
 
     loop {
         if !attempted {
@@ -552,7 +601,10 @@ async fn monitor_agent(
                     attempted = true;
                     match handle.cancel().await {
                         Ok(()) => {
-                            let exit = handle.wait().await.map_err(|error| {
+                            let exit = handle.wait().await;
+                            // Keep what the agent reported before it was stopped.
+                            record_usage(&mut *handle, store, owner, started_ms);
+                            let exit = exit.map_err(|error| {
                                 format!("cancelled but termination was not confirmed: {error}")
                             })?;
                             return Ok(MonitorOutcome {
@@ -585,6 +637,7 @@ async fn monitor_agent(
         match event {
             None => continue,
             Some(Ok(Some(AgentEvent::SessionExited { .. }))) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 let exit = handle
                     .wait()
                     .await
@@ -597,13 +650,15 @@ async fn monitor_agent(
                     supervision_error,
                 });
             }
-            Some(Ok(Some(_))) => {}
+            Some(Ok(Some(_))) => record_usage(&mut *handle, store, owner, started_ms),
             Some(Ok(None)) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 supervision_error =
                     Some("agent event stream ended without a process exit event".to_string());
                 break;
             }
             Some(Err(error)) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 supervision_error = Some(format!("agent event stream failed: {error}"));
                 break;
             }
@@ -623,7 +678,9 @@ async fn monitor_agent(
         Err(error) if cancel_error.is_none() => cancel_error = Some(error.to_string()),
         Err(_) => {}
     }
-    let exit = handle.wait().await.map_err(|error| {
+    let exit = handle.wait().await;
+    record_usage(&mut *handle, store, owner, started_ms);
+    let exit = exit.map_err(|error| {
         format!(
             "{}; termination was not confirmed: {error}",
             supervision_error

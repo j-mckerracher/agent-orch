@@ -249,6 +249,46 @@ fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
 }
 
 #[test]
+fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
+    let fixture = Fixture::new();
+    let usage_turn = r#"printf '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50,"reasoning_output_tokens":20}}\n'
+"#;
+    let reporting = fixture.script("usage-agent", &format!("{THREAD_STARTED}{usage_turn}"));
+    let api = fixture.api(&reporting);
+    let task_id = fixture.submit(&api, "usage-1", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let params = json!({
+        "timezone": "UTC",
+        "utc_offset_seconds": 0,
+        "window_start_unix_ms": now - 3_600_000,
+        "window_end_unix_ms": now + 3_600_000,
+    });
+    let summary = api.dispatch("usage.summary", params.clone()).unwrap();
+    let codex = &summary["providers"][0];
+    assert_eq!(codex["provider"], "codex");
+    assert_eq!(codex["reported"]["input_tokens"], 600);
+    assert_eq!(codex["reported"]["cache_read_tokens"], 400);
+    assert_eq!(codex["reported"]["output_tokens"], 50);
+    assert_eq!(codex["cost_status"], "unknown");
+    api.shutdown();
+
+    let quiet_fixture = Fixture::new();
+    let api = quiet_fixture.api(&succeeding_agent(&quiet_fixture));
+    let task_id = quiet_fixture.submit(&api, "usage-2", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let summary = api.dispatch("usage.summary", params).unwrap();
+    let codex = &summary["providers"][0];
+    assert_eq!(codex["sessions"], 1);
+    assert_eq!(codex["token_status"], "unknown");
+    assert!(codex["reported"]["input_tokens"].is_null());
+    api.shutdown();
+}
+
+#[test]
 fn failed_agent_fails_the_task_and_retry_appends_a_second_attempt() {
     let fixture = Fixture::new();
     let first_ran = fixture.marker("first-ran");
@@ -839,4 +879,199 @@ fn queue_snapshot_orders_the_queue_from_the_executors_fairness_cursor() {
     api.shutdown();
     fs::write(&release, "go").unwrap();
     wait_state(&api, "p1", "Verifying");
+}
+
+mod usage_paths {
+    use super::*;
+    use orchestrator_agents::{ReportedCost, UsageReport};
+    use std::future::{ready, Future};
+    use std::pin::Pin;
+
+    type Next = orchestrator_agents::Result<Option<AgentEvent>>;
+
+    /// A handle whose stream is scripted; usage is handed out once.
+    struct ScriptedHandle {
+        events: Vec<Next>,
+        usage: Vec<UsageReport>,
+    }
+
+    impl AgentHandle for ScriptedHandle {
+        fn pid(&self) -> u32 {
+            0
+        }
+        fn next_event<'a, 'b>(&'a mut self) -> Pin<Box<dyn Future<Output = Next> + Send + 'b>>
+        where
+            'a: 'b,
+            Self: 'b,
+        {
+            let next = if self.events.is_empty() {
+                Ok(None)
+            } else {
+                self.events.remove(0)
+            };
+            Box::pin(ready(next))
+        }
+        fn take_usage(&mut self) -> Vec<UsageReport> {
+            std::mem::take(&mut self.usage)
+        }
+        fn cancel<'a, 'b>(
+            &'a mut self,
+        ) -> Pin<Box<dyn Future<Output = orchestrator_agents::Result<()>> + Send + 'b>>
+        where
+            'a: 'b,
+            Self: 'b,
+        {
+            Box::pin(ready(Ok(())))
+        }
+        fn wait<'a, 'b>(
+            &'a mut self,
+        ) -> Pin<Box<dyn Future<Output = orchestrator_agents::Result<AgentExit>> + Send + 'b>>
+        where
+            'a: 'b,
+            Self: 'b,
+        {
+            Box::pin(ready(Ok(AgentExit::Cancelled {
+                code: None,
+                last_message: None,
+            })))
+        }
+    }
+
+    fn cost_only_report(occurred_at_ms: Option<u64>) -> UsageReport {
+        UsageReport {
+            receipt_key: "result".into(),
+            model: Some("model-a".into()),
+            input_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+            output_tokens: None,
+            reasoning_tokens: None,
+            cost: Some(ReportedCost {
+                nanos: 8_638_800,
+                currency: "USD".into(),
+            }),
+            occurred_at_ms,
+        }
+    }
+
+    fn now_ms() -> u64 {
+        unix_now_ms()
+    }
+
+    /// A Running task, its registered owner and the store holding both.
+    fn running_owner(fixture: &Fixture, task_id: &str) -> (SqliteStore, CancellationOwner) {
+        let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+        fixture.register(&store);
+        seed_interrupted_run(&store, fixture, task_id, None);
+        let owner = CancellationOwner::new(
+            task_id.into(),
+            format!("{task_id}-attempt-1"),
+            format!("{task_id}-session-1"),
+            uuid::Uuid::new_v4().simple().to_string(),
+        )
+        .unwrap();
+        store.register_cancellation_owner(&owner).unwrap();
+        (store, owner)
+    }
+
+    fn run(
+        handle: ScriptedHandle,
+        store: &SqliteStore,
+        owner: &CancellationOwner,
+    ) -> Result<MonitorOutcome, String> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(monitor_agent(Box::new(handle), store, owner))
+    }
+
+    fn assert_cost_recorded_and_tokens_unknown(store: &SqliteStore) {
+        let now = now_ms();
+        let summary = store
+            .usage_window_summary(now - 3_600_000, now + 3_600_000)
+            .unwrap();
+        let reported = &summary.providers[0].bucket.reported;
+        assert_eq!(reported.costs.get("USD"), Some(&8_638_800));
+        assert_eq!(
+            reported.input_tokens, None,
+            "unknown is never recorded as 0"
+        );
+        assert_eq!(reported.output_tokens, None);
+    }
+
+    #[test]
+    fn usage_is_recorded_when_the_event_stream_fails() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "stream-error");
+        let handle = ScriptedHandle {
+            events: vec![Err(orchestrator_agents::AgentError::Protocol(
+                "broken stream".into(),
+            ))],
+            usage: vec![cost_only_report(None)],
+        };
+        let outcome = run(handle, &store, &owner).unwrap();
+        assert!(outcome.supervision_error.is_some());
+        assert_cost_recorded_and_tokens_unknown(&store);
+    }
+
+    #[test]
+    fn usage_is_recorded_when_the_run_is_cancelled_before_any_event() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "early-cancel");
+        store.request_cancellation_for_task("early-cancel").unwrap();
+        let handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: vec![cost_only_report(None)],
+        };
+        let outcome = run(handle, &store, &owner).unwrap();
+        assert!(outcome.cancellation_succeeded);
+        assert_cost_recorded_and_tokens_unknown(&store);
+    }
+
+    #[test]
+    fn a_silent_cancelled_run_records_nothing() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "silent-cancel");
+        store
+            .request_cancellation_for_task("silent-cancel")
+            .unwrap();
+        let handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: Vec::new(),
+        };
+        run(handle, &store, &owner).unwrap();
+        let now = now_ms();
+        let summary = store
+            .usage_window_summary(now - 3_600_000, now + 3_600_000)
+            .unwrap();
+        assert!(summary.providers[0].bucket.reported.costs.is_empty());
+        assert_eq!(summary.providers[0].bucket.sessions_with_cost, 0);
+    }
+
+    #[test]
+    fn the_provider_timestamp_sets_the_receipt_window_end() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "provider-time");
+        let now = now_ms();
+        let started = now - 60_000;
+        let occurred = now - 30_000;
+        let mut handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: vec![cost_only_report(Some(occurred))],
+        };
+        record_usage(&mut handle, &store, &owner, started);
+        let at_provider_time = store
+            .usage_window_summary(occurred, occurred + 1_000)
+            .unwrap();
+        assert_eq!(
+            at_provider_time.totals.reported.costs.get("USD"),
+            Some(&8_638_800),
+            "attributed to the provider's own time, not the time it was observed"
+        );
+        let at_observation = store
+            .usage_window_summary(now - 1_000, now + 3_600_000)
+            .unwrap();
+        assert!(at_observation.totals.reported.costs.is_empty());
+    }
 }

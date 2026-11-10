@@ -247,6 +247,7 @@ impl RpcHandler for DaemonApi {
             "review.request_changes" => self.review_request_changes(params),
             "host.metrics" => self.host_metrics(params),
             "queue.snapshot" => self.queue_snapshot(params),
+            "usage.summary" => self.usage_summary(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1126,6 +1127,12 @@ mod queue;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_usage.rs"]
+mod usage;
+
+#[cfg(test)]
+#[path = "api_usage_tests.rs"]
+mod usage_tests;
 
 #[cfg(test)]
 #[path = "api_queue_tests.rs"]

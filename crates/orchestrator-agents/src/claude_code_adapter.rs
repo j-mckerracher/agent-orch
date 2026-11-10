@@ -28,6 +28,7 @@ use crate::contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 use crate::routing::RoutableAdapter;
+use crate::usage::{claude_result_usage, UsageReport};
 
 const ALLOWED_TOOLS: &str = "Read,Edit,Write";
 
@@ -169,6 +170,10 @@ impl AgentHandle for ClaudeCodeHandle {
         self.supervisor.pid()
     }
 
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        self.parser.take_usage()
+    }
+
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
         loop {
             match self.supervisor.next_event().await {
@@ -253,12 +258,18 @@ pub struct StreamParser {
     turn_finished: bool,
     turn_failure: Option<String>,
     violation: Option<ProtocolViolation>,
+    usage: Vec<UsageReport>,
 }
 
 impl StreamParser {
     /// Create a parser for one supervised Claude Code process.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Drain usage reported by terminal `result` events fed so far.
+    pub fn take_usage(&mut self) -> Vec<UsageReport> {
+        std::mem::take(&mut self.usage)
     }
 
     /// True after a successful terminal `result` event.
@@ -396,6 +407,10 @@ impl StreamParser {
             .ok_or(ProtocolViolation::BadField("is_error"))?;
         if let Some(result) = object.get("result").and_then(Value::as_str) {
             self.last_message = Some(result.to_owned());
+        }
+        // An error result still spent tokens and money, so usage is kept.
+        if let Some(report) = claude_result_usage(&Value::Object(object.clone())) {
+            self.usage.push(report);
         }
         // Only a successful result completes the turn; an error result stays
         // unfinished so a clean exit cannot be reported as `Completed`.

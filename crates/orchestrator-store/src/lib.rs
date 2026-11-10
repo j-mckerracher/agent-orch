@@ -60,8 +60,13 @@ pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBA
 mod sqlite_events;
 pub use sqlite_events::{IdempotencyStart, StreamEvent};
 mod sqlite_reconcile;
+mod sqlite_usage;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry};
+pub use sqlite_usage::{
+    ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,
+    UsageWindowSummary,
+};
 
 use std::path::Path;
 
