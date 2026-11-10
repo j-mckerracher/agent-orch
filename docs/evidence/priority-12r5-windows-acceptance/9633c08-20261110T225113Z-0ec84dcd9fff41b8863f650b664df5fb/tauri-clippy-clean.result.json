@@ -1,0 +1,11 @@
+{
+  "gate": "tauri-clippy-clean",
+  "command": "cargo clean -p agent-orch-desktop",
+  "cwd": "apps/desktop/src-tauri",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 1,
+  "problems": [],
+  "newDiagnostics": 0
+}

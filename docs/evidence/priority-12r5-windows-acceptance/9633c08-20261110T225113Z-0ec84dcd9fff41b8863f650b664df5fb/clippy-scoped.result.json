@@ -1,0 +1,11 @@
+{
+  "gate": "clippy-scoped",
+  "command": "cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 43,
+  "problems": [],
+  "newDiagnostics": 0
+}

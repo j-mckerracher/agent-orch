@@ -1,0 +1,11 @@
+{
+  "gate": "tauri-clippy",
+  "command": "cargo clippy --locked --all-targets --verbose",
+  "cwd": "apps/desktop/src-tauri",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 73,
+  "problems": [],
+  "newDiagnostics": 0
+}

@@ -1,0 +1,12 @@
+   Compiling orchestrator-cli v0.1.0 (C:\ProgramData\t\0ec84dcd\src\crates\orchestrator-cli)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix --lib -p orchestrator-cli --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.09s
+     Running unittests src\lib.rs (C:\ProgramData\t\0ec84dcd\tg\debug\deps\orchestrator_cli-192dc354e21d2fea.exe)

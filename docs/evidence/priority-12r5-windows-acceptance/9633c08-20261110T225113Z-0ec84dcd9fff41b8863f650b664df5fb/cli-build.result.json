@@ -1,0 +1,11 @@
+{
+  "gate": "cli-build",
+  "command": "cargo build --locked -p orchestrator-cli",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 0,
+  "problems": [],
+  "newDiagnostics": 0
+}

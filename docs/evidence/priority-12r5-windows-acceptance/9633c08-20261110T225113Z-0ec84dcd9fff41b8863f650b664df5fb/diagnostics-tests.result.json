@@ -1,0 +1,11 @@
+{
+  "gate": "diagnostics-tests",
+  "command": "cargo test --locked -p orchestrator-diagnostics",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 14,
+  "problems": [],
+  "newDiagnostics": 0
+}

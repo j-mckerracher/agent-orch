@@ -1,0 +1,11 @@
+{
+  "gate": "desktop-vitest",
+  "command": "npx vitest run",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 21,
+  "problems": [],
+  "newDiagnostics": 0
+}

@@ -1,0 +1,11 @@
+{
+  "gate": "git-lib-tests",
+  "command": "cargo test --locked -p orchestrator-git --lib",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 17,
+  "problems": [],
+  "newDiagnostics": 0
+}

@@ -1,0 +1,3 @@
+debug/agent-orch-desktop.exe
+size: 13571584
+sha256: 71968ae4347d34b180f64dd16e0a171f516c779f1bd4902bbcf0d2df247af4b8

@@ -1,0 +1,6 @@
+{
+  "name": "git-config",
+  "verdict": "PASS",
+  "problems": [],
+  "notes": "core.autocrlf=false core.longpaths=true"
+}

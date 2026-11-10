@@ -1,0 +1,10 @@
+{
+  "overall": "PASS",
+  "exitCode": 0,
+  "PASS": 34,
+  "FAIL": 0,
+  "SKIPPED": 0,
+  "skipped": [],
+  "gates": 27,
+  "platform": "win32"
+}

@@ -1,0 +1,11 @@
+{
+  "gate": "cli-cleanup-safety-tests",
+  "command": "cargo test --locked -p orchestrator-cli --test cleanup_safety",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 54,
+  "problems": [],
+  "newDiagnostics": 0
+}

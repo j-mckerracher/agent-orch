@@ -1,0 +1,13 @@
+
+running 8 tests
+test command_line::tests::the_windows_count_follows_the_quoting_std_applies ... ok
+test command_line::tests::a_normal_objective_is_accepted_on_every_platform ... ok
+test command_line::tests::the_unix_rules_cap_one_argument_and_the_total ... ok
+test command_line::tests::a_cmd_script_launcher_has_the_smaller_cmd_exe_limit ... ok
+test command_line::tests::escaping_counts_toward_the_windows_limit ... ok
+test command_line::tests::the_windows_limit_is_exact_at_the_boundary ... ok
+test command_line::tests::a_65000_character_objective_is_refused_on_windows_with_an_actionable_message ... ok
+test command_line::tests::a_too_long_command_line_is_refused_before_any_process_is_started ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+

@@ -1,0 +1,3 @@
+Exception type: InvalidOperationException
+Cause: ConvertFrom-Json rejected case-distinct keys SKIPPED and skipped in overall.result.json.
+Recovery: report-only parsing with ConvertFrom-Json -AsHashtable for overall.result.json; no test gates rerun.

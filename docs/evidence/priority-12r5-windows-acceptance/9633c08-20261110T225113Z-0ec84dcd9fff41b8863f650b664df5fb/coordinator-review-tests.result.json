@@ -1,0 +1,11 @@
+{
+  "gate": "coordinator-review-tests",
+  "command": "cargo test --locked -p orchestrator-daemon --test coordinator_review",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 8,
+  "problems": [],
+  "newDiagnostics": 0
+}

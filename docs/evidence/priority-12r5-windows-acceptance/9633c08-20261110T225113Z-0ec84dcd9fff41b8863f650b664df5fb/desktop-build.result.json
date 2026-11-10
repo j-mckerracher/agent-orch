@@ -1,0 +1,11 @@
+{
+  "gate": "desktop-build",
+  "command": "npm run build",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 2,
+  "problems": [],
+  "newDiagnostics": 0
+}

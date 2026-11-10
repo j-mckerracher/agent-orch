@@ -1,0 +1,2 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src\lib.rs (C:\ProgramData\t\0ec84dcd\tg\debug\deps\orchestrator_store-344f67571e0677a2.exe)
