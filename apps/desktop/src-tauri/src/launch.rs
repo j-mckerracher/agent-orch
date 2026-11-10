@@ -66,6 +66,21 @@ pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
     command.spawn()
 }
 
+/// How much of the end of `daemon.log` a launch failure quotes.
+const LOG_EXCERPT_BYTES: u64 = 2048;
+
+/// A launch-failure message plus the redacted end of `daemon.log`, so the user
+/// sees why the daemon stopped without opening the file. Never quotes the log
+/// unredacted: it can hold paths and messages a credential was part of.
+pub fn explain_with_log(message: String, data_dir: &Path) -> String {
+    match orchestrator_diagnostics::tail_redacted(&data_dir.join(DAEMON_LOG), LOG_EXCERPT_BYTES) {
+        Ok(tail) if !tail.is_empty() => {
+            format!("{message}\nlast daemon output:\n{tail}")
+        }
+        _ => message,
+    }
+}
+
 /// Best effort: a failed rotation only leaves the log growing as before.
 fn rotate_log(data_dir: &Path) {
     let log = data_dir.join(DAEMON_LOG);
@@ -123,5 +138,24 @@ mod tests {
 
         rotate_log(dir.path());
         assert!(!log.exists(), "a missing log is not an error");
+    }
+
+    #[test]
+    fn a_launch_failure_quotes_only_the_redacted_end_of_the_log() {
+        let dir = TempDir::new().unwrap();
+        let message = || "the daemon exited right after starting".to_owned();
+        assert_eq!(explain_with_log(message(), dir.path()), message());
+
+        let mut text = format!("old line token={}\n", "ABCDEF0123456789");
+        text.push_str(&"x".repeat(LOG_EXCERPT_BYTES as usize));
+        text.push_str("\n{\"event\":\"daemon_failed\",\"error\":\"password=hunter2hunter2\"}\n");
+        fs::write(dir.path().join(DAEMON_LOG), text).unwrap();
+
+        let explained = explain_with_log(message(), dir.path());
+        assert!(explained.starts_with(&message()));
+        assert!(explained.contains("daemon_failed"), "{explained}");
+        assert!(!explained.contains("hunter2hunter2"), "{explained}");
+        assert!(!explained.contains("old line"), "only the tail is quoted");
+        assert!(explained.len() < 3 * LOG_EXCERPT_BYTES as usize);
     }
 }

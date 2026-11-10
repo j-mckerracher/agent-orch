@@ -79,6 +79,7 @@ impl Fixture {
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(25),
             probe_timeout: Duration::from_secs(5),
+            diagnostics: orchestrator_diagnostics::Diagnostics::memory(),
         }
     }
 
@@ -634,6 +635,158 @@ fn restart_gate_blocks_launches_while_a_run_cannot_be_proven_dead() {
     executor.shutdown();
 }
 
+fn events(diag: &orchestrator_diagnostics::Diagnostics, name: &str) -> Vec<Value> {
+    diag.lines()
+        .iter()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .filter(|line| line["event"] == name)
+        .collect()
+}
+
+#[test]
+fn failed_agent_is_reported_with_its_exit_and_the_preserved_worktree() {
+    let fixture = Fixture::new();
+    let agent = fixture.script(
+        "partial-agent",
+        &format!("{THREAD_STARTED}echo half > partial.txt\nexit 3\n"),
+    );
+    let diag = Diagnostics::memory();
+    let api = fixture.api_with(&agent, |config| config.diagnostics = diag.clone());
+    let task_id = fixture.submit(&api, "partial-1", 0);
+    wait_state(&api, &task_id, "Failed");
+    wait_until("failure event", || {
+        !events(&diag, "task_attempt_failed").is_empty()
+    });
+
+    let exited = &events(&diag, "agent_exited")[0];
+    assert_eq!(exited["task_id"], task_id.as_str());
+    assert_eq!(exited["outcome"], "failed");
+    assert_eq!(exited["exit_code"], "3");
+    let failed = &events(&diag, "task_attempt_failed")[0];
+    assert_eq!(failed["records_complete"], "true");
+    assert_eq!(failed["uncommitted_paths"], "1");
+    let worktree = PathBuf::from(failed["worktree"].as_str().unwrap());
+    assert_eq!(
+        fs::read_to_string(worktree.join("partial.txt")).unwrap(),
+        "half\n",
+        "a failed run must keep what the agent wrote"
+    );
+    api.shutdown();
+}
+
+#[test]
+fn launch_failure_is_reported_without_leaking_the_credential_in_the_program_path() {
+    let fixture = Fixture::new();
+    let diag = Diagnostics::memory();
+    let missing = fixture
+        .root
+        .path()
+        .join("token=SECRETVALUE0123456789")
+        .join("codex");
+    let api = fixture.api_with(&missing, |config| config.diagnostics = diag.clone());
+    let task_id = fixture.submit(&api, "missing-1", 0);
+    wait_state(&api, &task_id, "Failed");
+    wait_until("launch failure event", || {
+        !events(&diag, "agent_launch_failed").is_empty()
+    });
+
+    let launch = &events(&diag, "agent_launch_failed")[0];
+    assert_eq!(launch["task_id"], task_id.as_str());
+    assert_eq!(launch["agent"], "codex");
+    assert!(launch["error"].as_str().unwrap().contains("[REDACTED]"));
+    for line in diag.lines() {
+        assert!(!line.contains("SECRETVALUE"), "credential leaked: {line}");
+    }
+    api.shutdown();
+}
+
+#[test]
+fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
+    let fixture = Fixture::new();
+    let diag = Diagnostics::memory();
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.diagnostics = diag.clone()
+    });
+    let waiting = fixture.submit_full(&api, "dep-parent", "pi", 0, &[]);
+    let second = fixture.submit_full(&api, "dep-child", "codex", 5, &[&waiting]);
+    assert_eq!(
+        api.dispatch(
+            "tasks.retry",
+            json!({"task_id": second, "idempotency_key": "retry-hunter2hunter2"})
+        ),
+        Err(RpcError::Conflict)
+    );
+    assert_eq!(
+        api.dispatch("tasks.retry", json!({"task_id": "missing", "idempotency_key": "k"})),
+        Err(RpcError::NotFound)
+    );
+
+    let failed = events(&diag, "rpc_failed");
+    assert_eq!(failed.len(), 1, "caller mistakes such as NotFound stay quiet");
+    assert_eq!(failed[0]["method"], "tasks.retry");
+    assert_eq!(failed[0]["level"], "warn");
+    assert_eq!(failed[0]["error"], "Conflict");
+    assert!(!diag.lines().join("\n").contains("hunter2"));
+    api.shutdown();
+}
+
+#[test]
+fn restart_reports_the_orphan_it_stopped_and_the_runs_it_interrupted() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    let mut orphan = Command::new("/bin/sleep")
+        .arg("300")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let orphan_pid = orphan.id();
+    let reaper = thread::spawn(move || orphan.wait().unwrap());
+    seed_interrupted_run(&store, &fixture, "orphaned", Some(orphan_pid));
+
+    let config = fixture.config(&data, &succeeding_agent(&fixture));
+    let diag = config.diagnostics.clone();
+    let executor = Executor::start(store.clone(), config).unwrap();
+    wait_until("gate to open", || {
+        !events(&diag, "recovery_gate_open").is_empty()
+    });
+    reaper.join().unwrap();
+
+    let stopped = &events(&diag, "orphan_terminated")[0];
+    assert_eq!(stopped["task_id"], "orphaned");
+    assert_eq!(stopped["pid"], orphan_pid.to_string().as_str());
+    let opened = &events(&diag, "recovery_gate_open")[0];
+    assert_eq!(opened["interrupted_task_ids"], "orphaned");
+    executor.shutdown();
+}
+
+#[test]
+fn restart_gate_refusal_is_reported_once_with_its_blocker() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    seed_interrupted_run(&store, &fixture, "unknown", None);
+
+    let config = fixture.config(&data, &succeeding_agent(&fixture));
+    let diag = config.diagnostics.clone();
+    let executor = Executor::start(store.clone(), config).unwrap();
+    wait_until("gate refusal event", || {
+        !events(&diag, "recovery_gate_blocked").is_empty()
+    });
+    thread::sleep(Duration::from_millis(300));
+    executor.shutdown();
+
+    let blocked = events(&diag, "recovery_gate_blocked");
+    assert_eq!(blocked.len(), 1, "an unchanged refusal is not repeated");
+    assert!(blocked[0]["reason"].as_str().unwrap().contains("unknown"));
+    assert_eq!(
+        events(&diag, "shutdown_with_running_agents")[0]["task_ids"],
+        "unknown"
+    );
+}
+
 fn spawn_group_leader() -> std::process::Child {
     Command::new("/bin/sleep")
         .arg("300")
@@ -661,7 +814,7 @@ fn restart_never_signals_an_agent_whose_owner_daemon_is_still_alive() {
     .with_exact_process_identity(capture_exact_process_identity(std::process::id()).unwrap());
     store.register_cancellation_owner(&owner).unwrap();
 
-    terminate_orphaned_agents(&store);
+    terminate_orphaned_agents(&store, &Diagnostics::memory());
 
     assert!(
         agent.try_wait().unwrap().is_none(),
@@ -692,7 +845,7 @@ fn restart_never_signals_a_process_whose_identity_differs_from_the_recorded_one(
         .record_session_identity("reused", "reused-session-1", &recorded)
         .unwrap();
 
-    terminate_orphaned_agents(&store);
+    terminate_orphaned_agents(&store, &Diagnostics::memory());
 
     assert!(
         reused.try_wait().unwrap().is_none(),

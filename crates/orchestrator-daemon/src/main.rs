@@ -9,16 +9,28 @@ mod idempotency;
 
 use api::DaemonApi;
 use executor::ExecutorConfig;
+use orchestrator_diagnostics::{install_panic_hook, Diagnostics};
 use orchestrator_ipc::{Server, ServerConfig};
 use orchestrator_store::DataDirectoryLock;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() {
+    let diagnostics = Diagnostics::stderr();
+    install_panic_hook(diagnostics.clone(), "daemon");
+    diagnostics.info(
+        "daemon",
+        "daemon_start",
+        &[
+            ("version", env!("CARGO_PKG_VERSION")),
+            ("pid", &std::process::id().to_string()),
+        ],
+    );
     if let Err(error) = run() {
-        eprintln!("orchestrator-daemon: {error}");
+        diagnostics.error("daemon", "daemon_failed", &[("error", &error)]);
         std::process::exit(1);
     }
+    diagnostics.info("daemon", "daemon_stop", &[("reason", "idle or shutdown")]);
 }
 
 fn run() -> Result<(), String> {

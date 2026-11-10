@@ -200,19 +200,25 @@ impl Bridge {
                 Err(error) => return Err(error.into()),
             }
             if let Ok(Some(status)) = child.try_wait() {
-                return Err(HostError::unavailable(format!(
-                    "the daemon exited right after starting ({status}); see {}",
-                    data_dir.join(launch::DAEMON_LOG).display()
+                return Err(HostError::unavailable(launch::explain_with_log(
+                    format!(
+                        "the daemon exited right after starting ({status}); see {}",
+                        data_dir.join(launch::DAEMON_LOG).display()
+                    ),
+                    data_dir,
                 )));
             }
             if Instant::now() >= deadline {
                 thread::spawn(move || {
                     let _ = child.wait();
                 });
-                return Err(HostError::unavailable(format!(
-                    "the daemon did not become ready within {} s; see {}",
-                    LAUNCH_WAIT.as_secs(),
-                    data_dir.join(launch::DAEMON_LOG).display()
+                return Err(HostError::unavailable(launch::explain_with_log(
+                    format!(
+                        "the daemon did not become ready within {} s; see {}",
+                        LAUNCH_WAIT.as_secs(),
+                        data_dir.join(launch::DAEMON_LOG).display()
+                    ),
+                    data_dir,
                 )));
             }
             thread::sleep(LAUNCH_RETRY);

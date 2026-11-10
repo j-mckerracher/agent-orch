@@ -858,6 +858,7 @@ dependencies = [
  "libc",
  "orchestrator-agents",
  "orchestrator-core",
+ "orchestrator-diagnostics",
  "orchestrator-engine",
  "orchestrator-git",
  "orchestrator-ipc",
@@ -869,6 +870,14 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "orchestrator-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

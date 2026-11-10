@@ -62,6 +62,11 @@ impl Daemon {
     /// authenticate. Panics, with the daemon log, if it exits or is not ready
     /// within `READY`.
     pub fn start(layout: &Layout) -> Self {
+        Self::start_with_env(layout, &[])
+    }
+
+    /// Like [`Daemon::start`], with extra environment for the daemon process.
+    pub fn start_with_env(layout: &Layout, env: &[(&str, &Path)]) -> Self {
         let log = File::options()
             .create(true)
             .append(true)
@@ -70,6 +75,7 @@ impl Daemon {
         let child = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")
             .arg(&layout.data)
+            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
             .stderr(log)
@@ -124,7 +130,7 @@ impl Drop for Daemon {
             eprintln!(
                 "--- daemon log ({}) ---\n{}\n--- end daemon log ---",
                 self.log.display(),
-                fs::read_to_string(&self.log).unwrap_or_default()
+                orchestrator_diagnostics::tail_redacted(&self.log, 64 * 1024).unwrap_or_default()
             );
         }
     }

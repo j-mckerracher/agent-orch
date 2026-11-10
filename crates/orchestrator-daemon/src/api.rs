@@ -35,6 +35,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::executor::{Executor, ExecutorConfig};
+use orchestrator_diagnostics::{Diagnostics, Level};
 use crate::idempotency;
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
@@ -218,7 +219,7 @@ impl RpcHandler for DaemonApi {
     }
 
     fn dispatch(&self, method: &str, params: Value) -> Result<Value, RpcError> {
-        match method {
+        let result = match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
             "tasks.submit" => self.submit_task(params),
@@ -241,7 +242,25 @@ impl RpcHandler for DaemonApi {
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
             _ => Err(RpcError::InvalidParams),
+        };
+        // Only the method and the error class are reported, never parameters.
+        // Caller mistakes (invalid params, unknown ids) stay quiet.
+        if let Err(error) = &result {
+            let level = match error {
+                RpcError::InvalidParams | RpcError::NotFound => None,
+                RpcError::Internal => Some(Level::Error),
+                _ => Some(Level::Warn),
+            };
+            if let Some(level) = level {
+                self.config.diagnostics.emit(
+                    level,
+                    "api",
+                    "rpc_failed",
+                    &[("method", method), ("error", &format!("{error:?}"))],
+                );
+            }
         }
+        result
     }
 
     fn events_after(&self, after_sequence: i64, limit: usize) -> Result<Vec<IpcEvent>, RpcError> {
@@ -550,7 +569,7 @@ impl DaemonApi {
     /// generation, which marks its request `Failed`. An owner that is not
     /// provably alive (missing or inconclusive identity) is left untouched.
     /// Both return `Conflict` before any request is created. `RpcError` carries
-    /// no detail, so recovery guidance goes to stderr.
+    /// no detail, so recovery guidance goes to the diagnostics log.
     fn require_live_cancellation_owner(&self, task_id: &str) -> Result<(), RpcError> {
         let owners = self
             .store
@@ -565,25 +584,45 @@ impl DaemonApi {
                 self.store
                     .retire_stale_cancellation_owner(&owner)
                     .map_err(map_store_error)?;
-                eprintln!(
-                    "orchestrator-daemon: cancellation owner for task {task_id} generation {} \
-                     exited; its request was marked Failed and the task remains Running. Stop \
-                     the daemon and use `agent-orch inspect {task_id}` to review the preserved state",
-                    owner.generation()
+                self.config.diagnostics.warn(
+                    "api",
+                    "cancellation_owner_exited",
+                    &[
+                        ("task_id", task_id),
+                        ("generation", owner.generation()),
+                        (
+                            "recovery",
+                            &format!(
+                                "request marked Failed and the task remains Running. Stop the \
+                                 daemon and use `agent-orch inspect {task_id}` to review the \
+                                 preserved state"
+                            ),
+                        ),
+                    ],
                 );
             } else {
-                eprintln!(
-                    "orchestrator-daemon: cancellation owner for task {task_id} generation {} \
-                     is not provably alive ({classification:?}); no cancellation was requested. \
-                     Stop the daemon, confirm the owner and agent processes have exited, then \
-                     run `agent-orch recover-owner {task_id} --attempt-id {} --session-id {} \
-                     --generation {} --confirm-processes-exited --reason \"<reason>\"`. \
-                     This Conflict is cached for the idempotency key, so retry cancellation \
-                     with a new key after recovery",
-                    owner.generation(),
-                    owner.attempt_id,
-                    owner.session_id,
-                    owner.generation()
+                self.config.diagnostics.warn(
+                    "api",
+                    "cancellation_owner_not_provably_alive",
+                    &[
+                        ("task_id", task_id),
+                        ("generation", owner.generation()),
+                        ("classification", &format!("{classification:?}")),
+                        (
+                            "recovery",
+                            &format!(
+                                "no cancellation was requested. Stop the daemon, confirm the \
+                                 owner and agent processes have exited, then run `agent-orch \
+                                 recover-owner {task_id} --attempt-id {} --session-id {} \
+                                 --generation {} --confirm-processes-exited --reason \"<reason>\"`. \
+                                 This Conflict is cached for the idempotency key, so retry \
+                                 cancellation with a new key after recovery",
+                                owner.attempt_id,
+                                owner.session_id,
+                                owner.generation()
+                            ),
+                        ),
+                    ],
                 );
             }
             return Err(RpcError::Conflict);
@@ -1060,7 +1099,7 @@ fn map_store_error(error: StoreError) -> RpcError {
         | StoreError::IllegalTransition(_)
         | StoreError::NoActiveCancellationOwner { .. }
         | StoreError::CancellationConflict { .. } => RpcError::Conflict,
-        _ => RpcError::Internal,
+        other => internal("store", &other),
     }
 }
 
@@ -1078,7 +1117,7 @@ fn map_approval_error(error: orchestrator_core::approval::ApprovalError) -> RpcE
         | ApprovalError::NotApproved { .. }
         | ApprovalError::ActionMismatch(_) => RpcError::Forbidden,
         ApprovalError::IllegalTransition { .. } => RpcError::Conflict,
-        ApprovalError::Persistence(_) => RpcError::Internal,
+        ApprovalError::Persistence(cause) => internal("approval", &cause),
     }
 }
 
@@ -1089,7 +1128,7 @@ fn map_git_error(error: orchestrator_git::Error) -> RpcError {
             RpcError::InvalidParams
         }
         orchestrator_git::Error::InvalidBaseRef { .. } => RpcError::InvalidParams,
-        _ => RpcError::Internal,
+        other => internal("git", &other),
     }
 }
 
@@ -1106,8 +1145,19 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
         DeliveryError::DifferentRepository { .. } | DeliveryError::PrimaryCheckoutCandidate => {
             RpcError::Forbidden
         }
-        _ => RpcError::Internal,
+        other => internal("delivery", &other),
     }
+}
+
+/// An unexpected failure reaches the client as a bare `Internal`, so its cause
+/// goes to the diagnostics log (redacted) or it would be lost.
+fn internal(source: &str, cause: &dyn std::fmt::Display) -> RpcError {
+    Diagnostics::stderr().error(
+        "api",
+        "internal_error",
+        &[("source", source), ("cause", &cause.to_string())],
+    );
+    RpcError::Internal
 }
 
 #[path = "api_coordinator.rs"]

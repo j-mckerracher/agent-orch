@@ -22,6 +22,7 @@ members = [
     "crates/orchestrator-store",
     "crates/orchestrator-runtime",
     "crates/orchestrator-engine",
+    "crates/orchestrator-diagnostics",
     "crates/orchestrator-ipc",
     "crates/orchestrator-daemon",
     "crates/orchestrator-cli",
