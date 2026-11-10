@@ -386,6 +386,10 @@ fn method_capability(method: &str) -> Option<Capability> {
         "review.request_approval" | "review.evidence" | "review.request_changes" => {
             Some(Capability::Review)
         }
+        // M7-08 (proposed names): conversations share the coordinator capability.
+        "conversations.send" | "conversations.get" | "conversations.cancel" => {
+            Some(Capability::Coordinator)
+        }
         _ => None,
     }
 }

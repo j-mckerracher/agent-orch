@@ -50,6 +50,8 @@ pub(crate) struct DaemonApi {
     idempotency_gate: Mutex<()>,
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
+    /// M7-08 conversation service (global and per-workstream).
+    conversations: conversation_runtime::ConversationService,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -170,6 +172,13 @@ impl DaemonApi {
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
                 .map_err(|_| "cannot initialize local approval policy".to_owned())?;
+        let conversations = conversation_runtime::ConversationService::new(
+            store.clone(),
+            Arc::new(conversation_runtime::UnavailableRuntime),
+            Arc::new(conversation_runtime::NoWorkstreams),
+            None,
+        );
+        conversations.recover()?;
         Ok(Self {
             store,
             config,
@@ -177,6 +186,7 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
+            conversations,
         })
     }
 
@@ -237,6 +247,9 @@ impl RpcHandler for DaemonApi {
             "coordinator.send_message" => self.coordinator_send_message(params),
             "coordinator.propose" => self.coordinator_propose(params),
             "coordinator.get" => self.coordinator_get(params),
+            "conversations.send" => self.conversations_send(params),
+            "conversations.get" => self.conversations_get(params),
+            "conversations.cancel" => self.conversations_cancel(params),
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
@@ -1110,6 +1123,10 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
     }
 }
 
+#[path = "api_conversation_runtime.rs"]
+mod conversation_runtime;
+#[path = "api_conversations.rs"]
+mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
 #[path = "api_review.rs"]
