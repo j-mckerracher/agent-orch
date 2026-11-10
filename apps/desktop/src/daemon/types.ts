@@ -18,6 +18,7 @@ export type Capability =
   | "workspaces"
   | "delivery"
   | "agents"
+  | "host"
   | "coordinator"
   | "review";
 
@@ -32,6 +33,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "workspaces",
   "delivery",
   "agents",
+  "host",
   "coordinator",
   "review",
 ];
@@ -40,11 +42,11 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
 export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
 
 /**
- * Capabilities the app works without. An older daemon rejects a handshake that names a capability
- * it does not know, so the connection retries without these and their surfaces degrade to
- * `unsupported` instead of the whole app becoming incompatible.
+ * Capabilities a daemon may lack without making the app unusable. The handshake asks for them, and
+ * `ConnectionManager` repeats it once without them when the daemon refuses; the matching feature then
+ * degrades to `unsupported`. Older daemons reject any capability name they do not know.
  */
-export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue"];
+export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue", "host", "workstreams"];
 
 export interface Welcome {
   version: number;

@@ -193,7 +193,7 @@ export interface UsageSource {
   usage(): Promise<SurfaceResult<UsageSummary>>;
 }
 
-// D13 -- SystemMetricsSource. No daemon data exists: the live adapter answers `unsupported`.
+// D13 -- SystemMetricsSource. Live: `host.metrics` (liveMetrics.ts). Fixture: wireframe numbers.
 export interface MeterValue {
   value: number;
   unit: string;
@@ -210,6 +210,12 @@ export interface SystemMetrics {
 export interface SystemMetricsSource {
   readonly provenance: Provenance;
   metrics(): Promise<SurfaceResult<SystemMetrics>>;
+  /**
+   * Live adapter only: delivers a fresh result now and then at the source's own sample interval,
+   * and sends no request while the window is hidden. Returns the stop function. Sources without
+   * it (fixtures) are read once through `metrics()`.
+   */
+  watch?(onResult: (result: SurfaceResult<SystemMetrics>) => void): () => void;
 }
 
 // D14 -- ModelCatalogSource. Derived: agents.capabilities (agents only, no models).

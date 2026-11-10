@@ -60,6 +60,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "delivery.request": "delivery",
   "tasks.retry": "tasks",
   "agents.capabilities": "agents",
+  "host.metrics": "host",
   "coordinator.send_message": "coordinator",
   "coordinator.propose": "coordinator",
   "coordinator.get": "coordinator",

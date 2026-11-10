@@ -21,6 +21,7 @@ import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { basename } from "../../ui/format";
 import { createDerivedActivity } from "./activity";
+import { createLiveMetrics } from "./liveMetrics";
 import { countStates, notOk, observation, okResult, unsupportedValue } from "./result";
 import { createSearchSource } from "./search";
 import type {
@@ -177,11 +178,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     usage: () => Promise.resolve(notOk(usageProvenance, "unsupported", "The daemon records no usage or spend.")),
   };
 
-  const metricsProvenance = prov("D13", []);
-  const metrics: SystemMetricsSource = {
-    provenance: metricsProvenance,
-    metrics: () => Promise.resolve(notOk(metricsProvenance, "unsupported", "The daemon reports no host metrics.")),
-  };
+  const metrics: SystemMetricsSource = createLiveMetrics(connection, { now });
 
   const modelsProvenance = prov("D14", ["agents.capabilities"]);
   const models: ModelCatalogSource = {

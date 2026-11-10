@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Measured, MeterValue, SystemMetrics, SystemMetricsSource } from "../../sources/surfaces/types";
+import type { Measured, MeterValue, SurfaceResult, SystemMetrics, SystemMetricsSource } from "../../sources/surfaces/types";
 import type { Provenance } from "../../sources/types";
 import { useServices, useSurface, type SurfaceState } from "../services";
 import { Disclosure, Meter } from "../theme";
@@ -195,14 +195,40 @@ export interface ResourceStripProps {
 }
 
 /**
- * Shell `resources` slot. Reads one snapshot per connection generation and keeps the shown
- * observation age moving, so a snapshot that stops refreshing visibly ages instead of
- * looking current.
+ * Shell `resources` slot. A source with `watch` (the live adapter) is refreshed by that
+ * source at its own interval and not at all while the window is hidden; any other source is
+ * read once per connection generation. Either way the shown observation age keeps moving, so a
+ * snapshot that stops refreshing visibly ages instead of looking current.
  */
 export function ResourceStrip({ source, defaultOpen, now = Date.now }: ResourceStripProps) {
   const services = useServices();
   const metrics = source ?? services.surfaces.metrics;
-  const state = useSurface(() => metrics.metrics(), "resource-strip", metrics.provenance);
+  return metrics.watch ? (
+    <WatchedStrip metrics={metrics} defaultOpen={defaultOpen} now={now} />
+  ) : (
+    <ReadOnceStrip metrics={metrics} defaultOpen={defaultOpen} now={now} />
+  );
+}
+
+interface StripBodyProps {
+  metrics: SystemMetricsSource;
+  defaultOpen?: boolean;
+  now: () => number;
+}
+
+function ReadOnceStrip(props: StripBodyProps) {
+  const state = useSurface(() => props.metrics.metrics(), "resource-strip", props.metrics.provenance);
+  return <AgingStrip {...props} state={state} />;
+}
+
+function WatchedStrip(props: StripBodyProps) {
+  const [watched, setWatched] = useState<{ source: SystemMetricsSource; result: SurfaceResult<SystemMetrics> } | null>(null);
+  useEffect(() => props.metrics.watch?.((result) => setWatched({ source: props.metrics, result })), [props.metrics]);
+  const state: SurfaceState<SystemMetrics> = watched && watched.source === props.metrics ? watched.result : { status: "loading" };
+  return <AgingStrip {...props} state={state} />;
+}
+
+function AgingStrip({ metrics, defaultOpen, now, state }: StripBodyProps & { state: SurfaceState<SystemMetrics> }) {
   const [nowMs, setNowMs] = useState(now);
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;

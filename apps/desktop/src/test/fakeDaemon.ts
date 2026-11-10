@@ -167,10 +167,11 @@ export class FakeDaemon implements DaemonConnector {
 
   async open(requested: readonly Capability[]): Promise<OpenedChannel> {
     this.openRequests.push([...requested]);
-    const unknown = requested.filter((capability) => this.unknownCapabilities.includes(capability));
-    if (unknown.length > 0) throw new DaemonError("capability-unavailable", "requested capability is unavailable", -32002);
     const failure = this.openFailures.shift() ?? this.openError;
     if (failure) throw failure;
+    if (requested.some((capability) => this.unknownCapabilities.includes(capability))) {
+      throw new DaemonError("capability-unavailable", "the daemon does not offer a requested capability", -32002);
+    }
     const channel = new FakeChannel(this);
     this.channels.push(channel);
     return {
