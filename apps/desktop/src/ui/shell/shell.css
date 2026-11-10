@@ -324,12 +324,6 @@ body:has(.shell) {
     margin: 0 22px 16px;
     overflow: visible;
   }
-
-  .shell-resources {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-  }
 }
 
 @media (max-width: 760px) {

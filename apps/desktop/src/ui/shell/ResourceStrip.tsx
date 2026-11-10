@@ -21,9 +21,15 @@ import "./ResourceStrip.css";
  *   threshold; the number, unit and scope are always printed beside it.
  * - Values from the fixture adapter carry the PLACEHOLDER DATA badge (also while collapsed).
  *
+ * - Only CPU and disk (and any other 0-100% value) are `role="meter"`. ARIA requires a meter
+ *   to carry a range. Memory is measured in absolute units with no reported total, so a
+ *   range would be invented, and unavailable/unsupported meters (GPU) have no value at all.
+ *   Those rows are `role="group"` with the same name, value, scope and age as visible text.
+ *
  * The strip renders inside the shell's `<section aria-label="Device resources">`, so it adds
  * no landmark of its own. The shell lays that region out in normal flow below the main
- * content, which is what keeps content, composers and dialogs from covering it.
+ * content at every width (it is never sticky, so an open strip cannot cover content on a
+ * narrow window), which is what keeps content, composers and dialogs from covering it.
  */
 
 type MeterKey = "cpu" | "memory" | "gpu" | "disk";

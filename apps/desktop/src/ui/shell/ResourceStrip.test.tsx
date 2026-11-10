@@ -86,6 +86,16 @@ describe("ResourceStrip with D13 fixtures", () => {
     expect(within(memory).queryByRole("meter")).toBeNull();
   });
 
+  it("keeps memory a named group (no invented range) that still carries value, unit, scope and age as text", async () => {
+    renderStrip(fixtureServices());
+    const memory = await screen.findByRole("group", { name: "Memory capacity used" });
+    expect(memory).not.toHaveAttribute("role", "meter");
+    expect(memory).not.toHaveAttribute("aria-valuenow");
+    expect(memory).not.toHaveAttribute("aria-valuemax");
+    expect(memory).toHaveTextContent(/18\.5 GiB/);
+    expect(memory).toHaveTextContent(/Scope: Memory in use · observed \d+ s ago/);
+  });
+
   it("shows GPU as unsupported text, not as zero or a healthy meter", async () => {
     renderStrip(fixtureServices());
     const gpu = await screen.findByRole("group", { name: "GPU utilization" });
