@@ -1,0 +1,10 @@
+   Compiling orchestrator-daemon v0.1.0 (Z:\201cf599\src\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.60s
+     Running tests\conversations.rs (Z:\201cf599\tg\debug\deps\conversations-bfea0d0cab69823e.exe)
+
+running 2 tests
+test conversation_methods_require_the_coordinator_capability ... ok
+test transcript_fails_closed_survives_restart_and_grants_no_authority ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+

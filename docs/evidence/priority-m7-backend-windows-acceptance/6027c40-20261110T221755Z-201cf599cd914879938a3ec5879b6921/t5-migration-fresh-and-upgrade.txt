@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src\lib.rs (Z:\201cf599\tg\debug\deps\orchestrator_store-83d5b0eb7428294f.exe)
+
+running 2 tests
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test sqlite_workstreams::tests::existing_data_directory_migrates_without_loss ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.16s
+

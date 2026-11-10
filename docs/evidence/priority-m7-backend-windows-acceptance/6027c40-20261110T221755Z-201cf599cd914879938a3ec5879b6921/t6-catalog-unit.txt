@@ -1,0 +1,20 @@
+   Compiling orchestrator-agents v0.1.0 (Z:\201cf599\src\crates\orchestrator-agents)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.65s
+     Running unittests src\lib.rs (Z:\201cf599\tg\debug\deps\orchestrator_agents-f684518e90b8cb36.exe)
+
+running 12 tests
+test catalog::tests::claude_effort_parser_rejects_unsafe_levels ... ok
+test catalog::tests::claude_reports_efforts_but_cannot_enumerate_models ... ok
+test catalog::tests::codex_states_never_turn_unreadable_into_empty ... ok
+test catalog::tests::codex_without_credentials_offers_nothing ... ok
+test catalog::tests::claude_states_follow_login_and_help ... ok
+test catalog::tests::only_a_catalog_with_every_facet_known_is_definitive ... ok
+test catalog::tests::codex_models_keep_only_listed_safe_unique_entries ... ok
+test catalog::tests::selection_args_build_exact_vectors ... ok
+test catalog::tests::validation_matrix_for_claude ... ok
+test catalog::tests::catalog_serializes_snake_case_states ... ok
+test catalog::tests::validation_refuses_every_unestablished_state ... ok
+test catalog::tests::validation_matrix_for_codex ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.00s
+

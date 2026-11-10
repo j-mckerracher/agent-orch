@@ -1,0 +1,27 @@
+   Compiling orchestrator-daemon v0.1.0 (Z:\201cf599\src\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.63s
+     Running unittests src\main.rs (Z:\201cf599\tg\debug\deps\orchestrator_daemon-ee0161e6afb8def3.exe)
+
+running 19 tests
+test api::queue_tests::consistent_reading_reads_once_when_the_journal_is_still ... ok
+test api::queue_tests::consistent_reading_retries_a_moving_journal_and_keeps_the_settled_reading ... ok
+test api::queue_tests::consistent_reading_gives_up_after_its_attempts_with_the_last_reading ... ok
+test api::queue_tests::limits_are_reported_in_their_own_wire_fields ... ok
+test api::queue_tests::created_tasks_are_not_part_of_the_queue ... ok
+test api::queue_tests::queue_snapshot_is_advertised_as_a_capability ... ok
+test api::queue_tests::queue_snapshot_rejects_params ... ok
+test api::queue_tests::empty_daemon_reports_limits_and_nothing_else ... ok
+test api::queue_tests::restart_gate_marks_startable_tasks_as_blocked ... ok
+test api::queue_tests::dependency_blocked_task_names_its_dependency_and_has_no_position ... ok
+test api::queue_tests::fairness_cursor_moves_the_up_next_order_past_the_last_started_project ... ok
+test api::queue_tests::global_cap_blocks_queued_tasks_behind_a_full_worker_pool ... ok
+test api::queue_tests::a_retried_task_is_judged_by_its_newest_workspace ... ok
+test api::queue_tests::project_cap_blocks_only_the_full_project ... ok
+test api::queue_tests::running_and_queued_are_sorted_whatever_order_the_records_arrive_in ... ok
+test api::queue_tests::snapshot_agrees_with_tasks_list_at_its_sequence ... ok
+test api::queue_tests::up_next_order_round_robins_across_projects ... ok
+test api::queue_tests::withheld_start_authorization_waits_for_approval ... ok
+test api::queue_tests::verifying_tasks_are_in_neither_list_and_hold_no_capacity ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.51s
+

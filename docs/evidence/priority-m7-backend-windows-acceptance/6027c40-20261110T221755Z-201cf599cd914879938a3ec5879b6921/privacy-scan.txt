@@ -1,0 +1,4 @@
+# Privacy review of the published copy (file:line:kind, never the value)
+line-level replacements: 0
+private values remaining after redaction: 0
+# publication notes

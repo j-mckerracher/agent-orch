@@ -1,0 +1,21 @@
+   Compiling orchestrator-core v0.1.0 (Z:\201cf599\src\crates\orchestrator-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.38s
+     Running unittests src\lib.rs (Z:\201cf599\tg\debug\deps\orchestrator_core-f400a1dd9ea8d41c.exe)
+
+running 13 tests
+test workstream::tests::archived_workstream_rejects_every_update ... ok
+test workstream::tests::blank_and_oversized_fields_are_rejected ... ok
+test workstream::tests::failed_update_leaves_original_unchanged ... ok
+test workstream::tests::gate_json_rejects_unknown_fields ... ok
+test workstream::tests::gate_state_change_records_and_clears_evidence ... ok
+test workstream::tests::revision_appends_gates_and_cannot_duplicate_existing ... ok
+test workstream::tests::tags_round_trip ... ok
+test workstream::tests::update_bumps_revision_by_one_and_applies_fields ... ok
+test workstream::tests::workstream_transition_table_is_exhaustive ... ok
+test workstream::tests::gate_state_rejects_unknown_same_state_and_pending_evidence ... ok
+test workstream::tests::gate_transition_table_is_exhaustive ... ok
+test workstream::tests::new_workstream_is_active_at_initial_revision ... ok
+test workstream::tests::objective_rejects_duplicate_gate_ids_and_overflow ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 45 filtered out; finished in 0.04s
+

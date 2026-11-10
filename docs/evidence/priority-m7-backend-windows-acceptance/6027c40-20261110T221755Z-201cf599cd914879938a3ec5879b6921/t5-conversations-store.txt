@@ -1,0 +1,19 @@
+   Compiling orchestrator-store v0.1.0 (Z:\201cf599\src\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.10s
+     Running tests\conversations.rs (Z:\201cf599\tg\debug\deps\conversations-593f99e601899229.exe)
+
+running 11 tests
+test a_second_message_is_refused_while_a_turn_runs ... ok
+test repeating_a_turn_id_returns_the_stored_turn_without_new_entries ... ok
+test failures_carry_a_bounded_code_and_a_new_message_can_follow ... ok
+test an_unused_target_reads_as_an_empty_transcript ... ok
+test the_first_terminal_state_wins_and_late_output_is_refused ... ok
+test targets_are_independent_conversations ... ok
+test the_transcript_is_append_only_at_the_database_level ... ok
+test messages_and_replies_are_ordered_and_correlated_by_turn ... ok
+test replay_returns_only_entries_after_the_cursor_and_survives_reopen ... ok
+test restart_fails_open_turns_and_keeps_the_transcript ... ok
+test input_and_reply_bounds_are_enforced ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+

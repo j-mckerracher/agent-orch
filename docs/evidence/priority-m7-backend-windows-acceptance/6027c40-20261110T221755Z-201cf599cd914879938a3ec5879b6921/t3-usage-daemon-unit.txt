@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running unittests src\main.rs (Z:\201cf599\tg\debug\deps\orchestrator_daemon-ee0161e6afb8def3.exe)
+
+running 9 tests
+test api::usage::tests::local_midnight_boundaries_follow_the_offset ... ok
+test api::usage::tests::nanos_format_as_trimmed_decimals ... ok
+test api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals ... ok
+test api::usage_tests::bad_parameters_are_rejected ... ok
+test api::usage_tests::the_exact_utc_offset_limits_are_accepted ... ok
+test api::usage_tests::usage_summary_is_dispatched_by_method_name ... ok
+test api::usage_tests::estimated_figures_stay_apart_from_reported_ones ... ok
+test api::usage_tests::local_midnight_boundary_decides_the_day ... ok
+test api::usage_tests::silent_provider_is_unknown_and_never_zero ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.24s
+

@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running unittests src\lib.rs (Z:\201cf599\tg\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+
+running 4 tests
+test workstreams_tests::workstreams_capability_is_named_and_round_trips ... ok
+test workstreams_tests::wrapper_sends_workstream_methods_with_the_capability ... ok
+test workstreams_tests::a_handler_without_workstreams_never_negotiates_it ... ok
+test workstreams_tests::every_workstream_method_is_gated_by_the_negotiated_capability ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.19s
+

@@ -1,0 +1,11 @@
+@echo off
+echo %*>>"Z:\201cf599\sa\calls.%1"
+if "%1"=="login" goto login
+if "%1"=="debug" goto debug
+exit /b 9
+:login
+echo Logged in
+exit /b 0
+:debug
+type "Z:\201cf599\sa\models.json"
+exit /b 0

@@ -1,0 +1,17 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
+     Running unittests src\main.rs (Z:\201cf599\tg\debug\deps\orchestrator_daemon-ee0161e6afb8def3.exe)
+
+running 10 tests
+test api::workstreams_tests::create_get_list_and_update_round_trip ... ok
+test api::workstreams_tests::capability_is_advertised ... ok
+test api::workstreams_tests::stale_revision_is_a_conflict_and_writes_nothing ... ok
+test api::workstreams_tests::invalid_parameters_are_rejected ... ok
+test api::workstreams_tests::idempotent_replay_returns_the_same_result ... ok
+test api::workstreams_tests::unknown_records_are_not_found ... ok
+test api::workstreams_tests::archived_is_terminal_and_illegal_transitions_conflict ... ok
+test api::workstreams_tests::task_submission_is_unchanged_by_the_workstream_model ... ok
+test api::workstreams_tests::linking_leaves_tasks_untouched_and_spans_projects ... ok
+test api::workstreams_tests::objectives_gates_and_evidence_flow ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 89 filtered out; finished in 0.43s
+

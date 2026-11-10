@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "sample_interval_ms": 500,
+  "meters": [
+    {
+      "meter": "cpu",
+      "state": "ok",
+      "kind": "utilization",
+      "unit": "percent",
+      "scope": "all logical CPUs",
+      "value": 60.3204460144043,
+      "total": null,
+      "observed_at": "2026-11-10T22:38:07.328Z",
+      "sample_interval_ms": 500,
+      "reason": null
+    },
+    {
+      "meter": "memory",
+      "state": "ok",
+      "kind": "capacity",
+      "unit": "bytes",
+      "scope": "physical memory",
+      "value": 20690268160.0,
+      "total": 34029125632.0,
+      "observed_at": "2026-11-10T22:38:07.328Z",
+      "sample_interval_ms": 500,
+      "reason": null
+    },
+    {
+      "meter": "disk",
+      "state": "ok",
+      "kind": "capacity",
+      "unit": "bytes",
+      "scope": "C:\\",
+      "value": 968963497984.0,
+      "total": 1013309239296.0,
+      "observed_at": "2026-11-10T22:38:07.328Z",
+      "sample_interval_ms": 500,
+      "reason": null
+    },
+    {
+      "meter": "gpu",
+      "state": "unsupported",
+      "kind": "utilization",
+      "unit": "percent",
+      "scope": null,
+      "value": null,
+      "total": null,
+      "observed_at": "2026-11-10T22:38:07.328Z",
+      "sample_interval_ms": 500,
+      "reason": "no vetted GPU utilization source for this platform"
+    }
+  ]
+}

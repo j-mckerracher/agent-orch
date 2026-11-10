@@ -1,0 +1,23 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s
+     Running unittests src\main.rs (Z:\201cf599\tg\debug\deps\orchestrator_daemon-ee0161e6afb8def3.exe)
+
+running 16 tests
+test api::conversations::tests::an_unused_conversation_reads_as_empty_not_as_an_error ... ok
+test api::conversations::tests::malformed_requests_are_rejected_without_side_effects ... ok
+test api::conversations::tests::a_retried_send_returns_the_first_result_and_runs_once ... ok
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+test api::conversations::tests::cancel_is_scoped_to_its_conversation_and_turn ... ok
+test api::conversations::tests::a_large_delta_is_split_without_breaking_characters ... ok
+test api::conversations::tests::a_reply_streams_in_order_and_is_correlated_with_its_message ... ok
+test api::conversations::tests::a_reply_over_the_turn_bound_fails_the_turn_and_stops_the_runtime ... ok
+test api::conversations::tests::a_running_turn_blocks_the_next_message_until_it_ends ... ok
+test api::conversations::tests::cancel_closes_the_turn_stops_the_runtime_and_discards_late_output ... ok
+test api::conversations::tests::a_runtime_that_does_not_match_its_pin_never_sees_the_message ... ok
+test api::conversations::tests::the_shipped_default_fails_closed_as_unavailable ... ok
+test api::conversations::tests::restart_keeps_the_transcript_fails_open_turns_and_resumes_replay ... ok
+test api::conversations::tests::workstream_targets_need_a_resolvable_workstream_and_stay_separate ... ok
+test api::conversations::tests::replay_pages_are_bounded_and_cursors_are_checked ... ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 83 filtered out; finished in 0.99s
+

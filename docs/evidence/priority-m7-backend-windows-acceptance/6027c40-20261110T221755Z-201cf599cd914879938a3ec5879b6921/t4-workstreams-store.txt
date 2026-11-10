@@ -1,0 +1,20 @@
+   Compiling orchestrator-store v0.1.0 (Z:\201cf599\src\crates\orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.63s
+     Running tests\workstreams.rs (Z:\201cf599\tg\debug\deps\workstreams-93f4110513b03a6f.exe)
+
+running 12 tests
+test rule_violations_are_rejected_without_a_revision ... ok
+test archived_workstream_is_terminal_and_refuses_new_work ... ok
+test create_get_and_list_round_trip_in_creation_order ... ok
+test linking_derives_projects_and_leaves_the_task_untouched ... ok
+test update_rejects_stale_revision_and_writes_nothing ... ok
+test objectives_revise_append_only_with_stale_rejection ... ok
+test duplicate_and_missing_workstreams_are_typed_errors ... ok
+test every_accepted_change_appends_an_immutable_revision ... ok
+test state_survives_reopening_the_database ... ok
+test gate_state_requires_a_task_linked_to_the_same_workstream ... ok
+test link_is_idempotent_exclusive_and_validated ... ok
+test concurrent_writers_cannot_both_win_the_same_revision ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+

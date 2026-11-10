@@ -1,0 +1,12 @@
+crate                         derived  measured  diff   ignored   failed   macOS
+orchestrator-agents               118       118     0       0/0        0     123
+orchestrator-cli                   81        68   -13       0/0        0     105
+orchestrator-core                  97        97     0       0/0        0      97
+orchestrator-daemon               107       107     0       0/0        0     156
+orchestrator-engine                 0         0     0       0/0        0       0
+orchestrator-git                   87        86    -1       0/0        1      90
+orchestrator-host-metrics          25        25     0       0/0        0      24
+orchestrator-ipc                   55        55     0       0/0        0      55
+orchestrator-runtime               42        42     0       0/0        0      55
+orchestrator-store                135       135     0       1/1        0     137
+TOTAL                             747       733   -14       1/1        1     842

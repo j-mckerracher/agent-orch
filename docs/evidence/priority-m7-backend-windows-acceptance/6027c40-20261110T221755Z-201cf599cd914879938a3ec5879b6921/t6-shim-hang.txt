@@ -1,0 +1,4 @@
+@echo off
+echo %*>>"Z:\201cf599\sb\calls.%1"
+ping -n 27 127.0.0.1 >nul
+exit /b 0
