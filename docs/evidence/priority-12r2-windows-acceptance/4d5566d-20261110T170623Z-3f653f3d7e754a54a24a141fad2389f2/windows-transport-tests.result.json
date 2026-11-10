@@ -1,0 +1,25 @@
+{
+  "name": "windows-transport-tests",
+  "command": "cargo.exe test --locked -p orchestrator-ipc windows_transport",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:12:21.2471665Z",
+  "duration_seconds": 7.784,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\windows-transport-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\windows-transport-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1277,
+  "stdout_sha256": "6021ab59111b5d6a8e252d05b38f8c621cf339c7eb4bc7632e5800b653558948",
+  "stderr_bytes": 239,
+  "stderr_sha256": "22ce1d9c9e7d60291d26664185937d5343d123bf028eb12e3c963d631e0d5c0d",
+  "error": null
+}

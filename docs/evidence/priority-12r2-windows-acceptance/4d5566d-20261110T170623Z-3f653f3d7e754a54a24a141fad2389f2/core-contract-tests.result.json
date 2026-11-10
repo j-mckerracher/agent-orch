@@ -1,0 +1,25 @@
+{
+  "name": "core-contract-tests",
+  "command": "cargo.exe test --locked -p orchestrator-core --lib contract",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:13:31.1083193Z",
+  "duration_seconds": 25.96,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\core-contract-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\core-contract-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1306,
+  "stdout_sha256": "c97e5c14bdc8b2dc62ec8b1498f988df7971d482a1a466b64a8631bb6ecbdfd9",
+  "stderr_bytes": 529,
+  "stderr_sha256": "6b80b9711157288031d4650447616c45e3e9e7a034a63eff0a57ed3f9557fe74",
+  "error": null
+}

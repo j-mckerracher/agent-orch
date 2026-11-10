@@ -1,0 +1,3 @@
+Test Files  15 passed (15)
+Tests  290 passed (290)
+Duration  17.92s (environment 62%, setup 16%, tests 15%, import 3%, transform 3%)

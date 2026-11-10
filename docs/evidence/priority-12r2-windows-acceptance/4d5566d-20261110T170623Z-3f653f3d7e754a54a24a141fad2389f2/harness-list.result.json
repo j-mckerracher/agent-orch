@@ -1,0 +1,25 @@
+{
+  "name": "harness-list",
+  "command": "node.exe scripts/ci/run-gates.mjs --list",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:34:25.5053550Z",
+  "duration_seconds": 0.118,
+  "timeout_seconds": 300,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1047,
+  "stdout_sha256": "a5dd9612e125cb6ccb57e93ca15f3120fefc800e76f53414f64644d39012fe23",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

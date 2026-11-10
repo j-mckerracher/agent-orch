@@ -1,0 +1,25 @@
+{
+  "name": "npm-version",
+  "command": "npm.cmd -v",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:06:39.6453394Z",
+  "duration_seconds": 2.572,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 7,
+  "stdout_sha256": "2f0e8f502b77b05758a5626e8a65322b21ade9f8182be2f0c108b4bcd1124f1c",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

@@ -1,0 +1,2 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.80s
+     Running tests\lifecycle.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\lifecycle-df97ab7e9ecea884.exe)

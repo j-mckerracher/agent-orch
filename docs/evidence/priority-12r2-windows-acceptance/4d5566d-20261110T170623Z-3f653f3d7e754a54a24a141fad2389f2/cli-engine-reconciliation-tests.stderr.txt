@@ -1,0 +1,3 @@
+   Compiling orchestrator-cli v0.1.0 (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\source\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.37s
+     Running tests\engine_reconciliation_gate.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\engine_reconciliation_gate-845d3f92037e6de4.exe)

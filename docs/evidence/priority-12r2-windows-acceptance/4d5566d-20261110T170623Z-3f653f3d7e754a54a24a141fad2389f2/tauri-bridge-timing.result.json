@@ -1,0 +1,25 @@
+{
+  "name": "tauri-bridge-timing",
+  "command": "cargo.exe test --locked bridge::real_tests -- --nocapture --test-threads=1",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source\\apps\\desktop\\src-tauri",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:26:21.2949310Z",
+  "duration_seconds": 58.119,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\tauri-bridge-timing",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\tauri-bridge-timing",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 527,
+  "stdout_sha256": "9e2af5572cdc23ce33a340417116675702804414b6eae3e45e9ebe037aed0257",
+  "stderr_bytes": 2205,
+  "stderr_sha256": "72cc93b3b1dcc02ffb90ed3f1e3887b8987d214445ed05935176e4cc0cb1bfbe",
+  "error": null
+}

@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN by this script (M6-01 R12). A run with a ~65,000-character objective was not submitted on Windows; the app must refuse it before any spawn. Do the by-hand check and record it in manual-p12.txt.

@@ -1,0 +1,2 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\coordinator_review-b5ea58e4bb442c1c.exe)

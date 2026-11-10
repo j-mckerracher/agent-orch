@@ -1,0 +1,13 @@
+
+running 3 tests
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon ... ok
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon ... ok
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 56.61s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

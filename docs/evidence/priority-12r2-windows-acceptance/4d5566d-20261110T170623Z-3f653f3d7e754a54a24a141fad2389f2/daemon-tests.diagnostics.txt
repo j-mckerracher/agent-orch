@@ -1,0 +1,91 @@
+===== daemon-tests.stdout =====
+failed tests (1 in this stream):
+test a_failed_launch_is_explained_in_the_log_without_the_credential ... FAILED
+per-call timing block printed by a failing test (1 in this stream):
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+daemon log block printed by a failing test (1 in this stream):
+--- daemon log tail (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\test-tmp\daemon-tests\aor61ehl\daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"31724","ts":"2026-11-10T17:11:24Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-10T17:11:24Z"}
+{"attempt_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1-attempt-1","component":"executor","event":"task_attempt_failed","level":"error","records_complete":"true","recovery":"worktree kept; retry the task or inspect the worktree","task_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1","ts":"2026-11-10T17:11:27Z","uncommitted_paths":"0","worktree":"C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\d\\worktrees\\task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1"}
+{"agent":"codex","attempt_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1-attempt-1","component":"executor","error":"agent binary not found: C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\token=[REDACTED]","event":"agent_launch_failed","level":"error","task_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1","ts":"2026-11-10T17:11:28Z","uncommitted_paths":"0","worktree":"C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\d\\worktrees\\task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1"}
+--- end daemon log ---
+Last 50 lines of the stream:
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test a_failed_launch_is_explained_in_the_log_without_the_credential ... FAILED
+
+failures:
+
+---- a_failed_launch_is_explained_in_the_log_without_the_credential stdout ----
+
+thread 'a_failed_launch_is_explained_in_the_log_without_the_credential' (47768) panicked at crates\orchestrator-daemon\tests\diagnostics_log.rs:88:43:
+called `Result::unwrap()` on an `Err` value: Frame(Io(BrokenPipe))
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<enum2$<serde_json::value::Value>,enum2$<orchestrator_ipc::IpcError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: diagnostics_log::a_failed_launch_is_explained_in_the_log_without_the_credential
+             at .\tests\diagnostics_log.rs:88
+   5: diagnostics_log::a_failed_launch_is_explained_in_the_log_without_the_credential::closure$0
+             at .\tests\diagnostics_log.rs:64
+   6: core::ops::function::FnOnce::call_once<diagnostics_log::a_failed_launch_is_explained_in_the_log_without_the_credential::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+--- daemon log tail (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\test-tmp\daemon-tests\aor61ehl\daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"31724","ts":"2026-11-10T17:11:24Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-10T17:11:24Z"}
+{"attempt_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1-attempt-1","component":"executor","event":"task_attempt_failed","level":"error","records_complete":"true","recovery":"worktree kept; retry the task or inspect the worktree","task_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1","ts":"2026-11-10T17:11:27Z","uncommitted_paths":"0","worktree":"C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\d\\worktrees\\task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1"}
+{"agent":"codex","attempt_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1-attempt-1","component":"executor","error":"agent binary not found: C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\token=[REDACTED]","event":"agent_launch_failed","level":"error","task_id":"task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1","ts":"2026-11-10T17:11:28Z","uncommitted_paths":"0","worktree":"C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-tests\\aor61ehl\\d\\worktrees\\task-93d8a3995bb1e89a7b589b15b2b44cf3d1e8955e472af52ba9a3e03b5ae124c1"}
+--- end daemon log ---
+
+
+failures:
+    a_failed_launch_is_explained_in_the_log_without_the_credential
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.85s
+
+
+===== daemon-tests.stderr =====
+NO diagnostics marker, no per-call timing, no bridge-test line, no request trace and no daemon log block found. Last 200 lines of the stream:
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\source\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.33s
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\orchestrator_daemon-e34c539026ecf227.exe)
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-10T17:10:30Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T17:10:43Z"}
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-10T17:10:43Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-10T17:10:43Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T17:10:45Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T17:10:48Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-10T17:10:48Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-10T17:10:48Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-10T17:10:49Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-10T17:10:49Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-10T17:10:49Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-10T17:10:50Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T17:10:51Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-10T17:10:51Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-10T17:10:51Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-10T17:10:53Z"}
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\coordinator_review-b5ea58e4bb442c1c.exe)
+     Running tests\daemon.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\daemon-dfe7eb75e3bb0fd4.exe)
+     Running tests\diagnostics_log.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\diagnostics_log-4ea62be8b7680d03.exe)
+error: test failed, to rerun pass `-p orchestrator-daemon --test diagnostics_log`
+

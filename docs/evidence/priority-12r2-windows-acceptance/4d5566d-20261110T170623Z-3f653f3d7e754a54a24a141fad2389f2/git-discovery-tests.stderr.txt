@@ -1,0 +1,5 @@
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-git v0.1.0 (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\source\crates\orchestrator-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.76s
+     Running tests\repository_discovery.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\repository_discovery-d74da2506451bfa3.exe)

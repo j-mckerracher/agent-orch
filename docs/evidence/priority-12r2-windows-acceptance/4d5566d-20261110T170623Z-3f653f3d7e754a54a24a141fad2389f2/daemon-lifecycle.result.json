@@ -1,0 +1,25 @@
+{
+  "name": "daemon-lifecycle",
+  "command": "cargo.exe test --locked -p orchestrator-daemon --test lifecycle -- --nocapture",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:11:29.2166509Z",
+  "duration_seconds": 33.307,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-lifecycle",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\daemon-lifecycle",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 874,
+  "stdout_sha256": "a54590dcd2f1ebcb748e66b2f172bfe275ccabd041009b92b3c94ee7a6ca9cac",
+  "stderr_bytes": 231,
+  "stderr_sha256": "6588380c8d68acf94eb9d349682d6379864515fdee2b03024b87b1f4687bddaf",
+  "error": null
+}

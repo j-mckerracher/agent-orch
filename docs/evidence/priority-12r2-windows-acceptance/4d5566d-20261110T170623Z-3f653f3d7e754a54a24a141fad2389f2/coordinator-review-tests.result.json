@@ -1,0 +1,25 @@
+{
+  "name": "coordinator-review-tests",
+  "command": "cargo.exe test --locked -p orchestrator-daemon --test coordinator_review",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:12:03.4055173Z",
+  "duration_seconds": 16.408,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\coordinator-review-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\coordinator-review-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 434,
+  "stdout_sha256": "d62bce6cb7654ec460253d1231bbaf57d7ab338b5f297ea8fec9e02841cc2e5d",
+  "stderr_bytes": 248,
+  "stderr_sha256": "cefcf906381abedd68995ffb7042f61a6b2b1f21f33465b01778b62405914d6c",
+  "error": null
+}

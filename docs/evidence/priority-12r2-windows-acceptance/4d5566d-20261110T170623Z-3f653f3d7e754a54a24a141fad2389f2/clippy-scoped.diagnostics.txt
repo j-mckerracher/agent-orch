@@ -1,0 +1,3 @@
+BASELINE warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let` @ crates\orchestrator-runtime\src\supervisor.rs:414:9
+BASELINE warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let` @ crates\orchestrator-runtime\src\supervisor.rs:437:9
+RECONCILIATION (report only): summary lines declare 2 warning(s) in total; 2 distinct warning diagnostic(s) were classified; 2 baseline; 0 new.

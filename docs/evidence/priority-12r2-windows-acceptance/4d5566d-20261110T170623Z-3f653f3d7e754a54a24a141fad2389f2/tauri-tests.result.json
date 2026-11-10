@@ -1,0 +1,25 @@
+{
+  "name": "tauri-tests",
+  "command": "cargo.exe test --locked",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source\\apps\\desktop\\src-tauri",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:23:12.6198118Z",
+  "duration_seconds": 187.868,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\tauri-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\tauri-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1921,
+  "stdout_sha256": "ffb874aeec7b8528eb638157f8e7e91ea1445fd3b7c388423a810ccca92cede7",
+  "stderr_bytes": 887,
+  "stderr_sha256": "3f6b9c16a5b8b79b2d8c3899d6ac9cde76e4c7ce0e351bbaab343e5ba21d65b8",
+  "error": null
+}

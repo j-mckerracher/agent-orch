@@ -1,0 +1,13 @@
+
+ RUN  v5.1.0 C:/Users/<user>/AppData/Local/Temp/ao12-20261110T170623Z-3f653f3d/source/apps/desktop
+
+
+ Test Files  15 passed (15)
+      Tests  290 passed (290)
+   Start at  10:20:08
+   Duration  17.92s (environment 62%, setup 16%, tests 15%, import 3%, transform 3%)
+
+Environment  jsdom was created 15 times · 87.93s total, 62% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: <url-redacted>
+

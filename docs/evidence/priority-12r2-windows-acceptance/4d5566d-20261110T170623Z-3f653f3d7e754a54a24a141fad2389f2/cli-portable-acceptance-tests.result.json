@@ -1,0 +1,25 @@
+{
+  "name": "cli-portable-acceptance-tests",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test portable_acceptance",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:16:28.5113580Z",
+  "duration_seconds": 57.03,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\cli-portable-acceptance-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\cli-portable-acceptance-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 234,
+  "stdout_sha256": "6e75dd753b994f5ee24ab37781a3ff32fd5097ee56c1bac40578361b94db8d34",
+  "stderr_bytes": 2040,
+  "stderr_sha256": "4d32bf5056ff3fe9f15c9b98d2e6acadad4ff0976081c6357f686ac75dd08077",
+  "error": null
+}

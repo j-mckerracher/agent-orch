@@ -1,0 +1,25 @@
+{
+  "name": "cli-cleanup-safety-tests",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test cleanup_safety",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\source",
+  "source_commit": "4d5566d7cb07f38476d3d7e8334c12947a9bad49",
+  "started_utc": "2026-11-10T17:17:26.2906340Z",
+  "duration_seconds": 14.707,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\cli-cleanup-safety-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\test-tmp\\cli-cleanup-safety-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T170623Z-3f653f3d\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 339,
+  "stdout_sha256": "9ef525f1fe4638202a00bf48b4ca2d018f55eeeffbac918bcd11bb04fe964012",
+  "stderr_bytes": 378,
+  "stderr_sha256": "f2f781d7bfe2a8a77404f8f8156a81677e20aaa45b03dccc9ce29594d00b0587",
+  "error": null
+}

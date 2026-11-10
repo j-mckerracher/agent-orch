@@ -1,0 +1,8 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling syn v3.0.9
+   Compiling serde_derive v1.0.229
+   Compiling serde v1.0.229
+   Compiling orchestrator-core v0.1.0 (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\source\crates\orchestrator-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.44s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T170623Z-3f653f3d\cargo-target\debug\deps\orchestrator_core-f400a1dd9ea8d41c.exe)

@@ -1,0 +1,9 @@
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.38s
+
