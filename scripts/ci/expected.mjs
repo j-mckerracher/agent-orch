@@ -11,7 +11,7 @@ export const WINDOWS = {
   ipc: { passed: 46, sequence: [46, 0] },
   daemon: { passed: 55, sequence: [50, 4, 0, 1] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  windowsTransport: { passed: 13, sequence: [13], filteredOut: 32 },
+  windowsTransport: { passed: 13, sequence: [13], filteredOut: 33 },
   tauri: { passed: 12, sequence: [12, 0, 0] },
 };
 
