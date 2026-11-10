@@ -171,15 +171,45 @@
   outline: none;
 }
 
+/* Placeholder text uses the readable secondary token (Chrome's default grey fails 4.5:1 on the dark panel). */
+.ws-composer textarea::placeholder,
+.ws-popover input[type="search"]::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
+
+/* One row at every width: the chips shrink and truncate instead of wrapping the send button away. */
 .ws-composer-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
 }
 
-.ws-composer-row .ws-popover-root:nth-child(2) {
+.ws-composer-row .ws-popover-root {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.ws-composer-row .ws-model-root {
   margin-left: auto;
+}
+
+.ws-composer-row .ws-chip-button {
+  max-width: 100%;
+}
+
+.ws-chip-button > span:first-child,
+.ws-chip-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-target-note {
+  color: var(--subtle);
+  font-size: 12px;
 }
 
 .ws-composer .ws-send {
@@ -305,20 +335,10 @@
   outline-offset: 2px;
 }
 
-/* The shell reserves the activity column from 961px and stacks it below; keep the composer usable when stacked. */
+/* The shell stacks the activity column below 961px; tighten the top padding when stacked. */
 @media (max-width: 960px) {
   .ws-conversation {
     padding-top: 12px;
-  }
-
-  .ws-composer-row .ws-popover-root:nth-child(2) {
-    margin-left: 0;
-  }
-
-  .ws-popover,
-  .ws-model-panel {
-    right: auto;
-    left: 0;
   }
 }
 

@@ -21,7 +21,9 @@ const GLOBAL_OPTION: TargetOption = {
 const GLOBAL_LIVE_REASON =
   "The daemon has a coordinator for each project and no Global orchestrator, so nothing typed here can be sent.";
 const NOTE_COPY =
-  "A message is recorded as a note for the coordinator. It does not create tasks or approvals, and it can be neither approved nor undone from here.";
+  "Notes only, no reply: a message is recorded as a note for the coordinator, which does not respond. It does not create tasks or approvals, and it can be neither approved nor undone from here.";
+const SIMULATED_COPY = "Nothing typed here is sent or recorded anywhere; a send is only simulated in this window.";
+const GLOBAL_NOTE_COPY = "The Global orchestrator is placeholder data; nothing typed here is recorded.";
 
 interface SimulatedEntry {
   id: string;
@@ -129,7 +131,7 @@ interface ConversationProps {
 }
 
 function Conversation({ option, options, live, draft, simulated, onSelect, onDraft, onSimulated }: ConversationProps) {
-  const { surfaces } = useServices();
+  const { surfaces, drafts } = useServices();
   const gate = useGate();
   const ids = useId();
   const [nonce, setNonce] = useState(0);
@@ -164,18 +166,20 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
   const send = async () => {
     if (!canSend) return;
     const key = option.key;
+    const sent = draft;
     setBusy(true);
     setFeedback(null);
     try {
-      const receipt = await surfaces.conversation.send(target, draft);
+      const receipt = await surfaces.conversation.send(target, sent);
       if (receipt.simulated) {
-        onSimulated({ id: receipt.entryId, text: draft, at: receipt.at });
+        onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
       } else {
         setFeedback({ key, notice: receipt.notice, error: null });
         setNonce((value) => value + 1);
       }
-      onDraft("");
+      // Keep anything typed while the send was in flight.
+      if (drafts.workspaceDraft(key) === sent) onDraft("");
     } catch (thrown) {
       setFeedback({ key, notice: null, error: asDaemonError(thrown) });
     } finally {
@@ -196,6 +200,8 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
 
   const headingId = `${ids}-heading`;
   const hintId = `${ids}-hint`;
+  const keysId = `${ids}-keys`;
+  const noteCopy = target.kind === "global" ? GLOBAL_NOTE_COPY : live ? NOTE_COPY : SIMULATED_COPY;
   const sendId = `${ids}-send-reason`;
   const modelCatalog = useSurface(
     () => surfaces.models.catalog(),
@@ -208,6 +214,7 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
       <header className="ws-head">
         <h2 id={headingId}>Talking to: {option.label}</h2>
         {(target.kind === "global" || !live) && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
+        {target.kind === "project" && <Badge tone="neutral">Notes, no reply</Badge>}
         <p className="ws-scope">{option.scope}</p>
       </header>
 
@@ -227,7 +234,7 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
       </div>
 
       <p className="ws-small" id={hintId}>
-        {NOTE_COPY}
+        {noteCopy}
       </p>
       {target.kind === "project" && (
         <div className="ws-chips">
@@ -254,8 +261,8 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
           id={`${ids}-draft`}
           rows={3}
           value={draft}
-          placeholder={`Message ${option.label}. Press Ctrl or Cmd + Enter to send.`}
-          aria-describedby={`${hintId}${blocked ? ` ${sendId}` : ""}`}
+          placeholder={`Message ${option.label}`}
+          aria-describedby={`${hintId} ${keysId}${blocked ? ` ${sendId}` : ""}`}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
@@ -273,6 +280,9 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
             {busy ? "…" : "↑"}
           </Button>
         </div>
+        <p id={keysId} className="ws-small">
+          Press Ctrl or Cmd + Enter to send.
+        </p>
         {blocked && (
           <p id={sendId} className="ws-small ws-blocked">
             Sending is disabled. {blocked}

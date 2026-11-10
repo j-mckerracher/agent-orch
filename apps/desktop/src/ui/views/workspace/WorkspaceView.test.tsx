@@ -157,6 +157,28 @@ describe("workspace view, live (daemon-derived) mode", () => {
     for (const name of ["Provider", "Model", "Effort"]) expect(screen.getByRole("combobox", { name })).toBeDisabled();
     expect(screen.getByText(/cannot be chosen/)).toBeInTheDocument();
     expect(screen.queryByText(/Codex \(placeholder\)/)).toBeNull();
+    expect(screen.getByText("PLACEHOLDER DATA (D14), unsupported")).toBeInTheDocument();
+  });
+
+  it("labels project targets 'notes, no reply' in the header, the picker and the note copy", async () => {
+    const services = track(build({ fake: liveDaemon() }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const heading = await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
+    expect(within(heading.parentElement as HTMLElement).getByText("Notes, no reply")).toBeInTheDocument();
+    expect(screen.getByText(/Notes only, no reply/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
+    expect(screen.getAllByText(/notes, no reply/).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the send hint in persistent text, not in the placeholder", async () => {
+    const fake = liveDaemon();
+    const services = track(build({ fake }));
+    const { user: _user } = await mountView(services, false);
+    await waitLive(services);
+    const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
+    expect(box.getAttribute("placeholder")).toBe("Message alpha coordinator");
+    expect(screen.getByText("Press Ctrl or Cmd + Enter to send.")).toBeInTheDocument();
   });
 
   it("shows an unavailable transcript with Retry", async () => {

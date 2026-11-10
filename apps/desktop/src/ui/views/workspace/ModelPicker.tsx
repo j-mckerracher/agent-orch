@@ -39,6 +39,8 @@ export function ModelPicker({ catalog, provenance }: { catalog: SurfaceState<Mod
   const lock = live || provider === undefined;
   const note = live ? LIVE_REASON : FIXTURE_NOTE;
   const noteId = `${ids}-note`;
+  const triggerBadge = "PLACEHOLDER (D14)";
+  const panelBadge = live ? "PLACEHOLDER DATA (D14), unsupported" : "PLACEHOLDER DATA (D14)";
 
   let unavailable: string | null = null;
   if (catalog.status === "loading") unavailable = "Loading the model catalog…";
@@ -46,24 +48,28 @@ export function ModelPicker({ catalog, provenance }: { catalog: SurfaceState<Mod
   else if (providers.length === 0) unavailable = "No providers are reported.";
 
   return (
-    <div ref={popover.rootRef} className="ws-popover-root" onKeyDown={popover.onKeyDown} onBlur={popover.onBlur}>
+    <div
+      ref={popover.rootRef}
+      className="ws-popover-root ws-model-root"
+      onKeyDown={popover.onKeyDown}
+      onBlur={popover.onBlur}
+    >
       <button
         ref={popover.buttonRef}
         type="button"
         className="ws-chip-button"
         aria-expanded={popover.open}
         aria-controls={`${ids}-menu`}
-        aria-label={`Model settings: ${summary}`}
+        aria-label={`Model settings: ${summary}${catalog.status === "ok" ? `. ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
         <span>{summary}</span>
-        {!live && catalog.status === "ok" && <Badge tone="placeholder">PLACEHOLDER (D14)</Badge>}
+        {catalog.status === "ok" && <Badge tone="placeholder">{triggerBadge}</Badge>}
         <span aria-hidden="true">⌄</span>
       </button>
       <div id={`${ids}-menu`} className="ws-popover ws-model-panel" hidden={!popover.open}>
         <p className="ws-menu-title">
-          Conversation settings{" "}
-          {live ? <Badge tone="neutral">Not configurable</Badge> : <Badge tone="placeholder">PLACEHOLDER DATA (D14)</Badge>}
+          Conversation settings <Badge tone="placeholder">{panelBadge}</Badge>
         </p>
         {unavailable && <p role="status">{unavailable}</p>}
         <label className="ws-field">
