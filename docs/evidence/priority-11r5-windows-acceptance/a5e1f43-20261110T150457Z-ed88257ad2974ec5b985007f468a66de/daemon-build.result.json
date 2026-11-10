@@ -1,0 +1,25 @@
+{
+  "name": "daemon-build",
+  "command": "cargo.exe build --locked -p orchestrator-daemon",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r5-20261110T150457Z-ed88257a\\source",
+  "source_commit": "a5e1f43b9516b172247197c6c126acbc6aaf8d54",
+  "started_utc": "2026-11-10T15:05:08.8769889Z",
+  "duration_seconds": 74.579,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r5-20261110T150457Z-ed88257a\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 4904,
+  "stderr_sha256": "1c5e25ef494f9a9c5708f45e8282a2f937b026a87795878bf12c298164e92f6b",
+  "error": null
+}

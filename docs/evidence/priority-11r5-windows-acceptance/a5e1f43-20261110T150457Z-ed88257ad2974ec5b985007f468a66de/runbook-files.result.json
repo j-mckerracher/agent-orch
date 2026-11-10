@@ -1,0 +1,25 @@
+{
+  "name": "runbook-files",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r5-20261110T150457Z-ed88257a\\source diff --name-only a5e1f43b9516b172247197c6c126acbc6aaf8d54 867788c30c0639e78c920ca2ba06d5d814a0a4fc",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r5-20261110T150457Z-ed88257a",
+  "source_commit": "a5e1f43b9516b172247197c6c126acbc6aaf8d54",
+  "started_utc": "2026-11-10T15:05:01.4934285Z",
+  "duration_seconds": 0.098,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r5-20261110T150457Z-ed88257a\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 66,
+  "stdout_sha256": "cd5901bca3ba67fde30c90d5df77f7fb7530c2449be41510a0a4d4d8c236edd9",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

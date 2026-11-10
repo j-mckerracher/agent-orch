@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN. The webview and the React click path were not driven: no window, no webview, no daemon_open, daemon_send or daemon_close call as the webview makes it, and nobody clicked through the approval flow. The bridge::real_tests drive the Rust Bridge directly, with no window.
