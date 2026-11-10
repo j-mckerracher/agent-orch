@@ -1,0 +1,25 @@
+Priority 12 by-hand observations
+Run ID: 20261110T170623Z-3f653f3d7e754a54a24a141fad2389f2
+Recorded after the automated result was first published; no automated gate was rerun.
+
+1. Data-directory ACL (only current user)
+Status: FINDING
+Commands: orchestrator-daemon.exe --data-dir <run-root>\manual-acl-data; icacls <run-root>; icacls <run-root>\manual-acl-data; icacls <run-root>\manual-acl-data\store.sqlite; icacls <run-root>\manual-acl-data\daemon.token; icacls <run-root>\manual-acl-data\daemon.log
+Observed: direct SecurityIdentifier inspection found one non-inherited allow ACE for the current user SID on the data directory ((OI)(CI)(F)), store.sqlite ((F)) and daemon.token ((F)); no extra ACEs on those three paths. The parent ACL contained inherited sandbox-group, SYSTEM, Administrators and current-user entries. daemon.log was absent when inspected after daemon.token appeared, so its ACL is unknown. icacls printed the account name but this host could not translate it to a SID; direct SID inspection was used. No ACL was changed. The daemon process started for this check was stopped after verifying its executable path.
+
+2. Redacted launch failure
+Status: PASS
+Commands: write a daemon.log line containing a fake secret marker (literal omitted); set AGENT_ORCH_DAEMON_BIN=<run-root>\manual-launch\exit3.exe and AGENT_ORCH_DATA_DIR=<run-root>\manual-launch-data; run the debug agent-orch-desktop.exe produced by tauri-build.
+Observed: the visible window reported exit code 3 and showed the planted daemon.log tail in its launch-detail block. The fake value appeared redacted; it was not visible. The window was closed. No real credential was used.
+
+3. Approximately 65,000-character objective refusal before spawn
+Status: FINDING
+Commands: orchestrator-cli.exe run --help; initialize a throwaway Git repository with branch main; build orchestrator-cli from the pinned source; generate an approximately 65,000-character repeated-word objective in memory and invoke orchestrator-cli.exe --data-dir <data-dir> run --repo <repo> --objective <generated text> using ProcessStartInfo.ArgumentList. The objective value was not written to disk or this file.
+Observed: help confirmed --objective is a process argument and exposed no objective-file option. Windows rejected process creation before the CLI started: "The filename or extension is too long." No CLI error naming CommandLineTooLong, program, objective length, limit or longest argument was produced, so the application guard was not exercised. The new data directory remained empty; no record or child agent was created. This is a finding/unverified CLI behavior, not a pass. The runtime unit test for the same guard is recorded under check 4.
+
+4. Private-fs and command-line unit tests (not gates)
+Status: FINDING for the documented combined command's expected private-fs count; all intended suites were also measured separately.
+Command: cargo test --locked -p orchestrator-private-fs -p orchestrator-runtime command_line
+Observed: exit 0; orchestrator-private-fs ran 0 tests and filtered 9 (the command_line filter applied to both packages); orchestrator-runtime ran 8 tests and all 8 passed, including the 65,000-character Windows refusal and no-process-start test.
+Supplemental command: cargo test --locked -p orchestrator-private-fs
+Observed: exit 0; all 9 private-fs tests passed (9 passed, 0 failed). Counts are reported as printed; no count was adjusted.

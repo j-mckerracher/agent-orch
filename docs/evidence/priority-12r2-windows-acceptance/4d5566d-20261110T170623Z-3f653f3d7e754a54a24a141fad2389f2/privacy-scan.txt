@@ -1,4 +1,5 @@
-# Privacy gate report. Redact and continue; this gate never blocks publication.
+# Privacy scan for the supplemental manual-p12.txt. Redact and continue.
 patterns: github-token, private-key, aws-access-key, slack-token, bearer-token, personal-email
 redacted hits: 0 (file:line pattern, never the value)
 # publication notes
+manual-p12.txt was recorded after the initial automated report; no automated gate was rerun.
