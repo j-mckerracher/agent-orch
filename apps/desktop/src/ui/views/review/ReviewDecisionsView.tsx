@@ -7,10 +7,12 @@
 // D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon.
 import { useMemo } from "react";
 import type { ReviewClient } from "../../../review/client";
+import { evidenceBlockers, type ActionContext } from "../../../review/binding";
 import { createReviewClient } from "../../../review/client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "../../../review/daemonSources";
 import { createFixtureDaemonClient } from "../../../review/fixtureDaemon";
 import { ReviewScreen, type ReviewEmbedSlots } from "../../../review/ReviewScreen";
+import { createReviewSession, sessionFor } from "../../../review/reviewSession";
 import {
   createFixtureChangeRequestSource,
   createFixtureReviewEvidenceSource,
@@ -29,6 +31,9 @@ import "./review-decisions.css";
 export interface ReviewDecisionsViewProps {
   /** Explicit demo mode (no daemon bridge and `?fixture=1`). Never inferred from a failed request. */
   fixtureMode?: boolean;
+  /** Fixture scenarios (`?evidence=`, `?changes=`); ignored outside fixture mode. */
+  evidenceScenario?: string;
+  changesScenario?: string;
   /** Test seams; the defaults are chosen from the boot mode exactly as the S6 route does. */
   client?: ReviewClient;
   evidenceSource?: ReviewEvidenceSource;
@@ -69,6 +74,8 @@ function ScopeRow() {
 
 export function ReviewDecisionsView({
   fixtureMode = false,
+  evidenceScenario,
+  changesScenario,
   client: clientOverride,
   evidenceSource: evidenceOverride,
   changeRequestSource: changesOverride,
@@ -79,17 +86,26 @@ export function ReviewDecisionsView({
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [clientOverride, fixtureMode, connection],
   );
+  // The session is shared per daemon connection so an approved-but-undelivered candidate
+  // survives leaving and re-entering the view. The fixture client is rebuilt on every mount
+  // (its approvals come back pending), so its session is private to the mount too.
+  const sessionOwner = clientOverride ?? (fixtureMode ? null : connection);
+  const session = useMemo(() => (sessionOwner ? sessionFor(sessionOwner) : createReviewSession()), [sessionOwner]);
   const evidenceSource = useMemo(
     () =>
       evidenceOverride ??
-      (fixtureMode ? createFixtureReviewEvidenceSource() : createDaemonReviewEvidenceSource(() => connection.api())),
-    [evidenceOverride, fixtureMode, connection],
+      (fixtureMode
+        ? createFixtureReviewEvidenceSource(evidenceScenario)
+        : createDaemonReviewEvidenceSource(() => connection.api())),
+    [evidenceOverride, fixtureMode, evidenceScenario, connection],
   );
   const changeRequestSource = useMemo(
     () =>
       changesOverride ??
-      (fixtureMode ? createFixtureChangeRequestSource() : createDaemonChangeRequestSource(() => connection.api())),
-    [changesOverride, fixtureMode, connection],
+      (fixtureMode
+        ? createFixtureChangeRequestSource(changesScenario)
+        : createDaemonChangeRequestSource(() => connection.api())),
+    [changesOverride, fixtureMode, changesScenario, connection],
   );
 
   const decisions = useSurface(() => surfaces.decisions.queue(), "review-decisions", surfaces.decisions.provenance);
@@ -120,6 +136,7 @@ export function ReviewDecisionsView({
               task: state.task,
               evidence: state.evidence,
               delivery: state.mutation.delivery,
+              evidenceProblems: state.loading ? [] : evidenceBlockers(bindingContext(state)),
             })}
           />
         ),
@@ -137,10 +154,25 @@ export function ReviewDecisionsView({
         scope={ALL_SCOPE}
         onBack={() => undefined}
         newKey={newKey}
+        session={session}
         embedded={slots}
       />
     </div>
   );
+}
+
+/** Only `approval`, `evidence` and `diff` are read by evidenceBlockers; the rest is inert here. */
+function bindingContext(state: ReviewState): ActionContext {
+  return {
+    connected: true,
+    loading: false,
+    stale: false,
+    refreshRequired: false,
+    approval: state.approval,
+    task: state.task,
+    diff: state.diff,
+    evidence: state.evidence,
+  };
 }
 
 function Heading({ state }: { state: ReviewState }) {
@@ -150,6 +182,7 @@ function Heading({ state }: { state: ReviewState }) {
       <div>
         <p className="rd-eyebrow">Unified human decisions</p>
         <h1>Review &amp; Decisions</h1>
+        <p className="rd-subtitle">One queue for choices, approvals, evidence, and controlled delivery.</p>
       </div>
       {state.listState === "ready" ? (
         <Badge tone={waiting > 0 ? "info" : "neutral"}>

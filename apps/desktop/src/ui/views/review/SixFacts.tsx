@@ -23,11 +23,13 @@ export interface FactInputs {
   task: TaskRecord | null;
   evidence: ReviewEvidenceResult | null;
   delivery: MutationView<DeliveryResult> | undefined;
+  /** `evidenceBlockers` for the selected candidate; a pass that the Accept gate rejects is not drawn as success. */
+  evidenceProblems?: readonly string[];
 }
 
 const NOT_AVAILABLE = "Not available";
 
-export function deriveFacts({ approval, task, evidence, delivery }: FactInputs): Fact[] {
+export function deriveFacts({ approval, task, evidence, delivery, evidenceProblems = [] }: FactInputs): Fact[] {
   const execution: Fact = (() => {
     const base = { id: "execution", label: "Execution finished", source: "tasks.get" };
     if (!task) return { ...base, tone: "neutral", status: NOT_AVAILABLE, detail: "The task record could not be read." };
@@ -62,7 +64,17 @@ export function deriveFacts({ approval, task, evidence, delivery }: FactInputs):
     const { verification } = evidence.evidence;
     const count = verification.checks.length;
     const detail = `Verification run ${verification.runId}${count > 0 ? `, ${count} check${count === 1 ? "" : "s"} listed` : ""}.`;
-    if (verification.outcome === "passed") return { ...base, tone: "ok", status: "Passed", detail };
+    if (verification.outcome === "passed") {
+      if (evidenceProblems.length > 0) {
+        return {
+          ...base,
+          tone: "warn",
+          status: "Passed, not bound to this candidate",
+          detail: `${detail} It does not authorize this candidate: ${evidenceProblems.join(" ")}`,
+        };
+      }
+      return { ...base, tone: "ok", status: "Passed", detail };
+    }
     if (verification.outcome === "failed") return { ...base, tone: "bad", status: "Failed", detail };
     return { ...base, tone: "warn", status: "Outcome unknown", detail };
   })();

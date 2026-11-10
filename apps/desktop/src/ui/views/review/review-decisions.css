@@ -278,6 +278,32 @@
   overflow-wrap: anywhere;
 }
 
+.review-decisions .rd-subtitle {
+  margin: 2px 0 0;
+  color: var(--subtle);
+  font-size: 13px;
+}
+
+.rd-unreviewed {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.rd-unreviewed h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.rd-unreviewed-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--soft);
+}
+
 .rd-fact-list {
   display: grid;
   gap: 8px;

@@ -97,6 +97,11 @@ export function DecisionQueue({ state, meta }: { state: ReviewState; meta: Queue
 
       <div role="tabpanel" id="rd-tabpanel" aria-labelledby={`rd-tab-${tab}`} className="rd-tabpanel">
         <p className="rd-note">{current.description}</p>
+        {state.approval && !current.unsupported && !shown.some((a) => a.id === state.approval?.id) && (
+          <p className="rd-note" role="note">
+            The candidate shown on the right (approval {state.approval.id}) is not in this tab.
+          </p>
+        )}
         {current.unsupported ? (
           <EmptyState title="No separate verification decisions" description={current.unsupported} />
         ) : shown.length === 0 ? (
@@ -129,10 +134,37 @@ export function DecisionQueue({ state, meta }: { state: ReviewState; meta: Queue
           </ul>
         )}
       </div>
-      {state.hiddenCount > 0 && (
-        <p className="rd-note" role="note">
-          {state.hiddenCount} non-delivery decision(s) are not reviewed here.
-        </p>
+      {state.hidden.length > 0 && <NotReviewed approvals={state.hidden} />}
+    </section>
+  );
+}
+
+const NOT_REVIEWED_LIMIT = 10;
+
+/** Pending approvals of other kinds are listed, not just counted, so none is silently dropped from the queue. */
+function NotReviewed({ approvals }: { approvals: readonly Approval[] }) {
+  const shown = approvals.slice(0, NOT_REVIEWED_LIMIT);
+  return (
+    <section aria-labelledby="rd-unreviewed-title" className="rd-unreviewed">
+      <h3 id="rd-unreviewed-title">Not reviewed here ({approvals.length})</h3>
+      <p className="rd-note">
+        {approvals.length} non-delivery decision(s) are not reviewed here. This view cannot approve or reject them.
+      </p>
+      <ul className="rd-rows" aria-label="Decisions not reviewed here">
+        {shown.map((approval) => (
+          <li key={approval.id} className="rd-unreviewed-row">
+            <span className="rd-row-title">
+              Task {approval.action.task_id}
+              <Pill tone="neutral">Not reviewed here</Pill>
+            </span>
+            <span className="rd-row-sub">
+              {KIND_LABEL[approvalKind(approval)] ?? approvalKind(approval)} · approval {approval.id}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {approvals.length > shown.length && (
+        <p className="rd-note">And {approvals.length - shown.length} more not listed.</p>
       )}
     </section>
   );

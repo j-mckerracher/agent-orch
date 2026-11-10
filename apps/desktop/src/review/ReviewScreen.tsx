@@ -7,6 +7,7 @@ import { digestHex, deliveryKindOf } from "./binding";
 import { ChangeRequestPanel } from "./ChangeRequestPanel";
 import { EvidencePanel, PlaceholderTag } from "./EvidencePanel";
 import type { ChangeRequestSource, ReviewEvidenceSource } from "./sources";
+import type { ReviewSession } from "./reviewSession";
 import { useReview, type MutationView, type ReviewScope, type ReviewState } from "./useReview";
 import "./review.css";
 
@@ -36,6 +37,8 @@ export interface ReviewScreenProps {
    * queue-plus-detail layout. The accepted decision, delivery and idempotency logic is the same.
    */
   embedded?: ReviewEmbedSlots;
+  /** Keeps resolved decisions and receipts across remounts (the global view shares one per connection). */
+  session?: ReviewSession;
 }
 
 function receiptTag(client: ReviewClient) {
@@ -73,8 +76,8 @@ function MutationStatus<T>({
   );
 }
 
-export function ReviewScreen({ client, evidenceSource, changeRequestSource, scope, onBack, newKey, embedded }: ReviewScreenProps) {
-  const r = useReview({ client, evidenceSource, scope, newKey });
+export function ReviewScreen({ client, evidenceSource, changeRequestSource, scope, onBack, newKey, embedded, session }: ReviewScreenProps) {
+  const r = useReview({ client, evidenceSource, scope, newKey, session });
   const { approval, task } = r;
   const back: ReviewScope = scope.taskId ? scope : { projectId: task?.contract.project_id ?? scope.projectId, taskId: scope.taskId };
   const backLabel = scope.taskId ? `Back to task ${scope.taskId}` : scope.projectId ? `Back to project ${scope.projectId}` : "Back";
@@ -113,7 +116,6 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
 
       {approval && (
         <section aria-label="Diff" className="diff-region">
-
           <aside aria-label="Files">
             <h3>Files</h3>
             {r.diff.status === "ok" && (
@@ -261,7 +263,7 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
       {r.listState === "ready" && r.items.length === 0 && (
         <p role="status">
           No pending decisions{scope.taskId ? " for this task" : scope.projectId ? " for this project" : ""}.
-          {r.hiddenCount > 0 ? ` ${r.hiddenCount} non-delivery decision(s) are not reviewed here.` : ""}
+          {!embedded && r.hiddenCount > 0 ? ` ${r.hiddenCount} non-delivery decision(s) are not reviewed here.` : ""}
         </p>
       )}
       {r.notice && <p role="alert">{r.notice}</p>}
