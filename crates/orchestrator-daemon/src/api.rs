@@ -214,6 +214,7 @@ impl RpcHandler for DaemonApi {
             Capability::Agents,
             Capability::Coordinator,
             Capability::Review,
+            Capability::Workstreams,
         ]
     }
 
@@ -240,6 +241,15 @@ impl RpcHandler for DaemonApi {
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
+            "workstreams.create" => self.workstreams_create(params),
+            "workstreams.list" => self.workstreams_list(params),
+            "workstreams.get" => self.workstreams_get(params),
+            "workstreams.update" => self.workstreams_update(params),
+            "workstreams.add_objective" => self.workstreams_add_objective(params),
+            "workstreams.revise_objective" => self.workstreams_revise_objective(params),
+            "workstreams.set_gate" => self.workstreams_set_gate(params),
+            "workstreams.link_task" => self.workstreams_link_task(params),
+            "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1115,10 +1125,16 @@ mod coordinator;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_workstreams.rs"]
+mod workstreams;
 
 #[cfg(test)]
 #[path = "api_review_tests.rs"]
 mod review_tests;
+
+#[cfg(test)]
+#[path = "api_workstreams_tests.rs"]
+mod workstreams_tests;
 
 #[cfg(test)]
 #[path = "api_tests.rs"]

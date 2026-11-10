@@ -342,6 +342,15 @@ impl Client {
         )
     }
 
+    /// Calls one `workstreams.*` method. The daemon authorizes by method name,
+    /// so a non-workstream method is refused here rather than gated wrongly.
+    pub fn workstreams_call(&mut self, method: &str, params: Value) -> Result<Value, IpcError> {
+        if !method.starts_with("workstreams.") {
+            return Err(IpcError::Operation);
+        }
+        self.call_feature(Capability::Workstreams, method, params)
+    }
+
     pub fn events_subscribe(&mut self, after_sequence: Option<i64>) -> Result<String, IpcError> {
         self.events_subscribe_in_epoch(after_sequence, None)
     }

@@ -386,6 +386,15 @@ fn method_capability(method: &str) -> Option<Capability> {
         "review.request_approval" | "review.evidence" | "review.request_changes" => {
             Some(Capability::Review)
         }
+        "workstreams.create"
+        | "workstreams.list"
+        | "workstreams.get"
+        | "workstreams.update"
+        | "workstreams.add_objective"
+        | "workstreams.revise_objective"
+        | "workstreams.set_gate"
+        | "workstreams.link_task"
+        | "workstreams.unlink_task" => Some(Capability::Workstreams),
         _ => None,
     }
 }
