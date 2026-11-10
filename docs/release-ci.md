@@ -221,5 +221,24 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 - that reusable-workflow `workflow_call` composition in `release.yml` resolves on the default
   branch.
 
-Not covered by M6-02: updater signing keys and update metadata, installing the artifact on a clean
-machine, and the Windows desktop e2e (it needs a Unix socket).
+Not covered by M6-02: updater signing keys and update metadata, and the Windows desktop e2e (it needs
+a Unix socket). Installing the artifact is M6-04, below.
+
+## Install and upgrade smoke (M6-04)
+
+`release.yml` runs `scripts/release/install-smoke.mjs` on the artifact it just built, after `Package`
+and before the artifact upload: it checks `SHA256SUMS`, `release-info.json`, the file name against the
+`signed` flag and the app version; extracts (macOS) or silently installs (Windows) the artifact; checks
+signatures (`--require-signed` when the build was signed); and runs the `release_smoke` example of
+`orchestrator-daemon` against the **installed** sidecar through install, cancellation, hard-kill recovery,
+approvals and orderly shutdown. A failure keeps the artifact from being uploaded; `install-smoke.json` is
+uploaded as `install-smoke-<platform>` either way. The Windows flow also upgrades over an existing install
+and uninstalls with `/S _?=<dir>`.
+
+It is not a clean machine and does not open the GUI. Real signing, notarization, Gatekeeper, SmartScreen,
+a previous-release upgrade and the clean-machine procedures are **UNPROVEN** and written up with expected
+results in `docs/evidence/m6-04-clean-machine-runbook.md`. The Windows flow, the `release_smoke` Windows
+branches and the new workflow step have never run on Windows or on a runner. The pure logic and both
+flows are covered by `scripts/release/install-lib.test.mjs` against a fake machine
+(`node --test "scripts/**/*.test.mjs"`); they add no `run-gates.mjs` gate, so the gate counts above are
+unchanged.
