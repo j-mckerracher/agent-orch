@@ -347,6 +347,17 @@ mod tests {
     }
 
     #[test]
+    fn resolve_base_ref_refuses_option_like_and_control_character_refs() {
+        let (_tmp, _wts, repo) = fixture();
+        for refspec in ["--all", "-h", "HEAD\nmain", "HEAD\0"] {
+            match repo.resolve_base_ref(refspec) {
+                Err(Error::InvalidBaseRef { .. }) => {}
+                other => panic!("expected InvalidBaseRef for {refspec:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn empty_task_id_rejected() {
         let (_tmp, wts, repo) = fixture();
         for id in ["", "---", "-"] {
