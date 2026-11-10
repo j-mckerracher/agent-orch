@@ -14,6 +14,7 @@ export type Capability =
   | "sessions"
   | "events"
   | "approvals"
+  | "queue"
   | "workspaces"
   | "delivery"
   | "agents"
@@ -27,6 +28,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "sessions",
   "events",
   "approvals",
+  "queue",
   "workspaces",
   "delivery",
   "agents",

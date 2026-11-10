@@ -104,7 +104,7 @@ describe("derived D10 conversation", () => {
 describe("derived D11 activity", () => {
   it("splits running and queued, explains waiting honestly, and lists only requested approvals", async () => {
     const result = await (await live(populate(new FakeDaemon()))).activity.activity();
-    expect(result).toMatchObject({ status: "ok", provenance: { methods: ["tasks.list", "approvals.list"] } });
+    expect(result).toMatchObject({ status: "ok", provenance: { methods: ["queue.snapshot", "tasks.list", "approvals.list"] } });
     if (result.status !== "ok") return;
     expect(result.data.running.map((e) => [e.taskId, e.waiting])).toEqual([["t-run", null]]);
     const queued = Object.fromEntries(result.data.queued.map((e) => [e.taskId, e.waiting]));
@@ -113,10 +113,9 @@ describe("derived D11 activity", () => {
     expect(result.data.attention).toEqual([
       { approvalId: "a-1", taskId: "t-run", projectId: ALPHA, kind: "LocalReviewMerge", priority: "unknown" },
     ]);
-    expect(result.data.slots.status).toBe("unsupported");
-    expect(result.data.upNext.status).toBe("unsupported");
+    expect(result.data.slots).toMatchObject({ status: "ok", value: { used: 1, limit: 2 } });
+    expect(result.data.upNext).toMatchObject({ status: "ok", value: "t-free" });
     expect(result.data.dispatchPaused.status).toBe("unsupported");
-    expect(JSON.stringify(result.data)).not.toMatch(/"limit"|"used"/);
   });
 
   it("treats a dependency on an unlisted task as unmet", async () => {

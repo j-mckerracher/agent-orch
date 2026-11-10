@@ -55,6 +55,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "events.subscribe": "events",
   "approvals.list": "approvals",
   "approvals.resolve": "approvals",
+  "queue.snapshot": "queue",
   "workspaces.diff": "workspaces",
   "delivery.request": "delivery",
   "tasks.retry": "tasks",

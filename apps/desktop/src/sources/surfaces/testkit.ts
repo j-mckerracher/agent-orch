@@ -71,6 +71,7 @@ export const READ_METHODS = [
   "projects.list",
   "tasks.list",
   "approvals.list",
+  "queue.snapshot",
   "agents.capabilities",
   "coordinator.get",
 ] as const;
