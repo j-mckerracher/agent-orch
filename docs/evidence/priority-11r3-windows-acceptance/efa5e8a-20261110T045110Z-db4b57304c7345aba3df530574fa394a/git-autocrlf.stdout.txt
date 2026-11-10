@@ -1,0 +1,2 @@
+file:C:/Program Files/Git/etc/gitconfig	true
+file:.git/config	false

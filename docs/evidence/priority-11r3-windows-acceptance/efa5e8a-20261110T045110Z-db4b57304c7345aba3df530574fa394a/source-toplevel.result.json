@@ -1,0 +1,25 @@
+{
+  "name": "source-toplevel",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r3-20261110T045110Z-db4b5730\\source rev-parse --show-toplevel",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r3-20261110T045110Z-db4b5730",
+  "source_commit": "efa5e8af3469082226c61cccfea167cc607d6a0f",
+  "started_utc": "2026-11-10T04:51:20.9383082Z",
+  "duration_seconds": 0.225,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r3-20261110T045110Z-db4b5730\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 77,
+  "stdout_sha256": "ae17d22f4020e80868cd138ec1a3014316b27a4a0a7953b50558a142726a641d",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

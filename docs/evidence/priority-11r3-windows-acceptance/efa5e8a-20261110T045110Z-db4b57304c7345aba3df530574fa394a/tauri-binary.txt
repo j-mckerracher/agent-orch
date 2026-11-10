@@ -1,0 +1,3 @@
+artifact: debug\agent-orch-desktop.exe (relative to the target directory)
+bytes: 13388800
+sha256: 93fed4891180445e290489d30f9351ae67f7b2121dbb03830bcc66a1759d0f2b

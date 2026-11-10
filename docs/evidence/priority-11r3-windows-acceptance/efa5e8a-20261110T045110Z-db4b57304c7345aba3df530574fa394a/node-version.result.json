@@ -1,0 +1,25 @@
+{
+  "name": "node-version",
+  "command": "node.exe -v",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r3-20261110T045110Z-db4b5730\\source",
+  "source_commit": "efa5e8af3469082226c61cccfea167cc607d6a0f",
+  "started_utc": "2026-11-10T04:51:26.6990526Z",
+  "duration_seconds": 0.142,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r3-20261110T045110Z-db4b5730\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 10,
+  "stdout_sha256": "b6bf9a2e5266985cec216256285e5e53db737d91cb3f08d469cc548a3d805b99",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

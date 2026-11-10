@@ -1,0 +1,66 @@
+===== coordinator-review-tests.stdout =====
+daemon log block printed by a failing test (2 in this stream):
+--- daemon log (C:\Users\<user>\AppData\Local\Temp\ao11r3-20261110T045110Z-db4b5730\test-tmp\coordinator-review-tests\ao9RjN4r\daemon.log) ---
+
+--- end daemon log ---
+daemon log block printed by a failing test (2 in this stream):
+--- daemon log (C:\Users\<user>\AppData\Local\Temp\ao11r3-20261110T045110Z-db4b5730\test-tmp\coordinator-review-tests\aoqNapK4\daemon.log) ---
+
+--- end daemon log ---
+Last 50 lines of the stream:
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<enum2$<serde_json::value::Value>,enum2$<orchestrator_ipc::IpcError> > >::unwrap
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1233
+   4: coordinator_review::approval_flow_rejects_and_requests_changes_through_the_real_daemon
+             at .\tests\coordinator_review.rs:381
+   5: coordinator_review::approval_flow_rejects_and_requests_changes_through_the_real_daemon::closure$0
+             at .\tests\coordinator_review.rs:355
+   6: core::ops::function::FnOnce::call_once<coordinator_review::approval_flow_rejects_and_requests_changes_through_the_real_daemon::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+--- daemon log (C:\Users\<user>\AppData\Local\Temp\ao11r3-20261110T045110Z-db4b5730\test-tmp\coordinator-review-tests\ao9RjN4r\daemon.log) ---
+
+--- end daemon log ---
+
+---- approval_flow_approves_and_delivers_through_the_real_daemon stdout ----
+
+thread 'approval_flow_approves_and_delivers_through_the_real_daemon' (33204) panicked at crates\orchestrator-daemon\tests\coordinator_review.rs:271:5:
+delivery needs an approval: Err(Frame(Io(TimedOut)))
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: coordinator_review::approval_flow_approves_and_delivers_through_the_real_daemon
+             at .\tests\coordinator_review.rs:271
+   3: coordinator_review::approval_flow_approves_and_delivers_through_the_real_daemon::closure$0
+             at .\tests\coordinator_review.rs:252
+   4: core::ops::function::FnOnce::call_once<coordinator_review::approval_flow_approves_and_delivers_through_the_real_daemon::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   5: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+--- daemon log (C:\Users\<user>\AppData\Local\Temp\ao11r3-20261110T045110Z-db4b5730\test-tmp\coordinator-review-tests\aoqNapK4\daemon.log) ---
+
+--- end daemon log ---
+
+
+failures:
+    approval_flow_approves_and_delivers_through_the_real_daemon
+    approval_flow_rejects_and_requests_changes_through_the_real_daemon
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.83s
+
+
+===== coordinator-review-tests.stderr =====
+NO diagnostics marker and no daemon log block found. Last 200 lines of the stream:
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\ao11r3-20261110T045110Z-db4b5730\cargo-target\debug\deps\coordinator_review-45c0c5fb4a74ac4c.exe)
+error: test failed, to rerun pass `-p orchestrator-daemon --test coordinator_review`
+
