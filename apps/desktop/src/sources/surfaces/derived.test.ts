@@ -81,10 +81,20 @@ describe("derived D9 workstreams", () => {
 
   it("reports a failed read as unavailable with daemon provenance, never as fixture data", async () => {
     const fake = populate(new FakeDaemon());
-    fake.failNext("workstreams.get", { code: -32603, message: "boom" });
+    // Every detail read fails: nothing is known, so the read fails instead of listing unknown rows.
+    fake.failNext("workstreams.get", { code: -32603, message: "boom" }, 2);
     const result = await (await live(fake)).workstreams.workstreams();
     expect(result).toMatchObject({ status: "unavailable", provenance: { kind: "daemon", id: "D9" } });
     expect(result).not.toHaveProperty("data");
+  });
+
+  it("keeps the readable workstreams when one detail read fails, and marks that row unknown", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.failNext("workstreams.get", { code: -32603, message: "boom" });
+    const result = await (await live(fake)).workstreams.workstreams();
+    if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+    expect(result.data.map((item) => item.unreadReason !== undefined)).toEqual([true, false]);
+    expect(result.data[0]!.objectives.status).toBe("unknown");
   });
 });
 

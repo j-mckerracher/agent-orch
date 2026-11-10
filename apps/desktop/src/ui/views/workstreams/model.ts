@@ -64,6 +64,8 @@ export interface WsGroup {
   tasks: WsTask[];
   counts: Record<TaskState, number>;
   objectives: Measured<WorkstreamObjective[]>;
+  /** Set when this workstream's detail read failed; its tasks, counts and objectives are unknown. */
+  unreadReason: string | null;
 }
 
 export type WsModel =
@@ -78,6 +80,8 @@ export type WsModel =
       groups: WsGroup[];
       /** Daemon tasks linked to no workstream (live only); candidates for `workstreams.link_task`. */
       unlinked: WsTask[];
+      /** False when a workstream could not be read: a task linked there would wrongly look unlinked. */
+      unlinkedKnown: boolean;
       stale: boolean;
     };
 
@@ -179,7 +183,7 @@ export function deriveLiveGroups(
   tasks: readonly TaskRecord[] | null,
   sessions: readonly SessionEntry[] | null,
   approvals: readonly Approval[] | null,
-): { groups: WsGroup[]; unlinked: WsTask[] } {
+): { groups: WsGroup[]; unlinked: WsTask[]; unlinkedKnown: boolean } {
   const records = new Map((tasks ?? []).map((task) => [task.contract.id, task]));
   const states = new Map<string, { state: TaskState }>(
     workstreams.flatMap((ws) => ws.tasks.map((task) => [task.id, { state: task.state }] as const)),
@@ -198,11 +202,13 @@ export function deriveLiveGroups(
       tasks: own,
       counts: countStates(own.map((task) => task.state)),
       objectives: ws.objectives,
+      unreadReason: ws.unreadReason ?? null,
     };
   });
 
+  const unlinkedKnown = groups.every((group) => group.unreadReason === null);
   const linked = new Set(workstreams.flatMap((ws) => ws.tasks.map((task) => task.id)));
-  const unlinked = (tasks ?? [])
+  const unlinked = (unlinkedKnown ? tasks ?? [] : [])
     .filter((record) => !linked.has(record.contract.id))
     .map((record) =>
       wsTaskOf(
@@ -221,7 +227,7 @@ export function deriveLiveGroups(
         states,
       ),
     );
-  return { groups, unlinked };
+  return { groups, unlinked, unlinkedKnown };
 }
 
 /** Maps the fixture D9 workstreams to the same shape. Placeholder tasks have no detail route. */
@@ -250,6 +256,7 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
     })),
     counts: ws.counts,
     objectives: ws.objectives,
+    unreadReason: null,
   }));
 }
 
@@ -303,7 +310,7 @@ export function useWorkstreamModel(): WsModel {
   const derived = useMemo(() => {
     if (!loaded) return null;
     return fixture
-      ? { groups: groupsFromSource(loaded), unlinked: [] as WsTask[] }
+      ? { groups: groupsFromSource(loaded), unlinked: [] as WsTask[], unlinkedKnown: true }
       : deriveLiveGroups(loaded, tasks.data, sessions.data, approvals.data);
   }, [loaded, fixture, tasks.data, sessions.data, approvals.data]);
 
@@ -314,6 +321,7 @@ export function useWorkstreamModel(): WsModel {
       provenance,
       groups: derived.groups,
       unlinked: derived.unlinked,
+      unlinkedKnown: derived.unlinkedKnown,
       stale: !fixture && !gate.connected,
     };
   }

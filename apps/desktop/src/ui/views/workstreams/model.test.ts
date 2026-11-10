@@ -80,6 +80,22 @@ describe("deriveLiveGroups", () => {
     expect(unlinked.map((task) => [task.id, task.projectId, task.objectiveId])).toEqual([["t9", B, null]]);
   });
 
+  it("does not guess unlinked tasks while a workstream is unread, since its tasks would look unlinked", () => {
+    const unread = stream("w2", [], {
+      unreadReason: "Details could not be read.",
+      objectives: { status: "unknown", reason: "Details could not be read." },
+    });
+    const { groups, unlinked, unlinkedKnown } = deriveLiveGroups(
+      [stream("w1", [link("t1", A)]), unread],
+      [mkTask("t1", A), mkTask("t2", B)],
+      null,
+      [],
+    );
+    expect(groups.map((group) => group.unreadReason)).toEqual([null, "Details could not be read."]);
+    expect(unlinkedKnown).toBe(false);
+    expect(unlinked).toEqual([]);
+  });
+
   it("reports no unlinked tasks while the task list is unloaded, and passes objectives through unchanged", () => {
     const objectives = { status: "unknown" as const, reason: "later" };
     const { groups, unlinked } = deriveLiveGroups([stream("w1", [], { objectives })], null, null, null);

@@ -68,7 +68,7 @@ export function createSearchSource(
                 kind: "workstream",
                 id: workstream.id,
                 title: workstream.title,
-                detail: `${workstream.tasks.length} task(s)`,
+                detail: workstream.unreadReason === undefined ? `${workstream.tasks.length} task(s)` : "tasks unknown",
                 origin,
               });
             }

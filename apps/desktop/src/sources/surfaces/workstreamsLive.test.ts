@@ -144,6 +144,43 @@ describe("live workstreams adapter", () => {
     expect(WORKSTREAM_STATE.get(fake)!.links.find((link) => link.task_id === "t-run")?.workstream_id).toBe("ws-1");
   });
 
+  it("does not report success when unlinking a task that was never linked to the workstream", async () => {
+    const fake = populate(new FakeDaemon());
+    const source = await live(fake);
+    const before = [...WORKSTREAM_STATE.get(fake)!.links];
+    await expect(source.unlinkTask("ws-1", "t-free")).rejects.toMatchObject({ kind: "not-found" });
+    await expect(source.unlinkTask("ws-2", "t-run")).rejects.toMatchObject({ kind: "not-found" });
+    expect(fake.callsTo("workstreams.unlink_task")).toHaveLength(2);
+    expect(WORKSTREAM_STATE.get(fake)!.links).toEqual(before);
+    // A real link still unlinks and reports success.
+    await expect(source.unlinkTask("ws-1", "t-run")).resolves.toMatchObject({ id: "t-run" });
+  });
+
+  it("marks one workstream whose detail read failed as unknown and keeps the others", async () => {
+    const fake = populate(new FakeDaemon());
+    const state = WORKSTREAM_STATE.get(fake)!;
+    const ghost = { id: "ws-ghost", title: "Unreadable", summary: "listed only", state: "active" as const, revision: 7 };
+    fake.stub("workstreams.list", () => [...state.workstreams, ghost]);
+    const result = await (await live(fake)).workstreams();
+    if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+    const [first, , unread] = result.data;
+    expect(result.data.map((item) => item.id)).toEqual(["ws-1", "ws-2", "ws-ghost"]);
+    expect(first!.unreadReason).toBeUndefined();
+    expect(first!.tasks.length).toBeGreaterThan(0);
+    expect(unread).toMatchObject({ title: "Unreadable", revision: 7, tasks: [], objectives: { status: "unknown" } });
+    expect(unread!.unreadReason).toMatch(/could not be read.*not-found/);
+  });
+
+  it("fails the read when every detail read fails or the failure is not about one record", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.stub("workstreams.list", () => [{ id: "ws-ghost", title: "x", summary: "", state: "active", revision: 1 }]);
+    expect(await (await live(fake)).workstreams()).toMatchObject({ status: "unavailable" });
+
+    const second = populate(new FakeDaemon());
+    second.failNext("workstreams.get", { code: -32602, message: "bad" });
+    expect((await (await live(second)).workstreams()).status).toBe("unavailable");
+  });
+
   it("refuses to unlink a task that a gate cites as evidence", async () => {
     const fake = populate(new FakeDaemon());
     const source = await live(fake);

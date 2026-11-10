@@ -64,6 +64,26 @@ function workstreamOf(summary: WorkstreamWire, detail: WorkstreamDetailWire, tas
   };
 }
 
+/** Errors the daemon answered with for one record; any other failure means the whole read is untrustworthy. */
+const PER_RECORD_FAILURES: ReadonlySet<string> = new Set(["not-found", "internal", "result-too-large"]);
+
+/** A listed workstream whose detail read failed: its tasks and objectives are unknown, not empty. */
+function unreadWorkstream(summary: WorkstreamWire, error: DaemonError): Workstream {
+  const reason = `Details could not be read (${error.kind}: ${error.message}).`;
+  return {
+    id: summary.id,
+    title: summary.title,
+    summary: summary.summary,
+    state: summary.state,
+    revision: summary.revision,
+    projectIds: [],
+    tasks: [],
+    counts: countStates([]),
+    objectives: { status: "unknown", reason },
+    unreadReason: reason,
+  };
+}
+
 export function createLiveWorkstreams(
   connection: ConnectionManager,
   now: () => number,
@@ -105,11 +125,23 @@ export function createLiveWorkstreams(
       guarded(provenance, now, async () => {
         const api = connection.api();
         const list = await api.workstreamsList();
-        const details = await Promise.all(list.map((item) => api.workstreamsGet(item.id)));
+        const details = await Promise.allSettled(list.map((item) => api.workstreamsGet(item.id)));
+        // A connection-level failure, or every detail failing, fails the read; one bad record does not.
+        for (const detail of details) {
+          if (detail.status === "rejected" && !PER_RECORD_FAILURES.has(asDaemonError(detail.reason).kind)) throw detail.reason;
+        }
+        if (details.length > 0 && details.every((detail) => detail.status === "rejected")) {
+          throw (details[0] as PromiseRejectedResult).reason;
+        }
         // Tasks are read after the links so a linked task is never newer than the snapshot of it.
         const tasks = new Map((await api.tasksList()).map((task) => [task.contract.id, task]));
         const nowMs = now();
-        return list.map((item, index) => workstreamOf(item, details[index]!, tasks, nowMs));
+        return list.map((item, index) => {
+          const detail = details[index]!;
+          return detail.status === "fulfilled"
+            ? workstreamOf(item, detail.value, tasks, nowMs)
+            : unreadWorkstream(item, asDaemonError(detail.reason));
+        });
       }),
 
     create: (title, summary) =>
@@ -184,7 +216,9 @@ export function createLiveWorkstreams(
 
     unlinkTask: (workstreamId, taskId) =>
       mutate(`ws:unlink:${workstreamId}:${taskId}`, null, [workstreamId, taskId], async (key) => {
-        await connection.api().workstreamsUnlinkTask(workstreamId, taskId, key);
+        const unlinked = await connection.api().workstreamsUnlinkTask(workstreamId, taskId, key);
+        // The daemon answers ok with removed=false when nothing was linked; that is not a removal.
+        if (!unlinked.removed) throw new DaemonError("not-found", "The task is not linked to this workstream.");
         return receipt(taskId, null);
       }),
   };

@@ -409,6 +409,73 @@ describe("live mutations", () => {
     expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
     expect(screen.getByLabelText("New workstream title")).toBeDisabled();
   });
+
+  it("has a Refresh control that re-reads the daemon, so another client's edit shows without an own action", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeInTheDocument();
+    streams.get(fake)!.workstreams[0]!.title = "Alpha renamed elsewhere";
+    const before = fake.callsTo("workstreams.list").length;
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Alpha renamed elsewhere" })).toBeInTheDocument();
+    expect(fake.callsTo("workstreams.list").length).toBeGreaterThan(before);
+    expect(within(tree()).getByText("Alpha renamed elsewhere")).toBeInTheDocument();
+  });
+
+  it("clears a failure banner when the operator refreshes, and its advice names a control that exists", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-gate");
+    streams.get(fake)!.objectives[0]!.revision = 9;
+    await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Refresh to see the current state/);
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.queryByText("The workstream data was reloaded from the daemon.")).not.toBeInTheDocument();
+  });
+
+  it("clears a failure banner once the connection recovers", async () => {
+    const fake = daemon();
+    const { services, user } = await mount(fake);
+    await screen.findAllByTestId("ws-gate");
+    streams.get(fake)!.objectives[0]!.revision = 9;
+    await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
+    const banner = () => within(screen.getByTestId("workstreams-view")).queryByRole("alert");
+    await waitFor(() => expect(banner()).not.toBeNull());
+    fake.openError = new DaemonError("disconnected", "down");
+    fake.drop();
+    await waitFor(() => expect(screen.getByTestId("ws-source")).toHaveTextContent("Stale"));
+    expect(banner()).not.toBeNull();
+    fake.openError = null;
+    act(() => services.connection.reconnect());
+    await waitFor(() => expect(screen.getByTestId("ws-source")).not.toHaveTextContent("Stale"));
+    expect(banner()).toBeNull();
+  });
+
+  it("marks a workstream whose details could not be read as unknown, never as empty or zero", async () => {
+    const fake = daemon((f, state) => {
+      const ghost = { id: "ws-ghost", title: "Ghost stream", summary: "", state: "active" as const, revision: 4 };
+      f.stub("workstreams.list", () => [...state.workstreams, ghost]);
+    });
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    expect(level(1).map((group) => group.getAttribute("aria-label"))).toEqual([
+      "Workstream 1 of 3: Alpha stream, 2 tasks",
+      "Workstream 2 of 3: Beta stream, 1 task",
+      "Workstream 3 of 3: Ghost stream, tasks unknown",
+    ]);
+    expect(screen.getByTestId("ws-unlinked")).toHaveTextContent("Tasks not in any workstream: unknown.");
+    await user.click(screen.getByRole("button", { name: /Ghost stream/ }));
+    expect(await screen.findByTestId("ws-unread")).toHaveTextContent("Tasks unknown");
+    expect(screen.getByTestId("ws-unread-reason")).toHaveTextContent(/could not be read/);
+    expect(screen.queryAllByTestId("task-row")).toHaveLength(0);
+    expect(screen.queryByText("No tasks")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Add objective" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("ws-unlinked-unknown")).toBeInTheDocument();
+  });
 });
 
 describe("tree keyboard navigation", () => {

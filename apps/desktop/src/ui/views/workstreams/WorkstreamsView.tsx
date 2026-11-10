@@ -19,7 +19,7 @@ import {
   useMutationRunner,
   type Controls,
 } from "./Manage";
-import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "./model";
+import { reloadWorkstreams, taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "./model";
 import { STATE_TONE } from "./tone";
 import "./workstreams.css";
 
@@ -30,6 +30,7 @@ interface Receipt {
 
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
+const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
 const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
 const PLAN_REASON =
   "Disabled: the daemon has no method to split a task or reassign it. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
@@ -74,7 +75,7 @@ export function WorkstreamsView() {
       </p>
     );
   } else {
-    const { groups, mode, unlinked } = model;
+    const { groups, mode, unlinked, unlinkedKnown } = model;
     const fixture = mode === "fixture";
     const needle = filter.trim().toLowerCase();
     const visible = groups.filter((group) => group.title.toLowerCase().includes(needle));
@@ -191,7 +192,7 @@ export function WorkstreamsView() {
                         {index + 1}. {group.title}
                       </span>
                       <small>
-                        {taskCount(group.tasks.length)}
+                        {group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}
                         {group.state !== "active" && ` · ${group.state}`}
                       </small>
                     </button>
@@ -206,6 +207,11 @@ export function WorkstreamsView() {
               <p className="ws-reason" id={`${reasonId}-list`}>
                 {LIST_REASON}
               </p>
+              {live && !unlinkedKnown && (
+                <p className="ws-subtle" data-testid="ws-unlinked">
+                  Tasks not in any workstream: unknown.
+                </p>
+              )}
               {live && unlinked.length > 0 && (
                 <p className="ws-subtle" data-testid="ws-unlinked">
                   {taskCount(unlinked.length)} not in any workstream.
@@ -218,11 +224,18 @@ export function WorkstreamsView() {
                 fixture={fixture}
                 marker={marker}
                 unlinked={unlinked}
+                unlinkedKnown={unlinkedKnown}
                 reasonId={`${reasonId}-actions`}
                 controls={{
                   run: mutations.run,
                   busy: mutations.busy,
-                  locked: model.stale ? STALE_REASON : current.state === "archived" ? ARCHIVED_REASON : null,
+                  locked: model.stale
+                    ? STALE_REASON
+                    : current.unreadReason !== null
+                      ? UNREAD_REASON
+                      : current.state === "archived"
+                        ? ARCHIVED_REASON
+                        : null,
                 }}
               />
             )}
@@ -237,6 +250,17 @@ export function WorkstreamsView() {
       <header className="ws-head">
         <p className="ws-eyebrow">Orchestration</p>
         <h1 id={headingId}>Workstreams</h1>
+        {surfaces.workstreams.provenance.kind !== "fixture" && (
+          <Button
+            disabled={mutations.busy}
+            onClick={() => {
+              mutations.clear();
+              reloadWorkstreams();
+            }}
+          >
+            Refresh
+          </Button>
+        )}
       </header>
       {body}
     </section>
@@ -283,6 +307,7 @@ function Detail({
   fixture,
   marker,
   unlinked,
+  unlinkedKnown,
   reasonId,
   controls,
 }: {
@@ -290,6 +315,7 @@ function Detail({
   fixture: boolean;
   marker: ReactNode;
   unlinked: WsTask[];
+  unlinkedKnown: boolean;
   reasonId: string;
   controls: Controls;
 }) {
@@ -304,13 +330,24 @@ function Detail({
             {group.state}
           </Pill>{" "}
           {group.projectIds.length > 0 && <Badge>Projects: {group.projectIds.map(basename).join(", ")}</Badge>}{" "}
-          <Badge>{taskCount(group.tasks.length)}</Badge>{" "}
-          {TASK_STATES.filter((state) => group.counts[state] > 0).map((state) => (
-            <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
-              {group.counts[state]} {state}
-            </Pill>
-          ))}
+          {group.unreadReason !== null ? (
+            <Badge data-testid="ws-unread">Tasks unknown</Badge>
+          ) : (
+            <>
+              <Badge>{taskCount(group.tasks.length)}</Badge>{" "}
+              {TASK_STATES.filter((state) => group.counts[state] > 0).map((state) => (
+                <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
+                  {group.counts[state]} {state}
+                </Pill>
+              ))}
+            </>
+          )}
         </p>
+        {group.unreadReason !== null && (
+          <p role="status" data-testid="ws-unread-reason">
+            {group.unreadReason} Its tasks and objectives are unknown, not empty.
+          </p>
+        )}
         {group.summary !== "" && <p data-testid="ws-summary">{group.summary}</p>}
         {fixture ? (
           <div className="ws-row" role="group" aria-label="Workstream actions">
@@ -361,14 +398,16 @@ function Detail({
       </Panel>
 
       <Panel title="Task dependencies" headingLevel={2} actions={marker}>
-        <DependencyGraph tasks={group.tasks} />
+        {group.unreadReason !== null ? <p role="status">Dependencies unknown: tasks could not be read.</p> : <DependencyGraph tasks={group.tasks} />}
       </Panel>
 
       <Panel title="Tasks" headingLevel={2} actions={marker} className="ws-tasks">
         <p className="ws-subtle">
           Other views of this workstream (Milestones, Context, Deliverables, Activity) are not available yet.
         </p>
-        {group.tasks.length === 0 ? (
+        {group.unreadReason !== null ? (
+          <p role="status">Tasks unknown: {group.unreadReason}</p>
+        ) : group.tasks.length === 0 ? (
           <EmptyState title="No tasks" description="This workstream has no tasks yet." />
         ) : (
           <div className="ws-table-scroll" role="region" aria-label={`Tasks of ${group.title}`} tabIndex={0}>
@@ -417,7 +456,9 @@ function Detail({
             </table>
           </div>
         )}
-        {!fixture && <LinkTaskForm group={group} unlinked={unlinked} controls={controls} />}
+        {!fixture && (
+          <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />
+        )}
         <div className="ws-row" role="group" aria-label="Plan editing">
           {(fixture ? ["Add task", "Split task", "Remove task", "Reassign"] : ["Split task", "Reassign"]).map((label) => (
             <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>

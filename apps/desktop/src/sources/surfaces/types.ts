@@ -99,8 +99,13 @@ export interface Workstream {
   revision: number;
   projectIds: string[];
   tasks: WorkstreamTask[];
-  /** Every state is present; a zero here is a real zero over the returned tasks. */
+  /** Every state is present; a zero here is a real zero over the returned tasks. Meaningless when `unreadReason` is set. */
   counts: Record<TaskState, number>;
+  /**
+   * Set when the daemon listed this workstream but its detail read failed. Title, summary,
+   * state and revision come from the list; tasks, counts and objectives are unknown, not empty.
+   */
+  unreadReason?: string;
   /** A workstream holds any number of objectives; a live workstream with none is `ok` with `[]`. */
   objectives: Measured<WorkstreamObjective[]>;
 }

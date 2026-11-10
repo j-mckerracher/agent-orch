@@ -3,7 +3,7 @@
  * through the D9 source. Each write quotes the revision the operator last read, so a stale
  * edit is a daemon conflict that the runner answers by reloading, never by overwriting.
  */
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type {
   GateState,
@@ -11,7 +11,7 @@ import type {
   WorkstreamMutation,
   WorkstreamObjective,
 } from "../../../sources/surfaces/types";
-import { useServices } from "../../services";
+import { useGate, useServices } from "../../services";
 import { Button, Pill } from "../../theme";
 import { ErrorNotice, Notice } from "../../widgets";
 import { reloadWorkstreams, taskLabelOf, type WsGroup, type WsTask } from "./model";
@@ -25,9 +25,16 @@ interface Outcome {
 }
 
 /** Serialises mutations: one in flight at a time, with the outcome shown until the next one. */
-export function useMutationRunner(): { run: Run; busy: boolean; outcome: Outcome | null } {
+export function useMutationRunner(): { run: Run; busy: boolean; outcome: Outcome | null; clear: () => void } {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const { connected } = useGate();
+  const wasConnected = useRef(connected);
+  // A failure banner describes a past attempt; once the connection is back it is no longer current.
+  useEffect(() => {
+    if (connected && !wasConnected.current) setOutcome((current) => (current?.error ? null : current));
+    wasConnected.current = connected;
+  }, [connected]);
   const run: Run = async (action, send) => {
     setBusy(true);
     setOutcome(null);
@@ -47,7 +54,7 @@ export function useMutationRunner(): { run: Run; busy: boolean; outcome: Outcome
       setBusy(false);
     }
   };
-  return { run, busy, outcome };
+  return { run, busy, outcome, clear: () => setOutcome(null) };
 }
 
 export function OutcomeNotice({ outcome }: { outcome: Outcome | null }) {
@@ -310,7 +317,17 @@ export function LifecycleControls({ group, controls }: { group: WsGroup; control
   );
 }
 
-export function LinkTaskForm({ group, unlinked, controls }: { group: WsGroup; unlinked: WsTask[]; controls: Controls }) {
+export function LinkTaskForm({
+  group,
+  unlinked,
+  unlinkedKnown,
+  controls,
+}: {
+  group: WsGroup;
+  unlinked: WsTask[];
+  unlinkedKnown: boolean;
+  controls: Controls;
+}) {
   const { surfaces } = useServices();
   const [taskId, setTaskId] = useState("");
   const [objectiveId, setObjectiveId] = useState("");
@@ -324,6 +341,13 @@ export function LinkTaskForm({ group, unlinked, controls }: { group: WsGroup; un
     );
     if (done) setTaskId("");
   };
+  if (!unlinkedKnown) {
+    return (
+      <p className="ws-subtle" data-testid="ws-unlinked-unknown">
+        Tasks outside every workstream are unknown: a workstream could not be read, and its tasks would look unlinked.
+      </p>
+    );
+  }
   if (unlinked.length === 0) {
     return <p className="ws-subtle">Every daemon task is already in a workstream, so there is nothing to link.</p>;
   }

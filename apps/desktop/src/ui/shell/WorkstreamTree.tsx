@@ -183,7 +183,7 @@ export function WorkstreamTree() {
                 aria-setsize={groups.length}
                 aria-posinset={index + 1}
                 aria-expanded={groupOpen}
-                aria-label={`Workstream ${index + 1} of ${groups.length}: ${group.title}, ${taskCount(group.tasks.length)}`}
+                aria-label={`Workstream ${index + 1} of ${groups.length}: ${group.title}, ${group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}`}
                 tabIndex={tabKey === key ? 0 : -1}
                 data-key={key}
                 ref={(node) => {
@@ -200,11 +200,15 @@ export function WorkstreamTree() {
                 </span>
                 <span className="ws-tree-number" aria-hidden="true" data-text={`${index + 1} / ${groups.length}`} />
                 <span className="ws-tree-title">{group.title}</span>
-                <small className="ws-tree-count" aria-hidden="true" data-text={group.tasks.length} />
+                <small className="ws-tree-count" aria-hidden="true" data-text={group.unreadReason === null ? group.tasks.length : "?"} />
               </div>
               {groupOpen && (
                 <ul role="group" className="ws-tree-tasks">
-                  {group.tasks.length === 0 && <li role="none" className="ws-tree-none">No tasks.</li>}
+                  {group.tasks.length === 0 && (
+                    <li role="none" className="ws-tree-none">
+                      {group.unreadReason === null ? "No tasks." : "Tasks unknown."}
+                    </li>
+                  )}
                   {group.tasks.map((task, position) => {
                     const leafKey = taskKey(task);
                     const common = {
