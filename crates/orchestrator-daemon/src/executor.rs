@@ -587,7 +587,10 @@ async fn monitor_agent(
                     attempted = true;
                     match handle.cancel().await {
                         Ok(()) => {
-                            let exit = handle.wait().await.map_err(|error| {
+                            let exit = handle.wait().await;
+                            // Keep what the agent reported before it was stopped.
+                            record_usage(&mut *handle, store, owner, started_ms);
+                            let exit = exit.map_err(|error| {
                                 format!("cancelled but termination was not confirmed: {error}")
                             })?;
                             return Ok(MonitorOutcome {
@@ -641,6 +644,7 @@ async fn monitor_agent(
                 break;
             }
             Some(Err(error)) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 supervision_error = Some(format!("agent event stream failed: {error}"));
                 break;
             }
@@ -660,7 +664,9 @@ async fn monitor_agent(
         Err(error) if cancel_error.is_none() => cancel_error = Some(error.to_string()),
         Err(_) => {}
     }
-    let exit = handle.wait().await.map_err(|error| {
+    let exit = handle.wait().await;
+    record_usage(&mut *handle, store, owner, started_ms);
+    let exit = exit.map_err(|error| {
         format!(
             "{}; termination was not confirmed: {error}",
             supervision_error

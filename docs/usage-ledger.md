@@ -9,7 +9,7 @@ Plan: /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mcl
 | --- | --- | --- | --- |
 | Codex (`exec --json`) | yes: `turn.completed.usage` (`input_tokens` includes `cached_input_tokens`; `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`) | never | recorded runs in `docs/evidence/m1-05-macos/` |
 | Claude Code (`stream-json`) | yes: terminal `result.usage` (`input_tokens` excludes cache) | yes: `result.total_cost_usd`, a list price computed by the CLI, not provider billing | recorded run `docs/evidence/m4-02-macos/20261107T215309-0700.stdout.jsonl` |
-| Pi / OMP RPC | yes: assistant `message_end.message.usage` | yes: `usage.cost.total`, USD, computed by the runtime | Pi RPC documentation and an OMP session file. Not a live RPC capture; the recorded handshakes in this repo carry only a price table. Unverified live. |
+| Pi / OMP RPC | expected: assistant `message_end.message.usage` | expected: `usage.cost.total`, USD, computed by the runtime | **Not verified against a live stream.** No real Pi stream exists in this repo. The field names match the `Usage`/`AssistantMessage` types in the installed Pi 1.5.0 docs (`docs/message-types.md`; `reasoning` is already inside `output`, so it is not read) and an OMP session file; the recorded handshakes carry only a price table, and the tests use synthetic JSON and a fake RPC child. Pi figures must not be trusted until a recorded `message_end` is replayed in `usage_replay.rs`. |
 
 Before M7-06 every adapter discarded this data.
 
@@ -36,8 +36,16 @@ is strictly newer. A receipt is attributed to the day of its `window_end_ms`, so
 a receipt that arrives late lands in the day it belongs to. The migration only
 adds a table, so existing data directories upgrade in place.
 
-The daemon executor records receipts while it supervises the agent. A failure to
-record is logged and never fails the run.
+The daemon executor records receipts while it supervises the agent: after every
+event, at session exit, when the event stream ends or fails, and after a
+cancellation, so a cancelled run keeps whatever it had already reported (for
+Claude Code, the cost on its `result` event only appears if the run got that
+far; otherwise the cost stays unknown, never zero). Model text is stored cut to
+128 bytes.
+
+A failure to record is only logged to stderr and never fails the run. The
+receipt is then lost with no durable signal and no counter; the summary shows
+that session's figures as unknown or partial, not as zero.
 
 ## `usage.summary`
 
@@ -60,4 +68,5 @@ Method scope: gated by the `agents` capability.
 ## Known gaps
 
 * The CLI workflow path does not record usage.
+* Pi usage parsing is unverified (see the spike table).
 * Claude cost is a client-side list price and may differ from the bill.

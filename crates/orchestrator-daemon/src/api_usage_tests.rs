@@ -269,6 +269,8 @@ fn bad_parameters_are_rejected() {
         json!({"timezone": "", "utc_offset_seconds": 0}),
         json!({"timezone": "UTC", "utc_offset_seconds": 15 * 3600}),
         json!({"timezone": "UTC", "utc_offset_seconds": -13 * 3600}),
+        json!({"timezone": "UTC", "utc_offset_seconds": 14 * 3600 + 1}),
+        json!({"timezone": "UTC", "utc_offset_seconds": -12 * 3600 - 1}),
         json!({"timezone": "x".repeat(65), "utc_offset_seconds": 0}),
         json!({"timezone": "UTC", "utc_offset_seconds": 0, "extra": 1}),
         json!({"timezone": "UTC", "utc_offset_seconds": 0, "now_unix_ms": -1}),
@@ -286,6 +288,20 @@ fn bad_parameters_are_rejected() {
             ),
             "{params}"
         );
+    }
+}
+
+#[test]
+fn the_exact_utc_offset_limits_are_accepted() {
+    let (_directory, api) = new_api();
+    for offset in [14 * 3600, -12 * 3600] {
+        let summary = api
+            .usage_summary(json!({
+                "timezone": "UTC", "utc_offset_seconds": offset,
+                "now_unix_ms": UTC_MIDNIGHT,
+            }))
+            .unwrap();
+        assert_eq!(summary["window"]["utc_offset_seconds"], offset);
     }
 }
 

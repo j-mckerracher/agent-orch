@@ -21,8 +21,12 @@
 //!
 //! Adapter coverage (spike result): Codex reports tokens only. Claude Code
 //! reports tokens and a CLI-computed USD cost on its terminal `result` event.
-//! Pi reports tokens and a runtime-computed USD cost on each assistant
-//! `message_end`.
+//! Pi is expected to report tokens and a runtime-computed USD cost on each
+//! assistant `message_end`. **Pi parsing is not verified against a live
+//! stream:** none has been recorded. [`pi_message_end_usage`] matches the
+//! `Usage` and `AssistantMessage` types in the installed Pi 1.5.0 docs
+//! (`docs/message-types.md`) but is tested only on synthetic JSON. Replace
+//! those fixtures with a recorded `message_end` before relying on Pi figures.
 
 use serde_json::{Map, Value};
 
@@ -150,9 +154,11 @@ pub fn claude_result_usage(record: &Value) -> Option<UsageReport> {
     .keep()
 }
 
-/// Pi `message_end` for an assistant message. Pi can finish several assistant
-/// messages in one turn; each has its own `responseId`. A message whose token
-/// counts are all zero reports nothing.
+/// Pi `message_end` for an assistant message. **Not verified live:** the field
+/// names come from Pi's type documentation, not a recorded stream. Pi can
+/// finish several assistant messages in one turn; each has its own
+/// `responseId`. A message whose token counts are all zero reports nothing.
+/// Pi's `reasoning` count is already inside `output`, so it is not read.
 pub fn pi_message_end_usage(record: &Map<String, Value>) -> Option<UsageReport> {
     let message = record.get("message")?.as_object()?;
     if message.get("role")?.as_str()? != "assistant" {
@@ -288,6 +294,35 @@ mod tests {
         assert_eq!(pi_message_end_usage(empty.as_object().unwrap()), None);
         let keyless = json!({"message":{"role":"assistant","usage":{"input":1}}});
         assert_eq!(pi_message_end_usage(keyless.as_object().unwrap()), None);
+    }
+
+    #[test]
+    fn claude_result_names_a_model_only_when_exactly_one_ran() {
+        let many = json!({"usage":{"output_tokens":3},
+            "modelUsage":{"model-a":{},"model-b":{}}});
+        assert_eq!(claude_result_usage(&many).unwrap().model, None);
+        let none = json!({"usage":{"output_tokens":3},"modelUsage":{}});
+        assert_eq!(claude_result_usage(&none).unwrap().model, None);
+        let one = json!({"usage":{"output_tokens":3},"modelUsage":{"model-a":{}}});
+        assert_eq!(
+            claude_result_usage(&one).unwrap().model.as_deref(),
+            Some("model-a")
+        );
+    }
+
+    #[test]
+    fn a_null_or_missing_token_field_is_unknown_not_zero() {
+        let record = json!({"usage":{"input_tokens":null,"output_tokens":4,
+            "cache_read_input_tokens":null}});
+        let report = claude_result_usage(&record).unwrap();
+        assert_eq!(report.input_tokens, None);
+        assert_eq!(report.cache_read_tokens, None);
+        assert_eq!(report.cache_write_tokens, None);
+        assert_eq!(report.output_tokens, Some(4));
+        let codex =
+            codex_turn_usage(&json!({"usage":{"output_tokens":4,"input_tokens":null}}), 1).unwrap();
+        assert_eq!(codex.input_tokens, None);
+        assert_eq!(codex.cache_read_tokens, None);
     }
 
     #[test]

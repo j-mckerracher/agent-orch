@@ -25,6 +25,20 @@ use sqlx::Row;
 use crate::{SqliteStore, StoreError};
 
 const MAX_RECEIPT_KEY_BYTES: usize = 128;
+/// Longest model name kept. Provider text beyond this is cut on a character
+/// boundary rather than rejected, so an odd name never drops the figures.
+const MAX_MODEL_BYTES: usize = 128;
+
+fn truncate_model(model: String) -> String {
+    if model.len() <= MAX_MODEL_BYTES {
+        return model;
+    }
+    let mut end = MAX_MODEL_BYTES;
+    while !model.is_char_boundary(end) {
+        end -= 1;
+    }
+    model[..end].to_owned()
+}
 
 /// Who produced a receipt's figures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,6 +86,7 @@ pub struct UsageReceipt {
     pub reasoning_tokens: Option<u64>,
     /// Nano-units and ISO-style currency code, both or neither.
     pub cost: Option<(u64, String)>,
+    /// Provider text; stored cut to `MAX_MODEL_BYTES`.
     pub model: Option<String>,
 }
 
@@ -235,7 +250,8 @@ impl SqliteStore {
         receipt: &UsageReceipt,
     ) -> Result<ReceiptOutcome, StoreError> {
         validate(receipt)?;
-        let receipt = receipt.clone();
+        let mut receipt = receipt.clone();
+        receipt.model = receipt.model.take().map(truncate_model);
         let window_start = to_i64(receipt.window_start_ms)?;
         let window_end = to_i64(receipt.window_end_ms)?;
         let reported_at = to_i64(receipt.reported_at_ms)?;
@@ -694,6 +710,163 @@ mod tests {
         assert_eq!(summary.totals.sessions, 3);
         assert_eq!(summary.totals.sessions_with_tokens, 2);
         assert_eq!(summary.totals.reported.input_tokens, Some(20));
+    }
+
+    #[test]
+    fn a_null_field_inside_a_receipt_stays_unknown_not_zero() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        // Cost-only receipt, like a Claude result that reported no tokens.
+        let mut cost_only = receipt("s-claude", "result", NOON, 1);
+        cost_only.input_tokens = None;
+        cost_only.output_tokens = None;
+        cost_only.cost = Some((5, "USD".into()));
+        store.record_usage_receipt(&cost_only).unwrap();
+        // Tokens without a cache figure.
+        store
+            .record_usage_receipt(&receipt("s-codex", "turn.completed:1", NOON, 1))
+            .unwrap();
+
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        let claude = provider(&summary, "claude-code");
+        assert_eq!(claude.reported.input_tokens, None);
+        assert_eq!(claude.reported.output_tokens, None);
+        assert_eq!(
+            (
+                claude.sessions,
+                claude.sessions_with_tokens,
+                claude.sessions_with_cost
+            ),
+            (1, 0, 1),
+            "a cost-only receipt covers the session for cost, not tokens"
+        );
+        let codex = provider(&summary, "codex");
+        assert_eq!(codex.reported.input_tokens, Some(10));
+        assert_eq!(codex.reported.cache_read_tokens, None);
+        assert_eq!(codex.reported.cache_write_tokens, None);
+        assert_eq!(codex.reported.reasoning_tokens, None);
+        assert_eq!(summary.totals.reported.cache_read_tokens, None);
+        assert_eq!(summary.totals.reported.input_tokens, Some(10));
+    }
+
+    #[test]
+    fn session_coverage_follows_start_time_and_receipts() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        let set_start = |session: &'static str, at: &'static str| {
+            store
+                .call(move |pool| async move {
+                    sqlx::query("UPDATE durable_events SET created_at = ? WHERE kind = 'session.created' AND session_id = ?")
+                        .bind(at)
+                        .bind(session)
+                        .execute(&pool)
+                        .await?;
+                    Ok(())
+                })
+                .unwrap();
+        };
+        // DAY_START is 2026-01-02 00:00:00 UTC; DAY_END is the next midnight.
+        set_start("s-codex", "2026-01-02 00:00:00");
+        set_start("s-claude", "2026-01-03 00:00:00");
+        set_start("s-pi", "2026-01-01 23:59:59");
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        let sessions = |name: &str| {
+            summary
+                .providers
+                .iter()
+                .find(|entry| entry.provider == name)
+                .map(|entry| entry.bucket.sessions)
+        };
+        assert_eq!(sessions("codex"), Some(1), "start is inclusive");
+        assert_eq!(sessions("claude-code"), None, "end is exclusive");
+        assert_eq!(sessions("pi"), None, "before the window");
+
+        // A receipt in the window covers a session that started elsewhere.
+        store
+            .record_usage_receipt(&receipt("s-pi", "m", NOON, 1))
+            .unwrap();
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        let pi = provider(&summary, "pi");
+        assert_eq!((pi.sessions, pi.sessions_with_tokens), (1, 1));
+    }
+
+    #[test]
+    fn costs_are_summed_per_provider_and_in_the_grand_total() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        for (session, key, nanos) in [
+            ("s-claude", "result", 100),
+            ("s-claude", "result-2", 250),
+            ("s-codex", "cost", 7),
+        ] {
+            let mut priced = receipt(session, key, NOON, 1);
+            priced.cost = Some((nanos, "USD".into()));
+            store.record_usage_receipt(&priced).unwrap();
+        }
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        assert_eq!(
+            provider(&summary, "claude-code").reported.costs.get("USD"),
+            Some(&350)
+        );
+        assert_eq!(
+            provider(&summary, "codex").reported.costs.get("USD"),
+            Some(&7)
+        );
+        assert_eq!(summary.totals.reported.costs.get("USD"), Some(&357));
+        assert_eq!(summary.totals.sessions_with_cost, 2);
+    }
+
+    #[test]
+    fn token_sums_saturate_instead_of_wrapping() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        for key in ["a", "b", "c"] {
+            let mut huge = receipt("s-codex", key, NOON, 1);
+            huge.input_tokens = Some(i64::MAX as u64);
+            store.record_usage_receipt(&huge).unwrap();
+        }
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        assert_eq!(
+            provider(&summary, "codex").reported.input_tokens,
+            Some(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn model_text_is_truncated_on_a_character_boundary() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        let stored = |key: &'static str| {
+            store
+                .call(move |pool| async move {
+                    Ok(sqlx::query_scalar::<_, Option<String>>(
+                        "SELECT model FROM usage_receipts WHERE receipt_key = ?",
+                    )
+                    .bind(key)
+                    .fetch_one(&pool)
+                    .await?)
+                })
+                .unwrap()
+        };
+        let mut long = receipt("s-claude", "long", NOON, 1);
+        long.model = Some("m".repeat(MAX_MODEL_BYTES + 500));
+        store.record_usage_receipt(&long).unwrap();
+        assert_eq!(stored("long"), Some("m".repeat(MAX_MODEL_BYTES)));
+
+        // A 3-byte character straddling the limit is dropped whole.
+        let mut wide = receipt("s-claude", "wide", NOON, 1);
+        wide.model = Some(format!("{}{}", "m".repeat(MAX_MODEL_BYTES - 1), "€€"));
+        store.record_usage_receipt(&wide).unwrap();
+        assert_eq!(stored("wide"), Some("m".repeat(MAX_MODEL_BYTES - 1)));
+
+        let mut exact = receipt("s-claude", "exact", NOON, 1);
+        exact.model = Some("m".repeat(MAX_MODEL_BYTES));
+        store.record_usage_receipt(&exact).unwrap();
+        assert_eq!(stored("exact"), Some("m".repeat(MAX_MODEL_BYTES)));
+        store
+            .record_usage_receipt(&receipt("s-claude", "none", NOON, 1))
+            .unwrap();
+        assert_eq!(stored("none"), None);
     }
 
     #[test]

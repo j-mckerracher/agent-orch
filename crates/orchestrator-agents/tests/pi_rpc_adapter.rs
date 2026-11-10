@@ -329,6 +329,7 @@ fn ignores_malformed_json_lines() {
 
 #[test]
 fn reports_assistant_usage_from_message_end_and_nothing_else() {
+    // Not verified against a live Pi stream: the fake child emits a synthetic `message_end`.
     with_runtime(async {
         let mut handle = spawn_fake("usage").await;
         assert!(handle.take_usage().is_empty());
