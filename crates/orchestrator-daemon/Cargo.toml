@@ -22,3 +22,9 @@ sha2 = "=0.10.9"
 
 [dev-dependencies]
 tempfile = "=3.27.0"
+
+# Re-executes its own binary as the fake agent, so it needs a custom main and
+# runs identically on Unix and Windows (`cargo test -p orchestrator-daemon --test lifecycle`).
+[[test]]
+name = "lifecycle"
+harness = false
