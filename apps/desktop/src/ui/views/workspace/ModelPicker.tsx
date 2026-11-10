@@ -58,7 +58,11 @@ export function ModelPicker({
   const [retries, setRetries] = useState(0);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
-  const provider: ModelProvider | undefined = providers.find((item) => item.id === providerId) ?? providers[0];
+  // A provider the daemon cannot launch is listed but never chosen, and never the default.
+  const provider: ModelProvider | undefined =
+    providers.find((item) => item.launchable && item.id === providerId) ??
+    providers.find((item) => item.launchable) ??
+    providers[0];
   const models = provider?.models.status === "ok" ? provider.models.value : [];
   const model = models.find((item) => item.id === modelId) ?? models[0];
   const efforts = live ? effortsFor(provider, model) : provider?.efforts.status === "ok" ? provider.efforts.value : [];
@@ -200,7 +204,7 @@ export function ModelPicker({
           >
             {providers.length === 0 && <option value="">Not available</option>}
             {providers.map((item) => (
-              <option key={item.id} value={item.id}>
+              <option key={item.id} value={item.id} disabled={!item.launchable}>
                 {item.name}
                 {item.launchable ? "" : " (not launchable)"}
               </option>

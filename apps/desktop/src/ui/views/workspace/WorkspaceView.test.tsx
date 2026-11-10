@@ -5,7 +5,7 @@ import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
-import { CODEX_CATALOG, COLD_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
+import { CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { workspaceRegistration } from "./register";
@@ -222,6 +222,34 @@ describe("workspace view, live (daemon-derived) mode", () => {
       expect(last).toEqual({ agent: "codex", model: "gpt-b", effort: "medium" });
     });
     expect(screen.getByText(/task submission only/)).toBeInTheDocument();
+  });
+
+  it("disables a non-launchable provider and never defaults to it", async () => {
+    const fake = liveDaemon();
+    const caps = (agent: string, launchable: boolean) => ({
+      agent,
+      installed: launchable,
+      launchable,
+      capabilities: launchable
+        ? { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true }
+        : null,
+    });
+    fake.stub("agents.capabilities", [caps("pi", false), caps("codex", true)]);
+    fake.stub("agents.catalog", [PI_CATALOG, CODEX_CATALOG]);
+    stubValidate(fake, [PI_CATALOG, CODEX_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const provider = await screen.findByRole("combobox", { name: "Provider" });
+    const pi = within(provider).getByRole("option", { name: /pi \(not launchable\)/ });
+    expect(pi).toBeDisabled();
+    expect(within(provider).getByRole("option", { name: "codex" })).toBeEnabled();
+    await waitFor(() => expect(provider).toHaveValue("codex"));
+    expect(screen.getByRole("button", { name: /^Model settings: codex · GPT A/ })).toBeInTheDocument();
+    await user.selectOptions(provider, "pi");
+    expect(provider).toHaveValue("codex");
   });
 
   it("retries a cold catalog shortly and then lists the models", async () => {

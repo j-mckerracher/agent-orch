@@ -9,8 +9,9 @@
  *   that as a status line and never produces reply text of its own.
  * - There is no push stream. Replies arrive by cursor reads; the caller polls
  *   while the latest turn is `running`.
- * - The transcript is re-read from the start every time. The log is persisted
- *   by the daemon, so a reconnect or a daemon restart needs no client cursor.
+ * - The transcript is re-read every time, with no client cursor. The log is persisted
+ *   by the daemon, so a reconnect or a daemon restart needs no saved state. A very long
+ *   log shows its newest entries; the oldest are cut and the result says so.
  */
 import type { ConnectionManager } from "../../daemon/connection";
 import { isFixtureId } from "../../daemon/api";
@@ -33,6 +34,14 @@ import type {
 } from "./types";
 
 export const MAX_LIVE_CONVERSATION_PAGES = 50;
+/** The daemon returns at most 100 entries per page, so this span fits in `MAX_LIVE_CONVERSATION_PAGES` pages. */
+export const MAX_LIVE_SEQUENCE_SPAN = MAX_LIVE_CONVERSATION_PAGES * 100;
+
+/** A window that starts mid-turn would show a reply with no message; start at the first whole turn. */
+function dropPartialLeadingTurn(entries: ConversationWireEntry[]): ConversationWireEntry[] {
+  const first = entries.findIndex((entry) => entry.kind === "user_message");
+  return first > 0 ? entries.slice(first) : entries;
+}
 
 export type LiveTarget = Exclude<ConversationTarget, { kind: "project" }>;
 
@@ -162,23 +171,38 @@ export function createLiveConversation(
         async () => {
           const api = connection.api();
           const wire = toWireTarget(target);
-          const entries: ConversationWireEntry[] = [];
+          let entries: ConversationWireEntry[] = [];
           let after: number | undefined;
+          let epoch: string | undefined;
           let more = false;
           let turn: ConversationWireTurn | null = null;
-          for (let page = 0; page < MAX_LIVE_CONVERSATION_PAGES; page++) {
-            const result = await api.conversationsGet(wire, after);
+          let jumpedTo: number | null = null;
+          // The first read starts at the beginning and learns `latest_sequence`. A long log is then
+          // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
+          // latest turn are always the ones shown. Sequences are shared by every conversation, so
+          // this is a bound on the span, not an exact entry count.
+          for (let page = 0; page <= MAX_LIVE_CONVERSATION_PAGES; page++) {
+            const result = await api.conversationsGet(wire, after, epoch);
+            epoch ??= result.epoch;
             entries.push(...result.entries);
             turn = result.turn;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
+            const windowStart = result.latest_sequence - MAX_LIVE_SEQUENCE_SPAN;
+            if (windowStart > after) {
+              entries = [];
+              after = jumpedTo = windowStart;
+            }
           }
+          // A jump discards entries already read, so it always means older entries are not shown.
+          const truncated = more || jumpedTo !== null;
+          if (truncated) entries = dropPartialLeadingTurn(entries);
           return {
             target,
             entries: mapEntries(entries),
             repliesExpected: true,
-            truncated: more,
+            truncated,
             turn: turn === null ? null : turnInfo(turn),
           };
         },

@@ -79,6 +79,103 @@ describe("mapEntries", () => {
   });
 });
 
+/**
+ * A daemon-shaped paged log. `turns` turns of two entries each; `gap` is how many sequence numbers
+ * other conversations use between two of this conversation's entries (sequences are store-wide).
+ * The last turn is left `running` when `lastRunning` is set.
+ */
+function stubPagedLog(fake: FakeDaemon, turns: number, options: { gap?: number; lastRunning?: boolean } = {}) {
+  const gap = options.gap ?? 1;
+  const log: ConversationWireEntry[] = [];
+  for (let n = 1; n <= turns; n++) {
+    const running = options.lastRunning === true && n === turns;
+    log.push(wire(log.length * gap + 1, `t${n}`, "user_message", `m${n}`));
+    if (!running) log.push(wire(log.length * gap + 1, `t${n}`, "reply_chunk", `r${n}`));
+    if (!running) log.push(wire(log.length * gap + 1, `t${n}`, "turn_completed"));
+  }
+  const latest = log.at(-1)!.sequence;
+  const turnFor = (id: string, state: "running" | "completed") => ({
+    id,
+    state,
+    error_code: null,
+    runtime: { name: "stub", version: "1" },
+    reply_bytes: 0,
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+  });
+  const lastTurn = turnFor(`t${turns}`, options.lastRunning ? "running" : "completed");
+  fake.stub("conversations.get", (params: Record<string, unknown>) => {
+    const after = typeof params.after_sequence === "number" ? params.after_sequence : 0;
+    const rest = log.filter((entry) => entry.sequence > after);
+    const entries = rest.slice(0, 100);
+    return {
+      authority: "none",
+      target: { kind: "global" },
+      entries,
+      more: rest.length > 100,
+      next_after_sequence: entries.at(-1)?.sequence ?? after,
+      latest_sequence: latest,
+      turn: lastTurn,
+      epoch: "epoch-1",
+    };
+  });
+  return { log, afters: () => fake.callsTo("conversations.get").map((c) => (c.params as Record<string, unknown>).after_sequence) };
+}
+
+describe("live transcript of a very long log", () => {
+  it("shows the newest entries and the latest turn instead of the oldest 5000 entries", async () => {
+    const fake = populate(new FakeDaemon());
+    const { afters } = stubPagedLog(fake, 3000, { lastRunning: true });
+    const result = await (await live(fake)).conversation.transcript({ kind: "global" });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    const messages = result.data.entries.filter((e) => e.role === "user");
+    expect(messages.at(-1)!.text).toBe("m3000");
+    expect(result.data.entries.some((e) => e.text === "m1")).toBe(false);
+    expect(result.data.entries[0]).toMatchObject({ role: "user" });
+    expect(result.data.entries.length).toBeLessThanOrEqual(5000);
+    expect(result.data.truncated).toBe(true);
+    expect(result.data.turn).toMatchObject({ id: "t3000", state: "running" });
+    expect(afters().length).toBeLessThanOrEqual(51);
+    expect(afters()[0]).toBeUndefined();
+    expect(afters()[1]).toBeGreaterThan(0);
+    for (const call of fake.callsTo("conversations.get").slice(1)) {
+      expect((call.params as Record<string, unknown>).epoch).toBe("epoch-1");
+    }
+  });
+
+  it("shows a log that fits the window whole, without truncation", async () => {
+    const fake = populate(new FakeDaemon());
+    stubPagedLog(fake, 1600);
+    const result = await (await live(fake)).conversation.transcript({ kind: "global" });
+    expect(result.status === "ok" && [result.data.truncated, result.data.entries.filter((e) => e.role === "user").length]).toEqual([
+      false,
+      1600,
+    ]);
+  });
+
+  it("does not report truncation when other conversations only stretch the sequence span", async () => {
+    const fake = populate(new FakeDaemon());
+    const { afters } = stubPagedLog(fake, 40, { gap: 200 });
+    const result = await (await live(fake)).conversation.transcript({ kind: "global" });
+    expect(result.status === "ok" && result.data.truncated).toBe(false);
+    expect(result.status === "ok" && result.data.entries.filter((e) => e.role === "user")).toHaveLength(40);
+    expect(afters().length).toBeGreaterThan(1);
+  });
+
+  it("reports truncation when the window skips real older entries across a stretched span", async () => {
+    const fake = populate(new FakeDaemon());
+    stubPagedLog(fake, 200, { gap: 200 });
+    const result = await (await live(fake)).conversation.transcript({ kind: "global" });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.data.truncated).toBe(true);
+    expect(result.data.entries.some((e) => e.text === "m1")).toBe(false);
+    expect(result.data.entries.at(-1)).toMatchObject({ role: "coordinator", text: "r200", streaming: false });
+    expect(result.data.entries.filter((e) => e.role === "user").at(-1)!.text).toBe("m200");
+  });
+});
+
 describe("live conversation adapter", () => {
   it("reads every page and reports the latest turn", async () => {
     const fake = populate(new FakeDaemon());
