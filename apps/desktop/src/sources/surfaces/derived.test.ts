@@ -126,16 +126,6 @@ describe("derived D11 activity", () => {
   });
 });
 
-describe("derived D12 (no daemon data)", () => {
-  it("answers unsupported with daemon provenance that reads no method, even when connected", async () => {
-    const fake = populate(new FakeDaemon());
-    const s = await live(fake);
-    const before = fake.calls.length;
-    expect(await s.usage.usage()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon", methods: [] } });
-    expect(fake.calls.length).toBe(before);
-  });
-});
-
 describe("derived D14 models", () => {
   it("maps agents.capabilities and never claims a model list", async () => {
     const result = await (await live(populate(new FakeDaemon()))).models.catalog();

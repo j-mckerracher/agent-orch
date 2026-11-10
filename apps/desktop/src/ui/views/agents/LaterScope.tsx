@@ -85,15 +85,26 @@ export function LaterScope() {
                 ).map(([label, value]) => (
                   <tr key={label}>
                     <th scope="row">{label}</th>
-                    <td>{measured(value, (n) => `${usage.data.currency} ${n.toFixed(2)}`)}</td>
+                    <td>
+                      {measured(value, (n) => `${usage.data.currency} ${n > 0 && n < 0.01 ? "<0.01" : n.toFixed(2)}`)}
+                    </td>
                   </tr>
                 ))}
-                {usage.data.coverage.map((c) => (
-                  <tr key={c.provider}>
+                {usage.data.coverage.map((c, index) => (
+                  <tr key={`${index}:${c.provider}`}>
                     <th scope="row">Coverage: {c.provider}</th>
                     <td>{c.reporting}</td>
                   </tr>
                 ))}
+                {usage.data.costCoverage && usage.data.costCoverage.status !== "complete" && (
+                  <tr>
+                    <th scope="row">Reported cost coverage</th>
+                    <td>
+                      partial: {usage.data.costCoverage.sessionsWithCost} of {usage.data.costCoverage.sessions} sessions
+                      reported a cost
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

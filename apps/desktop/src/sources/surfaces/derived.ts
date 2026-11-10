@@ -1,17 +1,17 @@
 /**
  * Daemon-derived adapters for D9-D16 (M7-03). They read only methods the
  * daemon already has: projects.list, tasks.list, approvals.list,
- * agents.capabilities, coordinator.get and coordinator.send_message. No
- * method is added. D11 is built in `activity.ts` from `queue.snapshot` (M7-20).
+ * agents.capabilities, coordinator.get, coordinator.send_message, queue.snapshot
+ * (D11, `activity.ts`), usage.summary (D12, `usageLive.ts`) and host.metrics (D13,
+ * `liveMetrics.ts`). No method is added.
  *
  * Rules:
  * - This file never imports fixtures. A failed live call is `unavailable` (or
  *   `unsupported` when the daemon lacks the method) with daemon provenance; it
  *   is never answered with fixture data.
- * - Values the daemon does not record (spend, models, objectives, priorities,
+ * - Values the daemon does not record (models, objectives, priorities,
  *   deadlines) are `unsupported` or `unknown`, never zero or an invented
- *   number. Slots and queue order are read live by `activity.ts`. Host metrics
- *   are not read here: D13 stays `unsupported` in this file.
+ *   number.
  * - `simulate*` calls reject: they exist for fixture adapters only.
  */
 import type { ConnectionManager } from "../../daemon/connection";
@@ -24,6 +24,7 @@ import { createDerivedActivity } from "./activity";
 import { createLiveMetrics } from "./liveMetrics";
 import { countStates, notOk, observation, okResult, unsupportedValue } from "./result";
 import { createSearchSource } from "./search";
+import { createLiveUsageSource } from "./usageLive";
 import type {
   ConversationSource,
   ConversationTarget,
@@ -172,11 +173,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
 
   const activity = createDerivedActivity(connection, now);
 
-  const usageProvenance = prov("D12", []);
-  const usage: UsageSource = {
-    provenance: usageProvenance,
-    usage: () => Promise.resolve(notOk(usageProvenance, "unsupported", "The daemon records no usage or spend.")),
-  };
+  const usage: UsageSource = createLiveUsageSource(connection, now);
 
   const metrics: SystemMetricsSource = createLiveMetrics(connection, { now });
 
