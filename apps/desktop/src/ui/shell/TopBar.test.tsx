@@ -136,6 +136,33 @@ describe("usage pill", () => {
     expect(details.open).toBe(false);
     expect(button).toHaveFocus();
   });
+
+  it("shows a readable window start and no doubled periods", async () => {
+    await mount(null);
+    const button = screen.getByRole("group", { name: "Daily usage" }).querySelector("summary") as HTMLElement;
+    await userEvent.setup().click(button);
+    const info = await screen.findByTestId("top-usage-info");
+    await waitFor(() => expect(info).toHaveTextContent("reported since"));
+    expect(info).toHaveTextContent(/since Jan 1, 2026/);
+    expect(info.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    expect(info.textContent).not.toContain("..");
+  });
+
+  it("live mode popover has no doubled period", async () => {
+    await mount(daemon());
+    const info = screen.getByTestId("top-usage-info");
+    expect(info.textContent).not.toContain("..");
+  });
+
+  it("closes the popover on an outside pointer press", async () => {
+    const { user } = await mount(null);
+    const button = screen.getByRole("group", { name: "Daily usage" }).querySelector("summary") as HTMLElement;
+    await user.click(button);
+    const details = button.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(true);
+    await user.click(document.body);
+    expect(details.open).toBe(false);
+  });
 });
 
 describe("local search", () => {
@@ -220,6 +247,31 @@ describe("local search", () => {
     expect(services.router.getSnapshot()).toMatchObject({ name: "global" });
   });
 
+  it("gives options whitespace-free ids and keeps aria-expanded true while the panel is open", async () => {
+    const { user } = await mount(daemon());
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await user.type(search(), "zzzz");
+    await waitFor(() => expect(status()).toHaveTextContent("No loaded records match"));
+    expect(search()).toHaveAttribute("aria-expanded", "true");
+    await user.clear(search());
+    await user.type(search(), "/work");
+    const options = await screen.findAllByRole("option");
+    for (const option of options) expect(option.id).toMatch(/^\S+$/);
+    expect(new Set(options.map((option) => option.id)).size).toBe(options.length);
+  });
+
+  it("searching and navigating issue only read RPCs", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    const before = fake.calls.length;
+    await user.type(search(), "release");
+    await screen.findByRole("option", { name: /release/ });
+    await user.keyboard("{Enter}");
+    const methods = fake.calls.slice(before).map((call) => call.method);
+    expect(methods.filter((method) => !/\.(list|get)$|subscribe|capabilities/.test(method))).toEqual([]);
+  });
+
   it("reports skipped inputs instead of implying absence", async () => {
     const fake = daemon();
     const { user } = await mount(fake);
@@ -237,5 +289,12 @@ describe("layout", () => {
   it("puts search on its own row below 761 px", () => {
     expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.shell-topbar-search\s*\{\s*order: 3/);
     expect(css).toMatch(/\.shell-topbar-usage\s*\{\s*order: 1/);
+  });
+
+  it("anchors the usage popover to the top bar below 761 px so it cannot overflow the viewport", () => {
+    const narrow = css.slice(css.indexOf("@media (max-width: 760px)"));
+    expect(narrow).toMatch(/\.shell-topbar\s*\{\s*position: relative/);
+    expect(narrow).toMatch(/\.top-usage,\s*\.top-usage-info\s*\{\s*position: static/);
+    expect(narrow).toMatch(/\.top-usage-popup\s*\{[^}]*left: 18px;[^}]*right: 18px/);
   });
 });

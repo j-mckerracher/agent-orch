@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { Measured, UsageSummary } from "../../sources/surfaces/types";
 import { useServices, useSurface } from "../services";
 import { PlaceholderBadge } from "../widgets";
@@ -17,20 +17,36 @@ function age(ageMs: number): string {
   return minutes < 1 ? "just now" : `${minutes} min ago`;
 }
 
+/** Reasons arrive as free text that may already end in a period. */
+function trimStop(text: string): string {
+  return text.replace(/[.\s]+$/, "");
+}
+
+function windowLabel(windowStart: string, timezone: string): string {
+  const date = new Date(windowStart);
+  if (Number.isNaN(date.getTime())) return windowStart;
+  try {
+    return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(date);
+  } catch {
+    return windowStart;
+  }
+}
+
 function figure(label: string, value: Measured<number>, currency: string): string {
   return value.status === "ok"
     ? `${label}: ${money(value.value, currency)} (observed ${age(value.ageMs)}).`
-    : `${label}: ${value.status} (${value.reason}).`;
+    : `${label}: ${value.status} (${trimStop(value.reason)}).`;
 }
 
 function UsageDetails({ summary }: { summary: UsageSummary }) {
   const { reported, estimated, budget, currency, timezone, windowStart, coverage } = summary;
+  const since = `since ${windowLabel(windowStart, timezone)} (${timezone})`;
   return (
     <>
       <p>
         {reported.status === "ok"
-          ? `${money(reported.value, currency)} reported since ${windowStart} (${timezone}).`
-          : `Reported usage since ${windowStart} (${timezone}) is ${reported.status}: ${reported.reason}.`}
+          ? `${money(reported.value, currency)} reported ${since}.`
+          : `Reported usage ${since} is ${reported.status}: ${trimStop(reported.reason)}.`}
       </p>
       <p>{figure("Estimated, not reported", estimated, currency)} Estimates are never added to the reported figure.</p>
       <p>{figure("Budget", budget, currency)}</p>
@@ -65,11 +81,20 @@ export function UsagePill() {
         ? money(reported, summary.currency)
         : "not available";
   const reason =
-    result.status === "loading" || result.status === "ok" ? null : `Usage is ${result.status}: ${result.reason}.`;
+    result.status === "loading" || result.status === "ok" ? null : `Usage is ${result.status}: ${trimStop(result.reason)}.`;
 
   const close = () => {
     if (details.current) details.current.open = false;
   };
+
+  // WebKit does not focus a clicked <summary>, so blur alone cannot close the popover.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (details.current?.open && !details.current.contains(event.target as Node | null)) close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
 
   return (
     <div className="top-usage" role="group" aria-label="Daily usage" data-testid="top-usage">
@@ -97,9 +122,7 @@ export function UsagePill() {
           {summary ? (
             <UsageDetails summary={summary} />
           ) : (
-            <p>
-              {reason ?? "Loading usage."} A missing figure is not zero spend.
-            </p>
+            <p>{reason ?? "Loading usage."} A missing figure is not zero spend.</p>
           )}
           {source.provenance.kind === "fixture" && <p>Figures are placeholder data.</p>}
         </div>

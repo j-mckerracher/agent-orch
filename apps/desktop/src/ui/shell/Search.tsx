@@ -86,15 +86,11 @@ function sessionOptions(store: AppDataSnapshot, query: string): Option[] {
   return options;
 }
 
-type SearchState =
-  | { status: "idle" }
-  | { status: "searching" }
-  | { status: "done"; query: string; result: SurfaceResult<SearchResults> };
+type SearchState = { status: "idle" } | { status: "done"; query: string; result: SurfaceResult<SearchResults> };
 
-function summarize(state: SearchState, count: number, notice: string | null): string {
+function summarize(state: SearchState, count: number, notice: string | null, pending: boolean): string {
   if (notice) return notice;
-  if (state.status === "idle") return "";
-  if (state.status === "searching") return "Searching…";
+  if (state.status === "idle") return pending ? "Searching…" : "";
   const { result, query } = state;
   if (result.status !== "ok") return `Search is ${result.status}: ${result.reason}`;
   if (count === 0) return `No loaded records match “${query}”.`;
@@ -121,13 +117,15 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
   const [state, setState] = useState<SearchState>({ status: "idle" });
 
   const trimmed = query.trim();
+  const { projects, tasks, approvals } = store;
+  // Earlier results stay on screen while a new query is debounced; the effect also re-runs
+  // when the loaded lists change so results follow store events.
   useEffect(() => {
     if (!trimmed) {
-      setState({ status: "idle" });
+      setState((previous) => (previous.status === "idle" ? previous : { status: "idle" }));
       return;
     }
     let live = true;
-    setState({ status: "searching" });
     const timer = setTimeout(() => {
       surfaces.search.search(trimmed).then(
         (result) => live && setState({ status: "done", query: trimmed, result }),
@@ -148,10 +146,12 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
       live = false;
       clearTimeout(timer);
     };
-  }, [trimmed, debounceMs, surfaces]);
+  }, [trimmed, debounceMs, surfaces, projects, tasks, approvals]);
 
+  // The displayed results answer an older query until the debounced search returns.
+  const pending = trimmed !== "" && !(state.status === "done" && state.query === trimmed);
   const groups = useMemo(() => {
-    if (state.status !== "done") return [];
+    if (state.status !== "done" || !trimmed) return [];
     const options: Option[] = [];
     if (state.result.status === "ok") {
       for (const hit of state.result.data.hits) {
@@ -169,12 +169,15 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
     return GROUP_ORDER.map((group) => ({ group, options: options.filter((option) => option.group === group) })).filter(
       (entry) => entry.options.length > 0,
     );
-  }, [state, store]);
+  }, [state, store, trimmed]);
   const flat = groups.flatMap((entry) => entry.options);
   const activeOption = flat[active];
+  const optionId = (option: Option) => `${ids}-opt-${flat.indexOf(option)}`;
   const skipped = state.status === "done" && state.result.status === "ok" ? state.result.data.skipped : [];
   const fixtureSource = surfaces.search.provenance.kind === "fixture";
-  const status = summarize(state, flat.length, notice);
+  // Keep the last announced text while a newer query is pending so the live region does not
+  // repeat "Searching…" on every keystroke once results exist.
+  const status = summarize(state, flat.length, notice, pending);
 
   const choose = (option: Option) => {
     router.navigate(option.route);
@@ -198,7 +201,7 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
       }
       case "Enter": {
         const option = activeOption ?? flat[0];
-        if (open && option) {
+        if (open && option && !pending) {
           event.preventDefault();
           choose(option);
         }
@@ -228,9 +231,9 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
         className="top-search-input"
         aria-label="Search"
         aria-autocomplete="list"
-        aria-expanded={open && flat.length > 0}
+        aria-expanded={open}
         aria-controls={open && flat.length > 0 ? listId : undefined}
-        aria-activedescendant={open && activeOption ? `${ids}-${activeOption.key}` : undefined}
+        aria-activedescendant={open && activeOption ? optionId(activeOption) : undefined}
         aria-describedby={hintId}
         placeholder="Search projects, tasks, sessions, approvals"
         autoComplete="off"
@@ -259,7 +262,7 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
           </p>
           {status && !flat.length && (
             <p className="top-search-summary" aria-hidden="true">
-              {status}
+              {pending ? "Searching…" : status}
             </p>
           )}
           {skipped.length > 0 && (
@@ -280,7 +283,7 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
                     {options.map((option) => (
                       <div
                         key={option.key}
-                        id={`${ids}-${option.key}`}
+                        id={optionId(option)}
                         role="option"
                         aria-selected={option === activeOption}
                         className="top-search-option"
