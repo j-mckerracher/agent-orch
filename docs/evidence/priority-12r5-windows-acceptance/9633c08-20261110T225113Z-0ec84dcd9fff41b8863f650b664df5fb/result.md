@@ -117,3 +117,12 @@ P12-WINDOWS-CHECKS: PASS
 Step 3 report-parser issue: the first execution stopped when PowerShell ConvertFrom-Json rejected case-distinct keys SKIPPED and skipped in overall.result.json.
 Report-only recovery: overall.result.json was excluded from gate/harness classification and its overall field was read with ConvertFrom-Json -AsHashtable. All other result JSON files used the runbook parser unchanged.
 No harness gate was rerun, no source file or harness code was changed, and the original exception is preserved in runbook-parser-error.txt.
+
+## Reporting identity-check note
+The first Step 5 identity guard reported a mismatch after creating local commit 53715a2988003a37f2463bcd7e239eb619dfb1df. That commit was not pushed.
+The exact four-field guard was replayed in a fresh PowerShell session and passed; direct git show checks also confirmed author and committer names and noreply addresses match the runbook-pinned repo identity.
+The original local commit remains in this evidence branch history. This follow-up commit records the verifier diagnostic and does not change test results.
+
+## Publication continuation note
+A resumed Step 5 privacy-rescan attempt stopped before staging because the continuation session had not initialized the runbook UTF-8 encoder.
+The exact runbook redaction and privacy-scan block is rerun with its required no-BOM UTF-8 encoder. No test gates or source code are rerun or changed.

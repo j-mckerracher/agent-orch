@@ -1,0 +1,2 @@
+A resumed Step 5 privacy-rescan attempt stopped before staging because the continuation session had not initialized the runbook UTF-8 encoder.
+The exact runbook redaction and privacy-scan block is rerun with its required no-BOM UTF-8 encoder. No test gates or source code are rerun or changed.

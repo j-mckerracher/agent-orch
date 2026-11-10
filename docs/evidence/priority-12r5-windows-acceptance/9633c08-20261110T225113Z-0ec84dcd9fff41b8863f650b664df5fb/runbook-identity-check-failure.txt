@@ -1,0 +1,4 @@
+Initial Step 5 verifier result: RuntimeException, pinned-identity assertion failed before push.
+Preserved local commit: 53715a2988003a37f2463bcd7e239eb619dfb1df.
+Fresh exact replay: all four identity fields match; direct git show author and committer metadata match the pinned repo identity.
+No evidence push was attempted by the failed invocation.
