@@ -11,13 +11,14 @@ export interface TargetOption {
   label: string;
   /** One line under the header; never an invented figure. */
   scope: string;
-  /** True for the Global orchestrator: it has no daemon service, so it carries the D10 PLACEHOLDER badge. */
+  /** True for fixture-only options (Global in fixture mode): they carry the D10 PLACEHOLDER badge. */
   placeholder: boolean;
 }
 
-/** Stable key for a target; also the draft key. The `project:` prefix keeps it apart from `global`. */
+/** Stable key for a target; also the draft key. The `project:` and `workstream:` prefixes keep them apart from `global`. */
 export function targetKey(target: ConversationTarget): string {
-  return target.kind === "global" ? "global" : `project:${target.projectId}`;
+  if (target.kind === "global") return "global";
+  return target.kind === "project" ? `project:${target.projectId}` : `workstream:${target.workstreamId}`;
 }
 
 export function parseTargetKey(key: string | null): ConversationTarget | null {
@@ -25,11 +26,20 @@ export function parseTargetKey(key: string | null): ConversationTarget | null {
   if (key?.startsWith("project:") && key.length > "project:".length) {
     return { kind: "project", projectId: key.slice("project:".length) };
   }
+  if (key?.startsWith("workstream:") && key.length > "workstream:".length) {
+    return { kind: "workstream", workstreamId: key.slice("workstream:".length) };
+  }
   return null;
 }
 
 export function projectLabel(projectId: string): string {
   return `${basename(projectId)} coordinator`;
+}
+
+/** The id that names the target in the daemon; Global has none. */
+export function targetId(target: ConversationTarget): string | null {
+  if (target.kind === "global") return null;
+  return target.kind === "project" ? target.projectId : target.workstreamId;
 }
 
 /** Case-insensitive substring match over the option's label and scope. */

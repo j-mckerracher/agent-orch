@@ -65,6 +65,11 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "review.request_approval": "review",
   "review.evidence": "review",
   "review.request_changes": "review",
+  "agents.catalog": "agents",
+  "agents.validate_selection": "agents",
+  "conversations.send": "coordinator",
+  "conversations.get": "coordinator",
+  "conversations.cancel": "coordinator",
 };
 
 interface Pending {

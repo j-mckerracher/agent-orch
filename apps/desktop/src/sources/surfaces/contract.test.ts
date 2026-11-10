@@ -171,8 +171,17 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
 
   it("exposes the same adapter methods as the other adapter set", () => {
     const fixture = createFixtureSurfaces();
+    // `cancel` and `validate` are optional: only the live adapters have a daemon to ask.
+    const optional = new Set(["cancel", "validate"]);
     const shape = (s: SurfaceSources) =>
-      Object.fromEntries(Object.entries(s).map(([name, source]) => [name, Object.keys(source).sort()]));
+      Object.fromEntries(
+        Object.entries(s).map(([name, source]) => [
+          name,
+          Object.keys(source)
+            .filter((key) => !optional.has(key))
+            .sort(),
+        ]),
+      );
     return harness.build("ok").then((built) => expect(shape(built.surfaces)).toEqual(shape(fixture)));
   });
 });
