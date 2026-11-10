@@ -160,10 +160,10 @@ export function gatesFor(platform) {
 
 // Measured on macOS at the source commit efa5e8af (see the M6-02 owner report). Not Windows evidence.
 const MACOS_COUNTS = {
-  daemonTests: 0,
-  daemonSequence: [],
+  daemonTests: 72,
+  daemonSequence: [59, 4, 9],
   workspacePassed: 638,
   workspaceIgnored: 1,
   tauriTests: 10,
-  e2eFiles: 0,
+  e2eFiles: 1,
 };

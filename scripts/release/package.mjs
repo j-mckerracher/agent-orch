@@ -69,12 +69,15 @@ for (const name of signingNames(platform)) {
 delete childEnv.REQUIRE_SIGNING;
 
 const version = JSON.parse(readFileSync(join(desktop, "src-tauri", "tauri.conf.json"), "utf8")).version;
+if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== `v${version}`) {
+  console.error(`::error::tag ${process.env.GITHUB_REF_NAME} does not match app version v${version}`);
+  process.exit(1);
+}
 const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 mkdirSync(out, { recursive: true });
 const label = decision.sign ? "signed" : "unsigned";
 const artifacts = [];
 let certThumbprint = null;
-const extra = [];
 
 try {
   if (platform === "windows" && decision.sign) {
@@ -91,18 +94,17 @@ try {
       rmSync(pfx, { force: true });
     }
     if (!/^[0-9A-Fa-f]{40}$/.test(certThumbprint)) throw new Error("certificate import did not return a thumbprint");
-    const config = join(targetDir, "tauri-signing.conf.json");
-    writeFileSync(config, JSON.stringify({
+    // The Tauri CLI merges TAURI_CONFIG into the config; the thumbprint is not a secret.
+    childEnv.TAURI_CONFIG = JSON.stringify({
       bundle: { windows: {
         certificateThumbprint: certThumbprint,
         digestAlgorithm: "sha256",
         timestampUrl: process.env.WINDOWS_TIMESTAMP_URL || "http://timestamp.digicert.com",
       } },
-    }));
-    extra.push("--", "--config", config);
+    });
   }
 
-  run("npm", ["run", platform === "macos" ? "package:mac" : "package:win", ...extra], { cwd: desktop, env: childEnv });
+  run("npm", ["run", platform === "macos" ? "package:mac" : "package:win"], { cwd: desktop, env: childEnv });
 
   if (platform === "macos") {
     const app = join(targetDir, "release", "bundle", "macos", "Agent Orchestrator.app");

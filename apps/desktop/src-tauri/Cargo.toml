@@ -3,6 +3,7 @@ name = "agent-orch-desktop"
 description = "Tauri host for the agent orchestrator desktop app. Thin layer: window lifecycle and IPC forwarding to the engine; no orchestration logic lives here."
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 # Deliberately kept outside the root Cargo workspace so desktop tooling and
 # the engine never share a build graph (root Cargo.toml header explains the
