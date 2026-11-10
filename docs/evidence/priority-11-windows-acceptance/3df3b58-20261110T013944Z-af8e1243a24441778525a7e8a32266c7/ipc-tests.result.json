@@ -1,0 +1,25 @@
+{
+  "name": "ipc-tests",
+  "command": "cargo.exe test --locked -p orchestrator-ipc",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\source",
+  "source_commit": "3df3b5831ffab764aeeddf14de2caef17b00cf4a",
+  "started_utc": "2026-11-10T01:42:16.0396483Z",
+  "duration_seconds": 30.494,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\ipc-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\ipc-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 4090,
+  "stdout_sha256": "0ed4ca4c586e99dc6b741e6b02b8242b4372969fc111df9dcb65206710451721",
+  "stderr_bytes": 884,
+  "stderr_sha256": "2a0c951c971496c42e4597b02d04698ba9e74e97d88bb9d03d284407981e4d1e",
+  "error": null
+}

@@ -1,0 +1,25 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\source\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.79s
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\cargo-target\debug\deps\orchestrator_daemon-fa3ebc8fd7f64b8d.exe)
+     Running tests\coordinator_review.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\cargo-target\debug\deps\coordinator_review-45c0c5fb4a74ac4c.exe)
+     Running tests\daemon.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\cargo-target\debug\deps\daemon-796fe7cb5e15b5c8.exe)
+     Running tests\lifecycle.rs (C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\cargo-target\debug\deps\lifecycle-3ea3121053bfb7c8.exe)
+
+thread 'main' (33560) panicked at crates\orchestrator-daemon\tests\lifecycle.rs:87:9:
+timed out after 30 s: agent wrote its pid
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: lifecycle::until<u32,lifecycle::scenario::closure_env$2>
+             at .\tests\lifecycle.rs:87
+   3: lifecycle::scenario
+             at .\tests\lifecycle.rs:226
+   4: lifecycle::main
+             at .\tests\lifecycle.rs:39
+   5: core::ops::function::FnOnce::call_once<void (*)(),tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+error: test failed, to rerun pass `-p orchestrator-daemon --test lifecycle`

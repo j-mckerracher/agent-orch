@@ -1,0 +1,25 @@
+{
+  "name": "daemon-lifecycle",
+  "command": "cargo.exe test --locked -p orchestrator-daemon --test lifecycle -- --nocapture",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\source",
+  "source_commit": "3df3b5831ffab764aeeddf14de2caef17b00cf4a",
+  "started_utc": "2026-11-10T01:44:20.7762063Z",
+  "duration_seconds": 32.125,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\daemon-lifecycle",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\daemon-lifecycle",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 402,
+  "stdout_sha256": "4f800d7eec1b52328683d3874cf76beae9bdf710ba7097384f2e90aca875a198",
+  "stderr_bytes": 1281,
+  "stderr_sha256": "1cb7f24c4373a6f1286a9d97feaaa014d0b43e42a592174e6d4515818a80dee7",
+  "error": null
+}

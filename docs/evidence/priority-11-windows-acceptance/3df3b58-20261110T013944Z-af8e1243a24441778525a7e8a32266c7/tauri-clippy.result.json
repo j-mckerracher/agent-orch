@@ -1,0 +1,25 @@
+{
+  "name": "tauri-clippy",
+  "command": "cargo.exe clippy --locked --all-targets",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\source\\apps\\desktop\\src-tauri",
+  "source_commit": "3df3b5831ffab764aeeddf14de2caef17b00cf4a",
+  "started_utc": "2026-11-10T01:53:55.7514890Z",
+  "duration_seconds": 108.131,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 4567,
+  "stderr_sha256": "d64da43e1eb0c3ed634d5fa782ab06c55fac2a7462e4691eee958c9a896b08f2",
+  "error": null
+}

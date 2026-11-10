@@ -1,0 +1,2 @@
+artifact: release\bundle\nsis\Agent Orchestrator_0.1.0_x64-setup.exe (relative to the target directory)
+missing

@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN. Killing the daemon pid and a sidecar that fails to start were not exercised. Both stop or break a process, which this runbook never does.

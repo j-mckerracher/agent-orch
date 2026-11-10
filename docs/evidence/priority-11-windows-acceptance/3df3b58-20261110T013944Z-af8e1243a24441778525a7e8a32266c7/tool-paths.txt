@@ -1,0 +1,6 @@
+C:\Program Files\Git\cmd\git.exe
+C:\Users\<user>\.cargo\bin\cargo.exe
+C:\Users\<user>\.cargo\bin\rustc.exe
+C:\Program Files\nodejs\node.exe
+C:\Program Files\nodejs\npm.cmd
+C:\Program Files\nodejs\npx.cmd

@@ -1,0 +1,25 @@
+{
+  "name": "desktop-package-win",
+  "command": "npm.cmd run package:win",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\source\\apps\\desktop",
+  "source_commit": "3df3b5831ffab764aeeddf14de2caef17b00cf4a",
+  "started_utc": "2026-11-10T01:55:44.6977980Z",
+  "duration_seconds": 141.547,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 2,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 425,
+  "stdout_sha256": "5466f3373d30277e0a842fff840c48bbbf18377cad93ab435e63bc219ca0e364",
+  "stderr_bytes": 5288,
+  "stderr_sha256": "8fb70652d59de853a04e4d66adbce0fd375f2236ccb7bb1c6efb9671e8662483",
+  "error": null
+}

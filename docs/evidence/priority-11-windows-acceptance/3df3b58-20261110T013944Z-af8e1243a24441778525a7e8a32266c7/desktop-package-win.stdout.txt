@@ -1,0 +1,9 @@
+
+> agent-orch-desktop@0.1.0 package:win
+> npm run prepare:sidecar && tauri build --config src-tauri/tauri.bundle.conf.json --bundles nsis
+
+
+> agent-orch-desktop@0.1.0 prepare:sidecar
+> node scripts/prepare-daemon-sidecar.mjs
+
+staged C:\Users\<user>\AppData\Local\Temp\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\source\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe

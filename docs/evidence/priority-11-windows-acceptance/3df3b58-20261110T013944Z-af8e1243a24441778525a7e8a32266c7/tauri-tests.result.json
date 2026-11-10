@@ -1,0 +1,25 @@
+{
+  "name": "tauri-tests",
+  "command": "cargo.exe test --locked",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\source\\apps\\desktop\\src-tauri",
+  "source_commit": "3df3b5831ffab764aeeddf14de2caef17b00cf4a",
+  "started_utc": "2026-11-10T01:51:43.1923325Z",
+  "duration_seconds": 131.329,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\tauri-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\test-tmp\\tauri-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 867,
+  "stdout_sha256": "8482d44a7d2a17e33c783db06032e361e005e116b7c7b72339a8e0a51a43b883",
+  "stderr_bytes": 1001,
+  "stderr_sha256": "07616a44d3f9fd107c6af4cd7d62ef8d1c66dee2294a130630cd6f7265aa764b",
+  "error": null
+}

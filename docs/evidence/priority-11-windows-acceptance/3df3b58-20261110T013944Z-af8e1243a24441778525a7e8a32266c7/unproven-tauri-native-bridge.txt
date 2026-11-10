@@ -1,0 +1,2 @@
+status: UNPROVEN
+The Tauri host was built and its 6 unit tests ran, but the running bridge was not exercised: no window, no webview, no daemon_open, daemon_send or daemon_close call and no live bridge to a daemon.

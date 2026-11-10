@@ -1,0 +1,2 @@
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process

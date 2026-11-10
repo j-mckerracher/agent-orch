@@ -1,0 +1,6 @@
+Initialized empty Git repository in C:/Users/<user>/AppData/Local/Temp/agent-orch-p11-acc-20261110T013944Z-af8e1243a24441778525a7e8a32266c7/test-tmp/daemon-lifecycle/.tmpkDNiiu/repo/.git/
+[main (root-commit) cf635c1] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
