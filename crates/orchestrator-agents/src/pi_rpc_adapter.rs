@@ -24,6 +24,7 @@ use crate::contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 use crate::routing::RoutableAdapter;
+use crate::usage::{pi_message_end_usage, UsageReport};
 
 /// Pi's RPC protocol facts verified by [`PiRpcAdapter::detect_protocol`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,6 +220,7 @@ pub struct PiRpcHandle {
     in_flight: HashSet<String>,
     responses: HashMap<String, PiRpcResponse>,
     events: VecDeque<AgentEvent>,
+    usage: Vec<UsageReport>,
     turn_outcome: Option<TurnOutcome>,
     protocol_error: Option<String>,
     cancelled: bool,
@@ -235,6 +237,7 @@ impl PiRpcHandle {
             in_flight: HashSet::new(),
             responses: HashMap::new(),
             events: VecDeque::new(),
+            usage: Vec::new(),
             turn_outcome: None,
             protocol_error: None,
             cancelled: false,
@@ -318,6 +321,7 @@ impl PiRpcHandle {
                 }
                 Some(RpcRecord::Response(response)) => self.store_response(response),
                 Some(RpcRecord::Event(event)) => self.queue_event(event),
+                Some(RpcRecord::Usage(report)) => self.usage.push(report),
                 Some(RpcRecord::ProtocolError(message)) => {
                     let event = self.record_protocol_error(message);
                     self.events.push_back(event);
@@ -431,6 +435,10 @@ impl AgentHandle for PiRpcHandle {
         self.supervisor.pid()
     }
 
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        std::mem::take(&mut self.usage)
+    }
+
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
         if let Some(event) = self.events.pop_front() {
             return Ok(Some(event));
@@ -439,6 +447,7 @@ impl AgentHandle for PiRpcHandle {
             match self.next_record().await? {
                 Some(RpcRecord::Response(response)) => self.store_response(response),
                 Some(RpcRecord::Event(event)) => return Ok(Some(self.record_event(event))),
+                Some(RpcRecord::Usage(report)) => self.usage.push(report),
                 Some(RpcRecord::ProtocolError(message)) => {
                     return Ok(Some(self.record_protocol_error(message)));
                 }
@@ -502,6 +511,7 @@ impl PiRpcHandle {
 enum RpcRecord {
     Response(PiRpcResponse),
     Event(AgentEvent),
+    Usage(UsageReport),
     ProtocolError(String),
     Exited,
 }
@@ -517,6 +527,9 @@ fn parse_record(line: &str) -> Option<RpcRecord> {
     let record_type = object.get("type")?.as_str()?;
     if record_type == "response" {
         return parse_response(object).map(RpcRecord::Response);
+    }
+    if record_type == "message_end" {
+        return pi_message_end_usage(object).map(RpcRecord::Usage);
     }
     event_from_record(record_type, object).map(RpcRecord::Event)
 }

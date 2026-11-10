@@ -10,6 +10,7 @@
 //! The transition table lives only here.
 
 use crate::contract::{AgentEvent, TurnOutcome};
+use crate::usage::{codex_turn_usage, UsageReport};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -45,6 +46,8 @@ pub struct Parser {
     last_message: Option<String>,
     turn_finished: bool,
     violation: Option<ProtocolViolation>,
+    turns_completed: u64,
+    usage: Vec<UsageReport>,
 }
 
 impl Default for Parser {
@@ -60,7 +63,14 @@ impl Parser {
             last_message: None,
             turn_finished: false,
             violation: None,
+            turns_completed: 0,
+            usage: Vec::new(),
         }
+    }
+
+    /// Drain usage reported by `turn.completed` records fed so far.
+    pub fn take_usage(&mut self) -> Vec<UsageReport> {
+        std::mem::take(&mut self.usage)
     }
 
     /// True once `turn.completed` has been seen.
@@ -206,6 +216,10 @@ impl Parser {
                 }
                 self.turn_finished = true;
                 self.phase = Phase::TurnDone;
+                self.turns_completed += 1;
+                if let Some(report) = codex_turn_usage(v, self.turns_completed) {
+                    self.usage.push(report);
+                }
                 Ok(Some(AgentEvent::TurnFinished {
                     outcome: TurnOutcome::Success,
                 }))

@@ -119,6 +119,12 @@ pub trait AgentHandle: Send {
     /// The next canonical event, or `None` once the process has exited and
     /// the stream is exhausted (after the `SessionExited` event).
     async fn next_event(&mut self) -> Result<Option<AgentEvent>>;
+    /// Drain provider-reported usage observed so far. Call after each event,
+    /// including `SessionExited`. Adapters whose provider reports nothing keep
+    /// this default; an empty result means unknown, never zero usage.
+    fn take_usage(&mut self) -> Vec<crate::usage::UsageReport> {
+        Vec::new()
+    }
     /// Kill the child and its descendants. Idempotent.
     async fn cancel(&mut self) -> Result<()>;
     /// Consume the stream until the process has exited and return the

@@ -249,6 +249,46 @@ fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
 }
 
 #[test]
+fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
+    let fixture = Fixture::new();
+    let usage_turn = r#"printf '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50,"reasoning_output_tokens":20}}\n'
+"#;
+    let reporting = fixture.script("usage-agent", &format!("{THREAD_STARTED}{usage_turn}"));
+    let api = fixture.api(&reporting);
+    let task_id = fixture.submit(&api, "usage-1", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let params = json!({
+        "timezone": "UTC",
+        "utc_offset_seconds": 0,
+        "window_start_unix_ms": now - 3_600_000,
+        "window_end_unix_ms": now + 3_600_000,
+    });
+    let summary = api.dispatch("usage.summary", params.clone()).unwrap();
+    let codex = &summary["providers"][0];
+    assert_eq!(codex["provider"], "codex");
+    assert_eq!(codex["reported"]["input_tokens"], 600);
+    assert_eq!(codex["reported"]["cache_read_tokens"], 400);
+    assert_eq!(codex["reported"]["output_tokens"], 50);
+    assert_eq!(codex["cost_status"], "unknown");
+    api.shutdown();
+
+    let quiet_fixture = Fixture::new();
+    let api = quiet_fixture.api(&succeeding_agent(&quiet_fixture));
+    let task_id = quiet_fixture.submit(&api, "usage-2", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let summary = api.dispatch("usage.summary", params).unwrap();
+    let codex = &summary["providers"][0];
+    assert_eq!(codex["sessions"], 1);
+    assert_eq!(codex["token_status"], "unknown");
+    assert!(codex["reported"]["input_tokens"].is_null());
+    api.shutdown();
+}
+
+#[test]
 fn failed_agent_fails_the_task_and_retry_appends_a_second_attempt() {
     let fixture = Fixture::new();
     let first_ran = fixture.marker("first-ran");

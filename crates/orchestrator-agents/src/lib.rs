@@ -13,6 +13,7 @@ pub mod codex_parser;
 pub mod contract;
 pub mod pi_rpc_adapter;
 pub mod routing;
+pub mod usage;
 
 pub use codex_adapter::CodexAdapter;
 pub use claude_code_adapter::ClaudeCodeAdapter;
@@ -25,3 +26,4 @@ pub use pi_rpc_adapter::PiRpcAdapter;
 pub use routing::{
     select_adapter, AdapterCapabilityGap, Capability, RoutableAdapter, RoutingError,
 };
+pub use usage::{ReportedCost, UsageReport};

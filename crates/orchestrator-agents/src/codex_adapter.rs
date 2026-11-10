@@ -15,6 +15,7 @@ use crate::contract::{
     AgentLaunchRequest, Result,
 };
 use crate::routing::RoutableAdapter;
+use crate::usage::UsageReport;
 
 /// The Codex adapter for `codex exec --json` one-shot execution.
 #[derive(Debug, Clone, Default)]
@@ -132,6 +133,10 @@ struct CodexHandle {
 impl AgentHandle for CodexHandle {
     fn pid(&self) -> u32 {
         self.sup.pid()
+    }
+
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        self.parser.take_usage()
     }
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {

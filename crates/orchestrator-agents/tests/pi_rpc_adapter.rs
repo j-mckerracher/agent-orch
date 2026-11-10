@@ -46,7 +46,7 @@ fn main() {
             matches!(
                 *argument,
                 "echo" | "reverse" | "interleaved" | "malformed" | "unknown" | "stderr" | "fail"
-                    | "eof" | "second-turn-eof"
+                    | "eof" | "second-turn-eof" | "usage"
             )
         })
         .unwrap_or("probe");
@@ -106,6 +106,22 @@ fn main() {
         "unknown" => {
             let line = lines.next().expect("command").expect("line");
             event(&mut stdout, r#"{"type":"future_event","payload":1}"#);
+            response(&mut stdout, &line, r#"{"ok":true}"#);
+        }
+        "usage" => {
+            let line = lines.next().expect("command").expect("line");
+            event(
+                &mut stdout,
+                r#"{"type":"message_end","message":{"role":"user","usage":{"input":9}}}"#,
+            );
+            event(
+                &mut stdout,
+                r#"{"type":"message_end","message":{"role":"assistant","responseId":"r1","timestamp":1762900000123,"model":"m1","usage":{"input":10,"output":20,"cacheRead":30,"cacheWrite":0,"totalTokens":60,"cost":{"total":0.00125}}}}"#,
+            );
+            event(
+                &mut stdout,
+                r#"{"type":"message_end","message":{"role":"assistant","responseId":"r2","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"cost":{"total":0}}}}"#,
+            );
             response(&mut stdout, &line, r#"{"ok":true}"#);
         }
         "stderr" => {
@@ -307,6 +323,34 @@ fn ignores_malformed_json_lines() {
                 .expect("response after malformed line")
                 .success
         );
+        handle.cancel().await.expect("cancel fake child");
+    });
+}
+
+#[test]
+fn reports_assistant_usage_from_message_end_and_nothing_else() {
+    with_runtime(async {
+        let mut handle = spawn_fake("usage").await;
+        assert!(handle.take_usage().is_empty());
+        let id = handle
+            .send_command(serde_json::json!({"type":"get_state"}))
+            .await
+            .expect("send command");
+        handle.read_response(&id).await.expect("response");
+        let reports = handle.take_usage();
+        assert_eq!(
+            reports.len(),
+            1,
+            "user and all-zero messages report nothing"
+        );
+        let report = &reports[0];
+        assert_eq!(report.receipt_key, "response:r1");
+        assert_eq!(report.input_tokens, Some(10));
+        assert_eq!(report.cache_read_tokens, Some(30));
+        assert_eq!(report.output_tokens, Some(20));
+        assert_eq!(report.cost.as_ref().map(|cost| cost.nanos), Some(1_250_000));
+        assert_eq!(report.occurred_at_ms, Some(1_762_900_000_123));
+        assert!(handle.take_usage().is_empty(), "drained");
         handle.cancel().await.expect("cancel fake child");
     });
 }

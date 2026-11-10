@@ -240,6 +240,7 @@ impl RpcHandler for DaemonApi {
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
+            "usage.summary" => self.usage_summary(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1115,6 +1116,12 @@ mod coordinator;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_usage.rs"]
+mod usage;
+
+#[cfg(test)]
+#[path = "api_usage_tests.rs"]
+mod usage_tests;
 
 #[cfg(test)]
 #[path = "api_review_tests.rs"]

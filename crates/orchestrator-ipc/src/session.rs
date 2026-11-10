@@ -375,7 +375,7 @@ fn method_capability(method: &str) -> Option<Capability> {
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
             Some(Capability::Tasks)
         }
-        "agents.capabilities" => Some(Capability::Agents),
+        "agents.capabilities" | "usage.summary" => Some(Capability::Agents),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
