@@ -15,16 +15,25 @@ steps are **UNPROVEN**: the author had only a Mac, and neither the daemon nor
 - The host starts the daemon only when no daemon answers, and never stops it.
   The host refuses `shutdown` and `handshake`. Closing a window or quitting the
   app ends only that client's connection.
-- The daemon exits by itself after 60 s with no requests, no pending executor
-  pass and no active task (existing daemon design). **MEASURED (Mac):** an idle
-  daemon with a connected UI exited; the host started a fresh daemon on the UI's
-  next reconnect. Running agents keep the daemon alive.
+- The daemon exits by itself after 60 s of true idleness: no request, no open
+  event subscription, no pending executor pass and no active task. A live UI
+  event subscription counts as activity, so a connected window keeps its daemon
+  alive; the 60 s clock restarts when the last subscriber disconnects. After that
+  the daemon idles out and the host starts a fresh one on the next open or
+  reconnect. Running agents also keep the daemon alive. **MEASURED (Mac, tests):**
+  `orchestrator-ipc` `idle_subscription_tests` (live subscription outlives the
+  idle timeout; the server idles out after the last subscriber leaves; a
+  non-subscribed connection does not hold it). **NOT re-measured through the GUI**
+  after this fix; the earlier GUI observation (idle exit with a connected UI)
+  describes the pre-fix behavior.
 - Release gate: the shipped app always uses the live daemon. Fixture data is
   reachable only in a plain browser with `?fixture=1` (global banner "FIXTURE DEMO
-  MODE") or on a review route `#/project/<id>/review/<taskId>?fixture=1` (panel
-  labelled "FIXTURE DAEMON - PLACEHOLDER DATA"). A failed live request is never
-  replaced by fixture data. D3 recovery status is a labelled placeholder
-  ("Recovery: unknown", "PLACEHOLDER DATA (D3)").
+  MODE") or on a review route `#/project/<id>/review/<taskId>?fixture=1` in that
+  same browser (panel labelled "FIXTURE DAEMON - PLACEHOLDER DATA"). The native app
+  (any mode with a bound daemon bridge) ignores `fixture=1` everywhere. A failed live request is never replaced by fixture data. D3
+  recovery status is a labelled placeholder that reports "Unavailable": for real
+  tasks it shows no per-task process, workspace or delivery facts, only that the
+  daemon exposes no recovery status yet ("PLACEHOLDER DATA (D3)").
 
 ## 2. Build
 
@@ -74,7 +83,7 @@ Environment overrides (set before launch):
 | `AGENT_ORCH_DATA_DIR` | Daemon data directory. Default `~/.local/share/agent-orch` (macOS), `%LOCALAPPDATA%\agent-orch` (Windows). |
 | `AGENT_ORCH_DAEMON_BIN` | Debug builds only. A release app always uses the sidecar next to its executable. |
 
-Data directory contents: `daemon.log` (daemon stdout/stderr), `store.sqlite`,
+Data directory contents: `daemon.log` (daemon stdout/stderr; rotated once at host launch to `daemon.log.1` when over 4 MiB), `store.sqlite`,
 `daemon.token` (owner-only), `ipc/`. **Keep the data-dir path short on macOS**:
 the Unix socket path (`<dir>/ipc/daemon.sock`) must stay under about 100 bytes.
 **MEASURED:** with a 190-character data dir the daemon exits at once with
@@ -99,7 +108,15 @@ registered." from the real daemon.
 | Wrong or stale token | Authentication failed | Restart the app so it reads the current token. |
 | Protocol version or capability mismatch | Incompatible version or capability | Update app and daemon together. |
 | Connected | Connected + note "A connection does not prove any agent is running" | Per-task process, workspace and delivery state come from each task. |
-| Always | Recovery: unknown (D3 placeholder) | The daemon exposes no recovery status yet. No process is assumed safe from a PID or a successful connection. |
+| Always | Recovery: unknown (D3 placeholder) | The daemon exposes no recovery status yet. No process is assumed safe from a PID or a successful connection. Task detail shows the same state as "Unavailable" for real tasks, never canned process/workspace/delivery facts. |
+
+Windows connect timing (**derived from code, UNMEASURED**): the host relay now
+fails fast when a stale `daemon.token` exists but the pipe is gone (about 0.3 s
+per attempt instead of about 5 s, so roughly 0.6 s before the host relaunches the
+daemon; `launch_and_open` then retries every 200 ms for 15 s). Relay handshake and
+write timeouts are 10 s (were 2 s). A plain `Client::connect` (CLI, tests) still
+waits up to 5 s for a pipe that has not appeared yet, because the daemon writes
+the token before it creates the pipe.
 
 ## 5. Lifecycle verification
 
@@ -168,8 +185,18 @@ Record result per step: PASS, FAIL or UNPROVEN, with the pids observed.
 - step 5: reopening via LaunchServices re-established an authenticated connection
   to the same daemon process (same pid; matching `lsof -U` peer sockets) and the
   window rendered "Connected" again;
-- the daemon idle-exit (above) followed by a host relaunch was observed
-  once, as a side effect.
+- the pre-fix daemon idle-exit with a connected UI followed by a host relaunch was
+  observed once, as a side effect (this no longer happens with a live
+  subscription; see section 1).
+
+Additional native steps to run (**UNPROVEN**, never driven through the GUI):
+
+8. macOS only: press Cmd+Q (or the app menu Quit). The app must exit and the
+   daemon and agent pids must be unchanged (the `prevent_exit` handling is only
+   read from code).
+9. Leave a window connected for more than 60 s with no task. The daemon pid must
+   not change (live subscription keeps it alive). Then quit the app and wait
+   about 60 s: the daemon may exit; a later launch starts a new one.
 
 **UNPROVEN:** steps 2, 3, 6, 7 in the native app (no task, no draft typed, no
 daemon kill, no sidecar failure was driven through the GUI); every step on
@@ -182,6 +209,18 @@ normally after reopen. This was not investigated and may be a capture artifact.
 | --- | --- | --- |
 | Frames relay, reauth, resume | `orchestrator-ipc` relay tests (5) | Rust, in-process server |
 | Host bridge errors, limits, no shutdown/handshake | `src-tauri` bridge tests (6) | Rust, real ipc server |
-| Close/reopen reconnect, drafts survive, states distinct, fixture mode gated | `native.test.tsx` (16) | vitest, fake host |
+| Close/reopen reconnect, drafts survive, states distinct, fixture mode gated (incl. native `?fixture=1` review route, D3 unavailable) | `native.test.tsx` (18) | vitest, fake host |
 | S6 (D5/D7/D8) against the real daemon methods | `e2e/daemon.e2e.test.ts` | Node, real daemon (Unix socket) |
 | Daemon-owned task survives client close | `tests/lifecycle.rs` | Rust, real daemon + agent process |
+| Live subscription keeps an idle daemon alive; idle exit after the last subscriber leaves | `orchestrator-ipc` `idle_subscription_tests` (3, seconds-scale timeouts) | Rust, in-process server |
+
+The e2e suite needs the daemon binary: build it first
+(`cargo build --locked -p orchestrator-daemon`) and run from `apps/desktop`:
+
+```sh
+ORCH_DAEMON_BIN=<target>/debug/orchestrator-daemon npm run test:e2e
+```
+
+Without `ORCH_DAEMON_BIN` the suite fails at start ("set ORCH_DAEMON_BIN to the
+orchestrator-daemon binary"). It is Unix-socket based and has not been run on
+Windows.
