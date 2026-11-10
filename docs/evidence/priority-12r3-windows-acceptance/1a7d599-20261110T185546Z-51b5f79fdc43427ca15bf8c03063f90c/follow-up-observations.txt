@@ -1,0 +1,12 @@
+P12r3 follow-up: monitor interference and privacy review
+
+Run ID: 20261110T185546Z-51b5f79fdc43427ca15bf8c03063f90c
+Source: 1a7d599bab8848d912ca5642d4ce1a6137c515a9
+
+The original run and its raw output remain unchanged in the private run directory. No gate was rerun.
+
+The cli-engine-reconciliation-tests command itself exited 0 with 22 passing tests. Its original FAIL verdict was caused by the survivor scan finding one pwsh.exe observer process whose command line was the live evidence-summary inspection performed during that gate; that inspection included this run root. The process was not a test child. The original survivors file is retained and the gate remains FAIL in the original verdict because the no-survivor condition was contaminated.
+
+The p12-windows-checks raw output ended with P12-WINDOWS-CHECKS: FAIL (2 of 8 failed), while the harness verdict parser recorded INCONCLUSIVE (empty parsed script verdict). The captured manual-p12.txt and raw output preserve the two findings: daemon.log was not present after the wait although the daemon had not exited, and .orchestrator.lock had an inherited ACE. The other ACL files and cmdline-refused check passed; launch-failure-window was NOT RUN as expected. No ACL was changed.
+
+A separate local-name review found the current Windows account principal in p12-windows-checks.stdout.txt. The evidence copy at this branch tip now redacts that principal as <user>; the original raw stdout remains private in the run directory. The initial evidence commit 812a50b6df87c49a33860fd8cca783e0d5d6a3e5 remains in branch history and therefore still contains that value. This follow-up does not rewrite history or force-push.

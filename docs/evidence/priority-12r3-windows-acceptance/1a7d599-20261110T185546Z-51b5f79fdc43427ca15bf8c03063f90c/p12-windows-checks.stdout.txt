@@ -3,32 +3,32 @@ p12-windows-checks: platform windows
 acl: started daemon pid 43980
 CHECK acl-files-present: FAIL - missing after 30 s: daemon.log; daemon exited: False
 ---- icacls data-dir
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data BOILERAD\jmckerra:(OI)(CI)(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data <user>:(OI)(CI)(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-data-dir: PASS - only the current user, full control, protected, nothing inherited
 ---- icacls .orchestrator.lock
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\.orchestrator.lock BOILERAD\jmckerra:(I)(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\.orchestrator.lock <user>:(I)(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-.orchestrator.lock: FAIL - an inherited ACE (I) is present; ACE is inherited; the DACL is not protected from inheritance
 ---- icacls daemon.token
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\daemon.token BOILERAD\jmckerra:(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\daemon.token <user>:(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-daemon.token: PASS - only the current user, full control, protected, nothing inherited
 ---- icacls store.sqlite
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite BOILERAD\jmckerra:(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite <user>:(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-store.sqlite: PASS - only the current user, full control, protected, nothing inherited
 ---- icacls store.sqlite-shm
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-shm BOILERAD\jmckerra:(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-shm <user>:(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-store.sqlite-shm: PASS - only the current user, full control, protected, nothing inherited
 ---- icacls store.sqlite-wal
-C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-wal BOILERAD\jmckerra:(F)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-wal <user>:(F)
 
 Successfully processed 1 files; Failed processing 0 files
 CHECK acl-store.sqlite-wal: PASS - only the current user, full control, protected, nothing inherited
@@ -38,7 +38,7 @@ C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12 BUILTIN\Users:(I)(CI)(S,WD,AD,X)
                                             BUILTIN\Administrators:(I)(OI)(CI)(IO)(F)
                                             NT AUTHORITY\SYSTEM:(I)(F)
                                             NT AUTHORITY\SYSTEM:(I)(OI)(CI)(IO)(F)
-                                            BOILERAD\jmckerra:(I)(F)
+                                            <user>:(I)(F)
                                             CREATOR OWNER:(I)(OI)(CI)(IO)(F)
 
 Successfully processed 1 files; Failed processing 0 files
