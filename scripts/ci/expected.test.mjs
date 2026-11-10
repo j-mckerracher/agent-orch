@@ -3,18 +3,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CLIPPY_BASELINE, MACOS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 import { gatesFor } from "./gates.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
-test("each expected total equals its running-sequence sum (filtered tests excluded)", () => {
+test("each running-sequence sum equals passed plus ignored (filtered tests excluded)", () => {
   for (const [platform, table] of [["windows", WINDOWS], ["macos", MACOS]]) {
     for (const [key, value] of Object.entries(table)) {
       if (!value.sequence) continue;
-      assert.equal(sum(value.sequence), value.passed, `${platform}.${key}`);
+      assert.equal(sum(value.sequence), value.passed + (value.ignored ?? 0), `${platform}.${key}`);
     }
   }
 });
@@ -33,6 +33,9 @@ test("each expected total equals the length of its name list, so a merge updates
     ["private-fs", "privateFs"],
     ["runtime-command-line", "runtimeCommandLine"],
     ["cli-command-line", "cliCommandLine"],
+    ["store", "store"],
+    ["diagnostics", "diagnostics"],
+    ["lock-takeover", "lockTakeover"],
   ];
   for (const [list, key] of suites) {
     assert.equal(win[list].length, WINDOWS[key].passed, `windows ${list}`);
@@ -56,10 +59,25 @@ test("gates take their counts from expected.mjs", () => {
     ["private-fs-tests", "privateFs"],
     ["runtime-command-line-tests", "runtimeCommandLine"],
     ["cli-command-line-tests", "cliCommandLine"],
+    ["store-tests", "store"],
+    ["lock-takeover-test", "lockTakeover"],
+    ["diagnostics-tests", "diagnostics"],
   ]) {
     assert.deepEqual([win[gate].passed, win[gate].runningSequence], [WINDOWS[key].passed, WINDOWS[key].sequence], gate);
   }
   const mac = byName("darwin");
+  for (const [gate, key] of [["store-tests", "store"], ["lock-takeover-test", "lockTakeover"], ["diagnostics-tests", "diagnostics"]]) {
+    assert.deepEqual([mac[gate].passed, mac[gate].runningSequence], [MACOS[key].passed, MACOS[key].sequence], gate);
+  }
+  for (const table of [win, mac]) {
+    assert.equal(table["store-tests"].ignored, 1);
+    assert.equal(table["node-self-tests"].passed, NODE_SELF_TESTS.passed);
+    assert.equal(table["node-self-tests"].mode, "node-tests");
+  }
+  assert.equal(gatesFor("win32")[0].name, "node-self-tests");
+  assert.equal(gatesFor("darwin")[0].name, "node-self-tests");
+  assert.equal(win["lock-takeover-test"].filteredOut, WINDOWS.lockTakeover.filteredOut);
+  assert.equal(mac["lock-takeover-test"].filteredOut, MACOS.lockTakeover.filteredOut);
   assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
   assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);
   assert.equal(win["tauri-tests"].passed, WINDOWS.tauri.passed);
@@ -72,7 +90,8 @@ test("the Windows-only p12 gate needs both binaries and takes its paths from the
   assert.deepEqual(p12.needs, ["daemon-build", "cli-build"]);
   for (const placeholder of ["{target}", "{testTmp}", "{evidence}"]) assert.ok(p12.args.includes(placeholder) || p12.args.some((a) => a.includes(placeholder)), placeholder);
   assert.ok(win.findIndex((g) => g.name === "cli-build") < win.indexOf(p12));
-  assert.equal(win.length, 23);
+  assert.equal(win.length, 27);
+  assert.equal(gatesFor("darwin").length, 26);
   assert.ok(!gatesFor("darwin").some((g) => g.name === "p12-windows-checks" || g.name === "cli-build"));
 });
 

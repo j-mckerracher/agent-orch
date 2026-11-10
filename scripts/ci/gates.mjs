@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLIPPY_BASELINE, E2E_TESTS, MACOS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { CLIPPY_BASELINE, E2E_TESTS, MACOS, NODE_SELF_TESTS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
@@ -41,6 +41,13 @@ export function gatesFor(platform) {
   const want = win ? WINDOWS : MACOS;
 
   const gates = [
+    {
+      // The harness's own tests, inside the run so that their exit code and counts are evidence. The glob is
+      // expanded by `node --test` itself (Node 22 or later), so it is the same on every shell. `isolated` points
+      // TEMP at the test temp directory, which keeps their scratch files out of the checkout.
+      name: "node-self-tests", mode: "node-tests", cwd: ".", exe: "node", isolated: true, timeout: 600,
+      args: ["--test", "scripts/**/*.test.mjs"], passed: NODE_SELF_TESTS.passed,
+    },
     {
       name: "daemon-build", mode: "build", cwd: ".", exe: "cargo",
       args: ["build", "--locked", "-p", "orchestrator-daemon"],
@@ -74,12 +81,23 @@ export function gatesFor(platform) {
   // from the sources' cfg gates (see expected.mjs); the filters name tests, not test binaries.
   const suite = (name, args, key, list, timeout = 1800) => ({
     name, mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout, args: ["test", "--locked", ...args],
-    expect: counts[list], passed: want[key].passed, ignored: 0, runningSequence: want[key].sequence,
+    expect: counts[list], passed: want[key].passed, ignored: want[key].ignored ?? 0, runningSequence: want[key].sequence,
+    ...(want[key].filteredOut === undefined ? {} : { filteredOut: want[key].filteredOut }),
   });
   gates.push(
     suite("git-lib-tests", ["-p", "orchestrator-git", "--lib"], "gitLib", "git-lib"),
     suite("cli-cleanup-safety-tests", ["-p", "orchestrator-cli", "--test", "cleanup_safety"], "cliCleanupSafety", "cli-cleanup-safety"),
     suite("private-fs-tests", ["-p", "orchestrator-private-fs"], "privateFs", "private-fs", 600),
+    // M6-01 and M6-03 counts that no other gate measures: the whole store crate, the one store test that
+    // checks the lock file's owner-only protection when it is created and when a stale lock is taken over
+    // (also run alone, so a wrong count there cannot hide in the crate total), and the diagnostics crate.
+    suite("store-tests", ["-p", "orchestrator-store"], "store", "store"),
+    suite(
+      "lock-takeover-test",
+      ["-p", "orchestrator-store", "--lib", "the_lock_file_is_owner_only_when_created_and_when_taken_over"],
+      "lockTakeover", "lock-takeover", 600,
+    ),
+    suite("diagnostics-tests", ["-p", "orchestrator-diagnostics"], "diagnostics", "diagnostics"),
     suite("runtime-command-line-tests", ["-p", "orchestrator-runtime", "--lib", "command_line"], "runtimeCommandLine", "runtime-command-line", 600),
     suite(
       "cli-command-line-tests",

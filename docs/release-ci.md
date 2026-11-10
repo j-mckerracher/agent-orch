@@ -24,7 +24,10 @@ the clippy baseline. A gate passes only when the command exits 0 within its time
 process of the run survives it**, **and** the output matches the expected shape: test counts, the `running N tests`
 sequence, named tests, `Compiling` lines for a build gate (so a cached target cannot pass), the
 Vitest file and test counts, and the artifact. Nothing is retried. A gate whose prerequisite did
-not pass is `SKIPPED`, which also fails the run.
+not pass is `SKIPPED`: it was not measured, so it is never a pass. The run's overall verdict is `FAIL` (exit
+1) if any gate or harness check failed, else `INCONCLUSIVE` (exit 2) if any gate was `SKIPPED` or none ran, else
+`PASS` (exit 0). `summary.md` and `overall.result.json` carry the verdict, and `summary.md` lists the skipped
+gates under "Not measured, so NOT a pass".
 
 The Windows list is the published runbook
 `docs/evidence/priority-11r3-windows-acceptance-efa5e8a-runbook.md` (branch
@@ -32,6 +35,7 @@ The Windows list is the published runbook
 
 | Gate | Command | Where |
 | --- | --- | --- |
+| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (71 tests on both; the exit code is in `node-self-tests.result.json`) | both |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
@@ -43,6 +47,9 @@ The Windows list is the published runbook
 | `git-lib-tests` | `cargo test --locked -p orchestrator-git --lib` (49 on both: Windows 47 portable + 2 `cfg(windows)`, macOS 47 portable + 2 `cfg(unix)`) | both |
 | `cli-cleanup-safety-tests` | `cargo test --locked -p orchestrator-cli --test cleanup_safety` (Windows 3, macOS 4: one test is `cfg(unix)`; a fifth is `cfg(all(unix, feature = "fault-injection"))` and runs nowhere by default) | both |
 | `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[11,0]`: 4 portable + 7 DACL; macOS `[8,0]`: 4 portable + 4 Unix; the `0` is the doc-test binary) | both |
+| `store-tests` | `cargo test --locked -p orchestrator-store` (Windows 100 passed + 1 ignored, derived; macOS 104 passed + 1 ignored, measured: 4 tests are `cfg(unix)`; the ignored test is in `data_lock`) | both |
+| `lock-takeover-test` | `cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over` (1 passed; 32 filtered out on Windows, 34 on macOS) | both |
+| `diagnostics-tests` | `cargo test --locked -p orchestrator-diagnostics` (28 on both: no test is `cfg`-gated) | both |
 | `runtime-command-line-tests` | `cargo test --locked -p orchestrator-runtime --lib command_line` (8 tests; the pure Windows rules run on every host) | both |
 | `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
@@ -150,6 +157,41 @@ measured); `orchestrator-store` gains 1 portable test (not a harness gate; its W
 derived); `--list` shows 23 Windows gates (`cli-build` and `p12-windows-checks` are new) and 22 on macOS. The Windows figures are
 derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
 
+**Priority 12 round 5** (the native Windows run of round 4 stopped at `desktop-build`, so three gates were
+`SKIPPED` and the run was not a pass) fixed six defects:
+
+- D1, `TS2883` in `src/test/render.tsx`: the run root was a `Z:` `SUBST` of a directory on `C:`, so Vitest saw
+  `Z:/...` and `tsc -b` (a `composite` project) the real `C:/Users/...` path, and the declaration emit named one
+  module by two paths. `mount` now has an explicit return type, so the emitter has nothing to name (it is
+  proven on macOS only; the alias itself is refused, see D3). The cause was the alias, not the code.
+- D2, three gates `SKIPPED`: `tauri-build`, `tauri-tests` and `tauri-clippy` need `apps/desktop/dist`, so they
+  still need `desktop-build` and are skipped when it fails. What changed is the verdict: a skipped gate now
+  makes the run `INCONCLUSIVE` (exit 2), never a pass; see Gates. `verdict.mjs` holds the rule and
+  `verdict.test.mjs` the cases (a failure plus a skip stays `FAIL`).
+- D3, the run root: the runbook's `C:\t` could not be created, so the operator used a `SUBST` drive and the
+  duplicated paths. `run-gates.mjs` now checks its paths first (`preflight.mjs`, Windows only) and stops with
+  exit 3, creating nothing, if the source, working directory, evidence directory, target directory or test temp
+  directory is a `SUBST` or mapped drive, a junction, a UNC path, or longer than 64 characters. It compares each
+  given path with `realpathSync.native` of it (or of its nearest existing parent), case-insensitively and
+  tolerating 8.3 short names. `node scripts/ci/run-gates.mjs --preflight` runs only this check. Making `tsc`
+  tolerate an alias was not cheap or safe (it would need `preserveSymlinks` or a path mapping in every
+  project), so the harness refuses instead.
+- D4, the node self-tests' exit code was in no evidence: they are now the first gate (`node-self-tests`), with
+  the summary (`# pass N`, or `ℹ pass N`) checked for 71 tests and no fail, cancelled, skipped or todo, and the exit
+  code in `node-self-tests.result.json`. `ci.yml` keeps its own "Harness self-tests" step.
+- D5, uncounted tests: `store-tests`, `lock-takeover-test` and `diagnostics-tests` are gates, so the M6-01 (lock
+  owner-only) and M6-03 (diagnostics) counts are measured by the harness. 27 Windows gates and 26 on macOS.
+- D6, the real-host items stay unproven (the host's `daemon.log` DACL, the redacted launch failure in the real
+  window, the ACL of the transient `.orchestrator.lock.takeover-<n>` directory): see the unproven list.
+
+Counts: macOS (measured) `store-tests` `[35,9,2,13,8,11,3,4,3,11,5,1,0]` = 104 passed + 1 ignored; `diagnostics-tests`
+`[0,6,7,15,0]` = 28; `lock-takeover-test` 1; the `workspace-tests` total is unchanged at 726 + 1 ignored (the
+three gates select tests it already counts). Windows (derived from `cfg`, not measured) `store-tests`
+`[33,9,2,13,8,11,3,3,3,11,4,1,0]` = 100 passed + 1 ignored (the four `cfg(unix)` tests are absent: file mode of the
+database files, the private lock directory, the symlink at the lock path, and the real SQLite process exit);
+`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 71, measured on macOS (no test is
+platform-gated).
+
 ### Maximum path lengths on Windows
 
 - **Worktree path: 215 characters.** `git worktree add` runs its checkout with `GIT_DIR=<worktree>\.git`, and
@@ -164,7 +206,7 @@ derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
   `checkout_files_longer_than_max_path_are_created` covers it.
 - **Harness paths.** `--test-tmp`, `--target-dir` and `--evidence-dir` should be at most about 60
   characters (`C:\ao\t`, `C:\ao\target`): the test temp directory, a task or fixture name and a test's
-  worktree all go under it. A harness that passes a long `TMP`/`TEMP` (such as
+  worktree all go under it. The preflight enforces 64 characters for each root (and for the source). A harness that passes a long `TMP`/`TEMP` (such as
   `C:\Users\<name>\AppData\Local\Temp\<run-id>\test-tmp`) shortens at the source by choosing a short
   `--test-tmp`; do not rely on `core.longpaths`.
 
@@ -248,11 +290,14 @@ anything: only the PowerShell call that imports the certificate receives the pas
 ```sh
 node --test "scripts/**/*.test.mjs"
 node scripts/ci/run-gates.mjs --list
+# Windows: refuses a SUBST/mapped drive, a junction, a UNC path or a root over 64 characters (exit 3).
+node scripts/ci/run-gates.mjs --preflight --evidence-dir <new> --target-dir <new empty> --test-tmp <new>
 # Needs a clean, committed tree; the evidence dir must not exist; the target dir must be empty.
 CI=true node scripts/ci/run-gates.mjs \
   --evidence-dir ../evidence-run --target-dir ../target-run --test-tmp ../tt
 ```
 
+Exit codes: 0 `PASS`, 1 `FAIL`, 2 `INCONCLUSIVE` (a gate was skipped), 3 preflight refused the paths.
 Keep the test temp path short: macOS Unix socket paths are limited to about 104 characters.
 `--only a,b` runs a subset (later gates that need an earlier one are then `SKIPPED`).
 
@@ -262,16 +307,22 @@ The Windows agent must run these natively on a Windows host. None of it has been
 the M6-02 owner.
 
 1. `git config --global core.autocrlf false` and `git config --global core.longpaths true`, then a
-   clean checkout of the commit under test at a short path.
+   clean checkout of the commit under test in a real directory with a short path (for example
+   `C:\t\<8 hex>`). Never a `SUBST` or mapped drive, a junction or a UNC share: Round 4 failed with `TS2883`
+   because of a `Z:` `SUBST`. If `C:\t` cannot be created, use another real short directory on a local drive and
+   say which. Run `node scripts/ci/run-gates.mjs --preflight --evidence-dir <new> --target-dir <new empty> --test-tmp <new>`
+   first; it must print `PREFLIGHT PASSED`.
 2. Toolchain: Rust 1.96.0 (MSVC), Node 22.20.0, npm, Visual Studio Build Tools with the C++
    workload, Windows SDK, network access (NSIS download). Record versions; a missing tool is
    `BLOCKED`.
-3. `node --test "scripts/**/*.test.mjs"`: the parser tests (including CRLF output) must pass.
-4. `node scripts/ci/run-gates.mjs --list` must show the 23 Windows gates, including
-   `windows-transport-tests`, `git-lib-tests`, `private-fs-tests`, `cli-build`, `p12-windows-checks` and
-   `desktop-package-win`.
+3. `node --test "scripts/**/*.test.mjs"`: the parser tests (including CRLF output) must pass; record the exit
+   code. The harness runs them again as its first gate.
+4. `node scripts/ci/run-gates.mjs --list` must show the 27 Windows gates, including `node-self-tests`,
+   `windows-transport-tests`, `git-lib-tests`, `private-fs-tests`, `store-tests`, `lock-takeover-test`,
+   `diagnostics-tests`, `cli-build`, `p12-windows-checks` and `desktop-package-win`.
 5. `$env:CI = "true"; node scripts/ci/run-gates.mjs --evidence-dir <new> --target-dir <new empty> --test-tmp <new>`
-   Expected: every gate `PASS` with the derived counts in the gate table. A count mismatch is a
+   Expected: every gate `PASS` with the derived counts in the gate table, `OVERALL: PASS` and exit 0. Any
+   `SKIPPED` gate is `INCONCLUSIVE`, not a pass: fix the failing prerequisite and run again. A count mismatch is a
    finding: report it; do not edit `scripts/ci/expected.mjs` to fit.
 6. Confirm `git-config`, `gitattributes-before/after` and `source-status-before/after` pass, that
    every `<gate>.survivors.txt` says `none`, and that the run leaves the tree clean.

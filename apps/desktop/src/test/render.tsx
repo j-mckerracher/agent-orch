@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, waitFor, type RenderResult } from "@testing-library/react";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { expect } from "vitest";
 import App from "../App";
 import { createFixtureSources } from "../sources/fixtures";
@@ -19,7 +19,12 @@ export interface MountOptions extends Omit<CreateServicesOptions, "connector" | 
   daemonSources?: boolean;
 }
 
-export async function mount(fake: FakeDaemon, options: MountOptions = {}) {
+// The explicit return type keeps the declaration emitter of `tsc -b` (composite) from naming the inferred
+// type by a module path; under a drive alias that path is spelled two ways (TS2883, Priority 12 round 4).
+export async function mount(
+  fake: FakeDaemon,
+  options: MountOptions = {},
+): Promise<{ services: Services; user: UserEvent; view: RenderResult }> {
   const { route, bridge = true, waitConnected = true, daemonSources = false, ...rest } = options;
   const services: Services = createServices({
     connector: bridge ? fake : undefined,

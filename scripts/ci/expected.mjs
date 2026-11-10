@@ -25,6 +25,15 @@ export const WINDOWS = {
   runtimeCommandLine: { passed: 8, sequence: [8] },
   // One portable test and one cfg(windows) test.
   cliCommandLine: { passed: 2, sequence: [2] },
+  // orchestrator-store: the macOS list minus 4 cfg(unix) tests (a lib test of the data directory modes, a lib test
+  // of the database file modes, the lock-path symlink test, the real-process exit test). The `8` is data_lock.rs:
+  // 7 passed and 1 `#[ignore]` child process. The Priority 12r3 Windows run measured the lib at 32; round 4 added
+  // one portable test, so 33 is derived. The lock-path test `the_lock_file_is_owner_only_when_created_and_when_taken_over`
+  // is the M6-01 takeover ACL check and is also its own gate.
+  store: { passed: 100, ignored: 1, sequence: [33, 9, 2, 13, 8, 11, 3, 3, 3, 11, 4, 1, 0] },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 32 },
+  // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
+  diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
 
 // macOS: measured on the Priority 12 integration merge (M6-01 + M6-02 + M6-03 on the M5-05 round 5
@@ -40,8 +49,14 @@ export const MACOS = {
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
+  store: { passed: 104, ignored: 1, sequence: [35, 9, 2, 13, 8, 11, 3, 4, 3, 11, 5, 1, 0] },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 34 },
+  diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 1,
 };
+
+// `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number.
+export const NODE_SELF_TESTS = { passed: 71 };
 
 // Platform independent.
 export const VITEST = { files: 15, tests: 290 };

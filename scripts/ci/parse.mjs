@@ -146,6 +146,28 @@ export const checkVitest = (stdout, { files, tests }) => {
 export const checkPattern = (stdout, pattern) =>
   new RegExp(pattern, "m").test(normalize(stdout)) ? [] : [`output does not match /${pattern}/`];
 
+// `node --test` summary lines: `# pass 52` (TAP reporter, Node 22 without a terminal) or `ℹ pass 52` (spec
+// reporter). Every counter must be present: a run that printed no summary proves nothing.
+export const nodeTestSummary = (stdout) => {
+  const text = normalize(stdout);
+  const read = (key) => {
+    const m = new RegExp(`^(?:#|ℹ)[ \\t]+${key}[ \\t]+(\\d+)[ \\t]*$`, "m").exec(text);
+    return m ? Number(m[1]) : null;
+  };
+  return Object.fromEntries(["tests", "pass", "fail", "cancelled", "skipped", "todo"].map((k) => [k, read(k)]));
+};
+
+export const checkNodeTests = (stdout, { passed }) => {
+  const problems = [];
+  const s = nodeTestSummary(stdout);
+  for (const [key, value] of Object.entries(s)) if (value === null) problems.push(`no '${key}' summary line`);
+  if (problems.length) return problems;
+  if (s.pass !== passed) problems.push(`pass is ${s.pass}, expected ${passed}`);
+  if (s.tests !== passed) problems.push(`tests is ${s.tests}, expected ${passed}`);
+  for (const key of ["fail", "cancelled", "skipped", "todo"]) if (s[key] !== 0) problems.push(`${key} is ${s[key]}, expected 0`);
+  return problems;
+};
+
 // The Priority 12 by-hand checks (scripts/ci/p12-windows-checks.ps1) end with one verdict line:
 // `P12-WINDOWS-CHECKS: PASS | FAIL (n of m failed) | INCOMPLETE (...)`. The match is case-sensitive:
 // the script's own banner lines start with the lower-case `p12-windows-checks:` and a

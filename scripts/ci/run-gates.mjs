@@ -1,13 +1,17 @@
 // Runs the native gates of one platform, once each, and records evidence.
 //
 //   node scripts/ci/run-gates.mjs --evidence-dir D --target-dir T --test-tmp P [--only a,b] [--list]
+//   node scripts/ci/run-gates.mjs --preflight [--evidence-dir D --target-dir T --test-tmp P]
 //
 // Evidence per gate: <name>.stdout.txt, <name>.stderr.txt (raw bytes), <name>.result.json. A gate
 // is PASS only when the process exits 0 within its limit AND its output matches the expected
 // shape (counts, sequences, names, artifacts) AND no process of the run survives it (a read-only
 // scan for processes under the target or test-temp directory). Nothing is retried. A gate whose
-// prerequisite did not pass is SKIPPED, which also fails the run. The evidence directory must not
-// already exist.
+// prerequisite did not pass is SKIPPED: not measured, never a pass. The run's overall verdict is
+// FAIL (exit 1) if anything failed, else INCONCLUSIVE (exit 2) if anything was skipped, else PASS
+// (exit 0). On Windows the paths are checked first (preflight.mjs) and the run stops with exit 3,
+// before anything is created, if a root is an alias (SUBST, mapped drive, junction) or too long.
+// The evidence directory must not already exist.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -19,19 +23,23 @@ import { fileURLToPath } from "node:url";
 import { runBounded } from "./bounded.mjs";
 import { UNPROVEN_ROWS, gatesFor } from "./gates.mjs";
 import {
-  checkBuild, checkLifecycle, checkLint, checkP12, checkPattern, checkTests, checkVitest, diagnostics, normalize,
+  checkBuild, checkLifecycle, checkLint, checkNodeTests, checkP12, checkPattern, checkTests, checkVitest, diagnostics, normalize,
 } from "./parse.mjs";
+import { checkPreflight } from "./preflight.mjs";
 import { findPrivate, identityFromEnv, redactText } from "./redact.mjs";
 import { describeSurvivors, scanSurvivors } from "./survivors.mjs";
+import { EXIT_CODES, countVerdicts, overallVerdict } from "./verdict.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const win = process.platform === "win32";
+const PREFLIGHT_EXIT = 3;
 
 const parseArgs = (argv) => {
-  const out = { only: null, list: false };
+  const out = { only: null, list: false, preflight: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--list") out.list = true;
+    else if (a === "--preflight") out.preflight = true;
     else if (["--evidence-dir", "--target-dir", "--test-tmp", "--only", "--source"].includes(a)) {
       const v = argv[++i];
       if (!v) throw new Error(`${a} needs a value`);
@@ -54,12 +62,29 @@ if (args.list) {
   for (const g of gates) console.log(`${g.name}\t${g.exe} ${g.args.join(" ")}\t(${g.cwd})`);
   process.exit(0);
 }
+const optionName = (k) => `--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 for (const k of ["evidenceDir", "targetDir", "testTmp"]) {
-  if (!args[k]) throw new Error(`--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} is required`);
+  if (!args[k] && !args.preflight) throw new Error(`${optionName(k)} is required`);
 }
-const evidence = resolve(args.evidenceDir);
-const target = resolve(args.targetDir);
-const testTmp = resolve(args.testTmp);
+const evidence = args.evidenceDir ? resolve(args.evidenceDir) : null;
+const target = args.targetDir ? resolve(args.targetDir) : null;
+const testTmp = args.testTmp ? resolve(args.testTmp) : null;
+
+// Before anything is created: a directory with two spellings breaks the TypeScript declaration emit
+// (TS2883, Priority 12 round 4), and long roots reach the 260-character path limit.
+const preflightRoots = Object.fromEntries(Object.entries({
+  source, "working directory": process.cwd(), "evidence directory": evidence, "target directory": target, "test temp directory": testTmp,
+}).filter(([, v]) => v));
+const preflightProblems = checkPreflight({ roots: preflightRoots });
+if (preflightProblems.length) {
+  console.error("PREFLIGHT FAILED: nothing was run and nothing was created.");
+  for (const p of preflightProblems) console.error(`  - ${p}`);
+  process.exit(PREFLIGHT_EXIT);
+}
+if (args.preflight) {
+  console.log(`PREFLIGHT PASSED (${process.platform}): ${Object.keys(preflightRoots).join(", ")}`);
+  process.exit(0);
+}
 if (existsSync(evidence)) throw new Error(`evidence directory exists, refusing to reuse it: ${evidence}`);
 if (existsSync(target) && readdirSync(target).length > 0) throw new Error(`target directory is not empty: ${target}`);
 mkdirSync(evidence, { recursive: true });
@@ -118,6 +143,7 @@ const envLines = [
   `TEST_TMP: ${testTmp}`,
   `CI: ${baseEnv.CI}`,
   `source: ${source}`,
+  `preflight: passed (${win ? "no SUBST, mapped drive, junction or UNC root; roots within the length limit" : "not applicable off Windows"})`,
 ];
 writeText("environment.txt", `${envLines.join("\n")}\n`);
 
@@ -201,7 +227,8 @@ for (const gate of gates) {
       if (gate.mode === "test") {
         problems.push(...checkTests({ stdout: run.stdout, ...gate }));
         if (gate.pattern) problems.push(...checkPattern(run.stdout, gate.pattern));
-      } else if (gate.mode === "lifecycle") problems.push(...checkLifecycle(run.stdout));
+      } else if (gate.mode === "node-tests") problems.push(...checkNodeTests(`${run.stdout}\n${run.stderr}`, gate));
+      else if (gate.mode === "lifecycle") problems.push(...checkLifecycle(run.stdout));
       else if (gate.mode === "build") problems.push(...checkBuild(run.stderr, gate));
       else if (gate.mode === "lint") {
         problems.push(...checkLint(run.stderr, gate));
@@ -274,12 +301,21 @@ const rows = [...results, ...harness].map((r) => {
   const note = r.problems?.length ? r.problems.join("; ").replace(/\n/g, " ").replace(/\|/g, "/") : (r.notes ?? "");
   return `| ${r.gate ?? r.name} | ${r.verdict} | ${r.exitCode ?? ""} | ${r.durationSeconds ?? ""} | ${note} |`;
 });
-const overall = [...results, ...harness].every((r) => r.verdict === "PASS") && results.length > 0;
+const overall = overallVerdict(results, harness);
+const counts = countVerdicts([...results, ...harness]);
+const skipped = results.filter((r) => r.verdict === "SKIPPED").map((r) => r.gate);
 const summary = [
-  `## Native gates: ${process.platform} (${overall ? "PASS" : "FAIL"})`,
+  `## Native gates: ${process.platform} (${overall})`,
   "",
   `Source ${git("rev-parse", "HEAD").out} (tree ${git("rev-parse", "HEAD^{tree}").out}).`,
   "",
+  `OVERALL: ${overall} (${counts.PASS} PASS, ${counts.FAIL} FAIL, ${counts.SKIPPED} SKIPPED; exit ${EXIT_CODES[overall]})`,
+  "",
+  ...(skipped.length
+    ? [`### Not measured, so NOT a pass: ${skipped.length} gate(s) SKIPPED`, "",
+       ...skipped.map((n) => `- ${n}`), "",
+       "A skipped gate gives the run the verdict INCONCLUSIVE (exit 2) at best. Fix the prerequisite and run again.", ""]
+    : []),
   "| Gate | Verdict | Exit | Seconds | Notes |",
   "|---|---|---|---|---|",
   ...rows,
@@ -295,4 +331,5 @@ const summary = [
 writeText("summary.md", summary);
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${redactText(summary, identity)}\n`);
 console.log(redactText(summary, identity));
-process.exit(overall ? 0 : 1);
+writeJson("overall.result.json", { overall, exitCode: EXIT_CODES[overall], ...counts, skipped, gates: results.length, platform: process.platform });
+process.exit(EXIT_CODES[overall]);
