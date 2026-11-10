@@ -171,6 +171,7 @@ impl PiRpcAdapter {
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,
+            env_names: Vec::new(),
         };
         let (supervisor, stdin) = ChildSupervisor::launch_with_stdin(&launch)?;
         Ok(PiRpcHandle::new(supervisor, stdin))
@@ -609,6 +610,7 @@ async fn read_cli_version(program: &Path, working_dir: &Path) -> Result<String> 
         program: program.to_path_buf(),
         args: vec!["--version".to_owned()],
         working_dir: working_dir.to_path_buf(),
+        env_names: Vec::new(),
     })?;
     let mut version = None;
     let code = loop {

@@ -87,6 +87,11 @@ fn pin_git(command: &mut Command) -> &mut Command {
     command
         .env("GIT_CONFIG_GLOBAL", "/nonexistent-git-global")
         .env("GIT_CONFIG_SYSTEM", "/nonexistent-git-system")
+        // The supervisor forwards only an allowlisted environment to agents.
+        .env(
+            "AGENT_ORCH_ENV_PASSTHROUGH",
+            "GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,FAKE_AGENT_SCENARIO,FAKE_AGENT_PIDFILE",
+        )
 }
 
 fn git(repo: &Path, args: &[&str]) -> String {

@@ -157,6 +157,7 @@ async fn supervisor_exposes_identity_captured_at_launch() {
         program: "/bin/sleep".into(),
         args: vec!["0.2".into()],
         working_dir: std::env::current_dir().expect("current directory"),
+        env_names: Vec::new(),
     })
     .expect("launch child");
     let identity = supervisor.identity().expect("launch identity");

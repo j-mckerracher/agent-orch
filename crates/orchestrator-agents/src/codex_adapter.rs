@@ -16,6 +16,15 @@ use crate::contract::{
 };
 use crate::routing::RoutableAdapter;
 
+/// Parent variables Codex needs beyond the baseline allowlist.
+const PROVIDER_ENV: &[&str] = &[
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+    "OPENAI_PROJECT",
+    "CODEX_HOME",
+];
+
 /// The Codex adapter for `codex exec --json` one-shot execution.
 #[derive(Debug, Clone, Default)]
 pub struct CodexAdapter {
@@ -106,6 +115,7 @@ impl AgentAdapter for CodexAdapter {
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,
+            env_names: PROVIDER_ENV.iter().map(|name| (*name).to_owned()).collect(),
         })?;
         Ok(Box::new(CodexHandle {
             sup,

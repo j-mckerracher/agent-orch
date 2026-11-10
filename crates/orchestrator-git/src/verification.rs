@@ -16,9 +16,33 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::env_policy::EnvPolicy;
 use crate::repository::Repository;
 use crate::worktree::sanitize_task_id;
 use crate::Error;
+
+/// Toolchain locations validation commands need beyond the baseline
+/// allowlist. Credentials are deliberately absent; forward those with
+/// `AGENT_ORCH_ENV_PASSTHROUGH`.
+const TOOLCHAIN_ENV: &[&str] = &[
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "CARGO_TARGET_DIR",
+    "RUSTFLAGS",
+    "CI",
+    "NODE_PATH",
+    "NVM_DIR",
+    "VOLTA_HOME",
+    "GOPATH",
+    "GOROOT",
+    "GOCACHE",
+    "GOFLAGS",
+    "VIRTUAL_ENV",
+    "PYTHONPATH",
+    "JAVA_HOME",
+    "DOTNET_ROOT",
+];
 
 const MAX_COMMAND_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const MAX_CAPTURED_OUTPUT: usize = 1024 * 1024;
@@ -719,6 +743,7 @@ fn run_command(worktree_path: &Path, configured: &ValidationCommand) -> CommandR
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    EnvPolicy::for_launch(TOOLCHAIN_ENV).apply(&mut command);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -1358,5 +1383,51 @@ mod tests {
         let expected_exit = if cfg!(windows) { Some(1) } else { None };
         assert_eq!(result.commands[0].exit_code, expected_exit);
         assert!(result.commands[0].duration_ms < 2_000);
+    }
+
+    #[test]
+    fn validation_commands_do_not_inherit_unlisted_environment() {
+        let temp = TempDir::new().unwrap();
+        std::env::set_var("M6_VERIFY_UNLISTED_TOKEN", "must-not-leak");
+        std::env::set_var("CARGO_HOME", "toolchain-location");
+        #[cfg(windows)]
+        let command = CommandSpec {
+            program: "cmd.exe".into(),
+            args: vec!["/C".into(), "set".into()],
+        };
+        #[cfg(not(windows))]
+        let command = CommandSpec {
+            program: "/usr/bin/env".into(),
+            args: Vec::new(),
+        };
+
+        let result = run_command(
+            temp.path(),
+            &ValidationCommand {
+                command,
+                timeout: Duration::from_secs(20),
+            },
+        );
+
+        assert_eq!(result.status, CommandStatus::Passed, "{:?}", result.detail);
+        let names: Vec<&str> = result
+            .stdout
+            .lines()
+            .filter_map(|line| line.split_once('=').map(|(name, _)| name))
+            .collect();
+        assert!(
+            names.iter().any(|n| n.eq_ignore_ascii_case("PATH")),
+            "{names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n.eq_ignore_ascii_case("CARGO_HOME")),
+            "toolchain names are forwarded: {names:?}"
+        );
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case("M6_VERIFY_UNLISTED_TOKEN")),
+            "unlisted names must not be inherited: {names:?}"
+        );
     }
 }
