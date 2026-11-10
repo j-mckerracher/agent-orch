@@ -1,0 +1,22 @@
+
+running 17 tests
+test contract::tests::contract_text_with_a_nul_byte_is_rejected ... ok
+test contract::tests::approval_required_does_not_imply_workspace_writes ... ok
+test contract::tests::commands_verification_with_blank_command_rejected ... ok
+test contract::tests::delivery_and_autonomy_are_orthogonal ... ok
+test contract::tests::contract_fields_over_their_limit_are_rejected ... ok
+test contract::tests::duplicate_dependency_rejected ... ok
+test contract::tests::empty_objective_rejected ... ok
+test contract::tests::proposal_cannot_change_autonomy ... ok
+test contract::tests::objective_control_and_bidi_characters_are_rejected_but_layout_is_kept ... ok
+test contract::tests::malformed_proposal_is_invalid_not_denied ... ok
+test contract::tests::only_workspace_writes_grants_workspace_writes ... ok
+test contract::tests::proposal_cannot_remove_authorized_verification_gate ... ok
+test contract::tests::proposal_within_envelope_accepted ... ok
+test contract::tests::pull_request_delivery_denied_without_explicit_authorization ... ok
+test contract::tests::valid_contract_passes ... ok
+test contract::tests::self_dependency_rejected ... ok
+test contract::tests::contract_at_each_limit_is_accepted ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.01s
+

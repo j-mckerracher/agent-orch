@@ -1,0 +1,25 @@
+{
+  "name": "diagnostics-tests",
+  "command": "cargo.exe test --locked -p orchestrator-diagnostics",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\source",
+  "source_commit": "136646d95c86b050ca6f6617bb75bf10758826bb",
+  "started_utc": "2026-11-10T19:47:33.2655628Z",
+  "duration_seconds": 14.193,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\diagnostics-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\diagnostics-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 2188,
+  "stdout_sha256": "06da2f9e248c83d1088c5dc8e4d3828471f38e80f42266b7a0fa68bcb600f5cb",
+  "stderr_bytes": 988,
+  "stderr_sha256": "15e02aec11f6b4c9b9400c9422c5a4bfdc09054e8e212d0f3b3ccf4f3fba36a6",
+  "error": null
+}

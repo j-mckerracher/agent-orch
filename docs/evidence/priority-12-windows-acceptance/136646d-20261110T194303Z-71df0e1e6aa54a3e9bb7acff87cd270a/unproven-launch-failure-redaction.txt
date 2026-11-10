@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN by this script (M6-01). The desktop host quoting only the redacted tail of daemon.log, with the daemon token masked, when the daemon fails to launch was not checked in a real window. The tauri-tests unit tests cover the logic. Do the by-hand check and record it in manual-p12.txt.

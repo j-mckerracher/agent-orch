@@ -1,0 +1,25 @@
+{
+  "name": "clippy-scoped",
+  "command": "cargo.exe clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\source",
+  "source_commit": "136646d95c86b050ca6f6617bb75bf10758826bb",
+  "started_utc": "2026-11-10T19:50:02.6451270Z",
+  "duration_seconds": 43.375,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 5728,
+  "stderr_sha256": "4f74a0abdc9f589809b23a016d2ea57a96ac03f3e37702e784d240c6784dd254",
+  "error": null
+}

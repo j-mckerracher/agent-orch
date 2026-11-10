@@ -1,0 +1,33 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.58s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T194303Z-71df0e1e\cargo-target\debug\deps\agent_orch_desktop_lib-cba81428f865b8fb.exe)
+[bridge-test] main review.request_approval answered in 1.3086763s
+[bridge-test] main approvals.resolve answered in 32.769ms
+[bridge-test] main review.evidence answered in 4.87715s
+[bridge-test] main approvals.resolve answered in 37.2594ms
+[bridge-test] main delivery.request answered in 5.1612162s
+[bridge-test] main review.request_approval answered in 2.0298546s
+[bridge-test] main review.request_changes answered in 34.7361ms
+[bridge-test] main approvals.resolve answered in 38.7018ms
+[bridge-test] main review.evidence answered in 2.7223ms
+[bridge-test] main review.request_approval answered in 27.5583ms
+[bridge-test] main review.request_changes answered in 30.1909ms
+[bridge-test] main coordinator.get answered in 32.7315ms
+[bridge-test] main coordinator.send_message answered in 32.0175ms
+[bridge-test] main approvals.list answered in 33.647ms
+[bridge-test] main approvals.resolve answered in 32.0277ms
+[bridge-test] main delivery.request answered in 33.0402ms
+[bridge-test] main review.evidence answered in 2.9215ms
+[bridge-test] main coordinator.send_message answered in 10.5332ms
+[bridge-test] main coordinator.get answered in 32.6997ms
+[bridge-test] main coordinator.get answered in 31.3997ms
+[bridge-test] main review.evidence answered in 4.4204726s
+[bridge-test] main delivery.request answered in 5.804124s
+[bridge-test] main review.request_approval answered in 2.1005974s
+[bridge-test] main review.evidence answered in 5.3902624s
+[bridge-test] main approvals.list answered in 30.2133ms
+[bridge-test] main approvals.resolve answered in 35.251ms
+[bridge-test] main review.evidence answered in 4.3891023s
+[bridge-test] main delivery.request answered in 9.3630801s
+[bridge-test] main events.subscribe answered in 10.1313ms
+[bridge-test] main review.evidence answered in 4.7171415s
+     Running unittests src\main.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T194303Z-71df0e1e\cargo-target\debug\deps\agent_orch_desktop-c9ee17cb9c2178f7.exe)

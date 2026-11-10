@@ -1,0 +1,13 @@
+Priority 12 manual checks (operator observations)
+
+1. FINDING - data-directory ACL (R11)
+Commands: started orchestrator-daemon.exe with --data-dir <RunRoot>\manual-p12\acl-data; inspected the parent, data directory, store.sqlite, daemon.token, and daemon.log with icacls; stopped only the daemon started for this check.
+Observed: the parent directory, data directory, and store.sqlite had an inherited CodexSandboxUsers Modify ACE. The daemon.token ACL showed only the current user. daemon.log was absent at inspection. icacls exited 0 but emitted a workstation/domain trust-relationship diagnostic. No ACLs were changed. The extra inherited Modify access is a finding against the runbook's expected principal set.
+
+2. FINDING - redacted launch failure
+Commands: planted a fake-only secret line in <RunRoot>\manual-p12\redaction-data\daemon.log; set AGENT_ORCH_DAEMON_BIN to an isolated nonzero-exit helper and AGENT_ORCH_DATA_DIR to that directory; launched the debug agent-orch-desktop.exe while the isolated Vite dev server was available; inspected the accessible window text; closed the window.
+Observed: the window displayed "The daemon is not running and could not be started" and instructed the operator to check daemon.log. It did not display the redacted log tail or a launch-failure cause. The planted fake secret and any daemon token were not visible. The expected redacted-tail presentation was not demonstrated, so this is a finding.
+
+3. NOT RUN - approximately 64 KiB objective (R12)
+Commands: cargo build --locked -p orchestrator-cli (exit 0); orchestrator-cli.exe run --help (exit 1); initialized a local throwaway git repository on branch main and an empty data directory; attempted to start orchestrator-cli.exe with --data-dir <temporary directory> run --repo <throwaway repository> --objective followed by a generated 65,000-character repeated-word value.
+Observed: run --help printed "not yet implemented: task execution is not available in this scaffold". Windows rejected process creation with native error 206 before the CLI received the objective; there is no CLI exit code or application behavior to report. The objective was not printed. The objective-length behavior remains unverified.

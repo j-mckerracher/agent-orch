@@ -1,0 +1,37 @@
+
+running 32 tests
+test data_lock::tests::fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact ... ok
+test data_lock::tests::fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact ... ok
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+test data_lock::tests::platform_without_identity_still_retries_and_preserves_the_lock ... ok
+test data_lock::tests::verified_creation_is_cleaned_up_on_drop ... ok
+test data_lock::tests::identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock ... ok
+test tests::create_persists_validated_contract_and_rejects_invalid ... ok
+test tests::concurrent_creates_same_id_exactly_one_wins ... ok
+test tests::invalid_task_ids_are_rejected_not_panics ... ok
+test tests::concurrent_mutations_do_not_lose_a_transition ... ok
+test sqlite::tests::new_database_uses_wal_mode ... ok
+test tests::invalid_transition_changes_nothing ... ok
+test tests::attempt_must_match_task_and_sequence ... ok
+test sqlite_ops::tests::transition_rolls_back_state_when_event_insert_fails ... ok
+test tests::list_ignores_foreign_files ... ok
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test tests::attempt_state_moves_follow_central_table ... ok
+test tests::session_must_reference_recorded_attempt ... ok
+test tests::new_attempt_must_be_pending_with_nonempty_id ... ok
+test tests::new_session_must_start_spawning ... ok
+test sqlite::tests::foreign_keys_reject_orphan_attempts_on_each_handle ... ok
+test tests::session_cannot_carry_a_foreign_attempt ... ok
+test tests::close_and_reopen_preserves_everything ... ok
+test tests::malformed_stored_attempt_is_not_linked_to_new_rows ... ok
+test tests::session_state_moves_follow_central_table ... ok
+test sqlite_ops::tests::separate_handles_serialize_writes_or_return_database_errors ... ok
+test sqlite_ops::tests::task_records_and_event_sequence_survive_reopen ... ok
+test tests::state_change_and_audit_event_persist_together ... ok
+test tests::new_attempt_requires_queued_task ... ok
+test tests::failed_attempt_preserved_and_retry_appends_new_one ... ok
+test tests::session_exit_does_not_affect_task_state ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+

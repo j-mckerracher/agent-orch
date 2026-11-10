@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN by this script (M6-01 R11). The ACLs of the Windows data directory, store.sqlite, daemon.token and daemon.log were not inspected with icacls. Do the by-hand check and record it in manual-p12.txt.

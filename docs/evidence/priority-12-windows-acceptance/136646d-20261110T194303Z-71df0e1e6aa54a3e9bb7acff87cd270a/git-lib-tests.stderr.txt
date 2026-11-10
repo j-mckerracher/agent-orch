@@ -1,0 +1,4 @@
+   Compiling orchestrator-git v0.1.0 (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T194303Z-71df0e1e\source\crates\orchestrator-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.48s
+     Running unittests src\lib.rs (C:\Users\<user>\AppData\Local\Temp\ao12-20261110T194303Z-71df0e1e\cargo-target\debug\deps\orchestrator_git-4a1ff5d2331e70c7.exe)
+error: test failed, to rerun pass `-p orchestrator-git --lib`

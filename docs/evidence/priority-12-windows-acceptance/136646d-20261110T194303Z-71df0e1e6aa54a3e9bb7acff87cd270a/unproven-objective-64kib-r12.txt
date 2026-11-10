@@ -1,0 +1,2 @@
+status: UNPROVEN
+NOT RUN by this script (M6-01 R12). A run with an objective near 64 KiB was not submitted on Windows, where the 32,767-character command-line limit may make the agent spawn fail. Do the by-hand check and record it in manual-p12.txt.

@@ -1,0 +1,25 @@
+{
+  "name": "runtime-env-isolation-test",
+  "command": "cargo.exe test --locked -p orchestrator-runtime --test env_isolation",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\source",
+  "source_commit": "136646d95c86b050ca6f6617bb75bf10758826bb",
+  "started_utc": "2026-11-10T19:46:42.5223019Z",
+  "duration_seconds": 16.43,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\runtime-env-isolation-test",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\runtime-env-isolation-test",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 174,
+  "stdout_sha256": "3b52cc52aa45025a037000a27f80d93d0708d8ef2dd0a0a4b0505d7c6de6567f",
+  "stderr_bytes": 1098,
+  "stderr_sha256": "66694c4fe61cbe15496876d556e700b32ed8c7a5503b5994a487522c1789dda7",
+  "error": null
+}

@@ -1,0 +1,25 @@
+{
+  "name": "cli-crash-concurrency-tests",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test crash_concurrency",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\source",
+  "source_commit": "136646d95c86b050ca6f6617bb75bf10758826bb",
+  "started_utc": "2026-11-10T19:49:38.0613804Z",
+  "duration_seconds": 23.852,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\cli-crash-concurrency-tests",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\cli-crash-concurrency-tests",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 574,
+  "stdout_sha256": "2822ce53cb484d62e6c82b0a92e055766d168b56535a66618c33d86e08d376d4",
+  "stderr_bytes": 384,
+  "stderr_sha256": "119ab53e3dc18be38300d76b836cabcfee6b08fdd448cf31f6b05897042f9e21",
+  "error": null
+}

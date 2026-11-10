@@ -1,0 +1,239 @@
+TAP version 13
+# Subtest: captures stdout, stderr and the exit code, and also the file bytes
+ok 1 - captures stdout, stderr and the exit code, and also the file bytes
+  ---
+  duration_ms: 138.2801
+  type: 'test'
+  ...
+# Subtest: a descendant holding the output pipes cannot stall the run after the process exits
+not ok 2 - a descendant holding the output pipes cannot stall the run after the process exits
+  ---
+  duration_ms: 453.8455
+  type: 'test'
+  location: 'C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\source\\scripts\\ci\\bounded.test.mjs:39:1'
+  failureType: 'testCodeFailure'
+  error: "EBUSY: resource busy or locked, rmdir 'C:\\Users\\<user>\\AppData\\Local\\Temp\\ao12-20261110T194303Z-71df0e1e\\test-tmp\\node-self-tests\\bounded-nTbeV1'"
+  code: 'EBUSY'
+  stack: |-
+    rmdirSync (node:fs:1201:11)
+    _rmdirSync (node:internal/fs/rimraf:236:5)
+    rimrafSync (node:internal/fs/rimraf:194:7)
+    rmSync (node:fs:1247:10)
+    withDir (<url-redacted>
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a timeout kills the process and ends the run promptly
+ok 3 - a timeout kills the process and ends the run promptly
+  ---
+  duration_ms: 1208.3351
+  type: 'test'
+  ...
+# Subtest: a command that cannot start reports the error
+ok 4 - a command that cannot start reports the error
+  ---
+  duration_ms: 8.3262
+  type: 'test'
+  ...
+# Subtest: each expected total equals its running-sequence sum (filtered tests excluded)
+ok 5 - each expected total equals its running-sequence sum (filtered tests excluded)
+  ---
+  duration_ms: 1.269
+  type: 'test'
+  ...
+# Subtest: each expected total equals the length of its name list, so a merge updates both
+ok 6 - each expected total equals the length of its name list, so a merge updates both
+  ---
+  duration_ms: 3.5359
+  type: 'test'
+  ...
+# Subtest: gates take their counts from expected.mjs
+ok 7 - gates take their counts from expected.mjs
+  ---
+  duration_ms: 5.4083
+  type: 'test'
+  ...
+# Subtest: the clippy baseline pattern matches only the listed lines, under either separator
+ok 8 - the clippy baseline pattern matches only the listed lines, under either separator
+  ---
+  duration_ms: 0.7008
+  type: 'test'
+  ...
+# Subtest: sequence and totals are read across binaries, with CRLF output
+ok 9 - sequence and totals are read across binaries, with CRLF output
+  ---
+  duration_ms: 4.3853
+  type: 'test'
+  ...
+# Subtest: a wrong count, sequence or missing name is a problem in either direction
+ok 10 - a wrong count, sequence or missing name is a problem in either direction
+  ---
+  duration_ms: 0.7214
+  type: 'test'
+  ...
+# Subtest: a failed or ignored test is not ok
+ok 11 - a failed or ignored test is not ok
+  ---
+  duration_ms: 0.4423
+  type: 'test'
+  ...
+# Subtest: name matching is by whole path segment, not substring
+ok 12 - name matching is by whole path segment, not substring
+  ---
+  duration_ms: 0.3717
+  type: 'test'
+  ...
+# Subtest: lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+ok 13 - lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+  ---
+  duration_ms: 0.7309
+  type: 'test'
+  ...
+# Subtest: build and lint outputs must show real work and a Finished line
+ok 14 - build and lint outputs must show real work and a Finished line
+  ---
+  duration_ms: 0.9189
+  type: 'test'
+  ...
+# Subtest: diagnostics keep the message and location
+ok 15 - diagnostics keep the message and location
+  ---
+  duration_ms: 0.5529
+  type: 'test'
+  ...
+# Subtest: vitest summary lines
+ok 16 - vitest summary lines
+  ---
+  duration_ms: 0.6274
+  type: 'test'
+  ...
+# Subtest: parsePs reads pid, ppid and the whole command line, spaces included
+ok 17 - parsePs reads pid, ppid and the whole command line, spaces included
+  ---
+  duration_ms: 3.152
+  type: 'test'
+  ...
+# Subtest: survivors are processes under this run's directories; the harness and its ancestors are not
+ok 18 - survivors are processes under this run's directories; the harness and its ancestors are not
+  ---
+  duration_ms: 0.7099
+  type: 'test'
+  ...
+# Subtest: Windows listing: path separators and case do not matter, a single object is accepted
+ok 19 - Windows listing: path separators and case do not matter, a single object is accepted
+  ---
+  duration_ms: 0.3026
+  type: 'test'
+  ...
+# Subtest: scanSurvivors retries while a process is still listed, then reports what remains
+ok 20 - scanSurvivors retries while a process is still listed, then reports what remains
+  ---
+  duration_ms: 27.5484
+  type: 'test'
+  ...
+# Subtest: a listing failure is an error, not an empty result
+ok 21 - a listing failure is an error, not an empty result
+  ---
+  duration_ms: 0.5541
+  type: 'test'
+  ...
+# Subtest: the real listing finds a live process by a path unique to it, and not this harness
+ok 22 - the real listing finds a live process by a path unique to it, and not this harness
+  ---
+  duration_ms: 2587.8201
+  type: 'test'
+  ...
+# Subtest: a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+ok 23 - a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+  ---
+  duration_ms: 1.916
+  type: 'test'
+  ...
+# Subtest: relative, drive-relative, empty and unset values are rejected on both path flavours
+ok 24 - relative, drive-relative, empty and unset values are rejected on both path flavours
+  ---
+  duration_ms: 0.5808
+  type: 'test'
+  ...
+# Subtest: the Windows child never inherits the signing certificate or password
+ok 25 - the Windows child never inherits the signing certificate or password
+  ---
+  duration_ms: 0.7275
+  type: 'test'
+  ...
+# Subtest: the macOS child keeps non-empty signing variables only when signing, drops empty ones
+ok 26 - the macOS child keeps non-empty signing variables only when signing, drops empty ones
+  ---
+  duration_ms: 0.2268
+  type: 'test'
+  ...
+# Subtest: takeWindowsSecrets moves the secrets out of the environment object
+ok 27 - takeWindowsSecrets moves the secrets out of the environment object
+  ---
+  duration_ms: 0.1857
+  type: 'test'
+  ...
+# Subtest: a process that took the secrets cannot pass them to a child it spawns afterwards
+ok 28 - a process that took the secrets cannot pass them to a child it spawns afterwards
+  ---
+  duration_ms: 185.2086
+  type: 'test'
+  ...
+# Subtest: no secrets: a clean unsigned skip with a clear message
+ok 29 - no secrets: a clean unsigned skip with a clear message
+  ---
+  duration_ms: 2.001
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING turns an absent configuration into an error
+ok 30 - REQUIRE_SIGNING turns an absent configuration into an error
+  ---
+  duration_ms: 0.1661
+  type: 'test'
+  ...
+# Subtest: a partial configuration is an error that names the missing variables only
+ok 31 - a partial configuration is an error that names the missing variables only
+  ---
+  duration_ms: 0.2214
+  type: 'test'
+  ...
+# Subtest: signing without notarization is allowed unless required
+ok 32 - signing without notarization is allowed unless required
+  ---
+  duration_ms: 1.3203
+  type: 'test'
+  ...
+# Subtest: full macOS and Windows configurations
+ok 33 - full macOS and Windows configurations
+  ---
+  duration_ms: 0.535
+  type: 'test'
+  ...
+# Subtest: a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+ok 34 - a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+  ---
+  duration_ms: 0.6579
+  type: 'test'
+  ...
+# Subtest: a tag build with signing secrets signs; macOS also needs notarization unless opted out
+ok 35 - a tag build with signing secrets signs; macOS also needs notarization unless opted out
+  ---
+  duration_ms: 0.4738
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING takes precedence over the unsigned opt-in
+ok 36 - REQUIRE_SIGNING takes precedence over the unsigned opt-in
+  ---
+  duration_ms: 0.2569
+  type: 'test'
+  ...
+1..36
+# tests 36
+# suites 0
+# pass 35
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2787.8385
