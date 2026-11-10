@@ -67,7 +67,7 @@ export function LaterScope() {
           </p>
         )}
         {usage.status === "ok" && (
-          <div className="agents-scroll">
+          <div className="agents-scroll" role="region" aria-label="Usage provenance table" tabIndex={0}>
             <table aria-label="Usage provenance">
               <thead>
                 <tr>

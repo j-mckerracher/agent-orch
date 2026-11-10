@@ -197,13 +197,9 @@ export function WorkstreamTree() {
                 <span className="ws-tree-chevron" aria-hidden="true">
                   {groupOpen ? "▾" : "▸"}
                 </span>
-                <span className="ws-tree-number" aria-hidden="true">
-                  {index + 1} / {groups.length}
-                </span>
+                <span className="ws-tree-number" aria-hidden="true" data-text={`${index + 1} / ${groups.length}`} />
                 <span className="ws-tree-title">{group.title}</span>
-                <small className="ws-tree-count" aria-hidden="true">
-                  {group.tasks.length}
-                </small>
+                <small className="ws-tree-count" aria-hidden="true" data-text={group.tasks.length} />
               </div>
               {groupOpen && (
                 <ul role="group" className="ws-tree-tasks">

@@ -301,7 +301,7 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
 
 function DiffText({ text }: { text: string }) {
   return (
-    <pre aria-label="Diff content" className="diff-text">
+    <pre aria-label="Diff content" role="region" tabIndex={0} className="diff-text">
       {text.split("\n").map((line, i) => (
         <span key={i} className={line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : undefined}>
           {line}

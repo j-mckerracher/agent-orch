@@ -60,11 +60,16 @@ export function ModelPicker({ catalog, provenance }: { catalog: SurfaceState<Mod
         className="ws-chip-button"
         aria-expanded={popover.open}
         aria-controls={`${ids}-menu`}
-        aria-label={`Model settings: ${summary}${catalog.status === "ok" ? `. ${triggerBadge}` : ""}`}
+        aria-label={`Model settings: ${summary}${catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
         <span>{summary}</span>
-        {catalog.status === "ok" && <Badge tone="placeholder">{triggerBadge}</Badge>}
+        {catalog.status === "ok" && (
+          <>
+            {" "}
+            <Badge tone="placeholder">{triggerBadge}</Badge>
+          </>
+        )}
         <span aria-hidden="true">⌄</span>
       </button>
       <div id={`${ids}-menu`} className="ws-popover ws-model-panel" hidden={!popover.open}>

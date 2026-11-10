@@ -316,6 +316,12 @@
   white-space: nowrap;
 }
 
+/* Generated so the row's visible text is only its name (WCAG 2.5.3 label in name). */
+.ws-tree-number::before,
+.ws-tree-count::before {
+  content: attr(data-text);
+}
+
 .ws-tree-title {
   min-width: 0;
   flex: 1;

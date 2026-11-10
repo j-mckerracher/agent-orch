@@ -133,7 +133,7 @@ export function WorkstreamsView() {
                   <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "initiative" : "initiatives"}
                 </>
               }
-              headingLevel={3}
+              headingLevel={2}
               actions={marker}
               className="ws-list"
               aria-label="Workstream list"
@@ -213,7 +213,7 @@ function Detail({
   const gates = objective.status === "ok" ? objective.value.gates : [];
   return (
     <section className="ws-detail" aria-label={`Workstream ${group.title}`} data-testid="ws-detail">
-      <Panel title={group.title} headingLevel={3} actions={marker} className="ws-objective">
+      <Panel title={group.title} headingLevel={2} actions={marker} className="ws-objective">
         {objective.status === "ok" ? (
           <>
             <p data-testid="ws-objective">{objective.value.text}</p>
@@ -276,11 +276,11 @@ function Detail({
         </p>
       </Panel>
 
-      <Panel title="Task dependencies" headingLevel={3} actions={marker}>
+      <Panel title="Task dependencies" headingLevel={2} actions={marker}>
         <DependencyGraph tasks={group.tasks} />
       </Panel>
 
-      <Panel title="Tasks" headingLevel={3} actions={marker} className="ws-tasks">
+      <Panel title="Tasks" headingLevel={2} actions={marker} className="ws-tasks">
         <p className="ws-subtle">
           Other views of this workstream (Milestones, Context, Deliverables, Activity) are not available yet.
         </p>

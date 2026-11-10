@@ -54,12 +54,12 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
       >
         Skip to main content
       </a>
-      <div className="shell-strip" data-testid="shell-connection">
+      <div className="shell-strip" tabIndex={0} data-testid="shell-connection">
         {connection}
       </div>
       <div className="shell-body">
-        <div className="shell-sidebar" data-testid="shell-sidebar">
-          <div className="shell-brand">
+        <section className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
+          <header className="shell-brand">
             <div>
               <strong>MCAO</strong>
               <span className="shell-brand-name">Mayo Clinic Agent Orchestrator</span>
@@ -75,23 +75,23 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
                 Menu
               </button>
             )}
-          </div>
+          </header>
           <div id="shell-sidebar-body" className="shell-sidebar-body" hidden={narrow && !menuOpen}>
             <SidebarNav route={route} reviewCount={slots.reviewCount} />
             <SidebarWorkstreams route={route} count={slots.workstreamsCount}>
               {slots.workstreamsTree}
             </SidebarWorkstreams>
-            <div className="shell-bottom" data-testid="slot-theme-toggle">
+            <section className="shell-bottom" aria-label="Appearance" data-testid="slot-theme-toggle">
               {slots.themeToggle}
-            </div>
+            </section>
           </div>
-        </div>
+        </section>
         <div className={`shell-content${hasActivity ? " has-activity" : ""}`}>
-          <div className="shell-topbar" role="group" aria-label="Workspace summary">
+          <section className="shell-topbar" aria-label="Workspace summary">
             <div className="shell-topbar-usage">{slots.topUsage}</div>
             <div className="shell-topbar-search">{slots.topSearch}</div>
             <div className="shell-topbar-counts">{slots.topCounts}</div>
-          </div>
+          </section>
           {main}
           {hasActivity && (
             <aside className="shell-activity" aria-label="Workspace activity">

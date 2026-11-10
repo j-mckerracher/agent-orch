@@ -36,7 +36,7 @@ export function Inventory({
         onRetry={onRetry}
       >
         {(rows) => (
-          <div className="agents-scroll">
+          <div className="agents-scroll" role="region" aria-label="Adapter inventory table" tabIndex={0}>
             <table aria-label="Adapter inventory">
               <thead>
                 <tr>

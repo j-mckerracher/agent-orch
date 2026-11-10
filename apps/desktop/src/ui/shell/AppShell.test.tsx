@@ -283,7 +283,7 @@ describe("slots", () => {
     expect(within(tree).getByTestId("s-wcount")).toBeInTheDocument();
     expect(within(tree).getByTestId("s-tree")).toBeInTheDocument();
     expect(within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
-    const top = screen.getByRole("group", { name: "Workspace summary" });
+    const top = screen.getByRole("region", { name: "Workspace summary" });
     for (const id of ["s-usage", "s-search", "s-counts"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
     expect(within(screen.getByRole("complementary", { name: "Workspace activity" })).getByTestId("s-activity")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Device resources" })).getByTestId("s-resources")).toBeInTheDocument();
@@ -327,7 +327,7 @@ describe("responsive behaviour", () => {
     await mount(daemon());
     expect(document.querySelector(".shell")).toHaveAttribute("data-shell-tier", tier);
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Workspace summary" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Workspace summary" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Workspace activity" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Device resources" })).toBeInTheDocument();
