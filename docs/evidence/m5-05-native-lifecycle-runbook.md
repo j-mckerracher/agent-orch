@@ -253,7 +253,9 @@ normally after reopen. This was not investigated and may be a capture artifact.
 | Guarantee | Test | Layer |
 | --- | --- | --- |
 | Frames relay, reauth, resume | `orchestrator-ipc` relay tests (5) | Rust, in-process server |
-| Host bridge errors, limits, no shutdown/handshake | `src-tauri` bridge tests (6) | Rust, real ipc server |
+| Host bridge errors, limits, no shutdown/handshake | `src-tauri` bridge tests (5 + 1 Unix-only launch test) | Rust, in-process ipc server |
+| Host bridge against the real daemon: launch, `coordinator.*`, `review.*`, approve/reject/request-changes, delivery, gating (Unix and Windows) | `src-tauri` `bridge::real_tests` (3) | Rust, real `orchestrator-daemon` process, no GUI |
+| Real daemon process: `coordinator.*`, `review.*`, approval flow, token and capability gating (Unix and Windows) | `crates/orchestrator-daemon/tests/coordinator_review.rs` (4) | Rust, real daemon process over the platform transport |
 | Close/reopen reconnect, drafts survive, states distinct, fixture mode gated (incl. native `?fixture=1` review route, D3 unavailable) | `native.test.tsx` (18) | vitest, fake host |
 | S6 (D5/D7/D8) against the real daemon methods | `e2e/daemon.e2e.test.ts` | Node, real daemon (Unix socket) |
 | Daemon-owned task survives client close | `tests/lifecycle.rs` | Rust, real daemon + agent process |
@@ -268,7 +270,9 @@ ORCH_DAEMON_BIN=<target>/debug/orchestrator-daemon npm run test:e2e
 
 Without `ORCH_DAEMON_BIN` the suite fails at start ("set ORCH_DAEMON_BIN to the
 orchestrator-daemon binary"). It is Unix-socket based and has not been run on
-Windows.
+Windows; the Windows equivalent is section 5.5. The `seed_review` example is now
+a thin wrapper over `crates/orchestrator-daemon/tests/support/seed.rs`, shared
+with the daemon process tests.
 
 ### 5.4 Windows gate hazards (from the first native run)
 
@@ -299,3 +303,102 @@ Windows.
   failure.
 - **Pipe names** are a fixed-length hash of the canonical data directory
   (`\\.\pipe\agent-orch-<16 hex>`), so data-dir length does not affect them.
+
+### 5.5 Real-daemon approval flow on native Windows (automated, no GUI)
+
+The release gate for M5-05 is that the approval/review flow (S6, D5/D7/D8)
+runs against the real daemon `coordinator.*` and `review.*` methods with native
+Windows proof. Two Rust test sets provide the headless part of that proof. Both
+use `cfg`-neutral code, so the same tests run on Unix (socket) and Windows
+(named pipe); neither is a fixture. Run in a clone with `core.longpaths true`,
+a short root (for example `C:\w`), one unique `CARGO_TARGET_DIR` with at least
+2 GiB free, and `git` on `PATH`:
+
+```powershell
+# daemon process tests (builds and spawns orchestrator-daemon.exe)
+cargo test --locked -p orchestrator-daemon --test coordinator_review -- --nocapture
+# daemon, all binaries (unit tests, coordinator_review, lifecycle)
+cargo test --locked -p orchestrator-daemon
+# Tauri host bridge against a real spawned daemon (no window, no webview)
+cd apps\desktop\src-tauri
+cargo test --locked
+```
+
+The Tauri tests build `orchestrator-daemon.exe` and the `seed_review` example
+once with a nested `cargo build --locked` into `<CARGO_TARGET_DIR>\real-daemon`
+(first run: several extra minutes). To skip the nested build, set both
+`AGENT_ORCH_DAEMON_BIN` and `AGENT_ORCH_SEED_BIN` to prebuilt binaries. A build
+failure fails the tests with the build output; nothing is skipped silently.
+
+Expected counts on Windows (derived from the Windows run-2 baseline plus the
+tests added in round 3; the Mac counts differ because Unix-only tests also run):
+
+| Gate | Run-2 baseline | Expected now |
+| --- | --- | --- |
+| `orchestrator-ipc` | 45 | 45 (unchanged) |
+| daemon `src\main.rs` unit tests | 42 | 42 |
+| daemon `tests\coordinator_review.rs` | 0 (Unix-only) | **4** |
+| daemon `tests\daemon.rs` | 0 (Unix-only) | 0 (still Unix-only) |
+| daemon `tests\lifecycle.rs` | `lifecycle: PASS` | `lifecycle: PASS` |
+| `src-tauri` unit tests | 6 (bridge 5 + launch 1) | **9** (+3 `bridge::real_tests`) |
+| vitest | 287 | 287 |
+
+New tests:
+
+- `coordinator_review.rs`:
+  `coordinator_conversation_survives_daemon_restart_and_grants_no_authority`,
+  `daemon_gates_the_coordinator_and_review_methods_on_token_and_capability`,
+  `approval_flow_approves_and_delivers_through_the_real_daemon`,
+  `approval_flow_rejects_and_requests_changes_through_the_real_daemon`.
+- `src-tauri` `bridge::real_tests`:
+  `the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery`,
+  `the_host_drives_reject_and_request_changes_through_the_real_daemon`,
+  `the_host_forwards_capability_and_token_gating_from_the_real_daemon`.
+
+What they prove on Windows: the daemon process serves `coordinator.*`,
+`review.*`, `approvals.*`, `workspaces.diff` and `delivery.request` over the
+named pipe; a requested approval is pending, approve and reject are observable
+in `review.evidence` and `approvals.list`, delivery after approve creates the
+review ref at the approved candidate commit (read back with `git`), delivery
+before approval or after reject is refused, request-changes blocks approval;
+a client without the capability gets `-32004` from the daemon, a wrong token is
+an authentication failure; and the Tauri host's `Bridge` starts the daemon
+through its real detached launch path (`DETACHED_PROCESS`), forwards the same
+real methods, never forwards `shutdown` or `handshake`, never exposes the token
+in frames, and gets `NotFound` for an unknown task or project (no fixture ids,
+no fallback). On failure the daemon's `daemon.log` is printed.
+
+What they do NOT prove (**UNPROVEN until a human runs section 5.6**): the
+installed NSIS app, the real window and webview, the `daemon_open/send/close`
+Tauri commands and capability file as the webview calls them, the React review
+screens and their click path, and everything in section 5.2 on Windows. The
+desktop vitest e2e (`npm run test:e2e`) is still Unix-socket only. Do not mark
+M5-05 done on the strength of these tests alone if the release rule requires the
+desktop UI itself to have driven the flow.
+
+### 5.6 Manual Windows checklist (human GUI session, `gui-install-launch`)
+
+Record PASS, FAIL or UNPROVEN and the observed pids for each step. Use a short
+`AGENT_ORCH_DATA_DIR` and a repository that has a verified task candidate, or
+seed one with `seed_review` (see `crates/orchestrator-daemon/examples`) into a
+stopped daemon's data directory.
+
+1. Install the NSIS installer (per-user, no admin). Expect no UAC prompt.
+2. Start "Agent Orchestrator". Expect the strip to show "Connected" within a few
+   seconds and `Get-Process orchestrator-daemon` to show one daemon.
+3. Open the review screen for the seeded task. Expect the candidate, diff and
+   verification evidence to come from the daemon (not sample data; `?fixture=1`
+   must be unavailable in the installed app).
+4. Request approval, then approve in the UI. Expect the task review state to
+   become approved and, after delivery, `git rev-parse
+   refs/heads/orchestrator/review/<task>` in the repository to equal the
+   candidate commit.
+5. Repeat with a second task: reject, and request changes. Expect no ref and no
+   approve button enabled after request changes.
+6. Close the window while a task runs. The daemon and agent pids must be
+   unchanged; reopen and expect "Connected" with the same task still `Running`.
+7. Kill only the daemon pid; the strip must leave "Connected" and a new daemon
+   must start on reconnect. Rename the sidecar and relaunch; expect "Daemon
+   unavailable" and no sample data.
+8. Uninstall. Expect the data directory to be left alone and the daemon to be
+   stopped or idle-exited within about 60 s.

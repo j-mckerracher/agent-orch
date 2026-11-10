@@ -275,3 +275,7 @@ impl Bridge {
 #[cfg(test)]
 #[path = "bridge_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bridge_real_tests.rs"]
+mod real_tests;
