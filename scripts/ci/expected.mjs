@@ -8,20 +8,20 @@
 // Windows: the published Priority 11r3 runbook's derived values (not yet measured on a runner).
 // `sequence` is the `running N tests` series, one entry per test binary, in order.
 export const WINDOWS = {
-  ipc: { passed: 45, sequence: [45, 0] },
+  ipc: { passed: 46, sequence: [46, 0] },
   daemon: { passed: 55, sequence: [50, 4, 0, 1] },
   coordinatorReview: { passed: 4, sequence: [4] },
   windowsTransport: { passed: 13, sequence: [13], filteredOut: 32 },
   tauri: { passed: 12, sequence: [12, 0, 0] },
 };
 
-// macOS: measured on the Priority 12 integration merge (M6-01 + M6-02 + M6-03 on the M5-05 round 4
+// macOS: measured on the Priority 12 integration merge (M6-01 + M6-02 + M6-03 on the M5-05 round 5
 // source). Not Windows evidence. daemon is unit, coordinator_review, daemon.rs, diagnostics_log.
 export const MACOS = {
-  ipc: { passed: 45, sequence: [45, 0] },
+  ipc: { passed: 46, sequence: [46, 0] },
   daemon: { passed: 87, sequence: [72, 4, 10, 1] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 705, ignored: 1 },
+  workspace: { passed: 708, ignored: 1 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
   e2eFiles: 1,
 };

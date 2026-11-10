@@ -45,7 +45,8 @@
    "a_daemon_that_stops_ends_the_relay_with_a_remote_close",
    "unsubscribed_connection_does_not_keep_the_server_alive",
    "server_idles_out_after_its_last_subscriber_leaves",
-   "live_subscription_keeps_an_otherwise_idle_server_running"
+   "live_subscription_keeps_an_otherwise_idle_server_running",
+   "a_call_longer_than_the_idle_timeout_does_not_stop_the_server"
   ],
   "daemon": [
    "evidence_for_unknown_task_or_approval_is_not_found",

@@ -60,7 +60,8 @@
    "read_reports_end_of_file_only_after_the_peer_closes",
    "data_written_before_the_writer_closes_is_still_readable",
    "handshake_waits_for_a_client_that_writes_after_connecting",
-   "idle_connections_hold_their_instances_until_they_close"
+   "idle_connections_hold_their_instances_until_they_close",
+   "a_call_longer_than_the_idle_timeout_does_not_stop_the_server"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",

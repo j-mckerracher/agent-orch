@@ -33,13 +33,13 @@ The Windows list is the published runbook
 | Gate | Command | Where |
 | --- | --- | --- |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
-| `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (45 tests) | both |
+| `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
 | `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 55 = 50+4+0+1, macOS 87 = 72+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
 | `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (705 passed, 1 ignored) | macOS |
+| `workspace-tests` | `cargo test --locked --workspace` (708 passed, 1 ignored) | macOS |
 | `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 289 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
 | `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 12, macOS 14), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
@@ -69,11 +69,13 @@ sequence and a name list disagree. Measure on the platform; do not edit to fit a
 `single_match` baseline lines in `supervisor.rs` are `CLIPPY_BASELINE` there: they are
 `#[cfg(windows)]` code, so only the Windows `clippy-scoped` gate can show them as new.
 
-**Priority 12 merge** (M6-01 security, M6-02 CI and M6-03 diagnostics on the M5-05 round 4 source)
+**Priority 12 merge** (M6-01 security, M6-02 CI and M6-03 diagnostics on the M5-05 round 5 source)
 set the current values in `expected.mjs` and the name lists: `daemon-tests` Windows `[50,4,0,1]`/55
 and macOS `[72,4,10,1]`/87 (M6-01 added the two `submit_` tests; M6-03 added the diagnostics
 tests and the `diagnostics_log` test binary); `tauri-tests` Windows `[12,0,0]` and macOS
-`[14,0,0]`; macOS `workspace-tests` 705 passed and 1 ignored; vitest 289; `CLIPPY_BASELINE.lines`
+`[14,0,0]`; `ipc-tests` 46 (M5-05 round 5 added `a_call_longer_than_the_idle_timeout_does_not_stop_the_server`);
+macOS `workspace-tests` 708 passed and 1 ignored (round 5 also added 2 `orchestrator-git`
+`repository_discovery` tests, which no gate counts separately); vitest 289; `CLIPPY_BASELINE.lines`
 409 and 432; and the lifecycle test prints `STEP 1` to `STEP 8` (`LIFECYCLE_STEPS`). The macOS
 figures were measured on the merged tree; the Windows figures are derived from the three owner
 reports and are unproven until a Windows run. Re-measure on Windows; do not edit to fit.
