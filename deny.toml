@@ -14,8 +14,11 @@ targets = [
 
 [advisories]
 unmaintained = "workspace"
+# Keep this list in step with .cargo/audit.toml (cargo audit reads that file).
+# An entry here is a known, tracked exception, not an acceptance of the risk: remove it when the
+# dependency is upgraded.
 ignore = [
-  { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys < 0.39 bundles SQLite < 3.54. sqlx-sqlite 0.9.0 (latest) caps it at < 0.38, so no fix is installable. Exposure needs a crafted database plus -wal pair inside the 0700 per-user data directory. Re-evaluate on the next sqlx release." },
+  { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys < 0.39 bundles SQLite < 3.54 (0.37.0 via sqlx 0.9.0). sqlx-sqlite 0.9.0 (latest) caps it at < 0.38, so no fix is installable; the fix needs libsqlite3-sys >= 0.39 (rusqlite 0.41 line) and an sqlx release that allows it. Exposure needs a crafted database plus -wal pair opened locally, inside the 0700 per-user data directory. Owner: M6-01 security audit. Re-evaluate on the next sqlx release." },
 ]
 
 [licenses]

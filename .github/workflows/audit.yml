@@ -1,0 +1,73 @@
+name: audit
+
+# Dependency audits. Lockfile analysis does not depend on the host OS, so one Linux runner checks
+# both lockfiles; deny.toml pins the graph to the shipped macOS and Windows targets.
+# Policy and exceptions: deny.toml and .cargo/audit.toml. See docs/release-ci.md.
+
+on:
+  pull_request:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - deny.toml
+      - .cargo/audit.toml
+      - apps/desktop/src-tauri/Cargo.toml
+      - apps/desktop/src-tauri/Cargo.lock
+      - apps/desktop/package.json
+      - apps/desktop/package-lock.json
+      - .github/workflows/audit.yml
+  push:
+    branches: [main]
+  schedule:
+    # New advisories appear without any change to this repository.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Only a superseded pull request run is cancelled; a scheduled, main-branch or release run completes.
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.20.0"
+          package-manager-cache: false
+
+      - name: Install cargo-deny and cargo-audit
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-deny@0.20.2,cargo-audit@0.22.2
+
+      - name: cargo deny (root workspace)
+        run: cargo deny --manifest-path Cargo.toml check
+
+      # The desktop host crate is publish = false, so deny.toml does not demand a license for it.
+      - name: cargo deny (desktop host)
+        run: cargo deny --manifest-path apps/desktop/src-tauri/Cargo.toml check
+
+      # Vulnerabilities fail. The unmaintained and unsound notes for Linux-only GTK3 crates in the
+      # desktop lockfile are warnings and do not fail the step.
+      - name: cargo audit (root workspace)
+        run: cargo audit --file Cargo.lock
+
+      - name: cargo audit (desktop host)
+        run: cargo audit --file apps/desktop/src-tauri/Cargo.lock
+
+      - name: npm audit
+        working-directory: apps/desktop
+        run: npm audit --audit-level=high
