@@ -82,6 +82,8 @@ function consumeSelfEvent(expected: Map<string, number>, event: DaemonEvent): bo
 
 const defaultNewKey = () => crypto.randomUUID();
 
+export type ReviewState = ReturnType<typeof useReview>;
+
 export function useReview({ client, evidenceSource, scope, newKey = defaultNewKey }: UseReviewOptions) {
   const subscribeConnection = useCallback(
     (onChange: () => void) => client.subscribe((notice) => notice.type === "connection" && onChange()),
