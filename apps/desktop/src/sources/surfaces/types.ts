@@ -177,10 +177,18 @@ export interface UsageCoverage {
    */
   reporting: "provider-reported" | "estimated" | "partial" | "tokens-only" | "none";
 }
+/** How many of the window's sessions reported a cost. Anything short of `complete` makes the headline a lower bound. */
+export interface UsageCostCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessions: number;
+  sessionsWithCost: number;
+}
 export interface UsageSummary {
   windowStart: string;
   timezone: string;
   currency: string;
+  /** Live adapter only; fixtures omit it. */
+  costCoverage?: UsageCostCoverage;
   reported: Measured<number>;
   estimated: Measured<number>;
   budget: Measured<number>;

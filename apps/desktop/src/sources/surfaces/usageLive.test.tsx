@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../../App";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { connected } from "../../test/render";
@@ -234,6 +234,28 @@ describe("live usage adapter mapping", () => {
     expect(result.estimated).toMatchObject({ status: "ok", value: 4.5 });
   });
 
+  it("words an estimate in another currency as an estimate, not a report", async () => {
+    const result = await data(
+      summary(bucket({ sessions: 2, withTokens: 2, withCost: 2, reported: [["USD", "1"]], estimated: [["EUR", "9"]] })),
+    );
+    expect(result.estimated).toMatchObject({ reason: expect.stringMatching(/^Estimated costs were recorded in EUR 9.*only USD/) });
+    expect(result.estimated).toMatchObject({ reason: expect.not.stringContaining("reported in") });
+    const several = await data(
+      summary(bucket({ sessions: 2, withCost: 2, reported: [["EUR", "1"], ["USD", "2"]], estimated: [["USD", "3.1"]] })),
+    );
+    expect(several.reported).toMatchObject({ reason: expect.stringMatching(/^Costs were reported in EUR 1, USD 2.*one currency/) });
+    expect(several.estimated).toMatchObject({ status: "unsupported", reason: expect.stringMatching(/^Estimated costs were recorded in USD 3\.1/) });
+  });
+
+  it("carries the totals cost coverage so a partial headline can be flagged", async () => {
+    const partial = await data(summary(bucket({ sessions: 4, withTokens: 4, withCost: 1, reported: [["USD", "2"]] })));
+    expect(partial.costCoverage).toEqual({ status: "partial", sessions: 4, sessionsWithCost: 1 });
+    const complete = await data(summary(bucket({ sessions: 2, withTokens: 2, withCost: 2, reported: [["USD", "2"]] })));
+    expect(complete.costCoverage).toEqual({ status: "complete", sessions: 2, sessionsWithCost: 2 });
+    const none = await data(summary(bucket({ sessions: 2, withTokens: 2 })));
+    expect(none.costCoverage).toEqual({ status: "unknown", sessions: 2, sessionsWithCost: 0 });
+  });
+
   it("keeps decimal strings exact enough for a nano-unit amount", () => {
     const wire = parseUsageSummary(summary(bucket({ sessions: 1, withCost: 1, reported: [["USD", "123456.000000001"]] })));
     expect(mapUsageSummary(wire, NOW).reported).toMatchObject({ status: "ok", value: 123456.000000001 });
@@ -303,9 +325,9 @@ describe("usage pill with the live adapter", () => {
       sources: createFixtureSources(),
     });
     const user = userEvent.setup();
-    render(<App services={services} shellSlots={topBarSlots} />);
+    const view = render(<App services={services} shellSlots={topBarSlots} />);
     await connected();
-    return { user };
+    return { user, unmount: view.unmount };
   }
 
   it("shows a reported amount and the labelled window, estimate and provider coverage", async () => {
@@ -352,5 +374,86 @@ describe("usage pill with the live adapter", () => {
     await waitFor(() => expect(within(pill).getByTestId("top-usage-value")).toHaveTextContent("not available"));
     expect(pill.textContent).not.toMatch(/\$|26/);
     expect(screen.getByTestId("top-usage-info")).toHaveTextContent("Usage is unavailable");
+  });
+
+  const valueOf = () => within(screen.getByTestId("top-usage")).getByTestId("top-usage-value");
+  const oneCost = (amount: string, extra: BucketOptions = {}) =>
+    summary(bucket({ sessions: 1, withTokens: 1, withCost: 1, reported: [["USD", amount]], ...extra }));
+
+  it("refreshes the figure when the window regains focus and keeps polling machinery cleaned up", async () => {
+    const fake = new FakeDaemon();
+    let amount = "1.00";
+    fake.stub("usage.summary", () => oneCost(amount));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("$1.00"));
+    amount = "9.00";
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(valueOf()).toHaveTextContent("$9.00"));
+    expect(fake.callsTo("usage.summary").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows a sub-cent amount as <$0.01, distinct from a true zero", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", oneCost("0.004"));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("<$0.01"));
+    expect(valueOf().textContent).not.toBe("$0.00");
+    expect(screen.getByTestId("top-usage-info")).toHaveTextContent("<$0.01 reported since");
+  });
+
+  it("shows nine-decimal dust as <$0.01 and a reported zero as $0.00", async () => {
+    const dust = new FakeDaemon();
+    dust.stub("usage.summary", oneCost("0.000000001"));
+    const first = await mountLive(dust);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("<$0.01"));
+    first.unmount();
+    const zero = new FakeDaemon();
+    zero.stub("usage.summary", oneCost("0"));
+    await mountLive(zero);
+    await waitFor(() => expect(valueOf()).toHaveTextContent(/^\$0\.00$/));
+  });
+
+  it("flags a partial headline on the pill and in the popover", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", summary(bucket({ sessions: 4, withTokens: 4, withCost: 1, reported: [["USD", "2"]] })));
+    await mountLive(fake);
+    const pill = screen.getByTestId("top-usage");
+    await waitFor(() => expect(valueOf()).toHaveTextContent("$2.00"));
+    expect(pill).toHaveTextContent("reported (partial)");
+    expect(screen.getByTestId("top-usage-partial")).toHaveTextContent("1 of 4 sessions reported a cost, so this is a lower bound");
+  });
+
+  it("does not flag a complete headline as partial", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", oneCost("2"));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("$2.00"));
+    expect(screen.getByTestId("top-usage")).not.toHaveTextContent("partial");
+    expect(screen.queryByTestId("top-usage-partial")).toBeNull();
+  });
+
+  it("renders duplicate provider names without a duplicate-key warning and clips long labels", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const fake = new FakeDaemon();
+      const long = "p".repeat(300);
+      fake.stub(
+        "usage.summary",
+        summary(bucket({ sessions: 2, withTokens: 2, withCost: 2, reported: [["USD", "1"]] }), [
+          ["codex", bucket({ sessions: 1, withTokens: 1 })],
+          ["codex", bucket({ sessions: 1, withTokens: 1 })],
+          [long, bucket({ sessions: 1, withTokens: 1 })],
+        ]),
+      );
+      await mountLive(fake);
+      await waitFor(() => expect(valueOf()).toHaveTextContent("$1.00"));
+      const items = within(screen.getByRole("list", { name: "Reporting coverage", hidden: true })).getAllByRole("listitem", { hidden: true });
+      expect(items).toHaveLength(3);
+      expect(items[2]!.textContent!.length).toBeLessThan(80);
+      expect(items[2]).toHaveAttribute("title", long);
+      expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key|unique "key"/);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

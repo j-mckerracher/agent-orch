@@ -1,15 +1,36 @@
 import { useEffect, useRef } from "react";
-import type { Measured, UsageSummary } from "../../sources/surfaces/types";
-import { useServices, useSurface } from "../services";
+import type { Measured, UsageCostCoverage, UsageSummary } from "../../sources/surfaces/types";
+import { useServices, useSurface, type SurfaceRefresh } from "../services";
 import { PlaceholderBadge } from "../widgets";
 import "./topbar.css";
 
+const REFRESH: SurfaceRefresh = { pollMs: 60_000, onFocus: true, atLocalMidnight: true };
+const MAX_LABEL = 40;
+
+/**
+ * An amount below the smallest displayable unit reads "<$0.01", so a real but tiny spend is
+ * never drawn as the true zero "$0.00".
+ */
 function money(value: number, currency: string): string {
+  let formatter: Intl.NumberFormat | null = null;
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(value);
+    formatter = new Intl.NumberFormat("en-US", { style: "currency", currency });
   } catch {
-    return `${value.toFixed(2)} ${currency}`;
+    formatter = null;
   }
+  const digits = formatter?.resolvedOptions().maximumFractionDigits ?? 2;
+  const show = (amount: number) => (formatter ? formatter.format(amount) : `${amount.toFixed(digits)} ${currency}`);
+  const smallest = 1 / 10 ** digits;
+  return value > 0 && value < smallest ? `<${show(smallest)}` : show(value);
+}
+
+/** Provider and timezone names come from the daemon and host; keep them from blowing out the popover. */
+function clip(label: string): { text: string; title?: string } {
+  return label.length > MAX_LABEL ? { text: `${label.slice(0, MAX_LABEL - 1)}…`, title: label } : { text: label };
+}
+
+function isPartial(coverage: UsageCostCoverage | undefined): coverage is UsageCostCoverage {
+  return coverage !== undefined && coverage.status !== "complete";
 }
 
 function age(ageMs: number): string {
@@ -39,23 +60,33 @@ function figure(label: string, value: Measured<number>, currency: string): strin
 }
 
 function UsageDetails({ summary }: { summary: UsageSummary }) {
-  const { reported, estimated, budget, currency, timezone, windowStart, coverage } = summary;
-  const since = `since ${windowLabel(windowStart, timezone)} (${timezone})`;
+  const { reported, estimated, budget, currency, timezone, windowStart, coverage, costCoverage } = summary;
+  const zone = clip(timezone);
+  const since = `since ${windowLabel(windowStart, timezone)} (${zone.text})`;
   return (
     <>
-      <p>
+      <p title={zone.title}>
         {reported.status === "ok"
           ? `${money(reported.value, currency)} reported ${since}.`
           : `Reported usage ${since} is ${reported.status}: ${trimStop(reported.reason)}.`}
       </p>
+      {reported.status === "ok" && isPartial(costCoverage) && (
+        <p data-testid="top-usage-partial">
+          Partial: {costCoverage.sessionsWithCost} of {costCoverage.sessions}{" "}
+          {costCoverage.sessions === 1 ? "session" : "sessions"} reported a cost, so this is a lower bound.
+        </p>
+      )}
       <p>{figure("Estimated, not reported", estimated, currency)} Estimates are never added to the reported figure.</p>
       <p>{figure("Budget", budget, currency)}</p>
       <ul aria-label="Reporting coverage">
-        {coverage.map((entry) => (
-          <li key={entry.provider}>
-            {entry.provider}: {entry.reporting === "none" ? "no usage reported" : entry.reporting}
-          </li>
-        ))}
+        {coverage.map((entry, index) => {
+          const name = clip(entry.provider);
+          return (
+            <li key={`${index}:${entry.provider}`} title={name.title}>
+              {name.text}: {entry.reporting === "none" ? "no usage reported" : entry.reporting}
+            </li>
+          );
+        })}
       </ul>
     </>
   );
@@ -70,7 +101,7 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
 export function UsagePill() {
   const { surfaces } = useServices();
   const source = surfaces.usage;
-  const result = useSurface(() => source.usage(), "top-usage", source.provenance);
+  const result = useSurface(() => source.usage(), "top-usage", source.provenance, source.provenance.kind === "daemon" ? REFRESH : undefined);
   const details = useRef<HTMLDetailsElement>(null);
   const summary = result.status === "ok" ? result.data : null;
   const reported = summary?.reported.status === "ok" ? summary.reported.value : null;
@@ -100,7 +131,11 @@ export function UsagePill() {
     <div className="top-usage" role="group" aria-label="Daily usage" data-testid="top-usage">
       <span>Usage:</span>
       <strong data-testid="top-usage-value">{text}</strong>
-      {summary && reported !== null && <span>reported</span>}
+      {summary && reported !== null && (
+        <span title={isPartial(summary.costCoverage) ? "Only some sessions reported a cost; this is a lower bound." : undefined}>
+          {isPartial(summary.costCoverage) ? "reported (partial)" : "reported"}
+        </span>
+      )}
       {source.provenance.kind === "fixture" && result.status !== "loading" && <PlaceholderBadge provenance={source.provenance} />}
       <details
         ref={details}

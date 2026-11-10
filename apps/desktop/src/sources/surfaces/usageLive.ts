@@ -139,15 +139,21 @@ const listed = (costs: readonly UsageCostWire[]) => costs.map((cost) => `${cost.
  * One cost list as one number in the pill's single currency. An empty list is unknown; a list in
  * another or several currencies is not summed or converted.
  */
-function figure(costs: readonly UsageCostWire[], currency: string, nowMs: number, none: string): Measured<number> {
+function figure(
+  costs: readonly UsageCostWire[],
+  currency: string,
+  nowMs: number,
+  none: string,
+  noun: "reported" | "estimated",
+): Measured<number> {
   if (costs.length === 0) return { status: "unknown", reason: none };
   const [only] = costs;
   if (costs.length === 1 && only!.currency === currency) {
     return measured(Number(only!.amount), observation(nowMs));
   }
-  return unsupportedValue(
-    `Costs were reported in ${listed(costs)}. The usage pill shows one currency and never adds or converts currencies`,
-  );
+  const subject = noun === "reported" ? "Costs were reported" : "Estimated costs were recorded";
+  const shown = currency === "unknown" ? "one currency" : `only ${currency}`;
+  return unsupportedValue(`${subject} in ${listed(costs)}. The usage pill shows ${shown} and never adds or converts currencies`);
 }
 
 function reporting(provider: UsageBucketWire): UsageCoverage["reporting"] {
@@ -168,13 +174,15 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
     windowStart: new Date(wire.window.start_unix_ms).toISOString(),
     timezone: wire.window.timezone,
     currency,
+    costCoverage: { status: wire.totals.cost_status, sessions, sessionsWithCost: wire.totals.sessions_with_cost },
     reported: figure(
       reported.costs,
       currency,
       nowMs,
       `No provider reported a cost in this window (${sessions} ${sessions === 1 ? "session" : "sessions"} started). A missing cost is not zero`,
+      "reported",
     ),
-    estimated: figure(estimated.costs, currency, nowMs, "No estimate was recorded; the daemon has no price table"),
+    estimated: figure(estimated.costs, currency, nowMs, "No estimate was recorded; the daemon has no price table", "estimated"),
     budget: unsupportedValue("The daemon records no budget."),
     coverage: wire.providers.map((provider) => ({ provider: provider.provider, reporting: reporting(provider) })),
   };
