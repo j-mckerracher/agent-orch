@@ -1,0 +1,15 @@
+   Compiling uuid v1.29.1
+   Compiling tempfile v3.27.0
+   Compiling cfb v0.14.0
+   Compiling schemars v0.8.22
+   Compiling infer v0.22.0
+   Compiling tauri-utils v2.10.2
+   Compiling tauri-build v2.7.4
+   Compiling tauri-codegen v2.7.4
+   Compiling tauri v2.12.5
+   Compiling agent-orch-desktop v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\apps\desktop\src-tauri)
+   Compiling tauri-macros v2.7.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.95s
+     Running unittests src\lib.rs (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\cargo-target\debug\deps\agent_orch_desktop_lib-d8e9c9da257385d4.exe)
+     Running unittests src\main.rs (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\cargo-target\debug\deps\agent_orch_desktop-31ebc523affe8b94.exe)
+   Doc-tests agent_orch_desktop_lib

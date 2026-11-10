@@ -1,0 +1,25 @@
+{
+  "name": "p12-windows-checks",
+  "command": "pwsh.exe -NoProfile -File C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source\\scripts\\ci\\p12-windows-checks.ps1 -TargetDir C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target -RunRoot C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\p12 -EvidenceDir C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\evidence",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:18:35.7414106Z",
+  "duration_seconds": 35.259,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 3278,
+  "stdout_sha256": "a1aa27eb355c58df4a7910061715c71e340110a259838b6366dc4b3ca52da4fc",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

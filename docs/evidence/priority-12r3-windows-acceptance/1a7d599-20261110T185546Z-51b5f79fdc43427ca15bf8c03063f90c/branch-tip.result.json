@@ -1,0 +1,25 @@
+{
+  "name": "branch-tip",
+  "command": "git.exe -C C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source rev-parse refs/remotes/origin/orch/priority-12r3-windows-fix-1a7d599",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T18:55:48.1553069Z",
+  "duration_seconds": 0.104,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 41,
+  "stdout_sha256": "4079cf8598a00050e1dad54447a42807c7aed7a4b1d48d1f00f607a01a842e9a",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

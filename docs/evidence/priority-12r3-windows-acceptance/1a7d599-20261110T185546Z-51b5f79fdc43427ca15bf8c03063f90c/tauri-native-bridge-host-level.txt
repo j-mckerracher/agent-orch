@@ -1,0 +1,2 @@
+status: PASS
+Host level only, no window and no webview: the real orchestrator-daemon.exe served the coordinator and review methods over the Windows named pipe (coordinator-review-tests) and the Tauri host Bridge launched it and drove an approval to delivery, a reject, a request-changes and the capability and token gating (tauri-tests). Both gates PASS in this run (coordinator-review-tests PASS, tauri-tests PASS). Not a webview, installer or click-path proof.

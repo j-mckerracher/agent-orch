@@ -1,0 +1,8 @@
+
+ProcessId       : 50416
+ParentProcessId : 30392
+Name            : pwsh.exe
+ExecutablePath  : C:\Program Files (x86)\PowerShell\7\pwsh.exe
+CommandLine     : "C:\Program Files (x86)\PowerShell\7\pwsh.exe" -NoProfile -Command "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+                  $ev='C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\evidence'; Get-ChildItem -LiteralPath $ev -File -Filter '*.summary.txt' | Sort-Object Name | ForEach-Object { $v=Get-Content -LiteralPath $_.FullName -TotalCount 3 -ErrorAction SilentlyContinue; '{0}: {1}' -f $_.BaseName,($v -join ' | ') }; Get-ChildItem -LiteralPath $ev -File -Filter '*.stdout.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { 'latest=' + $_.Name }"
+

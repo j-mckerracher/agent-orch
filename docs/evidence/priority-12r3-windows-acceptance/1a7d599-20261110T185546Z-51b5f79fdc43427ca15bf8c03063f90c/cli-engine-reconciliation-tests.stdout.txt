@@ -1,0 +1,27 @@
+
+running 22 tests
+test interrupted_task_whose_project_cannot_be_inspected_refuses_scheduling ... ok
+test confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling ... ok
+test live_owner_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test interrupted_task_without_a_recorded_workspace_refuses_scheduling ... ok
+test interrupted_task_with_partial_delivery_refuses_scheduling_and_keeps_evidence ... ok
+test interrupted_foreign_workspace_refuses_scheduling_and_keeps_all_evidence ... ok
+test live_owner_with_confirmed_delivery_while_running_refuses_scheduling ... ok
+test consistent_delivery_journals_do_not_block_scheduling ... ok
+test live_owner_with_partial_delivery_journal_refuses_scheduling ... ok
+test live_owner_with_consistent_not_applied_journal_does_not_block_scheduling ... ok
+test pending_attempt_without_any_session_refuses_scheduling ... ok
+test held_data_directory_lock_refuses_mutating_commands_and_leaves_readers_alone ... ok
+test running_task_without_an_unfinished_session_refuses_scheduling ... ok
+test planned_and_admitted_tasks_without_attempts_do_not_block_scheduling ... ok
+test run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated ... ok
+test settled_task_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test settled_task_with_partial_delivery_journal_refuses_scheduling ... ok
+test unidentified_running_session_refuses_scheduling_and_preserves_records ... ok
+test settled_failed_task_with_dirty_worktree_does_not_block_scheduling ... ok
+test live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock ... ok
+test interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evidence ... ok
+test settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.37s
+

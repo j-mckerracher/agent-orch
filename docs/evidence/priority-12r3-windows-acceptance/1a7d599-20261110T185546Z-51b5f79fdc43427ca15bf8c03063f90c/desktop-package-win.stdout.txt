@@ -1,0 +1,19 @@
+
+> agent-orch-desktop@0.1.0 package:win
+> node scripts/package.mjs nsis
+
+staged C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+vite v8.3.6 building client environment for production...
+transforming...
+✓ 64 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.41 kB │ gzip:   0.28 kB
+dist/assets/index-DxNRNoNE.css    1.87 kB │ gzip:   0.77 kB
+dist/assets/index-CLYi8bWq.js   335.26 kB │ gzip: 100.44 kB
+
+✓ built in 270ms

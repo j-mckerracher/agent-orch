@@ -1,0 +1,13 @@
+p12-windows-checks: run root length 43 characters
+p12-windows-checks: platform windows
+CHECK acl-files-present: FAIL - missing after 30 s: daemon.log; daemon exited: False
+CHECK acl-data-dir: PASS - only the current user, full control, protected, nothing inherited
+CHECK acl-.orchestrator.lock: FAIL - an inherited ACE (I) is present; ACE is inherited; the DACL is not protected from inheritance
+CHECK acl-daemon.token: PASS - only the current user, full control, protected, nothing inherited
+CHECK acl-store.sqlite: PASS - only the current user, full control, protected, nothing inherited
+CHECK acl-store.sqlite-shm: PASS - only the current user, full control, protected, nothing inherited
+CHECK acl-store.sqlite-wal: PASS - only the current user, full control, protected, nothing inherited
+CHECK cmdline-refused: PASS - refused before any record, with the limit named and no objective echoed
+INFO cmdline-65k-literal: the OS refused to start it, as expected: This command cannot be run due to the error: The filename or extension is too long.
+CHECK launch-failure-window: NOT RUN - needs a person to drive the desktop window; the tauri-tests gate covers the redaction logic
+P12-WINDOWS-CHECKS: FAIL (2 of 8 failed)

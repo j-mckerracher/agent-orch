@@ -1,0 +1,25 @@
+{
+  "name": "desktop-vitest",
+  "command": "npx.cmd vitest run",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source\\apps\\desktop",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:04:08.6089540Z",
+  "duration_seconds": 23.246,
+  "timeout_seconds": 1200,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 542,
+  "stdout_sha256": "11153f8a303d202c2cf8eebe243f6a254be3237ffd189b2e1895256110d1f2fd",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

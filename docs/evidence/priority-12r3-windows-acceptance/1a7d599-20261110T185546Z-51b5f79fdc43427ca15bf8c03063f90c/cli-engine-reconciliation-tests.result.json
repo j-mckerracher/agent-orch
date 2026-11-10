@@ -1,0 +1,25 @@
+{
+  "name": "cli-engine-reconciliation-tests",
+  "command": "cargo.exe test --locked -p orchestrator-cli --test engine_reconciliation_gate",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:02:08.9730313Z",
+  "duration_seconds": 36.599,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\cli-engine-reconciliation-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\cli-engine-reconciliation-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 1855,
+  "stdout_sha256": "710b20b01dd481f3525c9a5cb475f571f191299e566caf3f73aaa428b66b7b02",
+  "stderr_bytes": 346,
+  "stderr_sha256": "efc01de27e7cb5adb42672219f979221c27c905af87713654e72385c841baa85",
+  "error": null
+}

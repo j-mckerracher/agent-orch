@@ -1,0 +1,25 @@
+{
+  "name": "private-fs-tests",
+  "command": "cargo.exe test --locked -p orchestrator-private-fs",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:01:51.7072549Z",
+  "duration_seconds": 4.669,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\private-fs-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\private-fs-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 913,
+  "stdout_sha256": "5c7a2900d3d510b64177f0d454f75ab383bd41d3ad4112b34deefb7a169bc9c0",
+  "stderr_bytes": 442,
+  "stderr_sha256": "ed33a97884478238f2d9735a8e2a017e153e69c281f2a998f02e68a01fb31587",
+  "error": null
+}

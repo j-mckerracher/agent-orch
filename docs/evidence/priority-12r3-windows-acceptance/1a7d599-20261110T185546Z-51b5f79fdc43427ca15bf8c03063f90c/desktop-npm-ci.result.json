@@ -1,0 +1,25 @@
+{
+  "name": "desktop-npm-ci",
+  "command": "npm.cmd ci",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source\\apps\\desktop",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:03:51.3423034Z",
+  "duration_seconds": 8.235,
+  "timeout_seconds": 1200,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 143,
+  "stdout_sha256": "6ccd891a45c4470785658e7903985dd72050cca13ed0f2f76fb352a2bb1d4571",
+  "stderr_bytes": 521,
+  "stderr_sha256": "d98ee3a2bd76459fdfd30872fd25f80eae6416bb4e868263593544dc56c14d8d",
+  "error": null
+}

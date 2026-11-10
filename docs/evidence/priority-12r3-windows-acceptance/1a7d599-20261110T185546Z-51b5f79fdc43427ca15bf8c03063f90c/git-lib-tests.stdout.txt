@@ -1,0 +1,54 @@
+
+running 49 tests
+test env_policy::tests::baseline_keeps_process_start_and_network_names_only ... ok
+test env_policy::tests::locale_names_are_exact_not_a_prefix ... ok
+test env_policy::tests::credentials_and_agent_sockets_are_not_in_the_baseline ... ok
+test env_policy::tests::non_ascii_name_boundaries_do_not_panic ... ok
+test env_policy::tests::a_wildcard_entry_is_rejected_with_a_clear_reason ... ok
+test env_policy::tests::passthrough_list_splits_and_rejects_bad_entries ... ok
+test env_policy::tests::non_unicode_names_are_dropped ... ok
+test env_policy::tests::orchestrator_configuration_is_never_forwarded_even_when_listed ... ok
+test env_policy::tests::unix_names_are_case_sensitive_and_windows_names_are_not ... ok
+test env_policy::tests::rejected_entries_never_report_a_value ... ok
+test env_policy::tests::provider_names_extend_the_baseline ... ok
+test git_path::tests::for_git_is_a_no_op_off_windows ... ok
+test git_path::tests::near_reserved_names_are_plain ... ok
+test git_path::tests::verbatim_paths_with_other_meaning_are_left_alone ... ok
+test git_path::tests::verbatim_drive_and_unc_paths_become_plain_paths ... ok
+test delivery::tests::identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact ... ok
+test delivery::tests::missing_platform_identity_fails_acquisition_and_keeps_the_artifact ... ok
+test delivery::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test delivery::tests::verified_identity_lock_is_removed_on_drop ... ok
+test verification::tests::validation_commands_do_not_inherit_unlisted_environment ... ok
+test worktree::tests::a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists ... ok
+test worktree::tests::a_worktree_path_over_the_limit_is_refused_naming_the_limit ... ok
+test verification::tests::rejects_branch_not_derived_from_task_id ... ok
+test verification::tests::rejects_worktree_owned_by_another_task ... ok
+test verification::tests::rejects_mutable_branch_reference_as_attempt_commit ... ok
+test verification::tests::rejects_candidate_after_branch_moves ... ok
+test verification::tests::fails_and_names_changed_protected_path ... ok
+test verification::tests::default_trust_policy_does_not_run_untrusted_command ... ok
+test worktree::tests::long_stderr_keeps_the_final_cause_within_the_bound ... ok
+test worktree::tests::name_collision_is_recognized_only_for_gits_own_conflict_lines ... ok
+test verification::tests::trusted_command_does_not_authorize_different_argv ... ok
+test worktree::tests::checkout_files_longer_than_max_path_are_created ... ok
+test verification::tests::question_mark_matches_one_unicode_path_character ... ok
+test verification::tests::trusted_nonzero_exit_is_recorded_as_failed ... ok
+test worktree::tests::stderr_detail_neutralizes_terminal_control_characters ... ok
+test verification::tests::timed_out_command_is_killed_and_recorded ... ok
+test verification::tests::trusted_command_runs_and_records_output_and_exit_code ... ok
+test worktree::tests::dirty_primary_checkout_preserved ... ok
+test worktree::tests::empty_task_id_rejected ... ok
+test worktree::tests::collision_allocates_suffix ... ok
+test worktree::tests::resolve_base_ref_refuses_option_like_and_control_character_refs ... ok
+test worktree::tests::git_add_failure_preserves_repo_state_and_reports_partial_state ... ok
+test worktree::tests::worktrees_root_inside_repository_rejected ... ok
+test worktree::tests::resolve_base_commit_rejects_invalid_ref ... ok
+test worktree::tests::git_add_failure_reports_git_stderr_cause ... ok
+test worktree::tests::verbatim_worktrees_root_creates_a_worktree ... ok
+test worktree::tests::worktree_at_the_longest_accepted_path_is_created ... ok
+test worktree::tests::preexisting_branch_skipped ... ok
+test worktree::tests::open_accepts_repo_and_isolates_primary ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.71s
+

@@ -1,0 +1,2 @@
+status: UNPROVEN
+Scripted at r3 by p12-windows-checks (the acl-* lines in manual-p12.txt and the p12-windows-checks row), which has never run on Windows. This row stays UNPROVEN by construction: the coordinator reads those lines, and nothing here proves the ACLs of the packaged app or of a data directory the script did not create.

@@ -1,0 +1,25 @@
+{
+  "name": "store-tests",
+  "command": "cargo.exe test --locked -p orchestrator-store --lib",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T18:59:44.0557704Z",
+  "duration_seconds": 39.201,
+  "timeout_seconds": 1800,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\store-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\store-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 2359,
+  "stdout_sha256": "2489249085ba1f88b9dd49b23001a3cca8e61faa0eccf52fb65be32aadf356c6",
+  "stderr_bytes": 1766,
+  "stderr_sha256": "3c082df19cdb5b51994c9b22e400333411330b255ed5f1b8426eb55d52c8ca93",
+  "error": null
+}

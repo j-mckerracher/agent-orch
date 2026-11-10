@@ -1,0 +1,7 @@
+
+running 2 tests
+test cancel_terminates_agent_and_descendant ... ok
+test run_produces_isolated_diff_and_cleanup_preserves_primary ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.91s
+

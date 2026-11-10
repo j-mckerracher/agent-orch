@@ -1,0 +1,6 @@
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-private-fs v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-private-fs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.99s
+     Running unittests src\lib.rs (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\cargo-target\debug\deps\orchestrator_private_fs-4c0ee0fad3543979.exe)
+   Doc-tests orchestrator_private_fs

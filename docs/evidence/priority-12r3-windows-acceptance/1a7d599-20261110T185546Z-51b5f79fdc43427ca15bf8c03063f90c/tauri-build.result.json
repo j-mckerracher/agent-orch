@@ -1,0 +1,25 @@
+{
+  "name": "tauri-build",
+  "command": "cargo.exe build --locked",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source\\apps\\desktop\\src-tauri",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:04:32.5489575Z",
+  "duration_seconds": 150.592,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 6548,
+  "stderr_sha256": "51f4c9b629e7509cbe8414f74663167fc5348e4d3bce01d2d0f84fa35faf1046",
+  "error": null
+}

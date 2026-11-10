@@ -1,0 +1,2 @@
+status: UNPROVEN
+Scripted at r3 by p12-windows-checks (cmdline-refused: a 9,000-character objective against a .cmd stand-in; a literal 65,000-character command line is refused by CreateProcess and recorded as INFO cmdline-65k-literal). This row stays UNPROVEN by construction: the coordinator reads the lines, and no 65,000-character objective reached the daemon on Windows.

@@ -1,0 +1,31 @@
+
+running 13 tests
+test bridge::tests::no_daemon_and_no_executable_is_daemon_unavailable ... ok
+test launch::tests::a_launch_failure_quotes_only_the_redacted_end_of_the_log ... ok
+test launch::tests::the_whole_message_is_redacted_and_the_daemon_token_is_masked_exactly ... ok
+test launch::tests::an_oversized_log_is_rotated_and_a_small_one_is_kept ... ok
+test bridge::tests::the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection ... ok
+test bridge::tests::forwards_frames_and_closing_a_window_leaves_the_daemon_running ... ok
+test bridge::tests::a_daemon_executable_that_cannot_start_is_daemon_unavailable ... ok
+test bridge::tests::a_daemon_that_cannot_be_started_shows_the_redacted_end_of_the_log ... ok
+test bridge::tests::a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log ... ok
+test bridge::tests::a_daemon_that_stops_is_reported_as_a_closed_connection_not_a_task_state ... ok
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon has been running for over 60 seconds
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon has been running for over 60 seconds
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery has been running for over 60 seconds
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon ... ok
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon ... ok
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 129.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

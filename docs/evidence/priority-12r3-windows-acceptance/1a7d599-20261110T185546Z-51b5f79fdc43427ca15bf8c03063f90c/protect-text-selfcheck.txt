@@ -1,0 +1,8 @@
+C:\Windows\Temp\p12r3-bfe455a7
+C:\Users\<user>
+
+C:/Windows/Temp/p12r3-bfe455a7
+C:\\Windows\\Temp\\p12r3-bfe455a7
+\\?\C:\Windows\Temp\p12r3-bfe455a7
+<url-redacted>
+<url-redacted>

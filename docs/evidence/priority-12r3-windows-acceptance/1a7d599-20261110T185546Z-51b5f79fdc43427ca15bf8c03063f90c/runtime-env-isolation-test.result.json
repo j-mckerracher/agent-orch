@@ -1,0 +1,25 @@
+{
+  "name": "runtime-env-isolation-test",
+  "command": "cargo.exe test --locked -p orchestrator-runtime --test env_isolation",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T18:59:26.6133749Z",
+  "duration_seconds": 16.801,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\runtime-env-isolation-test",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\runtime-env-isolation-test",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 174,
+  "stdout_sha256": "96335b878823420944e53e4ea1dd707c2552fb4cf0ed3e70588245e1c098498c",
+  "stderr_bytes": 986,
+  "stderr_sha256": "0d0dfa457a003cfda5c38f8bfd21126ad07287ec97831612fd5698ba97462f5a",
+  "error": null
+}

@@ -1,0 +1,2 @@
+status: UNPROVEN
+Denial of the named pipe to a second local user was not exercised. No second account is used.

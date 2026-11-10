@@ -1,0 +1,53 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test timestamps_follow_the_civil_calendar ... ok
+test clones_share_one_memory_sink ... ok
+test event_lines_are_single_line_json_with_the_fixed_fields ... ok
+test field_values_are_redacted_and_credential_named_fields_are_masked ... ok
+test long_values_are_truncated ... ok
+test log_tail_is_redacted_bounded_and_starts_on_a_line ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 7 tests
+test short_values_and_empty_values_are_ignored ... ok
+test a_registered_secret_is_masked_wherever_it_appears ... ok
+test matching_ignores_ascii_case_and_leaves_other_text ... ok
+test a_registered_secret_split_across_lines_or_escaped_breaks_is_masked ... ok
+test multibyte_secrets_are_masked_without_splitting_characters ... ok
+test a_watched_token_file_is_masked_now_and_after_it_changes ... ok
+test registered_secrets_do_not_make_redaction_quadratic ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+
+running 15 tests
+test multibyte_text_does_not_split_characters ... ok
+test ordinary_text_is_unchanged ... ok
+test url_scheme_check_is_case_insensitive_and_bounds_safe ... ok
+test debug_escaped_json_values_are_masked ... ok
+test ipc_token_shaped_hex_is_masked_but_git_shas_are_not ... ok
+test keys_that_only_mention_a_marker_keep_their_values ... ok
+test bearer_tokens_and_known_shapes_are_masked_anywhere ... ok
+test sensitive_keys_hide_their_values ... ok
+test plain_ssh_user_and_scp_style_remote_are_not_credentials ... ok
+test escaped_values_end_at_their_own_closing_quote ... ok
+test url_userinfo_is_masked_but_host_and_path_stay ... ok
+test windows_paths_and_unc_text_survive ... ok
+test escaped_quote_forms_stay_linear ... ok
+test url_userinfo_pass_is_linear_on_repeated_schemes ... ok
+test hostile_multi_megabyte_input_stays_linear ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.61s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

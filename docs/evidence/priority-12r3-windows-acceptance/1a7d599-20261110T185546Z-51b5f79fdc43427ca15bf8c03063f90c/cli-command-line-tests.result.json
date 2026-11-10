@@ -1,0 +1,25 @@
+{
+  "name": "cli-command-line-tests",
+  "command": "cargo.exe test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T19:02:01.4608349Z",
+  "duration_seconds": 5.792,
+  "timeout_seconds": 600,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\cli-command-line-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\cli-command-line-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 316,
+  "stdout_sha256": "a51260b12c2e97da1bce9bd5f13f4f94b22f9b3d9da3f5f16773cd3ee6ae96f6",
+  "stderr_bytes": 835,
+  "stderr_sha256": "eb326930910055f0137d4636dc4cd0843c6529837ab6c43a654eabdbdb2a8d4f",
+  "error": null
+}

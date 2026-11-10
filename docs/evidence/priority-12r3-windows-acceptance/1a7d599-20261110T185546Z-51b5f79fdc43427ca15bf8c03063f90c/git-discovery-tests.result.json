@@ -1,0 +1,25 @@
+{
+  "name": "git-discovery-tests",
+  "command": "cargo.exe test --locked -p orchestrator-git --test repository_discovery",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T18:58:47.5963428Z",
+  "duration_seconds": 7.176,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\git-discovery-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\git-discovery-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 243,
+  "stdout_sha256": "e504605f6bdc9744cf519ffd8b18aaf39b02c42007f4f1f064ffbdaf77cee2df",
+  "stderr_bytes": 397,
+  "stderr_sha256": "3c5e91204a0877ae63169ad27c1cfd631e09494a6ad1ccf5e92bfdc32a054c42",
+  "error": null
+}

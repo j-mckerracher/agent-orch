@@ -1,0 +1,25 @@
+{
+  "name": "git-env-policy-tests",
+  "command": "cargo.exe test --locked -p orchestrator-git --lib env_policy",
+  "working_directory": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\source",
+  "source_commit": "1a7d599bab8848d912ca5642d4ce1a6137c515a9",
+  "started_utc": "2026-11-10T18:59:13.8743723Z",
+  "duration_seconds": 0.452,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\git-env-policy-tests",
+    "tmp": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\test-tmp\\git-env-policy-tests",
+    "cargo_target_dir": "C:\\Windows\\Temp\\p12r3-bfe455a7\\51b5f79f\\cargo-target",
+    "isolated_temp": true,
+    "rustc_dir_on_path": true
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 957,
+  "stdout_sha256": "8c68e8329a892fd89725debc24c1810592c28e5b9ad1a6cdf064aa67ff6f3a15",
+  "stderr_bytes": 211,
+  "stderr_sha256": "69d4729a836057bfe149c31234a97231ffd6fc4393a9a749a8b9b15649604652",
+  "error": null
+}

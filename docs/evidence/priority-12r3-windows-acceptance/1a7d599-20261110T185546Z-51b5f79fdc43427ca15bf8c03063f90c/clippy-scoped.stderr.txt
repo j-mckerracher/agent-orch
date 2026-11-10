@@ -1,0 +1,131 @@
+   Compiling stable_deref_trait v1.2.1
+    Checking windows-link v0.2.1
+    Checking serde_core v1.0.229
+    Checking cfg-if v1.0.5
+   Compiling utf_types v1.0.0
+   Compiling smallvec v1.16.5
+    Checking memchr v2.8.3
+   Compiling zerofrom v0.1.8
+   Compiling litemap v0.8.3
+    Checking windows-sys v0.61.2
+   Compiling writeable v0.6.4
+    Checking pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling yoke v0.8.4
+   Compiling utf8_iter v1.1.0
+   Compiling typenum v1.20.1
+   Compiling scopeguard v1.2.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling lock_api v0.4.14
+   Compiling futures-sink v0.3.34
+    Checking thiserror v2.0.21
+   Compiling generic-array v0.14.9
+   Compiling equivalent v1.0.3
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+    Checking serde v1.0.229
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling parking_lot_core v0.9.12
+    Checking zmij v1.0.23
+    Checking once_cell v1.21.4
+   Compiling bytes v1.12.1
+    Checking itoa v1.0.18
+   Compiling icu_provider v2.4.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling slab v0.4.12
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling futures-io v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling percent-encoding v2.3.2
+   Compiling tracing-core v0.1.36
+   Compiling futures-util v0.3.34
+   Compiling tokio v1.54.1
+   Compiling form_urlencoded v1.2.2
+   Compiling hashbrown v0.16.1
+    Checking serde_json v1.0.154
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling idna_adapter v1.2.2
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling idna v1.1.0
+   Compiling hashbrown v0.17.1
+   Compiling parking v2.2.1
+   Compiling crc-catalog v2.5.0
+   Compiling tracing v0.1.44
+   Compiling hashlink v0.11.1
+   Compiling sha2 v0.10.9
+   Compiling event-listener v5.4.2
+   Compiling crc v3.4.0
+   Compiling crossbeam-queue v0.3.14
+   Compiling url v2.5.8
+   Compiling futures-intrusive v0.5.0
+   Compiling either v1.19.0
+   Compiling spin v0.9.9
+   Compiling indexmap v2.14.2
+   Compiling num-traits v0.2.19
+   Compiling base64 v0.22.1
+   Compiling flume v0.12.0
+   Compiling futures-executor v0.3.34
+   Compiling atoi v2.0.0
+   Compiling futures-channel v0.3.34
+   Compiling tokio-stream v0.1.19
+    Checking libsqlite3-sys v0.37.0
+    Checking orchestrator-core v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-core)
+    Checking orchestrator-git v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-git)
+   Compiling sqlx-core v0.9.0
+    Checking getrandom v0.3.4
+    Checking orchestrator-private-fs v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-private-fs)
+    Checking subtle v2.6.1
+    Checking getrandom v0.4.3
+    Checking uuid v1.18.1
+    Checking orchestrator-diagnostics v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-diagnostics)
+    Checking fastrand v2.5.0
+    Checking orchestrator-ipc v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-ipc)
+    Checking libc v0.2.191
+    Checking tempfile v3.27.0
+    Checking orchestrator-runtime v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-runtime)
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:414:9
+    |
+414 | /         match std::mem::take(&mut self.job.0) {
+415 | |             Some(job) => windows_impl::terminate_job(job),
+416 | |             None => {}
+417 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit <url-redacted>
+    = note: `#[warn(clippy::single_match)]` on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:437:9
+    |
+437 | /         match std::mem::take(&mut self.job.0) {
+438 | |             Some(job) => windows_impl::terminate_job(job),
+439 | |             None => {}
+440 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit <url-redacted>
+
+warning: `orchestrator-runtime` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p orchestrator-runtime -- ` to apply 2 suggestions)
+    Checking orchestrator-agents v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-agents)
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-store)
+    Checking orchestrator-engine v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-engine)
+    Checking orchestrator-daemon v0.1.0 (C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\source\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 41.08s
