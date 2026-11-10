@@ -1,0 +1,3 @@
+artifact: release\bundle\nsis\Agent Orchestrator_0.1.0_x64-setup.exe (relative to the target directory)
+bytes: 3950646
+sha256: bc05169557e6f0af5bc0758f2a9fe261ed5e1721624a2daea712e487a0b5b7ed

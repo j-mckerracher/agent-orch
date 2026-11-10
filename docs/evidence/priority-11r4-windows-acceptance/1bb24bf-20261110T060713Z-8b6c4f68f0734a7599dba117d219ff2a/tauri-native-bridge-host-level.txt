@@ -1,0 +1,2 @@
+status: UNPROVEN
+UNPROVEN: the host-level bridge is provable only when coordinator-review-tests and tauri-tests both PASS natively in this run. Gate statuses: coordinator-review-tests PASS, tauri-tests FAIL.

@@ -1,0 +1,73 @@
+
+running 42 tests
+test api::review_tests::evidence_for_unknown_task_or_approval_is_not_found ... ok
+test api::review_tests::coordinator_messages_are_idempotent_ordered_and_user_authored ... ok
+test api::review_tests::coordinator_enforces_project_existence_and_size_limits ... ok
+test api::review_tests::capabilities_include_coordinator_and_review ... ok
+test api::review_tests::coordinator_get_pages_at_one_hundred_entries ... ok
+test api::review_tests::evidence_marks_an_unverified_unknown_candidate_stale ... ok
+test api::review_tests::evidence_without_an_approval_is_missing_and_pinned_to_head ... ok
+test api::review_tests::evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale ... ok
+test api::review_tests::proposals_cannot_smuggle_authority_fields ... ok
+test api::review_tests::invalid_proposals_report_stable_codes ... ok
+test api::review_tests::new_methods_reject_malformed_parameters ... ok
+test api::review_tests::evidence_snapshot_is_size_bounded_and_path_filterable ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... ok
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+test api::review_tests::request_approval_refuses_unsafe_requests ... ok
+test api::review_tests::approval_from_review_request_delivers_end_to_end ... ok
+test api::review_tests::evidence_is_current_for_a_fresh_approval_and_stale_after_the_workspace_moves ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... ok
+test api::review_tests::request_approval_binds_the_delivery_digest_and_is_replayable ... ok
+test tests::lock_conflict_reports_live_holder_pid ... ok
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... ok
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... ok
+test api::review_tests::request_approval_requires_passed_verification_of_the_current_head ... ok
+test api::review_tests::valid_proposal_is_validated_without_authority_or_side_effects ... ok
+test api::review_tests::request_changes_blocks_approval_but_not_rejection ... ok
+test api::review_tests::request_changes_refuses_stale_duplicate_and_unknown_requests ... ok
+test api::review_tests::request_changes_refuses_a_decided_approval ... ok
+test api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 57.84s
+
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 58.38s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Initialized empty Git repository in C:/Users/<user>/AppData/Local/Temp/ao11r4-20261110T060713Z-8b6c4f68/test-tmp/daemon-tests/.tmpRdrUDo/repo/.git/
+[main (root-commit) 7d5f194] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+lifecycle: PASS

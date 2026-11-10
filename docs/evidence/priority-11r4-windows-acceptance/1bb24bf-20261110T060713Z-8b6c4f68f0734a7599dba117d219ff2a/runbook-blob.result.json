@@ -1,0 +1,25 @@
+{
+  "name": "runbook-blob",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68\\source rev-parse 60996cffd1055637b545ea2cd25284d9ffe5b5d7:docs/evidence/priority-11r4-windows-acceptance-1bb24bf-runbook.md",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68",
+  "source_commit": "1bb24bf98716a22e8955b50cd28643d063674240",
+  "started_utc": "2026-11-10T06:07:19.8500644Z",
+  "duration_seconds": 0.176,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 41,
+  "stdout_sha256": "41fa7e4f4ca6f983605a2d6d141ad6e7e07b74b1e8232756d94fe11598e11db7",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

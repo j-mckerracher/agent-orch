@@ -1,0 +1,25 @@
+{
+  "name": "source-diff-after-stat",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68\\source diff --stat",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68",
+  "source_commit": "1bb24bf98716a22e8955b50cd28643d063674240",
+  "started_utc": "2026-11-10T06:39:13.2411902Z",
+  "duration_seconds": 0.155,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r4-20261110T060713Z-8b6c4f68\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

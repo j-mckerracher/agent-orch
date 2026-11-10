@@ -1,0 +1,55 @@
+
+running 9 tests
+test bridge::tests::no_daemon_and_no_executable_is_daemon_unavailable ... ok
+test launch::tests::an_oversized_log_is_rotated_and_a_small_one_is_kept ... ok
+test bridge::tests::the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection ... ok
+test bridge::tests::forwards_frames_and_closing_a_window_leaves_the_daemon_running ... ok
+test bridge::tests::a_daemon_executable_that_cannot_start_is_daemon_unavailable ... ok
+test bridge::tests::a_daemon_that_stops_is_reported_as_a_closed_connection_not_a_task_state ... ok
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon has been running for over 60 seconds
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon has been running for over 60 seconds
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery has been running for over 60 seconds
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon ... ok
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon ... ok
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery ... FAILED
+
+failures:
+
+---- bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery stdout ----
+
+thread 'bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery' (47552) panicked at src\bridge_real_tests.rs:240:56:
+frame within 30 s: Timeout
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: core::result::unwrap_failed
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\result.rs:1867
+   3: enum2$<core::result::Result<enum2$<serde_json::value::Value>,std::sync::mpsc::RecvTimeoutError> >::expect<enum2$<serde_json::value::Value>,std::sync::mpsc::RecvTimeoutError>
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\result.rs:1185
+   4: agent_orch_desktop_lib::bridge::real_tests::Frames::next
+             at .\src\bridge_real_tests.rs:240
+   5: agent_orch_desktop_lib::bridge::real_tests::Frames::call
+             at .\src\bridge_real_tests.rs:258
+   6: agent_orch_desktop_lib::bridge::real_tests::Frames::result
+             at .\src\bridge_real_tests.rs:267
+   7: agent_orch_desktop_lib::bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery
+             at .\src\bridge_real_tests.rs:427
+   8: agent_orch_desktop_lib::bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery::closure$0
+             at .\src\bridge_real_tests.rs:312
+   9: core::ops::function::FnOnce::call_once<agent_orch_desktop_lib::bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery::closure_env$0,tuple$<> >
+             at C:\Users\<user>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+  10: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+--- daemon log (C:\Users\<user>\AppData\Local\Temp\ao11r4-20261110T060713Z-8b6c4f68\test-tmp\tauri-tests\aoM8eG4z\d\daemon.log) ---
+
+--- end daemon log ---
+
+
+failures:
+    bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 199.45s
+

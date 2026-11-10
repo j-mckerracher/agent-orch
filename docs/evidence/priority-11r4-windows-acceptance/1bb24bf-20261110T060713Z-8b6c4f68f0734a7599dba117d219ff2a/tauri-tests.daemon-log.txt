@@ -1,0 +1,1 @@
+No daemon.log survives under the isolated TEMP (the test deletes its base directory).
