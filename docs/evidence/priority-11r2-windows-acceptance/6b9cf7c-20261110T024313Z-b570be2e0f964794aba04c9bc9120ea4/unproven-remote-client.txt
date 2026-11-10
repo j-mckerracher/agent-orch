@@ -1,0 +1,2 @@
+status: UNPROVEN
+Rejection of a genuinely remote client was not exercised. No remote host or SMB loopback is used.

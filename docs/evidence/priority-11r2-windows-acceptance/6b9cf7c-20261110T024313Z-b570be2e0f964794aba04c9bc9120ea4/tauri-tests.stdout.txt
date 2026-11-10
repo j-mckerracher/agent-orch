@@ -1,0 +1,21 @@
+
+running 6 tests
+test bridge::tests::no_daemon_and_no_executable_is_daemon_unavailable ... ok
+test bridge::tests::a_daemon_executable_that_cannot_start_is_daemon_unavailable ... ok
+test launch::tests::an_oversized_log_is_rotated_and_a_small_one_is_kept ... ok
+test bridge::tests::the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection ... ok
+test bridge::tests::forwards_frames_and_closing_a_window_leaves_the_daemon_running ... ok
+test bridge::tests::a_daemon_that_stops_is_reported_as_a_closed_connection_not_a_task_state ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

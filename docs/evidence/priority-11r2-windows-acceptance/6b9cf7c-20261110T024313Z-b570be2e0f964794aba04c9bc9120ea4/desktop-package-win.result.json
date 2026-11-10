@@ -1,0 +1,25 @@
+{
+  "name": "desktop-package-win",
+  "command": "npm.cmd run package:win",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\source\\apps\\desktop",
+  "source_commit": "6b9cf7cdee06dd439492b15d8d9f6c7138059b2b",
+  "started_utc": "2026-11-10T02:57:38.5734879Z",
+  "duration_seconds": 399.383,
+  "timeout_seconds": 3600,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 645,
+  "stdout_sha256": "55c23130d376efc47f3335059c6c58cc7f8ec45e0ca18f247fe04b3afe26ccd0",
+  "stderr_bytes": 12447,
+  "stderr_sha256": "085a0fbcefea8a49e36274e0a7e0772cbb63a3d654f6c620d8031ff310136650",
+  "error": null
+}

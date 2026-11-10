@@ -1,0 +1,25 @@
+{
+  "name": "desktop-build",
+  "command": "npm.cmd run build",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\source\\apps\\desktop",
+  "source_commit": "6b9cf7cdee06dd439492b15d8d9f6c7138059b2b",
+  "started_utc": "2026-11-10T02:49:10.5923114Z",
+  "duration_seconds": 3.617,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 409,
+  "stdout_sha256": "be0e805429ad620572ccd693b5e5f534adf8b4db21f064585608cd69ad06054e",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}

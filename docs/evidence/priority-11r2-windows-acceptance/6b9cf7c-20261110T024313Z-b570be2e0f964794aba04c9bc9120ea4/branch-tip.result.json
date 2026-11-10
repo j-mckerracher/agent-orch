@@ -1,0 +1,25 @@
+{
+  "name": "branch-tip",
+  "command": "git.exe -C C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\source rev-parse refs/remotes/origin/orch/priority-11r2-m5-05-6b9cf7c",
+  "working_directory": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e",
+  "source_commit": "6b9cf7cdee06dd439492b15d8d9f6c7138059b2b",
+  "started_utc": "2026-11-10T02:43:16.4777476Z",
+  "duration_seconds": 0.091,
+  "timeout_seconds": 900,
+  "environment": {
+    "temp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "tmp": "C:\\Users\\<user>\\AppData\\Local\\Temp",
+    "cargo_target_dir": "C:\\Users\\<user>\\AppData\\Local\\Temp\\ao11r2-20261110T024313Z-b570be2e\\cargo-target",
+    "isolated_temp": false,
+    "rustc_dir_on_path": false
+  },
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "stdout_bytes": 41,
+  "stdout_sha256": "ca8f2b60a86448652532077652bb03acb2607563bb9caf874b523748720b14c5",
+  "stderr_bytes": 0,
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "error": null
+}
