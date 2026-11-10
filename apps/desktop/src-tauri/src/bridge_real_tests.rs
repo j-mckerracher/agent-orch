@@ -24,10 +24,23 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
-/// Bound on one frame from the host. Review calls run several Git processes in
-/// the daemon, which takes seconds on a slow Windows host.
-const WAIT: Duration = Duration::from_secs(30);
+/// Bound on one call (or one awaited frame) through the host. Review and
+/// delivery calls run a dozen Git processes in the daemon: seconds on a quiet
+/// host, a minute on a loaded Windows one. `AGENT_ORCH_TEST_TIMEOUT_SCALE`
+/// multiplies it for a slower host. A response that never comes still fails.
+const WAIT: Duration = Duration::from_secs(120);
 const STOP: Duration = Duration::from_secs(15);
+/// The daemon log lines printed when a test fails.
+const LOG_TAIL_LINES: usize = 80;
+
+fn wait() -> Duration {
+    let scale = std::env::var("AGENT_ORCH_TEST_TIMEOUT_SCALE")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(1.0);
+    WAIT.mul_f64(scale)
+}
 const BUILD_FAILED: &str = "building the real daemon failed";
 
 struct Binaries {
@@ -38,6 +51,9 @@ struct Binaries {
 fn binaries() -> &'static Binaries {
     static BINARIES: OnceLock<Binaries> = OnceLock::new();
     BINARIES.get_or_init(|| {
+        // Every fixture calls this before it spawns a daemon, so the daemons
+        // the host launches inherit the request trace in their `daemon.log`.
+        std::env::set_var("AGENT_ORCH_TRACE_REQUESTS", "1");
         let prebuilt = (
             std::env::var_os("AGENT_ORCH_DAEMON_BIN").filter(|v| !v.is_empty()),
             std::env::var_os("AGENT_ORCH_SEED_BIN").filter(|v| !v.is_empty()),
@@ -208,6 +224,7 @@ impl Drop for Fixture {
         // The host never stops the daemon, so the test does, over a plain
         // client, and waits for the token to go away so the directory can be
         // removed.
+        let token = fs::read_to_string(self.data.join("daemon.token")).unwrap_or_default();
         if let Ok(mut client) =
             Client::connect_with_timeout(&self.data, &[Capability::Health], STOP)
         {
@@ -218,10 +235,20 @@ impl Drop for Fixture {
             thread::sleep(Duration::from_millis(20));
         }
         if thread::panicking() {
+            let log = fs::read_to_string(self.data.join(launch::DAEMON_LOG)).unwrap_or_default();
+            let log = if token.is_empty() {
+                log
+            } else {
+                log.replace(token.trim(), "<token redacted>")
+            };
+            let lines: Vec<&str> = log.lines().collect();
+            let tail = &lines[lines.len().saturating_sub(LOG_TAIL_LINES)..];
             eprintln!(
-                "--- daemon log ({}) ---\n{}\n--- end daemon log ---",
+                "--- daemon log tail ({} of {} lines, {}) ---\n{}\n--- end daemon log ---",
+                tail.len(),
+                lines.len(),
                 self.data.join(launch::DAEMON_LOG).display(),
-                fs::read_to_string(self.data.join(launch::DAEMON_LOG)).unwrap_or_default()
+                tail.join("\n")
             );
         }
     }
@@ -237,7 +264,20 @@ struct Frames {
 
 impl Frames {
     fn next(&mut self) -> Value {
-        let payload = self.receiver.recv_timeout(WAIT).expect("frame within 30 s");
+        self.next_until(Instant::now() + wait(), "an awaited frame")
+    }
+
+    fn next_until(&mut self, deadline: Instant, what: &str) -> Value {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let payload = self
+            .receiver
+            .recv_timeout(remaining)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{what}: no frame before the deadline ({error:?}); {} frames seen",
+                    self.seen.len()
+                )
+            });
         self.seen.push(payload.to_string());
         payload
     }
@@ -247,6 +287,8 @@ impl Frames {
     fn call(&mut self, bridge: &Bridge, connection: u64, method: &str, params: Value) -> Value {
         let id = self.next_id;
         self.next_id += 1;
+        let started = Instant::now();
+        let timeout = wait();
         bridge
             .send(
                 &self.window,
@@ -254,10 +296,16 @@ impl Frames {
                 json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
             )
             .unwrap();
+        let what = format!("{method} (id {id}, limit {timeout:?})");
         loop {
-            let payload = self.next();
+            let payload = self.next_until(started + timeout, &what);
             assert_eq!(payload["kind"], "message", "{payload}");
             if payload["message"]["id"] == id {
+                eprintln!(
+                    "[bridge-test] {} {method} answered in {:?}",
+                    self.window,
+                    started.elapsed()
+                );
                 return payload["message"].clone();
             }
         }

@@ -75,6 +75,7 @@ impl Server {
         while !state.stopping.load(Ordering::Acquire) {
             reap_finished(&mut workers);
             let idle = state.live_subscriptions.load(Ordering::Acquire) == 0
+                && state.in_flight.load(Ordering::Acquire) == 0
                 && state
                     .last_request
                     .lock()

@@ -134,3 +134,69 @@ fn unsubscribed_connection_does_not_keep_the_server_alive() {
     drop(client);
     daemon.join().unwrap();
 }
+
+/// Answers every call after `SLOW_CALL`, longer than the server's idle timeout.
+struct SlowCall;
+
+const SLOW_CALL: Duration = Duration::from_secs(3);
+
+impl RpcHandler for SlowCall {
+    fn capabilities(&self) -> Vec<Capability> {
+        vec![Capability::Projects]
+    }
+
+    fn dispatch(&self, _: &str, _: Value) -> Result<Value, RpcError> {
+        thread::sleep(SLOW_CALL);
+        Ok(Value::Array(Vec::new()))
+    }
+
+    fn events_after(&self, _: i64, _: usize) -> Result<Vec<IpcEvent>, RpcError> {
+        Ok(Vec::new())
+    }
+
+    fn latest_event_sequence(&self) -> Result<i64, RpcError> {
+        Ok(0)
+    }
+}
+
+#[test]
+fn a_call_longer_than_the_idle_timeout_does_not_stop_the_server() {
+    let dir = TempDir::new().unwrap();
+    let data = dir.path().to_path_buf();
+    let daemon = thread::spawn(move || {
+        Server::serve_with_handler(
+            ServerConfig::new(data, "slow-call")
+                .with_idle_timeout(Duration::from_secs(1))
+                .with_stream_timeout(STREAM_TIMEOUT),
+            Arc::new(SlowCall),
+        )
+        .unwrap();
+    });
+    let deadline = Instant::now() + READY_DEADLINE;
+    let mut client = loop {
+        match Client::connect_with_timeout(
+            dir.path(),
+            &[Capability::Health, Capability::Projects],
+            READY_DEADLINE,
+        ) {
+            Ok(client) => break client,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "daemon not ready: {error}");
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+
+    assert_eq!(client.projects_list().unwrap(), Value::Array(Vec::new()));
+    assert_eq!(
+        client.health().unwrap().package_version,
+        "slow-call",
+        "the server must still serve this connection after a slow call"
+    );
+    drop(client);
+    assert!(
+        wait_for_exit(&daemon, READY_DEADLINE),
+        "with the call finished the server idles out as usual"
+    );
+    daemon.join().unwrap();
+}

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub(crate) struct State {
@@ -19,6 +19,9 @@ pub(crate) struct State {
     /// Authenticated connections whose event subscription is still delivering.
     /// While any exists the server is in use and must not idle out.
     pub(crate) live_subscriptions: AtomicUsize,
+    /// Handler calls that have started and not finished. A call that outlasts
+    /// the idle timeout must not let the server exit under it.
+    pub(crate) in_flight: AtomicUsize,
     pub(crate) stopping: AtomicBool,
     pub(crate) handler: Option<Arc<dyn RpcHandler>>,
     pub(crate) capabilities: Vec<Capability>,
@@ -54,6 +57,7 @@ impl State {
             stream_timeout,
             last_request: Mutex::new(started),
             live_subscriptions: AtomicUsize::new(0),
+            in_flight: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
             handler,
             capabilities,
@@ -87,6 +91,39 @@ impl Drop for LiveSubscription {
         self.0.live_subscriptions.fetch_sub(1, Ordering::AcqRel);
         self.0.touch();
     }
+}
+
+/// Counts one running handler call as server activity and restarts the idle
+/// clock when it ends, so the idle period is measured from the response.
+struct InFlight<'a>(&'a State);
+
+impl<'a> InFlight<'a> {
+    fn new(state: &'a State) -> Self {
+        state.in_flight.fetch_add(1, Ordering::AcqRel);
+        Self(state)
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        self.0.in_flight.fetch_sub(1, Ordering::AcqRel);
+        self.0.touch();
+    }
+}
+
+/// `AGENT_ORCH_TRACE_REQUESTS` set to anything writes one line to stderr (the
+/// daemon log) when a handler call starts and when it ends. It records the
+/// method, request id, elapsed time and outcome; never parameters or results.
+fn trace_requests() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("AGENT_ORCH_TRACE_REQUESTS").is_some())
+}
+
+fn trace(line: std::fmt::Arguments<'_>) {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis());
+    eprintln!("[{millis}] {line}");
 }
 
 fn sync_live(
@@ -306,7 +343,23 @@ fn handle_request(
     let Some(handler) = &state.handler else {
         return write_error(stream, request.id, -32601, "method unavailable").is_ok();
     };
-    match handler.dispatch(method, request.params) {
+    let _in_flight = InFlight::new(state);
+    let traced = trace_requests().then(|| (format!("{:?}", request.id), Instant::now()));
+    if let Some((id, _)) = &traced {
+        trace(format_args!("request start id={id} method={method}"));
+    }
+    let outcome = handler.dispatch(method, request.params);
+    if let Some((id, started)) = &traced {
+        let status = match &outcome {
+            Ok(_) => "ok".to_owned(),
+            Err(error) => format!("error {}", error.code()),
+        };
+        trace(format_args!(
+            "request end id={id} method={method} elapsed_ms={} status={status}",
+            started.elapsed().as_millis()
+        ));
+    }
+    match outcome {
         Ok(result) => write_result(stream, request.id, result).is_ok(),
         Err(error) => write_rpc_error(stream, request.id, error),
     }

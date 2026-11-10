@@ -4,6 +4,13 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::Error;
 use crate::git::{git, git_bytes};
 
+fn same_directory(left: &Path, right: &Path) -> bool {
+    matches!(
+        (std::fs::canonicalize(left), std::fs::canonicalize(right)),
+        (Ok(left), Ok(right)) if left == right
+    )
+}
+
 /// A validated Git repository. Operations never change the primary checkout:
 /// no branch switches, resets, or deletions of uncommitted work.
 pub struct Repository {
@@ -18,6 +25,36 @@ impl Repository {
     /// paths. Any work tree (including one checked out inside another
     /// repository's worktree) is accepted; a dirty state is not an error.
     pub fn new(path: &Path) -> Result<Self, Error> {
+        // One process for both answers. `--git-common-dir` is relative to the
+        // directory Git ran in, so a relative answer is only trusted when that
+        // directory is the work-tree root; otherwise (or if the output is not
+        // exactly two lines) the two questions are asked separately.
+        let combined = match git(
+            "discover repository",
+            path,
+            ["rev-parse", "--show-toplevel", "--git-common-dir"],
+        ) {
+            Ok(out) => out,
+            Err(Error::Git { stderr, .. }) => {
+                return Err(Error::not_a_repository(path.to_path_buf(), stderr));
+            }
+            Err(other) => return Err(other),
+        };
+        let mut lines = combined.lines();
+        if let (Some(toplevel), Some(common), None) = (lines.next(), lines.next(), lines.next()) {
+            let toplevel = PathBuf::from(toplevel);
+            let common = PathBuf::from(common);
+            if common.is_absolute() || same_directory(path, &toplevel) {
+                return Ok(Self {
+                    git_common_dir: toplevel.join(common),
+                    path: toplevel,
+                });
+            }
+        }
+        Self::discover_separately(path)
+    }
+
+    fn discover_separately(path: &Path) -> Result<Self, Error> {
         let toplevel = match git(
             "discover repository",
             path,
