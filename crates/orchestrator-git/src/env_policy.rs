@@ -13,7 +13,11 @@
 //!    separated), the documented way to forward other authentication or
 //!    toolchain variables.
 //!
-//! Only names are ever listed or logged; values are never recorded.
+//! Only names are ever listed or logged; values are never recorded. A rejected
+//! `AGENT_ORCH_ENV_PASSTHROUGH` entry is reported by position and, when the
+//! text before any `=` looks like a plain variable name, that name. The rest
+//! of the entry is never printed, so a mis-pasted `NAME=secret` stays out of
+//! the daemon log.
 //! Variables whose name starts with `AGENT_ORCH_` are orchestrator
 //! configuration (data directory, program overrides, fault gates) and are
 //! never forwarded, even when listed: the data directory locates the daemon's
@@ -24,6 +28,8 @@
 //! including files under its home directory.
 
 use std::ffi::{OsStr, OsString};
+use std::fmt;
+use std::io::Write;
 
 /// Variable naming extra parent variables to forward, comma separated.
 pub const PASSTHROUGH_VARIABLE: &str = "AGENT_ORCH_ENV_PASSTHROUGH";
@@ -62,6 +68,20 @@ const BASELINE: &[&str] = &[
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
     "NODE_EXTRA_CA_CERTS",
+    // Locale categories (POSIX and glibc); an arbitrary `LC_*` name is not one.
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_COLLATE",
+    "LC_MESSAGES",
+    "LC_MONETARY",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_PAPER",
+    "LC_NAME",
+    "LC_ADDRESS",
+    "LC_TELEPHONE",
+    "LC_MEASUREMENT",
+    "LC_IDENTIFICATION",
     // Windows process start and profile locations.
     "SystemRoot",
     "SystemDrive",
@@ -90,9 +110,6 @@ const BASELINE: &[&str] = &[
     "PROCESSOR_ARCHITECTURE",
     "NUMBER_OF_PROCESSORS",
 ];
-
-/// Baseline prefix: every `LC_*` locale category.
-const BASELINE_PREFIX: &str = "LC_";
 
 /// Decision for one environment variable name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,18 +148,37 @@ impl EnvPolicy {
 
     /// Baseline plus provider names plus the user's
     /// `AGENT_ORCH_ENV_PASSTHROUGH` list. Rejected user entries are reported
-    /// to stderr by name only.
+    /// to stderr without their values (see [`Rejection`]).
     pub fn for_launch<I, S>(provider_names: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        Self::for_launch_with(
+            provider_names,
+            std::env::var_os(PASSTHROUGH_VARIABLE).as_deref(),
+            &mut std::io::stderr().lock(),
+        )
+    }
+
+    /// As [`EnvPolicy::for_launch`] with the passthrough list and the report
+    /// sink chosen by the caller. A failing sink never changes the policy.
+    pub fn for_launch_with<I, S>(
+        provider_names: I,
+        passthrough: Option<&OsStr>,
+        report: &mut dyn Write,
+    ) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let mut policy = Self::with_names(provider_names);
-        if let Some(raw) = std::env::var_os(PASSTHROUGH_VARIABLE) {
+        if let Some(raw) = passthrough {
             let (accepted, rejected) = parse_passthrough(&raw.to_string_lossy());
-            for name in &rejected {
-                eprintln!(
-                    "orchestrator: ignoring {PASSTHROUGH_VARIABLE} entry {name:?}: not a forwardable variable name"
+            for rejection in &rejected {
+                let _ = writeln!(
+                    report,
+                    "orchestrator: ignoring {PASSTHROUGH_VARIABLE} entry {rejection}"
                 );
             }
             policy.extra.extend(accepted);
@@ -165,13 +201,8 @@ impl EnvPolicy {
                 candidate == name
             }
         };
-        let has_prefix = name.len() >= BASELINE_PREFIX.len()
-            && name.is_char_boundary(BASELINE_PREFIX.len())
-            && name[..BASELINE_PREFIX.len()].eq_ignore_ascii_case(BASELINE_PREFIX)
-            && (self.case_insensitive || name.starts_with(BASELINE_PREFIX));
-        has_prefix || BASELINE.iter().any(|candidate| same(candidate)) || {
-            self.extra.iter().any(|candidate| same(candidate))
-        }
+        BASELINE.iter().any(|candidate| same(candidate))
+            || self.extra.iter().any(|candidate| same(candidate))
     }
 
     /// The allowed subset of `parent`, in the parent's order.
@@ -202,26 +233,80 @@ fn is_internal(name: &str) -> bool {
         && name[..INTERNAL_PREFIX.len()].eq_ignore_ascii_case(INTERNAL_PREFIX)
 }
 
-/// A listable name: non-empty, no `=`, NUL, whitespace or control
-/// characters, and not orchestrator-internal.
+/// A listable name: non-empty, no `=`, `*`, NUL, whitespace or control
+/// characters, and not orchestrator-internal. Wildcards are refused because
+/// matching is by exact name; a `*` entry would silently forward nothing.
 pub fn is_forwardable_name(name: &str) -> bool {
     !name.is_empty()
         && !is_internal(name)
         && name
             .chars()
-            .all(|c| c != '=' && c != '\0' && !c.is_whitespace() && !c.is_control())
+            .all(|c| c != '=' && c != '*' && c != '\0' && !c.is_whitespace() && !c.is_control())
 }
 
-/// Splits a comma-separated list into `(accepted, rejected)` names. Blank
+/// One rejected `AGENT_ORCH_ENV_PASSTHROUGH` entry, described without
+/// disclosing its text. A user may paste `NAME=secret` or a bare secret, so
+/// only a plain-looking name before any `=` and a fixed reason are kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejection {
+    /// 1-based position among the non-blank entries.
+    pub position: usize,
+    /// The text before the first `=`, only when it is a plain variable name.
+    pub name: Option<String>,
+    pub reason: &'static str,
+}
+
+impl fmt::Display for Rejection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "#{}", self.position)?;
+        if let Some(name) = &self.name {
+            write!(formatter, " ({name})")?;
+        }
+        write!(formatter, ": {}", self.reason)
+    }
+}
+
+impl Rejection {
+    fn new(position: usize, entry: &str) -> Self {
+        let name = entry
+            .split('=')
+            .next()
+            .filter(|candidate| {
+                !candidate.is_empty()
+                    && candidate.len() <= 64
+                    && candidate
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
+            .map(str::to_owned);
+        let reason = if entry.contains('*') {
+            "wildcards are not supported; list each variable name"
+        } else if entry.contains('=') {
+            "list the variable name only, never NAME=value"
+        } else if is_internal(entry) {
+            "orchestrator-internal variables are never forwarded"
+        } else {
+            "not a forwardable variable name"
+        };
+        Self {
+            position,
+            name,
+            reason,
+        }
+    }
+}
+
+/// Splits a comma-separated list into `(accepted names, rejections)`. Blank
 /// entries are skipped, not rejected, so a trailing comma is harmless.
-pub fn parse_passthrough(raw: &str) -> (Vec<String>, Vec<String>) {
+pub fn parse_passthrough(raw: &str) -> (Vec<String>, Vec<Rejection>) {
     let mut accepted = Vec::new();
     let mut rejected = Vec::new();
-    for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+    let entries = raw.split(',').map(str::trim).filter(|e| !e.is_empty());
+    for (index, entry) in entries.enumerate() {
         if is_forwardable_name(entry) {
             accepted.push(entry.to_owned());
         } else {
-            rejected.push(entry.to_owned());
+            rejected.push(Rejection::new(index + 1, entry));
         }
     }
     (accepted, rejected)
@@ -355,7 +440,54 @@ mod tests {
             " OPENAI_API_KEY , ,FAKE=1,AGENT_ORCH_DATA_DIR,HAS SPACE,PATH,\tFOO_BAR,",
         );
         assert_eq!(accepted, ["OPENAI_API_KEY", "PATH", "FOO_BAR"]);
-        assert_eq!(rejected, ["FAKE=1", "AGENT_ORCH_DATA_DIR", "HAS SPACE"]);
+        let described: Vec<_> = rejected.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            described,
+            [
+                "#2 (FAKE): list the variable name only, never NAME=value",
+                "#3 (AGENT_ORCH_DATA_DIR): orchestrator-internal variables are never forwarded",
+                "#4: not a forwardable variable name",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_wildcard_entry_is_rejected_with_a_clear_reason() {
+        let (accepted, rejected) = parse_passthrough("*,AWS_*, OK");
+        assert_eq!(accepted, ["OK"]);
+        assert_eq!(rejected.len(), 2);
+        assert!(rejected.iter().all(|r| r.reason.contains("wildcards")));
+        assert!(!is_forwardable_name("*"));
+    }
+
+    #[test]
+    fn locale_names_are_exact_not_a_prefix() {
+        let policy = EnvPolicy::with_names_and_case(Vec::<String>::new(), false);
+        assert_eq!(
+            kept(
+                &policy,
+                &["LC_ALL", "LC_TIME", "LC_SECRET", "LC_", "LC_API_KEY"]
+            ),
+            ["LC_ALL", "LC_TIME"]
+        );
+    }
+
+    #[test]
+    fn rejected_entries_never_report_a_value() {
+        const CANARY: &str = "sk-LEAKCANARY-123";
+        let raw = format!(
+            "OPENAI_API_KEY={CANARY},{CANARY} with space,Bearer {CANARY},{CANARY}=x y,=={CANARY},\
+             AGENT_ORCH_DATA_DIR={CANARY},*{CANARY},OK_NAME"
+        );
+        let mut report = Vec::new();
+        let policy =
+            EnvPolicy::for_launch_with(Vec::<String>::new(), Some(OsStr::new(&raw)), &mut report);
+        let report = String::from_utf8(report).unwrap();
+        assert!(!report.contains(CANARY), "{report}");
+        assert!(!report.contains("sk-"), "{report}");
+        assert!(report.contains("OPENAI_API_KEY"), "{report}");
+        assert_eq!(report.lines().count(), 7, "{report}");
+        assert_eq!(kept(&policy, &["OK_NAME", "OPENAI_API_KEY"]), ["OK_NAME"]);
     }
 
     #[test]
