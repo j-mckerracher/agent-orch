@@ -58,6 +58,7 @@ fn create_running_task(api: &DaemonApi, task_id: &str) {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     api.store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -147,6 +148,17 @@ fn every_rpc_method_rejects_malformed_parameters() {
         ("tasks.retry", json!({"idempotency_key": "k"})),
         ("tasks.retry", json!({"task_id": 4, "idempotency_key": "k"})),
         ("agents.capabilities", json!({"extra": true})),
+        ("agents.catalog", json!({"extra": true})),
+        ("agents.validate_selection", json!({})),
+        (
+            "agents.validate_selection",
+            json!({"agent": "codex", "extra": 1}),
+        ),
+        (
+            "agents.validate_selection",
+            json!({"agent": "codex", "model": "-bad"}),
+        ),
+        ("agents.validate_selection", json!({"agent": "codex"})),
         ("sessions.list", json!({"task_id": 4})),
         ("sessions.get", json!({"task_id": "task-1"})),
         ("sessions.events", json!({"task_id": "task-1"})),
@@ -231,6 +243,7 @@ fn session_events_replay_task_and_only_selected_session_events() {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -656,6 +669,7 @@ fn approval_resolution_uses_allowlisted_actor_and_is_idempotent() {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();

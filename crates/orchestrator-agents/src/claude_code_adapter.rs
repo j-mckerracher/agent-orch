@@ -85,7 +85,7 @@ impl ClaudeCodeAdapter {
             .unwrap_or_else(|| PathBuf::from("claude"))
     }
 
-    fn locate(&self) -> Option<PathBuf> {
+    pub(crate) fn locate(&self) -> Option<PathBuf> {
         let program = self.program();
         if program.is_file() {
             return Some(program);
@@ -120,7 +120,7 @@ impl RoutableAdapter for ClaudeCodeAdapter {
             cancellation: true, // ClaudeCodeHandle::cancel calls ChildSupervisor::cancel (claude_code_adapter.rs:183-187).
             session_resumption: false, // Resume flags are unused by this adapter (docs/evidence/m4-02-claude-code-cli-verification.md:85).
             approvals: false, // Prompts are disabled and approval handling was not verified (docs/evidence/m4-02-claude-code-cli-verification.md:43-45).
-            model_selection: false, // `--model` is not used (docs/evidence/m4-02-claude-code-cli-verification.md:86).
+            model_selection: false, // The CLI cannot enumerate models, so a model cannot be validated (catalog.rs); only `--effort` is offered.
         }
     }
 }

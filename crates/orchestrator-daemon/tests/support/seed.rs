@@ -97,6 +97,7 @@ pub fn seed_review(data_dir: &Path, repo: &Path, worktrees: &Path, task_id: &str
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .expect("task");
     for event in [

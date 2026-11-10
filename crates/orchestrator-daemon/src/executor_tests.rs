@@ -79,6 +79,8 @@ impl Fixture {
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(25),
             probe_timeout: Duration::from_secs(5),
+            catalog_timeout: Duration::from_secs(5),
+            catalog_wait: Duration::from_secs(5),
         }
     }
 
@@ -502,6 +504,7 @@ fn queued_contract(fixture: &Fixture, id: &str) -> TaskContract {
         autonomy: AutonomyPolicy::WorkspaceWrites,
         max_retries: 0,
         max_repairs: 0,
+        model_selection: None,
     }
 }
 
@@ -1075,3 +1078,6 @@ mod usage_paths {
         assert!(at_observation.totals.reported.costs.is_empty());
     }
 }
+
+#[path = "api_models_tests.rs"]
+mod model_selection;

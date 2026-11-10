@@ -314,6 +314,7 @@ pub async fn run_task(
         autonomy: AutonomyPolicy::WorkspaceWrites,
         max_retries: 0,
         max_repairs: 0,
+        model_selection: None,
     };
     store
         .create(&contract)
@@ -2104,6 +2105,7 @@ mod tests {
                 autonomy: AutonomyPolicy::WorkspaceWrites,
                 max_retries: 0,
                 max_repairs: 0,
+                model_selection: None,
             })
             .unwrap();
         store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -3160,6 +3162,7 @@ mod tests {
                 autonomy: AutonomyPolicy::WorkspaceWrites,
                 max_retries: 0,
                 max_repairs: 0,
+                model_selection: None,
             })
             .unwrap();
         store.transition(task_id, TaskEvent::Admit).unwrap();

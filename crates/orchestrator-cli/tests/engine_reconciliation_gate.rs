@@ -338,6 +338,7 @@ fn create_admitted_task(fixture: &Fixture, task_id: &str, project_id: &str, proj
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -893,6 +894,7 @@ fn planned_and_admitted_tasks_without_attempts_do_not_block_scheduling() {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
 

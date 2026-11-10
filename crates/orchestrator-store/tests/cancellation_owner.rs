@@ -37,6 +37,7 @@ fn running_task(store: &SqliteStore, task_id: &str, register_owner: bool) -> Can
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();

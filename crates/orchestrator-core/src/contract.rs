@@ -100,6 +100,44 @@ impl VerificationPolicy {
     }
 }
 
+/// An explicit model and/or reasoning-effort choice for one task (M7-09).
+///
+/// This is only the *requested* selection. Whether the chosen adapter
+/// actually offers it is decided against the live adapter catalog by the
+/// daemon; [`validate`] checks structure only. `None` fields mean "adapter
+/// default", which the engine reports as unknown rather than inventing a value.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSelection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+const MAX_MODEL_ID_LEN: usize = 128;
+const MAX_EFFORT_LEN: usize = 32;
+
+/// A model id is passed to an adapter command line, so its first character
+/// must not be able to read as an option.
+fn is_valid_model_id(model: &str) -> bool {
+    let mut chars = model.chars();
+    model.len() <= MAX_MODEL_ID_LEN
+        && chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '/' | '@' | '+' | '-')
+        })
+}
+
+fn is_valid_effort(effort: &str) -> bool {
+    let mut chars = effort.chars();
+    effort.len() <= MAX_EFFORT_LEN
+        && chars
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_'))
+}
+
 /// The persisted, validated contract for one unit of work.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskContract {
@@ -128,6 +166,9 @@ pub struct TaskContract {
     pub max_retries: u32,
     /// Bounded verification-repair attempts (plan section 5.3).
     pub max_repairs: u32,
+    /// Optional model/effort request. Absent on every pre-M7-09 contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_selection: Option<ModelSelection>,
 }
 
 /// Errors from [`validate`]. Each variant names the invariant that failed.
@@ -143,6 +184,13 @@ pub enum ContractError {
     EmptyAgent,
     /// A `Commands` verification gate carries no commands.
     EmptyVerificationCommands,
+    /// A model selection names neither a model nor an effort.
+    EmptyModelSelection,
+    /// The model id is empty, too long, or has characters an adapter
+    /// command line must not receive.
+    InvalidModelId,
+    /// The effort level is empty, too long, or not a lowercase token.
+    InvalidEffort,
 }
 
 impl std::fmt::Display for ContractError {
@@ -158,6 +206,17 @@ impl std::fmt::Display for ContractError {
                     "Commands verification policy must carry at least one command"
                 )
             }
+            ContractError::EmptyModelSelection => {
+                write!(f, "model selection must name a model or an effort")
+            }
+            ContractError::InvalidModelId => write!(
+                f,
+                "model id must be 1-128 characters, start with a letter or digit, and use only letters, digits and . _ : / @ + -"
+            ),
+            ContractError::InvalidEffort => write!(
+                f,
+                "effort must be 1-32 characters of lowercase letters, digits, - or _"
+            ),
         }
     }
 }
@@ -194,7 +253,26 @@ pub fn validate(contract: &TaskContract) -> Result<(), ContractError> {
         }
         _ => {}
     }
+    if let Some(selection) = &contract.model_selection {
+        selection.validate()?;
+    }
     Ok(())
+}
+
+impl ModelSelection {
+    /// Structural check only; see the type documentation.
+    pub fn validate(&self) -> Result<(), ContractError> {
+        if self.model.is_none() && self.effort.is_none() {
+            return Err(ContractError::EmptyModelSelection);
+        }
+        if self.model.as_deref().is_some_and(|m| !is_valid_model_id(m)) {
+            return Err(ContractError::InvalidModelId);
+        }
+        if self.effort.as_deref().is_some_and(|e| !is_valid_effort(e)) {
+            return Err(ContractError::InvalidEffort);
+        }
+        Ok(())
+    }
 }
 
 /// A proposed contract arriving from a coordinator or agent. The engine
@@ -287,6 +365,7 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
         autonomy: proposal.autonomy,
         max_retries: proposal.max_retries,
         max_repairs: proposal.max_repairs,
+        model_selection: None,
     };
     match validate(&probe) {
         Ok(()) => Validation::Accept,
@@ -314,7 +393,63 @@ mod tests {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 1,
             max_repairs: 1,
+            model_selection: None,
         }
+    }
+
+    #[test]
+    fn model_selection_is_validated_structurally() {
+        let select = |model: Option<&str>, effort: Option<&str>| {
+            let mut c = contract();
+            c.model_selection = Some(ModelSelection {
+                model: model.map(str::to_owned),
+                effort: effort.map(str::to_owned),
+            });
+            validate(&c)
+        };
+        assert_eq!(select(Some("gpt-6-luna"), Some("low")), Ok(()));
+        assert_eq!(select(Some("claude-opus-4.8"), None), Ok(()));
+        assert_eq!(select(None, Some("max")), Ok(()));
+        assert_eq!(select(None, None), Err(ContractError::EmptyModelSelection));
+        for bad in [
+            "",
+            "-m",
+            "--model",
+            " x",
+            "a b",
+            "a;b",
+            "a\nb",
+            &"m".repeat(129),
+        ] {
+            assert_eq!(
+                select(Some(bad), None),
+                Err(ContractError::InvalidModelId),
+                "{bad:?}"
+            );
+        }
+        for bad in ["", "High", "x y", "-low", &"e".repeat(33)] {
+            assert_eq!(
+                select(None, Some(bad)),
+                Err(ContractError::InvalidEffort),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn model_selection_is_absent_from_legacy_json_and_omitted_when_unset() {
+        let mut value = serde_json::to_value(contract()).unwrap();
+        assert!(value.get("model_selection").is_none());
+        let legacy: TaskContract = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(legacy.model_selection, None);
+        value["model_selection"] = serde_json::json!({"model": "gpt-6-luna"});
+        let selected: TaskContract = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            selected.model_selection.unwrap().model.as_deref(),
+            Some("gpt-6-luna")
+        );
+        value["model_selection"] = serde_json::json!({"model": "x", "provider": "y"});
+        assert!(serde_json::from_value::<TaskContract>(value).is_err());
     }
 
     fn proposal() -> TaskProposal {
