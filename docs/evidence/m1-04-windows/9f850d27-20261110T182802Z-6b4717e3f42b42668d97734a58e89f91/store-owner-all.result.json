@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-store --test cancellation_owner -- --nocapture",
+  "source_commit": "9f850d27677b8c33ce3743b11fca09ae3ea6d50e",
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

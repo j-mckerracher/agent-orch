@@ -1,0 +1,4 @@
+Harness setup failed before clone or any cargo test command started.
+Attempt run ID: 20261110T182708Z-643d5a41714d41e4aee59f4083b5df5e
+PowerShell Get-Command git.exe returned multiple application paths; assigning .Source yielded a multiline value, so invocation failed with: The term 'C:\Program Files\Git\cmd\git.exe C:\Users\jmckerra\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe' is not recognized.
+No source checkout or tests were created. This preflight failure is preserved separately; the corrected attempt uses the first resolved application path and a new RunId.

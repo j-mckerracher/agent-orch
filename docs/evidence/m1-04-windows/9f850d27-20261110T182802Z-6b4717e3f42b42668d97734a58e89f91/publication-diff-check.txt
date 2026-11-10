@@ -1,0 +1,3 @@
+Extra publication diagnostic: git diff --cached --check exited nonzero before commit.
+Findings: new blank line at EOF in cpu.txt, os.txt, runtime-reconcile-all.stdout.txt, runtime-reconcile-exact.stdout.txt; trailing whitespace in generated result.md Overall result line. The generated result line was corrected. Captured Cargo stdout is preserved verbatim and was not modified.
+This diagnostic is not a runbook acceptance gate. The required source git diff --check is recorded as exit 0 in diff-check.exit.txt. No test was rerun.

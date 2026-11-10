@@ -1,0 +1,3 @@
+publisher_base=973b7ffd9c41ac0ae62817dc602ad38b41302957
+core.longpaths=true
+original failed worktree path (directory not created; source clone and branch preserved) at C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m1-04-windows-20261110T182802Z-6b4717e3f42b42668d97734a58e89f91\evidence-worktree

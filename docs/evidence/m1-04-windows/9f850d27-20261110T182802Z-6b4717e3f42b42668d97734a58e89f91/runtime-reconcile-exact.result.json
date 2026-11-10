@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-runtime --test reconcile -- --exact windows_owner_observation_uses_creation_time_not_only_pid windows_identity_compares_creation_time_at_100ns_precision owner_observation_requires_a_creation_time owner_observation_classifies_alive_and_reused_pid_by_creation_time --nocapture",
+  "source_commit": "9f850d27677b8c33ce3743b11fca09ae3ea6d50e",
+  "exit_code": 0,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

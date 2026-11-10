@@ -1,0 +1,2 @@
+branch 'evidence/m1-04-windows-9f850d27-20261110T182802Z-6b4717e3f42b42668d97734a58e89f91' set up to track 'origin/main'.
+HEAD is now at 973b7ff docs: update agent orchestrator implementation primer and correct file references

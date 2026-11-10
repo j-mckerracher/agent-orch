@@ -1,0 +1,9 @@
+
+running 4 tests
+test owner_observation_requires_a_creation_time ... ok
+test owner_observation_classifies_alive_and_reused_pid_by_creation_time ... ok
+test windows_identity_compares_creation_time_at_100ns_precision ... ok
+test windows_owner_observation_uses_creation_time_not_only_pid ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s
+

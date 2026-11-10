@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-store --test data_lock -- --exact dead_pid_lock_is_taken_over_and_new_holder_is_recorded live_legacy_lock_is_refused_with_clear_error live_pid_with_different_start_identity_is_taken_over --nocapture",
+  "source_commit": "9f850d27677b8c33ce3743b11fca09ae3ea6d50e",
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

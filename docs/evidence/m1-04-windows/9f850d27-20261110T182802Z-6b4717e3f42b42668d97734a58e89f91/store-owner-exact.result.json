@@ -1,0 +1,9 @@
+{
+  "command": "cargo test --locked -p orchestrator-store --test cancellation_owner -- --exact windows_owner_creation_time_precision_survives_reopen stale_owner_recovery_requires_the_recorded_process_identity stale_generation_is_retired_before_retry_owner_can_register --nocapture",
+  "source_commit": "9f850d27677b8c33ce3743b11fca09ae3ea6d50e",
+  "exit_code": 101,
+  "timed_out": false,
+  "root_process_stopped": true,
+  "tree_kill_attempted": false,
+  "error": null
+}

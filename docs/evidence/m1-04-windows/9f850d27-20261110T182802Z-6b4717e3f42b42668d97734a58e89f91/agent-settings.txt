@@ -1,0 +1,5 @@
+The coordinator read the pinned orchestration primer, technical implementation plan, and board.json listed in runbook-context.txt.
+The runbook requests a GitHub Copilot subagent configured for Claude Sonnet 5.5 with high reasoning.
+This runtime does not expose that Copilot selector or setting; no subagent was started, and that requested setting is UNVERIFIED.
+The coordinator executed the pinned commands directly. No OMP worker was started, as the runbook directs.
+No source, manifest, lockfile, or board file was edited.
