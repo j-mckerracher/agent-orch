@@ -12,13 +12,16 @@ GitHub Actions. Nothing here publishes a release.
 | `.github/workflows/release.yml` | `macos-15`, `windows-2025` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads artifacts only. |
 
 Every third-party action is pinned to a commit SHA. Workflows have `contents: read` and no
-other permission. Secrets are mapped only into the `Package` step of `release.yml`.
+other permission. Secrets are mapped only into the `Package` step of `release.yml`. `ci.yml` and
+`audit.yml` cancel a superseded run only for a pull request; a scheduled, `main` or release run
+always completes.
 
 ## Gates
 
 `scripts/ci/gates.mjs` defines the gates as data; `scripts/ci/run-gates.mjs` runs them;
-`scripts/ci/parse.mjs` judges the output. A gate passes only when the command exits 0 within its
-time limit **and** the output matches the expected shape: test counts, the `running N tests`
+`scripts/ci/parse.mjs` judges the output; `scripts/ci/expected.mjs` holds every expected count and
+the clippy baseline. A gate passes only when the command exits 0 within its time limit, **no
+process of the run survives it**, **and** the output matches the expected shape: test counts, the `running N tests`
 sequence, named tests, `Compiling` lines for a build gate (so a cached target cannot pass), the
 Vitest file and test counts, and the artifact. Nothing is retried. A gate whose prerequisite did
 not pass is `SKIPPED`, which also fails the run.
@@ -45,6 +48,35 @@ The Windows list is the published runbook
 Windows and macOS counts differ because tests are gated by `cfg`. Expected counts are never edited
 to fit a run; a change needs a reason in the commit that edits it.
 
+### Survivor check and bounded runs
+
+After every gate the harness lists processes (read-only: `ps` on macOS, `Get-CimInstance
+Win32_Process` on Windows) and fails the gate if any process outside the harness and its
+ancestors has this run's target or test-temp directory in its image path or command line. This is
+the per-gate survivor scan of the Windows runbook (`Find-OwnedSurvivors`); it retries for about
+5 s because an exiting process can still be listed, and it never stops a process. One difference:
+the runbook also matches 8.3 short-name aliases of its run root; this harness matches the paths as
+given, which on a GitHub runner (`D:\a\_temp\...`) have no alias. A gate whose process exits
+while a descendant keeps its output pipes open ends 5 s after the exit (the gate fails and the
+survivor is reported) instead of waiting for the job timeout; a timeout kill ends the run within
+10 s.
+
+### Changing a count or the baseline
+
+Edit `scripts/ci/expected.mjs` and the matching list in `scripts/ci/windows-test-names.json` /
+`macos-test-names.json` together; `node --test "scripts/**/*.test.mjs"` fails when a total, a
+sequence and a name list disagree. Measure on the platform; do not edit to fit a run. The two
+`single_match` baseline lines in `supervisor.rs` are `CLIPPY_BASELINE` there: they are
+`#[cfg(windows)]` code, so only the Windows `clippy-scoped` gate can show them as new.
+
+**Merging M6-01** (`orch/m6-01-20261110T045853Z`) changes these, all in `expected.mjs` and the name
+lists: daemon-tests +2 (Windows `[42,4,0]`/46 to about `[44,4,0]`/48, macOS `[59,4,9]`/72 to about
+`[61,4,9]`/74; the new tests are `submit_refuses_read_only_autonomy_because_the_agent_would_write`
+and `submit_rejects_oversized_and_nul_contract_fields` in `api_safety_tests.rs`); macOS
+`workspace-tests` 638 to the M6-01 owner's 654; and `CLIPPY_BASELINE.lines` 401 and 424 move to
+409 and 432 (M6-01 adds eight lines above them in `supervisor.rs`). Re-measure all of it on the
+merged tree; the M6-01 figures are the owner's, not this CI's. `deny.toml` also conflicts; see the
+remediation report.
 Run on both platforms, outside the checkout: `node --test "scripts/**/*.test.mjs"` (harness
 self-tests).
 
@@ -85,9 +117,22 @@ a message.
 | No signing secret is set | Warning `No <platform> signing secrets are set ...; building UNSIGNED`; the build succeeds. |
 | Some, but not all, required secrets are set | Error naming the missing variables. A half-configured release never ships unsigned. |
 | `REQUIRE_SIGNING=true` and no secret is set | Error. Set it with the `require_signing` input of the manual run or the repository variable `REQUIRE_SIGNING`. |
+| Tag build (`v*`) and no secret is set | Error, like `REQUIRE_SIGNING=true` (on macOS this also requires the notarization secrets). To build an unsigned release on purpose, set the repository variable `ALLOW_UNSIGNED_RELEASE` to `true`; the artifact is then still labelled `unsigned`. |
 | All signing secrets set | Signed build; verified afterwards. |
 
-Secrets live in the GitHub environment `release` (add required reviewers there to gate releases):
+Secrets live in the GitHub environment `release`. Configure it before the first release:
+
+- **Deployment branches and tags**: select *Selected branches and tags* and allow only the tag
+  pattern `v*` (add `main` only if manual signed runs from `main` are wanted). An environment that
+  does not exist is created on first use **without protection**, so any branch could then run
+  `workflow_dispatch` and read the secrets; the restriction is the control, the workflow cannot
+  enforce it.
+- **Required reviewers**: add at least one, so a tag push waits for approval before the secrets are
+  released to the job.
+- **Tag protection**: add a repository ruleset that restricts who can create or delete `v*` tags;
+  a pushed tag is what starts a release.
+- Keep the secrets in the environment only, not at repository or organization level.
+
 
 | Platform | Signing | Notarization |
 | --- | --- | --- |
@@ -100,7 +145,14 @@ configured. On macOS Tauri imports the certificate into a temporary keychain and
 notarization variables, notarizes; afterwards `codesign --verify --deep --strict` (and `stapler
 validate` plus `spctl` when notarized) must pass. On Windows the certificate is imported into the
 current-user store, passed to Tauri as `certificateThumbprint` through `TAURI_CONFIG`, checked with
-`Get-AuthenticodeSignature` (status `Valid`), and removed afterwards.
+`Get-AuthenticodeSignature` (status `Valid`), and removed afterwards. `package.mjs` removes
+`WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` from its own environment before it spawns
+anything: only the PowerShell call that imports the certificate receives the password, so the
+`npm run package:win` build, Tauri and cargo build scripts never see either value. The macOS
+`APPLE_*` variables must reach the build, because Tauri signs and notarizes itself.
+
+`CARGO_TARGET_DIR` must be absolute; any separator style is accepted and normalized, so
+`${{ runner.temp }}/target` (`D:\a\_temp/target`) works on Windows.
 
 ## Run it locally
 
@@ -130,15 +182,21 @@ the M6-02 owner.
    `windows-transport-tests` and `desktop-package-win`.
 5. `$env:CI = "true"; node scripts/ci/run-gates.mjs --evidence-dir <new> --target-dir <new empty> --test-tmp <new>`
    Expected: every gate `PASS` with the derived counts in the gate table. A count mismatch is a
-   finding: report it; do not edit `scripts/ci/gates.mjs` to fit.
-6. Confirm `git-config`, `gitattributes-before/after` and `source-status-before/after` pass, and
-   that the run leaves the tree clean.
+   finding: report it; do not edit `scripts/ci/expected.mjs` to fit.
+6. Confirm `git-config`, `gitattributes-before/after` and `source-status-before/after` pass, that
+   every `<gate>.survivors.txt` says `none`, and that the run leaves the tree clean.
 7. With a throwaway test certificate (never a real one), run
    `node scripts/release/package.mjs windows --out <new>` with `CARGO_TARGET_DIR` set to an
-   absolute path: once with no secrets (expect an unsigned build and the warning), once with
-   `REQUIRE_SIGNING=true` (expect an error), once with a test `.pfx` in `WINDOWS_CERTIFICATE` and
-   `WINDOWS_CERTIFICATE_PASSWORD` (expect `Valid` only if the test certificate chains to a trusted
-   root; record the real status either way).
+   absolute path written as the runner writes it, with mixed separators:
+   `$env:CARGO_TARGET_DIR = "$env:RUNNER_TEMP/target"` (the old check rejected this). Run it:
+   - with no secrets: expect an unsigned build and the warning;
+   - with `REQUIRE_SIGNING=true`: expect an error;
+   - with `GITHUB_REF_TYPE=tag` and `GITHUB_REF_NAME=v<version>` and no secrets: expect an error
+     that names `ALLOW_UNSIGNED_RELEASE`; with `ALLOW_UNSIGNED_RELEASE=true` added, an unsigned
+     build;
+   - with a test `.pfx` in `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD`: expect
+     `Valid` only if the test certificate chains to a trusted root (record the real status either
+     way), and that the thumbprint is gone from `Cert:\CurrentUser\My` afterwards.
 8. Report the real counts, durations, and the first failing gate, if any.
 
 ## What only a real GitHub runner can prove
@@ -147,6 +205,8 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 
 - that the runner images `macos-15` and `windows-2025` have the expected Xcode, MSVC, Windows SDK,
   WebView2 and rustup, or that `setup-node` can install Node 26.13.0 and 22.20.0;
+- the Windows survivor scan (`Get-CimInstance Win32_Process` through PowerShell) and the Windows
+  `runBounded` pipe and timeout behaviour, which only the self-tests exercise, on macOS;
 - Windows gate counts and the Windows clippy baseline at these toolchain versions (they are the
   runbook's derived values until a Windows host measures them);
 - the NSIS download, the Windows installer build and the sidecar being bundled;

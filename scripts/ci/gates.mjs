@@ -4,11 +4,13 @@
 // macOS runs the same commands with counts measured on macOS (they differ by `cfg`), plus the
 // two macOS-only gates the M5-05r3 owner measured: the whole workspace and the real-daemon e2e.
 //
-// Expected counts are never edited to fit a run. If a count changes, the change needs a reason in
-// the commit that edits it.
+// Every expected count and the clippy baseline live in expected.mjs; this file holds none. They
+// are never edited to fit a run. If a count changes, the change needs a reason in the commit that
+// edits it.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CLIPPY_BASELINE, E2E_TESTS, MACOS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
@@ -36,7 +38,7 @@ export function gatesFor(platform) {
   if (!win && platform !== "darwin") throw new Error(`unsupported platform ${platform}`);
   const exe = win ? ".exe" : "";
   const counts = win ? names("windows-test-names.json").windows : names("macos-test-names.json").macos;
-  const mac = win ? null : MACOS_COUNTS;
+  const want = win ? WINDOWS : MACOS;
 
   const gates = [
     {
@@ -48,15 +50,13 @@ export function gatesFor(platform) {
     {
       name: "ipc-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
       args: ["test", "--locked", "-p", "orchestrator-ipc"],
-      expect: counts.ipc, passed: 45, ignored: 0, runningSequence: [45, 0],
+      expect: counts.ipc, passed: want.ipc.passed, ignored: 0, runningSequence: want.ipc.sequence,
     },
     {
       name: "daemon-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
       args: ["test", "--locked", "-p", "orchestrator-daemon"],
       expect: counts.daemon, pattern: lifecyclePattern,
-      ...(win
-        ? { passed: 46, ignored: 0, runningSequence: [42, 4, 0] }
-        : { passed: mac.daemonTests, ignored: 0, runningSequence: mac.daemonSequence }),
+      passed: want.daemon.passed, ignored: 0, runningSequence: want.daemon.sequence,
     },
     {
       name: "daemon-lifecycle", mode: "lifecycle", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
@@ -65,7 +65,8 @@ export function gatesFor(platform) {
     {
       name: "coordinator-review-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 600,
       args: ["test", "--locked", "-p", "orchestrator-daemon", "--test", "coordinator_review"],
-      expect: counts["coordinator-review"], passed: 4, ignored: 0, runningSequence: [4], filteredOut: 0,
+      expect: counts["coordinator-review"], passed: want.coordinatorReview.passed, ignored: 0,
+      runningSequence: want.coordinatorReview.sequence, filteredOut: 0,
     },
   ];
 
@@ -73,18 +74,19 @@ export function gatesFor(platform) {
     gates.push({
       name: "windows-transport-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
       args: ["test", "--locked", "-p", "orchestrator-ipc", "windows_transport"],
-      expect: counts["windows-transport"], passed: 13, ignored: 0, runningSequence: [13], filteredOut: 32,
+      expect: counts["windows-transport"], passed: WINDOWS.windowsTransport.passed, ignored: 0,
+      runningSequence: WINDOWS.windowsTransport.sequence, filteredOut: WINDOWS.windowsTransport.filteredOut,
     });
   }
 
   gates.push(
     {
-      // The two `single_match` warnings in orchestrator-runtime are the known baseline; any other
+      // The `single_match` warnings in orchestrator-runtime (CLIPPY_BASELINE) are the known baseline; any other
       // diagnostic is reported in the summary and does not change the verdict.
       name: "clippy-scoped", mode: "lint", cwd: ".", exe: "cargo",
       args: ["clippy", "--locked", "-p", "orchestrator-ipc", "-p", "orchestrator-daemon", "--all-targets"],
       crates: ["orchestrator-ipc", "orchestrator-daemon"],
-      baseline: "crates[\\\\/]orchestrator-runtime[\\\\/]src[\\\\/]supervisor\\.rs:(?:401|424):\\d+",
+      baseline: clippyBaselinePattern(CLIPPY_BASELINE),
     },
   );
 
@@ -92,7 +94,7 @@ export function gatesFor(platform) {
     gates.push({
       name: "workspace-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 3600,
       args: ["test", "--locked", "--workspace"],
-      passed: mac.workspacePassed, ignored: mac.workspaceIgnored,
+      passed: MACOS.workspace.passed, ignored: MACOS.workspace.ignored,
     });
   }
 
@@ -105,7 +107,7 @@ export function gatesFor(platform) {
     },
     {
       name: "desktop-vitest", mode: "vitest", cwd: UI, exe: "npx", args: ["vitest", "run"], timeout: 1200,
-      files: 15, tests: 287, needs: ["desktop-npm-ci"],
+      files: VITEST.files, tests: VITEST.tests, needs: ["desktop-npm-ci"],
     },
   );
 
@@ -113,7 +115,7 @@ export function gatesFor(platform) {
     gates.push({
       // Real daemon over a Unix socket: not runnable on Windows (see UNPROVEN_ROWS).
       name: "desktop-e2e", mode: "vitest", cwd: UI, exe: "npm", args: ["run", "test:e2e"], timeout: 1800,
-      files: mac.e2eFiles, tests: 19, needs: ["desktop-npm-ci", "daemon-build"],
+      files: MACOS.e2eFiles, tests: E2E_TESTS, needs: ["desktop-npm-ci", "daemon-build"],
       env: { ORCH_DAEMON_BIN: { target: "debug/orchestrator-daemon" } },
     });
   }
@@ -127,8 +129,7 @@ export function gatesFor(platform) {
     {
       name: "tauri-tests", mode: "test", cwd: TAURI, exe: "cargo", isolated: true, timeout: 3600,
       args: ["test", "--locked"], needs: ["desktop-build"],
-      expect: counts.tauri, passed: win ? 9 : mac.tauriTests, ignored: 0,
-      runningSequence: win ? [9, 0, 0] : [mac.tauriTests, 0, 0],
+      expect: counts.tauri, passed: want.tauri.passed, ignored: 0, runningSequence: want.tauri.sequence,
     },
     // Removes only this package's cached output so the next gate really lints it.
     { name: "tauri-clippy-clean", mode: "exit", cwd: TAURI, exe: "cargo", args: ["clean", "-p", "agent-orch-desktop"], timeout: 900 },
@@ -157,13 +158,3 @@ export function gatesFor(platform) {
   );
   return gates;
 }
-
-// Measured on macOS at the source commit efa5e8af (see the M6-02 owner report). Not Windows evidence.
-const MACOS_COUNTS = {
-  daemonTests: 72,
-  daemonSequence: [59, 4, 9],
-  workspacePassed: 638,
-  workspaceIgnored: 1,
-  tauriTests: 10,
-  e2eFiles: 1,
-};

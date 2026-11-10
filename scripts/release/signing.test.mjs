@@ -38,3 +38,30 @@ test("full macOS and Windows configurations", () => {
   const w = signingDecision("windows", { WINDOWS_CERTIFICATE: "x", WINDOWS_CERTIFICATE_PASSWORD: "x", REQUIRE_SIGNING: "true" });
   assert.deepEqual([w.mode, w.sign, w.notarize], ["signed", true, false]);
 });
+
+test("a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in", () => {
+  const tag = { GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: "v1.0.0" };
+  for (const platform of ["macos", "windows"]) {
+    const d = signingDecision(platform, tag);
+    assert.equal(d.mode, "error");
+    assert.match(d.message, /tag build.*ALLOW_UNSIGNED_RELEASE=true/);
+    assert.deepEqual([signingDecision(platform, { ...tag, ALLOW_UNSIGNED_RELEASE: "true" }).mode], ["unsigned"]);
+  }
+  assert.equal(signingDecision("windows", { GITHUB_REF_TYPE: "branch" }).mode, "unsigned");
+  assert.equal(signingDecision("windows", { ...tag, ALLOW_UNSIGNED_RELEASE: "yes" }).mode, "error");
+});
+
+test("a tag build with signing secrets signs; macOS also needs notarization unless opted out", () => {
+  const tag = { GITHUB_REF_TYPE: "tag" };
+  const w = signingDecision("windows", { ...tag, WINDOWS_CERTIFICATE: "x", WINDOWS_CERTIFICATE_PASSWORD: "x" });
+  assert.deepEqual([w.mode, w.sign], ["signed", true]);
+  assert.equal(signingDecision("macos", { ...tag, ...mac }).mode, "error");
+  assert.equal(signingDecision("macos", { ...tag, ...mac, ALLOW_UNSIGNED_RELEASE: "true" }).mode, "signed");
+  assert.deepEqual(signingDecision("macos", { ...tag, ...mac, ...notary }).notarize, true);
+});
+
+test("REQUIRE_SIGNING takes precedence over the unsigned opt-in", () => {
+  const d = signingDecision("windows", { REQUIRE_SIGNING: "true", ALLOW_UNSIGNED_RELEASE: "true" });
+  assert.equal(d.mode, "error");
+  assert.match(d.message, /REQUIRE_SIGNING=true/);
+});

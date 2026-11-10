@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { CLIPPY_BASELINE, MACOS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { gatesFor } from "./gates.mjs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
+const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+
+test("each expected total equals its running-sequence sum (filtered tests excluded)", () => {
+  for (const [platform, table] of [["windows", WINDOWS], ["macos", MACOS]]) {
+    for (const [key, value] of Object.entries(table)) {
+      if (!value.sequence) continue;
+      assert.equal(sum(value.sequence), value.passed, `${platform}.${key}`);
+    }
+  }
+});
+
+test("each expected total equals the length of its name list, so a merge updates both", () => {
+  const win = names("windows-test-names.json").windows;
+  assert.equal(win.ipc.length, WINDOWS.ipc.passed);
+  assert.equal(win.daemon.length, WINDOWS.daemon.passed);
+  assert.equal(win["coordinator-review"].length, WINDOWS.coordinatorReview.passed);
+  assert.equal(win["windows-transport"].length, WINDOWS.windowsTransport.passed);
+  assert.equal(win.tauri.length, WINDOWS.tauri.passed);
+  const mac = names("macos-test-names.json").macos;
+  assert.equal(mac.ipc.length, MACOS.ipc.passed);
+  assert.equal(mac.daemon.length, MACOS.daemon.passed);
+  assert.equal(mac["coordinator-review"].length, MACOS.coordinatorReview.passed);
+  assert.equal(mac.tauri.length, MACOS.tauri.passed);
+});
+
+test("gates take their counts from expected.mjs", () => {
+  const byName = (platform) => Object.fromEntries(gatesFor(platform).map((g) => [g.name, g]));
+  const win = byName("win32");
+  assert.deepEqual([win["daemon-tests"].passed, win["daemon-tests"].runningSequence], [WINDOWS.daemon.passed, WINDOWS.daemon.sequence]);
+  assert.equal(win["windows-transport-tests"].filteredOut, WINDOWS.windowsTransport.filteredOut);
+  const mac = byName("darwin");
+  assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
+  assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);
+});
+
+test("the clippy baseline pattern matches only the listed lines, under either separator", () => {
+  const re = new RegExp(clippyBaselinePattern(CLIPPY_BASELINE), "i");
+  for (const line of CLIPPY_BASELINE.lines) {
+    assert.ok(re.test(`crates/orchestrator-runtime/src/supervisor.rs:${line}:9`));
+    assert.ok(re.test(`crates\\orchestrator-runtime\\src\\supervisor.rs:${line}:9`));
+  }
+  assert.ok(!re.test("crates/orchestrator-runtime/src/supervisor.rs:402:9"));
+  assert.ok(!re.test("crates/orchestrator-runtime/src/supervisorXrs:401:9"));
+  const moved = new RegExp(clippyBaselinePattern({ file: "a/b.rs", lines: [7, 80] }));
+  assert.ok(moved.test("a/b.rs:80:1") && !moved.test("a/b.rs:401:1"));
+});

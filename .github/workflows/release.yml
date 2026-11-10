@@ -3,8 +3,9 @@ name: release
 # Release builds for macOS and Windows. Builds artifacts only: nothing is published, no GitHub
 # release is created. Signing is parameterized by secrets of the `release` environment; when they
 # are absent the job still builds, warns, and labels the artifact UNSIGNED (see
-# scripts/release/signing.mjs). Set REQUIRE_SIGNING (input or repository variable) to make absent
-# secrets an error. See docs/release-ci.md.
+# scripts/release/signing.mjs) for a manual run. A `v*` tag build FAILS without signing secrets
+# unless the repository variable ALLOW_UNSIGNED_RELEASE is "true". Set REQUIRE_SIGNING (input or
+# repository variable) to make absent secrets an error for a manual run too. See docs/release-ci.md.
 
 on:
   push:
@@ -83,6 +84,7 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/target
           REQUIRE_SIGNING: ${{ (inputs.require_signing && 'true') || vars.REQUIRE_SIGNING || 'false' }}
+          ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

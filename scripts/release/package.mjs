@@ -3,10 +3,13 @@
 //   node scripts/release/package.mjs <macos|windows> --out DIR
 //
 // Environment: CARGO_TARGET_DIR (required, absolute, outside the checkout), signing secrets named
-// in signing.mjs, REQUIRE_SIGNING=true to fail instead of skipping when none are set,
-// WINDOWS_TIMESTAMP_URL (optional, not secret). Runs the same `npm run package:mac|win` as the CI
-// gate, then collects the artifact, a SHA256SUMS file and release-info.json into --out.
-// Secrets are passed to the packaging child by name only and are never logged.
+// in signing.mjs, REQUIRE_SIGNING=true to fail instead of skipping when none are set (a `v*` tag
+// build requires signing unless ALLOW_UNSIGNED_RELEASE=true), WINDOWS_TIMESTAMP_URL (optional,
+// not secret). Runs the same `npm run package:mac|win` as the CI gate, then collects the
+// artifact, a SHA256SUMS file and release-info.json into --out.
+// Secrets are never logged. The Windows certificate and password are removed from this process's
+// environment before anything is spawned and reach only the PowerShell step that imports the
+// certificate; the build child gets the certificate thumbprint through TAURI_CONFIG instead.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -14,7 +17,8 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { signingDecision, signingNames } from "./signing.mjs";
+import { buildChildEnv, resolveTargetDir, takeWindowsSecrets } from "./env.mjs";
+import { signingDecision } from "./signing.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..", "..");
@@ -30,9 +34,11 @@ if ((platform === "macos") !== (process.platform === "darwin") || (platform === 
   console.error(`::error::cannot package ${platform} on ${process.platform}`);
   process.exit(2);
 }
-const targetDir = process.env.CARGO_TARGET_DIR;
-if (!targetDir || resolve(targetDir) !== targetDir) {
-  console.error("::error::CARGO_TARGET_DIR must be set to an absolute path");
+let targetDir;
+try {
+  targetDir = resolveTargetDir(process.env.CARGO_TARGET_DIR);
+} catch (error) {
+  console.error(`::error::${error.message}`);
   process.exit(2);
 }
 const out = resolve(outArg);
@@ -53,20 +59,18 @@ const run = (command, args, options = {}) => {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited ${result.status}`);
 };
-const powershell = (script, env) => {
+// `extraEnv` is the only place a secret may be passed, and only for the one call that needs it.
+const powershell = (script, extraEnv) => {
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    encoding: "utf8", env: { ...process.env, ...env },
+    encoding: "utf8", env: { ...childEnv, ...extraEnv },
   });
   if (result.status !== 0) throw new Error(`powershell failed: ${result.stderr.trim()}`);
   return result.stdout.trim();
 };
 
-// The child inherits a signing variable only when it has a value.
-const childEnv = { ...process.env, CI: "true" };
-for (const name of signingNames(platform)) {
-  if (!decision.sign || !childEnv[name]?.trim()) delete childEnv[name];
-}
-delete childEnv.REQUIRE_SIGNING;
+// From here on nothing this process spawns inherits the Windows certificate or password.
+let windowsSecrets = platform === "windows" ? takeWindowsSecrets(process.env) : {};
+const childEnv = { ...buildChildEnv(platform, process.env, decision), CARGO_TARGET_DIR: targetDir };
 
 const version = JSON.parse(readFileSync(join(desktop, "src-tauri", "tauri.conf.json"), "utf8")).version;
 if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== `v${version}`) {
@@ -83,15 +87,16 @@ try {
   if (platform === "windows" && decision.sign) {
     const pfx = join(targetDir, "release-signing.pfx");
     mkdirSync(targetDir, { recursive: true });
-    writeFileSync(pfx, Buffer.from(process.env.WINDOWS_CERTIFICATE, "base64"), { mode: 0o600 });
+    writeFileSync(pfx, Buffer.from(windowsSecrets.WINDOWS_CERTIFICATE, "base64"), { mode: 0o600 });
     try {
       certThumbprint = powershell(
         "$pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force; " +
           "(Import-PfxCertificate -FilePath $env:PFX_PATH -CertStoreLocation Cert:\\CurrentUser\\My -Password $pw).Thumbprint",
-        { PFX_PATH: pfx },
+        { PFX_PATH: pfx, WINDOWS_CERTIFICATE_PASSWORD: windowsSecrets.WINDOWS_CERTIFICATE_PASSWORD },
       );
     } finally {
       rmSync(pfx, { force: true });
+      windowsSecrets = {};
     }
     if (!/^[0-9A-Fa-f]{40}$/.test(certThumbprint)) throw new Error("certificate import did not return a thumbprint");
     // The Tauri CLI merges TAURI_CONFIG into the config; the thumbprint is not a secret.

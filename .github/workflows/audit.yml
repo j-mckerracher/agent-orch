@@ -27,9 +27,10 @@ on:
 permissions:
   contents: read
 
+# Only a superseded pull request run is cancelled; a scheduled, main-branch or release run completes.
 concurrency:
   group: audit-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   audit:

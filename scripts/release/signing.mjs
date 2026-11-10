@@ -1,9 +1,10 @@
 // Decides, from environment variable NAMES only, whether a release build is signed.
 // Pure: reads names and emptiness, never prints or returns a secret value.
 //
-// A completely absent configuration is a clean skip (unsigned build, clear message) unless
-// REQUIRE_SIGNING=true. A partial configuration is an error: a half-configured release must not
-// quietly ship unsigned.
+// A completely absent configuration is a clean skip (unsigned build, clear message) for a manual
+// run, but an error when signing is required: REQUIRE_SIGNING=true, or a `v*` tag build
+// (GITHUB_REF_TYPE=tag) unless ALLOW_UNSIGNED_RELEASE=true opts in explicitly. A partial
+// configuration is always an error: a half-configured release must not quietly ship unsigned.
 
 const PLATFORMS = {
   macos: {
@@ -21,7 +22,11 @@ const present = (env, name) => typeof env[name] === "string" && env[name].trim()
 export function signingDecision(platform, env) {
   const spec = PLATFORMS[platform];
   if (!spec) throw new Error(`unknown platform ${platform}`);
-  const required = env.REQUIRE_SIGNING === "true";
+  const tagBuild = env.GITHUB_REF_TYPE === "tag" && env.ALLOW_UNSIGNED_RELEASE !== "true";
+  const required = env.REQUIRE_SIGNING === "true" || tagBuild;
+  const why = env.REQUIRE_SIGNING === "true"
+    ? "REQUIRE_SIGNING=true"
+    : "this is a tag build; set the repository variable ALLOW_UNSIGNED_RELEASE=true to allow an unsigned tag build";
   const names = [...spec.sign, ...spec.notarize];
   const have = names.filter((n) => present(env, n));
   const missingSign = spec.sign.filter((n) => !present(env, n));
@@ -30,7 +35,7 @@ export function signingDecision(platform, env) {
 
   if (have.length === 0) {
     return required
-      ? failure(`REQUIRE_SIGNING=true but no ${platform} signing secret is set (${names.join(", ")}).`)
+      ? failure(`Signing is required (${why}) but no ${platform} signing secret is set (${names.join(", ")}).`)
       : {
           mode: "unsigned", sign: false, notarize: false,
           message: `No ${platform} signing secrets are set (${names.join(", ")}); building UNSIGNED. This build must not be distributed.`,
@@ -45,7 +50,7 @@ export function signingDecision(platform, env) {
   }
   const notarize = spec.notarize.length > 0 && missingNotarize.length === 0;
   if (spec.notarize.length > 0 && !notarize && required) {
-    return failure(`REQUIRE_SIGNING=true but ${platform} notarization secrets are not set (${spec.notarize.join(", ")}).`);
+    return failure(`Signing is required (${why}) but ${platform} notarization secrets are not set (${spec.notarize.join(", ")}).`);
   }
   return {
     mode: "signed", sign: true, notarize,

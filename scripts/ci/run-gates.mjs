@@ -4,20 +4,24 @@
 //
 // Evidence per gate: <name>.stdout.txt, <name>.stderr.txt (raw bytes), <name>.result.json. A gate
 // is PASS only when the process exits 0 within its limit AND its output matches the expected
-// shape (counts, sequences, names, artifacts). Nothing is retried. A gate whose prerequisite did
-// not pass is SKIPPED, which also fails the run. The evidence directory must not already exist.
-import { spawn, spawnSync } from "node:child_process";
+// shape (counts, sequences, names, artifacts) AND no process of the run survives it (a read-only
+// scan for processes under the target or test-temp directory). Nothing is retried. A gate whose
+// prerequisite did not pass is SKIPPED, which also fails the run. The evidence directory must not
+// already exist.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  appendFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runBounded } from "./bounded.mjs";
 import { UNPROVEN_ROWS, gatesFor } from "./gates.mjs";
 import {
   checkBuild, checkLifecycle, checkLint, checkPattern, checkTests, checkVitest, diagnostics, normalize,
 } from "./parse.mjs";
+import { describeSurvivors, scanSurvivors } from "./survivors.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const win = process.platform === "win32";
@@ -79,48 +83,6 @@ const capture = (command, commandArgs, cwd = source) => {
 };
 
 const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
-
-const killTree = (child) => {
-  try {
-    if (win) spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-    else process.kill(-child.pid, "SIGKILL");
-  } catch {
-    // already gone
-  }
-};
-
-// One command, one process: its exit status is the status of that process, never of a pipeline.
-const runBounded = ({ exe, commandArgs, cwd, env, timeoutMs, stdoutFile, stderrFile }) =>
-  new Promise((done) => {
-    const started = Date.now();
-    const out = createWriteStream(stdoutFile);
-    const err = createWriteStream(stderrFile);
-    const chunks = { out: [], err: [] };
-    const child = spawn(exe, commandArgs, {
-      cwd, env, windowsHide: true, detached: !win, shell: win && /^np[mx]$/.test(exe),
-    });
-    let timedOut = false;
-    let spawnError = null;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killTree(child);
-    }, timeoutMs);
-    child.stdout.on("data", (d) => { chunks.out.push(d); out.write(d); process.stdout.write(d); });
-    child.stderr.on("data", (d) => { chunks.err.push(d); err.write(d); process.stderr.write(d); });
-    child.on("error", (e) => { spawnError = e; });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      out.end();
-      err.end();
-      Promise.all([new Promise((r) => out.on("finish", r)), new Promise((r) => err.on("finish", r))]).then(() =>
-        done({
-          code, signal, timedOut, spawnError: spawnError ? String(spawnError) : null,
-          durationMs: Date.now() - started,
-          stdout: Buffer.concat(chunks.out).toString("utf8"),
-          stderr: Buffer.concat(chunks.err).toString("utf8"),
-        }));
-    });
-  });
 
 const results = [];
 const writeJson = (name, value) => writeFileSync(join(evidence, name), `${JSON.stringify(value, null, 2)}\n`);
@@ -217,6 +179,7 @@ for (const gate of gates) {
     });
     const problems = [];
     if (run.spawnError) problems.push(`could not start: ${run.spawnError}`);
+    if (run.pipesAbandoned) problems.push("a descendant kept the output pipes open after the process exited; the pipes were abandoned");
     if (run.timedOut) problems.push(`timed out after ${gate.timeout ?? 1800} s`);
     else if (run.code !== 0) problems.push(`exit code ${run.code}${run.signal ? ` (signal ${run.signal})` : ""}`);
     const both = `${run.stdout}\n${run.stderr}`;
@@ -242,6 +205,14 @@ for (const gate of gates) {
           writeFileSync(join(evidence, artifact.record), `${artifact.target}\nsize: ${size}\nsha256: ${sha256(path)}\n`);
         }
       }
+    }
+    // Read-only, after EVERY gate: nothing is stopped. A survivor fails the gate.
+    try {
+      const survivors = await scanSurvivors([target, testTmp]);
+      writeFileSync(`${base}.survivors.txt`, survivors.length ? `${describeSurvivors(survivors)}\n` : "none\n");
+      if (survivors.length) problems.push(`${survivors.length} process(es) of this run survived the gate; see ${gate.name}.survivors.txt`);
+    } catch (error) {
+      problems.push(`survivor scan failed: ${error.message}`);
     }
     result = {
       ...header, verdict: problems.length ? "FAIL" : "PASS", exitCode: run.code, durationSeconds: Math.round(run.durationMs / 1000),
