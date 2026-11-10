@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 orchestrator-core = { path = "../orchestrator-core" }
+orchestrator-private-fs = { path = "../orchestrator-private-fs" }
 # serde/serde_json serialize domain records; std::fs handles FileStore I/O.
 # SQLx runs SQLite; a Tokio worker preserves synchronous Store signatures.
 # Updated: 2026-11-07T22:02:32-07:00.

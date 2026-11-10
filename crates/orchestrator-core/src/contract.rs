@@ -162,8 +162,9 @@ pub enum ContractError {
 /// system: Windows `CreateProcess` caps a whole command line at 32,767
 /// characters, so a prompt near `MAX_OBJECTIVE_BYTES` (passed as one
 /// argument to Codex and Claude Code) or many large verification arguments
-/// make the launch fail with a spawn error after validation succeeds. That
-/// fails closed. Unix limits are far larger.
+/// cannot be launched. `orchestrator_runtime::check_command_line` measures the
+/// real command line and refuses one that does not fit, before the spawn and
+/// without truncating. Unix limits are far larger.
 pub mod limits {
     /// Objective text, in bytes.
     pub const MAX_OBJECTIVE_BYTES: usize = 64 * 1024;

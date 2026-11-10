@@ -6,6 +6,8 @@ use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+use orchestrator_private_fs::{create_private_dir, restrict_to_owner};
+
 pub const DAEMON_LOG: &str = "daemon.log";
 const DAEMON_TOKEN: &str = "daemon.token";
 const DAEMON_LOG_ROTATED: &str = "daemon.log.1";
@@ -102,19 +104,8 @@ fn rotate_log(data_dir: &Path) {
     }
 }
 
-/// Creates the data directory owner-only on Unix and removes group and other
-/// access from one that already exists. Windows relies on the inherited ACL.
-fn create_private_dir(path: &Path) -> std::io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(path)?;
-    restrict_to_owner(path)
-}
-
-/// Opens `daemon.log` for append, owner-only on Unix (it carries daemon
-/// stderr). An existing log loses group and other access.
+/// Opens `daemon.log` for append, owner-only (it carries daemon stderr). An
+/// existing log loses other users' access.
 fn open_private_log(path: &Path) -> std::io::Result<fs::File> {
     let mut options = OpenOptions::new();
     options.create(true).append(true);
@@ -123,22 +114,6 @@ fn open_private_log(path: &Path) -> std::io::Result<fs::File> {
     let log = options.open(path)?;
     restrict_to_owner(path)?;
     Ok(log)
-}
-
-fn restrict_to_owner(path: &Path) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let metadata = fs::metadata(path)?;
-        let mode = metadata.permissions().mode();
-        if mode & 0o077 != 0 {
-            let private = if metadata.is_dir() { 0o700 } else { 0o600 };
-            fs::set_permissions(path, fs::Permissions::from_mode(mode & private))?;
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
 }
 
 #[cfg(unix)]

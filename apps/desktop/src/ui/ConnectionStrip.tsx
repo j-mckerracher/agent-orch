@@ -22,6 +22,10 @@ export function ConnectionStrip() {
   const journal = useSource(() => sources.journal.identity(), "journal", sources.journal.provenance);
 
   const detail = snap.error ? presentError(snap.error) : null;
+  // The host's launch-failure message carries the redacted end of the daemon
+  // log; the generic presentation above does not. Only this kind is shown
+  // verbatim, because the host redacts it before it reaches the webview.
+  const launchDetail = snap.error?.kind === "daemon-unavailable" ? snap.error.message.trim() : "";
   return (
     <header className="strip" aria-label="Connection">
       <div>
@@ -63,6 +67,11 @@ export function ConnectionStrip() {
         <p role="alert" data-testid="connection-error">
           {detail.reason} {detail.nextStep}
         </p>
+      )}
+      {launchDetail && snap.status !== "connected" && (
+        <pre data-testid="connection-error-detail" aria-label="Why the daemon could not start">
+          {launchDetail}
+        </pre>
       )}
       <p className="muted" data-testid="recovery-unknown">
         Recovery: unknown <PlaceholderBadge provenance={sources.recovery.provenance} /> The daemon does not expose

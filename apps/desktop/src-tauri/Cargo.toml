@@ -21,6 +21,9 @@ serde_json = "=1.0.154"
 orchestrator-ipc = { path = "../../../crates/orchestrator-ipc" }
 # Redaction for the daemon log excerpt shown in launch failures.
 orchestrator-diagnostics = { path = "../../../crates/orchestrator-diagnostics" }
+# Owner-only data directory and log (a protected DACL on Windows); shared with
+# the engine's store but dependency-free on Unix, so it pulls in no SQLite.
+orchestrator-private-fs = { path = "../../../crates/orchestrator-private-fs" }
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }

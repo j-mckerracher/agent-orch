@@ -35,14 +35,14 @@ The Windows list is the published runbook
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
-| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 55 = 50+4+0+1, macOS 87 = 72+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
+| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 57 = 52+4+0+1, macOS 88 = 73+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
 | `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (708 passed, 1 ignored) | macOS |
-| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 289 tests) | both |
+| `workspace-tests` | `cargo test --locked --workspace` (721 passed, 1 ignored) | macOS |
+| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 290 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
-| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 12, macOS 14), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
+| `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 13, macOS 15), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
 
 Windows and macOS counts differ because tests are gated by `cfg`. Expected counts are never edited
@@ -76,11 +76,24 @@ tests and the `diagnostics_log` test binary); `tauri-tests` Windows `[12,0,0]` a
 `[14,0,0]`; `ipc-tests` 46 (M5-05 round 5 added `a_call_longer_than_the_idle_timeout_does_not_stop_the_server`);
 macOS `workspace-tests` 708 passed and 1 ignored (round 5 also added 2 `orchestrator-git`
 `repository_discovery` tests, which no gate counts separately); vitest 289; `CLIPPY_BASELINE.lines`
-409 and 432; and the lifecycle test prints `STEP 1` to `STEP 8` (`LIFECYCLE_STEPS`). The macOS
+409 and 432 (before the remediation); and the lifecycle test prints `STEP 1` to `STEP 8` (`LIFECYCLE_STEPS`). The macOS
 figures were measured on the merged tree; the Windows figures are derived from the three owner
 reports and are unproven until a Windows run. Re-measure on Windows; do not edit to fit.
 Run on both platforms, outside the checkout: `node --test "scripts/**/*.test.mjs"` (harness
 self-tests).
+
+**Priority 12 Windows remediation** (owner-only data-directory DACL, launch-failure log tail in the
+UI, command-line length check) moved the counts: `daemon-tests` Windows `[52,4,0,1]`/57 and macOS
+`[73,4,10,1]`/88 (new `agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one`
+on both, and Windows-only `windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent`);
+`tauri-tests` Windows `[13,0,0]` and macOS `[15,0,0]` (new
+`a_daemon_that_cannot_be_started_shows_the_redacted_end_of_the_log`); vitest 290; macOS
+`workspace-tests` 721 passed and 1 ignored (+8 `orchestrator-runtime` `command_line` tests, +1
+`orchestrator-cli` unit test, +1 daemon test, +6 new `orchestrator-private-fs` tests, -3 `orchestrator-store`
+tests that moved into it); `CLIPPY_BASELINE.lines` 414 and 437 (the check added five lines above them).
+The macOS figures were measured; the Windows ones are derived. `orchestrator-private-fs` runs 6 tests
+on macOS (3 portable, 3 Unix) and 9 on Windows (3 portable, 6 DACL), and the Windows-only CLI test
+is a 35th `orchestrator-cli` unit test there; no Windows gate counts either crate.
 
 ### Evidence
 

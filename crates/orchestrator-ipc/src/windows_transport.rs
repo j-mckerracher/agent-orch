@@ -6,9 +6,9 @@
 //!
 //! Known limits (M6 threat review): the client opens the pipe without
 //! `SECURITY_SQOS_PRESENT` and does not verify the server's identity before
-//! sending the token; the data-directory ACL and token owner are not validated
-//! as they are on Unix, and an elevated process owns its files as
-//! `BUILTIN\Administrators` by default.
+//! sending the token; the token owner is not validated as it is on Unix, and
+//! an elevated process owns its files as `BUILTIN\Administrators` by default.
+//! The data directory itself is made owner-only by `orchestrator-private-fs`.
 
 use crate::transport::{IpcStream, TransportError};
 use std::fs::{self, File};

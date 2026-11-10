@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::executor::{Executor, ExecutorConfig};
+use crate::executor::{agent_command, Executor, ExecutorConfig};
 use orchestrator_diagnostics::Level;
 use crate::idempotency;
 
@@ -392,6 +392,7 @@ impl DaemonApi {
                     .get_project(&contract.project_id)
                     .map_err(map_store_error)?;
                 contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
+                self.check_agent_command_line(&contract)?;
                 self.validate_scheduler(&contract)?;
                 self.store.create(&contract).map_err(map_store_error)?;
                 self.store
@@ -478,6 +479,25 @@ impl DaemonApi {
             // The daemon has no stdin RPC launcher for Pi yet.
             agent_entry("pi", false, pi),
         ]))
+    }
+
+    /// Refuses an objective the operating system could not pass to the agent
+    /// CLI. `RpcError` carries no detail, so the actionable message goes to the
+    /// diagnostics log and the caller sees `InvalidParams`.
+    fn check_agent_command_line(&self, contract: &TaskContract) -> Result<(), RpcError> {
+        let Some((program, args)) =
+            agent_command(&self.config, &contract.agent, &contract.objective)
+        else {
+            return Ok(());
+        };
+        orchestrator_runtime::check_command_line(&program, &args).map_err(|error| {
+            self.config.diagnostics.warn(
+                "api",
+                "task_submit_command_line_too_long",
+                &[("agent", &contract.agent), ("error", &error.to_string())],
+            );
+            RpcError::InvalidParams
+        })
     }
 
     fn validate_scheduler(&self, candidate: &TaskContract) -> Result<(), RpcError> {

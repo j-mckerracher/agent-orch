@@ -185,7 +185,10 @@ impl Bridge {
             )
         })?;
         let mut child = launch::spawn(program, data_dir).map_err(|error| {
-            HostError::unavailable(format!("could not start the daemon ({:?})", error.kind()))
+            HostError::unavailable(launch::explain_with_log(
+                format!("could not start the daemon ({:?}: {error})", error.kind()),
+                data_dir,
+            ))
         })?;
         let deadline = Instant::now() + LAUNCH_WAIT;
         loop {

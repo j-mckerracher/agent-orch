@@ -126,6 +126,7 @@
    "submit_refuses_read_only_autonomy_because_the_agent_would_write",
    "submit_rejects_oversized_and_nul_contract_fields",
    "idempotency_store_failures_report_their_cause_too",
+   "agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one",
    "internal_causes_do_not_leak_into_the_next_request",
    "internal_error_causes_reach_the_injected_redacting_sink",
    "a_failed_listing_is_logged_and_never_reads_as_nothing_running",
@@ -146,6 +147,7 @@
   "tauri": [
    "no_daemon_and_no_executable_is_daemon_unavailable",
    "a_daemon_executable_that_cannot_start_is_daemon_unavailable",
+   "a_daemon_that_cannot_be_started_shows_the_redacted_end_of_the_log",
    "an_oversized_log_is_rotated_and_a_small_one_is_kept",
    "the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection",
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",

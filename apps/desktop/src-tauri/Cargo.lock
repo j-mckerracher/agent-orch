@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "orchestrator-diagnostics",
  "orchestrator-ipc",
+ "orchestrator-private-fs",
  "serde",
  "serde_json",
  "tauri",
@@ -2128,6 +2129,13 @@ dependencies = [
  "serde_json",
  "subtle",
  "thiserror 2.0.21",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "orchestrator-private-fs"
+version = "0.1.0"
+dependencies = [
  "windows-sys 0.61.2",
 ]
 

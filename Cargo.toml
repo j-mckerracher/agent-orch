@@ -20,6 +20,7 @@ members = [
     "crates/orchestrator-agents",
     "crates/orchestrator-git",
     "crates/orchestrator-store",
+    "crates/orchestrator-private-fs",
     "crates/orchestrator-runtime",
     "crates/orchestrator-engine",
     "crates/orchestrator-diagnostics",

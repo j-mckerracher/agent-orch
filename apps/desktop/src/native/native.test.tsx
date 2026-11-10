@@ -298,6 +298,9 @@ describe("C1 window close and reopen", () => {
       if (code === "daemon-unavailable") {
         expect(screen.getByTestId("connection-error")).toHaveTextContent("not running and could not be started");
         expect(screen.getByTestId("connection-error")).toHaveTextContent("Nothing is known about running work");
+        expect(screen.getByTestId("connection-error-detail")).toHaveTextContent("host says daemon-unavailable");
+      } else {
+        expect(screen.queryByTestId("connection-error-detail")).toBeNull();
       }
       view.unmount();
     }
@@ -314,6 +317,24 @@ describe("C1 window close and reopen", () => {
     fake.drop();
     await waitFor(() => expect(status()).toHaveTextContent(/Reconnecting|Disconnected/));
     expect(screen.getByTestId("offline-note")).toHaveTextContent("never stops the daemon");
+  }, 60_000);
+
+  it("shows the redacted end of the daemon log when the daemon could not be launched", async () => {
+    // What the host sends: the failure plus the redacted tail of daemon.log.
+    const message = [
+      "the daemon exited right after starting (exit code: 1); see C:\\Users\\dev\\AppData\\Local\\agent-orch\\daemon.log",
+      "last daemon output:",
+      '{"event":"daemon_failed","error":"data directory is locked by another process"}',
+    ].join("\n");
+    const host = new FakeHost(new FakeDaemon());
+    host.openFailure = { code: "daemon-unavailable", message };
+    const services = bootServices(tauriWindow(), { nativeConnector: createTauriConnector(host), connection: FAST }).services;
+    render(<App services={services} />);
+    await waitFor(() => expect(status()).toHaveTextContent("Daemon unavailable"), { timeout: 15_000 });
+    const detail = screen.getByTestId("connection-error-detail");
+    expect(detail).toHaveTextContent("last daemon output:");
+    expect(detail).toHaveTextContent("data directory is locked by another process");
+    expect(detail.textContent).toBe(message);
   }, 60_000);
 });
 

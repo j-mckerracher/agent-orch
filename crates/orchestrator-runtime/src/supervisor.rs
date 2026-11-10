@@ -79,6 +79,8 @@ pub struct LaunchRequest {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
+    #[error(transparent)]
+    CommandLineTooLong(#[from] crate::command_line::CommandLineTooLong),
     #[error("launch failed for {program}: {source}")]
     Launch {
         program: PathBuf,
@@ -222,6 +224,9 @@ impl ChildSupervisor {
         request: &LaunchRequest,
         stdin: std::process::Stdio,
     ) -> Result<(Self, Option<StdinWriter>), SupervisorError> {
+        // Refuse here, with a clear message, what the OS would refuse with an
+        // opaque spawn error.
+        crate::command_line::check_command_line(&request.program, &request.args)?;
         let mut cmd = tokio::process::Command::new(&request.program);
         cmd.args(&request.args)
             .current_dir(&request.working_dir)

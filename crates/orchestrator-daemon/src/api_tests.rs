@@ -968,3 +968,31 @@ fn idempotency_store_failures_report_their_cause_too() {
         RpcError::IdempotencyConflict
     );
 }
+
+#[test]
+fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one() {
+    let (_directory, api) = new_api();
+    let objective = "z".repeat(65_000);
+    for agent in ["codex", "claude-code"] {
+        let (program, args) = agent_command(&api.config, agent, &objective).unwrap();
+        assert!(args.contains(&objective), "{agent}: the objective is passed whole");
+        let error = orchestrator_runtime::command_line::check_windows(&program, &args)
+            .expect_err("65,000 characters plus flags exceed the 32,767 limit");
+        assert_eq!(error.limit, 32_767);
+    }
+    assert!(agent_command(&api.config, "pi", &objective).is_none());
+}
+
+// The objective passes contract validation (at most 64 KiB) and only the
+// Windows command-line limit rejects it, so this cannot be reached elsewhere.
+#[cfg(windows)]
+#[test]
+fn windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent() {
+    let (_directory, api, diagnostics) = api_with_memory_sink();
+    register_project(&api);
+    let result = api.dispatch("tasks.submit", submit_params("too-long", &"z".repeat(65_000)));
+    assert_eq!(result, Err(RpcError::InvalidParams));
+    let lines = diagnostics.lines().join("\n");
+    assert!(lines.contains("task_submit_command_line_too_long"), "{lines}");
+    assert!(lines.contains("Shorten the task objective"), "{lines}");
+}

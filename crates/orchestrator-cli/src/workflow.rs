@@ -287,6 +287,7 @@ pub async fn run_task(
     }
 
     let agent_path = resolve_program(agent_program)?;
+    check_agent_command_line(&agent_path, objective)?;
     let adapter = CodexAdapter::new().with_program(agent_path.clone());
     let capabilities = adapter
         .detect()
@@ -1815,18 +1816,31 @@ fn capture_args(
     task_paths: &Paths,
     objective: &str,
 ) -> Result<Vec<String>, String> {
-    Ok(vec![
+    let mut args = vec![
         "__codex_capture".to_string(),
         path_string(agent_program)?,
         path_string(&task_paths.stdout_log)?,
         path_string(&task_paths.stderr_log)?,
         "--".to_string(),
-        "exec".to_string(),
-        "--json".to_string(),
-        "--approve-for-me".to_string(),
-        "--".to_string(),
-        objective.to_string(),
-    ])
+    ];
+    args.extend(codex_exec_args(objective));
+    Ok(args)
+}
+
+fn codex_exec_args(objective: &str) -> Vec<String> {
+    ["exec", "--json", "--approve-for-me", "--"]
+        .into_iter()
+        .map(str::to_string)
+        .chain(std::iter::once(objective.to_string()))
+        .collect()
+}
+
+/// Refuses an objective the operating system could not pass to Codex, before
+/// any record is written. The supervisor repeats the check for the wrapper's
+/// slightly longer command line.
+fn check_agent_command_line(agent_program: &Path, objective: &str) -> Result<(), String> {
+    orchestrator_runtime::check_command_line(agent_program, &codex_exec_args(objective))
+        .map_err(|error| error.to_string())
 }
 
 fn path_string(path: &Path) -> Result<String, String> {
@@ -2037,6 +2051,28 @@ fn capture_stream<R: Read, W: Write>(mut input: R, mut output: W, mut log: File)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named() {
+        // Over the per-argument limit on Unix and the whole-line limit on
+        // Windows, so this holds on every platform.
+        let objective = "x".repeat(200_000);
+        let message = check_agent_command_line(Path::new("codex"), &objective).unwrap_err();
+        assert!(message.contains("Shorten the task objective"), "{message}");
+        assert!(message.contains("argument 5"), "{message}");
+        assert!(
+            check_agent_command_line(Path::new("codex"), "fix the parser").is_ok(),
+            "a normal objective must pass"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_65000_character_objective_is_refused_before_any_record_on_windows() {
+        let objective = "y".repeat(65_000);
+        let message = check_agent_command_line(Path::new("codex.exe"), &objective).unwrap_err();
+        assert!(message.contains("32767"), "{message}");
+    }
 
     fn register_test_owner(
         store: &SqliteStore,

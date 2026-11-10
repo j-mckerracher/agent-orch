@@ -39,20 +39,21 @@ pub struct SqliteStore {
 impl SqliteStore {
     /// Opens a database file, creates its parent if needed, and applies migrations.
     ///
-    /// On Unix a new parent directory is `0700` and the database, `-wal` and
-    /// `-shm` files are `0600`; existing files lose group and other access.
+    /// A new parent directory is owner-only and so are the database, `-wal`
+    /// and `-shm` files (0700/0600 on Unix, a protected owner-only DACL on
+    /// Windows); existing files lose other users' access.
     pub fn new(path: &Path) -> Result<Self, StoreError> {
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
         {
             if !parent.exists() {
-                crate::private::create_private_dir(parent)?;
+                orchestrator_private_fs::create_private_dir(parent)?;
             }
         }
         // SQLite gives `-wal` and `-shm` the main file's mode, so the file must
         // be private before the first connection creates them.
-        crate::private::create_private_file(path)?;
+        orchestrator_private_fs::create_private_file(path)?;
 
         let path = path.to_path_buf();
         let (sender, receiver) = mpsc::sync_channel(0);
@@ -68,7 +69,7 @@ impl SqliteStore {
         {
             Ok(()) => {
                 for sidecar in &sidecars {
-                    crate::private::restrict_to_owner(sidecar)?;
+                    orchestrator_private_fs::restrict_to_owner(sidecar)?;
                 }
                 Ok(Self {
                     sender: Some(sender),

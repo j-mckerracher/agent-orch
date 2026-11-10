@@ -32,10 +32,10 @@ pub struct DataDirectoryLock {
 }
 
 impl DataDirectoryLock {
-    /// Creates `data_dir` (owner-only on Unix; an existing one loses group and
-    /// other access) and acquires its exclusive process lock.
+    /// Creates `data_dir` owner-only (an existing one loses other users'
+    /// access) and acquires its exclusive process lock.
     pub fn acquire(data_dir: impl AsRef<Path>) -> Result<Self, DataDirectoryLockError> {
-        crate::private::create_private_dir(data_dir.as_ref())?;
+        orchestrator_private_fs::create_private_dir(data_dir.as_ref())?;
         let path = data_dir.as_ref().join(LOCK_FILE_NAME);
         let pid = std::process::id();
         let start_identity = process_start_identity(pid)?

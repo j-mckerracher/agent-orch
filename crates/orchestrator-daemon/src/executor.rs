@@ -570,41 +570,55 @@ fn supervise_inner(inner: &Inner, job: &Job) {
     }
 }
 
-async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
-    let (program, args, detect) = match job.agent.as_str() {
-        CODEX_AGENT => {
-            let program = inner
-                .config
+/// The program and argument vector the daemon launches for `agent`, or `None`
+/// when the agent has no daemon launcher. Shared by the launch and by the
+/// submit-time command-line check so the two cannot disagree.
+pub(crate) fn agent_command(
+    config: &ExecutorConfig,
+    agent: &str,
+    objective: &str,
+) -> Option<(PathBuf, Vec<String>)> {
+    match agent {
+        CODEX_AGENT => Some((
+            config
                 .codex_program
                 .clone()
-                .unwrap_or_else(|| PathBuf::from("codex"));
-            let args = ["exec", "--json", "--approve-for-me", "--"]
+                .unwrap_or_else(|| PathBuf::from("codex")),
+            ["exec", "--json", "--approve-for-me", "--"]
                 .into_iter()
                 .map(str::to_owned)
-                .chain([job.objective.clone()])
-                .collect::<Vec<_>>();
+                .chain([objective.to_owned()])
+                .collect(),
+        )),
+        CLAUDE_AGENT => Some((
+            config
+                .claude_program
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("claude")),
+            ClaudeCodeAdapter::args_for_prompt(objective),
+        )),
+        _ => None,
+    }
+}
+
+async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+    let Some((program, args)) = agent_command(&inner.config, &job.agent, &job.objective) else {
+        return Err(format!("agent {:?} has no daemon launcher", job.agent));
+    };
+    let detect = match job.agent.as_str() {
+        CODEX_AGENT => {
             let adapter = CodexAdapter::new().with_program(program.clone());
             let caps = adapter.detect().await.map_err(|error| error.to_string())?;
             if !(caps.streaming && caps.structured_output && caps.cancellation) {
                 return Err("codex lacks streaming, structured output or cancellation".into());
             }
-            (program, args, AdapterChoice::Codex(adapter))
+            AdapterChoice::Codex(adapter)
         }
-        CLAUDE_AGENT => {
-            let program = inner
-                .config
-                .claude_program
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("claude"));
+        _ => {
             let adapter = ClaudeCodeAdapter::new().with_program(program.clone());
             adapter.detect().await.map_err(|error| error.to_string())?;
-            (
-                program,
-                ClaudeCodeAdapter::args_for_prompt(&job.objective),
-                AdapterChoice::Claude(adapter),
-            )
+            AdapterChoice::Claude(adapter)
         }
-        other => return Err(format!("agent {other:?} has no daemon launcher")),
     };
     let request = AgentLaunchRequest {
         program,
