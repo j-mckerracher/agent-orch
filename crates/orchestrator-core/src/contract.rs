@@ -369,6 +369,8 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
 mod tests {
     use super::*;
 
+    type Mutation = Box<dyn Fn(&mut TaskContract)>;
+
     fn contract() -> TaskContract {
         TaskContract {
             id: "t1".into(),
@@ -597,7 +599,7 @@ mod tests {
     #[test]
     fn contract_fields_over_their_limit_are_rejected() {
         use limits::*;
-        let cases: Vec<(&str, Box<dyn Fn(&mut TaskContract)>)> = vec![
+        let cases: Vec<(&str, Mutation)> = vec![
             (
                 "objective",
                 Box::new(|c| c.objective = "o".repeat(MAX_OBJECTIVE_BYTES + 1)),
@@ -662,7 +664,7 @@ mod tests {
 
     #[test]
     fn contract_text_with_a_nul_byte_is_rejected() {
-        let cases: Vec<(&str, Box<dyn Fn(&mut TaskContract)>)> = vec![
+        let cases: Vec<(&str, Mutation)> = vec![
             ("objective", Box::new(|c| c.objective = "fix\0it".into())),
             ("agent", Box::new(|c| c.agent = "co\0dex".into())),
             ("project_id", Box::new(|c| c.project_id = "/repo\0x".into())),
