@@ -40,6 +40,7 @@ fn task_with_sessions(api: &DaemonApi, sessions: &[(&str, &str)]) {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();

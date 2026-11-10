@@ -488,6 +488,7 @@ mod tests {
                 autonomy: AutonomyPolicy::WorkspaceWrites,
                 max_retries: 1,
                 max_repairs: 1,
+                model_selection: None,
             })
             .unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();

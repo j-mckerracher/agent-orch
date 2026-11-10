@@ -832,6 +832,7 @@ mod tests {
                     autonomy: AutonomyPolicy::WorkspaceWrites,
                     max_retries: 0,
                     max_repairs: 0,
+                    model_selection: None,
                 };
                 sqlx::query(
                     "INSERT INTO tasks (id, project_id, parent_id, state, contract_json, version) \
