@@ -6,7 +6,7 @@
 // requested real-signing check on an unsigned artifact is a FAIL, not a skip.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export const APP_NAME = "Agent Orchestrator";
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -106,13 +106,82 @@ export const checkAuthenticode = (facts) => {
 
 // ---- flows ----
 
-const smokeArgs = (ctx, oldDaemon, oldVersion, newDaemon) => [
-  "--new-daemon", newDaemon, ...(oldDaemon ? ["--old-daemon", oldDaemon, "--expect-old-version", oldVersion] : []),
-  "--work", ctx.smokeWork, "--expect-new-version", ctx.version,
-];
+export const SMOKE_STEP_COUNT = 12;
+const SMOKE_RESULT_SCHEMA = 1;
+
+const sameFile = (a, b) => typeof a === "string" && typeof b === "string" && resolve(a) === resolve(b);
+
+/**
+ * Problems with the structured result `release_smoke --out` writes. The exit code alone proves
+ * nothing: a stub that exits 0 must fail here. `oldDaemon` is null for a reinstall.
+ */
+export const validateSmokeResult = (result, { version, oldVersion, oldDaemon, newDaemon }) => {
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return ["the smoke result is not a JSON object"];
+  const problems = [];
+  if (result.schema !== SMOKE_RESULT_SCHEMA) problems.push(`result schema is ${result.schema}, expected ${SMOKE_RESULT_SCHEMA}`);
+  if (result.result !== "PASS") problems.push(`result is ${JSON.stringify(result.result)}, expected "PASS"`);
+  const numbers = Array.isArray(result.steps) ? result.steps.map((s) => s?.n) : [];
+  if (numbers.join() !== Array.from({ length: SMOKE_STEP_COUNT }, (_, i) => i + 1).join()) problems.push(`steps ${JSON.stringify(numbers)} are not 1..${SMOKE_STEP_COUNT} in order`);
+  const versions = result.daemon_versions;
+  if (!Array.isArray(versions) || versions.length !== 2 || versions.some((v) => typeof v !== "string")) problems.push("daemon_versions is not two strings");
+  else {
+    if (versions[1] !== version) problems.push(`new daemon version is ${versions[1]}, expected ${version}`);
+    if (versions[0] !== (oldDaemon ? oldVersion : versions[1])) problems.push(`old daemon version is ${versions[0]}, expected ${oldDaemon ? oldVersion : "the new version (reinstall)"}`);
+    if (result.same_version !== (versions[0] === versions[1])) problems.push("same_version disagrees with daemon_versions");
+  }
+  if (result.upgrade_requested !== Boolean(oldDaemon)) problems.push(`upgrade_requested is ${result.upgrade_requested}, expected ${Boolean(oldDaemon)}`);
+  if (!sameFile(result.new_daemon, newDaemon)) problems.push(`the smoke ran ${result.new_daemon}, not the packaged sidecar ${newDaemon}`);
+  if (oldDaemon && !sameFile(result.old_daemon, oldDaemon)) problems.push(`the smoke ran ${result.old_daemon} as the old daemon, expected ${oldDaemon}`);
+  return problems;
+};
+
+/**
+ * "upgrade" only when the two builds differ in declared version AND in bytes. A same-version or
+ * byte-identical pair is a reinstall rehearsal, never an N-1 upgrade; unknown hashes prove nothing.
+ */
+export const classifyUpgrade = ({ oldInfo, newInfo, oldHash, newHash }) => {
+  if (!oldInfo) return { kind: "none", why: "no --old-artifact-dir was given, so no older build ran" };
+  if (oldInfo.version === newInfo.version) return { kind: "same-version", why: `old and new are both version ${newInfo.version}` };
+  if (!oldHash || !newHash) return { kind: "unverified", why: "the daemon sidecar hashes could not be compared" };
+  if (oldHash === newHash) return { kind: "same-version", why: "the old and new daemon sidecars are byte-identical" };
+  return { kind: "upgrade", why: `${oldInfo.version} -> ${newInfo.version}` };
+};
+
+const smokeSuffix = { upgrade: " (upgrade: old sidecar then new sidecar on one data directory)", none: " (reinstall; NO upgrade)" };
+const SAME_VERSION_LABEL = " (SAME-VERSION rerun; NOT an upgrade)";
+
+/** Runs release_smoke and accepts it only with exit 0 AND a valid structured result. */
+const runSmoke = (steps, ctx, { oldDaemon, oldVersion, newDaemon, kind }) => {
+  const out = ctx.smokeOut;
+  const args = [
+    "--new-daemon", newDaemon, ...(oldDaemon ? ["--old-daemon", oldDaemon, "--expect-old-version", oldVersion] : []),
+    "--work", ctx.smokeWork, "--expect-new-version", ctx.version, "--out", out,
+  ];
+  const label = `daemon smoke against the packaged sidecar${smokeSuffix[kind] ?? SAME_VERSION_LABEL}`;
+  const smoke = ctx.run(ctx.smokeBin, args, { stream: true });
+  const problems = [];
+  if (smoke.code !== 0) {
+    problems.push(`release_smoke exited ${smoke.code}${smoke.signal ? ` (signal ${smoke.signal})` : ""}${smoke.error ? `: ${smoke.error}` : ""}`);
+  } else {
+    const text = ctx.readText(out);
+    let parsed = null;
+    if (text === null) problems.push(`release_smoke exited 0 but wrote no structured result at ${out}`);
+    else {
+      try { parsed = JSON.parse(text); } catch (error) { problems.push(`the smoke result is not valid JSON: ${error.message}`); }
+      if (parsed !== null) problems.push(...validateSmokeResult(parsed, { version: ctx.version, oldVersion, oldDaemon, newDaemon }));
+    }
+  }
+  // A failed smoke keeps its work directory, and stops its fake agents; the path is the evidence.
+  steps.check(label, problems, `${ctx.smokeWork}${problems.length ? " (kept for inspection)" : ""}`);
+};
+
+const reportUpgrade = (steps, upgrade) => {
+  steps.upgrade = upgrade.kind;
+  if (upgrade.kind !== "upgrade") steps.add("UNPROVEN", "upgrade from a previous release (N-1 to N)", upgrade.why);
+};
 
 class Steps {
-  constructor() { this.items = []; }
+  constructor() { this.items = []; this.upgrade = "none"; }
   add(verdict, name, detail = "") {
     this.items.push({ verdict, name, detail });
     console.log(`${verdict} ${name}${detail ? `: ${String(detail).split("\n")[0]}` : ""}`);
@@ -185,14 +254,16 @@ export const runMacos = (ctx) => {
   }
 
   steps.add("UNPROVEN", "Gatekeeper first-launch on a CLEAN Mac, the quarantine prompt, and launching the GUI", "needs the clean-machine runbook; this run never opens the app");
-  if (!old) steps.add("UNPROVEN", "upgrade from a previous release", "no --old-artifact-dir was given, so no older build ran");
+  const sidecar = (entry) => join(entry.app, "Contents", "MacOS", "orchestrator-daemon");
+  const upgrade = classifyUpgrade({
+    oldInfo: old?.info, newInfo: next.info, oldHash: old && ctx.fileHash(sidecar(old)), newHash: ctx.fileHash(sidecar(next)),
+  });
+  reportUpgrade(steps, upgrade);
   if (!ctx.smokeBin) {
     steps.add("UNPROVEN", "daemon smoke (install, cancel, recover, approve, reject) against the packaged sidecar", "no --smoke-bin was given");
     return steps;
   }
-  const sidecar = (entry) => join(entry.app, "Contents", "MacOS", "orchestrator-daemon");
-  const smoke = run(ctx.smokeBin, smokeArgs(ctx, old ? sidecar(old) : null, old?.info.version, sidecar(next)), { stream: true });
-  steps.check(`daemon smoke against the packaged sidecar${old ? " (upgrade: old sidecar then new sidecar on one data directory)" : " (reinstall; NO upgrade)"}`, smoke.code === 0 ? [] : [`release_smoke exited ${smoke.code}`], ctx.smokeWork);
+  runSmoke(steps, ctx, { oldDaemon: old && sidecar(old), oldVersion: old?.info.version, newDaemon: sidecar(next), kind: upgrade.kind });
   return steps;
 };
 
@@ -229,26 +300,48 @@ export const runWindows = (ctx) => {
     }
   };
 
-  if (prepared.old) install("old");
-  const oldSidecar = prepared.old ? join(ctx.work, "old-orchestrator-daemon.exe") : null;
-  if (oldSidecar) run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Copy-Item -LiteralPath '${exe("orchestrator-daemon")}' -Destination '${oldSidecar}'`]);
-  install("new");
-
-  // The smoke needs both daemon binaries at once, so the old sidecar was copied out before the upgrade overwrote it.
-  if (!ctx.smokeBin) steps.add("UNPROVEN", "daemon smoke against the installed sidecar", "no --smoke-bin was given");
+  // The real data directory (%LOCALAPPDATA%\agent-orch, see the daemon's default) gets a sentinel before the first
+  // install; neither the upgrade-over install nor the uninstall may remove it. No directory, no check: FAIL.
+  const data = ctx.userData;
+  const sentinel = { name: `install-smoke-sentinel-${ctx.nonce}.txt`, text: `install-smoke sentinel ${ctx.nonce}` };
+  let seeded = false;
+  if (!data?.root) steps.add("FAIL", "seed a sentinel file in the real user data directory (%LOCALAPPDATA%\\agent-orch)", "LOCALAPPDATA is not set, so the data-survival check cannot run");
   else {
-    const smoke = run(ctx.smokeBin, smokeArgs(ctx, oldSidecar, prepared.old?.info.version, exe("orchestrator-daemon")), { stream: true });
-    steps.check(`daemon smoke against the installed sidecar${oldSidecar ? " (upgrade)" : " (reinstall; NO upgrade)"}`, smoke.code === 0 ? [] : [`release_smoke exited ${smoke.code}`], ctx.smokeWork);
+    try { data.seed(sentinel.name, sentinel.text); seeded = true; } catch (error) { steps.add("FAIL", `seed a sentinel file in ${data.root}`, error.message); }
+    if (seeded) steps.add("PASS", `seeded a sentinel file in the real user data directory`, join(data.root, sentinel.name));
   }
-  if (!prepared.old) steps.add("UNPROVEN", "upgrade from a previous release", "no --old-artifact-dir was given, so no older build ran");
+  const sentinelSurvived = (when) => steps.check(`the user data sentinel in the real data directory survived ${when}`,
+    !seeded ? ["the sentinel was not seeded"] : data.read(sentinel.name) === sentinel.text ? [] : [`${join(data.root, sentinel.name)} is missing or changed`]);
 
-  // NSIS copies its uninstaller aside and returns at once unless `_?=` pins it to the install directory.
-  const uninstall = run(exe("uninstall"), ["/S", `_?=${installDir}`]);
-  steps.check("silent uninstall", uninstall.code === 0 ? [] : [`uninstaller exited ${uninstall.code}`]);
-  steps.check("uninstall removed the app and left the user's data directory", [
-    ...(ctx.exists(exe("agent-orch-desktop")) ? ["agent-orch-desktop.exe is still installed"] : []),
-    ...(ctx.exists(ctx.smokeWork) || !ctx.smokeBin ? [] : ["the smoke data directory was deleted"]),
-  ]);
+  try {
+    if (prepared.old) install("old");
+    // The smoke needs both daemon binaries at once, so the old sidecar is copied out before the upgrade overwrites it.
+    const oldSidecar = prepared.old ? join(ctx.work, "old-orchestrator-daemon.exe") : null;
+    let oldCopied = false;
+    if (oldSidecar) {
+      const copy = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'; Copy-Item -LiteralPath '${exe("orchestrator-daemon")}' -Destination '${oldSidecar}'`]);
+      oldCopied = copy.code === 0 && ctx.exists(oldSidecar);
+      steps.check("old: copy the old sidecar out of the install directory", oldCopied ? [] : [`Copy-Item exited ${copy.code}${copy.err ? `: ${copy.err.trim()}` : ""}${copy.code === 0 ? "; the copy is not there" : ""}`], oldSidecar);
+    }
+    install("new");
+    if (prepared.old) sentinelSurvived("the upgrade-over install");
+
+    const upgrade = classifyUpgrade({
+      oldInfo: oldCopied ? prepared.old.info : null, newInfo: prepared.new.info,
+      oldHash: oldCopied ? ctx.fileHash(oldSidecar) : null, newHash: ctx.fileHash(exe("orchestrator-daemon")),
+    });
+    reportUpgrade(steps, oldSidecar && !oldCopied ? { kind: "unverified", why: "the old sidecar could not be copied out" } : upgrade);
+    if (!ctx.smokeBin) steps.add("UNPROVEN", "daemon smoke against the installed sidecar", "no --smoke-bin was given");
+    else if (oldSidecar && !oldCopied) steps.add("FAIL", "daemon smoke against the installed sidecar", "skipped: the old sidecar copy failed");
+    else runSmoke(steps, ctx, { oldDaemon: oldSidecar, oldVersion: prepared.old?.info.version, newDaemon: exe("orchestrator-daemon"), kind: upgrade.kind });
+  } finally {
+    // NSIS copies its uninstaller aside and returns at once unless `_?=` pins it to the install directory.
+    const uninstall = run(exe("uninstall"), ["/S", `_?=${installDir}`]);
+    steps.check("silent uninstall", uninstall.code === 0 ? [] : [`uninstaller exited ${uninstall.code}`]);
+    steps.check("uninstall removed the app", ctx.exists(exe("agent-orch-desktop")) ? ["agent-orch-desktop.exe is still installed"] : []);
+    sentinelSurvived("the uninstall");
+    if (seeded) data.remove(sentinel.name);
+  }
   steps.add("UNPROVEN", "SmartScreen reputation, UAC absence on a standard user, Windows Defender, and the GUI flow on a CLEAN Windows machine", "needs the clean-machine runbook");
   return steps;
 };

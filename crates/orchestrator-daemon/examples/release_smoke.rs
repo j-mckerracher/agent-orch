@@ -4,12 +4,19 @@
 //! Usage:
 //!   release_smoke --new-daemon <bin> [--old-daemon <bin>] [--work <new dir>]
 //!                 [--expect-old-version <v>] [--expect-new-version <v>]
+//!                 [--out <result.json>] [--keep-work]
 //!
 //! With `--old-daemon`, phase A runs the older binary and phase B runs the newer
 //! binary over the SAME data directory: that is the upgrade. Without it both
 //! phases run the one binary (a reinstall, not an upgrade) and the run says so.
 //! `--work` must not exist; it holds the repositories, the data directory and
-//! `daemon.log`, and is left in place so a failure can be inspected.
+//! `daemon.log`. A failed run leaves it in place for inspection and stops its fake agents; a
+//! passing run deletes it unless `--keep-work` is given.
+//!
+//! `--out` is written only after every step passed (it must not exist beforehand). It is the
+//! structured result that a caller must validate instead of trusting the exit code: `result`,
+//! `schema`, the numbered `steps`, both `daemon_start` versions, `upgrade_requested` (an
+//! `--old-daemon` was given), `same_version`, and the daemon binaries it ran.
 //!
 //! What a pass proves, over the real authenticated local transport (Unix socket
 //! or Windows named pipe), with a fake `codex` agent that this binary re-executes:
@@ -44,7 +51,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -54,7 +61,13 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// Not `AGENT_ORCH_`-prefixed: the supervisor never forwards that prefix.
 const AGENT_ROLE: &str = "RELEASE_SMOKE_AGENT_PID_FILE";
 
+const RESULT_SCHEMA: u32 = 1;
+/// The fake agent exits when this file (next to its pid file) appears, so a failed run leaves
+/// no process sleeping out the 90 s backstop.
+const AGENT_STOP_EXTENSION: &str = "stop";
+
 static LOG: OnceLock<PathBuf> = OnceLock::new();
+static STEPS: Mutex<Vec<(u32, String)>> = Mutex::new(Vec::new());
 
 fn main() {
     if let Some(pid_file) = std::env::var_os(AGENT_ROLE) {
@@ -66,13 +79,20 @@ fn main() {
             eprintln!("{message}");
             eprintln!(
                 "usage: release_smoke --new-daemon <bin> [--old-daemon <bin>] [--work <new dir>] \
-                 [--expect-old-version <v>] [--expect-new-version <v>]"
+                 [--expect-old-version <v>] [--expect-new-version <v>] [--out <result.json>] \
+                 [--keep-work]"
             );
             std::process::exit(2);
         }
     };
     install_redacting_panic_hook();
-    scenario(&options);
+    let result = scenario(&options);
+    if let Some(out) = &options.out {
+        let text = serde_json::to_string_pretty(&result).unwrap();
+        fs::write(out, format!("{text}\n")).unwrap_or_else(|error| {
+            panic!("cannot write the result file {}: {error}", out.display())
+        });
+    }
     println!("release_smoke: PASS");
 }
 
@@ -82,14 +102,21 @@ struct Options {
     work: PathBuf,
     expect_old: Option<String>,
     expect_new: Option<String>,
+    out: Option<PathBuf>,
+    keep_work: bool,
 }
 
 impl Options {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self, String> {
         let (mut new_daemon, mut old_daemon, mut work) = (None, None, None);
-        let (mut expect_old, mut expect_new) = (None, None);
+        let (mut expect_old, mut expect_new, mut out) = (None, None, None);
+        let mut keep_work = false;
         let mut args = args;
         while let Some(flag) = args.next() {
+            if flag == "--keep-work" {
+                keep_work = true;
+                continue;
+            }
             let mut value = || args.next().ok_or(format!("{flag} needs a value"));
             match flag.as_str() {
                 "--new-daemon" => new_daemon = Some(PathBuf::from(value()?)),
@@ -97,6 +124,7 @@ impl Options {
                 "--work" => work = Some(PathBuf::from(value()?)),
                 "--expect-old-version" => expect_old = Some(value()?),
                 "--expect-new-version" => expect_new = Some(value()?),
+                "--out" => out = Some(PathBuf::from(value()?)),
                 other => return Err(format!("unknown argument {other}")),
             }
         }
@@ -118,6 +146,14 @@ impl Options {
                 work.display()
             ));
         }
+        if let Some(out) = &out {
+            if out.exists() {
+                return Err(format!(
+                    "--out exists, refusing to reuse it: {}",
+                    out.display()
+                ));
+            }
+        }
         for binary in std::iter::once(&new_daemon).chain(old_daemon.as_ref()) {
             if !binary.is_file() {
                 return Err(format!("daemon binary not found: {}", binary.display()));
@@ -129,6 +165,8 @@ impl Options {
             work,
             expect_old,
             expect_new,
+            out,
+            keep_work,
         })
     }
 }
@@ -140,7 +178,7 @@ fn unix_seconds() -> u64 {
 }
 
 /// The fake agent: reports a started turn like codex, records its own pid and idles until
-/// killed (or 90 s, so a failed run cannot leave it behind for long).
+/// killed, told to stop by the stop file, or 90 s have passed.
 fn agent(pid_file: &Path) {
     if std::env::args().any(|arg| arg == "--version") {
         println!("release-smoke-fake-agent 0.0.0");
@@ -157,7 +195,11 @@ fn agent(pid_file: &Path) {
     if fs::write(&staged, std::process::id().to_string()).is_ok() {
         let _ = fs::rename(&staged, pid_file);
     }
-    thread::sleep(Duration::from_secs(90));
+    let stop = pid_file.with_extension(AGENT_STOP_EXTENSION);
+    let deadline = Instant::now() + Duration::from_secs(90);
+    while Instant::now() < deadline && !stop.exists() {
+        thread::sleep(Duration::from_millis(200));
+    }
 }
 
 fn install_redacting_panic_hook() {
@@ -187,6 +229,7 @@ fn tail(file: &Path) -> String {
 
 fn step(number: u32, text: &str) {
     println!("SMOKE {number} {text}");
+    STEPS.lock().unwrap().push((number, text.to_owned()));
 }
 
 fn until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
@@ -389,7 +432,17 @@ fn git_init(repo: &Path) {
     seed::git(repo, &["config", "core.longpaths", "true"]);
 }
 
-fn scenario(options: &Options) {
+/// Tells every fake agent to exit when the scenario ends or panics. It is declared before any
+/// daemon so it is dropped after the daemons have been killed.
+struct StopAgents(PathBuf);
+
+impl Drop for StopAgents {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.0, b"stop");
+    }
+}
+
+fn scenario(options: &Options) -> Value {
     fs::create_dir_all(&options.work).unwrap();
     // macOS temp dirs are symlinks; Windows canonical paths gain a `\\?\` prefix that does not
     // belong in pipe names, so only Unix canonicalizes.
@@ -404,6 +457,7 @@ fn scenario(options: &Options) {
         agent: std::env::current_exe().unwrap(),
         work: work.clone(),
     };
+    let _stop_agents = StopAgents(env.pid_file.with_extension(AGENT_STOP_EXTENSION));
     LOG.set(env.log.clone()).ok();
     fs::create_dir_all(&env.data).unwrap();
     println!("work directory: {}", work.display());
@@ -661,4 +715,25 @@ fn scenario(options: &Options) {
         "the IPC token was written to daemon.log"
     );
     assert!(!process_running(orphan) && !process_running(second));
+
+    let steps: Vec<Value> = STEPS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(number, text)| json!({ "n": number, "text": text }))
+        .collect();
+    let result = json!({
+        "schema": RESULT_SCHEMA,
+        "result": "PASS",
+        "steps": steps,
+        "upgrade_requested": upgrade,
+        "same_version": versions[0] == versions[1],
+        "daemon_versions": versions,
+        "old_daemon": old.display().to_string(),
+        "new_daemon": options.new_daemon.display().to_string(),
+    });
+    if !options.keep_work {
+        let _ = fs::remove_dir_all(&work);
+    }
+    result
 }

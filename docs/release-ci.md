@@ -229,11 +229,16 @@ a Unix socket). Installing the artifact is M6-04, below.
 `release.yml` runs `scripts/release/install-smoke.mjs` on the artifact it just built, after `Package`
 and before the artifact upload: it checks `SHA256SUMS`, `release-info.json`, the file name against the
 `signed` flag and the app version; extracts (macOS) or silently installs (Windows) the artifact; checks
-signatures (`--require-signed` when the build was signed); and runs the `release_smoke` example of
+signatures (`--require-signed` when the build was signed, otherwise `--allow-unsigned` plus a warning; exactly one
+of the two flags is mandatory); and runs the `release_smoke` example of
 `orchestrator-daemon` against the **installed** sidecar through install, cancellation, hard-kill recovery,
-approvals and orderly shutdown. A failure keeps the artifact from being uploaded; `install-smoke.json` is
-uploaded as `install-smoke-<platform>` either way. The Windows flow also upgrades over an existing install
-and uninstalls with `/S _?=<dir>`.
+approvals and orderly shutdown. The smoke binary's exit code is not trusted: its structured `--out` result must
+exist and validate (12 ordered steps, versions, packaged sidecar paths). A same-version run is labelled
+`SAME-VERSION rerun; NOT an upgrade`, recorded as `upgrade.kind` in `install-smoke.json`, and the N-1 to N upgrade
+is reported UNPROVEN. A failure keeps the artifact from being uploaded; `install-smoke.json` is
+uploaded as `install-smoke-<platform>` either way. The Windows flow also upgrades over an existing install,
+checks with a sentinel file in the real `%LOCALAPPDATA%\agent-orch` that neither the upgrade nor the uninstall
+removes user data (FAIL if `LOCALAPPDATA` is unset), and uninstalls with `/S _?=<dir>`.
 
 It is not a clean machine and does not open the GUI. Real signing, notarization, Gatekeeper, SmartScreen,
 a previous-release upgrade and the clean-machine procedures are **UNPROVEN** and written up with expected
