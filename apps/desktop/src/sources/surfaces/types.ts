@@ -168,10 +168,14 @@ export interface ActivitySource {
   simulateStop(taskId: string): Promise<SurfaceReceipt>;
 }
 
-// D12 -- UsageSource. No daemon data exists: the live adapter answers `unsupported`.
+// D12 -- UsageSource. The live adapter (`surfaces/usageLive.ts`) reads `usage.summary`.
 export interface UsageCoverage {
   provider: string;
-  reporting: "provider-reported" | "estimated" | "none";
+  /**
+   * How a provider's cost was reported: `partial` means only some of its sessions reported a
+   * cost; `tokens-only` means tokens were reported but no cost. Both are live-adapter values.
+   */
+  reporting: "provider-reported" | "estimated" | "partial" | "tokens-only" | "none";
 }
 export interface UsageSummary {
   windowStart: string;

@@ -37,20 +37,48 @@ const fixtureHarness: Harness = {
   },
 };
 
+/** A `usage.summary` result: one provider that reported a cost, or an empty day. */
+function usageWire(withCost: boolean) {
+  const figures = (costs: Array<{ currency: string; amount: string }>) => ({
+    input_tokens: costs.length ? 10 : null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    output_tokens: costs.length ? 5 : null,
+    reasoning_tokens: null,
+    costs,
+  });
+  const bucket = (n: number) => ({
+    sessions: n,
+    sessions_with_tokens: n,
+    sessions_with_cost: n,
+    token_status: n ? "complete" : "unknown",
+    cost_status: n ? "complete" : "unknown",
+    reported: figures(n ? [{ currency: "USD", amount: "0.5" }] : []),
+    estimated: figures([]),
+  });
+  const n = withCost ? 1 : 0;
+  return {
+    window: { start_unix_ms: 0, end_unix_ms: 86_400_000, timezone: "UTC", utc_offset_seconds: 0 },
+    totals: bucket(n),
+    providers: withCost ? [{ provider: "claude-code", ...bucket(1) }] : [],
+  };
+}
+
 const derivedHarness: Harness = {
   kind: "daemon",
   async build(scenario) {
     const fake = new FakeDaemon();
     if (scenario === "ok") populate(fake);
+    if (scenario === "ok" || scenario === "empty") fake.stub("usage.summary", usageWire(scenario === "ok"));
     if (scenario === "empty") {
       fake.stub("agents.capabilities", []);
       fake.stub("coordinator.get", { project_id: ALPHA, entries: [], more: false, next_after_sequence: 0 });
     }
     if (scenario === "unsupported") {
-      for (const method of READ_METHODS) fake.failNext(method, { code: -32601, message: "method unavailable" }, 20);
+      for (const method of [...READ_METHODS, "usage.summary"]) fake.failNext(method, { code: -32601, message: "method unavailable" }, 20);
     }
     if (scenario === "error") {
-      for (const method of READ_METHODS) fake.failNext(method, { code: -32603, message: "boom" }, 20);
+      for (const method of [...READ_METHODS, "usage.summary"]) fake.failNext(method, { code: -32603, message: "boom" }, 20);
     }
     const { surfaces, stop } = await connect(fake, scenario !== "unavailable");
     stops.push(stop);
@@ -70,9 +98,10 @@ const READS: Read[] = [
   ["D16", (b) => b.surfaces.decisions.queue()],
 ];
 
-/** The daemon has no usage or metrics data, so its adapters are `unsupported` in every scenario. */
+/** The daemon has no host metrics, so its D13 adapter is `unsupported`; D12 reads `usage.summary`. */
 function expectedStatus(kind: Kind, id: string, scenario: Scenario): string {
-  if (kind === "daemon" && (id === "D12" || id === "D13")) return "unsupported";
+  if (kind === "daemon" && id === "D13") return "unsupported";
+  if (kind === "daemon" && id === "D12" && scenario === "empty") return "ok";
   if (scenario === "ok") return "ok";
   if (scenario === "empty") return id === "D12" || id === "D13" ? "unknown" : "ok";
   if (scenario === "unsupported") return "unsupported";
@@ -88,6 +117,8 @@ function emptyCollection(id: string, data: unknown): boolean {
       return d.entries!.length === 0;
     case "D11":
       return d.running!.length === 0 && d.queued!.length === 0 && d.attention!.length === 0;
+    case "D12":
+      return (data as { coverage: unknown[] }).coverage.length === 0;
     case "D14":
       return d.providers!.length === 0;
     case "D15":

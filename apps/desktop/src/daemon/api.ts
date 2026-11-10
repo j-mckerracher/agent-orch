@@ -28,6 +28,7 @@ import type {
   WorkspaceDiff,
   WorkspaceDiffRequest,
 } from "./types";
+import type { UsageSummaryRequest } from "./usageWire";
 
 export const FIXTURE_ID_PREFIX = "fixture:";
 
@@ -149,6 +150,11 @@ export class DaemonApi {
 
   agentsCapabilities(): Promise<AgentCapabilityEntry[]> {
     return this.session.request("agents.capabilities");
+  }
+
+  /** The result is untyped wire JSON; the usage adapter validates it. */
+  usageSummary(request: UsageSummaryRequest): Promise<unknown> {
+    return this.session.request("usage.summary", request);
   }
 
   /** Records a user message; the daemon never acts on it. */

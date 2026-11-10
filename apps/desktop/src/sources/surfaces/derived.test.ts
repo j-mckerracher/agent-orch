@@ -127,14 +127,13 @@ describe("derived D11 activity", () => {
   });
 });
 
-describe("derived D12/D13 (no daemon data)", () => {
-  it("answer unsupported with daemon provenance that reads no method, even when connected", async () => {
+describe("derived D13 (no daemon data)", () => {
+  it("answers unsupported with daemon provenance that reads no method, even when connected", async () => {
     const fake = populate(new FakeDaemon());
     const s = await live(fake);
     const before = fake.calls.length;
-    for (const result of [await s.usage.usage(), await s.metrics.metrics()]) {
-      expect(result).toMatchObject({ status: "unsupported", provenance: { kind: "daemon", methods: [] } });
-    }
+    const result = await s.metrics.metrics();
+    expect(result).toMatchObject({ status: "unsupported", provenance: { kind: "daemon", methods: [] } });
     expect(fake.calls.length).toBe(before);
   });
 });

@@ -1,14 +1,14 @@
 /**
  * Daemon-derived adapters for D9-D16 (M7-03). They read only methods the
  * daemon already has: projects.list, tasks.list, approvals.list,
- * agents.capabilities, coordinator.get and coordinator.send_message. No
- * method is added.
+ * agents.capabilities, coordinator.get, coordinator.send_message and (D12,
+ * `usageLive.ts`) usage.summary. No method is added.
  *
  * Rules:
  * - This file never imports fixtures. A failed live call is `unavailable` (or
  *   `unsupported` when the daemon lacks the method) with daemon provenance; it
  *   is never answered with fixture data.
- * - Values the daemon does not record (slots, spend, host metrics, models,
+ * - Values the daemon does not record (slots, host metrics, models,
  *   objectives, priorities, deadlines) are `unsupported` or `unknown`, never
  *   zero or an invented number.
  * - `simulate*` calls reject: they exist for fixture adapters only.
@@ -21,6 +21,7 @@ import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "..
 import { basename } from "../../ui/format";
 import { countStates, notOk, observation, okResult, unsupportedValue } from "./result";
 import { createSearchSource } from "./search";
+import { createLiveUsageSource } from "./usageLive";
 import type {
   ActivitySnapshot,
   ActivitySource,
@@ -221,11 +222,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     simulateStop: () => Promise.reject(fixtureOnly("stop")),
   };
 
-  const usageProvenance = prov("D12", []);
-  const usage: UsageSource = {
-    provenance: usageProvenance,
-    usage: () => Promise.resolve(notOk(usageProvenance, "unsupported", "The daemon records no usage or spend.")),
-  };
+  const usage: UsageSource = createLiveUsageSource(connection, now);
 
   const metricsProvenance = prov("D13", []);
   const metrics: SystemMetricsSource = {
