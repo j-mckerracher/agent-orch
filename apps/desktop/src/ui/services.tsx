@@ -4,6 +4,7 @@ import type { ConnectionManager, ConnectionSnapshot } from "../daemon/connection
 import type { Store } from "../daemon/store";
 import type { Capability } from "../daemon/types";
 import type { Provenance, SourceResult, Sources } from "../sources/types";
+import type { SurfaceResult, SurfaceSources } from "../sources/surfaces/types";
 import type { DraftsStore } from "./drafts";
 import type { RouterStore } from "./router";
 
@@ -11,6 +12,8 @@ export interface Services {
   connection: ConnectionManager;
   data: AppData;
   sources: Sources;
+  /** D9-D16 operator-experience sources (M7-03): derived when a connector is bound, fixtures otherwise. */
+  surfaces: SurfaceSources;
   router: RouterStore;
   drafts: DraftsStore;
   /** False in explicit fixture demo mode: no connector, sample data only. */
@@ -91,4 +94,46 @@ export function useSource<T>(
     // The loader closes over `key`; re-running on key is the contract.
   }, [fullKey]);
   return result && result.key === fullKey ? result.value : { state: "loading" };
+}
+
+export type SurfaceState<T> = { status: "loading" } | SurfaceResult<T>;
+
+/**
+ * Loads a D9-D16 result. Same re-run rule as `useSource`: a daemon-provenance
+ * surface also re-runs when the connection generation or status changes. A
+ * rejected load becomes `unavailable` with the source's own provenance.
+ */
+export function useSurface<T>(
+  load: () => Promise<SurfaceResult<T>>,
+  key: string,
+  provenance: Provenance,
+): SurfaceState<T> {
+  const { connection } = useServices();
+  const snapshot = useStore(connection);
+  const fullKey =
+    provenance.kind === "daemon"
+      ? `${key}@${snapshot.generation}:${snapshot.status}:${snapshot.history.reason ?? ""}`
+      : key;
+  const [result, setResult] = useState<{ key: string; value: SurfaceResult<T> } | null>(null);
+  useEffect(() => {
+    let live = true;
+    load().then(
+      (value) => live && setResult({ key: fullKey, value }),
+      (error: unknown) =>
+        live &&
+        setResult({
+          key: fullKey,
+          value: {
+            status: "unavailable",
+            reason: error instanceof Error ? error.message : "source failed",
+            provenance,
+          },
+        }),
+    );
+    return () => {
+      live = false;
+    };
+    // The loader closes over `key`; re-running on key is the contract.
+  }, [fullKey]);
+  return result && result.key === fullKey ? result.value : { status: "loading" };
 }

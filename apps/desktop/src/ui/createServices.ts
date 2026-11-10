@@ -4,6 +4,9 @@ import { DaemonError } from "../daemon/errors";
 import type { DaemonConnector } from "../daemon/session";
 import { createDaemonSources } from "../sources/daemon";
 import { createFixtureSources } from "../sources/fixtures";
+import { createDerivedSurfaces } from "../sources/surfaces/derived";
+import { createFixtureSurfaces } from "../sources/surfaces/fixtures";
+import type { SurfaceSources } from "../sources/surfaces/types";
 import type { Sources } from "../sources/types";
 import { DraftsStore, type DraftStorage } from "./drafts";
 import { RouterStore, type Route } from "./router";
@@ -14,6 +17,8 @@ export interface CreateServicesOptions {
   connector?: DaemonConnector;
   /** Overrides the default: daemon adapters when a connector is supplied, fixtures otherwise. */
   sources?: Sources;
+  /** Overrides the D9-D16 default: derived adapters when a connector is supplied, fixtures otherwise. */
+  surfaces?: SurfaceSources;
   initialRoute?: Route;
   connection?: Omit<ConnectionOptions, "connector">;
   data?: AppDataOptions;
@@ -32,6 +37,7 @@ export function createServices(options: CreateServicesOptions = {}): Services {
     connection,
     data: new AppData(connection, options.data),
     sources: options.sources ?? (options.connector ? createDaemonSources(connection) : createFixtureSources()),
+    surfaces: options.surfaces ?? (options.connector ? createDerivedSurfaces(connection) : createFixtureSurfaces()),
     router: new RouterStore(options.initialRoute),
     drafts: new DraftsStore(options.draftStorage),
     bridgeBound: options.connector !== undefined,

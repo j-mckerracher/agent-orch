@@ -6,7 +6,8 @@ import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { TERMINAL_STATES, basename, pendingApprovals } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection } from "./widgets";
+import { Button } from "./theme";
+import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
   const { sources, data } = useServices();
@@ -56,13 +57,9 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
             </p>
             {realRetry ? (
               <div>
-                <button
-                  type="button"
-                  disabled={!info.available || retrying || !gate.can("tasks")}
-                  onClick={() => void retryTask()}
-                >
+                <Button disabled={!info.available || retrying || !gate.can("tasks")} onClick={() => void retryTask()}>
                   Retry task
-                </button>
+                </Button>
                 {retryNote && <p role="status">{retryNote}</p>}
                 {retryError && <ErrorNotice error={retryError} action="Retrying the task" />}
                 {retryError?.indeterminate && (
@@ -70,8 +67,7 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
                 )}
               </div>
             ) : (
-              <button
-                type="button"
+              <Button
                 disabled={!info.available}
                 onClick={() =>
                   void sources.retry
@@ -80,7 +76,7 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
                 }
               >
                 Preview retry
-              </button>
+              </Button>
             )}
           </div>
         )}
@@ -98,14 +94,14 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
               {info.cancelOutcome ? ` Cancel: ${info.cancelOutcome}.` : ""}
             </p>
             {previewId && (
-              <p>
-                <button type="button" onClick={() => void sources.execution.simulateLaunch(previewId).then(note)}>
+              <div className="ps-actions">
+                <Button onClick={() => void sources.execution.simulateLaunch(previewId).then(note)}>
                   Simulate launch
-                </button>{" "}
-                <button type="button" onClick={() => void sources.execution.simulateCancel(previewId).then(note)}>
+                </Button>
+                <Button onClick={() => void sources.execution.simulateCancel(previewId).then(note)}>
                   Simulate cancel
-                </button>
-              </p>
+                </Button>
+              </div>
             )}
           </div>
         )}
@@ -121,7 +117,7 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
             <p>
               {info.classification}: {info.reason} (phase: {info.phase})
             </p>
-            <ul>
+            <ul className="ps-steps">
               <li>Process: {info.checks.process}</li>
               <li>Workspace: {info.checks.workspace}</li>
               <li>Delivery: {info.checks.delivery}</li>
@@ -181,7 +177,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
   };
 
   return (
-    <main>
+    <main className="ps-page">
       <Crumbs
         items={[
           { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
@@ -201,27 +197,27 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
       >
         {(record) => (
           <div>
-            <p>
-              <button type="button" onClick={() => router.navigate({ name: "tasks", projectId, filter: "all" })}>
+            <div className="ps-actions">
+              <Button onClick={() => router.navigate({ name: "tasks", projectId, filter: "all" })}>
                 Back to tasks
-              </button>{" "}
+              </Button>
               {candidateApprovals.length > 0 ? (
-                <button type="button" onClick={() => router.navigate({ name: "review", projectId, taskId })}>
+                <Button variant="primary" onClick={() => router.navigate({ name: "review", projectId, taskId })}>
                   Review candidate
-                </button>
+                </Button>
               ) : (
                 <span className="muted">No pending approval for this task.</span>
               )}
-            </p>
-            <section aria-label="Task summary">
+            </div>
+            <section aria-label="Task summary" className="ps-section">
               <p>
                 <strong>{record.contract.objective}</strong>
               </p>
-              <dl>
+              <dl className="ps-facts">
                 <dt>ID</dt>
                 <dd><code>{record.contract.id}</code></dd>
                 <dt>State</dt>
-                <dd data-testid="task-state">{record.state}</dd>
+                <dd data-testid="task-state"><StateText state={record.state} /></dd>
                 <dt>Version</dt>
                 <dd>{record.version}</dd>
                 <dt>Kind / agent</dt>
@@ -237,9 +233,9 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                   {record.contract.dependencies.length === 0 && "none"}
                   {record.contract.dependencies.map((dep) =>
                     dependencyKnown(dep) ? (
-                      <button key={dep} type="button" onClick={() => router.navigate({ name: "task", projectId, taskId: dep })}>
+                      <Button key={dep} onClick={() => router.navigate({ name: "task", projectId, taskId: dep })}>
                         {dep}
-                      </button>
+                      </Button>
                     ) : (
                       <code key={dep}>{dep} (not in the returned list)</code>
                     ),
@@ -252,12 +248,12 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 </p>
               )}
             </section>
-            <section aria-label="Attempts">
+            <section aria-label="Attempts" className="ps-section">
               <h2>Attempts</h2>
               {record.attempts.length === 0 ? (
                 <p>No attempts recorded.</p>
               ) : (
-                <ul>
+                <ul className="ps-steps">
                   {record.attempts.map((attempt) => (
                     <li key={attempt.id}>
                       #{attempt.attempt_number} <code>{attempt.id}</code>: {attempt.state}
@@ -266,25 +262,25 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 </ul>
               )}
             </section>
-            <section aria-label="Audit transitions">
+            <section aria-label="Audit transitions" className="ps-section">
               <h2>Task audit transitions</h2>
               {record.events.length === 0 ? (
                 <p>None recorded.</p>
               ) : (
-                <ol>
+                <ol className="ps-steps">
                   {record.events.map((event, index) => (
                     <li key={index}>{event}</li>
                   ))}
                 </ol>
               )}
             </section>
-            <section aria-label="Sessions">
+            <section aria-label="Sessions" className="ps-section">
               <h2>Sessions</h2>
               {sessions.length === 0 ? (
                 <p>No recorded session.</p>
               ) : (
                 <div>
-                  <label>
+                  <label className="ps-field">
                     Recorded session
                     <select value={sessionId ?? ""} onChange={(event) => setChosen(event.target.value)}>
                       {sessions.map((session) => (
@@ -303,7 +299,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 </div>
               )}
             </section>
-            <section aria-label="Event timeline">
+            <section aria-label="Event timeline" className="ps-section">
               <h2>Timeline</h2>
               {sessionId === null ? (
                 <p>No session events: no session is recorded for this task.</p>
@@ -315,49 +311,50 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                   {timeline.events.length === 0 ? (
                     <p>No session events recorded.</p>
                   ) : (
-                    <table aria-label="Session events">
-                      <thead>
-                        <tr>
-                          <th>Sequence / time</th>
-                          <th>Reported kind</th>
-                          <th>Recorded payload</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {timeline.events.map((event) => (
-                          <tr key={event.sequence}>
-                            <td>
-                              {event.sequence} <span className="muted">{event.created_at}</span>
-                            </td>
-                            <td>{event.kind}</td>
-                            <td>
-                              <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-                            </td>
+                    <TableWrap>
+                      <table aria-label="Session events">
+                        <thead>
+                          <tr>
+                            <th>Sequence / time</th>
+                            <th>Reported kind</th>
+                            <th>Recorded payload</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {timeline.events.map((event) => (
+                            <tr key={event.sequence}>
+                              <td>
+                                {event.sequence} <span className="muted">{event.created_at}</span>
+                              </td>
+                              <td>{event.kind}</td>
+                              <td>
+                                <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </TableWrap>
                   )}
                   {timeline.more && (
-                    <button
-                      type="button"
+                    <Button
                       disabled={timeline.loadingMore || !gate.connected}
                       onClick={() => void data.loadTimeline(taskId, sessionId, "more")}
                     >
                       Load more session events
-                    </button>
+                    </Button>
                   )}
                 </div>
               )}
             </section>
-            <section aria-label="Cancellation">
-              <button
-                type="button"
+            <section aria-label="Cancellation" className="ps-section">
+              <Button
+                variant="danger"
                 disabled={!gate.can("tasks") || cancelling || TERMINAL_STATES.has(record.state)}
                 onClick={() => void cancel()}
               >
                 Request cancel
-              </button>
+              </Button>
               {!gate.connected && <span className="muted"> Unavailable while offline.</span>}
               {cancelNote && <p role="status">{cancelNote}</p>}
               {cancelError && <ErrorNotice error={cancelError} action="Cancelling the task" />}
@@ -378,7 +375,7 @@ export function FixtureTaskDetail({ projectId, id }: { projectId: string; id: st
   const { router, sources } = useServices();
   const preview = useSource(() => sources.execution.getPreviewTask(id), `preview:${id}`, sources.execution.provenance);
   return (
-    <main>
+    <main className="ps-page">
       <Crumbs
         items={[
           { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
@@ -399,31 +396,33 @@ export function FixtureTaskDetail({ projectId, id }: { projectId: string; id: st
             <p>
               <strong>{task.objective}</strong> — {task.state}, agent {task.agent}
             </p>
-            <ul aria-label="Preview attempts">
+            <ul aria-label="Preview attempts" className="ps-steps">
               {task.attempts.map((a) => (
                 <li key={a.id}>
                   <code>{a.id}</code>: {a.state}
                 </li>
               ))}
             </ul>
-            <ul aria-label="Preview sessions">
+            <ul aria-label="Preview sessions" className="ps-steps">
               {task.sessions.map((s) => (
                 <li key={s.id}>
                   <code>{s.id}</code>: {s.state}
                 </li>
               ))}
             </ul>
-            <table aria-label="Preview timeline">
-              <tbody>
-                {task.timeline.map((row) => (
-                  <tr key={`${row.at}-${row.kind}`}>
-                    <td>{row.at}</td>
-                    <td>{row.kind}</td>
-                    <td>{row.detail}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableWrap>
+              <table aria-label="Preview timeline">
+                <tbody>
+                  {task.timeline.map((row) => (
+                    <tr key={`${row.at}-${row.kind}`}>
+                      <td>{row.at}</td>
+                      <td>{row.kind}</td>
+                      <td>{row.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
             <PlaceholderPanels taskRef={{ origin: "fixture", id }} previewId={id} />
           </div>
         )}

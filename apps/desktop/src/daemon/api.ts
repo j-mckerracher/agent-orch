@@ -32,7 +32,7 @@ import type {
 export const FIXTURE_ID_PREFIX = "fixture:";
 
 export function isFixtureId(id: string): boolean {
-  return id.startsWith(FIXTURE_ID_PREFIX);
+  return id.trim().toLowerCase().startsWith(FIXTURE_ID_PREFIX);
 }
 
 /** Guard failures reject asynchronously, like every other API failure. */

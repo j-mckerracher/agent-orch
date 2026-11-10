@@ -88,9 +88,9 @@ describe("router", () => {
     expect(parseRoute(formatRoute(route))).toEqual(route);
   });
 
-  it("falls back to the project list for an unknown hash", () => {
-    expect(parseRoute("#/nonsense")).toEqual({ name: "projects" });
-    expect(parseRoute("")).toEqual({ name: "projects" });
+  it("falls back to the workspace for an empty or unknown hash", () => {
+    expect(parseRoute("#/nonsense")).toEqual({ name: "global", view: "workspace" });
+    expect(parseRoute("")).toEqual({ name: "global", view: "workspace" });
   });
 
   it("falls back to the project list for a malformed percent-escape instead of throwing", () => {
