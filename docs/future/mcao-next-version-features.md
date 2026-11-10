@@ -2,6 +2,8 @@
 
 Status: **Deferred — do not start during the current implementation.** Updated 2026-11-09 at the user's direction. Finish and accept the current version under the existing board and [technical implementation plan](/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/docs/technical-implementation-plan.md). This document records future intent; it does not change current tasks, priorities, dependencies, ownership, or acceptance criteria. Do not dispatch work from it now.
 
+M7-00 status note (decision D-1): the deferral above is superseded only for the UI shell and surfaces that show existing daemon data. That UI work is governed by the M7 board items and by [`docs/ui/wireframe.md`](../ui/wireframe.md) (section "M7 revision (M7-00)"). The OMP migration, the model/provider catalog, and every other feature in this document remain deferred.
+
 ## User direction
 
 After the planned version is implemented and running, use **Oh My Pi (OMP)** as the agent harness for the orchestrator and its workers. Prefer OMP's RPC interface so the orchestrator can submit work, observe workers, send steering and follow-up messages, and cancel work. Transition away from other agent harnesses only during the later migration, with a plan for existing sessions and history.
