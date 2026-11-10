@@ -42,10 +42,11 @@ pub enum Capability {
     Coordinator,
     Review,
     Host,
+    Queue,
 }
 
 impl Capability {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -58,6 +59,7 @@ impl Capability {
         Self::Coordinator,
         Self::Review,
         Self::Host,
+        Self::Queue,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -74,6 +76,7 @@ impl Capability {
             Self::Coordinator => "coordinator",
             Self::Review => "review",
             Self::Host => "host",
+            Self::Queue => "queue",
         }
     }
 

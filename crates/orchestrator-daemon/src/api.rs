@@ -218,6 +218,7 @@ impl RpcHandler for DaemonApi {
             Capability::Coordinator,
             Capability::Review,
             Capability::Host,
+            Capability::Queue,
         ]
     }
 
@@ -245,6 +246,7 @@ impl RpcHandler for DaemonApi {
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
             "host.metrics" => self.host_metrics(params),
+            "queue.snapshot" => self.queue_snapshot(params),
             _ => Err(RpcError::InvalidParams),
         }
     }
@@ -1119,9 +1121,15 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
 mod coordinator;
 #[path = "api_host.rs"]
 mod host;
+#[path = "api_queue.rs"]
+mod queue;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+
+#[cfg(test)]
+#[path = "api_queue_tests.rs"]
+mod queue_tests;
 
 #[cfg(test)]
 #[path = "api_review_tests.rs"]

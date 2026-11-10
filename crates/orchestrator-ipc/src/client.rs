@@ -247,6 +247,11 @@ impl Client {
         self.call_feature(Capability::Agents, "agents.capabilities", Value::Null)
     }
 
+    /// Read-only scheduler capacity and queue view; see `docs/queue-snapshot.md`.
+    pub fn queue_snapshot(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Queue, "queue.snapshot", Value::Null)
+    }
+
     pub fn workspaces_diff(
         &mut self,
         task_id: &str,

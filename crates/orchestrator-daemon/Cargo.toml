@@ -29,3 +29,9 @@ tempfile = "=3.27.0"
 [[test]]
 name = "lifecycle"
 harness = false
+
+# Same re-exec pattern as `lifecycle`; proves `queue.snapshot` over the platform
+# transport with two simultaneous tasks at the default 2/2 limits.
+[[test]]
+name = "queue_snapshot"
+harness = false

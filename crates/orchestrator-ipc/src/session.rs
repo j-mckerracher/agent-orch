@@ -387,6 +387,7 @@ fn method_capability(method: &str) -> Option<Capability> {
             Some(Capability::Review)
         }
         "host.metrics" => Some(Capability::Host),
+        "queue.snapshot" => Some(Capability::Queue),
         _ => None,
     }
 }
