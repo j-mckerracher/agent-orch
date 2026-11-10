@@ -1,7 +1,7 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { formatRoute } from "../router";
 import { useServices, useStore } from "../services";
-import { taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "../views/workstreams/model";
+import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "../views/workstreams/model";
 import { Badge } from "../theme";
 import { PlaceholderBadge } from "../widgets";
 import "../views/workstreams/workstreams.css";
@@ -182,7 +182,7 @@ export function WorkstreamTree() {
                 aria-setsize={groups.length}
                 aria-posinset={index + 1}
                 aria-expanded={groupOpen}
-                aria-label={`Workstream ${index + 1} of ${groups.length}: ${group.title}, ${group.tasks.length} tasks`}
+                aria-label={`Workstream ${index + 1} of ${groups.length}: ${group.title}, ${taskCount(group.tasks.length)}`}
                 tabIndex={tabKey === key ? 0 : -1}
                 data-key={key}
                 ref={(node) => {

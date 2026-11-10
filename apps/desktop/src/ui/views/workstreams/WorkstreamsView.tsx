@@ -7,7 +7,8 @@ import { NavLink } from "../../shell/NavLink";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
 import { PlaceholderBadge, SimulatedReceipts } from "../../widgets";
 import { DependencyGraph } from "./DependencyGraph";
-import { taskLabelOf, useWorkstreamModel, type WsGroup } from "./model";
+import { useReviewEvidence } from "./evidence";
+import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup } from "./model";
 import { STATE_TONE } from "./tone";
 import "./workstreams.css";
 
@@ -98,7 +99,12 @@ export function WorkstreamsView() {
               aria-describedby={fixture ? undefined : reasonId}
             />
           </label>
-          <Button type="submit" variant="primary" disabled={!fixture || title.trim() === ""}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!fixture || title.trim() === ""}
+            aria-describedby={fixture ? undefined : reasonId}
+          >
             {fixture ? "Create workstream (simulated)" : "Create workstream"}
           </Button>
           {!fixture && (
@@ -153,7 +159,7 @@ export function WorkstreamsView() {
                       <span className="ws-item-title">
                         {index + 1}. {group.title}
                       </span>
-                      <small>{group.tasks.length} tasks</small>
+                      <small>{taskCount(group.tasks.length)}</small>
                     </button>
                   </li>
                 ))}
@@ -202,6 +208,7 @@ function Detail({
   reasonId: string;
 }) {
   const decision = group.tasks.find((task) => task.pendingDecision);
+  const evidence = useReviewEvidence(group.tasks, !fixture);
   const objective = group.objective;
   const gates = objective.status === "ok" ? objective.value.gates : [];
   return (
@@ -233,7 +240,7 @@ function Detail({
         )}
         <p className="ws-tags">
           <Badge>Project: {group.projectIds.map(basename).join(", ")}</Badge>{" "}
-          <Badge>{group.tasks.length} tasks</Badge>{" "}
+          <Badge>{taskCount(group.tasks.length)}</Badge>{" "}
           {TASK_STATES.filter((state) => group.counts[state] > 0).map((state) => (
             <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
               {group.counts[state]} {state}
@@ -311,7 +318,7 @@ function Detail({
                       <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>
                     </td>
                     <td>{assignment(task)}</td>
-                    <td>{task.requiredEvidence}</td>
+                    <td>{evidence.get(task.id) ?? task.requiredEvidence}</td>
                   </tr>
                 ))}
               </tbody>

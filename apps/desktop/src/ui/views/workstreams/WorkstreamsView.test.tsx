@@ -63,7 +63,7 @@ describe("live data", () => {
     const groups = level(1);
     expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
       "Workstream 1 of 2: alpha, 2 tasks",
-      "Workstream 2 of 2: beta, 1 tasks",
+      "Workstream 2 of 2: beta, 1 task",
     ]);
     expect(screen.getAllByText("Grouped by project", { exact: false }).length).toBeGreaterThanOrEqual(2);
     const mine = [screen.getByTestId("workstream-tree"), screen.getByTestId("workstreams-view")];
@@ -134,7 +134,55 @@ describe("live data", () => {
       expect(reason && document.getElementById(reason)?.textContent).toMatch(/Disabled|daemon/);
     }
     expect(screen.getByRole("button", { name: "Create workstream" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create workstream" })).toHaveAccessibleDescription(
+      /daemon cannot create workstreams/,
+    );
     expect(screen.getByText(/daemon cannot create workstreams/)).toBeVisible();
+  });
+
+  it("pluralises task counts in the list and the detail badge", async () => {
+    const { user } = await mount(daemon());
+    await screen.findAllByTestId("task-row");
+    expect(screen.getByRole("button", { name: /2\. beta/ })).toHaveTextContent("1 task");
+    expect(screen.getByRole("button", { name: /2\. beta/ })).not.toHaveTextContent("1 tasks");
+    expect(screen.getByRole("button", { name: /1\. alpha/ })).toHaveTextContent("2 tasks");
+    await user.click(screen.getByRole("button", { name: /2\. beta/ }));
+    expect(within(screen.getByTestId("ws-detail")).getByText("1 task")).toBeInTheDocument();
+  });
+
+  it("reads required evidence from review.evidence for tasks that may hold a candidate", async () => {
+    const fake = daemon();
+    fake.stub("review.evidence", (params: Record<string, unknown>) => ({
+      task_id: params.task_id,
+      project_id: A,
+      state: "current",
+      reasons: [],
+      review_state: "not_requested",
+      decision_ready: false,
+      approval: null,
+      action: null,
+      digest_relationship: "unavailable",
+      candidate: { commit: "1234567890abcdef", source: "workspace", workspace_head: null },
+      workspace: null,
+      verification: [{ id: "v1", status: "passed", commit: "1234567890abcdef", started_at_ms: null, finished_at_ms: null, matches_candidate: true, details: null, details_truncated: false }],
+      artifacts: [],
+      snapshot: null,
+      change_request: null,
+    }));
+    await mount(fake);
+    const rows = await screen.findAllByTestId("task-row");
+    await waitFor(() => expect(rows[1]).toHaveTextContent("Approval request for candidate 12345678"));
+    expect(rows[1]).not.toHaveTextContent("Candidate from the running attempt");
+    expect(rows[0]).toHaveTextContent("None: task succeeded");
+    expect(fake.callsTo("review.evidence").map((call) => (call.params as { task_id: string }).task_id)).toEqual(["a2"]);
+  });
+
+  it("keeps the state-derived evidence when review.evidence is unavailable", async () => {
+    const fake = daemon();
+    await mount(fake);
+    const rows = await screen.findAllByTestId("task-row");
+    await waitFor(() => expect(fake.callsTo("review.evidence")).toHaveLength(1));
+    expect(rows[1]).toHaveTextContent("Candidate from the running attempt");
   });
 
   it("turns Resolve contract decision into a review link when an approval is pending", async () => {

@@ -62,6 +62,11 @@ export type WsModel =
 
 const NO_OBJECTIVE = "The daemon records no objective or revision for a project (interim grouping, decision D-4).";
 
+/** "1 task", "2 tasks". */
+export function taskCount(count: number): string {
+  return `${count} ${count === 1 ? "task" : "tasks"}`;
+}
+
 /** A task's display name: its objective, or its id when the objective is blank. */
 export function taskLabelOf(task: Pick<WsTask, "id" | "objective">): string {
   return task.objective.trim() === "" ? task.id : task.objective;
@@ -74,8 +79,9 @@ function approvalKind(approval: Approval): string {
 
 /**
  * The next evidence a task needs, derived only from its state, its predecessors and its
- * pending approvals. `review.evidence` is not fetched per task, so a candidate's evidence
- * detail stays on the review screen. `approvals === null` means the list is not loaded.
+ * pending approvals. It is the fallback text: the view refines it with `review.evidence`
+ * for tasks that may hold a candidate (see `evidence.ts`). `approvals === null` means the
+ * list is not loaded.
  */
 export function requiredEvidence(
   task: { id: string; state: TaskState; dependencies: readonly string[] },
