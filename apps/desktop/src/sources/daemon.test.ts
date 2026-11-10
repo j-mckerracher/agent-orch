@@ -40,6 +40,17 @@ describe("daemon-backed D1-D6 adapters", () => {
     expect(sources.recovery.provenance.kind).toBe("fixture");
   });
 
+  it("D3 reports recovery as unavailable for real tasks and fabricates no per-task facts", async () => {
+    const { sources } = await setup(new FakeDaemon());
+    for (const state of ["Queued", "Running", "Failed"] as const) {
+      const result = await sources.recovery.recoveryFor({ origin: "real", taskId: "t1", state });
+      expect(result).toEqual({
+        state: "unavailable",
+        reason: expect.stringContaining("the daemon exposes no recovery status yet"),
+      });
+    }
+  });
+
   it("maps agents.capabilities for D1 and derives D2 availability from the same probe", async () => {
     const fake = new FakeDaemon();
     fake.stub("agents.capabilities", [

@@ -198,6 +198,41 @@ describe("shipped app wiring", () => {
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
   });
 
+  it("native S6 ignores ?fixture=1 on the review route and never renders the fixture daemon", async () => {
+    const fake = new FakeDaemon();
+    fake.approvals = [mkApproval("a1", "t1")];
+    const host = new FakeHost(fake);
+    const { services } = bootServices(tauriWindow("#/project/p1/review/t1?fixture=1"), {
+      nativeConnector: createTauriConnector(host),
+      connection: FAST,
+      renderReview: (props) => <ReviewRoute {...props} />,
+    });
+    expect(services.bridgeBound).toBe(true);
+    render(<App services={services} />);
+    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list on the daemon");
+    expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
+    expect(screen.queryByText(/PLACEHOLDER DATA — fixture/i)).toBeNull();
+  });
+
+  it("native task detail shows recovery as unavailable, never canned fixture facts", async () => {
+    const fake = new FakeDaemon();
+    fake.projects = [{ id: "p1", repo_path: "/work/repo", created_at: "2026-01-01T00:00:00Z" } as never];
+    fake.tasks = [mkTask("t1", "p1", { state: "Running" })];
+    const host = new FakeHost(fake);
+    const { services } = bootServices(tauriWindow("#/project/p1/task/t1"), {
+      nativeConnector: createTauriConnector(host),
+      connection: FAST,
+    });
+    render(<App services={services} />);
+    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    const region = await screen.findByRole("region", { name: "Recovery classification (placeholder)" });
+    await waitFor(() => expect(region).toHaveTextContent(/Unavailable: the daemon exposes no recovery status yet/));
+    expect(region).toHaveTextContent("unknown");
+    expect(region).toHaveTextContent("PLACEHOLDER DATA (D3)");
+    expect(region).not.toHaveTextContent(/worktree present|no delivery recorded|reconciling/);
+  });
+
   it("native S6 shows the live failure instead of falling back to fixture data", async () => {
     const fake = new FakeDaemon();
     fake.failNext("approvals.list", { code: -32603, message: "store busy" }, 5);

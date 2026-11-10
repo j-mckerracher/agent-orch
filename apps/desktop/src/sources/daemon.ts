@@ -1,8 +1,9 @@
 /**
  * Daemon-backed adapters for D1, D2, D4, D5 and D6 (M5-02b, M5-02c).
  *
- * D3 (recovery status) has no daemon RPC and stays a fixture adapter, so
- * {@link createDaemonSources} takes it from the fixture set. Every result here
+ * D3 (recovery status) has no daemon RPC. It stays a labelled placeholder that
+ * reports "not available" for every task: it never serves fixture recovery
+ * facts for real tasks. Every other result here
  * carries `provenance.kind === "daemon"`; a disconnected or un-negotiated
  * capability is `unavailable`, never an empty list. Nothing in this file mints
  * a `fixture:` id or fabricates data.
@@ -16,7 +17,6 @@ import type {
   CoordinatorPage,
   TaskRecord,
 } from "../daemon/types";
-import { fixtureRecovery } from "./fixtures";
 import type {
   AgentCapabilitiesSource,
   AgentCapability,
@@ -29,6 +29,7 @@ import type {
   JournalIdentitySource,
   ProposedTask,
   Provenance,
+  RecoveryStatusSource,
   RetryAvailability,
   SourceId,
   SourceResult,
@@ -297,7 +298,17 @@ export function createDaemonSources(connection: ConnectionManager, now: () => nu
       }),
   };
 
-  return { agents, execution, recovery: fixtureRecovery(), retry, coordinator, journal };
+  const recovery: RecoveryStatusSource = {
+    provenance: { kind: "fixture", id: "D3", fixture: "recovery-unavailable" },
+    recoveryFor: () =>
+      Promise.resolve({
+        state: "unavailable",
+        reason:
+          "the daemon exposes no recovery status yet. This task's process, workspace and delivery state are unknown; do not read the absence of a warning as safe.",
+      }),
+  };
+
+  return { agents, execution, recovery, retry, coordinator, journal };
 }
 
 function fixtureOnly(what: string): DaemonError {

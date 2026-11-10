@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 pub const DAEMON_LOG: &str = "daemon.log";
+const DAEMON_LOG_ROTATED: &str = "daemon.log.1";
+/// Largest `daemon.log` carried into a new launch; a bigger one becomes `daemon.log.1`.
+pub const DAEMON_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Resolves the data directory the same way the daemon does, plus an
 /// `AGENT_ORCH_DATA_DIR` override. The host always passes the resolved path to
@@ -43,9 +46,11 @@ pub fn daemon_program() -> Option<PathBuf> {
 }
 
 /// Starts the daemon detached from this process, with its output appended to
-/// `<data dir>/daemon.log`.
+/// `<data dir>/daemon.log`. The log is rotated once at launch when it has grown
+/// past `DAEMON_LOG_MAX_BYTES`, so it keeps at most about two generations.
 pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
     create_private_dir(data_dir)?;
+    rotate_log(data_dir);
     let log = OpenOptions::new()
         .create(true)
         .append(true)
@@ -59,6 +64,15 @@ pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
         .stderr(log);
     detach(&mut command);
     command.spawn()
+}
+
+/// Best effort: a failed rotation only leaves the log growing as before.
+fn rotate_log(data_dir: &Path) {
+    let log = data_dir.join(DAEMON_LOG);
+    let oversized = fs::metadata(&log).is_ok_and(|meta| meta.len() > DAEMON_LOG_MAX_BYTES);
+    if oversized {
+        let _ = fs::rename(&log, data_dir.join(DAEMON_LOG_ROTATED));
+    }
 }
 
 fn create_private_dir(path: &Path) -> std::io::Result<()> {
@@ -82,4 +96,32 @@ fn detach(command: &mut Command) {
         command,
         DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn an_oversized_log_is_rotated_and_a_small_one_is_kept() {
+        let dir = TempDir::new().unwrap();
+        let log = dir.path().join(DAEMON_LOG);
+        let rotated = dir.path().join(DAEMON_LOG_ROTATED);
+
+        fs::write(&log, b"small").unwrap();
+        rotate_log(dir.path());
+        assert!(log.is_file() && !rotated.exists());
+
+        fs::write(&log, vec![b'x'; DAEMON_LOG_MAX_BYTES as usize + 1]).unwrap();
+        rotate_log(dir.path());
+        assert!(!log.exists());
+        assert_eq!(
+            fs::metadata(&rotated).unwrap().len(),
+            DAEMON_LOG_MAX_BYTES + 1
+        );
+
+        rotate_log(dir.path());
+        assert!(!log.exists(), "a missing log is not an error");
+    }
 }
