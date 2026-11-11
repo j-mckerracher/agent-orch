@@ -118,6 +118,7 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
     if (result.status !== "ok") return;
     expect(result.data.reported.status).toBe("unknown");
     expect(result.data.estimated.status).toBe("unknown");
+    expect(result.data.priceTable).toMatchObject({ basis: "list_price_standard_tier" });
     expect(result.data.budget.status).toBe("unsupported");
     expect(result.data.coverage).toEqual([]);
     expect(result.data.currency).toBe("unknown");
@@ -134,8 +135,11 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
     expect(data.currency).toBe("USD");
     expect(data.reported).toMatchObject({ status: "ok" });
     if (data.reported.status === "ok") expect(data.reported.value).toBeCloseTo(0.0086388, 7);
-    // The daemon produces no estimates, and Codex reports tokens but never a cost.
-    expect(data.estimated.status).toBe("unknown");
+    // The Codex run names no model (none was requested), so it cannot be priced: unknown, not zero.
+    expect(data.priceTable).toMatchObject({ version: expect.any(String), basis: "list_price_standard_tier" });
+    expect(data.estimated).toMatchObject({ status: "unknown", reason: expect.stringContaining("could not be priced") });
+    expect(data.estimateCoverage).toMatchObject({ sessionsNeedingEstimate: 1, sessionsEstimated: 0 });
+    expect(data.knownCostCoverage).toMatchObject({ sessions: 2, sessionsWithKnownCost: 1 });
     expect(data.budget.status).toBe("unsupported");
     const coverage = Object.fromEntries(data.coverage.map((c) => [c.provider, c.reporting]));
     expect(coverage["claude-code"]).toBe("provider-reported");

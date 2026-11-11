@@ -24,8 +24,9 @@ currency. A report with no tokens and no cost is dropped. A zero cost or an
 all-zero token count is treated as unknown, because a runtime that has no price
 or no figures cannot be told apart from a free call.
 
-No price table or estimator exists. `estimated` receipts are supported by the
-schema and summary but are never produced.
+No price table exists in the agents crate. Estimated cost is derived in the
+store crate at summary time (see "Estimated cost" below); `estimated` receipts
+written by something else are still supported by the schema and summary.
 
 ## Persistence
 
@@ -65,8 +66,50 @@ event, so sessions created before the journal existed are not counted.
 
 Method scope: gated by the `agents` capability.
 
+### Estimated cost (M7-26)
+
+A receipt with tokens but no cost (Codex always; Claude or Pi when the cost is
+absent) is priced from a small native table, `usage_prices.rs` in
+`orchestrator-store`, when the summary is computed. Nothing is written back:
+stored receipts keep their cost, source and model, and a reported cost is never
+replaced or recomputed. The estimate goes into `estimated.costs` (USD) only;
+the tokens are not repeated there, because they are already in `reported`.
+
+* Table: integer nano-USD per token for input, cache read, cache write and
+  output, for the Codex/OpenAI and Claude/Anthropic models in our adapters.
+  `version` (currently `2026-11-11.1`) changes with any price edit; `basis` is
+  `list_price_standard_tier`; `source` names where the prices were taken.
+  Prices are list prices, not a bill. Batch, flex, priority and long-context
+  tiers are not modelled, and Anthropic cache writes use the 5-minute rate.
+  An estimate may therefore understate. Prices are not refreshed at runtime
+  (no network); a new table means a new version.
+* Unknown stays unknown: a model that is absent or not in the table, or a
+  count the price needs that is `null`, gives no estimate. Never 0. A model
+  with no cache-write price accepts a cache-write count of `null` or 0 only.
+* A session is estimated whole or not at all: if any cost-less token receipt
+  of it in the window cannot be priced, the session contributes nothing, so a
+  partial sum is never shown as complete. A session that has a stored
+  `estimated` cost receipt is not estimated again.
+* Model names are matched case-folded, without a `[context]` tag or a trailing
+  `-YYYYMMDD`, with `.` read as `-` for `claude-*`. A Codex stream names no
+  model, so the daemon records the model the run was **requested** with
+  (`model_selection.model`) on Codex receipts that name none. A Codex run
+  started without a model selection has no model and stays unknown. This is a
+  requested model, not one the provider reported.
+
+Additive fields (a client must ignore unknown fields and tolerate their
+absence, as an older daemon does not send them): each bucket adds
+`sessions_needing_estimate` (sessions with a cost-less token receipt),
+`sessions_with_estimated_cost`, `sessions_with_known_cost` (reported or
+estimated), `estimated_cost_status` (estimated vs. needing) and
+`known_cost_status` (known vs. all sessions). The result adds
+`price_table: {version, basis, source, currency, models}`. `cost_status` keeps
+its meaning, reported only.
+
 ## Known gaps
 
 * The CLI workflow path does not record usage.
 * Pi usage parsing is unverified (see the spike table).
 * Claude cost is a client-side list price and may differ from the bill.
+* Estimated cost is a standard-tier list price; Codex runs without a model
+  selection have no model and stay unknown.

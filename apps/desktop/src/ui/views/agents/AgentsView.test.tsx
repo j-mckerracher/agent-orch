@@ -101,6 +101,46 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByRole("button", { name: "Configure providers" })).toBeDisabled();
   });
 
+  it("shows reported, estimated and unknown usage apart, with the price table version", async () => {
+    const fake = seeded();
+    const figures = (costs: Array<{ currency: string; amount: string }>) => ({
+      input_tokens: 10,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+      output_tokens: 10,
+      reasoning_tokens: null,
+      costs,
+    });
+    fake.stub("usage.summary", {
+      window: { start_unix_ms: 1_767_250_800_000, end_unix_ms: 1_767_337_200_000, timezone: "America/Denver", utc_offset_seconds: -25_200 },
+      totals: {
+        sessions: 4,
+        sessions_with_tokens: 4,
+        sessions_with_cost: 1,
+        token_status: "complete",
+        cost_status: "partial",
+        sessions_needing_estimate: 3,
+        sessions_with_estimated_cost: 1,
+        sessions_with_known_cost: 2,
+        estimated_cost_status: "partial",
+        known_cost_status: "partial",
+        reported: figures([{ currency: "USD", amount: "2" }]),
+        estimated: figures([{ currency: "USD", amount: "0.5" }]),
+      },
+      providers: [],
+      price_table: { version: "2026-11-11.1", basis: "list_price_standard_tier", source: "LiteLLM, 2026-11-11" },
+    });
+    await liveView(fake);
+    const usage = within(await screen.findByTestId("agents-usage"));
+    await waitFor(() => expect(usage.getByRole("table", { name: "Usage provenance", hidden: true })).toBeInTheDocument());
+    const table = usage.getByRole("table", { name: "Usage provenance", hidden: true });
+    expect(within(table).getByText(/USD 2\.00 \(reported\)/)).toBeInTheDocument();
+    expect(within(table).getByText(/USD 0\.50 \(estimated, table 2026-11-11\.1\)/)).toBeInTheDocument();
+    expect(screen.getByTestId("agents-usage-estimate-coverage")).toHaveTextContent("partial: 1 of 3 sessions");
+    expect(screen.getByTestId("agents-usage-unknown")).toHaveTextContent("2 of 4 sessions have neither a reported nor an estimated cost");
+    expect(screen.getByTestId("agents-usage-price-table")).toHaveTextContent("2026-11-11.1 · basis list_price_standard_tier");
+  });
+
   it("shows no placeholder badge and no wireframe numbers", async () => {
     await liveView();
     const main = within(screen.getByRole("main"));

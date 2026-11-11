@@ -39,12 +39,30 @@ export interface UsageBucketWire {
   sessions_with_cost: number;
   token_status: UsageCoverageStatus;
   cost_status: UsageCoverageStatus;
+  /**
+   * M7-26, absent from an older daemon: sessions with tokens but no reported cost, how many of those
+   * the native price table could price, and sessions with a reported or estimated cost.
+   */
+  sessions_needing_estimate?: number;
+  sessions_with_estimated_cost?: number;
+  sessions_with_known_cost?: number;
+  estimated_cost_status?: UsageCoverageStatus;
+  known_cost_status?: UsageCoverageStatus;
   reported: UsageFiguresWire;
   estimated: UsageFiguresWire;
 }
 
 export interface UsageProviderWire extends UsageBucketWire {
   provider: string;
+}
+
+/** M7-26: the native price table behind `estimated` figures. Absent from an older daemon. */
+export interface UsagePriceTableWire {
+  version: string;
+  basis: string;
+  source?: string;
+  currency?: string;
+  models?: number;
 }
 
 export interface UsageSummaryWire {
@@ -56,4 +74,5 @@ export interface UsageSummaryWire {
   };
   totals: UsageBucketWire;
   providers: UsageProviderWire[];
+  price_table?: UsagePriceTableWire;
 }

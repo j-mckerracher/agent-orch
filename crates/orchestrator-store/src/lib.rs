@@ -73,6 +73,7 @@ mod sqlite_events;
 pub use sqlite_events::{IdempotencyStart, StreamEvent};
 mod sqlite_reconcile;
 mod sqlite_usage;
+pub mod usage_prices;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry};
 pub use sqlite_usage::{

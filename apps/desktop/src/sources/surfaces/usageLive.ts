@@ -6,7 +6,8 @@
  *   provider that reported nothing is `none`, never a $0 line.
  * - Costs are decimal strings per currency. Currencies are never added together; a figure
  *   that spans several currencies is `unsupported` here and its amounts go in the reason.
- * - Reported and estimated figures stay separate. Nothing is derived from tokens.
+ * - Reported and estimated figures stay separate. This file derives nothing from tokens; an
+ *   estimate is the daemon's price-table figure (M7-26), carried with the table version and basis.
  * - A failed or unsupported call is reported as such. This file never imports fixtures, so
  *   live mode cannot fall back to placeholder numbers.
  */
@@ -18,6 +19,7 @@ import type {
   UsageCoverageStatus,
   UsageFiguresWire,
   UsageProviderWire,
+  UsagePriceTableWire,
   UsageSummaryRequest,
   UsageSummaryWire,
 } from "../../daemon/usageWire";
@@ -97,14 +99,34 @@ function figures(value: unknown, what: string): UsageFiguresWire {
 
 function bucket(value: unknown, what: string): UsageBucketWire {
   const raw = record(value, what);
+  const optionalCount = (field: string) => (raw[field] === undefined ? {} : { [field]: count(raw[field], `${what} ${field}`) });
+  const optionalStatus = (field: string) => (raw[field] === undefined ? {} : { [field]: status(raw[field], `${what} ${field}`) });
   return {
     sessions: count(raw.sessions, `${what} sessions`),
     sessions_with_tokens: count(raw.sessions_with_tokens, `${what} sessions_with_tokens`),
     sessions_with_cost: count(raw.sessions_with_cost, `${what} sessions_with_cost`),
     token_status: status(raw.token_status, `${what} token_status`),
     cost_status: status(raw.cost_status, `${what} cost_status`),
+    ...optionalCount("sessions_needing_estimate"),
+    ...optionalCount("sessions_with_estimated_cost"),
+    ...optionalCount("sessions_with_known_cost"),
+    ...optionalStatus("estimated_cost_status"),
+    ...optionalStatus("known_cost_status"),
     reported: figures(raw.reported, `${what} reported figures`),
     estimated: figures(raw.estimated, `${what} estimated figures`),
+  };
+}
+
+/** Absent on an older daemon. When present, a version and a basis are required; other fields are optional. */
+function priceTable(value: unknown): UsagePriceTableWire | undefined {
+  if (value === undefined || value === null) return undefined;
+  const raw = record(value, "price_table");
+  return {
+    version: text(raw.version, "price_table version"),
+    basis: text(raw.basis, "price_table basis"),
+    ...(typeof raw.source === "string" && raw.source.length > 0 ? { source: raw.source } : {}),
+    ...(typeof raw.currency === "string" && raw.currency.length > 0 ? { currency: raw.currency } : {}),
+    ...(typeof raw.models === "number" && Number.isSafeInteger(raw.models) && raw.models >= 0 ? { models: raw.models } : {}),
   };
 }
 
@@ -118,6 +140,7 @@ export function parseUsageSummary(value: unknown): UsageSummaryWire {
     return malformed("window");
   }
   if (!Array.isArray(raw.providers)) return malformed("providers");
+  const table = priceTable(raw.price_table);
   return {
     window: {
       start_unix_ms: start,
@@ -130,6 +153,7 @@ export function parseUsageSummary(value: unknown): UsageSummaryWire {
       ...bucket(entry, "provider"),
       provider: text((entry as { provider?: unknown } | null)?.provider, "provider name"),
     })),
+    ...(table ? { price_table: table } : {}),
   };
 }
 
@@ -170,11 +194,37 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
   const sole = (list: string[]) => (list.length === 1 ? list[0]! : undefined);
   const currency = sole(reportedCurrencies) ?? (reportedCurrencies.length === 0 ? sole(estimatedCurrencies) : undefined) ?? "unknown";
   const sessions = wire.totals.sessions;
+  const { sessions_needing_estimate: needing, sessions_with_estimated_cost: estimatedSessions, sessions_with_known_cost: known } = wire.totals;
+  const table = wire.price_table;
+  const estimateCoverage =
+    needing !== undefined && estimatedSessions !== undefined
+      ? {
+          status: wire.totals.estimated_cost_status ?? (estimatedSessions === 0 ? "unknown" : estimatedSessions < needing ? "partial" : "complete"),
+          sessionsNeedingEstimate: needing,
+          sessionsEstimated: estimatedSessions,
+        }
+      : undefined;
+  const knownCostCoverage =
+    known !== undefined
+      ? {
+          status: wire.totals.known_cost_status ?? (known === 0 ? "unknown" : known < sessions ? "partial" : "complete"),
+          sessions,
+          sessionsWithKnownCost: known,
+        }
+      : undefined;
+  const noEstimate = !table
+    ? "No estimate was recorded; the daemon has no price table"
+    : needing
+      ? `${needing} ${needing === 1 ? "session has" : "sessions have"} tokens but no reported cost and could not be priced (model not in price table ${table.version}, or a token count is missing)`
+      : `No session in this window needs an estimate (price table ${table.version})`;
   return {
     windowStart: new Date(wire.window.start_unix_ms).toISOString(),
     timezone: wire.window.timezone,
     currency,
     costCoverage: { status: wire.totals.cost_status, sessions, sessionsWithCost: wire.totals.sessions_with_cost },
+    ...(estimateCoverage ? { estimateCoverage } : {}),
+    ...(knownCostCoverage ? { knownCostCoverage } : {}),
+    ...(table ? { priceTable: { version: table.version, basis: table.basis, ...(table.source ? { source: table.source } : {}) } } : {}),
     reported: figure(
       reported.costs,
       currency,
@@ -182,7 +232,7 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
       `No provider reported a cost in this window (${sessions} ${sessions === 1 ? "session" : "sessions"} started). A missing cost is not zero`,
       "reported",
     ),
-    estimated: figure(estimated.costs, currency, nowMs, "No estimate was recorded; the daemon has no price table", "estimated"),
+    estimated: figure(estimated.costs, currency, nowMs, noEstimate, "estimated"),
     budget: unsupportedValue("The daemon records no budget."),
     coverage: wire.providers.map((provider) => ({ provider: provider.provider, reporting: reporting(provider) })),
   };
