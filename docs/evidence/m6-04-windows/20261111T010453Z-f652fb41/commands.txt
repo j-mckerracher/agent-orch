@@ -1,0 +1,7 @@
+node --test scripts/**/*.test.mjs
+Push-Location apps/desktop; npm ci; Pop-Location (PowerShell npm.ps1 attempt)
+Push-Location apps/desktop; ProgramFiles\nodejs\npm.cmd ci; Pop-Location (npm shim retry)
+CARGO_TARGET_DIR outside checkout: node scripts/release/package.mjs windows --out new-directory
+CARGO_TARGET_DIR same: cargo build --locked -p orchestrator-daemon --example release_smoke
+node scripts/release/install-smoke.mjs windows --artifact-dir package-output --work new-short-dir --smoke-bin target/debug/examples/release_smoke.exe --allow-unsigned --out install-smoke-win.json
+Get-Process orchestrator-daemon, release_smoke -ErrorAction SilentlyContinue

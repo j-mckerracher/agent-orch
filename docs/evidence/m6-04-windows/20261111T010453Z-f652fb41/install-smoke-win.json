@@ -1,0 +1,77 @@
+{
+  "platform": "windows",
+  "version": "0.1.0",
+  "signedPolicy": "allow-unsigned",
+  "upgrade": {
+    "kind": "none",
+    "proven": false
+  },
+  "counts": {
+    "PASS": 9,
+    "FAIL": 0,
+    "INFO": 1,
+    "UNPROVEN": 2
+  },
+  "steps": [
+    {
+      "verdict": "PASS",
+      "name": "new artifact directory is consistent (checksums, naming, release-info)",
+      "detail": "%USERPROFILE%\\pkg-f652fb41"
+    },
+    {
+      "verdict": "INFO",
+      "name": "new: UNSIGNED installer (Authenticode status )",
+      "detail": "SmartScreen will warn on a download"
+    },
+    {
+      "verdict": "PASS",
+      "name": "seeded a sentinel file in the real user data directory",
+      "detail": "%USERPROFILE%\\AppData\\Local\\agent-orch\\install-smoke-sentinel-28580-1794359826398.txt"
+    },
+    {
+      "verdict": "PASS",
+      "name": "new: silent per-user install with no elevation prompt",
+      "detail": "%USERPROFILE%\\aor-f652fb41\\AgentOrchestrator"
+    },
+    {
+      "verdict": "PASS",
+      "name": "new: the app, the daemon sidecar and the uninstaller are installed",
+      "detail": ""
+    },
+    {
+      "verdict": "PASS",
+      "name": "new: installed product version",
+      "detail": "0.1.0"
+    },
+    {
+      "verdict": "UNPROVEN",
+      "name": "upgrade from a previous release (N-1 to N)",
+      "detail": "no --old-artifact-dir was given, so no older build ran"
+    },
+    {
+      "verdict": "PASS",
+      "name": "daemon smoke against the packaged sidecar (reinstall; NO upgrade)",
+      "detail": "%USERPROFILE%\\aor-f652fb41\\s"
+    },
+    {
+      "verdict": "PASS",
+      "name": "silent uninstall",
+      "detail": ""
+    },
+    {
+      "verdict": "PASS",
+      "name": "uninstall removed the app",
+      "detail": ""
+    },
+    {
+      "verdict": "PASS",
+      "name": "the user data sentinel in the real data directory survived the uninstall",
+      "detail": ""
+    },
+    {
+      "verdict": "UNPROVEN",
+      "name": "SmartScreen reputation, UAC absence on a standard user, Windows Defender, and the GUI flow on a CLEAN Windows machine",
+      "detail": "needs the clean-machine runbook"
+    }
+  ]
+}

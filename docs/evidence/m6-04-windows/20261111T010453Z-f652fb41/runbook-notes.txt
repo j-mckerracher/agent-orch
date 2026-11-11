@@ -1,0 +1,5 @@
+Runbook asks for a throwaway Windows user or VM; this run used a standard non-admin profile with no preexisting app data/install/registration.
+PowerShell npm.ps1 initial invocation failed with Unknown command: pm; npm.cmd retry passed.
+Published logs redact profile paths and email-shaped strings; raw outputs remain in local temporary evidence.
+Runbook states successful smoke deletes its work directory, but the exit-0 run left uninstaller.exe and release-smoke-result.json.
+Local cleanup command was rejected by execution policy after verifying the exact generated directory and preserving its residue; the two work-residue files remain on the host.

@@ -1,0 +1,8 @@
+Work directory residue after install-smoke exit 0:
+AgentOrchestrator/uninstall.exe size=
+79235
+ sha256=
+8CE2260C7CA9690FBFA367A41B662D5C700D3C8B41B83D34F0240D1FE768A0A7
+release-smoke-result.json present=True
+No daemon or smoke processes remained; app and daemon executables were removed.
+Raw uninstaller and smoke JSON retained locally only.

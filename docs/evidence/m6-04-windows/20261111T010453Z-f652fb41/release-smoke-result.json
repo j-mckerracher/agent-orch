@@ -1,0 +1,62 @@
+{
+  "daemon_versions": [
+    "0.1.0",
+    "0.1.0"
+  ],
+  "new_daemon": "%USERPROFILE%\\aor-f652fb41\\AgentOrchestrator\\orchestrator-daemon.exe",
+  "old_daemon": "%USERPROFILE%\\aor-f652fb41\\AgentOrchestrator\\orchestrator-daemon.exe",
+  "result": "PASS",
+  "same_version": true,
+  "schema": 1,
+  "steps": [
+    {
+      "n": 1,
+      "text": "phase A: start the installed (old) daemon and register a project"
+    },
+    {
+      "n": 2,
+      "text": "phase A: cancel a running agent"
+    },
+    {
+      "n": 3,
+      "text": "phase A: crash the daemon while an agent runs (Unix: an orphan is left behind)"
+    },
+    {
+      "n": 4,
+      "text": "phase B: restart the same daemon (a reinstall; the upgrade is NOT exercised)"
+    },
+    {
+      "n": 5,
+      "text": "records written by the old daemon are read back unchanged"
+    },
+    {
+      "n": 6,
+      "text": "recovery: no orphan survives, and the interrupted task is Failed without a relaunch"
+    },
+    {
+      "n": 7,
+      "text": "cancellation on the new daemon"
+    },
+    {
+      "n": 8,
+      "text": "approvals: seed two reviewable tasks, restart, request approvals"
+    },
+    {
+      "n": 9,
+      "text": "a pending approval survives a hard daemon kill and restart"
+    },
+    {
+      "n": 10,
+      "text": "approve delivers a review ref at exactly the candidate commit"
+    },
+    {
+      "n": 11,
+      "text": "reject delivers nothing and blocks a later approve and delivery"
+    },
+    {
+      "n": 12,
+      "text": "orderly shutdown removes the token; the log holds no credential"
+    }
+  ],
+  "upgrade_requested": false
+}

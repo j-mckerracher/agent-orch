@@ -1,0 +1,31 @@
+PASS new artifact directory is consistent (checksums, naming, release-info): %USERPROFILE%\pkg-f652fb41
+INFO new: UNSIGNED installer (Authenticode status ): SmartScreen will warn on a download
+PASS seeded a sentinel file in the real user data directory: %USERPROFILE%\AppData\Local\agent-orch\install-smoke-sentinel-28580-1794359826398.txt
+PASS new: silent per-user install with no elevation prompt: %USERPROFILE%\aor-f652fb41\AgentOrchestrator
+PASS new: the app, the daemon sidecar and the uninstaller are installed
+PASS new: installed product version: 0.1.0
+UNPROVEN upgrade from a previous release (N-1 to N): no --old-artifact-dir was given, so no older build ran
+work directory: %USERPROFILE%\aor-f652fb41\s
+SMOKE 1 phase A: start the installed (old) daemon and register a project
+SMOKE 2 phase A: cancel a running agent
+SMOKE 3 phase A: crash the daemon while an agent runs (Unix: an orphan is left behind)
+SMOKE 4 phase B: restart the same daemon (a reinstall; the upgrade is NOT exercised)
+UPGRADE: 0.1.0 -> 0.1.0
+SMOKE 5 records written by the old daemon are read back unchanged
+SMOKE 6 recovery: no orphan survives, and the interrupted task is Failed without a relaunch
+SMOKE 7 cancellation on the new daemon
+SMOKE 8 approvals: seed two reviewable tasks, restart, request approvals
+SMOKE 9 a pending approval survives a hard daemon kill and restart
+SMOKE 10 approve delivers a review ref at exactly the candidate commit
+SMOKE 11 reject delivers nothing and blocks a later approve and delivery
+SMOKE 12 orderly shutdown removes the token; the log holds no credential
+release_smoke: PASS
+PASS daemon smoke against the packaged sidecar (reinstall; NO upgrade): %USERPROFILE%\aor-f652fb41\s
+PASS silent uninstall
+PASS uninstall removed the app
+PASS the user data sentinel in the real data directory survived the uninstall
+UNPROVEN SmartScreen reputation, UAC absence on a standard user, Windows Defender, and the GUI flow on a CLEAN Windows machine: needs the clean-machine runbook
+
+install-smoke windows: no failed step {"PASS":9,"FAIL":0,"INFO":1,"UNPROVEN":2}
+upgrade: NOT proven (none)
+UNPROVEN steps above are NOT passes.

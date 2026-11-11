@@ -1,0 +1,1 @@
+OS=Microsoft Windows NT 10.0.26200.0 PowerShell=7.5.4 Node=v22.20.0 npm=11.3.0 Git=git version 2.46.2.windows.1 Cargo=cargo 1.96.0 (30a34c682 2026-05-25) Rustc=rustc 1.96.0 (ac68faa20 2026-05-25) current_user_admin=False preexisting_agent_orch_data=False preexisting_per_user_install=False preexisting_uninstall_registration_count=0 checkout_clean_after_run=False
