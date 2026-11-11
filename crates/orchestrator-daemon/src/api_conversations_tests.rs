@@ -352,6 +352,24 @@ fn a_retried_send_returns_the_first_result_and_runs_once() {
 }
 
 #[test]
+fn a_replayed_send_shows_the_turn_as_it_is_now_not_as_it_was_recorded() {
+    let runtime = TestRuntime::new(Mode::Hold);
+    let (_directory, api) = pinned(runtime.clone());
+    let sent = send(&api, global(), "hi", "k1").unwrap();
+    assert_eq!(sent["turn"]["state"], "running");
+    assert_eq!(send(&api, global(), "hi", "k1").unwrap(), sent);
+
+    runtime.sink().delta("done").unwrap();
+    runtime.sink().complete();
+    let replayed = send(&api, global(), "hi", "k1").unwrap();
+    assert_eq!(replayed["turn"]["state"], "completed");
+    assert_eq!(replayed["turn"]["id"], sent["turn"]["id"]);
+    assert_eq!(replayed["turn"]["reply_bytes"], 4);
+    assert_eq!(replayed["entry"], sent["entry"]);
+    assert_eq!(runtime.started.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn restart_keeps_the_transcript_fails_open_turns_and_resumes_replay() {
     let runtime = TestRuntime::new(Mode::Hold);
     let (directory, api) = pinned(runtime.clone());
@@ -377,8 +395,15 @@ fn restart_keeps_the_transcript_fails_open_turns_and_resumes_replay() {
         kinds(&get(&reopened, global(), 0)),
         ["user_message", "reply_chunk", "turn_failed"]
     );
-    // The stored result for the original request survives and still replays.
-    assert_eq!(send(&reopened, global(), "first", "k1").unwrap(), sent);
+    // The stored result for the original request survives and still replays,
+    // with the turn shown as it is now rather than as it was recorded.
+    assert_eq!(sent["turn"]["state"], "running");
+    let replayed = send(&reopened, global(), "first", "k1").unwrap();
+    assert_eq!(replayed["turn"]["state"], "failed");
+    assert_eq!(replayed["turn"]["error_code"], "interrupted_by_restart");
+    assert_eq!(replayed["turn"]["id"], sent["turn"]["id"]);
+    assert_eq!(replayed["entry"], sent["entry"]);
+    assert_eq!(replayed["epoch"], sent["epoch"]);
     // A fresh message is accepted; the default runtime is unavailable.
     let next = send(&reopened, global(), "again", "k2").unwrap();
     assert_eq!(next["turn"]["error_code"], "runtime_unavailable");

@@ -13,14 +13,15 @@
 //! - `[fake:fail]` exits non-zero without finishing the turn.
 //! - `[fake:hang]` starts the turn and never finishes it.
 //! - `[fake:slow]` replies in five pieces, 200 ms apart.
-//! - `[fake:control]` replies with control and bidirectional characters.
+//! - `[fake:control]` replies with control, bidirectional and invisible characters.
 //! - `[fake:flood]` replies with more text than a turn may store.
 //! - `[fake:echo]` replies with the prompt's context and history lines.
 //!
 //! Environment: `AGENT_ORCH_FAKE_VERSION` (default `0.0.0-fake`),
-//! `AGENT_ORCH_FAKE_LOG` (appends one line per turn with the working
-//! directory and arguments) and `AGENT_ORCH_FAKE_PID_FILE` (written with this
-//! process's id when a turn starts).
+//! `AGENT_ORCH_FAKE_VERSION_MODE` (`fail`, `garbage`, `hang` or `flood`: how
+//! `--version` misbehaves), `AGENT_ORCH_FAKE_LOG` (appends one line per turn
+//! with the working directory and arguments) and `AGENT_ORCH_FAKE_PID_FILE`
+//! (written with this process's id when a turn starts).
 
 use std::io::Write;
 use std::time::Duration;
@@ -33,7 +34,7 @@ fn main() {
     let version = std::env::var("AGENT_ORCH_FAKE_VERSION").unwrap_or_else(|_| "0.0.0-fake".into());
     let first: Vec<&str> = args.iter().take(2).map(String::as_str).collect();
     match first.as_slice() {
-        ["--version", ..] | ["-V", ..] => println!("codex-cli {version}"),
+        ["--version", ..] | ["-V", ..] => version_probe(&version),
         ["login", "status"] => println!("Logged in using ChatGPT"),
         ["debug", "models"] => println!(
             r#"{{"models":[{{"slug":"fake-model","display_name":"Fake model","visibility":"list","default_reasoning_level":"low","supported_reasoning_levels":[{{"effort":"low"}},{{"effort":"high"}}]}}]}}"#
@@ -55,6 +56,20 @@ fn main() {
             eprintln!("fake_agent: unsupported arguments");
             std::process::exit(2);
         }
+    }
+}
+
+/// Answers `--version`, or misbehaves as `AGENT_ORCH_FAKE_VERSION_MODE` says.
+fn version_probe(version: &str) {
+    match std::env::var("AGENT_ORCH_FAKE_VERSION_MODE").as_deref() {
+        Ok("fail") => {
+            eprintln!("fake_agent: version probe failing on request");
+            std::process::exit(1);
+        }
+        Ok("garbage") => println!("this is not a version banner"),
+        Ok("hang") => std::thread::sleep(Duration::from_secs(600)),
+        Ok("flood") => println!("codex-cli {version} {}", "x".repeat(100 * 1024)),
+        _ => println!("codex-cli {version}"),
     }
 }
 
@@ -133,7 +148,10 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
     } else if message.contains("[fake:slow]") {
         pieces.extend((1..=5).map(|n| format!("part{n} ")));
     } else if message.contains("[fake:control]") {
-        pieces.push("a\u{1b}[31mred\u{7}\u{0}b\r\nc\u{202e}d".to_owned());
+        pieces.push(
+            "a\u{1b}[31mred\u{7}\u{0}b\r\nc\u{202e}d\u{200b}e\u{feff}f\u{2028}g\u{2029}h\u{e0041}\u{2060}i"
+                .to_owned(),
+        );
     } else if message.contains("[fake:flood]") {
         // 40 pieces of 8 KiB is more than the 256 KiB a turn may store.
         pieces.extend((0..40).map(|_| "x".repeat(8 * 1024)));

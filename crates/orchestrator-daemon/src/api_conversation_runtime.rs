@@ -262,9 +262,9 @@ impl ConversationService {
     }
 
     /// Fail turns a previous process left running. Call once at startup,
-    /// before any request is served. The daemon owns this: a runtime child
-    /// does not outlive the daemon that started it, so an open turn found at
-    /// startup can never complete.
+    /// before any request is served. The daemon owns this: a turn left open
+    /// can never complete. A runtime child can outlive a killed daemon; the
+    /// runtime reaps those at startup (see `api_conversation_orphans`).
     pub(crate) fn recover(&self) -> Result<(), String> {
         self.shared
             .store

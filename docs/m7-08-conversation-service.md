@@ -100,11 +100,17 @@ no flag.
   `AGENT_ORCH_CONVERSATION_EFFORT` are checked against the catalog; an option
   the catalog does not offer fails closed. Agent program paths are the existing
   `AGENT_ORCH_CODEX_PROGRAM` / `AGENT_ORCH_CLAUDE_PROGRAM`.
-- **Launchable.** The adapter's `detect()` must succeed, the catalog must report
-  the agent `available` (signed in), and a bounded `--version` probe must give a
-  version. Otherwise the turn fails `runtime_unavailable`. The selection and
-  version are cached for 30 s; `conversations.send` calls `prepare()` before the
-  idempotency gate, so a cold catalog is a retryable `Conflict`, not a hang.
+- **Launchable.** The adapter's `detect()` must succeed, a bounded
+  `--version` probe (500 ms, at most 1 KiB of output) must give a version, and
+  the catalog must report the agent `available` (signed in). A program that is
+  present but cannot be started, exits non-zero, prints something that is not a
+  version or prints too much is not launchable: the turn fails
+  `runtime_unavailable` at once and nothing is launched. A probe that does not
+  answer in 500 ms (a hung program, or a cold start of a real CLI) and a
+  catalog that has not been read yet are retryable `Conflict`s, but only for
+  15 s (`conversations.send` calls `prepare()` before the idempotency gate);
+  after that the turn fails `runtime_unavailable` too. The selection and
+  version are cached for 30 s.
 - **Pins.** Known-good versions are compiled in (`codex` 0.167.0, `claude-code`
   2.1.311, the versions live-checked for this item). The operator can add more
   with `AGENT_ORCH_CONVERSATION_PINS=name@version,...`. An unpinned version gets
@@ -126,10 +132,24 @@ no flag.
 - **Text.** Replies and prompt text lose control characters (except newline
   and tab), carriage returns and bidirectional controls before they are stored
   or passed on.
+- **Text.** Replies and prompt text lose control characters (except newline
+  and tab), carriage returns, bidirectional controls and characters that render
+  as nothing (U+00AD, U+061C, U+200B, U+2028/2029, U+2060 to U+2064, U+FEFF and
+  the tag block U+E0000 to U+E007F) before they are stored or passed on. The
+  zero-width joiner and non-joiner stay, because emoji sequences and several
+  scripts need them; tag-based flag emoji lose their tags.
 - **Authority.** The runtime holds no store, task, approval or delivery handle
   beyond the reply sink. A reply is data. Nothing is parsed from it.
 - **Recovery.** Unchanged: the daemon owns the transcript, a turn the daemon
-  lost fails with `interrupted_by_restart`, and replay is by sequence.
+  lost fails with `interrupted_by_restart`, and replay is by sequence. A
+  replayed `conversations.send` returns the turn as it is now, not as
+  recorded. After a `kill -9` the agent can outlive the daemon, so every
+  running agent is recorded (pid, process group, start time) under
+  `<data-dir>/conversation-agents`, and the next start kills the group of each
+  record only when the process still matches that identity. A leader that is
+  gone, or any identity mismatch, is never signalled. A group whose leader
+  died first is left alone, as are agents spawned within milliseconds before
+  the kill. Windows relies on the Job Object (`KILL_ON_JOB_CLOSE`).
 - **Known limit.** A launched agent can read the user's files and runs the
   user's own agent settings and hooks, as any run of that CLI does. The
   read-only sandbox and the empty working directory limit what it changes, not

@@ -208,6 +208,11 @@ impl DaemonApi {
     /// Opens the store and starts the executor, which reconciles the store
     /// with the OS before it launches anything.
     pub(crate) fn with_executor(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
+        // Only the daemon that holds the data-directory lock may do this, and
+        // only before it starts any turn of its own.
+        conversation_orphans::reap(
+            &conversation_agent::ConversationConfig::for_data_dir(data_dir).agents,
+        );
         let mut api = Self::with_config(data_dir, config.clone())?;
         api.executor = Some(Executor::start(api.store.clone(), config)?);
         api.host.start();
@@ -1182,6 +1187,8 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
 
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
+#[path = "api_conversation_orphans.rs"]
+mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]
 mod conversation_runtime;
 #[path = "api_conversations.rs"]

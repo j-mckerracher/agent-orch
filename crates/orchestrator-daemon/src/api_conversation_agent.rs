@@ -40,6 +40,7 @@ use orchestrator_core::workstream::Workstream;
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{ConversationTarget, SqliteStore, WorkstreamStoreError};
 
+use super::conversation_orphans as orphans;
 use super::conversation_runtime::{
     ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity, TurnControl,
     TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
@@ -68,9 +69,14 @@ const MAX_TURN_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_RUNNING_TURNS: usize = 4;
 /// How long a resolved selection (and the version read with it) is reused.
 const SELECTION_TTL: Duration = Duration::from_secs(30);
+/// A cold catalog read finishes well inside this; a selection still unknown
+/// after it is not going to become known by waiting.
+const DEFAULT_RETRY_WINDOW: Duration = Duration::from_secs(15);
 /// Leaves headroom under the 2 s client I/O timeout after the catalog wait.
 const VERSION_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 const MAX_VERSION_LEN: usize = 64;
+/// More than any real `--version` line; longer output is not a version probe.
+const MAX_VERSION_OUTPUT: usize = 1024;
 /// How often a running turn looks at its cancel flag and deadline.
 const POLL: Duration = Duration::from_millis(50);
 const MAX_CONTEXT_BYTES: usize = 2 * 1024;
@@ -91,6 +97,13 @@ pub(crate) struct ConversationConfig {
     pub turn_timeout: Duration,
     /// Empty directory the agent runs in; it never sees a repository.
     pub scratch: PathBuf,
+    /// Where the identity of each running agent is kept so a restarted daemon
+    /// can reap an agent that outlived a killed one.
+    pub agents: PathBuf,
+    /// How long a selection that cannot be established yet (the catalog is
+    /// still loading) is answered with a retryable `Conflict`. After it the
+    /// turn fails closed with `runtime_unavailable`.
+    pub retry_window: Duration,
 }
 
 impl ConversationConfig {
@@ -112,6 +125,8 @@ impl ConversationConfig {
             extra_pins: text(PINS_ENV).map_or_else(Vec::new, |value| parse_pins(&value)),
             turn_timeout,
             scratch: data_dir.join("conversation-scratch"),
+            agents: data_dir.join("conversation-agents"),
+            retry_window: DEFAULT_RETRY_WINDOW,
         }
     }
 }
@@ -166,11 +181,21 @@ enum Selection {
     Missing(RuntimeFailure),
 }
 
+/// What one look at the installed agents established.
+enum Outcome {
+    Decided(Selection),
+    /// A launchable agent whose catalog is not read yet.
+    Pending,
+}
+
 pub(crate) struct AgentRuntime {
     exec: ExecutorConfig,
     cache: Arc<CatalogCache>,
     config: ConversationConfig,
     selection: Mutex<Option<(Instant, Selection)>>,
+    /// When a selection first could not be established; cleared by any
+    /// definitive outcome. Bounds the `Conflict` retries.
+    pending_since: Mutex<Option<Instant>>,
     running: Arc<AtomicUsize>,
 }
 
@@ -185,6 +210,7 @@ impl AgentRuntime {
             cache,
             config,
             selection: Mutex::new(None),
+            pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -226,11 +252,44 @@ impl AgentRuntime {
     }
 
     /// Picks the first agent that is installed, signed in, launchable and
-    /// offers the configured selection. `Conflict` means the state of an agent
-    /// could not be established in time: nothing is recorded, so the caller
-    /// retries with the same idempotency key. An agent that is simply absent
-    /// is not an error here; it becomes `Missing` and fails the turn closed.
+    /// offers the configured selection.
+    ///
+    /// What the executable itself does is a fact established here: a program
+    /// that cannot be started, exits non-zero from `--version`, prints
+    /// something that is not a version or prints too much is not launchable,
+    /// and the agent is skipped for good. What is not known yet is pending: a
+    /// `--version` that does not answer in time (a cold start can be slow) and
+    /// a catalog that has not been read. `Conflict` means pending: the caller
+    /// retries with the same idempotency key and nothing is recorded, but only
+    /// for [`ConversationConfig::retry_window`]; after that the selection
+    /// fails closed like any other unavailable runtime.
     fn resolve(&self) -> Result<Selection, RpcError> {
+        let outcome = self.select();
+        let mut pending = self
+            .pending_since
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        match outcome {
+            Outcome::Decided(selection) => {
+                *pending = None;
+                Ok(selection)
+            }
+            Outcome::Pending => {
+                let since = *pending.get_or_insert_with(Instant::now);
+                if since.elapsed() <= self.config.retry_window {
+                    return Err(RpcError::Conflict);
+                }
+                eprintln!(
+                    "orchestrator-daemon: conversation runtime still undetermined after {:?}; \
+                     failing closed",
+                    self.config.retry_window
+                );
+                Ok(Selection::Missing(RuntimeFailure::Unavailable))
+            }
+        }
+    }
+
+    fn select(&self) -> Outcome {
         let agents: Vec<&'static str> = match self.config.agent.as_deref() {
             None => vec![CODEX, CLAUDE],
             Some(CODEX) => vec![CODEX],
@@ -240,19 +299,51 @@ impl AgentRuntime {
                     "orchestrator-daemon: conversation agent {} is not supported",
                     log_safe(other)
                 );
-                return Ok(Selection::Missing(RuntimeFailure::Unavailable));
+                return Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable));
             }
         };
-        let names: Vec<&str> = agents.to_vec();
-        let catalogs = self.cache.read(&self.exec, &names);
+        let mut slow = false;
+        let launchable: Vec<(&'static str, PathBuf, String)> = agents
+            .into_iter()
+            .filter_map(|agent| {
+                if !self.launchable(agent) {
+                    return None;
+                }
+                let program = self.program_of(agent);
+                match read_version(&program) {
+                    Probe::Version(version) => Some((agent, program, version)),
+                    Probe::Rejected => {
+                        eprintln!(
+                            "orchestrator-daemon: conversation agent {agent} is not launchable: \
+                             `--version` did not give a version"
+                        );
+                        None
+                    }
+                    Probe::TimedOut => {
+                        eprintln!(
+                            "orchestrator-daemon: conversation agent {agent}: `--version` did \
+                             not answer in time"
+                        );
+                        slow = true;
+                        None
+                    }
+                }
+            })
+            .collect();
+        let names: Vec<&str> = launchable.iter().map(|(agent, ..)| *agent).collect();
+        let catalogs = if names.is_empty() {
+            Vec::new()
+        } else {
+            self.cache.read(&self.exec, &names)
+        };
         let wants_selection = self.config.model.is_some() || self.config.effort.is_some();
-        let mut transient = false;
+        let mut pending = slow;
         let mut missing = RuntimeFailure::Unavailable;
-        for (agent, catalog) in agents.iter().zip(&catalogs) {
+        for ((agent, program, version), catalog) in launchable.into_iter().zip(&catalogs) {
             match catalog.state {
                 CatalogState::Available => {}
                 CatalogState::Unknown => {
-                    transient = true;
+                    pending = true;
                     continue;
                 }
                 CatalogState::AuthenticationFailed => {
@@ -261,38 +352,30 @@ impl AgentRuntime {
                 }
                 CatalogState::Unavailable | CatalogState::Unsupported => continue,
             }
-            if wants_selection && !self.selection_offered(catalog, &mut transient) {
+            if wants_selection && !self.selection_offered(catalog, &mut pending) {
                 continue;
             }
-            if !self.launchable(agent) {
-                continue;
-            }
-            let program = self.program_of(agent);
-            let Some(version) = read_version(&program) else {
-                transient = true;
-                continue;
-            };
-            return Ok(Selection::Ready(Selected {
+            return Outcome::Decided(Selection::Ready(Selected {
                 agent,
                 program,
                 identity: RuntimeIdentity {
-                    name: (*agent).to_owned(),
+                    name: agent.to_owned(),
                     version,
                 },
                 model: self.config.model.clone(),
                 effort: self.config.effort.clone(),
             }));
         }
-        if transient {
-            Err(RpcError::Conflict)
+        if pending {
+            Outcome::Pending
         } else {
-            Ok(Selection::Missing(missing))
+            Outcome::Decided(Selection::Missing(missing))
         }
     }
 
-    fn selection_offered(&self, catalog: &AgentCatalog, transient: &mut bool) -> bool {
+    fn selection_offered(&self, catalog: &AgentCatalog, pending: &mut bool) -> bool {
         if !catalog.is_definitive() {
-            *transient = true;
+            *pending = true;
             return false;
         }
         match catalog.validate(self.config.model.as_deref(), self.config.effort.as_deref()) {
@@ -390,6 +473,7 @@ impl ConversationRuntime for AgentRuntime {
             launch,
             timeout: self.config.turn_timeout,
             cancelled: cancelled.clone(),
+            agents: self.config.agents.clone(),
         };
         let thread_sink = sink.clone();
         std::thread::Builder::new()
@@ -446,10 +530,22 @@ fn conversation_args(selected: &Selected, prompt: &str) -> Vec<String> {
     }
 }
 
-/// `--version` of the agent, read with a hard time bound. `None` when it
-/// cannot be run or does not print a version. The child leads its own process
-/// group on Unix so a wrapper script cannot outlive the bound.
-fn read_version(program: &Path) -> Option<String> {
+/// What `--version` of an agent program showed.
+#[derive(Debug, PartialEq)]
+enum Probe {
+    Version(String),
+    /// Cannot be started, exits non-zero, prints too much or does not print a
+    /// version. The program is not a launchable agent.
+    Rejected,
+    /// No answer within [`VERSION_PROBE_TIMEOUT`]. A cold start of a real CLI
+    /// can be this slow, so this is only provisional (see `resolve`). A
+    /// program that floods its output blocks on the pipe and lands here too.
+    TimedOut,
+}
+
+/// `--version` of the agent, read with a hard time bound. The child leads its
+/// own process group on Unix so a wrapper script cannot outlive the bound.
+fn read_version(program: &Path) -> Probe {
     let mut command = Command::new(program);
     command
         .arg("--version")
@@ -458,28 +554,36 @@ fn read_version(program: &Path) -> Option<String> {
         .stderr(Stdio::null());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command.spawn().ok()?;
+    let Ok(mut child) = command.spawn() else {
+        return Probe::Rejected;
+    };
     let deadline = Instant::now() + VERSION_PROBE_TIMEOUT;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            _ => {
+            Ok(None) => {
                 kill_probe(&mut child);
-                return None;
+                return Probe::TimedOut;
+            }
+            Err(_) => {
+                kill_probe(&mut child);
+                return Probe::Rejected;
             }
         }
     };
-    if !status.success() {
-        return None;
-    }
+    let Some(stdout) = child.stdout.take().filter(|_| status.success()) else {
+        return Probe::Rejected;
+    };
     let mut output = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(child.stdout.take()?, 1024),
+    let read = std::io::Read::read_to_end(
+        &mut std::io::Read::take(stdout, MAX_VERSION_OUTPUT as u64 + 1),
         &mut output,
-    )
-    .ok()?;
-    parse_version(&String::from_utf8_lossy(&output))
+    );
+    if read.is_err() || output.len() > MAX_VERSION_OUTPUT {
+        return Probe::Rejected;
+    }
+    parse_version(&String::from_utf8_lossy(&output)).map_or(Probe::Rejected, Probe::Version)
 }
 
 fn kill_probe(child: &mut std::process::Child) {
@@ -493,14 +597,20 @@ fn kill_probe(child: &mut std::process::Child) {
 }
 
 /// Removes everything that could forge or hide transcript text: control
-/// characters other than newline and tab, and bidirectional overrides. A
-/// carriage return is dropped so a reply cannot overwrite its own line.
+/// characters other than newline and tab, bidirectional overrides, and
+/// characters that render as nothing (zero-width space, word joiners, the
+/// byte-order mark, line and paragraph separators, soft hyphen, the Arabic
+/// letter mark and the Unicode tag block). A carriage return is dropped so a
+/// reply cannot overwrite its own line. The zero-width joiner and non-joiner
+/// stay: emoji sequences and several scripts need them to display correctly.
 pub(crate) fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|c| match c {
             '\n' | '\t' => true,
             c if c.is_control() => false,
             '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}' => false,
+            '\u{200b}' | '\u{2060}'..='\u{2064}' | '\u{feff}' | '\u{2028}' | '\u{2029}' => false,
+            '\u{00ad}' | '\u{061c}' | '\u{e0000}'..='\u{e007f}' => false,
             _ => true,
         })
         .collect()
@@ -548,6 +658,8 @@ struct Turn {
     launch: AgentLaunchRequest,
     timeout: Duration,
     cancelled: Arc<AtomicBool>,
+    /// Registry of running agents; see `api_conversation_orphans`.
+    agents: PathBuf,
 }
 
 /// Drives one agent process to the end of the turn and reports through `sink`.
@@ -569,6 +681,9 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     } else {
         ClaudeCodeAdapter::new().spawn(turn.launch).await
     };
+    // Declared before `handle` so the record is removed only after the handle
+    // has dropped and the agent's process group is gone.
+    let _record;
     let mut handle = match spawned {
         Ok(handle) => handle,
         Err(error) => {
@@ -586,6 +701,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             return;
         }
     };
+    _record = orphans::AgentRecord::register(&turn.agents, handle.pid());
     let deadline = Instant::now() + turn.timeout;
     let mut messages = 0usize;
     loop {
@@ -715,6 +831,202 @@ mod tests {
         let dirty = "a\u{1b}[31mred\u{7}\u{0}b\r\nc\td\u{202e}e\u{85}f";
         assert_eq!(sanitize(dirty), "a[31mredb\nc\tdef");
         assert_eq!(sanitize("héllo ✓"), "héllo ✓");
+    }
+
+    #[test]
+    fn sanitize_drops_characters_that_render_as_nothing() {
+        for invisible in [
+            '\u{00ad}',
+            '\u{061c}',
+            '\u{200b}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{2060}',
+            '\u{2063}',
+            '\u{2064}',
+            '\u{feff}',
+            '\u{e0000}',
+            '\u{e0041}',
+            '\u{e007f}',
+        ] {
+            assert_eq!(
+                sanitize(&format!("a{invisible}b")),
+                "ab",
+                "U+{:04X} must not reach the transcript",
+                u32::from(invisible)
+            );
+        }
+        // Emoji sequences and joining scripts still need the joiners.
+        assert_eq!(sanitize("👩\u{200d}💻"), "👩\u{200d}💻");
+        assert_eq!(sanitize("می\u{200c}خواهم"), "می\u{200c}خواهم");
+    }
+
+    #[cfg(unix)]
+    mod launch {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        fn program(dir: &Path, name: &str, body: &str, mode: u32) -> PathBuf {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        }
+
+        /// A script that is known to be startable. A script written while
+        /// another test thread forks can briefly fail with "text file busy".
+        fn startable(dir: &Path, name: &str, body: &str) -> PathBuf {
+            let path = program(dir, name, body, 0o755);
+            for _ in 0..100 {
+                let started = Command::new(&path)
+                    .arg("--version")
+                    .stdout(Stdio::null())
+                    .spawn();
+                match started {
+                    Ok(mut child) => {
+                        let _ = child.wait();
+                        return path;
+                    }
+                    Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) => {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            }
+            panic!("{} stayed busy", path.display());
+        }
+
+        /// The probe of a program that answers; a loaded machine can outlast
+        /// the probe once.
+        fn answered(path: &Path) -> Probe {
+            let mut probe = read_version(path);
+            for _ in 0..20 {
+                if probe != Probe::TimedOut {
+                    break;
+                }
+                probe = read_version(path);
+            }
+            probe
+        }
+
+        fn runtime(dir: &Path, codex: &Path, window: Duration) -> AgentRuntime {
+            let mut exec = ExecutorConfig::for_data_dir(dir);
+            exec.codex_program = Some(codex.to_path_buf());
+            exec.claude_program = Some(dir.join("no-such-claude"));
+            exec.catalog_timeout = Duration::from_millis(200);
+            exec.catalog_wait = Duration::from_millis(400);
+            let mut config = ConversationConfig::for_data_dir(dir);
+            config.agent = None;
+            config.model = None;
+            config.effort = None;
+            config.retry_window = window;
+            AgentRuntime::new(exec, Arc::default(), config)
+        }
+
+        #[test]
+        fn a_version_probe_that_is_not_a_version_is_rejected() {
+            let dir = tempfile::tempdir().unwrap();
+            let good = startable(dir.path(), "good", "echo codex-cli 1.2.3");
+            assert_eq!(answered(&good), Probe::Version("1.2.3".into()));
+            let oversized = format!("echo codex-cli 1.2.3 {}", "x".repeat(MAX_VERSION_OUTPUT));
+            for (name, body, mode) in [
+                ("not-executable", "echo codex-cli 1.2.3", 0o644),
+                ("exit-code", "echo codex-cli 1.2.3; exit 1", 0o755),
+                ("garbage", "echo not a version", 0o755),
+                ("silent", "exit 0", 0o755),
+                ("oversized", oversized.as_str(), 0o755),
+            ] {
+                let path = program(dir.path(), name, body, mode);
+                assert_eq!(answered(&path), Probe::Rejected, "{name}");
+            }
+        }
+
+        #[test]
+        fn a_version_probe_that_does_not_answer_is_only_provisionally_bad() {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, body) in [("hang", "exec sleep 30"), ("flood", "yes codex-cli")] {
+                let path = program(dir.path(), name, body, 0o755);
+                // A script written while another test forks can be "busy".
+                let mut probe = read_version(&path);
+                for _ in 0..40 {
+                    if probe == Probe::TimedOut {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                    probe = read_version(&path);
+                }
+                assert_eq!(probe, Probe::TimedOut, "{name}");
+            }
+        }
+
+        #[test]
+        fn a_present_runtime_that_cannot_run_fails_closed_without_waiting_out_a_window() {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, body, mode) in [
+                ("not-executable", "echo codex-cli 1.2.3", 0o644),
+                ("exit-code", "exit 1", 0o755),
+                ("garbage", "echo nonsense", 0o755),
+            ] {
+                let path = program(dir.path(), name, body, mode);
+                let runtime = runtime(dir.path(), &path, Duration::from_secs(60));
+                // A loaded machine can outlast the probe once; that is a
+                // conflict, never a selection.
+                let mut outcome = runtime.resolve();
+                for _ in 0..20 {
+                    if !matches!(outcome, Err(RpcError::Conflict)) {
+                        break;
+                    }
+                    outcome = runtime.resolve();
+                }
+                assert!(
+                    matches!(outcome, Ok(Selection::Missing(RuntimeFailure::Unavailable))),
+                    "{name}"
+                );
+            }
+        }
+
+        #[test]
+        fn an_unsettled_catalog_conflicts_only_for_the_retry_window() {
+            let dir = tempfile::tempdir().unwrap();
+            // Launchable, but the login and catalog probes never answer.
+            let path = startable(
+                dir.path(),
+                "slow-catalog",
+                "case \"$1\" in --version) echo codex-cli 1.2.3 ;; *) exec sleep 5 ;; esac",
+            );
+            let runtime = runtime(dir.path(), &path, Duration::from_millis(600));
+            assert!(matches!(runtime.resolve(), Err(RpcError::Conflict)));
+            std::thread::sleep(Duration::from_millis(700));
+            assert!(
+                matches!(
+                    runtime.resolve(),
+                    Ok(Selection::Missing(RuntimeFailure::Unavailable))
+                ),
+                "still a conflict after the window"
+            );
+        }
+
+        #[test]
+        fn a_version_probe_that_hangs_conflicts_only_for_the_retry_window() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = program(dir.path(), "hang", "exec sleep 30", 0o755);
+            let runtime = runtime(dir.path(), &path, Duration::from_millis(600));
+            let mut outcome = runtime.resolve();
+            // A script written while another test forks can be "busy".
+            for _ in 0..40 {
+                if matches!(outcome, Err(RpcError::Conflict)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+                outcome = runtime.resolve();
+            }
+            assert!(matches!(outcome, Err(RpcError::Conflict)));
+            std::thread::sleep(Duration::from_millis(700));
+            assert!(matches!(
+                runtime.resolve(),
+                Ok(Selection::Missing(RuntimeFailure::Unavailable))
+            ));
+        }
     }
 
     #[test]

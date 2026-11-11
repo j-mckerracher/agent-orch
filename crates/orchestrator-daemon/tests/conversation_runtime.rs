@@ -297,7 +297,13 @@ fn replies_survive_a_restart_replay_by_sequence_and_stay_idempotent() {
     assert_eq!(end["entries"], json!([]));
 
     let replayed = chat.send(&global(), "remember me", "m-1");
-    assert_eq!(replayed, sent, "idempotent across restart");
+    assert_eq!(replayed["turn"]["state"], "completed", "{replayed}");
+    assert_eq!(replayed["turn"]["id"], sent["turn"]["id"]);
+    assert_eq!(
+        replayed["entry"], sent["entry"],
+        "idempotent across restart"
+    );
+    assert_eq!(replayed["epoch"], sent["epoch"]);
     assert_eq!(chat.get(&global(), 0)["entries"], before["entries"]);
     stop(&layout, second, chat);
 }
@@ -388,6 +394,128 @@ fn process_alive(pid: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+#[cfg(unix)]
+#[test]
+fn an_agent_orphaned_by_a_killed_daemon_is_reaped_on_the_next_start() {
+    let layout = Layout::new();
+    let pid_file = layout.data.join("agent.pid");
+    let env = [
+        ("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "600000"),
+        ("AGENT_ORCH_FAKE_PID_FILE", pid_file.to_str().unwrap()),
+    ];
+    let mut first = start(&layout, &env);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "[fake:hang]", "m-1");
+    let deadline = Instant::now() + WAIT;
+    let pid = loop {
+        if let Ok(pid) = std::fs::read_to_string(&pid_file) {
+            if !pid.is_empty() {
+                break pid;
+            }
+        }
+        assert!(Instant::now() < deadline, "the agent never started");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let pid = pid.trim().to_owned();
+    // Kill, not shutdown: the daemon cannot stop its agent.
+    drop(chat);
+    first.kill();
+    assert!(process_alive(&pid), "agent {pid} should outlive the daemon");
+
+    let second = start(&layout, &env);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while process_alive(&pid) {
+        assert!(
+            Instant::now() < deadline,
+            "orphaned agent {pid} survived the restart"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    let mut chat = Chat::open(&layout);
+    let page = chat.get(&global(), 0);
+    assert_eq!(
+        page["turn"]["error_code"], "interrupted_by_restart",
+        "{page}"
+    );
+    // A new turn works, and the registry holds no stale record for it.
+    chat.send(&global(), "hello again", "m-2");
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    stop(&layout, second, chat);
+}
+
+/// One `conversations.send` without the conflict retry of [`Chat::send`], so
+/// a runtime that never settles shows up as a conflict instead of hanging.
+fn send_once(chat: &mut Chat, message: &str, key: &str) -> Value {
+    chat.call(
+        "conversations.send",
+        json!({"target": global(), "text": message, "idempotency_key": key}),
+    )
+}
+
+fn assert_fails_closed(response: &Value) {
+    assert!(
+        response.get("error").is_none(),
+        "not a conflict: {response}"
+    );
+    assert_eq!(response["result"]["turn"]["state"], "failed", "{response}");
+    assert_eq!(
+        response["result"]["turn"]["error_code"], "runtime_unavailable",
+        "{response}"
+    );
+}
+
+#[test]
+fn a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict() {
+    // The first start of a fresh binary can outlast the 500 ms probe, and a
+    // probe that hangs or floods looks the same, so a conflict is allowed for
+    // the 15 s retry window and not past it. Prompt answers for `fail` and
+    // `garbage` are proven by the unit tests, which do not depend on how fast
+    // the machine starts a new executable.
+    for mode in ["fail", "garbage", "hang", "flood"] {
+        let layout = Layout::new();
+        let log = layout.data.join("agent.log");
+        let daemon = start(
+            &layout,
+            &[
+                ("AGENT_ORCH_FAKE_VERSION_MODE", mode),
+                ("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap()),
+            ],
+        );
+        let mut chat = Chat::open(&layout);
+        let started = Instant::now();
+        let mut response = send_once(&mut chat, "hello", "m-1");
+        while response["error"]["code"] == CONFLICT {
+            assert!(
+                started.elapsed() < Duration::from_secs(25),
+                "{mode}: still a conflict after the retry window"
+            );
+            thread::sleep(Duration::from_millis(200));
+            response = send_once(&mut chat, "hello", "m-1");
+        }
+        assert_fails_closed(&response);
+        assert!(!log.exists(), "{mode}: the agent must never be launched");
+        let page = chat.get(&global(), 0);
+        assert_eq!(kinds(&page), ["user_message", "turn_failed"], "{mode}");
+        stop(&layout, daemon, chat);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_runtime_that_is_present_but_not_executable_fails_closed() {
+    let layout = Layout::new();
+    let program = layout.data.join("codex-not-executable");
+    std::fs::write(&program, "#!/bin/sh\necho codex-cli 1.0.0\n").unwrap();
+    let daemon = start(
+        &layout,
+        &[("AGENT_ORCH_CODEX_PROGRAM", program.to_str().unwrap())],
+    );
+    let mut chat = Chat::open(&layout);
+    let response = send_once(&mut chat, "hello", "m-1");
+    assert_fails_closed(&response);
+    stop(&layout, daemon, chat);
+}
+
 #[test]
 fn agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes() {
     let layout = Layout::new();
@@ -418,7 +546,7 @@ fn control_characters_never_reach_the_transcript() {
     chat.send(&global(), "[fake:control]", "m-1");
     let page = chat.settled(&global());
     assert_eq!(page["turn"]["state"], "completed", "{page}");
-    assert_eq!(reply(&page), "a[31mredb\ncd");
+    assert_eq!(reply(&page), "a[31mredb\ncdefghi");
 
     // A message that carries control characters is cleaned before the agent
     // sees it; the stored operator message is untouched.
