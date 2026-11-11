@@ -1,0 +1,2 @@
+cwd=C:\Users\Public\t\m7p12-73a62241335847c5988cad929d9fa9b3
+command=npm.cmd --version

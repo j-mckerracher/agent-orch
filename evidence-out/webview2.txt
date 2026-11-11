@@ -1,0 +1,2 @@
+Settings UI value=NOT OBSERVED in this run
+Registry values are recorded in webview2-registry.txt; this does not satisfy a Settings > Installed apps observation.
