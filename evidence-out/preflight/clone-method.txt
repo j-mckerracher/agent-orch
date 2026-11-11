@@ -1,0 +1,2 @@
+Acceptance source clone: NOT STARTED. The mandatory 20 GiB free-space preflight failed before setup.
+Evidence publication uses the existing local object database and the configured HTTPS origin; no source test checkout was created.

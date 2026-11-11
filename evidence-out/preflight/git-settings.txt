@@ -1,0 +1,2 @@
+Acceptance checkout git settings: NOT MEASURED; mandatory disk preflight stopped the run before source clone/checkout.
+No claim is made about core.autocrlf or core.longpaths for this acceptance run.

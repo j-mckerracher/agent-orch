@@ -1,0 +1,3 @@
+Blocked at mandatory preflight. No filesystem volume has the required 20 GiB free.
+C: has 1884020736 bytes free; the Temp alias resolves to the same C: volume.
+Per rerun addendum, stop without running any partial gates.

@@ -1,0 +1,8 @@
+Captured UTC: 2026-11-11T09:19:19.956Z
+Command: Get-PSDrive -PSProvider FileSystem | Select Name,Root,Free
+
+Name  Root                                      FreeBytes     FreeGiB
+C     C:\                                       1884020736    1.75
+Temp  C:\Users\[REDACTED]\AppData\Local\Temp  1884020736    1.75
+Temp is a PowerShell alias rooted on C:; it is not an independent volume.
+The Temp root path is redacted to remove the local account identifier; volume and free-space values are unchanged.

@@ -1,0 +1,9 @@
+Windows=Microsoft Windows NT 10.0.26200.0
+WindowsBuild=26200.8655
+PowerShell=7.5.4
+Git=2.46.2.windows.1
+Node=v22.20.0
+npm=11.3.0
+Rust=rustc 1.96.0 (ac68faa20 2026-05-25)
+Cargo=cargo 1.96.0 (30a34c682 2026-05-25)
+These are host versions only; acceptance setup and tests did not run.
