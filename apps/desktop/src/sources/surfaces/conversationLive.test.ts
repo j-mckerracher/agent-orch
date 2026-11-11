@@ -60,6 +60,17 @@ describe("mapEntries", () => {
     expect(entries.some((e) => e.role === "coordinator")).toBe(false);
   });
 
+  it("names the M7-25 runtime failures instead of showing a generic message", () => {
+    for (const [code, pattern] of [
+      ["runtime_timeout", /too long/],
+      ["runtime_busy", /already answering/],
+    ] as const) {
+      const entries = mapEntries([wire(1, "t1", "user_message", "hi"), wire(2, "t1", "turn_failed", "", code)]);
+      expect(entries[1]).toMatchObject({ kind: "status", role: "system", errorCode: code });
+      expect(entries[1]!.text).toMatch(pattern);
+    }
+  });
+
   it("marks a completed turn without a reply and a cancelled turn as statuses", () => {
     const entries = mapEntries([wire(1, "t1", "turn_completed"), wire(2, "t2", "turn_cancelled")]);
     expect(entries.map((e) => e.kind)).toEqual(["status", "status"]);

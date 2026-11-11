@@ -112,11 +112,14 @@ impl Daemon {
     /// authenticate. Panics, with the daemon log, if it exits or is not ready
     /// within `READY`.
     pub fn start(layout: &Layout) -> Self {
-        Self::start_with_env(layout, &[])
+        Self::start_with_env(layout, &[] as &[(&str, &str)])
     }
 
     /// Like [`Daemon::start`], with extra environment for the daemon process.
-    pub fn start_with_env(layout: &Layout, env: &[(&str, &Path)]) -> Self {
+    pub fn start_with_env<V: AsRef<std::ffi::OsStr> + Copy>(
+        layout: &Layout,
+        env: &[(&str, V)],
+    ) -> Self {
         TIMINGS.with(|timings| timings.borrow_mut().clear());
         let log = File::options()
             .create(true)
@@ -158,6 +161,12 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// Ends the daemon without giving it a chance to clean up.
+    pub fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 
     pub fn wait_for_exit(&mut self) {

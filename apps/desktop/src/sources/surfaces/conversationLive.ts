@@ -4,9 +4,10 @@
  *
  * What this shows, and what it does not:
  * - The daemon records the user message and starts a turn. A turn ends as
- *   completed, failed or cancelled. The shipped daemon has no model runtime
- *   yet, so every turn fails with `runtime_unavailable`; this adapter shows
- *   that as a status line and never produces reply text of its own.
+ *   completed, failed or cancelled. The daemon (M7-25) routes the message to an
+ *   installed, launchable and pinned agent and records its reply; when none is
+ *   available the turn fails with `runtime_unavailable`. This adapter shows a
+ *   failure as a status line and never produces reply text of its own.
  * - There is no push stream. Replies arrive by cursor reads; the caller polls
  *   while the latest turn is `running`.
  * - The transcript is re-read every time, with no client cursor. The log is persisted
@@ -51,12 +52,14 @@ export const LIVE_METHODS = ["conversations.get", "conversations.send", "convers
 
 const FAILURE_TEXT: Record<string, string> = {
   runtime_unavailable:
-    "Orchestrator runtime unavailable. The daemon recorded your message, but no conversation runtime is attached, so no reply was produced.",
+    "Orchestrator runtime unavailable. The daemon recorded your message, but no installed agent could be launched to answer it, so no reply was produced.",
   credentials_missing: "The orchestrator could not start: its credentials are missing. No reply was produced.",
   permission_denied: "The orchestrator was denied permission to run. No reply was produced.",
   version_mismatch: "The orchestrator runtime has an unsupported version. No reply was produced.",
   runtime_unpinned: "The orchestrator runtime is not pinned to a version. No reply was produced.",
   runtime_failed: "The orchestrator runtime failed. The reply is incomplete or missing.",
+  runtime_timeout: "The orchestrator took too long to answer and was stopped. The reply is incomplete or missing.",
+  runtime_busy: "The orchestrator is already answering other conversations. Try again in a moment.",
   reply_too_large: "The reply was larger than the daemon allows and was dropped.",
   interrupted_by_restart: "The daemon restarted before the reply finished. The reply is incomplete or missing.",
 };

@@ -194,8 +194,34 @@ function probe(dataDir: string): Promise<boolean> {
   });
 }
 
-async function launch(dataDir: string): Promise<{ child: ChildProcess; stderr: () => string }> {
-  const child = spawn(daemonBinary(), ["--data-dir", dataDir], { stdio: ["ignore", "pipe", "pipe"] });
+/** Defaults to the `fake_agent` example next to the daemon binary (`cargo build --examples`). */
+export function fakeAgentBinary(): string {
+  return process.env.ORCH_FAKE_AGENT_BIN ?? join(dirname(daemonBinary()), "examples", "fake_agent");
+}
+
+/** Environment under which the daemon finds no installed agent, wherever the tests run. */
+export function noAgentsEnv(): Record<string, string> {
+  const missing = join(workRoot(), "no-such-agent");
+  return { AGENT_ORCH_CODEX_PROGRAM: missing, AGENT_ORCH_CLAUDE_PROGRAM: missing };
+}
+
+/** Environment that makes the deterministic fake the only installed agent, pinned at its version. */
+export function fakeAgentEnv(): Record<string, string> {
+  return {
+    AGENT_ORCH_CODEX_PROGRAM: fakeAgentBinary(),
+    AGENT_ORCH_CLAUDE_PROGRAM: join(workRoot(), "no-such-agent"),
+    AGENT_ORCH_CONVERSATION_PINS: "codex@0.0.0-fake",
+  };
+}
+
+async function launch(
+  dataDir: string,
+  env: Record<string, string>,
+): Promise<{ child: ChildProcess; stderr: () => string }> {
+  const child = spawn(daemonBinary(), ["--data-dir", dataDir], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, ...env },
+  });
   let stderr = "";
   child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
   const deadline = Date.now() + 15_000;
@@ -214,13 +240,13 @@ async function terminate(child: ChildProcess): Promise<void> {
   }
 }
 
-export async function startDaemon(): Promise<RunningDaemon> {
+export async function startDaemon(env: Record<string, string> = {}): Promise<RunningDaemon> {
   const workDir = mkdtempSync(join(workRoot(), "r-"));
   const dataDir = join(workDir, "d");
   const repo = join(workDir, "repo");
   mkdirSync(dataDir, { recursive: true });
   initRepo(repo);
-  let running = await launch(dataDir);
+  let running = await launch(dataDir, env);
   const daemon: RunningDaemon = {
     dataDir,
     repo,
@@ -237,7 +263,7 @@ export async function startDaemon(): Promise<RunningDaemon> {
       if (options.resetStore) {
         for (const suffix of ["", "-wal", "-shm"]) rmSync(join(dataDir, `store.sqlite${suffix}`), { force: true });
       }
-      running = await launch(dataDir);
+      running = await launch(dataDir, env);
     },
     async seedReview(taskId = "e2e-task") {
       await terminate(running.child);
@@ -246,7 +272,7 @@ export async function startDaemon(): Promise<RunningDaemon> {
         [dataDir, realpathSync(repo), join(workDir, "worktrees"), taskId],
         { encoding: "utf8" },
       );
-      running = await launch(dataDir);
+      running = await launch(dataDir, env);
       return JSON.parse(out) as SeededReview;
     },
     async stop() {

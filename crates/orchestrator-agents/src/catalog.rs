@@ -719,6 +719,29 @@ impl CodexAdapter {
         }
         args
     }
+
+    /// Arguments for a text-only conversation turn: a read-only sandbox, no
+    /// session file and no repository requirement. The prompt is one
+    /// argument after `--`; no shell is involved.
+    pub fn args_for_conversation(
+        prompt: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Vec<String> {
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "read-only",
+            "--skip-git-repo-check",
+            "--ephemeral",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(Self::selection_args(model, effort))
+        .chain(["--".to_owned(), prompt.to_owned()])
+        .collect()
+    }
 }
 
 impl ClaudeCodeAdapter {
@@ -748,6 +771,45 @@ impl ClaudeCodeAdapter {
         effort: Option<&str>,
     ) -> Vec<String> {
         let mut args = Self::args_for_prompt(prompt);
+        if let Some(model) = model {
+            args.push("--model".into());
+            args.push(model.into());
+        }
+        if let Some(effort) = effort {
+            args.push("--effort".into());
+            args.push(effort.into());
+        }
+        args
+    }
+
+    /// Arguments for a text-only conversation turn: every tool is disabled
+    /// (`--tools ""`), nothing is persisted, and permission prompts are
+    /// refused. The prompt stays one argument; no shell is involved.
+    pub fn args_for_conversation(
+        prompt: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "-p",
+            prompt,
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--include-partial-messages",
+            "--permission-mode",
+            "dontAsk",
+            "--permission-prompts",
+            "none",
+            "--restricted",
+            "--strict-mcp-config",
+            "--no-session-persistence",
+            "--tools",
+            "",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
         if let Some(model) = model {
             args.push("--model".into());
             args.push(model.into());
@@ -1011,6 +1073,28 @@ mod tests {
             ClaudeCodeAdapter::args_for_prompt_with_selection("hi", None, None),
             ClaudeCodeAdapter::args_for_prompt("hi")
         );
+    }
+
+    #[test]
+    fn conversation_args_are_read_only_and_keep_the_prompt_whole() {
+        let prompt = "line one\n--dangerously; $(rm -rf /)";
+        let codex = CodexAdapter::args_for_conversation(prompt, Some("m"), Some("low"));
+        assert_eq!(codex.last().map(String::as_str), Some(prompt));
+        assert_eq!(codex[codex.len() - 2], "--");
+        for flag in ["--json", "--ephemeral", "--skip-git-repo-check"] {
+            assert!(codex.iter().any(|arg| arg == flag), "{flag}");
+        }
+        let sandbox = codex.iter().position(|arg| arg == "--sandbox").unwrap();
+        assert_eq!(codex[sandbox + 1], "read-only");
+        assert!(codex.iter().any(|arg| arg == "-m"));
+
+        let claude = ClaudeCodeAdapter::args_for_conversation(prompt, None, Some("max"));
+        assert_eq!(&claude[..2], ["-p", prompt]);
+        let tools = claude.iter().position(|arg| arg == "--tools").unwrap();
+        assert_eq!(claude[tools + 1], "");
+        assert!(claude.iter().any(|arg| arg == "--no-session-persistence"));
+        assert!(!claude.iter().any(|arg| arg == "--allowedTools"));
+        assert_eq!(&claude[claude.len() - 2..], ["--effort", "max"]);
     }
 
     #[test]

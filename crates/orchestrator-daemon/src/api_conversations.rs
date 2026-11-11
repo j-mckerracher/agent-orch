@@ -73,13 +73,16 @@ impl DaemonApi {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
-        idempotency::run(
+        self.conversations.prepare()?;
+        let fresh = std::cell::Cell::new(false);
+        let mut reply = idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "conversations.send",
             &key,
             &request,
             || {
+                fresh.set(true);
                 let target = request.target.to_store();
                 self.conversations.require_target(&target)?;
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
@@ -95,7 +98,29 @@ impl DaemonApi {
                     "epoch": self.store.store_epoch().map_err(map_store_error)?
                 }))
             },
-        )
+        )?;
+        if !fresh.get() {
+            self.refresh_replayed_turn(&mut reply);
+        }
+        Ok(reply)
+    }
+
+    /// The recorded reply of a send says "running" because that was true when
+    /// it was recorded. A replay (a retry, or a retry after a restart) shows
+    /// the turn as it is now. The entry and the epoch stay as recorded.
+    fn refresh_replayed_turn(&self, reply: &mut Value) {
+        let Some(turn) = reply.get("turn") else {
+            return;
+        };
+        if turn.get("state").and_then(Value::as_str) != Some("running") {
+            return;
+        }
+        let Some(id) = turn.get("id").and_then(Value::as_str) else {
+            return;
+        };
+        if let Ok(Some(current)) = self.store.conversation_turn(id) {
+            reply["turn"] = turn_json(&current);
+        }
     }
 
     pub(super) fn conversations_get(&self, params: Value) -> Result<Value, RpcError> {
