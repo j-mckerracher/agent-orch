@@ -1,8 +1,8 @@
 /*
- * Global app shell layout. Colours use the M7-01 token names with fallbacks so the shell
- * renders correctly before (and without) the theme layer. Breakpoints follow the wireframe:
- * 1150 px (narrower sidebar), 960 px (activity panel stacks), 760 px (sidebar becomes a
- * collapsible block above the content).
+ * Global app shell layout. Token names fall back to M7-01 defaults.
+ * At 1150 px the sidebar narrows and the activity panel stays 300 px wide on the right.
+ * At 960 px activity moves above main; at 760 px sidebar navigation stays visible in two columns.
+ * Updated: 2026-11-11 18:12:43 UTC.
  */
 body:has(.shell) {
   margin: 0;
@@ -124,10 +124,6 @@ body:has(.shell) {
   min-height: 0;
 }
 
-.shell-sidebar-body[hidden] {
-  display: none;
-}
-
 .shell-nav {
   display: grid;
   gap: 6px;
@@ -211,11 +207,6 @@ body:has(.shell) {
   padding-top: 10px;
 }
 
-.shell-menu-toggle {
-  flex: none;
-  padding: 6px 12px;
-}
-
 .shell-placeholder {
   margin: 0;
   padding: 0 7px;
@@ -237,7 +228,7 @@ body:has(.shell) {
 }
 
 .shell-content.has-activity {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 324px;
   grid-template-areas:
     "top top"
     "main activity"
@@ -329,11 +320,11 @@ body:has(.shell) {
   }
 
   .shell-content.has-activity {
-    grid-template-columns: minmax(0, 1fr) 260px;
+    grid-template-columns: minmax(0, 1fr) 324px;
   }
 
   .shell-activity {
-    margin-right: 22px;
+    margin-right: 24px;
   }
 }
 
@@ -344,8 +335,8 @@ body:has(.shell) {
     grid-template-rows: auto auto auto auto;
     grid-template-areas:
       "top"
-      "main"
       "activity"
+      "main"
       "res";
     overflow: auto;
     /* The sticky resource strip must never cover the element that receives focus (WCAG 2.4.11). */
@@ -354,22 +345,22 @@ body:has(.shell) {
 
   .shell-main {
     overflow: visible;
-    /* A zero minimum lets the auto grid row shrink below its content, so the activity panel is painted over the main region. */
+    /* Grow main with its content; shell-body becomes the scroller at 760 px. */
     min-height: auto;
   }
 
   .shell-activity {
-    margin: 0 22px 16px;
-    overflow: visible;
-    /* Same reason as .shell-main: otherwise the panel overflows its row and paints under the sticky strip. */
-    min-height: auto;
+    width: min(300px, calc(100vw - 36px));
+    height: max-content;
+    max-height: min(45dvh, 420px);
+    margin: 0 22px 12px auto;
+    overflow: auto;
+    min-height: 0;
   }
 
   /*
-   * Wireframe: the resource strip stays at the bottom of the shell at every width. Below
-   * 960 px the content column scrolls, so the strip pins to its bottom edge instead of
-   * flowing after the content. It is collapsed by default (one bar) and capped while open so
-   * it can never cover more than ~15% of the viewport.
+   * Keep the existing resource slot pinned to the bottom of its scrolling content below 960 px.
+   * The supplied wireframe has no matching body element to define another resource-strip target.
    */
   .shell-resources {
     position: sticky;
@@ -441,7 +432,7 @@ body:has(.shell) {
   }
 
   .shell-activity {
-    margin: 0 18px 16px;
+    margin: 0 18px 12px auto;
   }
 
   .shell-resources {

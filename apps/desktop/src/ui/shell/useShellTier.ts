@@ -1,15 +1,14 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Responsive tier of the shell, using the breakpoints of the wireframe
- * (`docs/operator-experience/wireframes.html`). The CSS in `shell.css` owns the layout;
- * the tier only drives behaviour CSS cannot express (the collapsible sidebar) and is
- * exposed as `data-shell-tier` for tests and diagnostics.
+ * Responsive tier of the shell. `shell.css` owns layout; the tier drives the main region's
+ * keyboard scroll focusability and is exposed as `data-shell-tier` for tests and diagnostics.
  *
  * - `full`: wider than 1150 px.
- * - `medium`: 961-1150 px, narrower sidebar.
- * - `stacked`: 761-960 px, the activity panel stacks below the main region.
- * - `narrow`: 760 px or less, the sidebar becomes a collapsible block above the content.
+ * - `medium`: 961-1150 px, narrower sidebar and a 300 px activity panel on the right.
+ * - `stacked`: 761-960 px, activity moves above main as a capped popover.
+ * - `narrow`: 760 px or less, sidebar navigation stays visible in two columns.
+ * Updated: 2026-11-11 18:12:43 UTC.
  */
 export type ShellTier = "full" | "medium" | "stacked" | "narrow";
 

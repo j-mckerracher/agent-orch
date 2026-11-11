@@ -20,8 +20,9 @@
  *   live connection with the `tasks` capability, refuses `fixture:` ids, and asks for
  *   confirmation. Fixture rows use the source's simulated stop and never reach the daemon.
  *
- * Layout: the shell supplies the `<aside>` landmark and docks it right at >=961 px and below
- * the main region otherwise (`shell.css`), so this component renders no landmark of its own.
+ * Layout updated 2026-11-11 18:12:43 UTC. The shell docks this `<aside>` on the right at
+ * >=961 px and places its capped popover above main at 960 px and below (`shell.css`).
+ * This component renders no landmark of its own.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { isFixtureId } from "../../daemon/api";

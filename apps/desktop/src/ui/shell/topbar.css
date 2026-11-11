@@ -202,18 +202,7 @@
 }
 
 @media (max-width: 760px) {
-  /* Usage and counts share the first row; search takes its own full-width row below. */
-  .shell-topbar-usage {
-    order: 1;
-  }
-
-  .shell-topbar-counts {
-    order: 2;
-  }
-
-  .shell-topbar-search {
-    order: 3;
-  }
+  /* Updated: 2026-11-11 18:12:43 UTC. Preserve visual and keyboard order; shell.css wraps search. */
 
   /* Anchor the popover to the top bar, not the pill, so it spans the viewport width. */
   .shell-topbar {

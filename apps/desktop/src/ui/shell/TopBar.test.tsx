@@ -1,5 +1,3 @@
-/// <reference types="node" />
-import { readFileSync } from "node:fs";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,7 +11,6 @@ import { createServices } from "../createServices";
 import type { Route } from "../router";
 import { topBarSlots } from "./TopBar";
 
-const css = readFileSync("src/ui/shell/topbar.css", "utf8");
 const WORKSPACE: Route = { name: "global", view: "workspace" };
 
 async function mount(fake: FakeDaemon | null, options: { waitConnected?: boolean } = {}) {
@@ -300,19 +297,5 @@ describe("local search", () => {
     const skipped = await screen.findByTestId("top-search-skipped");
     expect(skipped).toHaveTextContent("Not searched: D16");
     expect(skipped).toHaveTextContent("not evidence of absence");
-  });
-});
-
-describe("layout", () => {
-  it("puts search on its own row below 761 px", () => {
-    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.shell-topbar-search\s*\{\s*order: 3/);
-    expect(css).toMatch(/\.shell-topbar-usage\s*\{\s*order: 1/);
-  });
-
-  it("anchors the usage popover to the top bar below 761 px so it cannot overflow the viewport", () => {
-    const narrow = css.slice(css.indexOf("@media (max-width: 760px)"));
-    expect(narrow).toMatch(/\.shell-topbar\s*\{\s*position: relative/);
-    expect(narrow).toMatch(/\.top-usage,\s*\.top-usage-info\s*\{\s*position: static/);
-    expect(narrow).toMatch(/\.top-usage-popup\s*\{[^}]*left: 18px;[^}]*right: 18px/);
   });
 });

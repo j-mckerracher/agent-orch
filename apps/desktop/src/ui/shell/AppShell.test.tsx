@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -393,4 +392,3 @@ describe("responsive behaviour", () => {
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
   });
 });
-

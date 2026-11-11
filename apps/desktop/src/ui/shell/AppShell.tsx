@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Route } from "../router";
 import { SidebarNav, SidebarWorkstreams } from "./SidebarNav";
 import type { ShellSlots } from "./slots";
@@ -20,15 +20,12 @@ export interface AppShellProps {
 }
 
 /**
- * Global application shell: persistent connection strip, left sidebar, top bar, main
- * region, optional right activity panel and bottom resource strip. Layout is CSS
- * (`shell.css`, breakpoints 1150/960/760 px); see `slots.ts` for the extension points.
+ * Global shell with persistent connection strip, sidebar, top bar, main, activity, and
+ * resource regions. CSS docks activity right above 960 px and before main at narrower widths.
+ * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, children }: AppShellProps) {
   const tier = useShellTier();
-  const narrow = tier === "narrow";
-  const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => setMenuOpen(false), [route]);
   const hasActivity = slots.activity !== null && slots.activity !== undefined;
   const hasResources = slots.resources !== null && slots.resources !== undefined;
   // Main is the scroll container only in the full and medium tiers, so only there must it be keyboard-focusable (axe scrollable-region-focusable).
@@ -66,19 +63,8 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
               <strong>MCAO</strong>
               <span className="shell-brand-name">Mayo Clinic Agent Orchestrator</span>
             </div>
-            {narrow && (
-              <button
-                type="button"
-                className="shell-menu-toggle"
-                aria-expanded={menuOpen}
-                aria-controls="shell-sidebar-body"
-                onClick={() => setMenuOpen((open) => !open)}
-              >
-                Menu
-              </button>
-            )}
           </header>
-          <div id="shell-sidebar-body" className="shell-sidebar-body" hidden={narrow && !menuOpen}>
+          <div className="shell-sidebar-body">
             <SidebarNav route={route} reviewCount={slots.reviewCount} />
             <SidebarWorkstreams route={route} count={slots.workstreamsCount}>
               {slots.workstreamsTree}

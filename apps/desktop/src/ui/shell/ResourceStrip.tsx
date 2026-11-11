@@ -26,10 +26,10 @@ import "./ResourceStrip.css";
  *   range would be invented, and unavailable/unsupported meters (GPU) have no value at all.
  *   Those rows are `role="group"` with the same name, value, scope and age as visible text.
  *
- * The strip renders inside the shell's `<section aria-label="Device resources">`, so it adds
- * no landmark of its own. The shell lays that region out in normal flow below the main
- * content at every width (it is never sticky, so an open strip cannot cover content on a
- * narrow window), which is what keeps content, composers and dialogs from covering it.
+ * The shell renders this slot in its `Device resources` section and owns responsive placement.
+ * Below 960 px it stays sticky in the scrolling content and is capped at 15dvh (`shell.css`).
+ * The supplied wireframe has no matching body element, so keep existing app behavior.
+ * Updated: 2026-11-11 18:12:43 UTC.
  */
 
 type MeterKey = "cpu" | "memory" | "gpu" | "disk";
