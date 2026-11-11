@@ -1,0 +1,460 @@
+{
+  "name": "Agent Orchestrator implementation",
+  "source": "https://github.com/j-mckerracher/agent-orch/blob/main/docs/technical-implementation-plan.md",
+  "status_values": [
+    "todo",
+    "in_progress",
+    "blocked",
+    "done"
+  ],
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Architecture and feasibility",
+      "exit_criterion": "A single task runs successfully on macOS and Windows."
+    },
+    {
+      "id": "M1",
+      "title": "Single-agent CLI",
+      "exit_criterion": "The CLI executes a task without touching the primary checkout."
+    },
+    {
+      "id": "M2",
+      "title": "Persistence and concurrency",
+      "exit_criterion": "Two parallel tasks survive recoverable failures without lost changes."
+    },
+    {
+      "id": "M3",
+      "title": "Coordinator and approvals",
+      "exit_criterion": "A multi-task objective reaches a reviewed candidate without unapproved merging."
+    },
+    {
+      "id": "M4",
+      "title": "Multi-agent support",
+      "exit_criterion": "Each supported agent completes the same conformance workflow on both operating systems."
+    },
+    {
+      "id": "M5",
+      "title": "Tauri desktop UI",
+      "exit_criterion": "Closing and reopening the UI preserves running daemon tasks."
+    },
+    {
+      "id": "M6",
+      "title": "Release hardening",
+      "exit_criterion": "A clean-machine installation passes all release smoke tests."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "M0-01",
+      "milestone": "M0",
+      "title": "Initialize Rust workspace and Tauri scaffold",
+      "status": "done",
+      "depends_on": [],
+      "details": "Establish the planned crate boundaries and pin dependencies. Keep the first execution slice independent of Tauri.",
+      "important_context": "Assigned to OMP worker in C:/Users/jmckerra/Code/agent-orch-m0-01, branch codex/m0-01-workspace; scope: workspace and desktop scaffold only. Coordinator will verify candidate before completion. Required runtime: purdue/qwen3.8:27b, high thinking, poteto-mode, pstack-pi, Ponytail. Worker RPC session 01a1b6be-f2cc-7058-a26e-f55e867a7d91: get_state verified purdue/qwen3.8:27b and high; Ponytail reported full; worker loaded poteto-mode and pstack-pi. Windows npm invocation needs npm.cmd; implementation and independent review pending. First attempt stopped after prolonged repetitive planning without file changes; session preserved. Retry session 01a1b6c5-ad23-7362-b7b4-ce2f5ec6f268 verified same model/high and Ponytail full. Second attempt stopped after erroneous C++ tools diagnosis and attempted installer launch; no installer process found, worktree clean. VS C++ tools confirmed via vswhere at C:/Program Files/Microsoft Visual Studio/2022/Community. Third session 01a1b6c7-e015-7647-93ab-15fd53e7c7be verified model/high and Ponytail; instructed no installs and npm.cmd. Third session created initial files then began domain implementation belonging to M0-04; stopped and resumed same session with explicit instruction to remove premature domain code and limit scope to scaffold. Runtime reverified. Scope corrected; scaffold files created and workspace build and npm install run. Coordinator found corrupt generated PNG/ICO. RPC monitor crashed printing Unicode to cp1252; session resumed with UTF-8 output and icon/build/lockfile remediation assigned. Independent checks pending. Worker and coordinator verified Windows root cargo build, frontend build, and standalone Tauri cargo build; icons decode and 3 lockfiles exist. Review correction assigned for false-success CLI and README claims; candidate commit and final review pending. macOS and GUI launch unverified. Completed in task-owned worktree C:/Users/jmckerra/Code/agent-orch-m0-01 on branch codex/m0-01-workspace, reviewed candidate 186fe1ac6d1ca6c2e1558f7be9d94dbd2978f8fa (not integrated). Coordinator inspected candidate and verified Windows cargo build --locked --workspace, cargo test --locked --workspace (zero tests), npm.cmd run build, standalone Tauri cargo build --locked, CLI exit 1, valid icons, lockfiles, dependency separation, and clean worktree. GUI launch and native macOS build unverified; M0 milestone exit not met. Dependent implementation worktrees must start from this candidate commit, not the unchanged primary checkout. Delivery/integration requires the configured authorization. User authorized integration and push to main. Candidate 186fe1ac6d1ca6c2e1558f7be9d94dbd2978f8fa was fast-forwarded onto main; dependent work may now use main as its base.",
+      "priority": 1
+    },
+    {
+      "id": "M0-02",
+      "milestone": "M0",
+      "title": "Prove cross-platform subprocess execution",
+      "status": "done",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Exercise subprocess launch, output and termination on native macOS and Windows.",
+      "important_context": "Assigned for priority-2 work in dedicated worktree; coordinator will verify the exact worker session, artifacts, and acceptance criteria. Native evidence from the user’s Mac run is partial: the Python process-group smoke test passed, but the task’s Rust probe remains pending. Worktree C:/Users/jmckerra/Code/agent-orch-m0-02-priority2; session 01a1b70d-2d0f-74b0-b940-90b980b867e3 (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m0-02-priority2\\2026-11-07T17-27-36-463Z_01a1b70d-2d0f-74b0-b940-90b980b867e3.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed. Worker skill reads and outcomes require review. Both poteto-mode and pstack-pi SKILL.md reads verified in this worker session. Monitor interrupted to stop cumulative RPC log growth; worktree changes and session preserved. Same session resumed, model/high and Ponytail reverified; filtered event monitoring active. Reconcile and verify interrupted work before completion. Windows probe candidate 6a62c61 in task worktree (not integrated); coordinator ran cargo run --release --locked --manifest-path tests/feasibility/m0-02/Cargo.toml and observed all four scenarios pass, including tree termination. Corrected contradictory Unix claims in evidence. Mac evidence in origin/main commit e8d4351 confirms a native Python subprocess with stdout/stderr capture and SIGTERM process-group termination. That does not run this task branch’s Rust process probe, so M0-02 remains blocked until tests/feasibility/m0-02 is compiled and run on Mac. User authorized publishing Mac run instructions to GitHub. Task branch codex/m0-02-priority2 (commit 5dc566c) pushed to origin with docs/evidence/m0-02-macos-runbook.md; Native Python process-group evidence is recorded in docs/laptop-verification-plan.md at origin/main e8d4351. Awaiting the Rust probe output from docs/evidence/m0-02-macos-runbook.md (branch commit 5dc566c). No merge performed.\n\nCurrent completion update (2026-11-07): M0-02 is done. The corrected probe source was fixed in task-branch commit e062fb4 (safe Unix CommandExt::process_group(0)); Windows cargo run --release --locked --offline passed all four scenarios. Native macOS retry evidence was pushed in origin/main commit a6f5bcb. It ran unchanged source branch commit 1b006b5053617eb8a7fa961dc4d88b870cc4c76c on macOS 26.7.1 arm64 / Rust 1.95.0: launch-stream, stderr-exit, fanout, and kill-tree all PASS; RESULT ALL PASS; exit 0. Raw evidence: docs/evidence/m0-02-macos/retry-1/; original compile failure remains preserved in origin/main bf4e1c6. Agent-facing runbook is on codex/m0-02-priority2 at 1b006b5, and the default-branch pointer is in origin/main 1c21894. No task implementation branch was merged.\nIntegration update 2026-11-07: the reviewed M0-02 implementation and runbook are now included in main through completed dependent candidates; branch tip 1b006b5 is an ancestor of main.",
+      "priority": 2
+    },
+    {
+      "id": "M0-03",
+      "milestone": "M0",
+      "title": "Verify Codex execution protocol",
+      "status": "done",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Validate the installed CLI's one-shot execution and structured output on both platforms.",
+      "important_context": "Assigned for priority-2 work in dedicated worktree; coordinator will verify the exact worker session, artifacts, and acceptance criteria. Native macOS Codex evidence is recorded in origin/main e8d4351; Windows candidate evidence is in its task branch. Worktree C:/Users/jmckerra/Code/agent-orch-m0-03-priority2; session 01a1b70d-2d1d-73f0-af8f-dce5ea63b257 (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m0-03-priority2\\2026-11-07T17-27-36-477Z_01a1b70d-2d1d-73f0-af8f-dce5ea63b257.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed. Worker skill reads and outcomes require review. Both poteto-mode and pstack-pi SKILL.md reads verified in this worker session. Coordinator found multiple installed Codex executables: PATH npm wrapper resolves to old 0.20.0 while desktop native C:/Users/jmckerra/AppData/Local/OpenAI/Codex/bin/14b838c1d074ff01/codex.exe reports 0.167.0-alpha.3.2. Verify executable selection and protocol for the intended binary; do not assume one version represents all installs. Interrupted old-wrapper model-guessing attempt after inspecting clean worktree; process tree terminated and preserved session resumed with same ID, get_state again verified purdue/qwen3.8:27b high, Ponytail full. Coordinator independently observed desktop binary JSON events through turn.completed with PONG on Windows; worker instructed to reproduce and record exact executable and exit status. Monitor interrupted to stop cumulative RPC log growth; worktree changes and session preserved. Same session resumed, model/high and Ponytail reverified; filtered event monitoring active. Reconcile and verify interrupted work before completion. Windows evidence candidate 2400f88 in task worktree (not integrated): native desktop codex-cli 0.167.0-alpha.3.2 emitted JSONL PONG and completed, worker runner reported exit 0; invalid sandbox exit 2. Older npm CLI 0.20.0 uses different framing and hung after 400 error in observed run. Coordinator inspected artifacts, corrected environment and unsupported claims. Resolved: native macOS arm64 Codex CLI 0.167.0 one-shot returned AGENT_ORCH_PROTOCOL_OK, all five stdout lines parsed as JSON, turn.completed was observed, and exit was 0; evidence is in origin/main commit e8d4351, docs/laptop-verification-plan.md. Together with the independently checked Windows 0.167.0-alpha.3.2 JSONL/PONG success and exit 0, this satisfies M0-03. User authorized publishing Mac run instructions to GitHub. Task branch codex/m0-03-priority2 (commit 8f4b0e0) pushed to origin with native macOS instructions in docs/evidence/m0-03-codex-exec-windows.md; Mac results were pushed in origin/main commit e8d4351. Windows and macOS one-shot JSON evidence is reviewed; M0-03 is done. No candidate branch merge was performed.\nIntegration update 2026-11-07: the reviewed M0-03 Windows evidence and Mac run instructions are now included in main through completed dependent candidates; branch tip 8f4b0e0 is an ancestor of main.",
+      "priority": 2
+    },
+    {
+      "id": "M0-04",
+      "milestone": "M0",
+      "title": "Define domain contracts and threat model",
+      "status": "done",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Define task contracts, task and session separation, state transitions, trust boundaries and authorization invariants.",
+      "important_context": "Assigned for priority-2 work in dedicated worktree; coordinator will verify the exact worker session, artifacts, and acceptance criteria. Native macOS evidence is required for M0-02 and M0-03; availability is unconfirmed. Worktree C:/Users/jmckerra/Code/agent-orch-m0-04-priority2; session 01a1b70d-2d3d-706b-a40a-029a45b536cd (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m0-04-priority2\\2026-11-07T17-27-36-509Z_01a1b70d-2d3d-706b-a40a-029a45b536cd.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed. Worker skill reads and outcomes require review. Both poteto-mode and pstack-pi SKILL.md reads verified in this worker session. Monitor interrupted to stop cumulative RPC log growth; worktree changes and session preserved. Same session resumed, model/high and Ponytail reverified; filtered event monitoring active. Reconcile and verify interrupted work before completion. Coordinator review found proposal delivery unconstrained, approval action parameters/destination unbound, ApprovalRequired ranked as most permissive, and verification policy missing; session interrupted and resumed with same ID/model/high/Ponytail verified for remediation. Candidate requires independent adversarial review after fix. Candidate 98bffca in task worktree, not integrated; coordinator reviewed domain contracts, transition table and security model, repaired empty verification gates, prevented proposal changes to authorized verification, bound additional action parameters, corrected document timestamp. Independent cargo test --locked --workspace --quiet passed 35 core tests on Windows. These are domain contracts, not persistent enforcement; later engine/store/delivery tasks must enforce transactions, ownership and action parameter completeness. Downstream work must base on this candidate once delivery is authorized; primary main does not contain it.\nIntegration update 2026-11-07: reviewed domain contract candidate 98bffca is now included in main through completed dependent candidates.",
+      "priority": 2
+    },
+    {
+      "id": "M0-05",
+      "milestone": "M0",
+      "title": "Demonstrate a single task on both platforms",
+      "status": "done",
+      "depends_on": [
+        "M0-02",
+        "M0-03",
+        "M0-04"
+      ],
+      "details": "Record evidence that one task runs successfully on macOS and Windows.",
+      "important_context": "Assigned one OMP worker at priority 3; dependencies M0-02, M0-03, M0-04 are complete. Feasibility-only scope: demonstrate one real coding task against a disposable Git repository on Windows and macOS; do not implement the production CLI or change project source/board. Task worktree C:/Users/jmckerra/Code/agent-orch-m0-05-priority3, branch codex/m0-05-priority3, integrated candidate base 24c3d03f5cc59fbda22b8f7dfb6bfa0f450512c8 (origin/main a6f5bcb plus M0-02 1b006b5, M0-03 8f4b0e0, M0-04 98bffca). Use an isolated temporary Git repo and the supported native Codex executable; capture exact binary/version, source/task commit, request, JSONL/output, exit status, diff, and worktree isolation. Windows half and an agent-facing macOS runbook are required; Mac evidence remains external and must be pushed as evidence-only. Coordinator owns board updates. OMP session 01a1b7db-27c5-70be-b169-6189446af3a1 (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m0-05-priority3\\2026-11-07T21-12-35-525Z_01a1b7db-27c5-70be-b169-6189446af3a1.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed; successful skill reads: poteto-mode and pstack-pi. Assignment dispatched 2026-11-07T14:14:38-07:00. Windows preflight confirmed the desktop Codex executable at C:/Users/jmckerra/AppData/Local/OpenAI/Codex/bin/14b838c1d074ff01/codex.exe (version 0.167.0-alpha.3.2), logged-in state, and `exec` support for `-C`, `--json`, `--output-last-message`, and `--sandbox workspace-write`; worker is now preparing the bounded disposable-repository demo. Windows demo retry 3 passes on Codex 0.167.0-alpha.3.2 in `docs/evidence/m0-05-windows/raw/run-20261107-143134/`; it used the per-invocation `-c windows.sandbox=\"unelevated\"` override with `--sandbox workspace-write`. Initial elevated-mode run failed with Windows error 1385. The shared `~/.codex/config.toml` remains unchanged. A separate diagnostic also invoked `danger-full-access` once for an `echo`-only probe; do not reuse that mode. Independent harness review and Mac evidence are still pending. Worker committed initial candidate 5126c63; coordinator review is still open. Required corrections: remove/restrict the runnable danger-full-access diagnostic, bound both platform runners, include untracked paths in the one-file assertion, reject reused output directories, fix PowerShell check/detail handling, remove trailing spaces from generated summaries, and rerun Windows against the committed runner revision. Final M0-05 candidate branch codex/m0-05-priority3 was pushed to origin at b1718b9; it includes the corrected Windows and Mac runners, reviewed Mac runbook, and preserved raw attempts. Final Windows validation at docs/evidence/m0-05-windows/raw/20261107-final-candidate-20261107-155733-441c6271e13c43d9838f7e26878d7ae7 passed all nine checks from source commit 3a0a35d with Codex 0.167.0-alpha.3.2 and PowerShell 7.5.4; exit 0, timeout false. M0-05 completion 2026-11-07: reviewed evidence-only branch codex/m0-05-macos-evidence-20261107-160208-618 commit 59edf4df6d96f85916826b7d5db0ba67fceb942d (parent tested candidate b1718b985deae5b5fb562738aa968f7688e0c9f0; only Mac evidence paths). Self-test passed; the first real run is preserved with in-process app-server Operation not permitted; retry on macOS 26.7.1 arm64/Codex 0.167.0 passed all nine checks, exit 0, timeout false, exact TASK.txt bytes and primary-checkout isolation. Windows final candidate source 3a0a35d passed all nine checks. M0-05 done; no code merged.\nIntegration update 2026-11-07: candidate branch codex/m0-05-priority3 at 8ab4c4153a4242d5af3d0ad5abd1efcb01cff661 was merged to main by merge commit 9238466.",
+      "priority": 3
+    },
+    {
+      "id": "M1-01",
+      "milestone": "M1",
+      "title": "Implement task lifecycle and local records",
+      "status": "done",
+      "depends_on": [
+        "M0-04"
+      ],
+      "details": "Validate and persist contracts, states and execution attempts; keep task completion distinct from process exit.",
+      "important_context": "Assigned one worker for M1-01. Dependency M0-04 candidate 98bffca; use that commit as base because it is not integrated into main. Scope: task lifecycle and local durable records, distinct Task/Attempt/Session persistence, transition validation and audit evidence. Coordinator verifies exact candidate and tests. Worktree C:/Users/jmckerra/Code/agent-orch-m1-01-priority3; branch codex/m1-01-priority3; base 98bffcad9f9d0ab7b0fda5f644b3978033815880. OMP session 01a1b783-5891-70bc-8280-27c96886f76e (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m1-01-priority3\\2026-11-07T19-36-40-849Z_01a1b783-5891-70bc-8280-27c96886f76e.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed. Skill reads and candidate require review.\n\nCoordinator review complete (2026-11-07). Worker follow-up 8c4f5b1 plus coordinator documentation correction 32a3826 on codex/m1-01-priority3, based on M0-04 candidate 98bffca; no merge or push. Exact final candidate passed independent cargo test --locked --workspace: 38 orchestrator-core tests and 19 orchestrator-store tests, zero failures; cargo clippy --locked --workspace --all-targets passed when run directly; git diff --check passed and worktree is clean. Review confirms table-driven attempt/session transitions, store-enforced initial states and task ownership, create/mutate serialization on one handle, and focused rejection/concurrency/reopen tests. Limits: one FileStore handle per data directory; multiple handles/processes are not serialized, and file plus rename does not promise power-loss durability because file/directory fsync is absent.\nIntegration update 2026-11-07: candidate branch codex/m1-01-priority3 at 32a3826 was merged to main by merge commit f90a2ad.",
+      "priority": 3
+    },
+    {
+      "id": "M1-02",
+      "milestone": "M1",
+      "title": "Implement isolated Git worktree lifecycle",
+      "status": "done",
+      "depends_on": [
+        "M0-01"
+      ],
+      "details": "Validate repositories, resolve base commits and create a unique branch and worktree per task without changing the primary checkout.",
+      "important_context": "Assigned for priority-2 work in dedicated worktree; coordinator will verify the exact worker session, artifacts, and acceptance criteria. Native macOS evidence is required for M0-02 and M0-03; availability is unconfirmed. Worktree C:/Users/jmckerra/Code/agent-orch-m1-02-priority2; session 01a1b70d-2d06-7435-8bd6-137c63be0b43 (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m1-02-priority2\\2026-11-07T17-27-36-454Z_01a1b70d-2d06-7435-8bd6-137c63be0b43.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed. Worker skill reads and outcomes require review. Both poteto-mode and pstack-pi SKILL.md reads verified in this worker session. Monitor interrupted to stop cumulative RPC log growth; worktree changes and session preserved. Same session resumed, model/high and Ponytail reverified; filtered event monitoring active. Reconcile and verify interrupted work before completion. Worker provider ECONNRESET interrupted a large write; no completed candidate. Partial files retained and same session resumed; model/high/Ponytail reverified. Directed smaller writes, valid Git branch names, collision safety and locked tests. Worker attempted rm -rf against fixed temp probe paths in OMP shell; subsequent git init failed with permission/invalid-path errors. The effect of each removal is not established. Coordinator interrupted and resumed same session with model/high/Ponytail verified, explicitly forbidding recursive deletion and fixed/shared temp paths; tests must use uniquely owned tempdirs. Coordinator found unsafe force-removal rollback and cleanup code in uncommitted worktree.rs; stopped worker before acceptance, resumed same session with model/high/Ponytail verified. Directed removal of all cleanup/rollback, preservation of partial failures, creation-only scope, and rejection of worktree roots inside repositories. Re-review code and test carefully before completion. Candidate 9df7d3f on codex/m1-02-priority2, task worktree C:/Users/jmckerra/Code/agent-orch-m1-02-priority2; not integrated. Coordinator independently inspected candidate, confirmed no delete/force cleanup code remains and verified git status clean. Independent cargo test --locked --workspace passed (8 orchestrator-git tests; rest of workspace compiled, no failures). Covers repository validation, base commit resolution, unique branches/paths, linked-worktree root exclusion, dirty primary checkout preservation, and no cleanup on failures. Downstream tasks depending on this code should base on 9df7d3f or integrate through configured delivery authorization; main is unchanged.\nIntegration update 2026-11-07: candidate 9df7d3f is now included in main through the M1-03 branch history.",
+      "priority": 2
+    },
+    {
+      "id": "M1-03",
+      "milestone": "M1",
+      "title": "Implement Codex adapter and process supervision",
+      "status": "done",
+      "depends_on": [
+        "M0-02",
+        "M0-03",
+        "M0-04",
+        "M1-02"
+      ],
+      "details": "Launch Codex in the worktree, stream structured progress, capture output and exit status, and support cancellation and process cleanup.",
+      "important_context": "Assigned one OMP worker at priority 3. Dependencies M0-02, M0-03, M0-04, M1-02 are complete; M0-04 was added because the adapter/runtime uses its canonical domain types. Scope: Codex adapter and deterministic process supervision only; coordinator verifies exact candidate. Worktree C:/Users/jmckerra/Code/agent-orch-m1-03-priority3, branch codex/m1-03-priority3, integrated base 766c6f5a4c6abdf93b8de99d652c5302a2599772 includes origin/main a6f5bcb, M0-04 98bffca, M1-02 9df7d3f, M0-02 1b006b5, M0-03 8f4b0e0. Baseline cargo test --locked --workspace passed: 35 core and 8 Git tests. Do not edit board.json, push, or merge to main. OMP session 01a1b7db-27ab-7666-ab0f-a26df7c912e0 (C:\\Users\\jmckerra\\.omp\\agent\\sessions\\-Code-agent-orch-m1-03-priority3\\2026-11-07T21-12-35-499Z_01a1b7db-27ab-7666-ab0f-a26df7c912e0.jsonl); get_state verified purdue/qwen3.8:27b, thinking high; Ponytail full observed; successful skill reads: poteto-mode and pstack-pi. Assignment dispatched 2026-11-07T14:14:38-07:00. At coordinator check-in 2026-11-07T14:55-07:00, the worker had completed a broad architecture/dependency survey with only two manifest edits after ~41 minutes. The same OMP session and worktree were preserved and resumed with a focused implementation directive; RPC verified the same session ID, purdue/qwen3.8:27b, and high thinking before sending it. No existing worktree changes were discarded. Same session resumed again at 2026-11-07T16:02-07:00 with a focused implementation directive and the exact docs/evidence/m0-03-codex-exec-windows.md protocol source. Current worktree has supervisor code and a Windows Job Object module; Codex adapter, behavior tests, workspace verification, and candidate commit remain pending.\n\nCoordinator review of OMP candidate d6c77829a8a54db968b32d25e89fd3141d5895ca found acceptance-blocking items: Tokio Child::id() was assumed infallible; Windows child launch preceded Job Object assignment; line buffering was not bounded and reader events could outlive Exited; no regression test covered a nonterminal item.completed error item; crate-level adapter docs named the wrong contract owner; native Unix/macOS behavior was unverified. The OMP attempt is preserved. Per the user's fallback direction, replacement /root/m103_review_fix is GPT-6 Luna at max reasoning on this same branch/worktree, with no push/merge authority. Ponytail v5.3.3 is installed locally; the Codex subagent runtime cannot load its Pi hooks, so it read and is explicitly following Ponytail AGENTS.md and skills/ponytail/SKILL.md plus poteto-mode and pstack-pi; this runtime limitation must remain recorded. Replacement implementation and independent review are in progress. M0-02 macOS results at origin/main a6f5bc were reviewed, but they are unrelated to M1-03. M1-03 still requires a native macOS run pinned to the final candidate before completion. The baseline parser also rejected the Mac run's valid nonterminal item.started command event (`unknown event type item.started`); the regression must cover it and continue through completion. Windows fallback checkpoint: all 10 Codex/supervisor integration tests pass on the edited worktree, including Mac event replay, oversized-line truncation on both streams, descendant cleanup, and no output after Exited. Windows launch now uses CREATE_SUSPENDED, assigns the exact process handle to a kill-on-close Job Object, verifies/resumes the primary thread, and fails closed on setup errors. Full workspace verification, independent diff review, and candidate commit remain pending. Windows verification update: `cargo test --locked --workspace` passed across the full workspace (agents 8, Codex/supervisor integration 10, core 35, Git 8; all unit/doc targets zero failures). Every touched Rust file passes direct rustfmt checking. `cargo fmt --check` remains nonzero only for untouched baseline files; final rerun after the documentation tweak is pending. Independent review found the new Mac regression fixture still reordered the warning: captured JSONL places item.completed/type=error after thread.started but before turn.started, whereas commit 31ee3ef's test places it after turn.started. The candidate parser still rejects the actual stream. Follow-up assigned to the same GPT-6 Luna max subagent on this branch; do not publish or mark done until the fixture preserves exact order, parser accepts the observed warning, and final checks pass. Final reviewed source candidate is 82023712efb9865e07586d6b6a3b0aa5860a725c (parent 31ee3ef); independently verified by coordinator on Windows with `cargo test --locked --workspace` (9 parser unit, 10 adapter/supervisor integration, 35 core, 8 Git; all remaining unit/doc targets passed), touched-file rustfmt checks, and diff check. `cargo fmt --check` remains nonzero only on seven untouched baseline files. Candidate branch `codex/m1-03-priority3` and candidate-pinned runbook `docs/evidence/m1-03-macos-runbook.md` are pushed; latest branch documentation commit a30c2ef. Native macOS `cargo test --locked --workspace` against exact source SHA 82023712efb9865e07586d6b6a3b0aa5860a725c remains pending. Do not mark done or start priority 4 until Mac evidence is fetched and reviewed. Native macOS attempt failed and is preserved in evidence-only branch commit 1e218446c9a01bd28bf9e2e4b5b8052c5eb0bcc6 (`docs/evidence/m1-03-macos/20261108T010732Z-4f607ba8-f2ec-4014-a86b-e484ca255bfc/`). It tested the exact source commit 82023712efb9865e07586d6b6a3b0aa5860a725c on macOS 26.7.1 arm64 / Rust 1.95.0; `cargo test --locked --workspace` exited 101, timeout=false, group_killed=false. The parser unit tests passed 9/9; adapter integration passed 9/10 and stopped at `cancel_reports_cancelled_exit` because the test incorrectly expected the child to remain alive after cancellation, before reap. Mac also reported one unused `std::os::unix::process::CommandExt` import. Raw stdout/stderr are preserved as base64 artifacts; source checkout stayed clean; no retry or source changes on Mac. Follow-up is assigned to the same GPT-6 Luna max replacement agent. Preserve this failed attempt; require a new candidate SHA and candidate-pinned Mac rerun before M1-03 can be done. Corrected Mac candidate is 649c137d7bcfcf2445d2a107162862cde0a1c0ed. The replacement removed the transient pre-reap liveness assertion and the unused Unix import; descendant cleanup coverage remains. Coordinator independently reran `cargo test --locked --workspace` on Windows: 9 parser unit, 10 adapter/supervisor integration, 35 core, 8 Git, and all remaining unit/doc targets passed; touched-file rustfmt and diff checks passed. Updated candidate-pinned runbook is pushed on `codex/m1-03-priority3` at documentation commit 6fe9d3617520c0424380de169613bb9888db6716, path `docs/evidence/m1-03-macos-runbook.md`; remote ref verified. New native Mac run against exact source SHA 649c137... is pending. Preserve first failed Mac evidence commit 1e218446; do not rerun the old candidate or mark M1-03 done until the new evidence is reviewed. Final native macOS verification passed against exact source candidate 649c137d7bcfcf2445d2a107162862cde0a1c0ed. The results watcher execution/M1-03/watch_macos_results.py --once detected evidence branch codex/m1-03-macos-evidence-20261108T012231Z-4a2cbc52-19db-4c76-aa4d-bb78cc552822 at evidence commit 29be290bb779517886144ab774ddd28fd78b746c. On macOS 26.7.1 (25G241) arm64, Rust/Cargo 1.95.0, `cargo test --locked --workspace` exited 0 (62 passed, 0 failed, 0 ignored; parser 9, Codex adapter integration 10, core 35, Git 8; remaining unit/doc targets had zero failures). Timeout=false, process-group SIGKILL=false, source checkout clean, full raw stdout/stderr preserved in the evidence directory. The evidence-only branch contains the run artifacts; the candidate-pinned runbook is docs/evidence/m1-03-macos-runbook.md on codex/m1-03-priority3 at 6fe9d3617520c0424380de169613bb9888db6716. Candidate 649c137 is an ancestor of that pushed branch tip. The prior failed Mac attempt on candidate 8202371 remains preserved at evidence commit 1e218446c9a01bd28bf9e2e4b5b8052c5eb0bcc6. M1-03 acceptance is complete. The repo-wide cargo fmt --check baseline limitation remains seven untouched files; all touched files pass direct rustfmt. Priority 4 was not started.\nIntegration update 2026-11-07: candidate branch codex/m1-03-priority3 at 6fe9d3617520c0424380de169613bb9888db6716 was merged by 569a920. Native Mac evidence commit 29be290bb779517886144ab774ddd28fd78b746c was merged by aeebec7. The corrected source candidate 649c137d7bcfcf2445d2a107162862cde0a1c0ed is in main. Priority 4 remains unstarted.",
+      "priority": 3
+    },
+    {
+      "id": "M1-04",
+      "milestone": "M1",
+      "title": "Build the single-task CLI workflow",
+      "status": "todo",
+      "depends_on": [
+        "M1-01",
+        "M1-03"
+      ],
+      "details": "Implement run, tasks, inspect, cancel, diff and cleanup commands; preserve worktrees for inspection and report actionable errors.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M1-05",
+      "milestone": "M1",
+      "title": "Verify primary checkout isolation and safe cleanup",
+      "status": "todo",
+      "depends_on": [
+        "M1-04"
+      ],
+      "details": "Exercise dirty repositories, cancellation and worktree retention; never delete uncommitted or unlanded work.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-01",
+      "milestone": "M2",
+      "title": "Implement SQLite persistence and migrations",
+      "status": "todo",
+      "depends_on": [
+        "M1-01"
+      ],
+      "details": "Persist projects, contracts, dependencies, attempts, sessions, workspaces, approvals, verification runs, artifacts and an ordered event journal; use WAL and foreign keys.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M2-02",
+      "milestone": "M2",
+      "title": "Build dependency-aware bounded scheduler",
+      "status": "todo",
+      "depends_on": [
+        "M2-01"
+      ],
+      "details": "Reject dependency cycles; enforce authorization, global and per-project limits, fair scheduling and exclusive worktree ownership. Default to two workers.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-03",
+      "milestone": "M2",
+      "title": "Add bounded retries and execution attempt history",
+      "status": "todo",
+      "depends_on": [
+        "M2-02"
+      ],
+      "details": "Use backoff and create a separate durable attempt for each retry.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M2-04",
+      "milestone": "M2",
+      "title": "Implement process and workspace reconciliation",
+      "status": "todo",
+      "depends_on": [
+        "M2-01",
+        "M1-03"
+      ],
+      "details": "Lock the data directory, validate process identity, inspect worktrees and partial deliveries, and classify interrupted tasks before resuming scheduling. Address Windows process trees and macOS process groups.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M2-05",
+      "milestone": "M2",
+      "title": "Test concurrent execution and crash recovery",
+      "status": "todo",
+      "depends_on": [
+        "M2-03",
+        "M2-04"
+      ],
+      "details": "Inject process and runtime failures with two parallel tasks and verify no changes or audit events are silently lost.",
+      "important_context": "",
+      "priority": 7
+    },
+    {
+      "id": "M3-01",
+      "milestone": "M3",
+      "title": "Implement structured coordinator decomposition",
+      "status": "todo",
+      "depends_on": [
+        "M2-02"
+      ],
+      "details": "Validate coordinator proposals against a schema, assign canonical IDs and validate dependencies and task contracts. Keep lifecycle and authorization in the engine.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M3-02",
+      "milestone": "M3",
+      "title": "Enforce task policies and approval state",
+      "status": "todo",
+      "depends_on": [
+        "M2-01"
+      ],
+      "details": "Persist explicit approval decisions bound to the exact action, parameters and candidate commit; reject unauthorized policy changes and reapprove changed actions.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M3-03",
+      "milestone": "M3",
+      "title": "Implement independent verification",
+      "status": "todo",
+      "depends_on": [
+        "M1-02",
+        "M2-01"
+      ],
+      "details": "Verify worktree ownership, candidate commit, protected paths and configured validation commands; retain results and apply an explicit execution trust policy.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M3-04",
+      "milestone": "M3",
+      "title": "Implement report-only and local-review delivery",
+      "status": "todo",
+      "depends_on": [
+        "M3-02",
+        "M3-03"
+      ],
+      "details": "Require authorization before integration, serialize delivery to a destination, revalidate against current state and retain unsafe-to-delete worktrees.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M3-05",
+      "milestone": "M3",
+      "title": "Verify the reviewed multi-task workflow",
+      "status": "todo",
+      "depends_on": [
+        "M3-01",
+        "M3-04"
+      ],
+      "details": "Demonstrate dependency execution, independent verification and approval enforcement across restarts without unapproved merging.",
+      "important_context": "",
+      "priority": 7
+    },
+    {
+      "id": "M4-01",
+      "milestone": "M4",
+      "title": "Implement Pi RPC adapter",
+      "status": "todo",
+      "depends_on": [
+        "M1-03"
+      ],
+      "details": "Support persistent JSONL RPC, correlated responses and asynchronous events according to detected capabilities.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M4-02",
+      "milestone": "M4",
+      "title": "Implement Claude Code adapter",
+      "status": "todo",
+      "depends_on": [
+        "M1-03"
+      ],
+      "details": "Verify installed CLI flags, structured output and permission behavior before integration.",
+      "important_context": "",
+      "priority": 4
+    },
+    {
+      "id": "M4-03",
+      "milestone": "M4",
+      "title": "Implement capability detection and agent routing",
+      "status": "todo",
+      "depends_on": [
+        "M4-01",
+        "M4-02"
+      ],
+      "details": "Expose supported streaming, interactive input, cancellation, resumption, structured output, approvals and model selection without successful no-ops.",
+      "important_context": "",
+      "priority": 5
+    },
+    {
+      "id": "M4-04",
+      "milestone": "M4",
+      "title": "Run adapter conformance suite on both platforms",
+      "status": "todo",
+      "depends_on": [
+        "M4-03"
+      ],
+      "details": "Cover framing, launch, cancellation, errors, unexpected EOF, unsupported features, interruption and approvals for each adapter.",
+      "important_context": "",
+      "priority": 6
+    },
+    {
+      "id": "M5-01",
+      "milestone": "M5",
+      "title": "Build daemon and authenticated local IPC",
+      "status": "todo",
+      "depends_on": [
+        "M3-05"
+      ],
+      "details": "Move reliable scheduling to an on-demand daemon; implement versioned length-prefixed JSON-RPC over Unix sockets and Windows named pipes, authorization and capability negotiation.",
+      "important_context": "",
+      "priority": 8
+    },
+    {
+      "id": "M5-02",
+      "milestone": "M5",
+      "title": "Implement reconnectable event stream and clients",
+      "status": "todo",
+      "depends_on": [
+        "M5-01"
+      ],
+      "details": "Support event subscriptions, sequence-based replay, reconnect and the project, task, session, approval, workspace and delivery methods.",
+      "important_context": "",
+      "priority": 9
+    },
+    {
+      "id": "M5-03",
+      "milestone": "M5",
+      "title": "Build project, task and coordinator UI",
+      "status": "todo",
+      "depends_on": [
+        "M5-02"
+      ],
+      "details": "Provide project selection, agent detection, task submission, board, conversation, live events, cancellation and recovery status.",
+      "important_context": "",
+      "priority": 10
+    },
+    {
+      "id": "M5-04",
+      "milestone": "M5",
+      "title": "Build diff review and approval UI",
+      "status": "todo",
+      "depends_on": [
+        "M5-02",
+        "M3-04"
+      ],
+      "details": "Show the candidate and exact action to be approved, and submit approval decisions through the daemon.",
+      "important_context": "",
+      "priority": 10
+    },
+    {
+      "id": "M5-05",
+      "milestone": "M5",
+      "title": "Complete desktop lifecycle and initial packaging",
+      "status": "todo",
+      "depends_on": [
+        "M5-03",
+        "M5-04"
+      ],
+      "details": "Package the desktop app and verify closing and reopening it does not interrupt daemon-owned work.",
+      "important_context": "",
+      "priority": 11
+    },
+    {
+      "id": "M6-01",
+      "milestone": "M6",
+      "title": "Review threat model and dependency security",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Audit dependencies and plugins, environment allowlists, untrusted inputs, authorization and protected delivery boundaries.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-02",
+      "milestone": "M6",
+      "title": "Implement cross-platform release CI",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Run native macOS and Windows tests, dependency audits, signing and release builds.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-03",
+      "milestone": "M6",
+      "title": "Harden diagnostics and recovery usability",
+      "status": "todo",
+      "depends_on": [
+        "M5-05"
+      ],
+      "details": "Make failures and recovery actions observable without leaking credentials or silently discarding work.",
+      "important_context": "",
+      "priority": 12
+    },
+    {
+      "id": "M6-04",
+      "milestone": "M6",
+      "title": "Test signed installs and upgrades on clean machines",
+      "status": "todo",
+      "depends_on": [
+        "M6-01",
+        "M6-02",
+        "M6-03"
+      ],
+      "details": "Run release smoke tests, including installation, upgrade, approvals, cancellation and recovery on macOS and Windows.",
+      "important_context": "",
+      "priority": 13
+    }
+  ],
+  "priority_description": "Dependency depth: 1 is highest; tasks with the same value may run in parallel once their dependencies are done. Priority does not imply readiness."
+}

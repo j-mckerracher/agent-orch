@@ -1,0 +1,88 @@
+name: ci
+
+# Native gates on macOS and Windows. The gate list, expected counts and verdict rules live in
+# scripts/ci/gates.mjs (Windows mirrors docs/evidence/priority-11r3-windows-acceptance-efa5e8a-runbook.md).
+# See docs/release-ci.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gates:
+    name: gates (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Toolchains are the versions the gate counts were measured with.
+          - { name: macos, runner: macos-15, rust: "1.95.0", node: "26.13.0" }
+          - { name: windows, runner: windows-2025, rust: "1.96.0", node: "22.20.0" }
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: ${{ matrix.rust }}
+    steps:
+      # Before checkout, so the working tree is written with LF and long paths work on Windows.
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Harness self-tests
+        run: node --test "scripts/**/*.test.mjs"
+
+      # One step runs every gate once, in order, with its own target dir and test temp dir.
+      # The evidence and target dirs are outside the checkout so the tree stays clean.
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-${{ matrix.name }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30

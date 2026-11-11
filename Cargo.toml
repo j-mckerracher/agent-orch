@@ -1,0 +1,36 @@
+# Root Cargo workspace.
+#
+# Dependency direction (see docs/technical-implementation-plan.md section 3):
+# orchestrator-core defines contracts; agents/git/store/runtime implement or
+# compose them; ipc and daemon add process boundaries; cli and the desktop
+# app are clients. orchestrator-core MUST NOT depend on tauri, sqlx/git2,
+# tokio, or any agent provider.
+#
+# Direct dependencies are pinned with `=`.
+#
+# `apps/desktop/src-tauri` is deliberately NOT a workspace member: it is a
+# standalone package with its own Cargo.lock. Keeping it outside the engine
+# workspace means desktop tooling and the engine never share a build graph,
+# and the engine can be built and shipped without desktop toolchain setup.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/orchestrator-core",
+    "crates/orchestrator-agents",
+    "crates/orchestrator-git",
+    "crates/orchestrator-store",
+    "crates/orchestrator-private-fs",
+    "crates/orchestrator-runtime",
+    "crates/orchestrator-engine",
+    "crates/orchestrator-diagnostics",
+    "crates/orchestrator-ipc",
+    "crates/orchestrator-daemon",
+    "crates/orchestrator-host-metrics",
+    "crates/orchestrator-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"

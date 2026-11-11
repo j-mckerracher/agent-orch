@@ -1,0 +1,37 @@
+{
+  "fixture": "D4",
+  "description": "Task retry (TaskRetrySource); tasks.retry replaced by M5-02b.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "byState": {
+          "Failed": {
+            "available": true,
+            "reason": "Simulated: a failed task accepts a retry that creates a new attempt.",
+            "previousAttemptId": "fixture:attempt-f1"
+          },
+          "VerificationFailed": {
+            "available": true,
+            "reason": "Simulated: a verification-failed task accepts a retry.",
+            "previousAttemptId": null
+          },
+          "default": {
+            "available": false,
+            "reason": "Simulated: retry is only offered for failed or verification-failed tasks.",
+            "previousAttemptId": null
+          }
+        }
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "tasks.retry is not available until M5-02b."
+    },
+    "error": {
+      "error": "Fixture retry lookup failed (simulated)."
+    }
+  }
+}

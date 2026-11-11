@@ -1,0 +1,60 @@
+{
+  "fixture": "D5",
+  "description": "Coordinator conversation and structured proposals (CoordinatorSource); replaced by M5-02c.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "messages": [
+          {
+            "id": "fixture:msg-1",
+            "role": "user",
+            "text": "Preview: split the settings page refactor into reviewable pieces.",
+            "at": "2026-01-01T00:00:00Z"
+          },
+          {
+            "id": "fixture:msg-2",
+            "role": "coordinator",
+            "text": "Preview: I propose two tasks. The second depends on the first.",
+            "at": "2026-01-01T00:00:03Z"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "fixture:prop-1",
+            "objective": "Preview: extract settings form component",
+            "dependencies": [],
+            "validation": "valid",
+            "validationErrors": [],
+            "suggestedDelivery": "LocalReview"
+          },
+          {
+            "id": "fixture:prop-2",
+            "objective": "Preview: migrate callers",
+            "dependencies": [
+              "fixture:prop-1"
+            ],
+            "validation": "invalid",
+            "validationErrors": [
+              "dependency is not yet an admitted task"
+            ],
+            "suggestedDelivery": "LocalReview"
+          }
+        ],
+        "outstandingDecisions": [
+          "Preview: approve proposal 1 before proposal 2 can be validated."
+        ],
+        "relatedRealIds": []
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "The coordinator conversation service is not available until M5-02c."
+    },
+    "error": {
+      "error": "Fixture coordinator failed (simulated)."
+    }
+  }
+}

@@ -1,0 +1,36 @@
+[package]
+name = "agent-orch-desktop"
+description = "Tauri host for the agent orchestrator desktop app. Thin layer: window lifecycle and IPC forwarding to the engine; no orchestration logic lives here."
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Deliberately kept outside the root Cargo workspace so desktop tooling and
+# the engine never share a build graph (root Cargo.toml header explains the
+# design choice). The empty [workspace] table stops cargo from walking up to
+# the root workspace and rejecting this package as a non-member.
+[workspace]
+
+[dependencies]
+# Pinned 2026-11-07 against crates.io max stable versions.
+tauri = { version = "=2.12.5", features = [] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+# The authenticated local transport; the host forwards frames, it never owns
+# orchestration logic.
+orchestrator-ipc = { path = "../../../crates/orchestrator-ipc" }
+# Redaction for the daemon log excerpt shown in launch failures.
+orchestrator-diagnostics = { path = "../../../crates/orchestrator-diagnostics" }
+# Owner-only data directory and log (a protected DACL on Windows); shared with
+# the engine's store but dependency-free on Unix, so it pulls in no SQLite.
+orchestrator-private-fs = { path = "../../../crates/orchestrator-private-fs" }
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lib]
+name = "agent_orch_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]

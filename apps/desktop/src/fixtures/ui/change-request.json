@@ -1,0 +1,28 @@
+{
+  "_comment": "PLACEHOLDER DATA for D8 (ChangeRequestSource). Simulated only; M5-02 has no change-request endpoint.",
+  "default": "success",
+  "scenarios": {
+    "success": {
+      "history": [
+        {
+          "requestId": "fixture-change-request-0",
+          "feedback": "Add a regression test for the empty-diff case (simulated).",
+          "resultingState": "changes requested (simulated)",
+          "submittedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    },
+    "empty": {
+      "history": []
+    },
+    "error": {
+      "history": [],
+      "historyError": "Simulated history read failure.",
+      "submitError": "Simulated change-request failure."
+    },
+    "unavailable": {
+      "history": [],
+      "submitError": "No change-request contract exists yet (M5-02c)."
+    }
+  }
+}

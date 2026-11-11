@@ -1,0 +1,84 @@
+{
+  "fixture": "D3",
+  "description": "Restart recovery status (RecoveryStatusSource); replaced by M5-02b reconciliation.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "byState": {
+          "Running": {
+            "phase": "reconciling (simulated)",
+            "classification": "needs-inspection",
+            "reason": "A restart would require process identity to be reconciled first.",
+            "checks": {
+              "process": "owner identity unverified",
+              "workspace": "worktree present",
+              "delivery": "no delivery recorded"
+            }
+          },
+          "Queued": {
+            "phase": "not started",
+            "classification": "recoverable",
+            "reason": "Queued work needs no process recovery.",
+            "checks": {
+              "process": "none recorded",
+              "workspace": "none",
+              "delivery": "none"
+            }
+          },
+          "Failed": {
+            "phase": "settled",
+            "classification": "blocked",
+            "reason": "Failed task awaits an explicit retry decision.",
+            "checks": {
+              "process": "exited",
+              "workspace": "preserved",
+              "delivery": "none"
+            }
+          },
+          "Succeeded": {
+            "phase": "settled",
+            "classification": "completed",
+            "reason": "Work completed before the restart.",
+            "checks": {
+              "process": "exited",
+              "workspace": "preserved",
+              "delivery": "recorded"
+            }
+          },
+          "default": {
+            "phase": "unknown",
+            "classification": "needs-inspection",
+            "reason": "No simulated classification for this state.",
+            "checks": {
+              "process": "unknown",
+              "workspace": "unknown",
+              "delivery": "unknown"
+            }
+          }
+        },
+        "byId": {
+          "fixture:task-running": {
+            "phase": "reconciling (simulated)",
+            "classification": "recoverable",
+            "reason": "Simulated: owner process is gone; session can be resumed.",
+            "checks": {
+              "process": "exited",
+              "workspace": "worktree present",
+              "delivery": "none"
+            }
+          }
+        }
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "Recovery classification is not available until M5-02b."
+    },
+    "error": {
+      "error": "Fixture recovery lookup failed (simulated)."
+    }
+  }
+}

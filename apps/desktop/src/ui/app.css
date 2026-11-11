@@ -1,0 +1,41 @@
+@import "./theme/tokens.css";
+@import "./theme/base.css";
+@import "./theme/primitives.css";
+
+/* Page layout kept from the pre-token stylesheet; shell items replace it. */
+body { margin: 0 1rem 2rem; line-height: 1.4; }
+label { display: block; margin: 0.4rem 0; }
+label input, label select, label textarea { display: block; min-width: 20rem; }
+input, select, textarea {
+  border: 1px solid var(--control-border); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--ink); font: inherit; padding: 0.25rem 0.4rem;
+}
+button {
+  border: 1px solid var(--control-border); border-radius: var(--radius-sm);
+  background: var(--panel); color: var(--ink); font: inherit; cursor: pointer;
+}
+button:disabled { color: var(--subtle); border-style: dashed; cursor: not-allowed; }
+pre {
+  max-height: 10rem; overflow: auto; margin: 0;
+  background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.25rem 0.5rem;
+}
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: left; vertical-align: top; }
+
+/* Legacy classes used by the existing screens, expressed in tokens. */
+.strip { position: sticky; top: 0; z-index: 5; background: var(--soft); border-bottom: 1px solid var(--line); padding: 0.5rem; }
+.strip p { margin: 0.2rem 0; }
+.pill {
+  display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid currentColor; border-radius: 1rem;
+  background: var(--soft); color: var(--ink);
+}
+.pill-connected { background: var(--green-bg); color: var(--green); }
+.pill-reconnecting, .pill-connecting { background: var(--amber-bg); color: var(--amber); }
+.pill-disconnected, .pill-unavailable, .pill-idle, .pill-auth-failed, .pill-incompatible { background: var(--red-bg); color: var(--red); }
+.muted { color: var(--subtle); }
+.notice { padding: 0.3rem 0.5rem; background: var(--amber-bg); color: var(--ink); border-left: 3px solid var(--amber); }
+.notice-error { background: var(--red-bg); border-left-color: var(--red); }
+.placeholder { border: 2px dashed var(--amber); padding: 0.5rem 0.75rem; margin: 0.75rem 0; background: var(--amber-bg); color: var(--ink); }
+.badge { font-size: 0.75em; padding: 0.1rem 0.4rem; border: 1px solid currentColor; border-radius: 0.3rem; background: var(--amber-bg); color: var(--amber); }
+.crumbs { margin: 0.5rem 0; }
+.placeholder-tag { background: var(--amber-bg); color: var(--amber); border: 1px dashed var(--amber); padding: 0 4px; font-weight: 600; font-size: 0.8em; }
