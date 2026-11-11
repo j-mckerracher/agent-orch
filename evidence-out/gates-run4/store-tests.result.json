@@ -1,0 +1,13 @@
+{
+  "gate": "store-tests",
+  "command": "cargo test --locked -p orchestrator-store",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 88,
+  "problems": [
+    "1 process(es) of this run survived the gate; see store-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

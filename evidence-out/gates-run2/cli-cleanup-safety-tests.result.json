@@ -1,0 +1,13 @@
+{
+  "gate": "cli-cleanup-safety-tests",
+  "command": "cargo test --locked -p orchestrator-cli --test cleanup_safety",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 73,
+  "problems": [
+    "1 process(es) of this run survived the gate; see cli-cleanup-safety-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

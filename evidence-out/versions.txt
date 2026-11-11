@@ -1,0 +1,1 @@
+node=v22.20.0 npm=11.3.0 rustc=rustc 1.96.0 (ac68faa20 2026-05-25) cargo=cargo 1.96.0 (30a34c682 2026-05-25) pwsh=7.5.4

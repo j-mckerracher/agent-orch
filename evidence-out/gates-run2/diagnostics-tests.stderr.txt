@@ -1,0 +1,9 @@
+   Compiling serde_core v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-diagnostics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-diagnostics)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.80s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\orchestrator_diagnostics-85964efb9b7821b5.exe)
+     Running tests\diagnostics.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\diagnostics-fd83d566730752d0.exe)
+     Running tests\known_secrets.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\known_secrets-2857b4acbf3b4cf0.exe)
+     Running tests\redaction.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\redaction-0e4273a55c513590.exe)
+   Doc-tests orchestrator_diagnostics

@@ -1,0 +1,19 @@
+{
+  "overall": "FAIL",
+  "exitCode": 1,
+  "PASS": 8,
+  "FAIL": 18,
+  "SKIPPED": 8,
+  "skipped": [
+    "p12-windows-checks",
+    "desktop-tsc",
+    "desktop-build",
+    "desktop-vitest",
+    "tauri-build",
+    "tauri-tests",
+    "tauri-clippy",
+    "desktop-package-win"
+  ],
+  "gates": 27,
+  "platform": "win32"
+}

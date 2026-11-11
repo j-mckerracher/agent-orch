@@ -1,0 +1,25 @@
+{
+  "gate": "ipc-tests",
+  "command": "cargo test --locked -p orchestrator-ipc",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 21,
+  "problems": [
+    "test not reported: authenticated_health_and_shutdown_remove_owned_files",
+    "test not reported: handshake_rejects_unknown_fields",
+    "test not reported: methods_require_handshake_and_negotiated_capability",
+    "test not reported: replay_backlog_beyond_the_live_buffer_is_delivered_in_order",
+    "test not reported: requests_reject_unknown_fields_and_control_params",
+    "test not reported: stalled_and_garbage_connections_do_not_block_health",
+    "test not reported: subscription_replays_then_streams_and_reconnects_from_observed_cursor",
+    "test not reported: stale_socket_is_reclaimed_after_refused_probe",
+    "test not reported: wrong_missing_and_unsupported_handshakes_are_sanitized",
+    "test not reported: timeout_applies_to_both_stream_directions",
+    "test not reported: live_server_rejects_competing_start_and_idle_cleanup_removes_files",
+    "test not reported: a_wrong_token_is_an_authentication_failure",
+    "test not reported: authenticated_request_resets_idle_deadline"
+  ],
+  "newDiagnostics": 0
+}

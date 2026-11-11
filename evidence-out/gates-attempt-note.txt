@@ -1,0 +1,2 @@
+Attempt 2 (gates-run2) completed with failures; exact results retained. Rerunning after correcting local Git settings and confirming prior fake_agent child has exited.
+Attempt 3 (gates-run3) stopped before gates because the target directory was nonempty from attempt 2; retained its refusal. Attempt 4 uses fresh target, temp and evidence directories after the Git config correction.

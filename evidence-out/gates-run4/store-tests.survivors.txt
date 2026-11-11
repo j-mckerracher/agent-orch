@@ -1,0 +1,6 @@
+pid 40980 ppid 6760 fake_agent.exe: "<profile>\b44f88a2\tg4\debug\examples\fake_agent.exe" exec --json --sandbox read-only --skip-git-repo-check --ephemeral -- "You are the orchestrator assistant in the agent-orch desktop app. Reply to the operator in plain text. You can only talk: you cannot start, change or cancel tasks, approve anything, deliver anything or modify files, and nothing you write is executed. If the operator wants an action, tell them which part of the app performs it.
+
+Scope: the global orchestrator.
+
+Current message:
+[fake:hang]"

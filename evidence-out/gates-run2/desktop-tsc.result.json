@@ -1,0 +1,10 @@
+{
+  "gate": "desktop-tsc",
+  "command": "npx tsc -b",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "SKIPPED",
+  "problems": [
+    "prerequisite gate(s) did not pass: desktop-npm-ci"
+  ]
+}

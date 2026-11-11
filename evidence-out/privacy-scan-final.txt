@@ -1,0 +1,1 @@
+Final evidence privacy scan: zero e-mail addresses, work/school domain matches, or local username matches. All JSON files valid. All 40 manual checklist rows have a verdict.

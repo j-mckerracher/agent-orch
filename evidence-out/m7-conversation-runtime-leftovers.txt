@@ -1,0 +1,3 @@
+No target fake_agent child remains.
+pid=36380 ppid=30796 command=<fake-agent-hang under isolated target>
+terminated=1

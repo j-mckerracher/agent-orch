@@ -1,0 +1,13 @@
+{
+  "gate": "coordinator-review-tests",
+  "command": "cargo test --locked -p orchestrator-daemon --test coordinator_review",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 11,
+  "problems": [
+    "1 process(es) of this run survived the gate; see coordinator-review-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

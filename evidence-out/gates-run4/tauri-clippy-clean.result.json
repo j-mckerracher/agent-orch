@@ -1,0 +1,13 @@
+{
+  "gate": "tauri-clippy-clean",
+  "command": "cargo clean -p agent-orch-desktop",
+  "cwd": "apps/desktop/src-tauri",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 1,
+  "problems": [
+    "1 process(es) of this run survived the gate; see tauri-clippy-clean.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

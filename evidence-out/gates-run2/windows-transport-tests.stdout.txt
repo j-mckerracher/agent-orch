@@ -1,0 +1,18 @@
+
+running 13 tests
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 5.05s
+

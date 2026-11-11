@@ -1,0 +1,38 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running tests\conversation_runtime.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+
+running 12 tests
+test live_codex_answers_a_global_message ... ignored, needs a signed-in codex CLI; set AGENT_ORCH_LIVE_CONVERSATION=1
+test control_characters_never_reach_the_transcript ... ok
+test a_turn_the_daemon_lost_is_failed_on_restart_not_left_running ... ok
+test a_version_that_is_not_pinned_never_receives_the_message ... ok
+test the_agent_runs_read_only_in_an_empty_scratch_directory ... ok
+test a_configured_model_the_catalog_does_not_offer_fails_closed ... ok
+test cancel_stops_a_streaming_reply_and_later_output_is_discarded ... ok
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+test replies_survive_a_restart_replay_by_sequence_and_stay_idempotent ... ok
+test agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes ... FAILED
+test a_hung_agent_is_killed_at_the_deadline ... ok
+test a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict ... ok
+
+failures:
+
+---- agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes stdout ----
+
+thread 'agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes' (36180) panicked at crates\orchestrator-daemon\tests\conversation_runtime.rs:122:47:
+relay closed: Remote
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+--- daemon log tail (C:\Users\[user-redacted]\AppData\Local\Temp\ao5oVLpD\daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"35796","ts":"2026-11-11T04:58:12Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:58:12Z"}
+--- end daemon log ---
+
+
+failures:
+    agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes
+
+test result: FAILED. 10 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 34.44s
+
+error: test failed, to rerun pass `-p orchestrator-daemon --test conversation_runtime`

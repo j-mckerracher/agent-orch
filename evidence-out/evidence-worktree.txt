@@ -1,0 +1,2 @@
+Preparing worktree (detached HEAD b44f88a)
+HEAD is now at b44f88a Update native gate expected counts for the M7 final merge

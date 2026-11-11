@@ -1,0 +1,36 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.50s
+     Running unittests src\main.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:48:48Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:48:49Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T04:48:49Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T04:48:49Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-11T04:48:55Z"}
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-11T04:49:04Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T04:49:04Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:04Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:06Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:08Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:08Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T04:49:08Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T04:49:08Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T04:49:09Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T04:49:09Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-11T04:49:09Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T04:49:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:11Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-11T04:49:13Z"}
+     Running tests\conversation_runtime.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+error: test failed, to rerun pass `-p orchestrator-daemon --test conversation_runtime`

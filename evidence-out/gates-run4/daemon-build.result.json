@@ -1,0 +1,11 @@
+{
+  "gate": "daemon-build",
+  "command": "cargo build --locked -p orchestrator-daemon",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 80,
+  "problems": [],
+  "newDiagnostics": 0
+}

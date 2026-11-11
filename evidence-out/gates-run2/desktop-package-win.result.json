@@ -1,0 +1,10 @@
+{
+  "gate": "desktop-package-win",
+  "command": "npm run package:win",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "SKIPPED",
+  "problems": [
+    "prerequisite gate(s) did not pass: desktop-npm-ci"
+  ]
+}

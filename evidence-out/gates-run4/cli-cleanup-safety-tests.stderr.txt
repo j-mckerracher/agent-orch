@@ -1,0 +1,37 @@
+   Compiling windows-sys v0.61.2
+   Compiling crypto-common v0.1.6
+   Compiling utf8parse v0.2.2
+   Compiling once_cell_polyfill v1.70.2
+   Compiling anstyle v1.0.14
+   Compiling colorchoice v1.0.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.1.1
+   Compiling clap_derive v4.6.7
+   Compiling digest v0.10.7
+   Compiling anstyle-parse v1.0.0
+   Compiling sha2 v0.10.9
+   Compiling sqlx-core v0.9.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling anstyle-wincon v3.0.11
+   Compiling orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+   Compiling anstyle-query v1.1.5
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling tokio v1.54.1
+   Compiling clap_builder v4.6.7
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling clap v4.6.7
+   Compiling sqlx-macros v0.9.0
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-agents)
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-engine)
+   Compiling orchestrator-cli v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.58s
+     Running tests\cleanup_safety.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\cleanup_safety-1c90eae2393b8fa5.exe)

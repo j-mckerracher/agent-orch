@@ -1,0 +1,1 @@
+No target-owned fake_agent.exe remained after the harness.

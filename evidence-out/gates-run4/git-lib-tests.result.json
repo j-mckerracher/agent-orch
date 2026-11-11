@@ -1,0 +1,13 @@
+{
+  "gate": "git-lib-tests",
+  "command": "cargo test --locked -p orchestrator-git --lib",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 20,
+  "problems": [
+    "1 process(es) of this run survived the gate; see git-lib-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

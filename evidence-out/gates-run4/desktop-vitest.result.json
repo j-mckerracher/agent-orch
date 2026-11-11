@@ -1,0 +1,10 @@
+{
+  "gate": "desktop-vitest",
+  "command": "npx vitest run",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "SKIPPED",
+  "problems": [
+    "prerequisite gate(s) did not pass: desktop-npm-ci"
+  ]
+}

@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running tests\queue_snapshot.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\queue_snapshot-21c82c2d8cb1d381.exe)
+Initialized empty Git repository in C:/Users/[user-redacted]/AppData/Local/Temp/.tmpupfdYb/repo/.git/
+[main (root-commit) 525b2d5] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 cancelling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS

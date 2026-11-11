@@ -1,0 +1,65 @@
+
+running 55 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test coordinator_review_tests::capability_set_names_are_unique_and_round_trip ... ok
+test auth::tests::reports_no_common_version ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test coordinator_review_tests::client_wrappers_send_the_documented_methods_and_parameters ... ok
+test coordinator_review_tests::methods_are_unavailable_without_the_negotiated_capability ... ok
+test coordinator_review_tests::a_handler_without_review_never_exposes_review_methods ... ok
+test host_tests::the_host_capability_is_named_and_listed ... ok
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... ok
+test event_stream_tests::reconnect_still_requires_the_current_token ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... ok
+test host_tests::host_metrics_needs_the_host_capability ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test queue_tests::a_handler_without_queue_never_exposes_it ... ok
+test queue_tests::queue_capability_is_named_and_part_of_the_full_set ... ok
+test coordinator_review_tests::server_gates_each_method_on_its_own_capability ... ok
+test queue_tests::queue_snapshot_needs_the_negotiated_queue_capability ... ok
+test relay::tests::closing_a_relay_is_not_a_daemon_shutdown_and_a_new_relay_resumes_the_stream ... ok
+test relay::tests::no_daemon_is_unavailable_not_an_authentication_failure ... ok
+test relay::tests::the_welcome_reports_only_the_capabilities_the_daemon_grants ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... ok
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... ok
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... ok
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... ok
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test event_stream_tests::replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test event_stream_tests::resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test workstreams_tests::a_handler_without_workstreams_never_negotiates_it ... ok
+test workstreams_tests::workstreams_capability_is_named_and_round_trips ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test workstreams_tests::every_workstream_method_is_gated_by_the_negotiated_capability ... ok
+test workstreams_tests::wrapper_sends_workstream_methods_with_the_capability ... ok
+test relay::tests::a_daemon_that_stops_ends_the_relay_with_a_remote_close ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test idle_subscription_tests::unsubscribed_connection_does_not_keep_the_server_alive ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test idle_subscription_tests::a_call_longer_than_the_idle_timeout_does_not_stop_the_server ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+test idle_subscription_tests::server_idles_out_after_its_last_subscriber_leaves ... ok
+test idle_subscription_tests::live_subscription_keeps_an_otherwise_idle_server_running ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.23s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

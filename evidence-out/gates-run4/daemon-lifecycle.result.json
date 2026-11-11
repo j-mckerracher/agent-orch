@@ -1,0 +1,13 @@
+{
+  "gate": "daemon-lifecycle",
+  "command": "cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 11,
+  "problems": [
+    "1 process(es) of this run survived the gate; see daemon-lifecycle.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

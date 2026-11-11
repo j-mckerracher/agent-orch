@@ -1,0 +1,74 @@
+   Compiling syn v3.0.9
+   Compiling windows-sys v0.61.2
+   Compiling tokio v1.54.1
+   Compiling synstructure v0.14.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+   Compiling tempfile v3.27.0
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling tokio-stream v0.1.19
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling thiserror v2.0.21
+   Compiling serde v1.0.229
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-core)
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:93:4
+   |
+93 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 29s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\orchestrator_store-344f67571e0677a2.exe)
+     Running tests\approvals.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\approvals-0e608e023cbbcc86.exe)
+     Running tests\attempt_history.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\attempt_history-eb7f15fec2b42fde.exe)
+     Running tests\cancellation_owner.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\cancellation_owner-053f9fe0676441fd.exe)
+     Running tests\conversations.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\conversations-7427a7bfa6126bab.exe)
+     Running tests\data_lock.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\data_lock-376180c3aaca7b9c.exe)
+     Running tests\delivery.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\delivery-b20d979009c02294.exe)
+     Running tests\delivery_acceptance_contract.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\delivery_acceptance_contract-24127dd75a558ffe.exe)
+     Running tests\lock_identity_contract.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\lock_identity_contract-c745c16d6eb28a0a.exe)
+     Running tests\reconnectable_events.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\reconnectable_events-30b176e0c8503756.exe)
+     Running tests\review.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\review-8f033cb9993ce717.exe)
+     Running tests\sqlite_reconcile.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\sqlite_reconcile-b4d1d722118eb743.exe)
+     Running tests\verification.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\verification-a6f0e7b7f8bc28f4.exe)
+     Running tests\workstreams.rs (C:\Users\[user-redacted]\b44f88a2\tg\debug\deps\workstreams-3d55f1c38a8de3a3.exe)
+   Doc-tests orchestrator_store

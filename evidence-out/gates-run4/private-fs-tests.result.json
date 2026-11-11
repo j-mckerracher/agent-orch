@@ -1,0 +1,13 @@
+{
+  "gate": "private-fs-tests",
+  "command": "cargo test --locked -p orchestrator-private-fs",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 6,
+  "problems": [
+    "1 process(es) of this run survived the gate; see private-fs-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

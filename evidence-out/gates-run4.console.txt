@@ -1,0 +1,1965 @@
+::group::node-self-tests: node --test scripts/**/*.test.mjs
+TAP version 13
+# Subtest: captures stdout, stderr and the exit code, and also the file bytes
+ok 1 - captures stdout, stderr and the exit code, and also the file bytes
+  ---
+  duration_ms: 221.3342
+  type: 'test'
+  ...
+# Subtest: a descendant holding the output pipes cannot stall the run after the process exits
+ok 2 - a descendant holding the output pipes cannot stall the run after the process exits
+  ---
+  duration_ms: 444.6382
+  type: 'test'
+  ...
+# Subtest: a timeout kills the process and ends the run promptly
+ok 3 - a timeout kills the process and ends the run promptly
+  ---
+  duration_ms: 1100.63
+  type: 'test'
+  ...
+# Subtest: a command that cannot start reports the error
+ok 4 - a command that cannot start reports the error
+  ---
+  duration_ms: 5.447
+  type: 'test'
+  ...
+# Subtest: each running-sequence sum equals passed plus ignored (filtered tests excluded)
+ok 5 - each running-sequence sum equals passed plus ignored (filtered tests excluded)
+  ---
+  duration_ms: 1.2894
+  type: 'test'
+  ...
+# Subtest: each expected total equals the length of its name list, so a merge updates both
+ok 6 - each expected total equals the length of its name list, so a merge updates both
+  ---
+  duration_ms: 5.3466
+  type: 'test'
+  ...
+# Subtest: gates take their counts from expected.mjs
+ok 7 - gates take their counts from expected.mjs
+  ---
+  duration_ms: 12.9882
+  type: 'test'
+  ...
+# Subtest: the Windows-only p12 gate needs both binaries and takes its paths from the harness
+ok 8 - the Windows-only p12 gate needs both binaries and takes its paths from the harness
+  ---
+  duration_ms: 8.387
+  type: 'test'
+  ...
+# Subtest: the clippy baseline pattern matches only the listed lines, under either separator
+ok 9 - the clippy baseline pattern matches only the listed lines, under either separator
+  ---
+  duration_ms: 0.5709
+  type: 'test'
+  ...
+# Subtest: both the TAP and the spec summary are read, with CRLF as well
+ok 10 - both the TAP and the spec summary are read, with CRLF as well
+  ---
+  duration_ms: 4.6244
+  type: 'test'
+  ...
+# Subtest: a wrong count, a failure, a cancellation, a skip or a todo is a problem
+ok 11 - a wrong count, a failure, a cancellation, a skip or a todo is a problem
+  ---
+  duration_ms: 1.3193
+  type: 'test'
+  ...
+# Subtest: output without a summary proves nothing
+ok 12 - output without a summary proves nothing
+  ---
+  duration_ms: 0.3684
+  type: 'test'
+  ...
+# Subtest: a counter in the middle of a line is not a summary line
+ok 13 - a counter in the middle of a line is not a summary line
+  ---
+  duration_ms: 0.1801
+  type: 'test'
+  ...
+# Subtest: the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+ok 14 - the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+  ---
+  duration_ms: 2.9386
+  type: 'test'
+  ...
+# Subtest: the verdict is case-sensitive, taken from a line start, and must be unique and known
+ok 15 - the verdict is case-sensitive, taken from a line start, and must be unique and known
+  ---
+  duration_ms: 0.5251
+  type: 'test'
+  ...
+# Subtest: a PASS verdict that contradicts its CHECK lines is a problem
+ok 16 - a PASS verdict that contradicts its CHECK lines is a problem
+  ---
+  duration_ms: 0.2303
+  type: 'test'
+  ...
+# Subtest: sequence and totals are read across binaries, with CRLF output
+ok 17 - sequence and totals are read across binaries, with CRLF output
+  ---
+  duration_ms: 1.2609
+  type: 'test'
+  ...
+# Subtest: a wrong count, sequence or missing name is a problem in either direction
+ok 18 - a wrong count, sequence or missing name is a problem in either direction
+  ---
+  duration_ms: 0.5694
+  type: 'test'
+  ...
+# Subtest: a failed or ignored test is not ok
+ok 19 - a failed or ignored test is not ok
+  ---
+  duration_ms: 0.3852
+  type: 'test'
+  ...
+# Subtest: name matching is by whole path segment, not substring
+ok 20 - name matching is by whole path segment, not substring
+  ---
+  duration_ms: 0.3202
+  type: 'test'
+  ...
+# Subtest: lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+ok 21 - lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+  ---
+  duration_ms: 0.752
+  type: 'test'
+  ...
+# Subtest: build and lint outputs must show real work and a Finished line
+ok 22 - build and lint outputs must show real work and a Finished line
+  ---
+  duration_ms: 0.9695
+  type: 'test'
+  ...
+# Subtest: diagnostics keep the message and location
+ok 23 - diagnostics keep the message and location
+  ---
+  duration_ms: 0.8904
+  type: 'test'
+  ...
+# Subtest: vitest summary lines
+ok 24 - vitest summary lines
+  ---
+  duration_ms: 0.6564
+  type: 'test'
+  ...
+# Subtest: a real short directory passes, existing or not yet created
+ok 25 - a real short directory passes, existing or not yet created
+  ---
+  duration_ms: 4.2993
+  type: 'test'
+  ...
+# Subtest: a SUBST or mapped drive fails: the drive letter differs from the real path
+ok 26 - a SUBST or mapped drive fails: the drive letter differs from the real path
+  ---
+  duration_ms: 0.6536
+  type: 'test'
+  ...
+# Subtest: a junction fails: the same drive, a different path
+ok 27 - a junction fails: the same drive, a different path
+  ---
+  duration_ms: 0.3592
+  type: 'test'
+  ...
+# Subtest: a junction in the nearest existing ancestor is found for a path that does not exist yet
+ok 28 - a junction in the nearest existing ancestor is found for a path that does not exist yet
+  ---
+  duration_ms: 0.4714
+  type: 'test'
+  ...
+# Subtest: letter case and an 8.3 short name are the same directory, not an alias
+ok 29 - letter case and an 8.3 short name are the same directory, not an alias
+  ---
+  duration_ms: 0.3962
+  type: 'test'
+  ...
+# Subtest: a network or device path fails
+ok 30 - a network or device path fails
+  ---
+  duration_ms: 0.2152
+  type: 'test'
+  ...
+# Subtest: a path longer than the limit fails, one at the limit does not
+ok 31 - a path longer than the limit fails, one at the limit does not
+  ---
+  duration_ms: 0.4811
+  type: 'test'
+  ...
+# Subtest: every bad root is reported, each once per problem
+ok 32 - every bad root is reported, each once per problem
+  ---
+  duration_ms: 0.5607
+  type: 'test'
+  ...
+# Subtest: nothing is checked off Windows
+ok 33 - nothing is checked off Windows
+  ---
+  duration_ms: 0.6297
+  type: 'test'
+  ...
+# Subtest: a path that cannot be resolved is reported
+ok 34 - a path that cannot be resolved is reported
+  ---
+  duration_ms: 0.8061
+  type: 'test'
+  ...
+# Subtest: the domain account, profile, host, DNS domain, user and e-mail are all replaced
+ok 35 - the domain account, profile, host, DNS domain, user and e-mail are all replaced
+  ---
+  duration_ms: 3.4641
+  type: 'test'
+  ...
+# Subtest: a domain in front of an account is removed even when the environment does not name it
+ok 36 - a domain in front of an account is removed even when the environment does not name it
+  ---
+  duration_ms: 1.4641
+  type: 'test'
+  ...
+# Subtest: names are matched whole-word, and short names are left alone
+ok 37 - names are matched whole-word, and short names are left alone
+  ---
+  duration_ms: 0.5012
+  type: 'test'
+  ...
+# Subtest: findPrivate reports the line and kind, never the value
+ok 38 - findPrivate reports the line and kind, never the value
+  ---
+  duration_ms: 0.8527
+  type: 'test'
+  ...
+# Subtest: raw tool output may name the profile but not the rest of the identity
+ok 39 - raw tool output may name the profile but not the rest of the identity
+  ---
+  duration_ms: 0.3324
+  type: 'test'
+  ...
+# Subtest: a busy directory is retried until it can be removed
+ok 40 - a busy directory is retried until it can be removed
+  ---
+  duration_ms: 2.9811
+  type: 'test'
+  ...
+# Subtest: the last busy error is thrown once the attempts are used up
+ok 41 - the last busy error is thrown once the attempts are used up
+  ---
+  duration_ms: 1.7655
+  type: 'test'
+  ...
+# Subtest: an error that is not a busy directory is thrown at once
+ok 42 - an error that is not a busy directory is thrown at once
+  ---
+  duration_ms: 0.3876
+  type: 'test'
+  ...
+# Subtest: a real directory tree is removed on the first attempt and a missing one is not an error
+ok 43 - a real directory tree is removed on the first attempt and a missing one is not an error
+  ---
+  duration_ms: 17.3472
+  type: 'test'
+  ...
+# Subtest: parsePs reads pid, ppid and the whole command line, spaces included
+ok 44 - parsePs reads pid, ppid and the whole command line, spaces included
+  ---
+  duration_ms: 3.4134
+  type: 'test'
+  ...
+# Subtest: survivors are processes under this run's directories; the harness and its ancestors are not
+ok 45 - survivors are processes under this run's directories; the harness and its ancestors are not
+  ---
+  duration_ms: 0.8312
+  type: 'test'
+  ...
+# Subtest: Windows listing: path separators and case do not matter, a single object is accepted
+ok 46 - Windows listing: path separators and case do not matter, a single object is accepted
+  ---
+  duration_ms: 0.7346
+  type: 'test'
+  ...
+# Subtest: with a launched child, the operator's monitor that names the run directory is not a survivor
+ok 47 - with a launched child, the operator's monitor that names the run directory is not a survivor
+  ---
+  duration_ms: 1.1387
+  type: 'test'
+  ...
+# Subtest: a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+ok 48 - a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+  ---
+  duration_ms: 0.4183
+  type: 'test'
+  ...
+# Subtest: scanSurvivors passes the launched pids to the scan
+ok 49 - scanSurvivors passes the launched pids to the scan
+  ---
+  duration_ms: 0.5956
+  type: 'test'
+  ...
+# Subtest: scanSurvivors retries while a process is still listed, then reports what remains
+ok 50 - scanSurvivors retries while a process is still listed, then reports what remains
+  ---
+  duration_ms: 32.4797
+  type: 'test'
+  ...
+# Subtest: a listing failure is an error, not an empty result
+ok 51 - a listing failure is an error, not an empty result
+  ---
+  duration_ms: 0.7738
+  type: 'test'
+  ...
+# Subtest: the real listing finds a live process by a path unique to it, and not this harness
+ok 52 - the real listing finds a live process by a path unique to it, and not this harness
+  ---
+  duration_ms: 1371.8187
+  type: 'test'
+  ...
+# Subtest: all PASS is PASS, and only that exits 0
+ok 53 - all PASS is PASS, and only that exits 0
+  ---
+  duration_ms: 1.1406
+  type: 'test'
+  ...
+# Subtest: a SKIPPED gate can never look like a pass: the verdict is INCONCLUSIVE and the exit is not 0
+ok 54 - a SKIPPED gate can never look like a pass: the verdict is INCONCLUSIVE and the exit is not 0
+  ---
+  duration_ms: 0.2641
+  type: 'test'
+  ...
+# Subtest: a failure wins over a skip, in a gate or in a harness check
+ok 55 - a failure wins over a skip, in a gate or in a harness check
+  ---
+  duration_ms: 0.1811
+  type: 'test'
+  ...
+# Subtest: no gates is INCONCLUSIVE, and an unknown verdict is a FAIL
+ok 56 - no gates is INCONCLUSIVE, and an unknown verdict is a FAIL
+  ---
+  duration_ms: 0.3727
+  type: 'test'
+  ...
+# Subtest: verdicts are counted
+ok 57 - verdicts are counted
+  ---
+  duration_ms: 1.0524
+  type: 'test'
+  ...
+# Subtest: a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+ok 58 - a Windows runner.temp path with mixed separators is accepted and normalized (win32 semantics)
+  ---
+  duration_ms: 2.1957
+  type: 'test'
+  ...
+# Subtest: relative, drive-relative, empty and unset values are rejected on both path flavours
+ok 59 - relative, drive-relative, empty and unset values are rejected on both path flavours
+  ---
+  duration_ms: 0.9395
+  type: 'test'
+  ...
+# Subtest: the Windows child never inherits the signing certificate or password
+ok 60 - the Windows child never inherits the signing certificate or password
+  ---
+  duration_ms: 1.1113
+  type: 'test'
+  ...
+# Subtest: the macOS child keeps non-empty signing variables only when signing, drops empty ones
+ok 61 - the macOS child keeps non-empty signing variables only when signing, drops empty ones
+  ---
+  duration_ms: 0.4499
+  type: 'test'
+  ...
+# Subtest: takeWindowsSecrets moves the secrets out of the environment object
+ok 62 - takeWindowsSecrets moves the secrets out of the environment object
+  ---
+  duration_ms: 0.3143
+  type: 'test'
+  ...
+# Subtest: a process that took the secrets cannot pass them to a child it spawns afterwards
+ok 63 - a process that took the secrets cannot pass them to a child it spawns afterwards
+  ---
+  duration_ms: 178.6591
+  type: 'test'
+  ...
+# Subtest: a consistent artifact directory has no problems
+ok 64 - a consistent artifact directory has no problems
+  ---
+  duration_ms: 3.7335
+  type: 'test'
+  ...
+# Subtest: artifact directory problems are named
+ok 65 - artifact directory problems are named
+  ---
+  duration_ms: 0.9216
+  type: 'test'
+  ...
+# Subtest: artifact names are platform specific and anchored
+ok 66 - artifact names are platform specific and anchored
+  ---
+  duration_ms: 0.4271
+  type: 'test'
+  ...
+# Subtest: codesign details: Developer ID, ad hoc and unsigned
+ok 67 - codesign details: Developer ID, ad hoc and unsigned
+  ---
+  duration_ms: 0.7441
+  type: 'test'
+  ...
+# Subtest: Authenticode: only a valid, timestamped signature passes
+ok 68 - Authenticode: only a valid, timestamped signature passes
+  ---
+  duration_ms: 0.5215
+  type: 'test'
+  ...
+# Subtest: Authenticode: a status that was not measured is Unknown with its cause, never blank
+ok 69 - Authenticode: a status that was not measured is Unknown with its cause, never blank
+  ---
+  duration_ms: 0.3977
+  type: 'test'
+  ...
+# Subtest: source checkout: the run's own changes are named, a dirty one is explained
+ok 70 - source checkout: the run's own changes are named, a dirty one is explained
+  ---
+  duration_ms: 0.6429
+  type: 'test'
+  ...
+# Subtest: macOS unsigned: reported, never claimed signed, upgrade and clean-machine steps UNPROVEN
+ok 71 - macOS unsigned: reported, never claimed signed, upgrade and clean-machine steps UNPROVEN
+  ---
+  duration_ms: 1.5386
+  type: 'test'
+  ...
+# Subtest: macOS: requiring a signature on an unsigned artifact fails
+ok 72 - macOS: requiring a signature on an unsigned artifact fails
+  ---
+  duration_ms: 0.611
+  type: 'test'
+  ...
+# Subtest: macOS signed with a genuinely older build: team ids compared, smoke gets both sidecars, upgrade is proven
+ok 73 - macOS signed with a genuinely older build: team ids compared, smoke gets both sidecars, upgrade is proven
+  ---
+  duration_ms: 2.4515
+  type: 'test'
+  ...
+# Subtest: macOS: a same-version 'old' build is a labelled rerun and the upgrade stays UNPROVEN
+ok 74 - macOS: a same-version 'old' build is a labelled rerun and the upgrade stays UNPROVEN
+  ---
+  duration_ms: 1.141
+  type: 'test'
+  ...
+# Subtest: smoke: the baseline passes
+ok 75 - smoke: the baseline passes
+  ---
+  duration_ms: 1.1994
+  type: 'test'
+  ...
+# Subtest: smoke: a stub that exits 0 and writes nothing fails
+ok 76 - smoke: a stub that exits 0 and writes nothing fails
+  ---
+  duration_ms: 1.2578
+  type: 'test'
+  ...
+# Subtest: smoke: a stale result file does not rescue a failing exit code
+ok 77 - smoke: a stale result file does not rescue a failing exit code
+  ---
+  duration_ms: 0.563
+  type: 'test'
+  ...
+# Subtest: smoke: wrong, truncated or foreign results fail
+ok 78 - smoke: wrong, truncated or foreign results fail
+  ---
+  duration_ms: 6.3183
+  type: 'test'
+  ...
+# Subtest: smoke: a spawn failure keeps its cause
+ok 79 - smoke: a spawn failure keeps its cause
+  ---
+  duration_ms: 0.4166
+  type: 'test'
+  ...
+# Subtest: classifyUpgrade needs different versions and different bytes
+ok 80 - classifyUpgrade needs different versions and different bytes
+  ---
+  duration_ms: 0.2186
+  type: 'test'
+  ...
+# Subtest: validateSmokeResult accepts exactly what release_smoke writes
+ok 81 - validateSmokeResult accepts exactly what release_smoke writes
+  ---
+  duration_ms: 0.1468
+  type: 'test'
+  ...
+# Subtest: macOS: a sidecar signed by another team fails
+ok 82 - macOS: a sidecar signed by another team fails
+  ---
+  duration_ms: 0.4287
+  type: 'test'
+  ...
+# Subtest: Windows: installs silently per user, upgrades over the same directory, uninstalls pinned to the directory
+ok 83 - Windows: installs silently per user, upgrades over the same directory, uninstalls pinned to the directory
+  ---
+  duration_ms: 1.8111
+  type: 'test'
+  ...
+# Subtest: Windows: an uninstaller that deletes the user's data directory content fails
+ok 84 - Windows: an uninstaller that deletes the user's data directory content fails
+  ---
+  duration_ms: 0.4625
+  type: 'test'
+  ...
+# Subtest: Windows: an upgrade-over install that deletes the user's data fails
+ok 85 - Windows: an upgrade-over install that deletes the user's data fails
+  ---
+  duration_ms: 0.3564
+  type: 'test'
+  ...
+# Subtest: Windows: a missing LOCALAPPDATA fails closed instead of passing the data check
+ok 86 - Windows: a missing LOCALAPPDATA fails closed instead of passing the data check
+  ---
+  duration_ms: 0.2981
+  type: 'test'
+  ...
+# Subtest: Windows: a failed copy of the old sidecar fails at its cause and the smoke is not run
+ok 87 - Windows: a failed copy of the old sidecar fails at its cause and the smoke is not run
+  ---
+  duration_ms: 0.6226
+  type: 'test'
+  ...
+# Subtest: Windows: an unsigned installer is INFO unless a signature is required
+ok 88 - Windows: an unsigned installer is INFO unless a signature is required
+  ---
+  duration_ms: 1.2302
+  type: 'test'
+  ...
+# Subtest: Windows: the same-version rerun is labelled and is not an upgrade pass
+ok 89 - Windows: the same-version rerun is labelled and is not an upgrade pass
+  ---
+  duration_ms: 1.2292
+  type: 'test'
+  ...
+# Subtest: no secrets: a clean unsigned skip with a clear message
+ok 90 - no secrets: a clean unsigned skip with a clear message
+  ---
+  duration_ms: 0.9715
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING turns an absent configuration into an error
+ok 91 - REQUIRE_SIGNING turns an absent configuration into an error
+  ---
+  duration_ms: 0.7191
+  type: 'test'
+  ...
+# Subtest: a partial configuration is an error that names the missing variables only
+ok 92 - a partial configuration is an error that names the missing variables only
+  ---
+  duration_ms: 0.1726
+  type: 'test'
+  ...
+# Subtest: signing without notarization is allowed unless required
+ok 93 - signing without notarization is allowed unless required
+  ---
+  duration_ms: 0.5915
+  type: 'test'
+  ...
+# Subtest: full macOS and Windows configurations
+ok 94 - full macOS and Windows configurations
+  ---
+  duration_ms: 0.1923
+  type: 'test'
+  ...
+# Subtest: a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+ok 95 - a tag build without secrets is an error unless ALLOW_UNSIGNED_RELEASE=true opts in
+  ---
+  duration_ms: 0.2715
+  type: 'test'
+  ...
+# Subtest: a tag build with signing secrets signs; macOS also needs notarization unless opted out
+ok 96 - a tag build with signing secrets signs; macOS also needs notarization unless opted out
+  ---
+  duration_ms: 0.3147
+  type: 'test'
+  ...
+# Subtest: REQUIRE_SIGNING takes precedence over the unsigned opt-in
+ok 97 - REQUIRE_SIGNING takes precedence over the unsigned opt-in
+  ---
+  duration_ms: 0.1473
+  type: 'test'
+  ...
+1..97
+# tests 97
+# suites 0
+# pass 97
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1889.5208
+PASS node-self-tests (2 s)
+::endgroup::
+::group::daemon-build: cargo build --locked -p orchestrator-daemon
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.229
+   Compiling memchr v2.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling serde v1.0.229
+   Compiling utf_types v1.0.0
+   Compiling futures-core v0.3.34
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.5
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling icu_properties_data v2.4.0
+   Compiling bytes v1.12.1
+   Compiling utf8_iter v1.1.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling windows-sys v0.61.2
+   Compiling generic-array v0.14.9
+   Compiling shlex v2.0.1
+   Compiling scopeguard v1.2.0
+   Compiling typenum v1.20.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling zmij v1.0.23
+   Compiling futures-sink v0.3.34
+   Compiling pkg-config v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling parking_lot_core v0.9.12
+   Compiling cc v1.11.1
+   Compiling vcpkg v0.2.15
+   Compiling serde_json v1.0.154
+   Compiling crossbeam-utils v0.8.23
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling equivalent v1.0.3
+   Compiling futures-io v0.3.34
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling once_cell v1.21.4
+   Compiling foldhash v0.2.0
+   Compiling thiserror v2.0.21
+   Compiling autocfg v1.5.1
+   Compiling futures-task v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling allocator-api2 v0.2.21
+   Compiling slab v0.4.12
+   Compiling itoa v1.0.18
+   Compiling futures-util v0.3.34
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling parking_lot v0.12.5
+   Compiling num-traits v0.2.19
+   Compiling hashbrown v0.16.1
+   Compiling digest v0.10.7
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling parking v2.2.1
+   Compiling hashbrown v0.17.1
+   Compiling crc-catalog v2.5.0
+   Compiling crossbeam-queue v0.3.14
+   Compiling synstructure v0.14.0
+   Compiling crc v3.4.0
+   Compiling hashlink v0.11.1
+   Compiling event-listener v5.4.2
+   Compiling sha2 v0.10.9
+   Compiling futures-intrusive v0.5.0
+   Compiling mio v1.2.4
+   Compiling indexmap v2.14.2
+   Compiling socket2 v0.6.5
+   Compiling base64 v0.22.1
+   Compiling tokio v1.54.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling spin v0.9.9
+   Compiling futures-channel v0.3.34
+   Compiling windows-result v0.4.1
+   Compiling flume v0.12.0
+   Compiling atoi v2.0.0
+   Compiling futures-executor v0.3.34
+   Compiling windows-strings v0.5.1
+   Compiling tracing-attributes v0.1.31
+   Compiling windows-interface v0.59.3
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling windows-implement v0.60.2
+   Compiling tokio-stream v0.1.19
+   Compiling windows-core v0.62.2
+   Compiling tracing v0.1.44
+   Compiling hex v0.4.3
+   Compiling winapi v0.3.9
+   Compiling zerofrom v0.1.8
+   Compiling heck v0.5.0
+   Compiling dotenvy v0.15.7
+   Compiling windows-threading v0.2.1
+   Compiling getrandom v0.3.4
+   Compiling libc v0.2.191
+   Compiling yoke v0.8.4
+   Compiling ntapi v0.4.3
+   Compiling windows-future v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+   Compiling async-trait v0.1.89
+   Compiling windows v0.62.2
+   Compiling orchestrator-diagnostics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-diagnostics)
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling subtle v2.6.1
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-core)
+   Compiling uuid v1.18.1
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-ipc)
+   Compiling icu_provider v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-agents)
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+   Compiling sysinfo v0.40.1
+   Compiling orchestrator-host-metrics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-host-metrics)
+   Compiling orchestrator-engine v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-engine)
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 19s
+PASS daemon-build (80 s)
+::endgroup::
+::group::ipc-tests: cargo test --locked -p orchestrator-ipc
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling getrandom v0.4.3
+   Compiling memchr v2.8.3
+   Compiling windows-sys v0.61.2
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling syn v3.0.9
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling thiserror v2.0.21
+   Compiling tempfile v3.27.0
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-ipc)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.62s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+
+running 55 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test coordinator_review_tests::capability_set_names_are_unique_and_round_trip ... ok
+test auth::tests::reports_no_common_version ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test coordinator_review_tests::client_wrappers_send_the_documented_methods_and_parameters ... ok
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... ok
+test coordinator_review_tests::methods_are_unavailable_without_the_negotiated_capability ... ok
+test host_tests::the_host_capability_is_named_and_listed ... ok
+test coordinator_review_tests::a_handler_without_review_never_exposes_review_methods ... ok
+test event_stream_tests::reconnect_still_requires_the_current_token ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... ok
+test host_tests::host_metrics_needs_the_host_capability ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test queue_tests::a_handler_without_queue_never_exposes_it ... ok
+test queue_tests::queue_capability_is_named_and_part_of_the_full_set ... ok
+test coordinator_review_tests::server_gates_each_method_on_its_own_capability ... ok
+test queue_tests::queue_snapshot_needs_the_negotiated_queue_capability ... ok
+test relay::tests::closing_a_relay_is_not_a_daemon_shutdown_and_a_new_relay_resumes_the_stream ... ok
+test relay::tests::no_daemon_is_unavailable_not_an_authentication_failure ... ok
+test relay::tests::the_welcome_reports_only_the_capabilities_the_daemon_grants ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... ok
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... ok
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... ok
+test event_stream_tests::replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume ... ok
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test event_stream_tests::resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test workstreams_tests::a_handler_without_workstreams_never_negotiates_it ... ok
+test workstreams_tests::workstreams_capability_is_named_and_round_trips ... ok
+test relay::tests::a_daemon_that_stops_ends_the_relay_with_a_remote_close ... ok
+test workstreams_tests::wrapper_sends_workstream_methods_with_the_capability ... ok
+test workstreams_tests::every_workstream_method_is_gated_by_the_negotiated_capability ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test idle_subscription_tests::unsubscribed_connection_does_not_keep_the_server_alive ... ok
+test idle_subscription_tests::a_call_longer_than_the_idle_timeout_does_not_stop_the_server ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+test idle_subscription_tests::server_idles_out_after_its_last_subscriber_leaves ... ok
+test idle_subscription_tests::live_subscription_keeps_an_otherwise_idle_server_running ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.21s
+
+   Doc-tests orchestrator_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+FAIL ipc-tests (21 s): test not reported: authenticated_health_and_shutdown_remove_owned_files; test not reported: handshake_rejects_unknown_fields; test not reported: methods_require_handshake_and_negotiated_capability; test not reported: replay_backlog_beyond_the_live_buffer_is_delivered_in_order; test not reported: requests_reject_unknown_fields_and_control_params; test not reported: stalled_and_garbage_connections_do_not_block_health; test not reported: subscription_replays_then_streams_and_reconnects_from_observed_cursor; test not reported: stale_socket_is_reclaimed_after_refused_probe; test not reported: wrong_missing_and_unsupported_handshakes_are_sanitized; test not reported: timeout_applies_to_both_stream_directions; test not reported: live_server_rejects_competing_start_and_idle_cleanup_removes_files; test not reported: a_wrong_token_is_an_authentication_failure; test not reported: authenticated_request_resets_idle_deadline
+::endgroup::
+::error title=ipc-tests FAIL::test not reported: authenticated_health_and_shutdown_remove_owned_files; test not reported: handshake_rejects_unknown_fields; test not reported: methods_require_handshake_and_negotiated_capability; test not reported: replay_backlog_beyond_the_live_buffer_is_delivered_in_order; test not reported: requests_reject_unknown_fields_and_control_params; test not reported: stalled_and_garbage_connections_do_not_block_health; test not reported: subscription_replays_then_streams_and_reconnects_from_observed_cursor; test not reported: stale_socket_is_reclaimed_after_refused_probe; test not reported: wrong_missing_and_unsupported_handshakes_are_sanitized; test not reported: timeout_applies_to_both_stream_directions; test not reported: live_server_rejects_competing_start_and_idle_cleanup_removes_files; test not reported: a_wrong_token_is_an_authentication_failure; test not reported: authenticated_request_resets_idle_deadline
+::group::daemon-tests: cargo test --locked -p orchestrator-daemon
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.50s
+     Running unittests src\main.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+
+running 118 tests
+test api::conversation_agent::tests::running_turns_are_capped_and_released ... ok
+test api::conversation_agent::tests::versions_parse_from_both_cli_formats_and_refuse_junk ... ok
+test api::conversation_agent::tests::the_prompt_ends_with_the_current_message_and_carries_history_and_context ... ok
+test api::conversation_agent::tests::pins_accept_known_agents_with_a_plain_version_only ... ok
+test api::conversation_agent::tests::sanitize_drops_characters_that_render_as_nothing ... ok
+test api::conversation_agent::tests::sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+test api::conversations::tests::an_unused_conversation_reads_as_empty_not_as_an_error ... ok
+test api::conversations::tests::a_replayed_send_shows_the_turn_as_it_is_now_not_as_it_was_recorded ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T04:48:48Z"}
+test api::conversations::tests::a_running_turn_blocks_the_next_message_until_it_ends ... ok
+test api::conversations::tests::cancel_is_scoped_to_its_conversation_and_turn ... ok
+test api::conversations::tests::a_reply_streams_in_order_and_is_correlated_with_its_message ... ok
+test api::conversations::tests::a_retried_send_returns_the_first_result_and_runs_once ... ok
+test api::conversations::tests::a_large_delta_is_split_without_breaking_characters ... ok
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+test api::conversations::tests::cancel_closes_the_turn_stops_the_runtime_and_discards_late_output ... ok
+test api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context ... ok
+test api::conversations::tests::a_reply_over_the_turn_bound_fails_the_turn_and_stops_the_runtime ... ok
+test api::queue_tests::consistent_reading_gives_up_after_its_attempts_with_the_last_reading ... ok
+test api::queue_tests::consistent_reading_reads_once_when_the_journal_is_still ... ok
+test api::queue_tests::consistent_reading_retries_a_moving_journal_and_keeps_the_settled_reading ... ok
+test api::conversations::tests::malformed_requests_are_rejected_without_side_effects ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:48:48Z"}
+test api::conversations::tests::a_runtime_that_does_not_match_its_pin_never_sees_the_message ... ok
+test api::host::tests::parameters_are_rejected ... ok
+test api::host::tests::dispatch_returns_a_snapshot_with_every_resource_before_any_sample ... ok
+test api::conversations::tests::without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable ... ok
+test api::host::tests::the_host_capability_is_advertised ... ok
+test api::queue_tests::created_tasks_are_not_part_of_the_queue ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:48:49Z"}
+test api::queue_tests::a_retried_task_is_judged_by_its_newest_workspace ... ok
+test api::conversations::tests::restart_keeps_the_transcript_fails_open_turns_and_resumes_replay ... ok
+test api::queue_tests::dependency_blocked_task_names_its_dependency_and_has_no_position ... ok
+test api::queue_tests::limits_are_reported_in_their_own_wire_fields ... ok
+test api::queue_tests::empty_daemon_reports_limits_and_nothing_else ... ok
+test api::queue_tests::project_cap_blocks_only_the_full_project ... ok
+test api::queue_tests::fairness_cursor_moves_the_up_next_order_past_the_last_started_project ... ok
+test api::conversations::tests::workstream_targets_need_a_resolvable_workstream_and_stay_separate ... ok
+test api::queue_tests::queue_snapshot_is_advertised_as_a_capability ... ok
+test api::queue_tests::queue_snapshot_rejects_params ... ok
+test api::queue_tests::global_cap_blocks_queued_tasks_behind_a_full_worker_pool ... ok
+test api::queue_tests::restart_gate_marks_startable_tasks_as_blocked ... ok
+test api::queue_tests::up_next_order_round_robins_across_projects ... ok
+test api::queue_tests::snapshot_agrees_with_tasks_list_at_its_sequence ... ok
+test api::queue_tests::withheld_start_authorization_waits_for_approval ... ok
+test api::queue_tests::running_and_queued_are_sorted_whatever_order_the_records_arrive_in ... ok
+test api::queue_tests::verifying_tasks_are_in_neither_list_and_hold_no_capacity ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T04:48:49Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T04:48:49Z"}
+test api::conversations::tests::replay_pages_are_bounded_and_cursors_are_checked ... ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+test api::review_tests::evidence_for_unknown_task_or_approval_is_not_found ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-11T04:48:55Z"}
+test api::review_tests::coordinator_enforces_project_existence_and_size_limits ... ok
+test api::review_tests::coordinator_messages_are_idempotent_ordered_and_user_authored ... ok
+test api::review_tests::capabilities_include_coordinator_and_review ... ok
+test api::review_tests::coordinator_get_pages_at_one_hundred_entries ... ok
+test api::review_tests::evidence_marks_an_unverified_unknown_candidate_stale ... ok
+test api::review_tests::evidence_without_an_approval_is_missing_and_pinned_to_head ... ok
+test api::review_tests::evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale ... ok
+test api::review_tests::evidence_snapshot_is_size_bounded_and_path_filterable ... ok
+test api::review_tests::new_methods_reject_malformed_parameters ... ok
+test api::review_tests::invalid_proposals_report_stable_codes ... ok
+test api::review_tests::proposals_cannot_smuggle_authority_fields ... ok
+test api::tests::agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::review_tests::approval_from_review_request_delivers_end_to_end ... ok
+test api::review_tests::evidence_is_current_for_a_fresh_approval_and_stale_after_the_workspace_moves ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::idempotency_store_failures_report_their_cause_too ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::tests::internal_causes_do_not_leak_into_the_next_request ... ok
+test api::tests::internal_error_causes_reach_the_injected_redacting_sink ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-11T04:49:04Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T04:49:04Z"}
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:04Z"}
+test api::review_tests::request_approval_refuses_unsafe_requests ... ok
+test api::review_tests::request_approval_binds_the_delivery_digest_and_is_replayable ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:06Z"}
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T04:49:08Z"}
+test api::review_tests::request_approval_requires_passed_verification_of_the_current_head ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:08Z"}
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T04:49:08Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T04:49:08Z"}
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T04:49:09Z"}
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T04:49:09Z"}
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... ok
+test api::usage::tests::local_midnight_boundaries_follow_the_offset ... ok
+test api::usage::tests::nanos_format_as_trimmed_decimals ... ok
+test api::tests::windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent ... ok
+test api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals ... ok
+test api::usage_tests::bad_parameters_are_rejected ... ok
+test api::usage_tests::estimated_figures_stay_apart_from_reported_ones ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-11T04:49:09Z"}
+test api::review_tests::request_changes_blocks_approval_but_not_rejection ... ok
+test api::usage_tests::native_estimate_is_additive_labelled_and_never_reported ... ok
+test api::usage_tests::local_midnight_boundary_decides_the_day ... ok
+test api::usage_tests::silent_provider_is_unknown_and_never_zero ... ok
+test api::usage_tests::the_exact_utc_offset_limits_are_accepted ... ok
+test api::review_tests::valid_proposal_is_validated_without_authority_or_side_effects ... ok
+test api::usage_tests::usage_summary_is_dispatched_by_method_name ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T04:49:10Z"}
+test api::workstreams_tests::archived_is_terminal_and_illegal_transitions_conflict ... ok
+test api::workstreams_tests::capability_is_advertised ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-11T04:49:10Z"}
+test api::workstreams_tests::create_get_list_and_update_round_trip ... ok
+test api::workstreams_tests::idempotent_replay_returns_the_same_result ... ok
+test api::workstreams_tests::invalid_parameters_are_rejected ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T04:49:10Z"}
+test api::workstreams_tests::linking_leaves_tasks_untouched_and_spans_projects ... ok
+test api::workstreams_tests::task_submission_is_unchanged_by_the_workstream_model ... ok
+test executor::running_listing_tests::a_failed_listing_is_logged_and_never_reads_as_nothing_running ... ok
+test api::workstreams_tests::stale_revision_is_a_conflict_and_writes_nothing ... ok
+test executor::running_listing_tests::a_readable_empty_listing_is_quiet_and_empty ... ok
+test executor::running_listing_tests::interrupted_tasks_are_unknown_when_either_listing_failed ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-11T04:49:10Z"}
+test tests::lock_conflict_reports_live_holder_pid ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-11T04:49:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-11T04:49:10Z"}
+test api::workstreams_tests::objectives_gates_and_evidence_flow ... ok
+test api::workstreams_tests::unknown_records_are_not_found ... ok
+test api::review_tests::request_changes_refuses_a_decided_approval ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T04:49:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:11Z"}
+test api::tests::safety::submit_refuses_read_only_autonomy_because_the_agent_would_write ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T04:49:11Z"}
+test api::review_tests::request_changes_refuses_stale_duplicate_and_unknown_requests ... ok
+test api::tests::safety::submit_rejects_oversized_and_nul_contract_fields ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-11T04:49:13Z"}
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... ok
+test api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files ... ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+
+test result: ok. 118 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.70s
+
+     Running tests\conversation_runtime.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+
+running 12 tests
+test live_codex_answers_a_global_message ... ignored, needs a signed-in codex CLI; set AGENT_ORCH_LIVE_CONVERSATION=1
+test a_version_that_is_not_pinned_never_receives_the_message ... ok
+test a_turn_the_daemon_lost_is_failed_on_restart_not_left_running ... ok
+test control_characters_never_reach_the_transcript ... ok
+test the_agent_runs_read_only_in_an_empty_scratch_directory ... ok
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+test replies_survive_a_restart_replay_by_sequence_and_stay_idempotent ... ok
+test a_configured_model_the_catalog_does_not_offer_fails_closed ... ok
+test cancel_stops_a_streaming_reply_and_later_output_is_discarded ... ok
+test agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes ... FAILED
+test a_hung_agent_is_killed_at_the_deadline ... ok
+test a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict ... ok
+
+failures:
+
+---- agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes stdout ----
+
+thread 'agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes' (50612) panicked at crates\orchestrator-daemon\tests\conversation_runtime.rs:122:47:
+relay closed: Remote
+stack backtrace:
+   0: std::panicking::panic_handler
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\std\src\panicking.rs:689
+   1: core::panicking::panic_fmt
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\panicking.rs:80
+   2: conversation_runtime::Chat::call
+             at .\tests\conversation_runtime.rs:122
+   3: conversation_runtime::Chat::get
+             at .\tests\conversation_runtime.rs:147
+   4: conversation_runtime::Chat::settled
+             at .\tests\conversation_runtime.rs:159
+   5: conversation_runtime::agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes
+             at .\tests\conversation_runtime.rs:535
+   6: conversation_runtime::agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes::closure$0
+             at .\tests\conversation_runtime.rs:526
+   7: core::ops::function::FnOnce::call_once<conversation_runtime::agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes::closure_env$0,tuple$<> >
+             at C:\Users\[user-redacted]\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\src\rust\library\core\src\ops\function.rs:250
+   8: core::ops::function::FnOnce::call_once
+             at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\core\src\ops\function.rs:250
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+--- daemon log tail (C:\Users\[user-redacted]\b44f88a2\tmp4\aoIuVW1V\daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"55480","ts":"2026-11-11T04:49:18Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T04:49:18Z"}
+--- end daemon log ---
+
+
+failures:
+    agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes
+
+test result: FAILED. 10 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 38.09s
+
+error: test failed, to rerun pass `-p orchestrator-daemon --test conversation_runtime`
+FAIL daemon-tests (88 s): a descendant kept the output pipes open after the process exited; the pipes were abandoned; exit code 101; 1 process(es) of this run survived the gate; see daemon-tests.survivors.txt
+::endgroup::
+::error title=daemon-tests FAIL::a descendant kept the output pipes open after the process exited; the pipes were abandoned; exit code 101; 1 process(es) of this run survived the gate; see daemon-tests.survivors.txt
+::group::daemon-lifecycle: cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running tests\lifecycle.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\lifecycle-0f4970ff71d2b2f1.exe)
+Initialized empty Git repository in C:/Users/[user-redacted]/b44f88a2/tmp4/.tmpf5kflj/repo/.git/
+[main (root-commit) e08fd27] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+FAIL daemon-lifecycle (11 s): 1 process(es) of this run survived the gate; see daemon-lifecycle.survivors.txt
+::endgroup::
+::error title=daemon-lifecycle FAIL::1 process(es) of this run survived the gate; see daemon-lifecycle.survivors.txt
+::group::coordinator-review-tests: cargo test --locked -p orchestrator-daemon --test coordinator_review
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running tests\coordinator_review.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\coordinator_review-567715bea0697ecf.exe)
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.79s
+
+FAIL coordinator-review-tests (11 s): 1 process(es) of this run survived the gate; see coordinator-review-tests.survivors.txt
+::endgroup::
+::error title=coordinator-review-tests FAIL::1 process(es) of this run survived the gate; see coordinator-review-tests.survivors.txt
+::group::git-lib-tests: cargo test --locked -p orchestrator-git --lib
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.42s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_git-4a1ff5d2331e70c7.exe)
+
+running 49 tests
+test env_policy::tests::baseline_keeps_process_start_and_network_names_only ... ok
+test env_policy::tests::credentials_and_agent_sockets_are_not_in_the_baseline ... ok
+test env_policy::tests::locale_names_are_exact_not_a_prefix ... ok
+test env_policy::tests::a_wildcard_entry_is_rejected_with_a_clear_reason ... ok
+test env_policy::tests::non_unicode_names_are_dropped ... ok
+test env_policy::tests::orchestrator_configuration_is_never_forwarded_even_when_listed ... ok
+test env_policy::tests::passthrough_list_splits_and_rejects_bad_entries ... ok
+test env_policy::tests::non_ascii_name_boundaries_do_not_panic ... ok
+test env_policy::tests::provider_names_extend_the_baseline ... ok
+test env_policy::tests::rejected_entries_never_report_a_value ... ok
+test env_policy::tests::unix_names_are_case_sensitive_and_windows_names_are_not ... ok
+test git_path::tests::for_git_is_a_no_op_off_windows ... ok
+test git_path::tests::near_reserved_names_are_plain ... ok
+test git_path::tests::verbatim_drive_and_unc_paths_become_plain_paths ... ok
+test git_path::tests::verbatim_paths_with_other_meaning_are_left_alone ... ok
+test delivery::tests::identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact ... ok
+test delivery::tests::missing_platform_identity_fails_acquisition_and_keeps_the_artifact ... ok
+test delivery::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test delivery::tests::verified_identity_lock_is_removed_on_drop ... ok
+test verification::tests::validation_commands_do_not_inherit_unlisted_environment ... ok
+test worktree::tests::a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists ... ok
+test worktree::tests::a_worktree_path_over_the_limit_is_refused_naming_the_limit ... ok
+test verification::tests::rejects_branch_not_derived_from_task_id ... ok
+test verification::tests::rejects_worktree_owned_by_another_task ... ok
+test verification::tests::rejects_mutable_branch_reference_as_attempt_commit ... ok
+test verification::tests::rejects_candidate_after_branch_moves ... ok
+test verification::tests::default_trust_policy_does_not_run_untrusted_command ... ok
+test worktree::tests::checkout_files_longer_than_max_path_are_created ... ok
+test worktree::tests::long_stderr_keeps_the_final_cause_within_the_bound ... ok
+test worktree::tests::name_collision_is_recognized_only_for_gits_own_conflict_lines ... ok
+test verification::tests::fails_and_names_changed_protected_path ... ok
+test verification::tests::trusted_command_does_not_authorize_different_argv ... ok
+test verification::tests::trusted_command_runs_and_records_output_and_exit_code ... ok
+test verification::tests::timed_out_command_is_killed_and_recorded ... ok
+test worktree::tests::stderr_detail_neutralizes_terminal_control_characters ... ok
+test verification::tests::question_mark_matches_one_unicode_path_character ... ok
+test verification::tests::trusted_nonzero_exit_is_recorded_as_failed ... ok
+test worktree::tests::dirty_primary_checkout_preserved ... ok
+test worktree::tests::empty_task_id_rejected ... ok
+test worktree::tests::collision_allocates_suffix ... ok
+test worktree::tests::resolve_base_ref_refuses_option_like_and_control_character_refs ... ok
+test worktree::tests::worktrees_root_inside_repository_rejected ... ok
+test worktree::tests::git_add_failure_preserves_repo_state_and_reports_partial_state ... ok
+test worktree::tests::resolve_base_commit_rejects_invalid_ref ... ok
+test worktree::tests::git_add_failure_reports_git_stderr_cause ... ok
+test worktree::tests::verbatim_worktrees_root_creates_a_worktree ... ok
+test worktree::tests::worktree_at_the_longest_accepted_path_is_created ... ok
+test worktree::tests::open_accepts_repo_and_isolates_primary ... ok
+test worktree::tests::preexisting_branch_skipped ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.50s
+
+FAIL git-lib-tests (20 s): 1 process(es) of this run survived the gate; see git-lib-tests.survivors.txt
+::endgroup::
+::error title=git-lib-tests FAIL::1 process(es) of this run survived the gate; see git-lib-tests.survivors.txt
+::group::cli-cleanup-safety-tests: cargo test --locked -p orchestrator-cli --test cleanup_safety
+   Compiling windows-sys v0.61.2
+   Compiling crypto-common v0.1.6
+   Compiling utf8parse v0.2.2
+   Compiling once_cell_polyfill v1.70.2
+   Compiling anstyle v1.0.14
+   Compiling colorchoice v1.0.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.1.1
+   Compiling clap_derive v4.6.7
+   Compiling digest v0.10.7
+   Compiling anstyle-parse v1.0.0
+   Compiling sha2 v0.10.9
+   Compiling sqlx-core v0.9.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling anstyle-wincon v3.0.11
+   Compiling orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+   Compiling anstyle-query v1.1.5
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+   Compiling tempfile v3.27.0
+   Compiling anstream v1.0.0
+   Compiling tokio v1.54.1
+   Compiling clap_builder v4.6.7
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling clap v4.6.7
+   Compiling sqlx-macros v0.9.0
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-agents)
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-engine)
+   Compiling orchestrator-cli v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.58s
+     Running tests\cleanup_safety.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\cleanup_safety-1c90eae2393b8fa5.exe)
+
+running 3 tests
+test cleanup_follows_existing_contract_for_provably_exited_run_owner ... ok
+test cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree ... ok
+test cleanup_refuses_clean_worktree_while_run_owner_is_live ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.27s
+
+FAIL cli-cleanup-safety-tests (57 s): 1 process(es) of this run survived the gate; see cli-cleanup-safety-tests.survivors.txt
+::endgroup::
+::error title=cli-cleanup-safety-tests FAIL::1 process(es) of this run survived the gate; see cli-cleanup-safety-tests.survivors.txt
+::group::private-fs-tests: cargo test --locked -p orchestrator-private-fs
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.48s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_private_fs-4c0ee0fad3543979.exe)
+
+running 11 tests
+test tests::the_dacl_reader_accepts_only_one_owner_allow_ace ... ok
+test windows::tests::the_owner_sid_text_matches_itself ... ok
+test tests::a_missing_path_is_not_an_error_to_restrict ... ok
+test windows::tests::a_missing_path_is_not_an_error_and_a_private_path_is_not_rewritten ... ok
+test tests::creating_a_file_never_truncates_an_existing_one ... ok
+test windows::tests::existing_wide_open_paths_are_tightened_without_losing_content ... ok
+test windows::tests::the_directory_ace_is_inherited_by_files_created_later ... ok
+test tests::a_created_private_file_and_directory_report_owner_only_and_a_missing_path_errors ... ok
+test windows::tests::tightening_a_directory_also_tightens_files_it_already_holds ... ok
+test windows::tests::a_new_directory_tree_and_file_are_owner_only ... ok
+test windows::tests::a_file_with_only_an_inherited_owner_ace_is_not_owner_only_until_restricted ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests orchestrator_private_fs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+FAIL private-fs-tests (6 s): 1 process(es) of this run survived the gate; see private-fs-tests.survivors.txt
+::endgroup::
+::error title=private-fs-tests FAIL::1 process(es) of this run survived the gate; see private-fs-tests.survivors.txt
+::group::store-tests: cargo test --locked -p orchestrator-store
+   Compiling syn v3.0.9
+   Compiling windows-sys v0.61.2
+   Compiling tokio v1.54.1
+   Compiling synstructure v0.14.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+   Compiling tempfile v3.27.0
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling thiserror-impl v2.0.21
+   Compiling zerofrom v0.1.8
+   Compiling tokio-stream v0.1.19
+   Compiling yoke v0.8.4
+   Compiling thiserror v2.0.21
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling serde v1.0.229
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-core)
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:93:4
+   |
+93 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.57s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_store-344f67571e0677a2.exe)
+
+running 63 tests
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+test data_lock::tests::fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact ... ok
+test data_lock::tests::fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact ... ok
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test data_lock::tests::verified_creation_is_cleaned_up_on_drop ... ok
+test data_lock::tests::platform_without_identity_still_retries_and_preserves_the_lock ... ok
+test data_lock::tests::identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock ... ok
+test data_lock::tests::the_lock_file_is_owner_only_when_created_and_when_taken_over ... ok
+test sqlite_ops::tests::transition_rolls_back_state_when_event_insert_fails ... ok
+test sqlite::tests::new_database_uses_wal_mode ... ok
+test sqlite_usage::tests::a_missing_token_count_leaves_the_estimate_unknown ... ok
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test sqlite_usage::tests::a_null_field_inside_a_receipt_stays_unknown_not_zero ... ok
+test sqlite_usage::tests::a_session_is_estimated_whole_or_not_at_all ... ok
+test sqlite_usage::tests::an_empty_window_has_no_providers ... ok
+test sqlite_usage::tests::a_stored_estimate_suppresses_the_native_one ... ok
+test sqlite::tests::foreign_keys_reject_orphan_attempts_on_each_handle ... ok
+test sqlite_usage::tests::an_unknown_or_missing_model_is_unknown_not_zero ... ok
+test sqlite_ops::tests::task_records_and_event_sequence_survive_reopen ... ok
+test sqlite_ops::tests::separate_handles_serialize_writes_or_return_database_errors ... ok
+test sqlite_usage::tests::costs_are_summed_per_provider_and_in_the_grand_total ... ok
+test sqlite_usage::tests::invalid_receipts_and_unknown_sessions_are_rejected ... ok
+test sqlite_usage::tests::each_model_is_estimated_from_its_own_price_and_kept_out_of_reported ... ok
+test sqlite_usage::tests::late_receipt_is_attributed_to_its_window_end_day ... ok
+test sqlite_usage::tests::receipts_are_idempotent_and_only_newer_observations_replace ... ok
+test sqlite_usage::tests::reported_and_estimated_mix_without_double_counting_or_overwriting ... ok
+test sqlite_usage::tests::model_text_is_truncated_on_a_character_boundary ... ok
+test tests::concurrent_creates_same_id_exactly_one_wins ... ok
+test sqlite_usage::tests::session_coverage_follows_start_time_and_receipts ... ok
+test tests::create_persists_validated_contract_and_rejects_invalid ... ok
+test sqlite_usage::tests::receipts_survive_reopen ... ok
+test tests::invalid_task_ids_are_rejected_not_panics ... ok
+test tests::concurrent_mutations_do_not_lose_a_transition ... ok
+test tests::list_ignores_foreign_files ... ok
+test tests::attempt_must_match_task_and_sequence ... ok
+test sqlite_usage::tests::silent_providers_are_unknown_not_zero_and_sources_stay_apart ... ok
+test tests::malformed_stored_attempt_is_not_linked_to_new_rows ... ok
+test sqlite_usage::tests::summarising_does_not_rewrite_stored_receipts ... ok
+test tests::attempt_state_moves_follow_central_table ... ok
+test sqlite_usage::tests::migration_applies_to_an_existing_data_directory_without_losing_data ... ok
+test tests::new_attempt_must_be_pending_with_nonempty_id ... ok
+test tests::close_and_reopen_preserves_everything ... ok
+test usage_prices::tests::a_missing_token_count_is_unknown_never_zero ... ok
+test usage_prices::tests::codex_recorded_turn_matches_a_hand_computation ... ok
+test usage_prices::tests::every_model_prices_from_its_own_row ... ok
+test tests::session_must_reference_recorded_attempt ... ok
+test tests::session_cannot_carry_a_foreign_attempt ... ok
+test tests::invalid_transition_changes_nothing ... ok
+test usage_prices::tests::info_names_the_version_basis_and_size ... ok
+test tests::new_session_must_start_spawning ... ok
+test usage_prices::tests::model_names_are_normalised_before_lookup ... ok
+test usage_prices::tests::reproduces_the_recorded_claude_code_cost_exactly ... ok
+test usage_prices::tests::table_rows_are_unique_canonical_and_priced ... ok
+test usage_prices::tests::no_cache_write_price_accepts_unknown_or_zero_but_not_positive_counts ... ok
+test usage_prices::tests::overflow_is_unknown_not_a_wrapped_figure ... ok
+test usage_prices::tests::unknown_or_missing_model_is_unknown_never_zero ... ok
+test sqlite_usage::tests::token_sums_saturate_instead_of_wrapping ... ok
+test tests::new_attempt_requires_queued_task ... ok
+test tests::state_change_and_audit_event_persist_together ... ok
+test tests::session_state_moves_follow_central_table ... ok
+test tests::failed_attempt_preserved_and_retry_appends_new_one ... ok
+test tests::session_exit_does_not_affect_task_state ... ok
+test sqlite_workstreams::tests::existing_data_directory_migrates_without_loss ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
+
+     Running tests\approvals.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\approvals-0e608e023cbbcc86.exe)
+
+running 9 tests
+test rejected_approval_cannot_transition_to_approved ... ok
+test changed_parameters_fail_check_and_require_reapproval ... ok
+test agent_cannot_approve_its_own_request ... ok
+test superseded_approval_cannot_be_reused ... ok
+test changed_candidate_commit_fails_check_and_supersedes_old_approval ... ok
+test policy_change_requires_approved_policy_approval ... ok
+test request_approve_and_check_round_trip ... ok
+test approvals_and_events_survive_reopen ... ok
+test approval_state_and_event_roll_back_together ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\attempt_history.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\attempt_history-eb7f15fec2b42fde.exe)
+
+running 2 tests
+test attempt_history_rejects_unknown_task ... ok
+test retry_appends_attempt_and_preserves_failure_after_reopen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\cancellation_owner.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\cancellation_owner-053f9fe0676441fd.exe)
+
+running 13 tests
+test absent_or_stale_owner_cannot_acknowledge_cancellation ... ok
+test manual_owner_recovery_requires_terminal_target_lifecycle ... ok
+test stale_owner_without_process_identity_is_not_retired ... ok
+test stale_owner_recovery_requires_the_recorded_process_identity ... ok
+test non_cancelled_owner_exit_resolves_request_without_cancelling_task ... ok
+test request_stays_pending_until_owner_confirms_reaped_handle ... ok
+test crashed_owner_leaves_durable_request_pending_not_cancelled ... ok
+test stale_owner_recovery_resolves_request_without_changing_lifecycle ... ok
+test manual_owner_recovery_is_auditable_and_preserves_lifecycle ... ok
+test duplicate_concurrent_requests_share_one_pending_result ... ok
+test stale_generation_is_retired_before_retry_owner_can_register ... ok
+test manual_recovery_releases_only_stale_generation_before_successor ... ok
+test windows_owner_creation_time_precision_survives_reopen ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests\conversations.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\conversations-7427a7bfa6126bab.exe)
+
+running 11 tests
+test a_second_message_is_refused_while_a_turn_runs ... ok
+test an_unused_target_reads_as_an_empty_transcript ... ok
+test failures_carry_a_bounded_code_and_a_new_message_can_follow ... ok
+test repeating_a_turn_id_returns_the_stored_turn_without_new_entries ... ok
+test targets_are_independent_conversations ... ok
+test the_first_terminal_state_wins_and_late_output_is_refused ... ok
+test messages_and_replies_are_ordered_and_correlated_by_turn ... ok
+test the_transcript_is_append_only_at_the_database_level ... ok
+test replay_returns_only_entries_after_the_cursor_and_survives_reopen ... ok
+test restart_fails_open_turns_and_keeps_the_transcript ... ok
+test input_and_reply_bounds_are_enforced ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\data_lock.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\data_lock-376180c3aaca7b9c.exe)
+
+running 8 tests
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test foreign_non_lock_file_is_never_removed ... ok
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test live_pid_with_different_start_identity_is_taken_over ... ok
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... ok
+test separate_process_cannot_acquire_a_live_lock ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\delivery.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\delivery-b20d979009c02294.exe)
+
+running 11 tests
+test delivery_refuses_changed_action_kind ... ok
+test verification_revalidation_rejects_nonpassed_run ... ok
+test delivery_step_and_audit_event_survive_reopen ... ok
+test verification_revalidation_requires_exact_candidate_and_passed_run ... ok
+test delivery_refuses_missing_approval ... ok
+test refused_delivery_step_and_audit_event_are_retained ... ok
+test report_only_step_persists_report_and_audit_event ... ok
+test all_delivery_steps_survive_reopen ... ok
+test delivery_refuses_changed_parameter_digest ... ok
+test delivery_refuses_changed_candidate_sha ... ok
+test delivery_step_and_audit_event_roll_back_together ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests\delivery_acceptance_contract.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\delivery_acceptance_contract-24127dd75a558ffe.exe)
+
+running 3 tests
+test delivery_step_is_append_only_and_a_reused_id_changes_nothing ... ok
+test outcome_that_does_not_match_a_delivery_action_persists_nothing ... ok
+test only_an_approved_current_exact_approval_authorizes_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests\lock_identity_contract.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\lock_identity_contract-c745c16d6eb28a0a.exe)
+
+running 3 tests
+test directory_at_the_lock_path_is_never_removed ... ok
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test malformed_records_are_never_taken_over ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\reconnectable_events.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\reconnectable_events-30b176e0c8503756.exe)
+
+running 3 tests
+test idempotency_result_and_parameter_binding_survive_reopen ... ok
+test session_replay_is_global_sequence_ordered_and_reconnectable ... ok
+test store_epoch_is_stable_across_reopen_and_unique_per_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\review.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\review-8f033cb9993ce717.exe)
+
+running 11 tests
+test approval_is_blocked_by_a_change_request_but_rejection_is_not ... ok
+test reviewed_approval_authorizes_before_looking_at_the_approval ... ok
+test request_changes_records_feedback_without_deciding_the_approval ... ok
+test approval_parameters_commit_with_the_approval ... ok
+test coordinator_entries_enforce_schema_invariants_and_survive_reopen ... ok
+test plain_approve_approval_cannot_bypass_a_change_request ... ok
+test request_changes_refuses_invalid_input_and_unauthorized_actors ... ok
+test coordinator_entries_are_ordered_paged_and_project_scoped ... ok
+test reviewed_approval_matches_plain_approval_without_changes ... ok
+test request_changes_is_single_use_and_needs_a_pending_approval ... ok
+test concurrent_approve_and_request_changes_never_both_succeed ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests\sqlite_reconcile.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\sqlite_reconcile-b4d1d722118eb743.exe)
+
+running 4 tests
+test identity_for_unknown_session_is_rejected ... ok
+test conflicting_identity_does_not_replace_first_record ... ok
+test list_workspaces_returns_all_rows_in_stable_order ... ok
+test session_identity_round_trips_after_reopen ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\verification.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\verification-a6f0e7b7f8bc28f4.exe)
+
+running 1 test
+test appends_and_reopens_results_without_overwriting_failed_runs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\workstreams.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\workstreams-3d55f1c38a8de3a3.exe)
+
+running 12 tests
+test archived_workstream_is_terminal_and_refuses_new_work ... ok
+test duplicate_and_missing_workstreams_are_typed_errors ... ok
+test every_accepted_change_appends_an_immutable_revision ... ok
+test rule_violations_are_rejected_without_a_revision ... ok
+test create_get_and_list_round_trip_in_creation_order ... ok
+test link_is_idempotent_exclusive_and_validated ... ok
+test update_rejects_stale_revision_and_writes_nothing ... ok
+test objectives_revise_append_only_with_stale_rejection ... ok
+test linking_derives_projects_and_leaves_the_task_untouched ... ok
+test gate_state_requires_a_task_linked_to_the_same_workstream ... ok
+test state_survives_reopening_the_database ... ok
+test concurrent_writers_cannot_both_win_the_same_revision ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+   Doc-tests orchestrator_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+FAIL store-tests (88 s): 1 process(es) of this run survived the gate; see store-tests.survivors.txt
+::endgroup::
+::error title=store-tests FAIL::1 process(es) of this run survived the gate; see store-tests.survivors.txt
+::group::lock-takeover-test: cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_store-344f67571e0677a2.exe)
+
+running 1 test
+test data_lock::tests::the_lock_file_is_owner_only_when_created_and_when_taken_over ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.04s
+
+FAIL lock-takeover-test (1 s): 1 process(es) of this run survived the gate; see lock-takeover-test.survivors.txt
+::endgroup::
+::error title=lock-takeover-test FAIL::1 process(es) of this run survived the gate; see lock-takeover-test.survivors.txt
+::group::diagnostics-tests: cargo test --locked -p orchestrator-diagnostics
+   Compiling serde_core v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling orchestrator-diagnostics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-diagnostics)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.06s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_diagnostics-85964efb9b7821b5.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\diagnostics-fd83d566730752d0.exe)
+
+running 6 tests
+test clones_share_one_memory_sink ... ok
+test event_lines_are_single_line_json_with_the_fixed_fields ... ok
+test timestamps_follow_the_civil_calendar ... ok
+test field_values_are_redacted_and_credential_named_fields_are_masked ... ok
+test long_values_are_truncated ... ok
+test log_tail_is_redacted_bounded_and_starts_on_a_line ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\known_secrets.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\known_secrets-2857b4acbf3b4cf0.exe)
+
+running 7 tests
+test a_registered_secret_is_masked_wherever_it_appears ... ok
+test matching_ignores_ascii_case_and_leaves_other_text ... ok
+test multibyte_secrets_are_masked_without_splitting_characters ... ok
+test short_values_and_empty_values_are_ignored ... ok
+test a_registered_secret_split_across_lines_or_escaped_breaks_is_masked ... ok
+test a_watched_token_file_is_masked_now_and_after_it_changes ... ok
+test registered_secrets_do_not_make_redaction_quadratic ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+     Running tests\redaction.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\redaction-0e4273a55c513590.exe)
+
+running 15 tests
+test bearer_tokens_and_known_shapes_are_masked_anywhere ... ok
+test plain_ssh_user_and_scp_style_remote_are_not_credentials ... ok
+test debug_escaped_json_values_are_masked ... ok
+test ipc_token_shaped_hex_is_masked_but_git_shas_are_not ... ok
+test keys_that_only_mention_a_marker_keep_their_values ... ok
+test multibyte_text_does_not_split_characters ... ok
+test ordinary_text_is_unchanged ... ok
+test escaped_values_end_at_their_own_closing_quote ... ok
+test sensitive_keys_hide_their_values ... ok
+test url_scheme_check_is_case_insensitive_and_bounds_safe ... ok
+test url_userinfo_is_masked_but_host_and_path_stay ... ok
+test windows_paths_and_unc_text_survive ... ok
+test escaped_quote_forms_stay_linear ... ok
+test url_userinfo_pass_is_linear_on_repeated_schemes ... ok
+test hostile_multi_megabyte_input_stays_linear ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.03s
+
+   Doc-tests orchestrator_diagnostics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+FAIL diagnostics-tests (14 s): 1 process(es) of this run survived the gate; see diagnostics-tests.survivors.txt
+::endgroup::
+::error title=diagnostics-tests FAIL::1 process(es) of this run survived the gate; see diagnostics-tests.survivors.txt
+::group::runtime-command-line-tests: cargo test --locked -p orchestrator-runtime --lib command_line
+   Compiling windows-sys v0.61.2
+   Compiling syn v3.0.9
+   Compiling mio v1.2.4
+   Compiling tempfile v3.27.0
+   Compiling thiserror-impl v2.0.21
+   Compiling serde_derive v1.0.229
+   Compiling tokio-macros v2.7.2
+   Compiling tokio v1.54.1
+   Compiling thiserror v2.0.21
+   Compiling orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+   Compiling serde v1.0.229
+   Compiling orchestrator-core v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-core)
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.01s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_runtime-58cc1108f4014b9d.exe)
+
+running 8 tests
+test command_line::tests::a_normal_objective_is_accepted_on_every_platform ... ok
+test command_line::tests::the_windows_count_follows_the_quoting_std_applies ... ok
+test command_line::tests::the_unix_rules_cap_one_argument_and_the_total ... ok
+test command_line::tests::escaping_counts_toward_the_windows_limit ... ok
+test command_line::tests::a_cmd_script_launcher_has_the_smaller_cmd_exe_limit ... ok
+test command_line::tests::the_windows_limit_is_exact_at_the_boundary ... ok
+test command_line::tests::a_65000_character_objective_is_refused_on_windows_with_an_actionable_message ... ok
+test command_line::tests::a_too_long_command_line_is_refused_before_any_process_is_started ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+FAIL runtime-command-line-tests (16 s): 1 process(es) of this run survived the gate; see runtime-command-line-tests.survivors.txt
+::endgroup::
+::error title=runtime-command-line-tests FAIL::1 process(es) of this run survived the gate; see runtime-command-line-tests.survivors.txt
+::group::cli-command-line-tests: cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective
+   Compiling orchestrator-cli v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-cli)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix --lib -p orchestrator-cli --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.34s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_cli-192dc354e21d2fea.exe)
+
+running 2 tests
+test workflow::tests::a_65000_character_objective_is_refused_before_any_record_on_windows ... ok
+test workflow::tests::an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.04s
+
+FAIL cli-command-line-tests (6 s): 1 process(es) of this run survived the gate; see cli-command-line-tests.survivors.txt
+::endgroup::
+::error title=cli-command-line-tests FAIL::1 process(es) of this run survived the gate; see cli-command-line-tests.survivors.txt
+::group::windows-transport-tests: cargo test --locked -p orchestrator-ipc windows_transport
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src\lib.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\orchestrator_ipc-a49301724822c7b1.exe)
+
+running 13 tests
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 5.12s
+
+FAIL windows-transport-tests (6 s): filtered out is 42, expected 33; 1 process(es) of this run survived the gate; see windows-transport-tests.survivors.txt
+::endgroup::
+::error title=windows-transport-tests FAIL::filtered out is 42, expected 33; 1 process(es) of this run survived the gate; see windows-transport-tests.survivors.txt
+::group::cli-build: cargo build --locked -p orchestrator-cli
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
+FAIL cli-build (0 s): 1 process(es) of this run survived the gate; see cli-build.survivors.txt
+::endgroup::
+::error title=cli-build FAIL::1 process(es) of this run survived the gate; see cli-build.survivors.txt
+::group::p12-windows-checks: pwsh.exe -NoProfile -File scripts\ci\p12-windows-checks.ps1 -TargetDir {target} -RunRoot {testTmp}\p12 -EvidenceDir {evidence}
+SKIPPED p12-windows-checks: prerequisite gate(s) did not pass: cli-build
+::endgroup::
+::error title=p12-windows-checks SKIPPED::prerequisite gate(s) did not pass: cli-build
+::group::clippy-scoped: cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets
+    Checking windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+    Checking memchr v2.8.3
+    Checking serde_core v1.0.229
+    Checking cfg-if v1.0.5
+   Compiling litemap v0.8.3
+   Compiling smallvec v1.16.5
+   Compiling utf_types v1.0.0
+   Compiling zerofrom v0.1.8
+    Checking windows-sys v0.61.2
+   Compiling writeable v0.6.4
+    Checking pin-project-lite v0.2.17
+   Compiling futures-core v0.3.34
+   Compiling yoke v0.8.4
+   Compiling utf8_iter v1.1.0
+   Compiling scopeguard v1.2.0
+   Compiling typenum v1.20.1
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling lock_api v0.4.14
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling futures-sink v0.3.34
+    Checking thiserror v2.0.21
+   Compiling generic-array v0.14.9
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling equivalent v1.0.3
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+    Checking serde v1.0.229
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling parking_lot_core v0.9.12
+    Checking zmij v1.0.23
+    Checking once_cell v1.21.4
+    Checking icu_provider v2.4.0
+   Compiling slab v0.4.12
+   Compiling futures-io v0.3.34
+   Compiling bytes v1.12.1
+   Compiling percent-encoding v2.3.2
+   Compiling allocator-api2 v0.2.21
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling foldhash v0.2.0
+    Checking itoa v1.0.18
+   Compiling futures-task v0.3.34
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+    Checking serde_json v1.0.154
+   Compiling futures-util v0.3.34
+   Compiling tokio v1.54.1
+   Compiling hashbrown v0.16.1
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling crc-catalog v2.5.0
+   Compiling hashbrown v0.17.1
+   Compiling parking v2.2.1
+   Compiling crc v3.4.0
+   Compiling crossbeam-queue v0.3.14
+   Compiling tracing v0.1.44
+   Compiling idna_adapter v1.2.2
+   Compiling event-listener v5.4.2
+   Compiling sha2 v0.10.9
+   Compiling futures-intrusive v0.5.0
+   Compiling idna v1.1.0
+   Compiling indexmap v2.14.2
+   Compiling hashlink v0.11.1
+   Compiling either v1.19.0
+   Compiling spin v0.9.9
+   Compiling url v2.5.8
+   Compiling num-traits v0.2.19
+    Checking windows-result v0.4.1
+    Checking windows-strings v0.5.1
+   Compiling base64 v0.22.1
+    Checking windows-core v0.62.2
+   Compiling futures-executor v0.3.34
+   Compiling flume v0.12.0
+   Compiling atoi v2.0.0
+   Compiling futures-channel v0.3.34
+   Compiling tokio-stream v0.1.19
+    Checking libsqlite3-sys v0.37.0
+    Checking orchestrator-core v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-core)
+    Checking windows-threading v0.2.1
+    Checking winapi v0.3.9
+   Compiling sqlx-core v0.9.0
+    Checking windows-future v0.3.2
+    Checking windows-collections v0.3.2
+    Checking windows-numerics v0.3.1
+    Checking orchestrator-git v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-git)
+    Checking getrandom v0.3.4
+    Checking libc v0.2.191
+    Checking orchestrator-private-fs v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-private-fs)
+    Checking subtle v2.6.1
+    Checking uuid v1.18.1
+    Checking windows v0.62.2
+    Checking getrandom v0.4.3
+    Checking orchestrator-diagnostics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-diagnostics)
+    Checking fastrand v2.5.0
+    Checking orchestrator-ipc v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-ipc)
+    Checking ntapi v0.4.3
+    Checking tempfile v3.27.0
+    Checking orchestrator-runtime v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-runtime)
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:414:9
+    |
+414 | /         match std::mem::take(&mut self.job.0) {
+415 | |             Some(job) => windows_impl::terminate_job(job),
+416 | |             None => {}
+417 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+    = note: `#[warn(clippy::single_match)]` on by default
+
+warning: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates\orchestrator-runtime\src\supervisor.rs:437:9
+    |
+437 | /         match std::mem::take(&mut self.job.0) {
+438 | |             Some(job) => windows_impl::terminate_job(job),
+439 | |             None => {}
+440 | |         }
+    | |_________^ help: try: `if let Some(job) = std::mem::take(&mut self.job.0) { windows_impl::terminate_job(job) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+
+warning: `orchestrator-runtime` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p orchestrator-runtime -- ` to apply 2 suggestions)
+    Checking orchestrator-agents v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-agents)
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-store)
+    Checking orchestrator-engine v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-engine)
+    Checking sysinfo v0.40.1
+    Checking orchestrator-host-metrics v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-host-metrics)
+    Checking orchestrator-daemon v0.1.0 (C:\Users\[user-redacted]\b44f88a2\s\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 40.98s
+FAIL clippy-scoped (41 s): 1 process(es) of this run survived the gate; see clippy-scoped.survivors.txt
+::endgroup::
+::error title=clippy-scoped FAIL::1 process(es) of this run survived the gate; see clippy-scoped.survivors.txt
+::group::desktop-npm-ci: npm ci
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'jsdom@31.0.0',
+npm warn EBADENGINE   required: { node: '^22.22.2 || ^24.15.0 || >=26.0.0' },
+npm warn EBADENGINE   current: { node: 'v22.20.0', npm: '11.3.0' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'w3c-xmlserializer@6.0.0',
+npm warn EBADENGINE   required: { node: '^22.22.2 || ^24.15.0 || >=26.0.0' },
+npm warn EBADENGINE   current: { node: 'v22.20.0', npm: '11.3.0' }
+npm warn EBADENGINE }
+
+added 155 packages, and audited 156 packages in 7s
+
+33 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+FAIL desktop-npm-ci (8 s): 1 process(es) of this run survived the gate; see desktop-npm-ci.survivors.txt
+::endgroup::
+::error title=desktop-npm-ci FAIL::1 process(es) of this run survived the gate; see desktop-npm-ci.survivors.txt
+::group::desktop-tsc: npx tsc -b
+SKIPPED desktop-tsc: prerequisite gate(s) did not pass: desktop-npm-ci
+::endgroup::
+::error title=desktop-tsc SKIPPED::prerequisite gate(s) did not pass: desktop-npm-ci
+::group::desktop-build: npm run build
+SKIPPED desktop-build: prerequisite gate(s) did not pass: desktop-npm-ci
+::endgroup::
+::error title=desktop-build SKIPPED::prerequisite gate(s) did not pass: desktop-npm-ci
+::group::desktop-vitest: npx vitest run
+SKIPPED desktop-vitest: prerequisite gate(s) did not pass: desktop-npm-ci
+::endgroup::
+::error title=desktop-vitest SKIPPED::prerequisite gate(s) did not pass: desktop-npm-ci
+::group::tauri-build: cargo build --locked
+SKIPPED tauri-build: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-build SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::tauri-tests: cargo test --locked
+SKIPPED tauri-tests: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-tests SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::tauri-clippy-clean: cargo clean -p agent-orch-desktop
+     Removed 0 files
+FAIL tauri-clippy-clean (1 s): 1 process(es) of this run survived the gate; see tauri-clippy-clean.survivors.txt
+::endgroup::
+::error title=tauri-clippy-clean FAIL::1 process(es) of this run survived the gate; see tauri-clippy-clean.survivors.txt
+::group::tauri-clippy: cargo clippy --locked --all-targets --verbose
+SKIPPED tauri-clippy: prerequisite gate(s) did not pass: desktop-build
+::endgroup::
+::error title=tauri-clippy SKIPPED::prerequisite gate(s) did not pass: desktop-build
+::group::desktop-package-win: npm run package:win
+SKIPPED desktop-package-win: prerequisite gate(s) did not pass: desktop-npm-ci
+::endgroup::
+::error title=desktop-package-win SKIPPED::prerequisite gate(s) did not pass: desktop-npm-ci
+## Native gates: win32 (FAIL)
+
+Source b44f88af63cb1ea7c68b7a827465db466ef308a2 (tree 79820e90846b09a64edf25fe8593ab751abbb323).
+
+OVERALL: FAIL (9 PASS, 17 FAIL, 8 SKIPPED; exit 1)
+
+### Not measured, so NOT a pass: 8 gate(s) SKIPPED
+
+- p12-windows-checks
+- desktop-tsc
+- desktop-build
+- desktop-vitest
+- tauri-build
+- tauri-tests
+- tauri-clippy
+- desktop-package-win
+
+A skipped gate gives the run the verdict INCONCLUSIVE (exit 2) at best. Fix the prerequisite and run again.
+
+| Gate | Verdict | Exit | Seconds | Notes |
+|---|---|---|---|---|
+| node-self-tests | PASS | 0 | 2 |  |
+| daemon-build | PASS | 0 | 80 |  |
+| ipc-tests | FAIL | 0 | 21 | test not reported: authenticated_health_and_shutdown_remove_owned_files; test not reported: handshake_rejects_unknown_fields; test not reported: methods_require_handshake_and_negotiated_capability; test not reported: replay_backlog_beyond_the_live_buffer_is_delivered_in_order; test not reported: requests_reject_unknown_fields_and_control_params; test not reported: stalled_and_garbage_connections_do_not_block_health; test not reported: subscription_replays_then_streams_and_reconnects_from_observed_cursor; test not reported: stale_socket_is_reclaimed_after_refused_probe; test not reported: wrong_missing_and_unsupported_handshakes_are_sanitized; test not reported: timeout_applies_to_both_stream_directions; test not reported: live_server_rejects_competing_start_and_idle_cleanup_removes_files; test not reported: a_wrong_token_is_an_authentication_failure; test not reported: authenticated_request_resets_idle_deadline |
+| daemon-tests | FAIL | 101 | 88 | a descendant kept the output pipes open after the process exited; the pipes were abandoned; exit code 101; 1 process(es) of this run survived the gate; see daemon-tests.survivors.txt |
+| daemon-lifecycle | FAIL | 0 | 11 | 1 process(es) of this run survived the gate; see daemon-lifecycle.survivors.txt |
+| coordinator-review-tests | FAIL | 0 | 11 | 1 process(es) of this run survived the gate; see coordinator-review-tests.survivors.txt |
+| git-lib-tests | FAIL | 0 | 20 | 1 process(es) of this run survived the gate; see git-lib-tests.survivors.txt |
+| cli-cleanup-safety-tests | FAIL | 0 | 57 | 1 process(es) of this run survived the gate; see cli-cleanup-safety-tests.survivors.txt |
+| private-fs-tests | FAIL | 0 | 6 | 1 process(es) of this run survived the gate; see private-fs-tests.survivors.txt |
+| store-tests | FAIL | 0 | 88 | 1 process(es) of this run survived the gate; see store-tests.survivors.txt |
+| lock-takeover-test | FAIL | 0 | 1 | 1 process(es) of this run survived the gate; see lock-takeover-test.survivors.txt |
+| diagnostics-tests | FAIL | 0 | 14 | 1 process(es) of this run survived the gate; see diagnostics-tests.survivors.txt |
+| runtime-command-line-tests | FAIL | 0 | 16 | 1 process(es) of this run survived the gate; see runtime-command-line-tests.survivors.txt |
+| cli-command-line-tests | FAIL | 0 | 6 | 1 process(es) of this run survived the gate; see cli-command-line-tests.survivors.txt |
+| windows-transport-tests | FAIL | 0 | 6 | filtered out is 42, expected 33; 1 process(es) of this run survived the gate; see windows-transport-tests.survivors.txt |
+| cli-build | FAIL | 0 | 0 | 1 process(es) of this run survived the gate; see cli-build.survivors.txt |
+| p12-windows-checks | SKIPPED |  |  | prerequisite gate(s) did not pass: cli-build |
+| clippy-scoped | FAIL | 0 | 41 | 1 process(es) of this run survived the gate; see clippy-scoped.survivors.txt |
+| desktop-npm-ci | FAIL | 0 | 8 | 1 process(es) of this run survived the gate; see desktop-npm-ci.survivors.txt |
+| desktop-tsc | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-npm-ci |
+| desktop-build | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-npm-ci |
+| desktop-vitest | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-npm-ci |
+| tauri-build | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| tauri-tests | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| tauri-clippy-clean | FAIL | 0 | 1 | 1 process(es) of this run survived the gate; see tauri-clippy-clean.survivors.txt |
+| tauri-clippy | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-build |
+| desktop-package-win | SKIPPED |  |  | prerequisite gate(s) did not pass: desktop-npm-ci |
+| git-config | PASS |  |  | core.autocrlf=false core.longpaths=true |
+| gitattributes-before | PASS |  |  |  |
+| source-status-before | PASS |  |  |  |
+| gitattributes-after | PASS |  |  |  |
+| source-status-after | PASS |  |  |  |
+| source-diff-after | PASS |  |  |  |
+| privacy-scan | PASS |  |  |  |
+
+### Not covered by this result (UNPROVEN by construction)
+
+- unproven-second-user: named-pipe denial to a second local user
+- unproven-remote-client: rejection of a genuinely remote client
+- unproven-slow-reader-64kib: a daemon write above the 64 KiB pipe buffer to a slow reader
+- unproven-e2e-windows: the desktop e2e suite needs a Unix socket and is not run on Windows
+- unproven-tauri-webview-click-path: webview and React click path through the approval flow
+- unproven-gui-install-launch: installing the installer and launching the app
+- unproven-gui-task-survives-close: a daemon-owned task surviving window close and reopen
+- unproven-gui-event-reconnect: event-stream reconnect at the saved cursor after reopen
+- unproven-stale-token-relaunch-timing: stale-token relaunch timing on Windows
+- unproven-daemon-idle-behaviour: 60 s idle exit and subscription keep-alive on the real app
+- unproven-daemon-kill-and-sidecar-failure: daemon kill and sidecar start failure
+

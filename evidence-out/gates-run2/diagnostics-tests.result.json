@@ -1,0 +1,13 @@
+{
+  "gate": "diagnostics-tests",
+  "command": "cargo test --locked -p orchestrator-diagnostics",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 25,
+  "problems": [
+    "1 process(es) of this run survived the gate; see diagnostics-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

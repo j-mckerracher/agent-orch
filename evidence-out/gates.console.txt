@@ -1,0 +1,11 @@
+file:///C:/Users/[user-redacted]/b44f88a2/s/scripts/ci/run-gates.mjs:88
+if (existsSync(evidence)) throw new Error(`evidence directory exists, refusing to reuse it: ${evidence}`);
+                                ^
+
+Error: evidence directory exists, refusing to reuse it: C:\Users\[user-redacted]\b44f88a2\ev\gates
+    at file:///C:/Users/[user-redacted]/b44f88a2/s/scripts/ci/run-gates.mjs:88:33
+    at ModuleJob.run (node:internal/modules/esm/module_job:345:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.20.0

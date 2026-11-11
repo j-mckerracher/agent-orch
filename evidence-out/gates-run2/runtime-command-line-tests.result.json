@@ -1,0 +1,13 @@
+{
+  "gate": "runtime-command-line-tests",
+  "command": "cargo test --locked -p orchestrator-runtime --lib command_line",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 35,
+  "problems": [
+    "1 process(es) of this run survived the gate; see runtime-command-line-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

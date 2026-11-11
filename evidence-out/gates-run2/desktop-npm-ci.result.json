@@ -1,0 +1,13 @@
+{
+  "gate": "desktop-npm-ci",
+  "command": "npm ci",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 29,
+  "problems": [
+    "1 process(es) of this run survived the gate; see desktop-npm-ci.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

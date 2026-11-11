@@ -1,0 +1,74 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running tests\conversation_runtime.rs (C:\Users\[user-redacted]\b44f88a2\tg4\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+
+running 1 test
+
+thread 'live_codex_answers_a_global_message' (51272) panicked at crates\orchestrator-daemon\tests\conversation_runtime.rs:143:9:
+runtime selection kept reporting a conflict
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+--- daemon log tail (C:\Users\[user-redacted]\AppData\Local\Temp\ao9QtsFL\daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"41244","ts":"2026-11-11T05:22:10Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:11Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:12Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:13Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:14Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:14Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:14Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:14Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:14Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:15Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:16Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:17Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:17Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:17Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:17Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:17Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T05:22:18Z"}
+--- end daemon log ---
+test live_codex_answers_a_global_message ... FAILED
+
+failures:
+
+failures:
+    live_codex_answers_a_global_message
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 11 filtered out; finished in 9.18s
+
+error: test failed, to rerun pass `-p orchestrator-daemon --test conversation_runtime`

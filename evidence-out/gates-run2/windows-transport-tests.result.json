@@ -1,0 +1,14 @@
+{
+  "gate": "windows-transport-tests",
+  "command": "cargo test --locked -p orchestrator-ipc windows_transport",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 7,
+  "problems": [
+    "filtered out is 42, expected 33",
+    "1 process(es) of this run survived the gate; see windows-transport-tests.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}

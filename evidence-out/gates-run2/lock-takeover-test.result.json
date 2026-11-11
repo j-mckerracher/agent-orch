@@ -1,0 +1,13 @@
+{
+  "gate": "lock-takeover-test",
+  "command": "cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over",
+  "cwd": ".",
+  "platform": "win32",
+  "verdict": "FAIL",
+  "exitCode": 0,
+  "durationSeconds": 3,
+  "problems": [
+    "1 process(es) of this run survived the gate; see lock-takeover-test.survivors.txt"
+  ],
+  "newDiagnostics": 0
+}
