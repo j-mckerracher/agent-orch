@@ -1,0 +1,7 @@
+Supplemental Windows UI evidence privacy scan
+Date: 2026-11-11 UTC.
+Scope: all files currently under evidence-out, including the nine UI screenshots.
+Patterns: local account identifier and known test email addresses.
+Result: no matching file or text content was reported by ripgrep.
+Screenshot review: the published screenshots show no profile path or personal email.
+The temporary test repository and worktree profile paths are omitted from the report and session log.

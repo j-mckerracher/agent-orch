@@ -1,0 +1,33 @@
+M7-32 supplemental Windows UI run
+Date: 2026-11-11 UTC.
+Source pin: b44f88af63cb1ea7c68b7a827465db466ef308a2; tree 79820e90846b09a64edf25fe8593ab751abbb323.
+Runbook: docs/m7-final-windows-acceptance-b44f88a.
+Environment: Windows 11 Education build 26200; WebView2 Runtime 157.0.4341.42.
+Permission: user explicitly authorized installing and launching the locally built unsigned app.
+
+Interactive installer completed successfully. The final installer screen had both “Run Agent Orchestrator” and “Create desktop shortcut” checked; Finish closed Setup and launched the app. The app opened at 1282x831, connected to the daemon, and remained connected after application close/reopen. This was an install and launch, not an N-1 upgrade. The earlier install-smoke separately passed silent install/uninstall; same-version installation is not claimed as an upgrade.
+
+Live workspace observations:
+- Header showed Connected, Last durable sequence: none, Recovery: unknown with PLACEHOLDER DATA (D3) and a reason, and Journal continuity: unknown with DAEMON (D6) and a reason.
+- Empty workspace reported 0 workstreams, tasks, running work, and pending approvals. Daily usage was “not available.” No example values from the checklist (20/24 slots, $26.00, CPU 41/44) appeared.
+- Agents & Sessions showed three adapters: codex and claude-code installed/launchable, pi not detected; zero active/queued/failed/disconnected work. Usage was explicitly unknown.
+- Review & Decisions showed no pending decisions. No approval or mutation was attempted.
+- Expanded Device resources showed measurement scopes/timestamps; GPU was “unsupported” with “no vetted GPU utilization source for this platform.” Disk was labeled as capacity used, not activity. The UI separately explains the color scale is a display aid, not an alert threshold.
+- The installed app exposed the composer as disabled while the selected model was unavailable. No message was sent and no agent was launched.
+- Light and dark themes both rendered. Dark was still on after a close/reopen; after switching back, light was still off after another close/reopen. The app was left on the light theme, global workspace, with the target picker dismissed. The Windows app-mode registry setting was not measured, so matching the system default remains partial.
+- First Tab focused “Skip to main content” with a visible focus ring. Enter moved focus to the main region. In the target picker, Enter opened it and Escape closed it with focus returned to the trigger. Other controls, dialogs, and routes were not exhaustively traversed.
+- At the captured 1282x831 size, the workspace and empty workstreams pages showed no horizontal overflow. Agents & Sessions fit its adapter columns but is dense. Attempts to resize using the window edge and native Size menu did not change the captured bounds; the other requested widths and display scales remain untested.
+- A repository with spaces and an accented character in its path registered successfully and its project overview opened. A separate Git worktree under a path with spaces/accented characters was created successfully. This does not prove that the app creates worktrees through task execution. The suggested C:\t test root was denied by Windows profile permissions, so the test used a profile-local isolated path instead. No app unregister control was visible; the local acceptance repository registration and test repository/worktree remain. Their exact user-profile paths are intentionally omitted from published evidence. The selected conversation target was restored to Global orchestrator and confirmed after relaunch.
+
+Screenshots in this evidence directory:
+- ui-workspace-dark-after-relaunch.jpg
+- ui-agents-sessions-dark.jpg
+- ui-workstreams-empty-dark.jpg
+- ui-workstreams-empty-light.jpg
+- ui-device-resources-light.jpg
+- ui-keyboard-first-tab-light.jpg
+- ui-keyboard-main-focus-light.jpg
+- ui-keyboard-target-picker-light.jpg
+- ui-keyboard-target-return-light.jpg
+
+NOT RUN: Windows 10 22H2; direct WebView feature assertions; contrast themes; DPI scaling; widths other than the captured default; Narrator/NVDA/VoiceOver; complete keyboard traversal; workstream-tree keys; Ctrl+Enter send; real approval actions; daemon-stop/recovery/idle-exit; app named-pipe reconnect/shutdown; fixture-query isolation; production CSP inspection; app-mediated worktree/task execution; GUI upgrade/uninstall; and N-1 upgrade.

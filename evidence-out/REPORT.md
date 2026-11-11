@@ -6,7 +6,7 @@ Section 3: PASS — package and install-smoke (unsigned; N-1/GUI limits are unpr
 Section 4: FAIL — named conversation-runtime test failed; other M7/P12 named checks passed, with harness discrepancies recorded.
 Section 5: FAIL — live Codex test returned repeated Conflict and no completed turn.
 Section 6: PASS for targeted unit tests; live estimate NOT RUN because no live receipt was produced.
-Section 7: NOT RUN — no action-time confirmation for interactive app installation/launch; every row is explicitly annotated.
+Section 7: PARTIAL - interactive install/launch succeeded; sampled UI checks are recorded, with untested items kept explicit.
 Section 8: UNPROVEN — no earlier-version N-1 artifact was available.
 
 ## Pin and environment
@@ -34,6 +34,7 @@ Section 8: UNPROVEN — no earlier-version N-1 artifact was available.
 
 - `package.mjs windows`: exit 0; version `0.1.0`, unsigned installer SHA-256 `0d983fa02807fa48a132487c2cdc67d6df4198e217eb926d87b03c37aa146dbf`.
 - `install-smoke windows --allow-unsigned`: exit 0, 9 PASS, 0 FAIL, 1 INFO, 2 UNPROVEN. Silent per-user install, app/daemon/uninstaller files, product version, packaged-sidecar `release_smoke: PASS`, silent uninstall, app removal, and survival of the run-created user-data sentinel all passed. This was a reinstall, not an upgrade.
+- Interactive installer: completed successfully after explicit user authorization; Finish launched the app. This was not an upgrade or GUI uninstall.
 - Authenticode literal status: `NotSigned`; installer is unsigned by configuration. Signing is UNPROVEN. SmartScreen, standard-user UAC behavior and Defender reputation remain UNPROVEN. N-1 upgrade is UNPROVEN because no earlier different-version package was available; no same-version copy was passed off as an upgrade.
 - The run-created sentinel was absent after the smoke script finished. No `orchestrator-daemon` or `release_smoke` process remained after install-smoke. The script left its work directory; an explicit cleanup attempt was rejected by automatic approval review, so that local temporary directory remains outside the repository/evidence tree.
 
@@ -49,9 +50,12 @@ Section 8: UNPROVEN — no earlier-version N-1 artifact was available.
 
 - Store usage tests: 29 passed. Daemon usage unit tests: 8 passed under the actual `usage_tests` module filter. The runbook's literal `api_usage` filter selected zero tests (exit 0), retained as-is. The tests cover unknown/missing-model-as-unknown, whole-session estimates, estimates staying under `estimated.costs`, separation from `reported`, and preservation of stored reported cost. No live usage summary/estimated figure was observed because M7-25 did not complete; no model was assumed.
 
-## 7. M7-32 hands-on Windows UI checklist — NOT RUN
+## 7. M7-32 hands-on Windows UI checklist - MEASURED PARTIAL
 
-- Every checklist row is filled in `WINDOWS-MANUAL-CHECKLIST.completed.md`. Windows build and installed WebView2 version are measured there. No interactive app launch, Narrator, theme/DPI/keyboard/connection/recovery/mutation/security UI checks, or screenshots were recorded. The runbook requires the real installed app; the computer-use skill requires action-time confirmation before installing/launching it. Confirmation was requested but had not arrived when this evidence was finalized. Silent install-smoke results are not represented as UI checklist passes.
+- The user explicitly authorized installing and launching the locally built unsigned app. The interactive installer completed and Finish launched the app. It opened Connected at 1282x831 and remained connected after close/reopen. The app was left on the light theme at the Global orchestrator target; no message, task, approval, or mutation was sent.
+- Verified samples: light/dark theme persistence across restarts; first Tab skip link and Enter-to-main; target picker Enter/Escape with focus restored; no illustrative values in sampled live views; and Windows resource measurements with an explicit unsupported-GPU reason. Repository path handling with spaces and an accented character was partially exercised.
+- The complete per-item outcomes are in WINDOWS-MANUAL-CHECKLIST.completed.md; nine screenshots and detailed observations are in manual-ui-session.txt. Screen-reader testing, contrast themes, DPI/width matrix, complete keyboard coverage, daemon recovery, UI mutations, production CSP, GUI upgrade/uninstall, and several other checks remain NOT RUN or PARTIAL as labeled.
+- The local test repository/worktree registration remains because no app unregister control was visible. Exact profile paths are intentionally omitted. The app remains installed; it was left open at the Global orchestrator workspace.
 
 ## 8. N-1 upgrade — UNPROVEN
 
@@ -59,15 +63,15 @@ Section 8: UNPROVEN — no earlier-version N-1 artifact was available.
 
 ## Remaining UNPROVEN
 
-Clean-machine behavior; code signing; SmartScreen; standard-user UAC; Defender reputation; second-user named-pipe denial; manual remote-client rejection; Windows 10 22H2; GUI launch/install/uninstall/upgrade and every unchecked UI behavior; feature support by the app's WebView; live Codex reply/model/usage/Job Object process-tree observation; N-1 upgrade; and any property not explicitly listed as measured above.
+Clean-machine behavior; code signing; SmartScreen; standard-user UAC; Defender reputation; second-user named-pipe denial; manual remote-client rejection; Windows 10 22H2; GUI upgrade/uninstall; checklist items marked PARTIAL or NOT RUN; feature support by the production WebView; live Codex reply/model/usage/Job Object process-tree observation; N-1 upgrade; and any property not explicitly listed as measured above.
 
 ## Evidence map
 
-Raw harness attempts are under `gates-run2/`, `gates-run3.console.txt`, and `gates-run4/`. Direct backend, frontend, Tauri, package, install-smoke, usage, Codex-live and P12 outputs are adjacent to this report. `privacy-scan-final.txt` records the final redaction check.
+Raw harness attempts are under gates-run2/, gates-run3.console.txt, and gates-run4/. Direct backend, frontend, Tauri, package, install-smoke, usage, Codex-live and P12 outputs are adjacent to this report. privacy-scan-final.txt records the initial run scan; privacy-scan-ui.txt records the supplemental UI scan.
 
 ## Final remote-assignment scan
 
-- Fresh HTTPS fetch inspected 108 remote heads, including docs, source (`orch/`), and evidence refs. `docs/m7-final-windows-acceptance-b44f88a` still points to `5511597080d37a6043a2e96e81ba0433fa2a16fb`; `orch/m7-final-b44f88a` still points to the pinned source commit/tree above. No M7-final evidence ref existed before this run.
-- The remote already contains a `priority-12r5` Windows evidence ref and an M7-backend evidence ref. The M7-backend report on that ref says overall FAIL (733 passed, 1 failed, 1 ignored against derived 747/0/1); it is an existing, adjudicated assignment and was not repeated. Older Windows acceptance assignments also have corresponding evidence refs. This run is only for the outstanding M7-final runbook.
+- A fresh HTTPS ls-remote scan inspected 108 heads: 30 docs refs and 35 evidence refs, plus source and other branches. The M7-final runbook tip remains 5511597080d37a6043a2e96e81ba0433fa2a16fb and its source branch remains b44f88af63cb1ea7c68b7a827465db466ef308a2. The existing M7 evidence ref was at 16ec5dddf55191ab1cbe8f0c3328202cc44733d4 before this supplemental UI update.
+- The P12R5 runbook/source pair remains at docs commit c94c2cc55969a14d65d347dceabf7067eca1c183 and source commit 9633c088df587a1d4db3b2dfe1ec770ed41af195. Its published report records OVERALL PASS (34 PASS, 0 FAIL, 0 SKIPPED); it was not repeated. M6-04 also has clean-machine evidence. The M7-backend evidence was previously adjudicated. All docs assignment branches found in this scan have corresponding evidence refs (some use a distinct evidence prefix), so no additional pending docs runbook was discovered.
 
-Evidence ref to publish: `evidence/m7-final-windows-acceptance-b44f88a-20261111T054110Z-0d6bdcb3`.
+Evidence ref being extended: evidence/m7-final-windows-acceptance-b44f88a-20261111T054110Z-0d6bdcb3.
