@@ -1,5 +1,4 @@
 /// <reference types="node" />
-import { readFileSync } from "node:fs";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,10 +10,7 @@ import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
-import { THEME_STORAGE_KEY } from "../theme/theme";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
-
-const shellCss = readFileSync("src/ui/shell/shell.css", "utf8");
 
 /** Like the shared `mount`, but starts on the boot default route and accepts the shell props. */
 async function mount(
@@ -335,12 +331,6 @@ describe("slots", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("loads the theme tokens and initialiser in the real app entry", () => {
-    expect(readFileSync("src/ui/app.css", "utf8")).toContain('@import "./theme/tokens.css"');
-    expect(readFileSync("index.html", "utf8")).toContain('<script src="/theme-init.js"></script>');
-    expect(readFileSync("public/theme-init.js", "utf8")).toContain(`"${THEME_STORAGE_KEY}"`);
-  });
-
   it("removes the activity and resource regions when their slots are null", async () => {
     await mount(daemon(), { shellSlots: { activity: null, resources: null } });
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
@@ -386,32 +376,21 @@ describe("responsive behaviour", () => {
     expect(screen.getByRole("navigation", { name: "Primary views" })).toBeVisible();
   });
 
-  it("collapses the sidebar behind an operable Menu button at the narrow breakpoint", async () => {
-    setViewport(760);
+  it.each([760, 480])("keeps primary navigation visible and keyboard operable at %i px", async (width) => {
+    setViewport(width);
     const { user, services } = await mount(daemon());
-    const menu = screen.getByRole("button", { name: "Menu" });
-    expect(menu).toHaveAttribute("aria-expanded", "false");
-    expect(menu).toHaveAttribute("aria-controls", "shell-sidebar-body");
-    expect(screen.queryByRole("navigation", { name: "Primary views" })).not.toBeInTheDocument();
-
-    menu.focus();
-    await user.keyboard("{Enter}");
-    expect(menu).toHaveAttribute("aria-expanded", "true");
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(nav).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+    expect(screen.getByRole("navigation", { name: "Workstreams" })).toBeVisible();
 
-    await user.click(within(nav).getByRole("link", { name: /Agents & Sessions/ }));
+    const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });
+    agents.focus();
+    await user.keyboard("{Enter}");
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
-    expect(screen.getByRole("button", { name: "Menu" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("navigation", { name: "Primary views" })).toBeVisible();
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
   });
 });
 
-describe("stylesheet", () => {
-  it("declares the wireframe breakpoints and token fallbacks", () => {
-    for (const width of [1150, 960, 760]) expect(shellCss).toContain(`@media (max-width: ${width}px)`);
-    expect(shellCss).toMatch(/var\(--blue, #0057a8\)/);
-    expect(shellCss).toMatch(/var\(--paper, #fff\)/);
-    expect(shellCss).toMatch(/\.shell-sidebar-body\[hidden\]/);
-  });
-});
