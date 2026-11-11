@@ -16,7 +16,7 @@
 - Preflight: **PASS**, Windows (`win32`), exit 0.
 - Gate list: **27** gates, `--list` exit 0.
 - Full harness: started once. The daemon build failed after 66 seconds with Rust output errors caused by disk exhaustion. The subsequent IPC gate began compiling, then failed to write outputs for the same reason. The captured PowerShell command returned exit 1; `gates.exit` was not written because the volume had no space. No retry was made.
-- At failure, C: had 0 free bytes. At this report capture, it had about 61 MiB free, still insufficient to finish the native gates.
+- At failure, C: had 0 free bytes. At this report capture, it had about 66 MiB free, still insufficient to finish the native gates.
 
 | Gate | Expected | Measured | Equal? |
 |---|---|---|---|
@@ -47,3 +47,4 @@ Overall status: **INCOMPLETE / BLOCKED**. The daemon build failure is an environ
 - Preserved gate outputs are in `evidence-out/`. User profile paths, the user name, and the school email domain were redacted from the pushed copy. The privacy scan passed.
 - Disk space prevented creating the runbook's separate evidence worktree. Evidence was assembled from the existing pinned clone into a separate staging directory; tracked source files were not changed.
 - Remaining work: restore several GB of free space, rerun this pinned assignment from a fresh isolated root, complete the required diagnostics and release/manual checks, and report all measurements without adjusting expectations.
+
