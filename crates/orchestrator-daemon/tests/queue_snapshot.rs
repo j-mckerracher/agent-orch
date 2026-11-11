@@ -26,7 +26,7 @@ const WAIT: Duration = Duration::from_secs(30);
 /// Retry loops swallow errors, so a short call bound would turn one slow call
 /// into a 30 s hang; the production default is 2 s.
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
-const AGENT_ROLE: &str = "AGENT_ORCH_QUEUE_AGENT_DIR";
+const AGENT_ROLE: &str = "QUEUE_AGENT_DIR";
 
 fn connect(data: &Path) -> Result<Client, IpcError> {
     Client::connect_with_timeout(data, &Capability::ALL, CALL_TIMEOUT)
@@ -258,6 +258,7 @@ fn scenario(base: &Path) {
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)
             .env(AGENT_ROLE, &agents)
+            .env("AGENT_ORCH_ENV_PASSTHROUGH", AGENT_ROLE)
             .stdout(Stdio::from(log.try_clone().unwrap()))
             .stderr(Stdio::from(log))
             .spawn()
