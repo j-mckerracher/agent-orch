@@ -1135,11 +1135,21 @@ mod usage_paths {
         store: &SqliteStore,
         owner: &CancellationOwner,
     ) -> Result<MonitorOutcome, String> {
+        let job = Job {
+            task_id: owner.task_id.clone(),
+            attempt_id: owner.attempt_id.clone(),
+            session_id: owner.session_id.clone(),
+            agent: "codex".into(),
+            objective: "objective".into(),
+            model_selection: None,
+            worktree: PathBuf::new(),
+            diag: orchestrator_diagnostics::Diagnostics::memory(),
+        };
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
             .unwrap()
-            .block_on(monitor_agent(Box::new(handle), store, owner))
+            .block_on(monitor_agent(Box::new(handle), store, owner, &job))
     }
 
     fn assert_cost_recorded_and_tokens_unknown(store: &SqliteStore) {
