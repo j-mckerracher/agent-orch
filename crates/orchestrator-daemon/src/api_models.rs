@@ -269,18 +269,24 @@ impl DaemonApi {
     /// than the sum, and never longer than `catalog_wait` in total. An agent
     /// whose read is not finished by then is reported `unknown`.
     fn catalogs(&self, agents: &[&str]) -> Vec<AgentCatalog> {
-        let deadline = Instant::now() + self.config.catalog_wait;
-        let working_dir = self
-            .config
+        self.catalog_cache.read(&self.config, agents)
+    }
+}
+
+impl CatalogCache {
+    pub(crate) fn read(
+        self: &Arc<Self>,
+        config: &ExecutorConfig,
+        agents: &[&str],
+    ) -> Vec<AgentCatalog> {
+        let deadline = Instant::now() + config.catalog_wait;
+        let working_dir = config
             .worktrees_root
             .parent()
             .map_or_else(|| PathBuf::from("."), PathBuf::from);
         let sources: Vec<_> = agents
             .iter()
-            .map(|agent| {
-                self.catalog_cache
-                    .source(agent, &self.config, working_dir.clone())
-            })
+            .map(|agent| self.source(agent, config, working_dir.clone()))
             .collect();
         sources
             .into_iter()

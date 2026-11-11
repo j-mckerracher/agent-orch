@@ -73,6 +73,7 @@ impl DaemonApi {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
+        self.conversations.prepare()?;
         idempotency::run(
             &self.store,
             &self.idempotency_gate,

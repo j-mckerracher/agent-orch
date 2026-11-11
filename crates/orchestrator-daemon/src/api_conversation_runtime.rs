@@ -8,14 +8,12 @@
 //! [`ReplySink`]. It receives no store handle, no task, approval or delivery
 //! capability, and nothing it emits is parsed as a command.
 //!
-//! No provider is bound here. The shipped runtime is [`UnavailableRuntime`],
-//! which fails every turn with `runtime_unavailable`. A real adapter (M7-24)
-//! must be pinned to an exact name and version by [`ConversationService`]; a
-//! runtime that does not match its pin never receives a message.
-//!
-//! The runtime-facing items below have no non-test caller until a provider is
-//! bound, so dead-code analysis is relaxed for this module only.
-#![allow(dead_code)]
+//! No provider is bound here. The daemon binds the agent runtime of
+//! `api_conversation_agent.rs` (M7-25), which fails every turn with
+//! `runtime_unavailable` when no launchable agent is installed. A runtime that
+//! produces output must match one of the identities [`ConversationService`]
+//! was given (an exact name and version); a runtime that does not match never
+//! receives a message.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -26,7 +24,7 @@ use orchestrator_store::{
     TurnState, MAX_REPLY_CHUNK_BYTES,
 };
 
-/// Name reported by [`UnavailableRuntime`].
+/// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
 
 /// Who produced replies. Recorded on every turn.
@@ -36,11 +34,25 @@ pub(crate) struct RuntimeIdentity {
     pub version: String,
 }
 
+/// One earlier, completed exchange of the same conversation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HistoryTurn {
+    pub user: String,
+    pub reply: String,
+}
+
 /// What a runtime is asked to answer.
 pub(crate) struct TurnRequest {
-    pub turn_id: String,
     pub target: ConversationTarget,
     pub text: String,
+    /// The identity the service pinned and recorded for this turn. A runtime
+    /// launches only this one.
+    pub identity: RuntimeIdentity,
+    /// Recent completed exchanges, oldest first, bounded in count and size.
+    /// Failed and cancelled turns are not included.
+    pub history: Vec<HistoryTurn>,
+    /// A short description of the workstream a workstream turn is about.
+    pub context: Option<String>,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -52,6 +64,8 @@ pub(crate) enum RuntimeFailure {
     PermissionDenied,
     VersionMismatch,
     Failed,
+    Timeout,
+    Busy,
 }
 
 impl RuntimeFailure {
@@ -62,6 +76,8 @@ impl RuntimeFailure {
             Self::PermissionDenied => "permission_denied",
             Self::VersionMismatch => "version_mismatch",
             Self::Failed => "runtime_failed",
+            Self::Timeout => "runtime_timeout",
+            Self::Busy => "runtime_busy",
         }
     }
 }
@@ -84,6 +100,13 @@ pub(crate) trait ConversationRuntime: Send + Sync {
         true
     }
 
+    /// Settle which agent answers before the request gate is taken, so a slow
+    /// probe never blocks other requests. `Conflict` means the state could not
+    /// be established in time and nothing was recorded.
+    fn prepare(&self) -> Result<(), RpcError> {
+        Ok(())
+    }
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -91,42 +114,23 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     ) -> Result<Box<dyn TurnControl>, RuntimeFailure>;
 }
 
-/// Fail-closed default until a provider adapter is bound.
-pub(crate) struct UnavailableRuntime;
-
-impl ConversationRuntime for UnavailableRuntime {
-    fn identity(&self) -> RuntimeIdentity {
-        RuntimeIdentity {
-            name: UNAVAILABLE_RUNTIME_NAME.to_owned(),
-            version: "none".to_owned(),
-        }
-    }
-
-    fn requires_pin(&self) -> bool {
-        false
-    }
-
-    fn start_turn(
-        &self,
-        _request: TurnRequest,
-        _sink: ReplySink,
-    ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
-        Err(RuntimeFailure::Unavailable)
-    }
-}
-
-/// Seam for M7-07. The workstream entity and its store belong to that item;
-/// the conversation service only asks whether an identifier names one.
-///
-/// Fixtures and unknown identifiers never resolve. M7-07 replaces
-/// [`NoWorkstreams`] with a store-backed implementation.
+/// The conversation service only asks whether an identifier names a workstream
+/// and, for a turn, for a short description of it. The workstream entity and
+/// its store belong to M7-07; fixtures and unknown identifiers never resolve.
 pub(crate) trait WorkstreamDirectory: Send + Sync {
     fn exists(&self, workstream_id: &str) -> Result<bool, RpcError>;
+
+    /// A short description for the runtime prompt. Best effort.
+    fn describe(&self, _workstream_id: &str) -> Option<String> {
+        None
+    }
 }
 
-/// Default until M7-07 lands: no workstream exists, so none can be addressed.
+/// No workstream exists, so none can be addressed.
+#[cfg(test)]
 pub(crate) struct NoWorkstreams;
 
+#[cfg(test)]
 impl WorkstreamDirectory for NoWorkstreams {
     fn exists(&self, _workstream_id: &str) -> Result<bool, RpcError> {
         Ok(false)
@@ -196,6 +200,14 @@ impl ReplySink {
     }
 }
 
+fn truncate_to(text: &str, max: usize) -> String {
+    let mut end = text.len().min(max);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_owned()
+}
+
 fn chunks(text: &str) -> impl Iterator<Item = &str> {
     let mut rest = text;
     std::iter::from_fn(move || {
@@ -212,13 +224,23 @@ fn chunks(text: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+/// Most exchanges, bytes per reply and bytes in total that a runtime is told
+/// about. A prompt larger than this would only slow every turn down.
+const MAX_HISTORY_TURNS: usize = 6;
+const MAX_HISTORY_REPLY_BYTES: usize = 4 * 1024;
+/// Kept well under the Windows 32,767-character command line, with room for
+/// an 8 KiB message and the frame.
+const MAX_HISTORY_BYTES: usize = 12 * 1024;
+/// How many of the newest transcript entries are scanned for history.
+const HISTORY_SCAN_ENTRIES: i64 = 400;
+
 /// Starts, tracks and cancels turns for both conversation scopes.
 pub(crate) struct ConversationService {
     shared: Arc<Shared>,
     runtime: Arc<dyn ConversationRuntime>,
     workstreams: Arc<dyn WorkstreamDirectory>,
-    /// Exact identity the runtime must report. Absent means no pinned runtime.
-    pin: Option<RuntimeIdentity>,
+    /// Exact identities a runtime may report. Empty means no pinned runtime.
+    pins: Vec<RuntimeIdentity>,
 }
 
 impl ConversationService {
@@ -226,7 +248,7 @@ impl ConversationService {
         store: Arc<SqliteStore>,
         runtime: Arc<dyn ConversationRuntime>,
         workstreams: Arc<dyn WorkstreamDirectory>,
-        pin: Option<RuntimeIdentity>,
+        pins: Vec<RuntimeIdentity>,
     ) -> Self {
         Self {
             shared: Arc::new(Shared {
@@ -235,18 +257,25 @@ impl ConversationService {
             }),
             runtime,
             workstreams,
-            pin,
+            pins,
         }
     }
 
     /// Fail turns a previous process left running. Call once at startup,
-    /// before any request is served.
+    /// before any request is served. The daemon owns this: a runtime child
+    /// does not outlive the daemon that started it, so an open turn found at
+    /// startup can never complete.
     pub(crate) fn recover(&self) -> Result<(), String> {
         self.shared
             .store
             .interrupt_open_conversation_turns()
             .map(|_| ())
             .map_err(|_| "cannot recover conversations".to_owned())
+    }
+
+    /// See [`ConversationRuntime::prepare`].
+    pub(crate) fn prepare(&self) -> Result<(), RpcError> {
+        self.runtime.prepare()
     }
 
     pub(crate) fn require_target(&self, target: &ConversationTarget) -> Result<(), RpcError> {
@@ -282,27 +311,7 @@ impl ConversationService {
         if !begun.created {
             return Ok(begun);
         }
-        let failure = match self.pin_failure(&identity) {
-            Some(code) => Some(code.to_owned()),
-            None => {
-                let request = TurnRequest {
-                    turn_id: turn_id.to_owned(),
-                    target: target.clone(),
-                    text: text.to_owned(),
-                };
-                let sink = ReplySink {
-                    shared: self.shared.clone(),
-                    turn_id: turn_id.to_owned(),
-                };
-                match self.runtime.start_turn(request, sink) {
-                    Ok(control) => {
-                        self.register(turn_id, control)?;
-                        None
-                    }
-                    Err(failure) => Some(failure.code().to_owned()),
-                }
-            }
-        };
+        let failure = self.launch(&identity, target, turn_id, text);
         if let Some(code) = failure {
             store.finish_conversation_turn(turn_id, &TurnOutcome::Failed(code))?;
         }
@@ -312,30 +321,118 @@ impl ConversationService {
         Ok(BegunTurn { turn, ..begun })
     }
 
+    /// Start the runtime for a begun turn. A failure code means the turn must
+    /// be closed as failed; a store error while registering the control is one
+    /// too, so no turn is left running with nothing to finish it.
+    fn launch(
+        &self,
+        identity: &RuntimeIdentity,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+    ) -> Option<String> {
+        if let Some(code) = self.pin_failure(identity) {
+            return Some(code.to_owned());
+        }
+        let request = TurnRequest {
+            target: target.clone(),
+            text: text.to_owned(),
+            identity: identity.clone(),
+            history: self.history(target, turn_id),
+            context: match target {
+                ConversationTarget::Workstream(id) => self.workstreams.describe(id),
+                ConversationTarget::Global => None,
+            },
+        };
+        let sink = ReplySink {
+            shared: self.shared.clone(),
+            turn_id: turn_id.to_owned(),
+        };
+        match self.runtime.start_turn(request, sink) {
+            Ok(control) => self
+                .register(turn_id, control)
+                .err()
+                .map(|_| RuntimeFailure::Failed.code().to_owned()),
+            Err(failure) => Some(failure.code().to_owned()),
+        }
+    }
+
     fn pin_failure(&self, identity: &RuntimeIdentity) -> Option<&'static str> {
         if !self.runtime.requires_pin() {
             return None;
         }
-        match &self.pin {
-            None => Some("runtime_unpinned"),
-            Some(pin) if pin != identity => Some("version_mismatch"),
-            Some(_) => None,
+        if self.pins.is_empty() {
+            Some("runtime_unpinned")
+        } else if self.pins.contains(identity) {
+            None
+        } else {
+            Some("version_mismatch")
         }
     }
 
+    /// The newest completed exchanges before `current_turn`, oldest first.
+    /// Best effort: an unreadable transcript yields no history, not a failure.
+    fn history(&self, target: &ConversationTarget, current_turn: &str) -> Vec<HistoryTurn> {
+        let store = &self.shared.store;
+        let Ok(latest) = store.conversation_page(target, 0, 1) else {
+            return Vec::new();
+        };
+        let after = (latest.latest_sequence - HISTORY_SCAN_ENTRIES).max(0);
+        let limit = usize::try_from(HISTORY_SCAN_ENTRIES).map_or(400, |n| n + 1);
+        let Ok(page) = store.conversation_page(target, after, limit) else {
+            return Vec::new();
+        };
+        let mut turns: Vec<(String, Option<String>, String, bool)> = Vec::new();
+        for entry in &page.entries {
+            if turns.last().map(|turn| &turn.0) != Some(&entry.turn_id) {
+                turns.push((entry.turn_id.clone(), None, String::new(), false));
+            }
+            let Some(turn) = turns.last_mut() else {
+                continue;
+            };
+            match entry.kind.as_str() {
+                "user_message" => turn.1 = Some(entry.body.clone()),
+                "reply_chunk" => turn.2.push_str(&entry.body),
+                "turn_completed" => turn.3 = true,
+                _ => {}
+            }
+        }
+        let mut kept: Vec<HistoryTurn> = Vec::new();
+        let mut bytes = 0usize;
+        for (id, user, reply, completed) in turns.into_iter().rev() {
+            let (true, Some(user)) = (completed && id != current_turn, user) else {
+                continue;
+            };
+            if reply.is_empty() {
+                continue;
+            }
+            let reply = truncate_to(&reply, MAX_HISTORY_REPLY_BYTES);
+            bytes += user.len() + reply.len();
+            if kept.len() >= MAX_HISTORY_TURNS || bytes > MAX_HISTORY_BYTES {
+                break;
+            }
+            kept.push(HistoryTurn { user, reply });
+        }
+        kept.reverse();
+        kept
+    }
+
     /// Keep the control only while the turn is still running; a runtime that
-    /// finished synchronously has nothing left to cancel.
+    /// finished synchronously has nothing left to cancel. On a store error the
+    /// runtime is stopped, because nothing could cancel it later.
     fn register(
         &self,
         turn_id: &str,
         control: Box<dyn TurnControl>,
     ) -> Result<(), ConversationError> {
         let mut controls = self.shared.controls();
-        let running = self
-            .shared
-            .store
-            .conversation_turn(turn_id)?
-            .is_some_and(|turn| turn.state == TurnState::Running);
+        let running = match self.shared.store.conversation_turn(turn_id) {
+            Ok(turn) => turn.is_some_and(|turn| turn.state == TurnState::Running),
+            Err(error) => {
+                control.cancel();
+                return Err(error);
+            }
+        };
         if running {
             controls.insert(turn_id.to_owned(), control);
         }

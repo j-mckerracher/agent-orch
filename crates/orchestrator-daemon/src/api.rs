@@ -178,11 +178,18 @@ impl DaemonApi {
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
                 .map_err(|_| "cannot initialize local approval policy".to_owned())?;
+        let catalog_cache: Arc<models::CatalogCache> = Arc::default();
+        let runtime = conversation_agent::AgentRuntime::new(
+            config.clone(),
+            catalog_cache.clone(),
+            conversation_agent::ConversationConfig::for_data_dir(data_dir),
+        );
+        let pins = runtime.pins();
         let conversations = conversation_runtime::ConversationService::new(
             store.clone(),
-            Arc::new(conversation_runtime::UnavailableRuntime),
-            Arc::new(conversation_runtime::NoWorkstreams),
-            None,
+            Arc::new(runtime),
+            Arc::new(conversation_agent::StoreWorkstreams(store.clone())),
+            pins,
         );
         conversations.recover()?;
         Ok(Self {
@@ -194,7 +201,7 @@ impl DaemonApi {
             approval_allowlist,
             host: host::HostService::new(data_dir),
             conversations,
-            catalog_cache: Arc::default(),
+            catalog_cache,
         })
     }
 
@@ -1173,6 +1180,8 @@ fn map_delivery_error(error: orchestrator_git::delivery::DeliveryError) -> RpcEr
     }
 }
 
+#[path = "api_conversation_agent.rs"]
+mod conversation_agent;
 #[path = "api_conversation_runtime.rs"]
 mod conversation_runtime;
 #[path = "api_conversations.rs"]

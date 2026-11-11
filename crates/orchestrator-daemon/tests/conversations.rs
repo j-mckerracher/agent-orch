@@ -2,10 +2,11 @@
 //! binary over the authenticated local transport (Unix socket, or Windows
 //! named pipe). Runs on Unix and Windows.
 //!
-//! The shipped daemon binds no conversation runtime, so a message is recorded
-//! and its turn fails closed with `runtime_unavailable`. These tests prove the
+//! The daemon finds no installed agent here, so a message is recorded and its
+//! turn fails closed with `runtime_unavailable`. These tests prove the
 //! gate, the durable transcript across a daemon restart, and that nothing in a
-//! conversation creates authority. Reply streaming is proven in-process.
+//! conversation creates authority. Replies from an agent are proven in
+//! `conversation_runtime.rs`.
 
 #[macro_use]
 mod support;
@@ -17,6 +18,20 @@ use std::time::Duration;
 use support::process::{connect, Daemon, Layout};
 
 const WAIT: Duration = Duration::from_secs(30);
+
+/// A daemon that can find no agent, wherever the tests run: a developer
+/// machine usually has Codex or Claude Code on PATH.
+fn start_without_agents(layout: &Layout) -> Daemon {
+    let missing = layout.data.join("no-such-agent");
+    let missing = missing.to_str().unwrap();
+    Daemon::start_with_env(
+        layout,
+        &[
+            ("AGENT_ORCH_CODEX_PROGRAM", missing),
+            ("AGENT_ORCH_CLAUDE_PROGRAM", missing),
+        ],
+    )
+}
 
 fn open(layout: &Layout, capability: Capability) -> (Relay, Receiver<RelayEvent>) {
     let (events, frames) = mpsc::channel();
@@ -49,7 +64,7 @@ fn raw(
 #[test]
 fn conversation_methods_require_the_coordinator_capability() {
     let layout = Layout::new();
-    let mut daemon = Daemon::start(&layout);
+    let mut daemon = start_without_agents(&layout);
     let (relay, frames) = open(&layout, Capability::Health);
     for (id, method, params) in [
         (
@@ -80,7 +95,7 @@ fn conversation_methods_require_the_coordinator_capability() {
 #[test]
 fn transcript_fails_closed_survives_restart_and_grants_no_authority() {
     let layout = Layout::new();
-    let mut first = Daemon::start(&layout);
+    let mut first = start_without_agents(&layout);
     let (relay, frames) = open(&layout, Capability::Coordinator);
     let send = |id, text: &str, key: &str| {
         raw(
@@ -112,7 +127,7 @@ fn transcript_fails_closed_survives_restart_and_grants_no_authority() {
     client.shutdown().unwrap();
     first.wait_for_exit();
 
-    let _second = Daemon::start(&layout);
+    let _second = start_without_agents(&layout);
     let (relay, frames) = open(&layout, Capability::Coordinator);
     let page = raw(
         &relay,
