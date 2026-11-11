@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./tokens.css", import.meta.url), "utf8");
+const primitives = readFileSync(new URL("./primitives.css", import.meta.url), "utf8");
 
 type Tokens = Record<string, string>;
 
@@ -115,11 +116,50 @@ describe("design tokens", () => {
       "wireframe-composer-border", "wireframe-picker-border", "meter-gradient", "meter-stop-1", "meter-stop-2",
       "meter-stop-3", "meter-stop-4", "meter-stop-5", "meter-track", "meter-marker", "meter-marker-ring",
       "meter-fill-pattern",
+      "font-display", "font-mono", "radius-sm", "radius-md", "radius-lg", "shadow-popover",
       "focus-width",
     ];
     for (const [name, tokens] of Object.entries(themes)) {
       for (const token of required) expect(tokens[`--${token}`], `${name} --${token}`).toBeTruthy();
     }
+  });
+
+  it("keeps the meter pattern above its gradient and masks from its current level", () => {
+    const track = block(primitives, ".ui-meter-track");
+    const background = track.match(/background:\s*([\s\S]*?);/)?.[1]
+      .replace(/\s+/g, " ")
+      .trim();
+    const fillLayers =
+      /^repeating-linear-gradient\(.+var\(--meter-fill-pattern\).+\),\s*var\(--meter-gradient\)$/;
+    expect(background).toMatch(fillLayers);
+
+    const overlay = block(primitives, ".ui-meter-track::after");
+    const inset = overlay.match(/inset:\s*([^;]+);/)?.[1].replace(/\s+/g, " ").trim();
+    expect(inset).toMatch(/^0 0 0 var\(--level(?:,\s*0%)?\)$/);
+
+    const reversed = primitives.replace(
+      /background:\s*repeating-linear-gradient\([\s\S]*?\),\s*var\(--meter-gradient\);/,
+      `background: var(--meter-gradient),
+        repeating-linear-gradient(
+          135deg,
+          var(--meter-fill-pattern) 0 2px,
+          transparent 2px 6px
+        );`,
+    );
+    expect(reversed).not.toBe(primitives);
+    const reversedBackground = block(reversed, ".ui-meter-track")
+      .match(/background:\s*([\s\S]*?);/)?.[1]
+      .replace(/\s+/g, " ")
+      .trim();
+    expect(reversedBackground).not.toMatch(fillLayers);
+
+    const detached = primitives.replace("inset: 0 0 0 var(--level, 0%);", "inset: 0;");
+    expect(detached).not.toBe(primitives);
+    const detachedInset = block(detached, ".ui-meter-track::after")
+      .match(/inset:\s*([^;]+);/)?.[1]
+      .replace(/\s+/g, " ")
+      .trim();
+    expect(detachedInset).not.toMatch(/^0 0 0 var\(--level(?:,\s*0%)?\)$/);
   });
 
   it("matches the wireframe palette anchors", () => {
