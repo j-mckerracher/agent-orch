@@ -72,6 +72,7 @@ function pairs(): Array<[string, string, number, string]> {
   out.push(["accent", "panel", 3, "primary button boundary"]);
   out.push(["accent", "soft", 3, "primary button boundary"]);
   out.push(["meter-marker", "meter-marker-ring", 3, "meter marker vs ring"]);
+  out.push(["meter-marker", "meter-track", 3, "meter marker on unfilled track"]);
   return out;
 }
 
