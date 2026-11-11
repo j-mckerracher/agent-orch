@@ -254,7 +254,13 @@
   height: 8px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--meter-gradient);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--meter-fill-pattern) 0 2px,
+      transparent 2px 6px
+    ),
+    var(--meter-gradient);
   /* A 3:1 boundary makes the full extent identifiable even where the fill/track are pale. */
   outline: 1px solid var(--control-border);
 }

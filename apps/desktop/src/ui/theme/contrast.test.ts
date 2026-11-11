@@ -96,6 +96,7 @@ function pairs(): Array<[string, string, number, string]> {
   out.push(["accent", "soft", 3, "primary button boundary"]);
   out.push(["meter-marker", "meter-marker-ring", 3, "meter marker vs ring"]);
   out.push(["meter-marker", "meter-track", 3, "meter marker on unfilled track"]);
+  for (let i = 1; i <= 5; i++) out.push(["meter-fill-pattern", `meter-stop-${i}`, 3, "meter fill pattern"]);
   return out;
 }
 
@@ -113,7 +114,7 @@ describe("design tokens", () => {
       "success-bg", "green", "green-bg", "amber", "amber-bg", "red", "red-bg", "wireframe-search-border",
       "wireframe-composer-border", "wireframe-picker-border", "meter-gradient", "meter-stop-1", "meter-stop-2",
       "meter-stop-3", "meter-stop-4", "meter-stop-5", "meter-track", "meter-marker", "meter-marker-ring",
-      "font-sans", "font-display", "font-mono", "radius-sm", "radius-md", "radius-lg", "shadow-popover",
+      "meter-fill-pattern",
       "focus-width",
     ];
     for (const [name, tokens] of Object.entries(themes)) {

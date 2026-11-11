@@ -1,6 +1,6 @@
 /*
  * Design tokens (M7-01). Other M7 items consume these published names.
- * Updated: 2026-11-11 11:32:56 MST (-0700).
+ * Updated: 2026-11-11 13:05:52 MST (-0700).
  *
  * Source: supplied wireframe's effective light and dark cascades.
  * Light is default; explicit data-theme wins, then prefers-color-scheme selects dark.
@@ -20,7 +20,7 @@
  * State         --success/--success-bg mirror the positive wireframe state.
  *               --green remains semantic green; amber and red remain semantic states.
  * Meter         --meter-gradient  --meter-stop-1..5  --meter-track
- *               --meter-marker  --meter-marker-ring
+ *               --meter-marker  --meter-marker-ring  --meter-fill-pattern
  * Sidebar stays light in dark mode; pair --sidebar with --sidebar-ink, --sidebar-link,
  * --sidebar-focus, and --sidebar-control-border for accessible contrast.
  * Reference-only: --wireframe-search-border, --wireframe-composer-border, and
@@ -94,6 +94,7 @@
   --meter-track: #d8e1eb;
   --meter-marker: #111111;
   --meter-marker-ring: #ffffff;
+  --meter-fill-pattern: #111111;
 
   /* Type: no bundled font. Avenir Next is macOS-only; Windows falls back to Segoe UI. */
   --font-sans: "Avenir Next", Avenir, system-ui, "Segoe UI", sans-serif;
