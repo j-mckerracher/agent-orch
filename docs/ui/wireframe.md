@@ -2,7 +2,7 @@
 
 Planning artifact only. No UI, fixture, IPC, or backend implementation is added by this change.
 
-**M7-00 revision (2026-11-10).** The decisions D-1..D-11, the global shell, the `OX-` identifier prefix, the mapping of every `wireframes.html` element and the placeholder registry D9–D16 are recorded in [M7 revision](#m7-revision-m7-00) at the end of this document. The M5 sections (C1, S1–S6, D1–D8) are retained as written; they describe the accepted project-first screens and are not changed by M7-00. Where an M5 statement is superseded, a note says so in place.
+**M7-00 revision (2026-11-11T10:14:24+00:00).** The decisions D-1..D-11, the global shell, the `OX-` identifier prefix, the mapping derived from the supplied gap-analysis inventory, and the placeholder registry D9–D16 are recorded in [M7 revision](#m7-revision-m7-00) at the end of this document. The M5 sections (C1, S1–S6, D1–D8) are retained as written; they describe the accepted project-first screens and are not changed by M7-00. Where an M5 statement is superseded, a note says so in place. Direct comparison with the original `wireframes.html` remains unverified.
 
 Reference: [technical implementation plan](/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/docs/technical-implementation-plan.md), §§2, 9, 10, 12; §11 explains coordinator authority and §14 limits the initial desktop scope. Execution is governed by `orch-impl-m.md`.
 
@@ -239,7 +239,7 @@ Decision ids carry a hyphen (`D-1`). Placeholder-registry ids do not (`D1`). Eac
 | ID | Question | Decision recorded | Consequence |
 | --- | --- | --- | --- |
 | D-1 | Does the wireframe-derived UI request supersede the "Deferred — do not start" status of `docs/future/mcao-next-version-features.md`? | **Yes**, for the UI shell and for surfaces backed by existing data. OMP-dependent items (the Global/LLM conversation, provider/model/effort selection, streamed orchestrator replies) stay deferred and post-release. | The future-features document gets a status note only (M7-00). Its OMP migration list is unchanged and still not dispatchable from that document. |
-| D-2 | Adopt `wireframes.html` as the repo's visual reference, waiving the M5 "do not reuse an HTML design from a different checkout" rule? Which document is authoritative where they differ? | **Adopt** `wireframes.html` for visual design and information architecture. The M5 rule is waived (see Scope and evidence). This document stays authoritative for data provenance (PLACEHOLDER DATA, no fixture-to-mutation path, no automatic fallback) and for what the daemon actually provides; where the HTML shows a count, control or capability the daemon cannot back, this document wins. Operator-experience ids are renamed with an `OX-` prefix. | Every HTML element is mapped below. Illustrative HTML numbers never appear in live mode. |
+| D-2 | Adopt `wireframes.html` as the repo's visual reference, waiving the M5 "do not reuse an HTML design from a different checkout" rule? Which document is authoritative where they differ? | **Adopt** `wireframes.html` for visual design and information architecture. The M5 rule is waived (see Scope and evidence). This document stays authoritative for data provenance (PLACEHOLDER DATA, no fixture-to-mutation path, no automatic fallback) and for what the daemon actually provides; where the HTML shows a count, control or capability the daemon cannot back, this document wins. Operator-experience ids are renamed with an `OX-` prefix. | The supplied gap-analysis inventory is mapped below. Direct comparison with the original HTML remains unverified. Illustrative HTML numbers never appear in live mode. |
 | D-3 | Information architecture: replace the project-first routes or keep them beneath a global shell? | **Keep** every accepted `#/project/...` route and add the global routes `#/workspace` (default), `#/workstreams`, `#/agents`, `#/review`. | See Global shell. No accepted route, parser or test is removed. |
 | D-4 | Workstream domain: new `Workstream`/`Objective` entity or interim grouping by project/`parent_id`? | **Interim grouping by project** for release: one workstream per registered project, tasks as children, labelled PLACEHOLDER DATA (D9) wherever a value is not derived from real records. A real entity is post-release work. | M7-11 builds the interim tree. M7-07 (backend entity) and M7-23 (live adapter) are post-release. |
 | D-5 | Which wireframe elements ship in the first release? | **Ship**: shell, theme, Review & Decisions, Agents & Sessions, activity panel, local search, CPU/memory/disk meters. **Ship only as clearly-labelled PLACEHOLDER or hidden**: usage, model picker, Global conversation. **Defer**: background animation, GPU meter, bulk operations. | See Release scope. |
@@ -315,27 +315,27 @@ Shell rules:
 
 ### Daemon surface at the accepted baseline
 
-Every real data source named in the mapping tables is one of the following. A name not in this list is **proposed** and is not a daemon method; it is marked "(proposed)" wherever it appears.
+The following list describes the accepted M5 baseline only. Candidate-only methods dispatched at source SHA `6c17442eaee5243b48034dfc53d7f43d25f1ab82` are listed in the D9–D16 registry and marked **in-flight**.
 
-- Dispatched by `crates/orchestrator-daemon/src/api.rs` (21): `projects.list`, `projects.register`, `tasks.submit`, `tasks.list`, `tasks.get`, `tasks.cancel`, `tasks.retry`, `agents.capabilities`, `sessions.list`, `sessions.get`, `sessions.events`, `approvals.list`, `approvals.resolve`, `workspaces.diff`, `delivery.request`, `coordinator.send_message`, `coordinator.propose`, `coordinator.get`, `review.request_approval`, `review.evidence`, `review.request_changes`.
-- Session-level, in `crates/orchestrator-ipc/src/session.rs`: `capabilities`, `health` (returns only `package_version`, `uptime_seconds`, `data_directory`), `shutdown`, `events.subscribe` (notification `events.event`).
-- Facts the design depends on that the daemon does **not** provide today: any workstream or objective record (`TaskContract` has `project_id`, `parent_id`, `agent`, `dependencies`, no workstream field); a conversational reply (the coordinator records messages and validates proposals with `authority: none`; nothing answers); a provider, model or effort list or a contract field for them (`agents.capabilities` reports agents with `installed`, `launchable` and capability flags such as `model_selection` and `session_resumption`); token or cost data; host CPU, memory, GPU or disk; scheduler capacity or queue ordering (`SchedulerLimits` default is 2 global and 2 per project and is not exposed by any method); attention priority or latest-response time; search; heartbeat or meaningful-progress time; pause-dispatch or stop-all; audit export; task editing, bulk operations or recovery status (D3 stays a placeholder).
-- Proposed working names only, to be finalised and documented by their M7 backend item before any adapter binds: `host.metrics` (M7-04), `queue.snapshot` or a field on `tasks.list` (M7-05), `usage.summary` (M7-06), `workstreams.*` (M7-07). The conversation service (M7-08) and the provider/model/effort catalog (M7-09) have no proposed method name yet.
+- Dispatched by `crates/orchestrator-daemon/src/api.rs` at accepted M5 source `a5e1f43b9516b172247197c6c126acbc6aaf8d54` (21): `projects.list`, `projects.register`, `tasks.submit`, `tasks.list`, `tasks.get`, `tasks.cancel`, `tasks.retry`, `agents.capabilities`, `sessions.list`, `sessions.get`, `sessions.events`, `approvals.list`, `approvals.resolve`, `workspaces.diff`, `delivery.request`, `coordinator.send_message`, `coordinator.propose`, `coordinator.get`, `review.request_approval`, `review.evidence`, `review.request_changes`.
+- Session-level methods at the accepted M5 baseline, in `crates/orchestrator-ipc/src/session.rs`: `capabilities`, `health` (returns only `package_version`, `uptime_seconds`, `data_directory`), `shutdown`, `events.subscribe` (notification `events.event`).
+- At the accepted M5 baseline, the daemon does **not** provide these design inputs: any workstream or objective record (`TaskContract` has `project_id`, `parent_id`, `agent`, `dependencies`, no workstream field); a conversational reply (the coordinator records messages and validates proposals with `authority: none`; nothing answers); a provider, model or effort list or a contract field for them (`agents.capabilities` reports agents with `installed`, `launchable` and capability flags such as `model_selection` and `session_resumption`); token or cost data; host CPU, memory, GPU or disk; scheduler capacity or queue ordering (`SchedulerLimits` default is 2 global and 2 per project and is not exposed by any method); attention priority or latest-response time; search; heartbeat or meaningful-progress time; pause-dispatch or stop-all; audit export; task editing, bulk operations or recovery status (D3 stays a placeholder).
+- Candidate-only methods are listed by M7 item in the D9–D16 registry. The dispatcher at candidate SHA `6c17442eaee5243b48034dfc53d7f43d25f1ab82` adds 17 routes to the 21-method accepted M5 list. Their **in-flight** status records route presence only. It does not establish board acceptance, behavior, protocol stability or native support. The `workstreams.*` and `conversations.*` names and shapes remain proposed and not frozen, as their API module docs state.
 
 ### Mapping: `wireframes.html` to repo ids
 
-Status values describe the **backing data or API**, not the UI (the UI for every row is new in M7 except where noted):
+Screen mapping tables describe the accepted M5 data source and status. Candidate-only dispatcher methods appear in the D9–D16 registry. A method marked in-flight records source presence only.
 
 - **existing**: the data or contract is in the accepted source, or the element needs no backend (client-side state or local derivation from loaded records).
-- **in-flight**: it exists only on an unaccepted candidate branch. No data source below depends on an unaccepted branch; the unaccepted P12 candidate edits to `ConnectionStrip.tsx`, `ProjectDetail`, submission and `sources/daemon.ts` are rebase risks for M7-02 and M7-03, not data sources, so no row below is marked in-flight.
-- **missing**: no data or contract exists; a proposed M7 item owns it, or it is unassigned.
+- **in-flight**: the candidate dispatcher at SHA `6c17442eaee5243b48034dfc53d7f43d25f1ab82` routes a method that is absent from the accepted M5 baseline. This label does not establish board acceptance, successful behavior, protocol stability or native support.
+- **missing**: the accepted M5 baseline has no data or contract for the mapped component. Candidate-only routes are listed separately when present.
 - **deferred**: recorded as later-scope by `docs/future/mcao-next-version-features.md`, by the wireframe's own "Later-scope preview" label, or by decisions D-5/D-9.
 
 "Placeholder" names the registry id (D9–D16 below, D1–D8 above) that supplies labelled fixture values when the real source is absent. "Derived" means computed in the UI from records already loaded through the existing methods; a derived value that approximates something the daemon does not report is labelled as derived.
 
 #### Shell (always visible)
 
-| OX id | `wireframes.html` element | Repo mapping | Data source | Status | Placeholder | M7 owner |
+| OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-A1 | Brand "MCAO / Mayo Clinic Agent Orchestrator" | Shell sidebar | none (static) | existing | — | M7-02 |
 | OX-A2 | Left nav: Orchestrator Workspace, Agents & Sessions, Review & Decisions · N | Global routes `#/workspace`, `#/agents`, `#/review`; count slot | Client routing; N derived from `approvals.list` | existing | D16 for priority | M7-02 |
@@ -351,7 +351,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 #### OX-S1 Orchestrator Workspace (`#command-center`)
 
-| OX id | `wireframes.html` element | Repo mapping | Data source | Status | Placeholder | M7 owner |
+| OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-B1 | Header "Talking to: <target>" with scope subtitle | Target identity line | Project target: selected project id. Global target: none | existing (project) / missing (Global) | D10 | M7-10 |
 | OX-B2 | Transcript bubbles (coordinator vs human) | Per-project note log labelled "notes; no reply" | `coordinator.get` | existing (log, no replies) | D10 for Global and replies | M7-10 |
@@ -371,7 +371,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 #### OX-S4 Workstreams (`#workstreams`) and OX-S6 panel
 
-| OX id | `wireframes.html` element | Repo mapping | Data source | Status | Placeholder | M7 owner |
+| OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-W1 | Heading and "Create workstream" | Create disabled with reason in live mode | none | missing | D9 | M7-07 (post-release) |
 | OX-W2 | "N initiatives" list with filter / save view / organize, Prioritize, Archive | Project list as interim workstreams (D-4); local filter | `projects.list`, `tasks.list` | existing (derived, filter) / missing (save view, prioritize, archive) | D9 | M7-11 |
@@ -386,7 +386,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 #### OX-S5 Agents & Sessions (`#agents-sessions`) and OX-S8 drawer
 
-| OX id | `wireframes.html` element | Repo mapping | Data source | Status | Placeholder | M7 owner |
+| OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-G1 | Heading and "Configure providers" | Configure disabled with reason | none | missing; deferred (OMP) | D14 | M7-09 (post-release) |
 | OX-G2 | Headline counts: running sessions, ready tasks queued, tasks blocked, disconnected sessions | Counts with stated denominators | derived from `sessions.list`, `tasks.list`; "disconnected" needs recovery classification | existing (derived) / missing (disconnected: D3 has no daemon method) | D3, D11 | M7-14 |
@@ -401,7 +401,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 #### OX-S2 Review & Decisions (`#review-decisions`) with OX-S3 and OX-S9 panels
 
-| OX id | `wireframes.html` element | Repo mapping | Data source | Status | Placeholder | M7 owner |
+| OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-R1 | Heading "N independent decisions" | Global decision queue header | `approvals.list` | existing (derived) | D16 | M7-13 |
 | OX-R2 | Filter tabs Actionable, Approvals, Verification, Candidates, Delivery, Resolved; scope chips (workstream, project, owner), sort by useful response time, "Active silences" | Tabs as far as approval state supports; project scope local; owner, response-time sort and silences absent | `approvals.list` | existing (partial, local) / missing (owner, response time, silences) | D16 | M7-13 |
@@ -414,7 +414,7 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 #### Cross-cutting requirements
 
-| OX id | `wireframes.html` requirement | Repo mapping | Data source | Status | M7 owner |
+| OX id | `wireframes.html` requirement | Repo mapping | Accepted M5 data source | Accepted M5 status | M7 owner |
 | --- | --- | --- | --- | --- | --- |
 | OX-X1 | Light and dark token sets (`--paper`, `--panel`, `--ink`, `--muted`, `--line`, `--soft`, `--blue` `#0057a8`) | Tokens module replacing the 19-line `ui/app.css` | none (client) | existing | M7-01 |
 | OX-X2 | Fonts Avenir Next, Segoe UI | `system-ui` stack with named fallbacks; nothing bundled (D-7) | none | existing | M7-01 |
@@ -429,18 +429,18 @@ Status values describe the **backing data or API**, not the UI (the UI for every
 
 The M5 `DUMMY interface and fixture registry` (D1–D8) is unchanged and its replacement-acceptance rules carry over: each interface keeps one typed boundary, fixture values are labelled in the UI, and a real adapter replaces a fixture only with its own acceptance evidence. M7 adds D9–D16. Fixture content follows the illustrative values in `wireframes.html` where the contract can carry them (CPU 44%, disk 71%, reported usage $26.00 with the estimate kept separate and never added to it); memory is an absolute figure because the D13 contract has no total, so the wireframe's 63% is not reproduced. It is visible only in fixture mode (`?fixture=1`) or where a row says a labelled placeholder is acceptable. Interfaces are owned by M7-03; adapters by M7-20..M7-24.
 
-| ID | Interface | Fixture content (illustrative only) | Real source today | Real source later | Adapter |
-| --- | --- | --- | --- | --- | --- |
-| D9 | `WorkstreamSource` | Workstreams, objectives, gates, milestones, objective-level graph | Project grouping from `projects.list` and `tasks.list` (D-4) | `workstreams.*` (proposed, M7-07) | M7-21 (interim), M7-23 |
-| D10 | `ConversationSource` | Global and per-workstream replies | Per-project `coordinator.get` and `coordinator.send_message`, shown as notes with no reply | Conversation service (M7-08, unnamed) | M7-24 |
-| D11 | `ActivitySource` | Running / up-next / waiting queue, slots "20/24", pause state | Derived from `tasks.list` and `approvals.list`; slot limits and queue order not exposed | `queue.snapshot` or a `tasks.list` field (proposed, M7-05) | M7-20 |
-| D12 | `UsageSource` | Daily usage, known cost, estimated cost, provenance | None; the UI shows "not available" | `usage.summary` (proposed, M7-06) | M7-22 |
-| D13 | `SystemMetricsSource` | CPU, memory, GPU, disk meters | None; the UI shows "unavailable" | `host.metrics` (proposed, M7-04) | M7-20 |
-| D14 | `ModelCatalogSource` | Providers, models, effort levels | `agents.capabilities` (agents only) | Catalog (M7-09, unnamed) | M7-24 |
-| D15 | `SearchSource` | None | Local index over records already loaded; no fixture | Optional RPC, not scheduled | M7-16 |
-| D16 | `DecisionQueueSource` | Priority, response time, owner, silences | `approvals.list` | Later | M7-13 |
+| ID | Interface | Fixture content (illustrative only) | Accepted M5 source | Candidate API at source SHA `6c17442eaee5243b48034dfc53d7f43d25f1ab82` (in-flight) | Remaining gap or later scope | Adapter |
+| --- | --- | --- | --- | --- | --- | --- |
+| D9 | `WorkstreamSource` | Workstreams, objectives, gates, milestones, objective-level graph | Project grouping from `projects.list` and `tasks.list` (D-4) | `workstreams.create`, `workstreams.list`, `workstreams.get`, `workstreams.update`, `workstreams.add_objective`, `workstreams.revise_objective`, `workstreams.set_gate`, `workstreams.link_task`, `workstreams.unlink_task` (names and shapes proposed, not frozen) | The entity remains post-release under D-4. Dispatch does not establish acceptance or behavior. | M7-21 (interim), M7-23 |
+| D10 | `ConversationSource` | Global and per-workstream replies | Per-project `coordinator.get` and `coordinator.send_message`, shown as notes with no reply | `conversations.send`, `conversations.get`, `conversations.cancel` (names proposed, not frozen) | Global or LLM-backed replies remain post-release. Dispatch does not establish reply or push behavior. | M7-24 |
+| D11 | `ActivitySource` | Running / up-next / waiting queue, slots "20/24", pause state | Derived from `tasks.list` and `approvals.list` | `queue.snapshot` | The read method does not add a pause or queue-settings action. Runtime behavior remains unverified. | M7-20 |
+| D12 | `UsageSource` | Daily usage, known cost, estimated cost, provenance | None; the UI shows "not available" | `usage.summary` | Provider coverage and runtime behavior remain unverified. | M7-22 |
+| D13 | `SystemMetricsSource` | CPU, memory, GPU, disk meters | None; the UI shows "unavailable" | `host.metrics` | Native sampling and platform support remain unverified. | M7-20 |
+| D14 | `ModelCatalogSource` | Providers, models, effort levels | `agents.capabilities` (agents only) | `agents.catalog`, `agents.validate_selection` | Provider availability and model-selection behavior remain unverified. | M7-24 |
+| D15 | `SearchSource` | None | Local index over records already loaded; no fixture | None | Optional RPC, not scheduled. | M7-16 |
+| D16 | `DecisionQueueSource` | Priority, response time, owner, silences | `approvals.list` | None | Priority, response-time, owner and silence data remain later-scope. | M7-13 |
 
-Rules: a real adapter replaces only the fields its source supplies; fields it cannot supply stay unavailable, never zero or sampled. A proposed method name above is not a daemon method until its M7 backend item merges and updates this document.
+Rules: Candidate APIs remain in-flight until their contracts and behavior are accepted. A real adapter replaces only fields its accepted source provides; other fields stay unavailable, never zero or sampled.
 
 #### D1–D8 status at the baseline
 
