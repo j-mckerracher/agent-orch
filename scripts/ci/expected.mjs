@@ -8,8 +8,13 @@
 // Windows: the published Priority 11r3 runbook's derived values (not yet measured on a runner).
 // `sequence` is the `running N tests` series, one entry per test binary, in order.
 export const WINDOWS = {
-  ipc: { passed: 46, sequence: [46, 0] },
-  daemon: { passed: 57, sequence: [52, 4, 0, 1] },
+  // The M7 merge adds 9 portable ipc tests (host, queue, workstreams).
+  ipc: { passed: 55, sequence: [55, 0] },
+  // Derived from cfg gates, not yet measured on Windows: the library loses executor::tests,
+  // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
+  // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
+  // tests/daemon.rs is cfg(unix), so it runs 0 tests.
+  daemon: { passed: 138, ignored: 1, sequence: [118, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   windowsTransport: { passed: 13, sequence: [13], filteredOut: 33 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
@@ -30,8 +35,10 @@ export const WINDOWS = {
   // 7 passed and 1 `#[ignore]` child process. The Priority 12r3 Windows run measured the lib at 32; round 4 added
   // one portable test, so 33 is derived. The lock-path test `the_lock_file_is_owner_only_when_created_and_when_taken_over`
   // is the M6-01 takeover ACL check and is also its own gate.
-  store: { passed: 100, ignored: 1, sequence: [33, 9, 2, 13, 8, 11, 3, 3, 3, 11, 4, 1, 0] },
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 32 },
+  // Derived, not measured on Windows: the macOS list minus the same 4 cfg(unix) tests (2 lib tests, 1 in
+  // lock_identity_contract, 1 in sqlite_reconcile); the sequence is the macOS one with those 4 removed.
+  store: { passed: 153, ignored: 1, sequence: [63, 9, 2, 13, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 62 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -39,20 +46,21 @@ export const WINDOWS = {
 // macOS: measured on the Priority 12 integration merge (M6-01 + M6-02 + M6-03 on the M5-05 round 5
 // source). Not Windows evidence. daemon is unit, coordinator_review, daemon.rs, diagnostics_log.
 export const MACOS = {
-  ipc: { passed: 46, sequence: [46, 0] },
-  daemon: { passed: 88, sequence: [73, 4, 10, 1] },
+  // Measured on the M7 final integration merge (macOS, this branch).
+  ipc: { passed: 55, sequence: [55, 0] },
+  daemon: { passed: 208, ignored: 1, sequence: [175, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 726, ignored: 1 },
+  workspace: { passed: 981, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 49, sequence: [49] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
-  store: { passed: 104, ignored: 1, sequence: [35, 9, 2, 13, 8, 11, 3, 4, 3, 11, 5, 1, 0] },
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 34 },
+  store: { passed: 157, ignored: 1, sequence: [65, 9, 2, 13, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
-  e2eFiles: 1,
+  e2eFiles: 8,
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
@@ -60,8 +68,8 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
-export const VITEST = { files: 15, tests: 290 };
-export const E2E_TESTS = 19;
+export const VITEST = { files: 51, tests: 1105 };
+export const E2E_TESTS = 43;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;

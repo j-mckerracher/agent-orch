@@ -37,25 +37,25 @@ The Windows list is the published runbook
 | --- | --- | --- |
 | `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (97 tests on both; the exit code is in `node-self-tests.result.json`) | both |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
-| `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
+| `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (55 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
 | `cli-build` | `cargo build --locked -p orchestrator-cli` (shape: a `Finished` line and the binary; cached output is fine) | Windows |
 | `p12-windows-checks` | `pwsh.exe -NoProfile -File scripts\ci\p12-windows-checks.ps1 -TargetDir {target} -RunRoot {testTmp}\p12 -EvidenceDir {evidence}`; the last `P12-WINDOWS-CHECKS:` line must be `PASS` (see below) | Windows |
-| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 57 = 52+4+0+1, macOS 88 = 73+4+10+1: unit, `coordinator_review`, `daemon.rs`, `diagnostics_log`) | both |
+| `daemon-tests` | `cargo test --locked -p orchestrator-daemon` (Windows 138 passed + 1 ignored = `[118,12,2,4,0,1,2]`, derived; macOS 208 passed + 1 ignored = `[175,14,2,4,11,1,2]`, measured: unit, `conversation_runtime`, `conversations`, `coordinator_review`, `daemon.rs`, `diagnostics_log`, `host_metrics`; the ignored test is in `conversation_runtime`) | both |
 | `daemon-lifecycle` | `cargo test --locked -p orchestrator-daemon --test lifecycle -- --nocapture` (`STEP 1` to `STEP 8`, one `lifecycle: PASS`) | both |
 | `coordinator-review-tests` | `cargo test --locked -p orchestrator-daemon --test coordinator_review` (4 tests) | both |
 | `git-lib-tests` | `cargo test --locked -p orchestrator-git --lib` (49 on both: Windows 47 portable + 2 `cfg(windows)`, macOS 47 portable + 2 `cfg(unix)`) | both |
 | `cli-cleanup-safety-tests` | `cargo test --locked -p orchestrator-cli --test cleanup_safety` (Windows 3, macOS 4: one test is `cfg(unix)`; a fifth is `cfg(all(unix, feature = "fault-injection"))` and runs nowhere by default) | both |
 | `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[11,0]`: 4 portable + 7 DACL; macOS `[8,0]`: 4 portable + 4 Unix; the `0` is the doc-test binary) | both |
-| `store-tests` | `cargo test --locked -p orchestrator-store` (Windows 100 passed + 1 ignored, derived; macOS 104 passed + 1 ignored, measured: 4 tests are `cfg(unix)`; the ignored test is in `data_lock`) | both |
-| `lock-takeover-test` | `cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over` (1 passed; 32 filtered out on Windows, 34 on macOS) | both |
+| `store-tests` | `cargo test --locked -p orchestrator-store` (Windows 153 passed + 1 ignored, derived; macOS 157 passed + 1 ignored, measured: 4 tests are `cfg(unix)`; the ignored test is in `data_lock`) | both |
+| `lock-takeover-test` | `cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over` (1 passed; 62 filtered out on Windows, 64 on macOS) | both |
 | `diagnostics-tests` | `cargo test --locked -p orchestrator-diagnostics` (28 on both: no test is `cfg`-gated) | both |
 | `runtime-command-line-tests` | `cargo test --locked -p orchestrator-runtime --lib command_line` (8 tests; the pure Windows rules run on every host) | both |
 | `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
-| `workspace-tests` | `cargo test --locked --workspace` (726 passed, 1 ignored) | macOS |
-| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (15 files, 290 tests) | both |
-| `desktop-e2e` | `npm run test:e2e` (1 file, 19 tests, real daemon over a Unix socket) | macOS |
+| `workspace-tests` | `cargo test --locked --workspace` (981 passed, 2 ignored) | macOS |
+| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (51 files, 1105 tests) | both |
+| `desktop-e2e` | `npm run test:e2e` (8 files, 43 tests, real daemon over a Unix socket) | macOS |
 | `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 14, macOS 16), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
 
@@ -430,3 +430,25 @@ separator agreement only; drive letters, the real file system, PowerShell and th
 - `install-smoke` prints, and writes under `source` in `--out`, the commit, `HEAD^{tree}`, the porcelain status of
   the checkout before and after the run, `changed by this run` (paths that appeared or vanished) and `cleanAfterRun`.
   A dirty checkout after a run is therefore explained by the paths it names; it is reported, never judged.
+
+### M7 final integration counts
+
+The M7 merge (adapters, conversation runtime, queue snapshot, host metrics, workstreams) moved the counts. macOS is
+measured on the merged branch; Windows is derived from `cfg` gates, not measured:
+
+| Gate | macOS (measured) | Windows (derived) |
+| --- | --- | --- |
+| `ipc-tests` | 55 `[55,0]` | 55 `[55,0]` (all new tests are `cfg(any(unix, windows))`) |
+| `daemon-tests` | 208 + 1 ignored `[175,14,2,4,11,1,2]` | 138 + 1 ignored `[118,12,2,4,0,1,2]` |
+| `store-tests` | 157 + 1 ignored `[65,9,2,13,11,8,11,3,4,3,11,5,1,12,0]` | 153 + 1 ignored `[63,9,2,13,11,8,11,3,3,3,11,4,1,12,0]` |
+| `lock-takeover-test` | 1 (64 filtered out) | 1 (62 filtered out) |
+| `workspace-tests` | 981 + 2 ignored | not a Windows gate |
+| `desktop-vitest` | 51 files, 1105 tests | same |
+| `desktop-e2e` | 8 files, 43 tests | not a Windows gate |
+
+On Windows the daemon library excludes `executor::tests`, `conversation_orphans`, `conversation_agent::launch` and
+four other unix-only tests, and gains `windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent`;
+`conversation_runtime` loses its two unix-only tests; `tests/daemon.rs` is `cfg(unix)`. The M6 supervisor clears the
+child environment and never forwards `AGENT_ORCH_*` names, so the conversation and queue-snapshot fake agents read
+`FAKE_AGENT_LOG`, `FAKE_AGENT_PID_FILE` and `QUEUE_AGENT_DIR`, listed in `AGENT_ORCH_ENV_PASSTHROUGH`. The name lists
+`macos-test-names.json` and `windows-test-names.json` were regenerated from the measured output.

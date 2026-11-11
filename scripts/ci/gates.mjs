@@ -63,7 +63,7 @@ export function gatesFor(platform) {
       name: "daemon-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
       args: ["test", "--locked", "-p", "orchestrator-daemon"],
       expect: counts.daemon, pattern: lifecyclePattern,
-      passed: want.daemon.passed, ignored: 0, runningSequence: want.daemon.sequence,
+      passed: want.daemon.passed, ignored: want.daemon.ignored ?? 0, runningSequence: want.daemon.sequence,
     },
     {
       name: "daemon-lifecycle", mode: "lifecycle", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
