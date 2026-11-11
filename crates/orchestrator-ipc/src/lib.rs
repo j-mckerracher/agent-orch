@@ -81,6 +81,9 @@ mod coordinator_review_tests;
 #[path = "event_stream_tests.rs"]
 mod event_stream_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "host_tests.rs"]
+mod host_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "idle_subscription_tests.rs"]
 mod idle_subscription_tests;
 #[cfg(all(test, unix))]
@@ -89,6 +92,12 @@ mod integration_tests;
 #[cfg(all(test, unix))]
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "queue_tests.rs"]
+mod queue_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "workstreams_tests.rs"]
+mod workstreams_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

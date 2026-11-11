@@ -23,6 +23,7 @@ pub mod records;
 pub mod retry;
 pub mod scheduler;
 pub mod task;
+pub mod workstream;
 
 pub use records::{Artifact, Project, VerificationRun, Workspace};
 pub use identity::ProcessIdentity;

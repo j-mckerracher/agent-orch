@@ -13,7 +13,8 @@ use orchestrator_core::approval::{
 };
 use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
-    self, AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+    self, AutonomyPolicy, DeliveryPolicy, ModelSelection, TaskContract, TaskKind,
+    VerificationPolicy,
 };
 use orchestrator_core::identity::ProcessClassification;
 use orchestrator_core::records::{Project, Workspace};
@@ -51,6 +52,11 @@ pub(crate) struct DaemonApi {
     idempotency_gate: Mutex<()>,
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
+    host: host::HostService,
+    /// M7-08 conversation service (global and per-workstream).
+    conversations: conversation_runtime::ConversationService,
+    /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
+    catalog_cache: Arc<models::CatalogCache>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -75,6 +81,8 @@ struct TaskSubmission {
     autonomy: AutonomyPolicy,
     max_retries: u32,
     max_repairs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_selection: Option<ModelSelection>,
 }
 
 #[derive(Deserialize)]
@@ -171,6 +179,13 @@ impl DaemonApi {
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
                 .map_err(|_| "cannot initialize local approval policy".to_owned())?;
+        let conversations = conversation_runtime::ConversationService::new(
+            store.clone(),
+            Arc::new(conversation_runtime::UnavailableRuntime),
+            Arc::new(conversation_runtime::NoWorkstreams),
+            None,
+        );
+        conversations.recover()?;
         Ok(Self {
             store,
             config,
@@ -178,6 +193,9 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
+            host: host::HostService::new(data_dir),
+            conversations,
+            catalog_cache: Arc::default(),
         })
     }
 
@@ -186,6 +204,7 @@ impl DaemonApi {
     pub(crate) fn with_executor(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
         let mut api = Self::with_config(data_dir, config.clone())?;
         api.executor = Some(Executor::start(api.store.clone(), config)?);
+        api.host.start();
         Ok(api)
     }
 
@@ -231,6 +250,9 @@ impl RpcHandler for DaemonApi {
             Capability::Agents,
             Capability::Coordinator,
             Capability::Review,
+            Capability::Host,
+            Capability::Queue,
+            Capability::Workstreams,
         ]
     }
 
@@ -244,6 +266,8 @@ impl RpcHandler for DaemonApi {
             "tasks.cancel" => self.cancel_task(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
+            "agents.catalog" => self.agents_catalog(params),
+            "agents.validate_selection" => self.agents_validate_selection(params),
             "sessions.list" => self.list_sessions(params),
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
@@ -254,9 +278,24 @@ impl RpcHandler for DaemonApi {
             "coordinator.send_message" => self.coordinator_send_message(params),
             "coordinator.propose" => self.coordinator_propose(params),
             "coordinator.get" => self.coordinator_get(params),
+            "conversations.send" => self.conversations_send(params),
+            "conversations.get" => self.conversations_get(params),
+            "conversations.cancel" => self.conversations_cancel(params),
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
+            "host.metrics" => self.host_metrics(params),
+            "queue.snapshot" => self.queue_snapshot(params),
+            "usage.summary" => self.usage_summary(params),
+            "workstreams.create" => self.workstreams_create(params),
+            "workstreams.list" => self.workstreams_list(params),
+            "workstreams.get" => self.workstreams_get(params),
+            "workstreams.update" => self.workstreams_update(params),
+            "workstreams.add_objective" => self.workstreams_add_objective(params),
+            "workstreams.revise_objective" => self.workstreams_revise_objective(params),
+            "workstreams.set_gate" => self.workstreams_set_gate(params),
+            "workstreams.link_task" => self.workstreams_link_task(params),
+            "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -361,6 +400,13 @@ impl DaemonApi {
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
         let request: TaskSubmitParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
+        // The catalog read can take as long as a CLI probe, so it happens
+        // before the idempotency gate is taken: the gate serializes every
+        // mutating request and must not wait on a subprocess.
+        let selection_catalog = self.selection_catalog(
+            &request.contract.agent,
+            request.contract.model_selection.as_ref(),
+        )?;
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
@@ -387,12 +433,19 @@ impl DaemonApi {
                     autonomy: request.contract.autonomy,
                     max_retries: request.contract.max_retries,
                     max_repairs: request.contract.max_repairs,
+                    model_selection: request.contract.model_selection.clone(),
                 };
                 self.store
                     .get_project(&contract.project_id)
                     .map_err(map_store_error)?;
                 contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
                 self.check_agent_command_line(&contract)?;
+                if let Some(selection) = &contract.model_selection {
+                    // `contract::validate` has accepted the selection, so the
+                    // pre-gate read was made for it.
+                    let catalog = selection_catalog.as_ref().ok_or(RpcError::Internal)?;
+                    self.check_selection(catalog, selection)?;
+                }
                 self.validate_scheduler(&contract)?;
                 self.store.create(&contract).map_err(map_store_error)?;
                 self.store
@@ -485,9 +538,12 @@ impl DaemonApi {
     /// CLI. `RpcError` carries no detail, so the actionable message goes to the
     /// diagnostics log and the caller sees `InvalidParams`.
     fn check_agent_command_line(&self, contract: &TaskContract) -> Result<(), RpcError> {
-        let Some((program, args)) =
-            agent_command(&self.config, &contract.agent, &contract.objective)
-        else {
+        let Some((program, args)) = agent_command(
+            &self.config,
+            &contract.agent,
+            &contract.objective,
+            contract.model_selection.as_ref(),
+        ) else {
             return Ok(());
         };
         orchestrator_runtime::check_command_line(&program, &args).map_err(|error| {
@@ -681,10 +737,15 @@ impl DaemonApi {
             None => self.store.list().map_err(map_store_error)?,
         };
         let sessions = tasks.into_iter().flat_map(|task| {
-            let task_id = task.contract.id;
-            task.sessions
-                .into_iter()
-                .map(move |session| json!({"task_id": &task_id, "session": session}))
+            let task_id = task.contract.id.clone();
+            let effective = models::effective_configuration(&task.contract);
+            task.sessions.into_iter().map(move |session| {
+                json!({
+                    "task_id": &task_id,
+                    "session": session,
+                    "effective_configuration": &effective,
+                })
+            })
         });
         Ok(Value::Array(sessions.collect()))
     }
@@ -692,12 +753,17 @@ impl DaemonApi {
     fn get_session(&self, params: Value) -> Result<Value, RpcError> {
         let params: SessionParams = parse_params(params)?;
         let task = self.store.get(&params.task_id).map_err(map_store_error)?;
+        let effective = models::effective_configuration(&task.contract);
         let session = task
             .sessions
             .into_iter()
             .find(|session| session.id == params.session_id)
             .ok_or(RpcError::NotFound)?;
-        Ok(json!({"task_id": params.task_id, "session": session}))
+        Ok(json!({
+            "task_id": params.task_id,
+            "session": session,
+            "effective_configuration": effective,
+        }))
     }
 
     fn session_events(&self, params: Value) -> Result<Value, RpcError> {
@@ -1212,15 +1278,41 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+#[path = "api_conversation_runtime.rs"]
+mod conversation_runtime;
+#[path = "api_conversations.rs"]
+mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "api_host.rs"]
+mod host;
+#[path = "api_models.rs"]
+mod models;
+#[path = "api_queue.rs"]
+mod queue;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_usage.rs"]
+mod usage;
+
+#[cfg(test)]
+#[path = "api_usage_tests.rs"]
+mod usage_tests;
+
+#[cfg(test)]
+#[path = "api_queue_tests.rs"]
+mod queue_tests;
+#[path = "api_workstreams.rs"]
+mod workstreams;
 
 #[cfg(test)]
 #[path = "api_review_tests.rs"]
 mod review_tests;
+
+#[cfg(test)]
+#[path = "api_workstreams_tests.rs"]
+mod workstreams_tests;
 
 #[cfg(test)]
 #[path = "api_tests.rs"]

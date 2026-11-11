@@ -7,13 +7,19 @@
 //! this crate interprets a session or process exit as task success, and it
 //! holds no task policy or authorization.
 
+pub mod catalog;
 pub mod claude_code_adapter;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
 pub mod pi_rpc_adapter;
 pub mod routing;
+pub mod usage;
 
+pub use catalog::{
+    pi_catalog, provider_of, AgentCatalog, CatalogState, Facet, ModelOption, SelectionError,
+    SelectionReason,
+};
 pub use codex_adapter::CodexAdapter;
 pub use claude_code_adapter::ClaudeCodeAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
@@ -25,3 +31,4 @@ pub use pi_rpc_adapter::PiRpcAdapter;
 pub use routing::{
     select_adapter, AdapterCapabilityGap, Capability, RoutableAdapter, RoutingError,
 };
+pub use usage::{ReportedCost, UsageReport};

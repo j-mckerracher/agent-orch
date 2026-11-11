@@ -54,17 +54,31 @@ pub use orchestrator_private_fs::{create_private_dir, create_private_file, restr
 pub mod sqlite;
 mod sqlite_approvals;
 mod sqlite_attempts;
+mod sqlite_conversations;
 mod sqlite_delivery;
 mod sqlite_ops;
 mod sqlite_review;
 mod sqlite_verification;
+mod sqlite_workstreams;
+pub use sqlite_conversations::{
+    BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
+    ConversationTurn, TurnOutcome, TurnState, INTERRUPTED_BY_RESTART,
+    MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
+    MAX_WORKSTREAM_ID_BYTES,
+};
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
+pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
 mod sqlite_events;
 pub use sqlite_events::{IdempotencyStart, StreamEvent};
 mod sqlite_reconcile;
+mod sqlite_usage;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry};
+pub use sqlite_usage::{
+    ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,
+    UsageWindowSummary,
+};
 
 use std::path::Path;
 
@@ -634,6 +648,7 @@ mod tests {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 1,
             max_repairs: 1,
+            model_selection: None,
         }
     }
 

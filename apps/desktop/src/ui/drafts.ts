@@ -30,10 +30,25 @@ export const emptySubmitDraft = (): SubmitDraft => ({
   maxRepairs: "1",
 });
 
+/**
+ * Orchestrator Workspace conversation state (M7-10). Keys are opaque target keys chosen by the
+ * view (`global`, `project:<id>`); this store only keeps their text. A draft is form text and is
+ * never sent anywhere by being stored.
+ */
+export interface WorkspaceDrafts {
+  /** The selected conversation target key, or null before the user has chosen one. */
+  target: string | null;
+  drafts: Record<string, string>;
+}
+
+export const emptyWorkspaceDrafts = (): WorkspaceDrafts => ({ target: null, drafts: {} });
+
 export interface DraftsSnapshot {
   registerPath: string;
   submit: Record<string, SubmitDraft>;
   coordinator: Record<string, string>;
+  /** Absent until the workspace view stores something; snapshots persisted before M7-10 lack it. */
+  workspace?: WorkspaceDrafts;
 }
 
 /** Bump when the persisted shape changes; an unknown version is discarded. */
@@ -43,6 +58,15 @@ export type DraftStorage = Pick<Storage, "getItem" | "setItem">;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+function loadWorkspace(value: unknown): WorkspaceDrafts | null {
+  if (!isRecord(value) || !isRecord(value.drafts)) return null;
+  const drafts: Record<string, string> = {};
+  for (const [key, text] of Object.entries(value.drafts)) {
+    if (typeof text === "string") drafts[key] = text;
+  }
+  return { target: typeof value.target === "string" ? value.target : null, drafts };
+}
 
 function loadDrafts(storage: DraftStorage): DraftsSnapshot | null {
   try {
@@ -59,7 +83,10 @@ function loadDrafts(storage: DraftStorage): DraftsSnapshot | null {
     for (const [project, text] of Object.entries(parsed.coordinator)) {
       if (typeof text === "string") coordinator[project] = text;
     }
-    return { registerPath: parsed.registerPath, submit, coordinator };
+    const snapshot: DraftsSnapshot = { registerPath: parsed.registerPath, submit, coordinator };
+    const workspace = loadWorkspace(parsed.workspace);
+    if (workspace) snapshot.workspace = workspace;
+    return snapshot;
   } catch {
     return null;
   }
@@ -100,5 +127,23 @@ export class DraftsStore extends Store<DraftsSnapshot> {
 
   setCoordinator(projectId: string, text: string): void {
     this.update({ coordinator: { ...this.getSnapshot().coordinator, [projectId]: text } });
+  }
+
+  workspace(): WorkspaceDrafts {
+    return this.getSnapshot().workspace ?? emptyWorkspaceDrafts();
+  }
+
+  workspaceDraft(targetKey: string): string {
+    return this.workspace().drafts[targetKey] ?? "";
+  }
+
+  setWorkspaceTarget(targetKey: string): void {
+    this.update({ workspace: { ...this.workspace(), target: targetKey } });
+  }
+
+  /** An empty draft is removed so cleared conversations do not accumulate keys. */
+  setWorkspaceDraft(targetKey: string, text: string): void {
+    const { [targetKey]: _dropped, ...rest } = this.workspace().drafts;
+    this.update({ workspace: { ...this.workspace(), drafts: text === "" ? rest : { ...rest, [targetKey]: text } } });
   }
 }

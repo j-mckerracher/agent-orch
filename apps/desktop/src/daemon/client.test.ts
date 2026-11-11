@@ -165,7 +165,37 @@ describe("DaemonApi placeholder-id guard", () => {
     ).rejects.toMatchObject({ kind: "invalid-params" });
     expect(fake.calls.filter((c) => c.method !== "events.subscribe")).toEqual([]);
     expect(isFixtureId("fixture:x")).toBe(true);
+    expect(isFixtureId("FIXTURE:x")).toBe(true);
+    expect(isFixtureId("  Fixture:x")).toBe(true);
+    expect(isFixtureId("fixture-project")).toBe(false);
     expect(isFixtureId("task-1")).toBe(false);
+  });
+
+  it("refuses fixture ids on the M7-24 conversation and selection methods and sends real ones", async () => {
+    const fake = new FakeDaemon();
+    const api = new DaemonApi(await open(fake));
+    const bad = { kind: "workstream", workstream_id: "fixture:ws-auth" } as const;
+    for (const call of [
+      () => api.conversationsSend(bad, "hi", "k"),
+      () => api.conversationsGet(bad),
+      () => api.conversationsCancel(bad, "t", "k"),
+      () => api.conversationsCancel({ kind: "global" }, "fixture:turn", "k"),
+      () => api.agentsValidateSelection("fixture:codex", { model: "m" }),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ kind: "invalid-params" });
+    }
+    expect(fake.calls.filter((c) => c.method !== "events.subscribe")).toEqual([]);
+
+    fake.stub("conversations.get", { entries: [] });
+    fake.stub("agents.catalog", []);
+    await api.conversationsGet({ kind: "workstream", workstream_id: "ws-1" }, 3, "e1");
+    expect(fake.callsTo("conversations.get")[0]!.params).toEqual({
+      target: { kind: "workstream", workstream_id: "ws-1" },
+      after_sequence: 3,
+      epoch: "e1",
+    });
+    await api.agentsCatalog();
+    expect(fake.callsTo("agents.catalog")).toHaveLength(1);
   });
 });
 

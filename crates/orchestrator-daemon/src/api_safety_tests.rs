@@ -84,6 +84,7 @@ fn fixture() -> Fixture {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -166,6 +167,7 @@ fn invalid_path_fixture() -> (TempDir, DaemonApi, PathBuf, PathBuf) {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 0,
             max_repairs: 0,
+            model_selection: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();

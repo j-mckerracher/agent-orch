@@ -6,10 +6,18 @@
  * a fixture record into a real action by mistake.
  */
 import { DaemonError } from "./errors";
+import { parseQueueSnapshot, type QueueSnapshotWire } from "./queue";
 import type { DaemonSession } from "./session";
 import type {
   AgentCapabilityEntry,
+  AgentCatalogEntry,
   Approval,
+  ConversationCancelResult,
+  ConversationSendResult,
+  ConversationWirePage,
+  ConversationWireTarget,
+  ModelSelectionWire,
+  SelectionCheck,
   CoordinatorEntry,
   CoordinatorPage,
   DaemonHealth,
@@ -27,12 +35,23 @@ import type {
   TaskSubmission,
   WorkspaceDiff,
   WorkspaceDiffRequest,
+  GateDraft,
+  ObjectiveWire,
+  WorkstreamDetailWire,
+  WorkstreamReviseObjectiveRequest,
+  WorkstreamSetGateRequest,
+  WorkstreamStateWire,
+  WorkstreamTaskLinkWire,
+  WorkstreamUpdateRequest,
+  WorkstreamWire,
 } from "./types";
+import type { HostMetricsWire } from "./hostMetrics";
+import type { UsageSummaryRequest } from "./usageWire";
 
 export const FIXTURE_ID_PREFIX = "fixture:";
 
 export function isFixtureId(id: string): boolean {
-  return id.startsWith(FIXTURE_ID_PREFIX);
+  return id.trim().toLowerCase().startsWith(FIXTURE_ID_PREFIX);
 }
 
 /** Guard failures reject asynchronously, like every other API failure. */
@@ -139,6 +158,11 @@ export class DaemonApi {
     });
   }
 
+  /** Read-only scheduler capacity and queue view (`queue` capability); takes no parameters. */
+  async queueSnapshot(): Promise<QueueSnapshotWire> {
+    return parseQueueSnapshot(await this.session.request("queue.snapshot"));
+  }
+
   /** Legal only for a Failed or VerificationFailed task within its retry or repair budget. */
   async tasksRetry(taskId: string, idempotencyKey: string): Promise<TaskRecord> {
     return this.session.request("tasks.retry", {
@@ -149,6 +173,16 @@ export class DaemonApi {
 
   agentsCapabilities(): Promise<AgentCapabilityEntry[]> {
     return this.session.request("agents.capabilities");
+  }
+
+  /** Cached host meters (capability `host`); the daemon never probes on the call. */
+  hostMetrics(): Promise<HostMetricsWire> {
+    return this.session.request("host.metrics");
+  }
+
+  /** The result is untyped wire JSON; the usage adapter validates it. */
+  usageSummary(request: UsageSummaryRequest): Promise<unknown> {
+    return this.session.request("usage.summary", request);
   }
 
   /** Records a user message; the daemon never acts on it. */
@@ -207,4 +241,135 @@ export class DaemonApi {
       idempotency_key: idempotencyKey,
     });
   }
+
+  workstreamsList(state?: WorkstreamStateWire): Promise<WorkstreamWire[]> {
+    return this.session.request("workstreams.list", state === undefined ? {} : { state });
+  }
+
+  async workstreamsGet(workstreamId: string): Promise<WorkstreamDetailWire> {
+    return this.session.request("workstreams.get", { workstream_id: realId(workstreamId) });
+  }
+
+  workstreamsCreate(title: string, summary: string | undefined, idempotencyKey: string): Promise<WorkstreamWire> {
+    return this.session.request("workstreams.create", {
+      title,
+      ...(summary === undefined ? {} : { summary }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsUpdate(request: WorkstreamUpdateRequest, idempotencyKey: string): Promise<WorkstreamWire> {
+    return this.session.request("workstreams.update", {
+      ...request,
+      workstream_id: realId(request.workstream_id),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsAddObjective(
+    workstreamId: string,
+    objective: { title: string; description?: string; gates?: GateDraft[] },
+    idempotencyKey: string,
+  ): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.add_objective", {
+      ...objective,
+      workstream_id: realId(workstreamId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsReviseObjective(request: WorkstreamReviseObjectiveRequest, idempotencyKey: string): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.revise_objective", {
+      ...request,
+      objective_id: realId(request.objective_id),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsSetGate(request: WorkstreamSetGateRequest, idempotencyKey: string): Promise<ObjectiveWire> {
+    return this.session.request("workstreams.set_gate", {
+      ...request,
+      objective_id: realId(request.objective_id),
+      ...(request.evidence_task_id === undefined ? {} : { evidence_task_id: realId(request.evidence_task_id) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsLinkTask(
+    workstreamId: string,
+    taskId: string,
+    objectiveId: string | undefined,
+    idempotencyKey: string,
+  ): Promise<WorkstreamTaskLinkWire> {
+    return this.session.request("workstreams.link_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      ...(objectiveId === undefined ? {} : { objective_id: realId(objectiveId) }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  async workstreamsUnlinkTask(workstreamId: string, taskId: string, idempotencyKey: string): Promise<{ removed: boolean }> {
+    return this.session.request("workstreams.unlink_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** M7-08. Records the message and starts a turn; the turn can still fail (e.g. `runtime_unavailable`). */
+  async conversationsSend(
+    target: ConversationWireTarget,
+    text: string,
+    idempotencyKey: string,
+  ): Promise<ConversationSendResult> {
+    return this.session.request("conversations.send", {
+      target: realTarget(target),
+      text,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Cursor read; there is no push stream. Omit `afterSequence` to read from the start. */
+  async conversationsGet(
+    target: ConversationWireTarget,
+    afterSequence?: number,
+    epoch?: string,
+  ): Promise<ConversationWirePage> {
+    return this.session.request("conversations.get", {
+      target: realTarget(target),
+      ...(afterSequence === undefined ? {} : { after_sequence: afterSequence }),
+      ...(epoch === undefined ? {} : { epoch }),
+    });
+  }
+
+  async conversationsCancel(
+    target: ConversationWireTarget,
+    turnId: string,
+    idempotencyKey: string,
+  ): Promise<ConversationCancelResult> {
+    return this.session.request("conversations.cancel", {
+      target: realTarget(target),
+      turn_id: realId(turnId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */
+  agentsCatalog(): Promise<AgentCatalogEntry[]> {
+    return this.session.request("agents.catalog");
+  }
+
+  /** At least one of model and effort is required by the daemon. */
+  async agentsValidateSelection(agent: string, selection: ModelSelectionWire): Promise<SelectionCheck> {
+    return this.session.request("agents.validate_selection", {
+      agent: realId(agent),
+      ...(selection.model === undefined ? {} : { model: selection.model }),
+      ...(selection.effort === undefined ? {} : { effort: selection.effort }),
+    });
+  }
+}
+
+function realTarget(target: ConversationWireTarget): ConversationWireTarget {
+  return target.kind === "global" ? target : { kind: "workstream", workstream_id: realId(target.workstream_id) };
 }

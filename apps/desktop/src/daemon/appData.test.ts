@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AppData, timelineKey } from "./appData";
 import { ConnectionManager } from "./connection";
 import { DaemonError } from "./errors";
-import type { TaskSubmission } from "./types";
+import { OPTIONAL_CAPABILITIES, type TaskSubmission } from "./types";
 import { FakeDaemon, mkEvent, mkSession, mkTask, until } from "../test/fakeDaemon";
 
 const submission: TaskSubmission = {
@@ -75,6 +75,76 @@ describe("ConnectionManager", () => {
     await until(() => status(connection) === "incompatible");
     await new Promise((r) => setTimeout(r, 40));
     expect(status(connection)).toBe("incompatible");
+  });
+
+  it("requests every capability first and makes one handshake when the daemon offers them all", async () => {
+    const fake = new FakeDaemon();
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    expect(fake.openRequests).toHaveLength(1);
+    for (const capability of OPTIONAL_CAPABILITIES) {
+      expect(fake.openRequests[0]).toContain(capability);
+      expect(connection.getSnapshot().capabilities).toContain(capability);
+    }
+  });
+
+  it("stays connected without the optional capabilities when an older daemon refuses them", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["queue", "host", "workstreams"];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    expect(fake.openRequests).toHaveLength(2);
+    for (const capability of OPTIONAL_CAPABILITIES) {
+      expect(fake.openRequests[0]).toContain(capability);
+      expect(fake.openRequests[1]).not.toContain(capability);
+      expect(connection.getSnapshot().capabilities).not.toContain(capability);
+    }
+    expect(fake.openRequests[1]).toContain("tasks");
+    expect(connection.getSnapshot().capabilities).toContain("tasks");
+  });
+
+  it("asks for the optional capabilities again on the next connection, so an upgraded daemon is used in full", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["host"];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    fake.unknownCapabilities = [];
+    const generation = connection.getSnapshot().generation;
+    connection.reconnect();
+    await until(() => connection.getSnapshot().generation > generation);
+    expect(connection.getSnapshot().capabilities).toContain("host");
+  });
+
+  it("is still incompatible when a required capability is refused", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["queue", "tasks"];
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "incompatible");
+    expect(fake.openRequests).toHaveLength(2);
+    expect(fake.channels).toHaveLength(0);
+  });
+
+  it("does not retry without optional capabilities when none were requested", async () => {
+    const fake = new FakeDaemon();
+    fake.unknownCapabilities = ["tasks"];
+    const connection = new ConnectionManager({ connector: fake, backoffMs: [5], capabilities: ["health", "tasks"] });
+    disposables.push(() => connection.stop());
+    connection.start();
+    await until(() => status(connection) === "incompatible");
+    expect(fake.openRequests).toHaveLength(1);
+  });
+
+  it("does not repeat the handshake without optional capabilities for other failures", async () => {
+    const fake = new FakeDaemon();
+    fake.openError = new DaemonError("version", "nope", -32003);
+    const { connection } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "incompatible");
+    expect(fake.openRequests).toHaveLength(1);
   });
 
   it("reconnects after a drop and resumes after the last applied sequence", async () => {

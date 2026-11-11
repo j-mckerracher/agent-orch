@@ -34,9 +34,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, ClaudeCodeAdapter,
-    CodexAdapter,
+    pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
+    ClaudeCodeAdapter, CodexAdapter,
 };
+use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
@@ -46,6 +47,7 @@ use orchestrator_git::{create_task_worktree, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
+    UsageReceipt, UsageSource,
 };
 
 const CODEX_AGENT: &str = "codex";
@@ -66,6 +68,58 @@ pub(crate) struct ExecutorConfig {
     pub(crate) probe_timeout: Duration,
     /// Where failures and recovery actions are reported (stderr in the daemon).
     pub(crate) diagnostics: Diagnostics,
+    /// Upper bound for each CLI probe behind `agents.catalog` and submit-time
+    /// selection checks. Launch-time checks use `LAUNCH_CATALOG_TIMEOUT`.
+    pub(crate) catalog_timeout: Duration,
+    /// How long a caller waits for a catalog read before it is told the
+    /// catalog is not known yet. Must stay well under the 2 s client I/O
+    /// timeout. The read itself continues in the background and fills the
+    /// cache for the retry.
+    pub(crate) catalog_wait: Duration,
+}
+
+/// No client waits on a launch, so its catalog check can wait for a slow CLI.
+const LAUNCH_CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Replaces control characters in text taken from a request so it cannot
+/// forge or hide log lines.
+pub(crate) fn log_safe(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
+}
+
+impl ExecutorConfig {
+    /// Reads one agent's catalog from its installed CLI. An agent the daemon
+    /// cannot launch with a selection is reported `unsupported`.
+    pub(crate) async fn read_catalog(
+        &self,
+        agent: &str,
+        working_dir: &Path,
+        limit: Duration,
+    ) -> AgentCatalog {
+        match agent {
+            CODEX_AGENT => {
+                let mut adapter = CodexAdapter::new();
+                if let Some(program) = &self.codex_program {
+                    adapter = adapter.with_program(program);
+                }
+                adapter.catalog(working_dir, limit).await
+            }
+            CLAUDE_AGENT => {
+                let mut adapter = ClaudeCodeAdapter::new();
+                if let Some(program) = &self.claude_program {
+                    adapter = adapter.with_program(program);
+                }
+                adapter.catalog(working_dir, limit).await
+            }
+            "pi" => pi_catalog(),
+            other => AgentCatalog::unsupported_agent(
+                other,
+                "the daemon has no launcher for this agent, so selection is unsupported",
+            ),
+        }
+    }
 }
 
 impl ExecutorConfig {
@@ -80,6 +134,8 @@ impl ExecutorConfig {
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
             diagnostics: Diagnostics::stderr(),
+            catalog_timeout: Duration::from_millis(1500),
+            catalog_wait: Duration::from_millis(1100),
         }
     }
 }
@@ -98,6 +154,9 @@ struct Inner {
     stop: AtomicBool,
     /// Why scheduling is blocked by the restart gate, if it is.
     blocked: Mutex<Option<String>>,
+    /// Project that received the last start; mirrors the loop's fairness
+    /// cursor so read models order the queue as the next pass would.
+    cursor: Mutex<Option<String>>,
 }
 
 impl Executor {
@@ -109,6 +168,7 @@ impl Executor {
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
+            cursor: Mutex::new(None),
         });
         let worker = inner.clone();
         let handle = thread::Builder::new()
@@ -130,6 +190,15 @@ impl Executor {
     /// out between an admission and its launch.
     pub(crate) fn has_pending_pass(&self) -> bool {
         *lock(&self.inner.dirty)
+    }
+
+    /// The next scheduling pass's fairness cursor and whether the restart gate
+    /// currently blocks every launch. Read-only; for the queue snapshot.
+    pub(crate) fn dispatch_state(&self) -> (Option<String>, bool) {
+        (
+            lock(&self.inner.cursor).clone(),
+            lock(&self.inner.blocked).is_some(),
+        )
     }
 
     /// The restart-gate refusal currently blocking all launches, if any.
@@ -280,6 +349,7 @@ impl Inner {
             }
             if gate_open {
                 self.schedule_pass(&mut last_started_project);
+                *lock(&self.cursor) = last_started_project.clone();
             }
             let wait = if gate_open {
                 self.config.poll
@@ -370,6 +440,7 @@ impl Inner {
             session_id: format!("{task_id}-session-{number}"),
             agent: task.contract.agent.clone(),
             objective: task.contract.objective.clone(),
+            model_selection: task.contract.model_selection.clone(),
             worktree: PathBuf::new(),
             diag: self.config.diagnostics.clone(),
         };
@@ -482,6 +553,7 @@ struct Job {
     session_id: String,
     agent: String,
     objective: String,
+    model_selection: Option<ModelSelection>,
     worktree: PathBuf,
     diag: Diagnostics,
 }
@@ -572,22 +644,27 @@ fn supervise_inner(inner: &Inner, job: &Job) {
 
 /// The program and argument vector the daemon launches for `agent`, or `None`
 /// when the agent has no daemon launcher. Shared by the launch and by the
-/// submit-time command-line check so the two cannot disagree.
+/// submit-time command-line check so the two cannot disagree; the selected
+/// model and effort are part of the vector, so the check measures them too.
 pub(crate) fn agent_command(
     config: &ExecutorConfig,
     agent: &str,
     objective: &str,
+    selection: Option<&ModelSelection>,
 ) -> Option<(PathBuf, Vec<String>)> {
+    let model = selection.and_then(|s| s.model.as_deref());
+    let effort = selection.and_then(|s| s.effort.as_deref());
     match agent {
         CODEX_AGENT => Some((
             config
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex")),
-            ["exec", "--json", "--approve-for-me", "--"]
+            ["exec", "--json", "--approve-for-me"]
                 .into_iter()
                 .map(str::to_owned)
-                .chain([objective.to_owned()])
+                .chain(CodexAdapter::selection_args(model, effort))
+                .chain(["--".to_owned(), objective.to_owned()])
                 .collect(),
         )),
         CLAUDE_AGENT => Some((
@@ -595,16 +672,31 @@ pub(crate) fn agent_command(
                 .claude_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("claude")),
-            ClaudeCodeAdapter::args_for_prompt(objective),
+            ClaudeCodeAdapter::args_for_prompt_with_selection(objective, model, effort),
         )),
         _ => None,
     }
 }
 
 async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
-    let Some((program, args)) = agent_command(&inner.config, &job.agent, &job.objective) else {
+    let selection = job.model_selection.as_ref();
+    let Some((program, args)) =
+        agent_command(&inner.config, &job.agent, &job.objective, selection)
+    else {
         return Err(format!("agent {:?} has no daemon launcher", job.agent));
     };
+    if let Some(selection) = selection {
+        // The catalog may have changed since submission (signed out, CLI
+        // replaced), so the selection is checked again against a fresh read.
+        inner
+            .config
+            .read_catalog(&job.agent, &job.worktree, LAUNCH_CATALOG_TIMEOUT)
+            .await
+            .validate(selection.model.as_deref(), selection.effort.as_deref())
+            .map_err(|error| {
+                format!("model selection refused: {}", log_safe(&error.to_string()))
+            })?;
+    }
     let detect = match job.agent.as_str() {
         CODEX_AGENT => {
             let adapter = CodexAdapter::new().with_program(program.clone());
@@ -737,6 +829,52 @@ struct MonitorOutcome {
     supervision_error: Option<String>,
 }
 
+/// Persists usage the agent reported so far. A usage failure is logged and
+/// never fails or delays the run; the receipt key makes a repeat harmless.
+fn record_usage(
+    handle: &mut dyn AgentHandle,
+    store: &SqliteStore,
+    owner: &CancellationOwner,
+    started_ms: u64,
+) {
+    for report in handle.take_usage() {
+        let now = unix_now_ms();
+        let receipt = UsageReceipt {
+            task_id: owner.task_id.clone(),
+            session_id: owner.session_id.clone(),
+            source: UsageSource::ProviderReported,
+            receipt_key: report.receipt_key,
+            window_start_ms: started_ms,
+            window_end_ms: report
+                .occurred_at_ms
+                .unwrap_or(now)
+                .clamp(started_ms, now.max(started_ms)),
+            reported_at_ms: now,
+            input_tokens: report.input_tokens,
+            cache_read_tokens: report.cache_read_tokens,
+            cache_write_tokens: report.cache_write_tokens,
+            output_tokens: report.output_tokens,
+            reasoning_tokens: report.reasoning_tokens,
+            cost: report.cost.map(|cost| (cost.nanos, cost.currency)),
+            model: report.model,
+        };
+        if let Err(error) = store.record_usage_receipt(&receipt) {
+            eprintln!(
+                "orchestrator-daemon: cannot record usage for session {}: {error}",
+                owner.session_id
+            );
+        }
+    }
+}
+
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 /// Drives the agent to exit. A cancellation request is consumed at most once,
 /// and `cancellation_succeeded` is set only after the handle's cancel returned
 /// Ok. Neither depends on any client connection.
@@ -752,6 +890,7 @@ async fn monitor_agent(
     let mut cancel_error = None;
     let mut supervision_error = None;
     let mut request_unreadable_logged = false;
+    let started_ms = unix_now_ms();
 
     loop {
         if !attempted {
@@ -763,7 +902,10 @@ async fn monitor_agent(
                         .info(LOG, "cancellation_requested", &job.event_fields(&[]));
                     match handle.cancel().await {
                         Ok(()) => {
-                            let exit = handle.wait().await.map_err(|error| {
+                            let exit = handle.wait().await;
+                            // Keep what the agent reported before it was stopped.
+                            record_usage(&mut *handle, store, owner, started_ms);
+                            let exit = exit.map_err(|error| {
                                 format!("cancelled but termination was not confirmed: {error}")
                             })?;
                             return Ok(MonitorOutcome {
@@ -813,6 +955,7 @@ async fn monitor_agent(
         match event {
             None => continue,
             Some(Ok(Some(AgentEvent::SessionExited { .. }))) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 let exit = handle
                     .wait()
                     .await
@@ -825,13 +968,15 @@ async fn monitor_agent(
                     supervision_error,
                 });
             }
-            Some(Ok(Some(_))) => {}
+            Some(Ok(Some(_))) => record_usage(&mut *handle, store, owner, started_ms),
             Some(Ok(None)) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 supervision_error =
                     Some("agent event stream ended without a process exit event".to_string());
                 break;
             }
             Some(Err(error)) => {
+                record_usage(&mut *handle, store, owner, started_ms);
                 supervision_error = Some(format!("agent event stream failed: {error}"));
                 break;
             }
@@ -851,7 +996,9 @@ async fn monitor_agent(
         Err(error) if cancel_error.is_none() => cancel_error = Some(error.to_string()),
         Err(_) => {}
     }
-    let exit = handle.wait().await.map_err(|error| {
+    let exit = handle.wait().await;
+    record_usage(&mut *handle, store, owner, started_ms);
+    let exit = exit.map_err(|error| {
         format!(
             "{}; termination was not confirmed: {error}",
             supervision_error

@@ -15,6 +15,7 @@ use crate::contract::{
     AgentLaunchRequest, Result,
 };
 use crate::routing::RoutableAdapter;
+use crate::usage::UsageReport;
 
 /// Parent variables Codex needs beyond the baseline allowlist.
 const PROVIDER_ENV: &[&str] = &[
@@ -52,7 +53,7 @@ impl CodexAdapter {
 
     /// Locate the executable for detection: an explicit path is checked
     /// as-is; a bare name is resolved against PATH (`.exe` on Windows).
-    fn locate(&self) -> Option<std::path::PathBuf> {
+    pub(crate) fn locate(&self) -> Option<std::path::PathBuf> {
         let program = self.program();
         if program.is_file() {
             return Some(program);
@@ -88,7 +89,7 @@ impl RoutableAdapter for CodexAdapter {
             cancellation: true, // CodexHandle::cancel calls ChildSupervisor::cancel (codex_adapter.rs:158-161).
             session_resumption: false, // `codex exec --json` is one-shot (codex_adapter.rs:16).
             approvals: false, // Parser::translate does not map approval events (codex_parser.rs:122-214).
-            model_selection: false, // No verified model-selection operation in this adapter.
+            model_selection: true, // `selection_args` passes a catalog-validated model and effort (catalog.rs).
         }
     }
 }
@@ -142,6 +143,10 @@ struct CodexHandle {
 impl AgentHandle for CodexHandle {
     fn pid(&self) -> u32 {
         self.sup.pid()
+    }
+
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        self.parser.take_usage()
     }
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {

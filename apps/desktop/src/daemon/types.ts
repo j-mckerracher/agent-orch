@@ -14,11 +14,14 @@ export type Capability =
   | "sessions"
   | "events"
   | "approvals"
+  | "queue"
   | "workspaces"
   | "delivery"
   | "agents"
+  | "host"
   | "coordinator"
-  | "review";
+  | "review"
+  | "workstreams";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -27,15 +30,25 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "sessions",
   "events",
   "approvals",
+  "queue",
   "workspaces",
   "delivery",
   "agents",
+  "host",
   "coordinator",
   "review",
+  "workstreams",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
 export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
+
+/**
+ * Capabilities a daemon may lack without making the app unusable. The handshake asks for them, and
+ * `ConnectionManager` repeats it once without them when the daemon refuses; the matching feature then
+ * degrades to `unsupported`. Older daemons reject any capability name they do not know.
+ */
+export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue", "host", "workstreams"];
 
 export interface Welcome {
   version: number;
@@ -346,6 +359,78 @@ export interface ReviewChangesResult {
   approval_state: "requested";
 }
 
+export type WorkstreamStateWire = "active" | "suspended" | "archived";
+export type GateStateWire = "pending" | "verified" | "failed";
+
+/** `workstreams.*` records, mirroring `crates/orchestrator-core/src/workstream.rs`. */
+export interface WorkstreamWire {
+  id: string;
+  title: string;
+  summary: string;
+  state: WorkstreamStateWire;
+  revision: number;
+}
+
+export interface AcceptanceGateWire {
+  id: string;
+  description: string;
+  state: GateStateWire;
+  evidence_task_id: string | null;
+}
+
+export interface ObjectiveWire {
+  id: string;
+  workstream_id: string;
+  title: string;
+  description: string;
+  gates: AcceptanceGateWire[];
+  revision: number;
+}
+
+/** A task linked to a workstream, optionally under one of its objectives. */
+export interface WorkstreamTaskLinkWire {
+  task_id: string;
+  workstream_id: string;
+  objective_id: string | null;
+  project_id: string;
+  task_state: TaskState;
+}
+
+export interface WorkstreamDetailWire {
+  workstream: WorkstreamWire;
+  objectives: ObjectiveWire[];
+  tasks: WorkstreamTaskLinkWire[];
+  project_ids: string[];
+}
+
+export interface WorkstreamUpdateRequest {
+  workstream_id: string;
+  expected_revision: number;
+  title?: string;
+  summary?: string;
+  state?: WorkstreamStateWire;
+}
+
+export interface GateDraft {
+  description: string;
+}
+
+export interface WorkstreamReviseObjectiveRequest {
+  objective_id: string;
+  expected_revision: number;
+  title?: string;
+  description?: string;
+  add_gates?: GateDraft[];
+}
+
+export interface WorkstreamSetGateRequest {
+  objective_id: string;
+  expected_revision: number;
+  gate_id: string;
+  state: GateStateWire;
+  evidence_task_id?: string;
+}
+
 /** Body of `tasks.submit` `contract`; the daemon assigns the task id. */
 export interface TaskSubmission {
   project_id: string;
@@ -359,4 +444,112 @@ export interface TaskSubmission {
   autonomy: AutonomyPolicy;
   max_retries: number;
   max_repairs: number;
+  /** Optional; check it with `agents.validate_selection` first. At least one of model and effort. */
+  model_selection?: ModelSelectionWire;
+}
+
+/** `model_selection` of a task contract and params of `agents.validate_selection` (M7-09). */
+export interface ModelSelectionWire {
+  model?: string;
+  effort?: string;
+}
+
+export type CatalogStateWire = "available" | "unknown" | "unavailable" | "unsupported" | "authentication_failed";
+
+export interface CatalogFacet<T> {
+  state: CatalogStateWire;
+  detail: string;
+  items: T[];
+}
+
+export interface CatalogModelOption {
+  id: string;
+  display_name: string;
+  efforts: string[];
+  default_effort: string | null;
+}
+
+/** One `agents.catalog` row. `models.items[].efforts` are per model; `efforts` is adapter-wide. */
+export interface AgentCatalogEntry {
+  agent: string;
+  provider: string | null;
+  state: CatalogStateWire;
+  detail: string;
+  models: CatalogFacet<CatalogModelOption>;
+  efforts: CatalogFacet<string>;
+}
+
+export type SelectionReasonWire =
+  | "agent_unavailable"
+  | "authentication_failed"
+  | "agent_state_unknown"
+  | "agent_unsupported"
+  | "models_unsupported"
+  | "models_unknown"
+  | "unknown_model"
+  | "effort_requires_model"
+  | "effort_unsupported"
+  | "effort_unknown";
+
+/** `agents.validate_selection` result. */
+export type SelectionCheck = { valid: true } | { valid: false; reason: SelectionReasonWire; detail: string };
+
+/** Conversation target on the wire (M7-08). The kind is `workstream`, not `project`. */
+export type ConversationWireTarget = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+
+export type ConversationEntryKind =
+  | "user_message"
+  | "reply_chunk"
+  | "turn_completed"
+  | "turn_failed"
+  | "turn_cancelled";
+
+export interface ConversationWireEntry {
+  sequence: number;
+  id: string;
+  turn_id: string;
+  kind: ConversationEntryKind;
+  author: "user" | "orchestrator" | "system";
+  body: string;
+  error_code: string | null;
+  created_at: string;
+}
+
+export interface ConversationWireTurn {
+  id: string;
+  state: "running" | "completed" | "failed" | "cancelled";
+  error_code: string | null;
+  runtime: { name: string; version: string };
+  reply_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `conversations.send` result: the daemon recorded the message; the turn may still fail. */
+export interface ConversationSendResult {
+  authority: "none";
+  target: ConversationWireTarget;
+  entry: ConversationWireEntry;
+  turn: ConversationWireTurn;
+  epoch: string;
+}
+
+/** `conversations.get` result: cursor paging, no push stream. */
+export interface ConversationWirePage {
+  authority: "none";
+  target: ConversationWireTarget;
+  entries: ConversationWireEntry[];
+  more: boolean;
+  next_after_sequence: number;
+  latest_sequence: number;
+  turn: ConversationWireTurn | null;
+  epoch: string;
+}
+
+export interface ConversationCancelResult {
+  authority: "none";
+  target: ConversationWireTarget;
+  turn: ConversationWireTurn;
+  cancel_applied: boolean;
+  epoch: string;
 }

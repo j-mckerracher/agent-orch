@@ -28,6 +28,7 @@ use crate::contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 use crate::routing::RoutableAdapter;
+use crate::usage::{claude_result_usage, UsageReport};
 
 const ALLOWED_TOOLS: &str = "Read,Edit,Write";
 
@@ -92,7 +93,7 @@ impl ClaudeCodeAdapter {
             .unwrap_or_else(|| PathBuf::from("claude"))
     }
 
-    fn locate(&self) -> Option<PathBuf> {
+    pub(crate) fn locate(&self) -> Option<PathBuf> {
         let program = self.program();
         if program.is_file() {
             return Some(program);
@@ -127,7 +128,7 @@ impl RoutableAdapter for ClaudeCodeAdapter {
             cancellation: true, // ClaudeCodeHandle::cancel calls ChildSupervisor::cancel (claude_code_adapter.rs:183-187).
             session_resumption: false, // Resume flags are unused by this adapter (docs/evidence/m4-02-claude-code-cli-verification.md:85).
             approvals: false, // Prompts are disabled and approval handling was not verified (docs/evidence/m4-02-claude-code-cli-verification.md:43-45).
-            model_selection: false, // `--model` is not used (docs/evidence/m4-02-claude-code-cli-verification.md:86).
+            model_selection: false, // The CLI cannot enumerate models, so a model cannot be validated (catalog.rs); only `--effort` is offered.
         }
     }
 }
@@ -176,6 +177,10 @@ struct ClaudeCodeHandle {
 impl AgentHandle for ClaudeCodeHandle {
     fn pid(&self) -> u32 {
         self.supervisor.pid()
+    }
+
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        self.parser.take_usage()
     }
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
@@ -262,12 +267,18 @@ pub struct StreamParser {
     turn_finished: bool,
     turn_failure: Option<String>,
     violation: Option<ProtocolViolation>,
+    usage: Vec<UsageReport>,
 }
 
 impl StreamParser {
     /// Create a parser for one supervised Claude Code process.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Drain usage reported by terminal `result` events fed so far.
+    pub fn take_usage(&mut self) -> Vec<UsageReport> {
+        std::mem::take(&mut self.usage)
     }
 
     /// True after a successful terminal `result` event.
@@ -405,6 +416,10 @@ impl StreamParser {
             .ok_or(ProtocolViolation::BadField("is_error"))?;
         if let Some(result) = object.get("result").and_then(Value::as_str) {
             self.last_message = Some(result.to_owned());
+        }
+        // An error result still spent tokens and money, so usage is kept.
+        if let Some(report) = claude_result_usage(&Value::Object(object.clone())) {
+            self.usage.push(report);
         }
         // Only a successful result completes the turn; an error result stays
         // unfinished so a clean exit cannot be reported as `Completed`.

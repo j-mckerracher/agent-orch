@@ -247,6 +247,28 @@ impl Client {
         self.call_feature(Capability::Agents, "agents.capabilities", Value::Null)
     }
 
+    /// Read-only scheduler capacity and queue view; see `docs/queue-snapshot.md`.
+    pub fn queue_snapshot(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Queue, "queue.snapshot", Value::Null)
+    }
+
+    pub fn agents_catalog(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Agents, "agents.catalog", Value::Null)
+    }
+
+    pub fn agents_validate_selection(
+        &mut self,
+        agent: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Agents,
+            "agents.validate_selection",
+            json!({"agent": agent, "model": model, "effort": effort}),
+        )
+    }
+
     pub fn workspaces_diff(
         &mut self,
         task_id: &str,
@@ -310,6 +332,12 @@ impl Client {
         self.call_feature(Capability::Review, "review.request_approval", params)
     }
 
+    /// `host.metrics`: cached CPU, memory, disk and GPU meters. See
+    /// `docs/host-metrics.md`.
+    pub fn host_metrics(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Host, "host.metrics", Value::Null)
+    }
+
     pub fn review_evidence(
         &mut self,
         task_id: &str,
@@ -340,6 +368,15 @@ impl Client {
                 "idempotency_key": idempotency_key
             }),
         )
+    }
+
+    /// Calls one `workstreams.*` method. The daemon authorizes by method name,
+    /// so a non-workstream method is refused here rather than gated wrongly.
+    pub fn workstreams_call(&mut self, method: &str, params: Value) -> Result<Value, IpcError> {
+        if !method.starts_with("workstreams.") {
+            return Err(IpcError::Operation);
+        }
+        self.call_feature(Capability::Workstreams, method, params)
     }
 
     pub fn events_subscribe(&mut self, after_sequence: Option<i64>) -> Result<String, IpcError> {

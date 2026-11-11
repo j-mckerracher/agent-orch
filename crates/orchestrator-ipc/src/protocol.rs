@@ -41,10 +41,13 @@ pub enum Capability {
     Agents,
     Coordinator,
     Review,
+    Host,
+    Queue,
+    Workstreams,
 }
 
 impl Capability {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 14] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -56,6 +59,9 @@ impl Capability {
         Self::Agents,
         Self::Coordinator,
         Self::Review,
+        Self::Host,
+        Self::Queue,
+        Self::Workstreams,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -71,6 +77,9 @@ impl Capability {
             Self::Agents => "agents",
             Self::Coordinator => "coordinator",
             Self::Review => "review",
+            Self::Host => "host",
+            Self::Queue => "queue",
+            Self::Workstreams => "workstreams",
         }
     }
 

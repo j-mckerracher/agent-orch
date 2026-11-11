@@ -4,6 +4,9 @@
  * Behavior:
  * - every (re)connect goes through {@link DaemonConnector.open}, which
  *   authenticates and negotiates capabilities again;
+ * - optional capabilities (`queue`, `host`, `workstreams`) are dropped from the handshake when the
+ *   daemon refuses it with `capability-unavailable`, so an older daemon
+ *   degrades that feature instead of making the app incompatible;
  * - the event stream resumes after the last applied sequence and is
  *   deduplicated by {@link DaemonSession}; `events.error` (slow consumer,
  *   gap, internal) marks history incomplete and reconnects;
@@ -17,9 +20,9 @@
  */
 import { DaemonApi } from "./api";
 import { DaemonError, asDaemonError, type DaemonErrorKind } from "./errors";
-import { DaemonSession, type DaemonConnector } from "./session";
+import { DaemonSession, type DaemonConnector, type OpenedChannel } from "./session";
 import { Store } from "./store";
-import { M5_03_CAPABILITIES, type Capability, type DaemonEvent } from "./types";
+import { M5_03_CAPABILITIES, OPTIONAL_CAPABILITIES, type Capability, type DaemonEvent } from "./types";
 
 export type ConnectionStatus =
   | "idle"
@@ -54,6 +57,11 @@ export interface ConnectionSnapshot {
 export interface ConnectionOptions {
   connector: DaemonConnector;
   capabilities?: readonly Capability[];
+  /**
+   * Requested capabilities the app can run without. When the daemon refuses the handshake with
+   * `capability-unavailable`, it is repeated once without them. Defaults to {@link OPTIONAL_CAPABILITIES}.
+   */
+  optionalCapabilities?: readonly Capability[];
   now?: () => number;
   requestTimeoutMs?: number;
   backoffMs?: readonly number[];
@@ -66,6 +74,7 @@ const DEFAULT_BACKOFF = [500, 1000, 2000, 4000, 8000];
 export class ConnectionManager extends Store<ConnectionSnapshot> {
   private readonly connector: DaemonConnector;
   private readonly requested: readonly Capability[];
+  private readonly optional: readonly Capability[];
   private readonly now: () => number;
   private readonly requestTimeoutMs: number | undefined;
   private readonly backoff: readonly number[];
@@ -93,6 +102,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     });
     this.connector = options.connector;
     this.requested = options.capabilities ?? M5_03_CAPABILITIES;
+    this.optional = options.optionalCapabilities ?? OPTIONAL_CAPABILITIES;
     this.now = options.now ?? Date.now;
     this.requestTimeoutMs = options.requestTimeoutMs;
     this.backoff = options.backoffMs ?? DEFAULT_BACKOFF;
@@ -153,6 +163,20 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     return this.getSnapshot();
   }
 
+  /**
+   * Asks for every requested capability first, so a daemon that has them is always used in full. A daemon
+   * that refuses (it rejects capability names it does not know) is asked again without the optional ones.
+   */
+  private async openNegotiated(): Promise<OpenedChannel> {
+    try {
+      return await this.connector.open(this.requested);
+    } catch (error) {
+      const required = this.requested.filter((capability) => !this.optional.includes(capability));
+      if (asDaemonError(error).kind !== "capability-unavailable" || required.length === this.requested.length) throw error;
+      return this.connector.open(required);
+    }
+  }
+
   private async establish(): Promise<void> {
     const epoch = ++this.epoch;
     this.clearTimer();
@@ -161,7 +185,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
 
     let session: DaemonSession;
     try {
-      const opened = await this.connector.open(this.requested);
+      const opened = await this.openNegotiated();
       if (epoch !== this.epoch) {
         opened.channel.close();
         return;

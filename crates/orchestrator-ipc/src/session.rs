@@ -375,7 +375,10 @@ fn method_capability(method: &str) -> Option<Capability> {
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
             Some(Capability::Tasks)
         }
-        "agents.capabilities" => Some(Capability::Agents),
+        "agents.capabilities"
+        | "agents.catalog"
+        | "agents.validate_selection"
+        | "usage.summary" => Some(Capability::Agents),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
@@ -385,6 +388,21 @@ fn method_capability(method: &str) -> Option<Capability> {
         }
         "review.request_approval" | "review.evidence" | "review.request_changes" => {
             Some(Capability::Review)
+        }
+        "host.metrics" => Some(Capability::Host),
+        "queue.snapshot" => Some(Capability::Queue),
+        "workstreams.create"
+        | "workstreams.list"
+        | "workstreams.get"
+        | "workstreams.update"
+        | "workstreams.add_objective"
+        | "workstreams.revise_objective"
+        | "workstreams.set_gate"
+        | "workstreams.link_task"
+        | "workstreams.unlink_task" => Some(Capability::Workstreams),
+        // M7-08 (proposed names): conversations share the coordinator capability.
+        "conversations.send" | "conversations.get" | "conversations.cancel" => {
+            Some(Capability::Coordinator)
         }
         _ => None,
     }

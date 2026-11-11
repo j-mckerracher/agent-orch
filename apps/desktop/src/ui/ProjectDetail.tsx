@@ -6,7 +6,8 @@ import { Crumbs } from "./ConnectionStrip";
 import { TASK_STATES, basename, pendingApprovals } from "./format";
 import { buildSubmission } from "./submission";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { ErrorNotice, LoadableRegion, SourceSection } from "./widgets";
+import { ErrorNotice, LoadableRegion, Notice, SourceSection } from "./widgets";
+import { Button } from "./theme";
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const { data, router, drafts, sources } = useServices();
@@ -49,7 +50,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   };
 
   return (
-    <main>
+    <main className="ps-page">
       <Crumbs
         items={[
           { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
@@ -61,23 +62,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         Repository: <code>{projectId}</code>
       </p>
       {known === false && projects.status === "ready" && (
-        <p role="alert" className="notice notice-error">
+        <Notice tone="bad" role="alert">
           This repository is not in the returned project list; it may have been removed. Refresh to confirm.
-        </p>
+        </Notice>
       )}
-      <nav aria-label="Project navigation">
-        <button type="button" onClick={() => router.navigate({ name: "tasks", projectId, filter: "all" })}>
-          Tasks
-        </button>{" "}
-        <button type="button" onClick={() => router.navigate({ name: "coordinator", projectId })}>
-          Coordinator
-        </button>{" "}
-        <button type="button" onClick={() => router.navigate({ name: "review", projectId, taskId: null })}>
+      <nav aria-label="Project navigation" className="ps-actions">
+        <Button onClick={() => router.navigate({ name: "tasks", projectId, filter: "all" })}>Tasks</Button>
+        <Button onClick={() => router.navigate({ name: "coordinator", projectId })}>Coordinator</Button>
+        <Button onClick={() => router.navigate({ name: "review", projectId, taskId: null })}>
           Pending review ({pending.length})
-        </button>
+        </Button>
       </nav>
 
-      <section aria-label="Task counts">
+      <section aria-label="Task counts" className="ps-section">
         <h2>Task counts</h2>
         <LoadableRegion
           what="tasks"
@@ -90,18 +87,17 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           {() => (
             <div>
               <p data-testid="task-total">{own?.length ?? 0} tasks in this project</p>
-              <ul>
+              <ul className="ps-counts">
                 {TASK_STATES.map((state) => {
                   const count = own?.filter((task) => task.state === state).length ?? 0;
                   return (
                     <li key={state}>
-                      <button
-                        type="button"
+                      <Button
                         disabled={count === 0}
                         onClick={() => router.navigate({ name: "tasks", projectId, filter: `state:${state}` })}
                       >
                         {state}: {count}
-                      </button>{" "}
+                      </Button>{" "}
                       <span className="muted">of {own?.length ?? 0}</span>
                     </li>
                   );
@@ -112,15 +108,16 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </LoadableRegion>
       </section>
 
-      <section aria-label="New task">
+      <section aria-label="New task" className="ps-section">
         <h2>New task</h2>
         <form
+          className="ps-form"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
         >
-          <label>
+          <label className="ps-wide">
             Objective
             <textarea value={draft.objective} onChange={(e) => set({ objective: e.target.value })} />
           </label>
@@ -154,7 +151,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             </select>
           </label>
           {draft.verification === "Commands" && (
-            <label>
+            <label className="ps-wide">
               Verification commands (one per line; split on spaces, no shell quoting)
               <textarea value={draft.commands} onChange={(e) => set({ commands: e.target.value })} />
             </label>
@@ -182,13 +179,17 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             Max repairs
             <input value={draft.maxRepairs} onChange={(e) => set({ maxRepairs: e.target.value })} />
           </label>
-          <button type="submit" disabled={!gate.can("tasks") || busy}>
-            Submit
-          </button>
-          {!gate.connected && <span className="muted"> Submission is unavailable while offline; the draft is kept.</span>}
-          <p className="muted">Submitting queues the task. It does not launch an agent.</p>
+          <div className="ps-form-footer">
+            <Button type="submit" variant="primary" disabled={!gate.can("tasks") || busy}>
+              Submit
+            </Button>
+            {!gate.connected && (
+              <span className="muted"> Submission is unavailable while offline; the draft is kept.</span>
+            )}
+            <p className="muted">Submitting queues the task. It does not launch an agent.</p>
+          </div>
           {errors.length > 0 && (
-            <ul role="alert">
+            <ul role="alert" className="ps-steps ps-wide">
               {errors.map((message) => (
                 <li key={message}>{message}</li>
               ))}
@@ -196,7 +197,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           )}
           {failure && <ErrorNotice error={failure} action="Submitting the task" />}
           {failure?.indeterminate && (
-            <p role="status">The outcome is unknown. Submitting the same form again reuses the same request key.</p>
+            <p role="status" className="ps-wide">
+              The outcome is unknown. Submitting the same form again reuses the same request key.
+            </p>
           )}
         </form>
 
@@ -207,7 +210,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           emptyText="No agents reported."
         >
           {(list) => (
-            <ul>
+            <ul className="ps-steps">
               {list.map((agent) => (
                 <li key={agent.id}>
                   {agent.name}: {agent.availability}

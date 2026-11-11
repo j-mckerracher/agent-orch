@@ -508,7 +508,7 @@ fn detect_reports_capabilities_for_found_binary() {
             cancellation: true,
             session_resumption: false,
             approvals: false,
-            model_selection: false,
+            model_selection: true,
         }
     );
     assert_eq!(
