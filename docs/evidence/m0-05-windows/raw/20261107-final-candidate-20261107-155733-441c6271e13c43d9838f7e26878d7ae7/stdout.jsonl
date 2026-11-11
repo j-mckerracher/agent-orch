@@ -1,6 +1,0 @@
-{"type":"thread.started","thread_id":"01a1b83b-48ad-7d60-8cf6-b2ddbebf638a"}
-{"type":"turn.started"}
-{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command \"[System.IO.File]::WriteAllBytes((Join-Path (Get-Location) 'TASK.txt'), [System.Text.Encoding]::ASCII.GetBytes(\\\"M0_TASK_AFTER\"'`n\"))\n[System.BitConverter]::ToString([System.IO.File]::ReadAllBytes((Join-Path (Get-Location) '\"'TASK.txt')))\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
-{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command \"[System.IO.File]::WriteAllBytes((Join-Path (Get-Location) 'TASK.txt'), [System.Text.Encoding]::ASCII.GetBytes(\\\"M0_TASK_AFTER\"'`n\"))\n[System.BitConverter]::ToString([System.IO.File]::ReadAllBytes((Join-Path (Get-Location) '\"'TASK.txt')))\"","aggregated_output":"4D-30-5F-54-41-53-4B-5F-41-46-54-45-52-0A\r\n","exit_code":0,"status":"completed"}}
-{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"TASK_DEMO_OK"}}
-{"type":"turn.completed","usage":{"input_tokens":45567,"cached_input_tokens":36224,"cache_write_input_tokens":0,"output_tokens":111,"reasoning_output_tokens":0}}

@@ -1,0 +1,9 @@
+{
+  "name": "git-config",
+  "verdict": "FAIL",
+  "problems": [
+    "core.autocrlf is true; CI must set it to false before checkout",
+    "core.longpaths is not true on Windows"
+  ],
+  "notes": "core.autocrlf=true core.longpaths=(unset)"
+}

@@ -1,6 +1,0 @@
-{"type":"thread.started","thread_id":"01a1b7e9-9ba2-7be0-93ed-d5cbf0919604"}
-{"type":"turn.started"}
-{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo SANDBOX_PROBE_OK'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
-{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo SANDBOX_PROBE_OK'","aggregated_output":"Failed to create unified exec process: CreateProcessWithLogonW failed: 1385","exit_code":-1,"status":"failed"}}
-{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"No exit code."}}
-{"type":"turn.completed","usage":{"input_tokens":45463,"cached_input_tokens":36096,"cache_write_input_tokens":0,"output_tokens":60,"reasoning_output_tokens":16}}

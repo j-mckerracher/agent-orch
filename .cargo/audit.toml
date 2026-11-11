@@ -1,4 +1,0 @@
-# Read by `cargo audit`. Keep in step with [advisories].ignore in deny.toml.
-# A tracked exception, not an acceptance: remove when libsqlite3-sys >= 0.39 is in the lockfile.
-[advisories]
-ignore = ["RUSTSEC-2026-0459"]

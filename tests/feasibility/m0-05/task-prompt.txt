@@ -1,1 +1,0 @@
-The file TASK.txt currently contains exactly the ASCII bytes "M0_TASK_BEFORE" followed by one LF (0x0A) byte. Rewrite TASK.txt to contain exactly the ASCII bytes "M0_TASK_AFTER" followed by one LF (0x0A) byte. No BOM, no CRLF, no trailing spaces. Change no other file. When done, reply with exactly TASK_DEMO_OK and nothing else.

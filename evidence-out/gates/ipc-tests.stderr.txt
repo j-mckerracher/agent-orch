@@ -1,0 +1,10 @@
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling getrandom v0.4.3
+   Compiling memchr v2.8.3
+   Compiling windows-sys v0.61.2
+   Compiling once_cell v1.21.4
+   Compiling fastrand v2.5.0
+   Compiling syn v3.0.9
+error: could not write output to <USERPROFILE>\6c17442a\tg\debug\build\serde_core-f3938ed9096deb0e\build_script_build-f3938ed9096deb0e.build_script_build.97291e0785a71324-cgu.0.rcgu.o: no space on device
+

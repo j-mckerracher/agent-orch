@@ -1,0 +1,15 @@
+platform: win32 10.0.26200 x64
+node: v22.20.0
+npm: 11.3.0
+git: git version 2.46.2.windows.1
+cargo: cargo 1.96.0 (30a34c682 2026-05-25)
+rustc: rustc 1.96.0 (ac68faa20 2026-05-25) | binary: rustc | commit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96 | commit-date: 2026-05-25 | host: x86_64-pc-windows-msvc | release: 1.96.0 | LLVM version: 22.1.2
+HEAD: 6c17442eaee5243b48034dfc53d7f43d25f1ab82
+tree: 9b9612ab6084c644e344603028149084118cc889
+core.autocrlf: file:C:/Program Files/Git/etc/gitconfig	true
+core.longpaths: (unset)
+CARGO_TARGET_DIR: <profile>\6c17442a\tg
+TEST_TMP: <profile>\6c17442a\tmp
+CI: true
+source: <profile>\6c17442a\s2
+preflight: passed (no SUBST, mapped drive, junction or UNC root; roots within the length limit)

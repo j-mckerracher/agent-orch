@@ -1,0 +1,154 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.229
+   Compiling pin-project-lite v0.2.17
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling writeable v0.6.4
+   Compiling smallvec v1.16.5
+   Compiling litemap v0.8.3
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.5
+   Compiling futures-core v0.3.34
+   Compiling utf_types v1.0.0
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling bytes v1.12.1
+   Compiling windows-sys v0.61.2
+   Compiling utf8_iter v1.1.0
+   Compiling typenum v1.20.1
+   Compiling generic-array v0.14.9
+   Compiling scopeguard v1.2.0
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling futures-sink v0.3.34
+   Compiling zmij v1.0.23
+   Compiling pkg-config v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling parking_lot_core v0.9.12
+   Compiling vcpkg v0.2.15
+   Compiling cc v1.11.1
+   Compiling serde_json v1.0.154
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling crossbeam-utils v0.8.23
+   Compiling equivalent v1.0.3
+   Compiling percent-encoding v2.3.2
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling futures-task v0.3.34
+   Compiling once_cell v1.21.4
+   Compiling thiserror v2.0.21
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling autocfg v1.5.1
+   Compiling itoa v1.0.18
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling tracing-core v0.1.36
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling form_urlencoded v1.2.2
+   Compiling num-traits v0.2.19
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling parking v2.2.1
+   Compiling crc-catalog v2.5.0
+   Compiling hashbrown v0.17.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling event-listener v5.4.2
+   Compiling synstructure v0.14.0
+   Compiling crc v3.4.0
+   Compiling hashlink v0.11.1
+   Compiling sha2 v0.10.9
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling indexmap v2.14.2
+   Compiling futures-intrusive v0.5.0
+   Compiling base64 v0.22.1
+   Compiling tokio v1.54.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling spin v0.9.9
+   Compiling futures-channel v0.3.34
+   Compiling windows-strings v0.5.1
+   Compiling flume v0.12.0
+   Compiling futures-executor v0.3.34
+   Compiling windows-result v0.4.1
+   Compiling atoi v2.0.0
+   Compiling hex v0.4.3
+   Compiling winapi v0.3.9
+   Compiling heck v0.5.0
+   Compiling tracing-attributes v0.1.31
+   Compiling windows-implement v0.60.2
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling windows-interface v0.59.3
+   Compiling dotenvy v0.15.7
+   Compiling windows-threading v0.2.1
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling windows-core v0.62.2
+   Compiling getrandom v0.3.4
+   Compiling libc v0.2.191
+   Compiling tokio-stream v0.1.19
+   Compiling yoke v0.8.4
+   Compiling ntapi v0.4.3
+   Compiling orchestrator-git v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-git)
+   Compiling windows-collections v0.3.2
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling windows-numerics v0.3.1
+   Compiling windows-future v0.3.2
+   Compiling orchestrator-private-fs v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-private-fs)
+   Compiling async-trait v0.1.89
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling orchestrator-diagnostics v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-diagnostics)
+   Compiling subtle v2.6.1
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling windows v0.62.2
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-core)
+   Compiling uuid v1.18.1
+   Compiling orchestrator-ipc v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-ipc)
+   Compiling icu_provider v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling orchestrator-runtime v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-runtime)
+   Compiling url v2.5.8
+   Compiling orchestrator-agents v0.1.0 (<USERPROFILE>\6c17442a\s2\crates\orchestrator-agents)
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+error: failed to write <USERPROFILE>\6c17442a\tg\debug\deps\rustcndQbqN\lib.rmeta: There is not enough space on the disk. (os error 112)
+
+error: failed to build archive at `<USERPROFILE>\6c17442a\tg\debug\deps\libsqlx_core-bb8e0ad8e2ba35e6.rlib`: There is not enough space on the disk. (os error 112)
+
+error: could not compile `sqlx-core` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `sqlx-core` (lib) due to 1 previous error
+rustc-LLVM ERROR: IO failure on output stream: no space on device
+error: could not compile `sqlx-sqlite` (lib)
+
+Caused by:
+  process didn't exit successfully: `<USERPROFILE>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name sqlx_sqlite --edition=2021 <USERPROFILE>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sqlx-sqlite-0.9.0\src\lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=2 --deny=clippy::disallowed_methods --deny=clippy::cast_sign_loss --deny=clippy::cast_possible_wrap --deny=clippy::cast_possible_truncation --cfg "feature=\"bundled\"" --cfg "feature=\"deserialize\"" --cfg "feature=\"load-extension\"" --cfg "feature=\"migrate\"" --cfg "feature=\"offline\"" --cfg "feature=\"serde\"" --cfg "feature=\"unlock-notify\"" --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"_unstable-all-sqlite-features\", \"_unstable-all-types\", \"_unstable-docs\", \"any\", \"bigdecimal\", \"bundled\", \"chrono\", \"deserialize\", \"json\", \"load-extension\", \"migrate\", \"offline\", \"preupdate-hook\", \"regexp\", \"rust_decimal\", \"serde\", \"sqlx-toml\", \"time\", \"unbundled\", \"unlock-notify\", \"uuid\"))" -C metadata=4570bf263923fd5c -C extra-filename=-6061296092c71d62 --out-dir <USERPROFILE>\6c17442a\tg\debug\deps -L dependency=<USERPROFILE>\6c17442a\tg\debug\deps --extern atoi=<USERPROFILE>\6c17442a\tg\debug\deps\libatoi-2fbe13d0da7addd9.rmeta --extern flume=<USERPROFILE>\6c17442a\tg\debug\deps\libflume-9dbc2cb08a42c20a.rmeta --extern form_urlencoded=<USERPROFILE>\6c17442a\tg\debug\deps\libform_urlencoded-f56a3cd6753b58f7.rmeta --extern futures_channel=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_channel-4ae95269fceee262.rmeta --extern futures_core=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_core-23f62ae5b806b96e.rmeta --extern futures_executor=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_executor-240013bb055fc70a.rmeta --extern futures_intrusive=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_intrusive-8e4abf90e5dfeac7.rmeta --extern futures_util=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_util-66d7f69830b2c2a6.rmeta --extern libsqlite3_sys=<USERPROFILE>\6c17442a\tg\debug\deps\liblibsqlite3_sys-cd50ac7736cde368.rmeta --extern log=<USERPROFILE>\6c17442a\tg\debug\deps\liblog-0b2579e30ea9af3d.rmeta --extern percent_encoding=<USERPROFILE>\6c17442a\tg\debug\deps\libpercent_encoding-62d9e9a014bdc3c1.rmeta --extern serde=<USERPROFILE>\6c17442a\tg\debug\deps\libserde-4f02b3ccb04a728c.rmeta --extern sqlx_core=<USERPROFILE>\6c17442a\tg\debug\deps\libsqlx_core-bb8e0ad8e2ba35e6.rmeta --extern thiserror=<USERPROFILE>\6c17442a\tg\debug\deps\libthiserror-0a2ecbb0e4aaf58b.rmeta --extern tracing=<USERPROFILE>\6c17442a\tg\debug\deps\libtracing-130a11e3d1b05405.rmeta --extern url=<USERPROFILE>\6c17442a\tg\debug\deps\liburl-29ec6a0f56956d8b.rmeta --cap-lints allow -L native=<USERPROFILE>\6c17442a\tg\debug\build\libsqlite3-sys-abc29f5f1c077492\out` (exit code: 101)
+rustc-LLVM ERROR: IO failure on output stream: no space on device
+error: could not compile `sqlx-sqlite` (lib)
+
+Caused by:
+  process didn't exit successfully: `<USERPROFILE>\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name sqlx_sqlite --edition=2021 <USERPROFILE>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sqlx-sqlite-0.9.0\src\lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no --deny=clippy::disallowed_methods --deny=clippy::cast_sign_loss --deny=clippy::cast_possible_wrap --deny=clippy::cast_possible_truncation --cfg "feature=\"bundled\"" --cfg "feature=\"load-extension\"" --cfg "feature=\"migrate\"" --cfg "feature=\"offline\"" --cfg "feature=\"serde\"" --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"_unstable-all-sqlite-features\", \"_unstable-all-types\", \"_unstable-docs\", \"any\", \"bigdecimal\", \"bundled\", \"chrono\", \"deserialize\", \"json\", \"load-extension\", \"migrate\", \"offline\", \"preupdate-hook\", \"regexp\", \"rust_decimal\", \"serde\", \"sqlx-toml\", \"time\", \"unbundled\", \"unlock-notify\", \"uuid\"))" -C metadata=7db4abe35fbec7f9 -C extra-filename=-d0081aade0c869fc --out-dir <USERPROFILE>\6c17442a\tg\debug\deps -L dependency=<USERPROFILE>\6c17442a\tg\debug\deps --extern atoi=<USERPROFILE>\6c17442a\tg\debug\deps\libatoi-2fbe13d0da7addd9.rmeta --extern flume=<USERPROFILE>\6c17442a\tg\debug\deps\libflume-9dbc2cb08a42c20a.rmeta --extern form_urlencoded=<USERPROFILE>\6c17442a\tg\debug\deps\libform_urlencoded-f56a3cd6753b58f7.rmeta --extern futures_channel=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_channel-4ae95269fceee262.rmeta --extern futures_core=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_core-23f62ae5b806b96e.rmeta --extern futures_executor=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_executor-240013bb055fc70a.rmeta --extern futures_intrusive=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_intrusive-8e4abf90e5dfeac7.rmeta --extern futures_util=<USERPROFILE>\6c17442a\tg\debug\deps\libfutures_util-66d7f69830b2c2a6.rmeta --extern libsqlite3_sys=<USERPROFILE>\6c17442a\tg\debug\deps\liblibsqlite3_sys-39e400e6641e30a4.rmeta --extern log=<USERPROFILE>\6c17442a\tg\debug\deps\liblog-0b2579e30ea9af3d.rmeta --extern percent_encoding=<USERPROFILE>\6c17442a\tg\debug\deps\libpercent_encoding-62d9e9a014bdc3c1.rmeta --extern serde=<USERPROFILE>\6c17442a\tg\debug\deps\libserde-4f02b3ccb04a728c.rmeta --extern sqlx_core=<USERPROFILE>\6c17442a\tg\debug\deps\libsqlx_core-aa821f3efceb78b2.rmeta --extern thiserror=<USERPROFILE>\6c17442a\tg\debug\deps\libthiserror-e2a646211ee33778.rmeta --extern tracing=<USERPROFILE>\6c17442a\tg\debug\deps\libtracing-130a11e3d1b05405.rmeta --extern url=<USERPROFILE>\6c17442a\tg\debug\deps\liburl-29ec6a0f56956d8b.rmeta --cap-lints allow -L native=<USERPROFILE>\6c17442a\tg\debug\build\libsqlite3-sys-350a9eeb099e7280\out` (exit code: 101)
+error: failed to write to `<USERPROFILE>\6c17442a\tg\debug\deps\rmetaCYbQiP\full.rmeta`: There is not enough space on the disk. (os error 112)
+
+error: could not compile `windows` (lib) due to 1 previous error

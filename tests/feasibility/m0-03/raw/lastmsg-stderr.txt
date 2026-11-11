@@ -1,7 +1,0 @@
-Reading additional input from stdin...
-2026-11-07T17:50:08.519185Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/
-2026-11-07T17:50:08.519248Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/
-2026-11-07T17:50:08.749632Z  WARN codex_core::shell_snapshot: Failed to create shell snapshot for powershell: Shell snapshot not supported yet for PowerShell
-2026-11-07T17:50:08.751699Z  WARN codex_core_plugins::remote::remote_installed_plugin_sync: failed to persist identity for cached remote installed plugin remote_plugin_id=plugin_connector_1p_b3438d6beb9081918fba3625bc988128 plugin=plugin-management marketplace=openai-curated-remote error=failed to persist remote plugin install metadata: Access is denied. (os error 5)
-2026-11-07T17:50:08.840792Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/
-2026-11-07T17:50:08.840845Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/

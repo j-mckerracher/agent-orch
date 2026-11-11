@@ -1,3 +1,0 @@
-﻿## codex/m0-05-priority3
-?? docs/evidence/m0-05-windows/
-?? tests/feasibility/m0-05/
