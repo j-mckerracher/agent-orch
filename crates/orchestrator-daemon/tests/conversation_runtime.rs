@@ -52,6 +52,12 @@ fn fake_env(layout: &Layout, extra: &[(&str, &str)]) -> Vec<(String, String)> {
             text(&absent(layout)),
         ),
         ("AGENT_ORCH_CONVERSATION_PINS".to_owned(), PIN.to_owned()),
+        // The process supervisor forwards only the baseline allowlist and
+        // the names listed here, so the fake agent's own settings are listed.
+        (
+            "AGENT_ORCH_ENV_PASSTHROUGH".to_owned(),
+            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE".to_owned(),
+        ),
     ];
     for (name, value) in extra {
         env.retain(|(existing, _)| existing != name);
@@ -362,7 +368,7 @@ fn a_hung_agent_is_killed_at_the_deadline() {
         &layout,
         &[
             ("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "4000"),
-            ("AGENT_ORCH_FAKE_PID_FILE", pid_file.to_str().unwrap()),
+            ("FAKE_AGENT_PID_FILE", pid_file.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);
@@ -401,7 +407,7 @@ fn an_agent_orphaned_by_a_killed_daemon_is_reaped_on_the_next_start() {
     let pid_file = layout.data.join("agent.pid");
     let env = [
         ("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "600000"),
-        ("AGENT_ORCH_FAKE_PID_FILE", pid_file.to_str().unwrap()),
+        ("FAKE_AGENT_PID_FILE", pid_file.to_str().unwrap()),
     ];
     let mut first = start(&layout, &env);
     let mut chat = Chat::open(&layout);
@@ -478,7 +484,7 @@ fn a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict() {
             &layout,
             &[
                 ("AGENT_ORCH_FAKE_VERSION_MODE", mode),
-                ("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap()),
+                ("FAKE_AGENT_LOG", log.to_str().unwrap()),
             ],
         );
         let mut chat = Chat::open(&layout);
@@ -563,7 +569,7 @@ fn control_characters_never_reach_the_transcript() {
 fn the_agent_runs_read_only_in_an_empty_scratch_directory() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
-    let daemon = start(&layout, &[("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap())]);
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
     let mut chat = Chat::open(&layout);
     chat.send(&global(), "hi", "m-1");
     assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
@@ -582,7 +588,7 @@ fn a_version_that_is_not_pinned_never_receives_the_message() {
         &layout,
         &[
             ("AGENT_ORCH_FAKE_VERSION", "9.9.9"),
-            ("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap()),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);
@@ -602,7 +608,7 @@ fn a_configured_model_the_catalog_does_not_offer_fails_closed() {
         &layout,
         &[
             ("AGENT_ORCH_CONVERSATION_MODEL", "no-such-model"),
-            ("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap()),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);
@@ -617,7 +623,7 @@ fn a_configured_model_the_catalog_does_not_offer_fails_closed() {
         &[
             ("AGENT_ORCH_CONVERSATION_MODEL", "fake-model"),
             ("AGENT_ORCH_CONVERSATION_EFFORT", "high"),
-            ("AGENT_ORCH_FAKE_LOG", log.to_str().unwrap()),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);

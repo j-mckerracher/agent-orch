@@ -19,9 +19,12 @@
 //!
 //! Environment: `AGENT_ORCH_FAKE_VERSION` (default `0.0.0-fake`),
 //! `AGENT_ORCH_FAKE_VERSION_MODE` (`fail`, `garbage`, `hang` or `flood`: how
-//! `--version` misbehaves), `AGENT_ORCH_FAKE_LOG` (appends one line per turn
-//! with the working directory and arguments) and `AGENT_ORCH_FAKE_PID_FILE`
-//! (written with this process's id when a turn starts).
+//! `--version` misbehaves), `FAKE_AGENT_LOG` (appends one line per turn
+//! with the working directory and arguments) and `FAKE_AGENT_PID_FILE`
+//! (written with this process's id when a turn starts). A turn runs with a
+//! filtered environment, so a test lists these two names in
+//! `AGENT_ORCH_ENV_PASSTHROUGH`; a name with the `AGENT_ORCH_` prefix is
+//! never forwarded.
 
 use std::io::Write;
 use std::time::Duration;
@@ -124,7 +127,7 @@ fn finished(dialect: Dialect, whole: &str) {
 }
 
 fn turn(args: &[String], prompt: &str, dialect: Dialect) {
-    if let Some(path) = std::env::var_os("AGENT_ORCH_FAKE_LOG") {
+    if let Some(path) = std::env::var_os("FAKE_AGENT_LOG") {
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -133,7 +136,7 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
             let _ = writeln!(file, "cwd={:?} args={args:?}", std::env::current_dir());
         }
     }
-    if let Some(path) = std::env::var_os("AGENT_ORCH_FAKE_PID_FILE") {
+    if let Some(path) = std::env::var_os("FAKE_AGENT_PID_FILE") {
         let _ = std::fs::write(path, std::process::id().to_string());
     }
     started(dialect);
