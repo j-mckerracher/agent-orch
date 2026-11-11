@@ -1,0 +1,5 @@
+uninstaller=uninstall.exe
+exit=0
+manual_install_present=True
+app_process_present=False
+scope=run-specific install path only

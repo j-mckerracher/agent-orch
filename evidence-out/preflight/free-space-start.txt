@@ -1,0 +1,7 @@
+
+Name Root                                         Free
+---- ----                                         ----
+C    C:\                                   65663586304
+Temp %USERPROFILE%\AppData\Local\Temp\ 65663586304
+
+

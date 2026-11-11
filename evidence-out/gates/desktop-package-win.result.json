@@ -1,0 +1,11 @@
+{
+  "gate": "desktop-package-win",
+  "command": "npm run package:win",
+  "cwd": "apps/desktop",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 302,
+  "problems": [],
+  "newDiagnostics": 0
+}

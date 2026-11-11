@@ -1,0 +1,78 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.47s
+     Running unittests src\main.rs (C:\Users\Public\t\77850eef\tg\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+
+running 8 tests
+test api::usage_tests::bad_parameters_are_rejected ... ok
+test api::usage_tests::the_exact_utc_offset_limits_are_accepted ... ok
+test api::usage_tests::usage_summary_is_dispatched_by_method_name ... ok
+test api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals ... ok
+test api::usage_tests::estimated_figures_stay_apart_from_reported_ones ... ok
+test api::usage_tests::native_estimate_is_additive_labelled_and_never_reported ... ok
+test api::usage_tests::local_midnight_boundary_decides_the_day ... ok
+test api::usage_tests::silent_provider_is_unknown_and_never_zero ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 110 filtered out; finished in 0.19s
+
+     Running tests\conversation_runtime.rs (C:\Users\Public\t\77850eef\tg\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests\conversations.rs (C:\Users\Public\t\77850eef\tg\debug\deps\conversations-b568dacb962dbd9e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\coordinator_review.rs (C:\Users\Public\t\77850eef\tg\debug\deps\coordinator_review-567715bea0697ecf.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests\daemon.rs (C:\Users\Public\t\77850eef\tg\debug\deps\daemon-ea1b8a70ee742a30.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics_log.rs (C:\Users\Public\t\77850eef\tg\debug\deps\diagnostics_log-ba071ea02020da6e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\host_metrics.rs (C:\Users\Public\t\77850eef\tg\debug\deps\host_metrics-652ebc476e7888e4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\lifecycle.rs (C:\Users\Public\t\77850eef\tg\debug\deps\lifecycle-0f4970ff71d2b2f1.exe)
+Initialized empty Git repository in C:/Users/Public/t/77850eef/tmp/.tmp5nPBrE/repo/.git/
+[main (root-commit) a787ee1] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+     Running tests\queue_snapshot.rs (C:\Users\Public\t\77850eef\tg\debug\deps\queue_snapshot-21c82c2d8cb1d381.exe)
+Initialized empty Git repository in C:/Users/Public/t/77850eef/tmp/.tmpuENC0V/repo/.git/
+[main (root-commit) 6d574b3] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 cancelling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS

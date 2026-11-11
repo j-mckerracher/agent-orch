@@ -1,0 +1,20 @@
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/ui/shell/ResourceStrip.test.tsx > ResourceStrip behaviour > stops ageing while the window is hidden and catches up when it is shown again
+Error: expect(element).toHaveAttribute("aria-valuetext", StringContaining "observed 2 s ago") // element.getAttribute("aria-valuetext") === StringContaining "observed 2 s ago"
+
+Expected the element to have attribute:
+  aria-valuetext=StringContaining "observed 2 s ago"
+Received:
+  aria-valuetext="44%, scope CPU, observed 2 min ago"
+ ❯ src/ui/shell/ResourceStrip.test.tsx:333:21
+    331|         vi.advanceTimersByTime(30_000);
+    332|       });
+    333|       expect(meter).toHaveAttribute("aria-valuetext", expect.stringCon…
+       |                     ^
+    334|       expect(vi.getTimerCount()).toBe(0);
+    335|       act(() => setHidden(false));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

@@ -1,0 +1,3 @@
+release/bundle/nsis/Agent Orchestrator_0.1.0_x64-setup.exe
+size: 4645021
+sha256: 35c01cbbc50bca67684fe51347647eec9d0b7f8cac32aed8f222c52eae9f44d4

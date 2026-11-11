@@ -1,0 +1,13 @@
+Initialized empty Git repository in C:/Users/Public/t/77850eef/tmp/.tmpONrEXz/repo/.git/
+[main (root-commit) c1127db] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS

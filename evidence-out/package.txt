@@ -1,0 +1,51 @@
+::warning title=Signing windows::No windows signing secrets are set (WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD); building UNSIGNED. This build must not be distributed.
+
+> agent-orch-desktop@0.1.0 package:win
+> node scripts/package.mjs nsis
+
+    Finished `release` profile [optimized] target(s) in 1.21s
+staged C:\Users\Public\t\77850eef\s\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> agent-orch-desktop@0.1.0 build
+> tsc -b && vite build
+
+vite v8.3.6 building client environment for production...
+transforming...
+✓ 151 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                           0.53 kB │ gzip:   0.31 kB
+dist/assets/index-Cl_MjGoS.css           48.85 kB │ gzip:   9.77 kB
+dist/assets/ocean-renderer-BUigl9mQ.js  183.47 kB │ gzip:  57.95 kB
+dist/assets/index-BFNonqEq.js           532.54 kB │ gzip: 157.08 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 588ms
+   Compiling agent-orch-desktop v0.1.0 (C:\Users\Public\t\77850eef\s\apps\desktop\src-tauri)
+    Finished `release` profile [optimized] target(s) in 36.88s
+       Built application at: C:\Users\Public\t\77850eef\tg\release\agent-orch-desktop.exe
+        Info Patching C:\Users\Public\t\77850eef\tg\release\agent-orch-desktop.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce C:\Users\Public\t\77850eef\tg\release\bundle\nsis\Agent Orchestrator_0.1.0_x64-setup.exe
+    Finished 1 bundle at:
+        C:\Users\Public\t\77850eef\tg\release\bundle\nsis\Agent Orchestrator_0.1.0_x64-setup.exe (4.43 MiB)
+
+{
+  "version": "0.1.0",
+  "platform": "windows",
+  "signed": false,
+  "notarized": false,
+  "commit": "6c17442eaee5243b48034dfc53d7f43d25f1ab82",
+  "artifacts": [
+    {
+      "file": "Agent-Orchestrator-0.1.0-windows-x64-unsigned-setup.exe",
+      "sha256": "dfda9aaab988d7631009cfdc22b9d40a5e87c62c01c0ce1a838f91623f2f5e30"
+    }
+  ]
+}

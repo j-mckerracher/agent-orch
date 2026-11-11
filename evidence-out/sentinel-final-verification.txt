@@ -1,0 +1,4 @@
+relative_path=%LOCALAPPDATA%\agent-orch\install-smoke-sentinel-32264-1794414627494.txt
+present_at_final_verification=False
+observation=exact run-created sentinel path was absent; no deletion was attempted during this final verification
+note=install-smoke recorded that the sentinel survived uninstall; sentinel-cleanup.txt records removed_run_created_sentinel=False, so the cleanup command itself is not claimed as successful

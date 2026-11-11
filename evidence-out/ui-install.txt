@@ -1,0 +1,7 @@
+installer=Agent-Orchestrator-0.1.0-windows-x64-unsigned-setup.exe
+exit=0
+target=run-specific isolated directory
+app_exe=agent-orch-desktop.exe
+app_pid=18888
+isolated_data_dir=ui-data
+webview_profile_dir=webview2-data

@@ -1,0 +1,3 @@
+cleanup_action=NOT PERFORMED
+reason=the execution safety policy blocked a scoped Stop-Process attempt
+observation=all three PIDs were already listed in procs-before.txt and remain in the after snapshots

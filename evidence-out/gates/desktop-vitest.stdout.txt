@@ -1,0 +1,16 @@
+
+ RUN  v5.1.0 C:/Users/Public/t/77850eef/s/apps/desktop
+
+ ❯ src/ui/shell/ResourceStrip.test.tsx (28 tests | 1 failed) 1760ms
+   ❯ ResourceStrip behaviour (3)
+     × stops ageing while the window is hidden and catches up when it is shown again 83ms
+
+ Test Files  1 failed | 50 passed (51)
+      Tests  1 failed | 1104 passed (1105)
+   Start at  09:14:34
+   Duration  53.68s (environment 59%, tests 18%, setup 17%, import 3%, transform 3%)
+
+Environment  jsdom was created 51 times · 307.96s total, 59% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+

@@ -1,0 +1,16 @@
+where.exe codex
+%USERPROFILE%\AppData\Roaming\npm\codex
+%USERPROFILE%\AppData\Roaming\npm\codex.cmd
+%USERPROFILE%\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe
+where_exit=0
+resolved_path=%USERPROFILE%\AppData\Roaming\npm\codex.ps1
+codex-cli 0.20.0
+version_exit=0
+Logged in using ChatGPT
+login_exit=0
+error: unrecognized subcommand 'models'
+System.Management.Automation.RemoteException
+Usage: codex-x86_64-pc-windows-msvc.exe debug [OPTIONS] <COMMAND>
+System.Management.Automation.RemoteException
+For more information, try '--help'.
+models_exit=0

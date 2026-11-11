@@ -1,0 +1,42 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\Public\t\77850eef\s\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.07s
+     Running unittests src\main.rs (C:\Users\Public\t\77850eef\tg\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T16:06:36Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T16:06:36Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-11T16:06:36Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T16:06:36Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-11T16:06:36Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T16:06:37Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-11T16:06:37Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-11T16:06:45Z"}
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-11T16:06:53Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T16:06:53Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T16:06:54Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T16:06:57Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T16:06:58Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T16:06:59Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-11T16:06:59Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-11T16:06:59Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T16:07:00Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-11T16:07:00Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T16:07:00Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-11T16:07:00Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-11T16:07:01Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-11T16:07:03Z"}
+     Running tests\conversation_runtime.rs (C:\Users\Public\t\77850eef\tg\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+     Running tests\conversations.rs (C:\Users\Public\t\77850eef\tg\debug\deps\conversations-b568dacb962dbd9e.exe)
+     Running tests\coordinator_review.rs (C:\Users\Public\t\77850eef\tg\debug\deps\coordinator_review-567715bea0697ecf.exe)
+     Running tests\daemon.rs (C:\Users\Public\t\77850eef\tg\debug\deps\daemon-ea1b8a70ee742a30.exe)
+     Running tests\diagnostics_log.rs (C:\Users\Public\t\77850eef\tg\debug\deps\diagnostics_log-ba071ea02020da6e.exe)
+     Running tests\host_metrics.rs (C:\Users\Public\t\77850eef\tg\debug\deps\host_metrics-652ebc476e7888e4.exe)
+     Running tests\lifecycle.rs (C:\Users\Public\t\77850eef\tg\debug\deps\lifecycle-0f4970ff71d2b2f1.exe)
+     Running tests\queue_snapshot.rs (C:\Users\Public\t\77850eef\tg\debug\deps\queue_snapshot-21c82c2d8cb1d381.exe)

@@ -1,0 +1,4 @@
+Retry reason: the first M7-25 attempt selected codex.cmd and failed before agent launch with batch file arguments invalid.
+A direct pinned codex.exe (0.167.0) exists in the package vendor bin and its version/login probes both exit 0.
+This separate rerun puts that direct executable directory first on PATH, following the runbook locator order (.exe before .cmd).
+The first attempt remains preserved as m7-25-live.txt.

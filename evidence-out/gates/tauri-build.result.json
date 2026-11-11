@@ -1,0 +1,11 @@
+{
+  "gate": "tauri-build",
+  "command": "cargo build --locked",
+  "cwd": "apps/desktop/src-tauri",
+  "platform": "win32",
+  "verdict": "PASS",
+  "exitCode": 0,
+  "durationSeconds": 168,
+  "problems": [],
+  "newDiagnostics": 0
+}

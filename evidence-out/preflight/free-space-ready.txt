@@ -1,0 +1,8 @@
+timestamp_utc=2026-11-11T15:57:55.1717080Z
+CARGO_TARGET_DIR=C:\Users\Public\t\77850eef\tg
+TEST_TMP=C:\Users\Public\t\77850eef\tmp
+TEMP=C:\Users\Public\t\77850eef\tmp
+TMP=C:\Users\Public\t\77850eef\tmp
+volumes:
+name=C root=C:\ free_bytes=65663586304 free_GiB=61.15
+name=Temp root=%USERPROFILE%\AppData\Local\Temp\ free_bytes=65663586304 free_GiB=61.15

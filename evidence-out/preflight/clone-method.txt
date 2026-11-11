@@ -1,0 +1,10 @@
+path_choice=C:\Users\Public\t\77850eef\s
+path_length=28
+C:\\t_creation=ACCESS_DENIED; selected=C:\\Users\\Public\\t (ordinary directory, not a reparse point)
+ssh_fetch=FAILED
+ssh_reason=[REDACTED_EMAIL] Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+method=HTTPS fallback after SSH failure (see sanitized reason)

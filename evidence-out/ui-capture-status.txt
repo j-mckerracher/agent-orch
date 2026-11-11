@@ -1,0 +1,3 @@
+computer-use screenshot capture attempt 1: GetCursorPos failed: Access is denied. (0x80070005)
+computer-use screenshot capture retry after refreshed list_apps/window selection: GetCursorPos failed: Access is denied. (0x80070005)
+recovery guidance: stopped UI automation after the second failure

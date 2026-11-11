@@ -1,0 +1,7 @@
+
+running 2 tests
+test workflow::tests::a_65000_character_objective_is_refused_before_any_record_on_windows ... ok
+test workflow::tests::an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.06s
+

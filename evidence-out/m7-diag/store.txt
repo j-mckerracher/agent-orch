@@ -1,0 +1,264 @@
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:93:4
+   |
+93 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.79s
+     Running unittests src\lib.rs (C:\Users\Public\t\77850eef\tg\debug\deps\orchestrator_store-344f67571e0677a2.exe)
+
+running 63 tests
+test data_lock::tests::fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact ... ok
+test data_lock::tests::fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact ... ok
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+test data_lock::tests::identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock ... ok
+test data_lock::tests::verified_creation_is_cleaned_up_on_drop ... ok
+test data_lock::tests::platform_without_identity_still_retries_and_preserves_the_lock ... ok
+test data_lock::tests::the_lock_file_is_owner_only_when_created_and_when_taken_over ... ok
+test sqlite::tests::new_database_uses_wal_mode ... ok
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test sqlite_ops::tests::transition_rolls_back_state_when_event_insert_fails ... ok
+test sqlite_usage::tests::an_empty_window_has_no_providers ... ok
+test sqlite_usage::tests::a_missing_token_count_leaves_the_estimate_unknown ... ok
+test sqlite_usage::tests::a_null_field_inside_a_receipt_stays_unknown_not_zero ... ok
+test sqlite_usage::tests::a_session_is_estimated_whole_or_not_at_all ... ok
+test sqlite_usage::tests::a_stored_estimate_suppresses_the_native_one ... ok
+test sqlite_usage::tests::an_unknown_or_missing_model_is_unknown_not_zero ... ok
+test sqlite::tests::foreign_keys_reject_orphan_attempts_on_each_handle ... ok
+test sqlite_ops::tests::separate_handles_serialize_writes_or_return_database_errors ... ok
+test sqlite_ops::tests::task_records_and_event_sequence_survive_reopen ... ok
+test sqlite_usage::tests::costs_are_summed_per_provider_and_in_the_grand_total ... ok
+test sqlite_usage::tests::each_model_is_estimated_from_its_own_price_and_kept_out_of_reported ... ok
+test sqlite_usage::tests::invalid_receipts_and_unknown_sessions_are_rejected ... ok
+test sqlite_usage::tests::late_receipt_is_attributed_to_its_window_end_day ... ok
+test sqlite_usage::tests::receipts_are_idempotent_and_only_newer_observations_replace ... ok
+test sqlite_usage::tests::model_text_is_truncated_on_a_character_boundary ... ok
+test sqlite_usage::tests::reported_and_estimated_mix_without_double_counting_or_overwriting ... ok
+test sqlite_usage::tests::receipts_survive_reopen ... ok
+test sqlite_usage::tests::silent_providers_are_unknown_not_zero_and_sources_stay_apart ... ok
+test sqlite_usage::tests::session_coverage_follows_start_time_and_receipts ... ok
+test tests::invalid_task_ids_are_rejected_not_panics ... ok
+test tests::create_persists_validated_contract_and_rejects_invalid ... ok
+test tests::concurrent_creates_same_id_exactly_one_wins ... ok
+test sqlite_usage::tests::summarising_does_not_rewrite_stored_receipts ... ok
+test tests::list_ignores_foreign_files ... ok
+test sqlite_usage::tests::migration_applies_to_an_existing_data_directory_without_losing_data ... ok
+test tests::attempt_must_match_task_and_sequence ... ok
+test tests::attempt_state_moves_follow_central_table ... ok
+test tests::malformed_stored_attempt_is_not_linked_to_new_rows ... ok
+test tests::new_attempt_must_be_pending_with_nonempty_id ... ok
+test tests::close_and_reopen_preserves_everything ... ok
+test tests::concurrent_mutations_do_not_lose_a_transition ... ok
+test tests::new_session_must_start_spawning ... ok
+test tests::session_must_reference_recorded_attempt ... ok
+test usage_prices::tests::a_missing_token_count_is_unknown_never_zero ... ok
+test usage_prices::tests::codex_recorded_turn_matches_a_hand_computation ... ok
+test tests::session_cannot_carry_a_foreign_attempt ... ok
+test usage_prices::tests::every_model_prices_from_its_own_row ... ok
+test usage_prices::tests::overflow_is_unknown_not_a_wrapped_figure ... ok
+test usage_prices::tests::no_cache_write_price_accepts_unknown_or_zero_but_not_positive_counts ... ok
+test usage_prices::tests::info_names_the_version_basis_and_size ... ok
+test usage_prices::tests::model_names_are_normalised_before_lookup ... ok
+test usage_prices::tests::reproduces_the_recorded_claude_code_cost_exactly ... ok
+test usage_prices::tests::table_rows_are_unique_canonical_and_priced ... ok
+test usage_prices::tests::unknown_or_missing_model_is_unknown_never_zero ... ok
+test tests::invalid_transition_changes_nothing ... ok
+test sqlite_usage::tests::token_sums_saturate_instead_of_wrapping ... ok
+test tests::failed_attempt_preserved_and_retry_appends_new_one ... ok
+test tests::state_change_and_audit_event_persist_together ... ok
+test tests::session_state_moves_follow_central_table ... ok
+test tests::new_attempt_requires_queued_task ... ok
+test sqlite_workstreams::tests::existing_data_directory_migrates_without_loss ... ok
+test tests::session_exit_does_not_affect_task_state ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests\approvals.rs (C:\Users\Public\t\77850eef\tg\debug\deps\approvals-0e608e023cbbcc86.exe)
+
+running 9 tests
+test agent_cannot_approve_its_own_request ... ok
+test superseded_approval_cannot_be_reused ... ok
+test request_approve_and_check_round_trip ... ok
+test rejected_approval_cannot_transition_to_approved ... ok
+test changed_parameters_fail_check_and_require_reapproval ... ok
+test policy_change_requires_approved_policy_approval ... ok
+test changed_candidate_commit_fails_check_and_supersedes_old_approval ... ok
+test approvals_and_events_survive_reopen ... ok
+test approval_state_and_event_roll_back_together ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests\attempt_history.rs (C:\Users\Public\t\77850eef\tg\debug\deps\attempt_history-eb7f15fec2b42fde.exe)
+
+running 2 tests
+test attempt_history_rejects_unknown_task ... ok
+test retry_appends_attempt_and_preserves_failure_after_reopen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\cancellation_owner.rs (C:\Users\Public\t\77850eef\tg\debug\deps\cancellation_owner-053f9fe0676441fd.exe)
+
+running 13 tests
+test stale_owner_without_process_identity_is_not_retired ... ok
+test manual_owner_recovery_is_auditable_and_preserves_lifecycle ... ok
+test absent_or_stale_owner_cannot_acknowledge_cancellation ... ok
+test manual_owner_recovery_requires_terminal_target_lifecycle ... ok
+test stale_owner_recovery_requires_the_recorded_process_identity ... ok
+test request_stays_pending_until_owner_confirms_reaped_handle ... ok
+test non_cancelled_owner_exit_resolves_request_without_cancelling_task ... ok
+test stale_owner_recovery_resolves_request_without_changing_lifecycle ... ok
+test manual_recovery_releases_only_stale_generation_before_successor ... ok
+test crashed_owner_leaves_durable_request_pending_not_cancelled ... ok
+test stale_generation_is_retired_before_retry_owner_can_register ... ok
+test windows_owner_creation_time_precision_survives_reopen ... ok
+test duplicate_concurrent_requests_share_one_pending_result ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests\conversations.rs (C:\Users\Public\t\77850eef\tg\debug\deps\conversations-7427a7bfa6126bab.exe)
+
+running 11 tests
+test an_unused_target_reads_as_an_empty_transcript ... ok
+test the_transcript_is_append_only_at_the_database_level ... ok
+test failures_carry_a_bounded_code_and_a_new_message_can_follow ... ok
+test the_first_terminal_state_wins_and_late_output_is_refused ... ok
+test targets_are_independent_conversations ... ok
+test a_second_message_is_refused_while_a_turn_runs ... ok
+test repeating_a_turn_id_returns_the_stored_turn_without_new_entries ... ok
+test replay_returns_only_entries_after_the_cursor_and_survives_reopen ... ok
+test messages_and_replies_are_ordered_and_correlated_by_turn ... ok
+test restart_fails_open_turns_and_keeps_the_transcript ... ok
+test input_and_reply_bounds_are_enforced ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\data_lock.rs (C:\Users\Public\t\77850eef\tg\debug\deps\data_lock-376180c3aaca7b9c.exe)
+
+running 8 tests
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test foreign_non_lock_file_is_never_removed ... ok
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test live_pid_with_different_start_identity_is_taken_over ... ok
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... ok
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test separate_process_cannot_acquire_a_live_lock ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\delivery.rs (C:\Users\Public\t\77850eef\tg\debug\deps\delivery-b20d979009c02294.exe)
+
+running 11 tests
+test verification_revalidation_rejects_nonpassed_run ... ok
+test report_only_step_persists_report_and_audit_event ... ok
+test delivery_refuses_changed_action_kind ... ok
+test delivery_refuses_missing_approval ... ok
+test delivery_refuses_changed_candidate_sha ... ok
+test refused_delivery_step_and_audit_event_are_retained ... ok
+test delivery_refuses_changed_parameter_digest ... ok
+test verification_revalidation_requires_exact_candidate_and_passed_run ... ok
+test all_delivery_steps_survive_reopen ... ok
+test delivery_step_and_audit_event_survive_reopen ... ok
+test delivery_step_and_audit_event_roll_back_together ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\delivery_acceptance_contract.rs (C:\Users\Public\t\77850eef\tg\debug\deps\delivery_acceptance_contract-24127dd75a558ffe.exe)
+
+running 3 tests
+test outcome_that_does_not_match_a_delivery_action_persists_nothing ... ok
+test delivery_step_is_append_only_and_a_reused_id_changes_nothing ... ok
+test only_an_approved_current_exact_approval_authorizes_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\lock_identity_contract.rs (C:\Users\Public\t\77850eef\tg\debug\deps\lock_identity_contract-c745c16d6eb28a0a.exe)
+
+running 3 tests
+test directory_at_the_lock_path_is_never_removed ... ok
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test malformed_records_are_never_taken_over ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\reconnectable_events.rs (C:\Users\Public\t\77850eef\tg\debug\deps\reconnectable_events-30b176e0c8503756.exe)
+
+running 3 tests
+test idempotency_result_and_parameter_binding_survive_reopen ... ok
+test session_replay_is_global_sequence_ordered_and_reconnectable ... ok
+test store_epoch_is_stable_across_reopen_and_unique_per_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\review.rs (C:\Users\Public\t\77850eef\tg\debug\deps\review-8f033cb9993ce717.exe)
+
+running 11 tests
+test reviewed_approval_matches_plain_approval_without_changes ... ok
+test request_changes_records_feedback_without_deciding_the_approval ... ok
+test request_changes_refuses_invalid_input_and_unauthorized_actors ... ok
+test reviewed_approval_authorizes_before_looking_at_the_approval ... ok
+test plain_approve_approval_cannot_bypass_a_change_request ... ok
+test approval_parameters_commit_with_the_approval ... ok
+test coordinator_entries_are_ordered_paged_and_project_scoped ... ok
+test approval_is_blocked_by_a_change_request_but_rejection_is_not ... ok
+test request_changes_is_single_use_and_needs_a_pending_approval ... ok
+test coordinator_entries_enforce_schema_invariants_and_survive_reopen ... ok
+test concurrent_approve_and_request_changes_never_both_succeed ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+     Running tests\sqlite_reconcile.rs (C:\Users\Public\t\77850eef\tg\debug\deps\sqlite_reconcile-b4d1d722118eb743.exe)
+
+running 4 tests
+test identity_for_unknown_session_is_rejected ... ok
+test list_workspaces_returns_all_rows_in_stable_order ... ok
+test conflicting_identity_does_not_replace_first_record ... ok
+test session_identity_round_trips_after_reopen ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\verification.rs (C:\Users\Public\t\77850eef\tg\debug\deps\verification-a6f0e7b7f8bc28f4.exe)
+
+running 1 test
+test appends_and_reopens_results_without_overwriting_failed_runs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\workstreams.rs (C:\Users\Public\t\77850eef\tg\debug\deps\workstreams-3d55f1c38a8de3a3.exe)
+
+running 12 tests
+test linking_derives_projects_and_leaves_the_task_untouched ... ok
+test rule_violations_are_rejected_without_a_revision ... ok
+test duplicate_and_missing_workstreams_are_typed_errors ... ok
+test update_rejects_stale_revision_and_writes_nothing ... ok
+test create_get_and_list_round_trip_in_creation_order ... ok
+test state_survives_reopening_the_database ... ok
+test archived_workstream_is_terminal_and_refuses_new_work ... ok
+test objectives_revise_append_only_with_stale_rejection ... ok
+test every_accepted_change_appends_an_immutable_revision ... ok
+test link_is_idempotent_exclusive_and_validated ... ok
+test gate_state_requires_a_task_linked_to_the_same_workstream ... ok
+test concurrent_writers_cannot_both_win_the_same_revision ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+   Doc-tests orchestrator_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

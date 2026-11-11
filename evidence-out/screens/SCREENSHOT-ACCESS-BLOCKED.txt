@@ -1,0 +1,1 @@
+No screenshots were captured. The computer-use tool failed twice with `GetCursorPos failed: Access is denied. (0x80070005)`, including after refreshing the app/window selection. Per the computer-use recovery rule, UI automation stopped after the second failure. No visual or assistive-technology result is inferred from process launch or automated tests.
