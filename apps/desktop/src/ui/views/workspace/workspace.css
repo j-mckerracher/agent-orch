@@ -121,6 +121,11 @@
   cursor: pointer;
 }
 
+.ws-model-root > .ws-chip-button {
+  background: var(--control-surface);
+  color: var(--control-ink);
+}
+
 .ws-chip-link:hover,
 .ws-chip-button:hover {
   background: var(--soft);
@@ -261,6 +266,7 @@
 .ws-model-panel {
   right: 0;
   left: auto;
+  border-color: var(--control-border);
 }
 
 .ws-root .ws-search-label,
@@ -273,6 +279,10 @@
   font-weight: 600;
 }
 
+.ws-model-panel .ws-field {
+  color: var(--control-ink);
+}
+
 .ws-popover input[type="search"],
 .ws-popover select {
   padding: 6px 8px;
@@ -281,6 +291,11 @@
   background: var(--panel);
   color: var(--ink);
   font: 13px/1.4 var(--font-sans);
+}
+
+.ws-model-panel select {
+  background: var(--control-surface);
+  color: var(--control-ink);
 }
 
 .ws-popover select:disabled {

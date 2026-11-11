@@ -86,14 +86,27 @@ body:has(.shell) {
 }
 
 .shell-sidebar {
+  --shell-blue: var(--sidebar-focus, #0057a8);
+  --shell-muted: var(--sidebar-ink, #111);
+  --blue: var(--sidebar-link, #0057a8);
+  --blue-bg: var(--soft-strong);
+  --control-border: var(--sidebar-control-border, #6b7f94);
+  --focus: var(--sidebar-focus, #0057a8);
+  --ink: var(--sidebar-ink, #111);
+  --muted: var(--sidebar-ink, #111);
+  --panel: var(--sidebar, #f2f7fc);
+  --soft: var(--sidebar, #f2f7fc);
+  --soft-strong: color-mix(in srgb, var(--sidebar, #f2f7fc) 90%, var(--sidebar-link, #0057a8));
+  --subtle: var(--sidebar-ink, #111);
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   padding: 24px 16px 14px;
   overflow-y: auto;
-  background: var(--shell-soft);
+  background: var(--sidebar, #f2f7fc);
   border-right: 1px solid var(--shell-line);
+  color: var(--sidebar-ink, #111);
 }
 
 .shell-brand {
@@ -139,18 +152,19 @@ body:has(.shell) {
   padding: 10px;
   border: 1px solid transparent;
   border-radius: 7px;
-  color: inherit;
+  color: var(--sidebar-link, #0057a8);
   font-size: 13px;
   text-decoration: none;
 }
 
 .shell-nav-link:hover {
-  background: var(--shell-panel);
+  background: var(--soft-strong);
 }
 
 .shell-nav-link[aria-current="page"] {
-  background: var(--shell-panel);
-  border-color: var(--shell-line);
+  background: var(--soft-strong);
+  border-color: var(--sidebar-control-border, #6b7f94);
+  color: var(--sidebar-ink, #111);
   font-weight: 650;
 }
 
@@ -158,7 +172,7 @@ body:has(.shell) {
   display: inline-grid;
   place-items: center;
   width: 20px;
-  color: var(--shell-blue);
+  color: var(--sidebar-link, #0057a8);
   font-size: 18px;
   line-height: 1;
 }
