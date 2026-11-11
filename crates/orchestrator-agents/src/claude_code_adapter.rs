@@ -93,29 +93,8 @@ impl ClaudeCodeAdapter {
             .unwrap_or_else(|| PathBuf::from("claude"))
     }
 
-    pub(crate) fn locate(&self) -> Option<PathBuf> {
-        let program = self.program();
-        if program.is_file() {
-            return Some(program);
-        }
-        if let Some(pathvar) = std::env::var_os("PATH") {
-            for dir in std::env::split_paths(&pathvar) {
-                let joined = dir.join(&program);
-                if joined.is_file() {
-                    return Some(joined);
-                }
-                #[cfg(windows)]
-                if !program.extension().is_some_and(|extension| {
-                    extension.to_string_lossy().eq_ignore_ascii_case("exe")
-                }) {
-                    let exe = dir.join(format!("{}.exe", program.to_string_lossy()));
-                    if exe.is_file() {
-                        return Some(exe);
-                    }
-                }
-            }
-        }
-        None
+    pub fn locate(&self) -> Option<PathBuf> {
+        crate::locate::locate_program(&self.program())
     }
 }
 

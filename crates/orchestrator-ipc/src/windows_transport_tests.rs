@@ -356,6 +356,23 @@ fn data_written_before_the_writer_closes_is_still_readable() {
 }
 
 #[test]
+fn a_write_larger_than_the_pipe_buffer_arrives_whole() {
+    let dir = TempDir::new().unwrap();
+    let mut listener = Listener::bind(dir.path()).unwrap();
+    let (mut client, mut server) = connected_pair(&mut listener, dir.path());
+    let payload: Vec<u8> = (0..600 * 1024).map(|i| (i % 251) as u8).collect();
+    let sent = payload.clone();
+    let writer = thread::spawn(move || {
+        server.write_all(&sent).unwrap();
+        server
+    });
+    let mut received = vec![0u8; payload.len()];
+    client.read_exact(&mut received).unwrap();
+    assert!(received == payload, "payload corrupted in transit");
+    drop(writer.join().unwrap());
+}
+
+#[test]
 fn handshake_waits_for_a_client_that_writes_after_connecting() {
     let dir = TempDir::new().unwrap();
     let daemon = start_with_stream_timeout(dir.path(), Duration::from_secs(5));

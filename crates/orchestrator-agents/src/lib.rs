@@ -12,6 +12,7 @@ pub mod claude_code_adapter;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
+mod locate;
 pub mod pi_rpc_adapter;
 pub mod routing;
 pub mod usage;

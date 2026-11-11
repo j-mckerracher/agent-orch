@@ -51,32 +51,11 @@ impl CodexAdapter {
             .unwrap_or_else(|| std::path::PathBuf::from("codex"))
     }
 
-    /// Locate the executable for detection: an explicit path is checked
-    /// as-is; a bare name is resolved against PATH (`.exe` on Windows).
-    pub(crate) fn locate(&self) -> Option<std::path::PathBuf> {
-        let program = self.program();
-        if program.is_file() {
-            return Some(program);
-        }
-        if let Some(pathvar) = std::env::var_os("PATH") {
-            for dir in std::env::split_paths(&pathvar) {
-                let joined = dir.join(&program);
-                if joined.is_file() {
-                    return Some(joined);
-                }
-                #[cfg(windows)]
-                if !program
-                    .extension()
-                    .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("exe"))
-                {
-                    let exe = dir.join(format!("{}.exe", program.to_string_lossy()));
-                    if exe.is_file() {
-                        return Some(exe);
-                    }
-                }
-            }
-        }
-        None
+    /// Locate the executable: an explicit path is checked as-is; a bare name
+    /// is resolved against PATH (`.exe`, then `.cmd`, on Windows). Every probe
+    /// and launch should use this one path.
+    pub fn locate(&self) -> Option<std::path::PathBuf> {
+        crate::locate::locate_program(&self.program())
     }
 }
 

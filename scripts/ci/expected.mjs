@@ -9,14 +9,18 @@
 // `sequence` is the `running N tests` series, one entry per test binary, in order.
 export const WINDOWS = {
   // The M7 merge adds 9 portable ipc tests (host, queue, workstreams).
-  ipc: { passed: 55, sequence: [55, 0] },
-  // Derived from cfg gates, not yet measured on Windows: the library loses executor::tests,
+  // Measured on Windows (b44f88a): ipc 55 (13 of them in windows_transport); the M7-final-r1
+  // large-write test makes 56. The daemon library measured 118; conversation_runtime ran 12
+  // tests (10 passed, 1 failed, 1 ignored) and the run stopped there, so the daemon total is
+  // still derived: 118 + 11 + 2 + 4 + 0 + 1 + 2 = 138 once M7-08 passes.
+  ipc: { passed: 56, sequence: [56, 0] },
+  // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
   // tests/daemon.rs is cfg(unix), so it runs 0 tests.
   daemon: { passed: 138, ignored: 1, sequence: [118, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  windowsTransport: { passed: 13, sequence: [13], filteredOut: 33 },
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 42 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the

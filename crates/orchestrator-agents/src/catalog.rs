@@ -316,8 +316,75 @@ pub(crate) struct Captured {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CaptureFailure {
     Launch,
+    /// The OS refused to start the program (not found, not executable, ...).
+    Spawn(std::io::ErrorKind),
     TimedOut,
     TooLarge,
+}
+
+const DIAGNOSTIC_STDERR_CHARS: usize = 160;
+
+/// A bounded, single-line excerpt of a probe's stderr that is safe to log:
+/// control characters become spaces and any long token-like run (a possible
+/// credential) is masked.
+fn stderr_excerpt(stderr: &[u8]) -> String {
+    let text: String = String::from_utf8_lossy(stderr)
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let masked: Vec<String> = text
+        .split_whitespace()
+        .map(|word| {
+            let tokenish = word.len() >= 24
+                && word
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '='));
+            let pathish = word.contains('/') || word.contains('\\') || word.contains(':');
+            if tokenish && !pathish {
+                "<redacted>".to_owned()
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect();
+    masked
+        .join(" ")
+        .chars()
+        .take(DIAGNOSTIC_STDERR_CHARS)
+        .collect()
+}
+
+/// One line saying how a probe ended: which probe, the resolved program,
+/// and the failure kind, exit code or stderr excerpt.
+pub(crate) fn probe_summary(
+    probe: &str,
+    program: &Path,
+    result: &Result<Captured, CaptureFailure>,
+) -> String {
+    let outcome = match result {
+        Ok(captured) => format!(
+            "exit code {}, stderr \"{}\"",
+            captured
+                .code
+                .map_or_else(|| "none".to_owned(), |code| code.to_string()),
+            stderr_excerpt(&captured.stderr)
+        ),
+        Err(CaptureFailure::Spawn(kind)) => format!("could not start ({kind:?})"),
+        Err(CaptureFailure::Launch) => "could not be read".to_owned(),
+        Err(CaptureFailure::TimedOut) => "timed out".to_owned(),
+        Err(CaptureFailure::TooLarge) => "output too large".to_owned(),
+    };
+    format!("probe `{probe}` via {}: {outcome}", program.display())
+}
+
+fn log_probe(agent: &str, probe: &str, program: &Path, result: &Result<Captured, CaptureFailure>) {
+    let failed = !matches!(result, Ok(captured) if captured.code == Some(0));
+    if failed {
+        eprintln!(
+            "orchestrator-agents: {agent} catalog {}",
+            probe_summary(probe, program, result)
+        );
+    }
 }
 
 /// Everything a probe started, not just the process the daemon spawned.
@@ -394,7 +461,9 @@ async fn capture(
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);
-    let mut child = command.spawn().map_err(|_| CaptureFailure::Launch)?;
+    let mut child = command
+        .spawn()
+        .map_err(|error| CaptureFailure::Spawn(error.kind()))?;
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
         return Err(CaptureFailure::Launch);
     };
@@ -701,6 +770,8 @@ impl CodexAdapter {
             capture(&program, &["login", "status"], working_dir, limit),
             capture(&program, &["debug", "models"], working_dir, limit),
         );
+        log_probe(CODEX_AGENT, "login status", &program, &login);
+        log_probe(CODEX_AGENT, "debug models", &program, &models);
         codex_catalog(&login, models)
     }
 
@@ -760,6 +831,8 @@ impl ClaudeCodeAdapter {
             capture(&program, &["auth", "status"], working_dir, limit),
             capture(&program, &["--help"], working_dir, limit),
         );
+        log_probe(CLAUDE_AGENT, "auth status", &program, &auth);
+        log_probe(CLAUDE_AGENT, "--help", &program, &help);
         claude_catalog(&auth, help)
     }
 
@@ -834,6 +907,39 @@ pub fn pi_catalog() -> AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_probe_summary_names_the_probe_path_and_outcome_and_masks_tokens() {
+        let program = Path::new("C:/tools/codex.exe");
+        let token = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
+        let result = Ok(Captured {
+            code: Some(2),
+            stdout: Vec::new(),
+            stderr: format!("error: unrecognized\nsubcommand 'login' {token}").into_bytes(),
+        });
+        let line = probe_summary("login status", program, &result);
+        assert!(
+            line.contains("login status") && line.contains("codex.exe"),
+            "{line}"
+        );
+        assert!(line.contains("exit code 2") && line.contains("unrecognized subcommand"));
+        assert!(
+            !line.contains(token) && line.contains("<redacted>"),
+            "{line}"
+        );
+        let spawn = probe_summary(
+            "debug models",
+            program,
+            &Err(CaptureFailure::Spawn(std::io::ErrorKind::NotFound)),
+        );
+        assert!(spawn.contains("NotFound"), "{spawn}");
+        let long = Ok(Captured {
+            code: Some(1),
+            stdout: Vec::new(),
+            stderr: "x ".repeat(500).into_bytes(),
+        });
+        assert!(probe_summary("p", program, &long).len() < 300);
+    }
 
     fn captured(code: i32, stdout: &str) -> Result<Captured, CaptureFailure> {
         Ok(Captured {

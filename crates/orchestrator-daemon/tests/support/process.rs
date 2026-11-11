@@ -165,8 +165,7 @@ impl Daemon {
 
     /// Ends the daemon without giving it a chance to clean up.
     pub fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        kill_tree(&mut self.child);
     }
 
     pub fn wait_for_exit(&mut self) {
@@ -182,10 +181,26 @@ impl Daemon {
     }
 }
 
+/// Kills the daemon and, on Windows, every process it started. The tree must
+/// be walked before the daemon dies: once it is gone its children no longer
+/// name it as their parent, and a failed test would leave an agent behind.
+fn kill_tree(child: &mut Child) {
+    #[cfg(windows)]
+    if matches!(child.try_wait(), Ok(None)) {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 impl Drop for Daemon {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        kill_tree(&mut self.child);
         if thread::panicking() {
             print_timings();
             eprintln!(

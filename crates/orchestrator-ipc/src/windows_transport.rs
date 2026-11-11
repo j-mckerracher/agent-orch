@@ -45,6 +45,7 @@ use windows_sys::Win32::System::Pipes::{
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 const PIPE_BUFFER_SIZE: u32 = 64 * 1024;
+const WRITE_CHUNK: usize = PIPE_BUFFER_SIZE as usize / 2;
 const PIPE_MAX_INSTANCES: u32 = 16;
 const PIPE_MODE: u32 =
     PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS;
@@ -590,6 +591,10 @@ impl Write for PipeStream {
         if buffer.is_empty() {
             return Ok(0);
         }
+        // A non-blocking write larger than the pipe buffer can be refused
+        // outright (0 bytes) however fast the peer reads, so offer at most
+        // half a buffer at a time; `write_all` loops over the partial writes.
+        let buffer = &buffer[..buffer.len().min(WRITE_CHUNK)];
         let deadline = Instant::now() + self.timeout;
         loop {
             match self.file.write(buffer) {

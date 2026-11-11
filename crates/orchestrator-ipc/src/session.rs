@@ -197,7 +197,11 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
     while !state.stopping.load(Ordering::Acquire) {
         let request = match protocol::read_optional::<RpcRequest>(&mut stream) {
             Ok(Some(request)) if request.jsonrpc == "2.0" => Some(request),
-            Ok(Some(_)) | Err(_) => break,
+            Ok(Some(_)) => break,
+            Err(error) => {
+                eprintln!("orchestrator-ipc: request read failed, closing connection: {error}");
+                break;
+            }
             Ok(None) if subscription.is_none() => break,
             Ok(None) => None,
         };
@@ -505,7 +509,7 @@ fn write_rpc_error(stream: &mut Box<dyn IpcStream>, id: RpcId, error: RpcError) 
 }
 
 fn write_result(stream: &mut Box<dyn IpcStream>, id: RpcId, result: Value) -> Result<(), IpcError> {
-    protocol::write(
+    let written = protocol::write(
         stream,
         &RpcResponse {
             jsonrpc: "2.0".into(),
@@ -513,7 +517,12 @@ fn write_result(stream: &mut Box<dyn IpcStream>, id: RpcId, result: Value) -> Re
             result: Some(result),
             error: None,
         },
-    )?;
+    );
+    if let Err(error) = &written {
+        // The caller closes the connection on this; say why (error kind only).
+        eprintln!("orchestrator-ipc: response write failed, closing connection: {error}");
+    }
+    written?;
     Ok(())
 }
 

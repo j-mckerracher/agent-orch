@@ -248,7 +248,14 @@ impl AgentRuntime {
             CODEX => self.exec.codex_program.clone(),
             _ => self.exec.claude_program.clone(),
         };
-        configured.unwrap_or_else(|| PathBuf::from(if agent == CODEX { "codex" } else { "claude" }))
+        let bare = PathBuf::from(if agent == CODEX { "codex" } else { "claude" });
+        let explicit = configured.clone().unwrap_or_else(|| bare.clone());
+        let located = if agent == CODEX {
+            CodexAdapter::new().with_program(&explicit).locate()
+        } else {
+            ClaudeCodeAdapter::new().with_program(&explicit).locate()
+        };
+        located.unwrap_or(explicit)
     }
 
     /// Picks the first agent that is installed, signed in, launchable and
@@ -340,6 +347,14 @@ impl AgentRuntime {
         let mut pending = slow;
         let mut missing = RuntimeFailure::Unavailable;
         for ((agent, program, version), catalog) in launchable.into_iter().zip(&catalogs) {
+            if catalog.state != CatalogState::Available {
+                eprintln!(
+                    "orchestrator-daemon: conversation agent {agent} ({}) catalog is {:?}: {}",
+                    program.display(),
+                    catalog.state,
+                    log_safe(&catalog.detail)
+                );
+            }
             match catalog.state {
                 CatalogState::Available => {}
                 CatalogState::Unknown => {
@@ -554,8 +569,16 @@ fn read_version(program: &Path) -> Probe {
         .stderr(Stdio::null());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let Ok(mut child) = command.spawn() else {
-        return Probe::Rejected;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            eprintln!(
+                "orchestrator-daemon: `--version` probe via {} could not start ({:?})",
+                program.display(),
+                error.kind()
+            );
+            return Probe::Rejected;
+        }
     };
     let deadline = Instant::now() + VERSION_PROBE_TIMEOUT;
     let status = loop {
@@ -564,6 +587,10 @@ fn read_version(program: &Path) -> Probe {
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
                 kill_probe(&mut child);
+                eprintln!(
+                    "orchestrator-daemon: `--version` probe via {} timed out",
+                    program.display()
+                );
                 return Probe::TimedOut;
             }
             Err(_) => {
@@ -572,7 +599,17 @@ fn read_version(program: &Path) -> Probe {
             }
         }
     };
-    let Some(stdout) = child.stdout.take().filter(|_| status.success()) else {
+    if !status.success() {
+        eprintln!(
+            "orchestrator-daemon: `--version` probe via {} exited with code {}",
+            program.display(),
+            status
+                .code()
+                .map_or_else(|| "none".to_owned(), |code| code.to_string()),
+        );
+        return Probe::Rejected;
+    }
+    let Some(stdout) = child.stdout.take() else {
         return Probe::Rejected;
     };
     let mut output = Vec::new();
@@ -583,7 +620,15 @@ fn read_version(program: &Path) -> Probe {
     if read.is_err() || output.len() > MAX_VERSION_OUTPUT {
         return Probe::Rejected;
     }
-    parse_version(&String::from_utf8_lossy(&output)).map_or(Probe::Rejected, Probe::Version)
+    let parsed = parse_version(&String::from_utf8_lossy(&output));
+    if parsed.is_none() {
+        eprintln!(
+            "orchestrator-daemon: `--version` probe via {} printed no version: {}",
+            program.display(),
+            log_safe(&String::from_utf8_lossy(&output).chars().take(80).collect::<String>())
+        );
+    }
+    parsed.map_or(Probe::Rejected, Probe::Version)
 }
 
 fn kill_probe(child: &mut std::process::Child) {
