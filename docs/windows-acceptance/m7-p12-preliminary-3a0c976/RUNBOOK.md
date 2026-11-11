@@ -8,13 +8,16 @@ The earlier Windows run tested `6c17442eaee5243b48034dfc53d7f43d25f1ab82`. It re
 
 ## Create an isolated run
 
-Use Windows PowerShell 5.1 or PowerShell 7. Set `$RunBase` to an existing short local path without spaces, such as `C:\t`. Use a local volume with at least 20 GiB free. Do not use a mapped drive, `SUBST` drive, junction, existing checkout, or shared evidence directory. Do not delete files to make room.
+Use Windows PowerShell 5.1 or PowerShell 7. Set `$RunBase` to an existing short local path without whitespace or `cmd.exe` metacharacters, such as `C:\t`. Use a local volume with at least 20 GiB free. Do not use a mapped drive, `SUBST` drive, junction, existing checkout, or shared evidence directory. Do not delete files to make room.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 $SourceSha = '3a0c976adf15df35c58734749155d0bb7b3b9460'
 $ExpectedTree = '139fa70a8e1fe2614d54e6d54a2491bf1b67fe74'
 $RunBase = 'C:\t'
+if ($RunBase -match '[&|<>^()%!"\s]') {
+  throw 'Choose a local path without whitespace or cmd.exe metacharacters.'
+}
 if (!(Test-Path -LiteralPath $RunBase -PathType Container)) { throw 'Choose an existing short local run directory.' }
 $RunId = [guid]::NewGuid().ToString('N')
 $RunRoot = Join-Path $RunBase "m7p12-$RunId"
@@ -61,7 +64,9 @@ function Assert-SourceWorktree {
   $RootExit = Invoke-Captured "$Name-root" 'git rev-parse --show-toplevel' $WorkingDirectory
   $HeadExit = Invoke-Captured "$Name-head" 'git rev-parse HEAD' $WorkingDirectory
   if ($RootExit -ne 0 -or $HeadExit -ne 0) { throw 'Could not verify the source worktree.' }
-  if ((Get-Content -Raw (Join-Path $Evidence "$Name-root.stdout.txt")).Trim() -ine $Source) {
+  $ActualRoot = [IO.Path]::GetFullPath((Get-Content -Raw (Join-Path $Evidence "$Name-root.stdout.txt")).Trim())
+  $ExpectedRoot = [IO.Path]::GetFullPath($Source)
+  if ($ActualRoot -ine $ExpectedRoot) {
     throw 'Command root is outside the isolated source checkout.'
   }
   if ((Get-Content -Raw (Join-Path $Evidence "$Name-head.stdout.txt")).Trim() -cne $SourceSha) {
@@ -236,6 +241,7 @@ New-Item -ItemType Directory -Path $Screens | Out-Null
 6. Use Tab and Enter to reach the skip link and primary navigation. Check visible focus, selected-link `aria-current`, one `main` landmark, named `Primary views` and `Workstreams` navigation landmarks, and the `Workspace activity` complementary landmark. Use the native accessibility tree or screen reader when available. Preserve errors and mark unavailable checks unverified.
 7. Check source contracts in `apps/desktop/src/ui/theme/theme.ts`, `apps/desktop/src/ui/theme/theme.test.ts`, `apps/desktop/src/ui/theme/ThemeToggle.test.tsx`, `apps/desktop/src/ui/theme/contrast.test.ts`, `apps/desktop/src/ui/theme/tokens.css`, `apps/desktop/index.html`, `apps/desktop/public/theme-init.js`, `apps/desktop/src/ui/router.ts`, `apps/desktop/src/ui/router.test.ts`, `apps/desktop/src/ui/shell/SidebarNav.tsx`, `apps/desktop/src/ui/shell/AppShell.test.tsx`, `apps/desktop/src/ui/shell/shell.css`, `apps/desktop/src/sources/surfaces/`, and `apps/desktop/src-tauri/tauri.conf.json`. Confirm the four global routes, legacy formats, theme-before-paint script, font stack and no `@font-face`, D9-D16 adapter contracts, landmarks, focus behavior, 1150/960/760 breakpoints, and 1280 by 800 default and 760 by 600 minimum window sizes. Source inspection is not native UI proof.
 8. Check that live views show unavailable or unknown values honestly and do not fall back to fixture values. Record views that cannot connect to the isolated daemon.
+9. Mark the known D9 retained-data freshness and project-group-label cases, and D15 search navigation after mapped-project removal, as `NOT ASSESSED`. This preliminary run does not reproduce either case.
 
 Save screenshots only when the authorized native capture mechanism works. Keep the complete error if capture fails, including `GetCursorPos failed: Access is denied. (0x80070005)` when returned. Do not elevate, change security settings, substitute a browser screenshot, or infer acceptance. Mark affected native checks unverified.
 
