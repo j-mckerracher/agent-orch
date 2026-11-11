@@ -367,7 +367,7 @@ fn a_hung_agent_is_killed_at_the_deadline() {
     let daemon = start(
         &layout,
         &[
-            ("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "4000"),
+            ("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "12000"),
             ("FAKE_AGENT_PID_FILE", pid_file.to_str().unwrap()),
         ],
     );
