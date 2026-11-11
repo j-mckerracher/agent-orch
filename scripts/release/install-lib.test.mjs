@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
-  artifactNamePattern, checkArtifactDir, checkAuthenticode, checkDeveloperIdSignature, classifyUpgrade, parseAuthenticode,
-  parseCodesignDetails, parseSums, runMacos, runWindows, validateSmokeResult,
+  artifactNamePattern, authenticodeArgs, checkArtifactDir, checkAuthenticode, checkDeveloperIdSignature, classifyUpgrade, describeSource,
+  diffPorcelain, parseAuthenticode, parseCodesignDetails, parsePorcelain, parseSums, runMacos, runWindows, validateSmokeResult,
 } from "./install-lib.mjs";
 
 const SHA = "a".repeat(64);
@@ -38,6 +39,7 @@ test("artifact names are platform specific and anchored", () => {
   assert.ok(!artifactNamePattern("windows", "0.1.0").test("Agent-Orchestrator-0x1x0-windows-x64-signed-setup.exe"));
   assert.ok(!artifactNamePattern("macos", "0.1.0").test("evil-Agent-Orchestrator-0.1.0-macos-arm64-signed.zip"));
   assert.equal(parseSums(`${SHA}  a b.zip\n`).sums.get("a b.zip"), SHA);
+  assert.equal(parseSums(`${SHA}  a.zip\r\n${SHA}  b.zip\r\n`).sums.size, 2, "SHA256SUMS written with CRLF line endings parses");
 });
 
 const DEVID = [
@@ -60,8 +62,37 @@ test("codesign details: Developer ID, ad hoc and unsigned", () => {
 
 test("Authenticode: only a valid, timestamped signature passes", () => {
   assert.deepEqual(checkAuthenticode(parseAuthenticode("Valid|CN=Example|True\n")), []);
+  assert.deepEqual(checkAuthenticode(parseAuthenticode("Valid|CN=Example|True\r\n")), [], "PowerShell ends its output with CRLF");
   assert.match(checkAuthenticode(parseAuthenticode("NotSigned||False")).join(), /NotSigned.*no signer.*no countersignature/);
   assert.match(checkAuthenticode(parseAuthenticode("Valid|CN=Example|False")).join(), /timestamp/);
+});
+
+test("Authenticode: a status that was not measured is Unknown with its cause, never blank", () => {
+  for (const text of ["", "\r\n", "|CN=x|True"]) assert.equal(parseAuthenticode(text).status, "Unknown", JSON.stringify(text));
+  const failed = parseAuthenticode("", { code: 1, err: "The term 'Get-AuthenticodeSignature' is not recognized\r\nat line 1" });
+  assert.equal(failed.status, "Unknown");
+  assert.match(failed.note, /exited 1 with no status: The term 'Get-AuthenticodeSignature'/);
+  assert.match(checkAuthenticode(failed).join(), /Unknown \(powershell exited 1/);
+  const args = authenticodeArgs();
+  assert.deepEqual(args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  const script = Buffer.from(args[3], "base64").toString("utf16le");
+  assert.match(script, /Get-AuthenticodeSignature -LiteralPath \$env:ARTIFACT/);
+  assert.ok(!script.includes('"'), "no double quote can be mangled by argument quoting");
+});
+
+test("source checkout: the run's own changes are named, a dirty one is explained", () => {
+  assert.deepEqual(parsePorcelain(" M b.txt\r\n?? a.txt\n"), [" M b.txt", "?? a.txt"]);
+  assert.deepEqual(diffPorcelain([" M a"], [" M a", "?? b"]), { added: ["?? b"], removed: [] });
+  const clean = describeSource({ head: "h", tree: "t", before: [], after: [] });
+  assert.equal(clean.cleanAfterRun, true);
+  assert.ok(clean.lines.includes("changed by this run: nothing"));
+  const dirty = describeSource({ head: "h", tree: "t", before: [], after: ["?? apps/desktop/x"] });
+  assert.equal(dirty.cleanAfterRun, false);
+  assert.deepEqual(dirty.changedByRun, { added: ["?? apps/desktop/x"], removed: [] });
+  assert.ok(dirty.lines.some((l) => l === "changed by this run: + ?? apps/desktop/x"));
+  const unknown = describeSource({ head: null, tree: null, before: null, after: null });
+  assert.equal(unknown.cleanAfterRun, null);
+  assert.ok(unknown.lines.some((l) => /unknown \(git status failed\)/.test(l)));
 });
 
 // A fake machine: records commands and answers from a table.
@@ -157,8 +188,10 @@ test("macOS signed with a genuinely older build: team ids compared, smoke gets b
   const steps = quiet(() => runMacos(macCtx(machine)));
   assert.deepEqual(failures(steps), []);
   const smoke = machine.commands.find((c) => c.startsWith("/smoke "));
-  assert.match(smoke, /--old-daemon \/w\/Applications-old\/Agent Orchestrator.app\/Contents\/MacOS\/orchestrator-daemon --expect-old-version 0\.0\.9/);
-  assert.match(smoke, /--new-daemon \/w\/Applications-new\/.*--expect-new-version 0\.1\.0 --out \/w\/result\.json/);
+  const sidecarIn = (folder) => join("/w", folder, "Agent Orchestrator.app", "Contents", "MacOS", "orchestrator-daemon");
+  assert.ok(smoke.includes(`--old-daemon ${sidecarIn("Applications-old")} --expect-old-version 0.0.9`), smoke);
+  assert.ok(smoke.includes(`--new-daemon ${sidecarIn("Applications-new")} `), smoke);
+  assert.ok(smoke.endsWith("--expect-new-version 0.1.0 --out /w/result.json"), smoke);
   assert.equal(steps.upgrade, "upgrade");
   assert.ok(steps.items.some((s) => s.verdict === "PASS" && /\(upgrade: old sidecar then new sidecar/.test(s.name)));
   assert.ok(!steps.items.some((s) => /upgrade from a previous release/.test(s.name)));
@@ -265,7 +298,7 @@ const windowsMachine = ({ uninstallHook = () => {}, installHook = () => {}, copy
   let version = oldVersion;
   const run = (command, args) => {
     commands.push([command, ...args].join(" "));
-    const text = args.join(" ");
+    const text = args.includes("-EncodedCommand") ? Buffer.from(args[args.indexOf("-EncodedCommand") + 1], "base64").toString("utf16le") : args.join(" ");
     if (text.includes("Get-AuthenticodeSignature")) return { code: 0, out: authenticode, err: "" };
     if (text.includes("ProductVersion")) return { code: 0, out: version, err: "" };
     if (text.includes("Copy-Item")) return { code: copyCode, out: "", err: copyCode ? "Cannot find path" : "" };
@@ -327,8 +360,12 @@ test("Windows: a failed copy of the old sidecar fails at its cause and the smoke
 
 test("Windows: an unsigned installer is INFO unless a signature is required", () => {
   const loose = quiet(() => runWindows(windowsCtx(windowsMachine({ authenticode: "NotSigned||False", oldVersion: "0.1.0" }), { requireSigned: false, oldArtifactDir: undefined, readDir: readDirFor("windows", false) })));
-  assert.ok(loose.items.some((s) => s.verdict === "INFO" && /UNSIGNED installer/.test(s.name)));
+  assert.ok(loose.items.some((s) => s.verdict === "INFO" && /UNSIGNED installer \(Authenticode status NotSigned\)/.test(s.name)));
   assert.deepEqual(failures(loose), []);
+  const unmeasured = quiet(() => runWindows(windowsCtx(windowsMachine({ authenticode: "", oldVersion: "0.1.0" }), { requireSigned: false, oldArtifactDir: undefined, readDir: readDirFor("windows", false) })));
+  const unknown = unmeasured.items.find((s) => /UNSIGNED installer/.test(s.name));
+  assert.match(unknown.name, /Authenticode status Unknown\)/);
+  assert.match(unknown.detail, /NOT measured: powershell exited 0 with no status/);
   const strict = quiet(() => runWindows(windowsCtx(windowsMachine({ authenticode: "NotSigned||False", oldVersion: "0.1.0" }), { oldArtifactDir: undefined, readDir: readDirFor("windows", false) })));
   assert.ok(strict.failed, "an unsigned artifact must fail when a signature is required");
   assert.ok(strict.items.some((s) => s.verdict === "FAIL" && /signed artifact was required/.test(`${s.name}${s.detail}`)));

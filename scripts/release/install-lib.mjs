@@ -87,18 +87,62 @@ export const checkDeveloperIdSignature = (details, { notarized }) => {
 
 // ---- Windows signature facts ----
 
+// No double quote appears in the script and it is passed as -EncodedCommand (base64 of UTF-16LE), so no
+// argument quoting on any Windows shell can change it.
 export const AUTHENTICODE_SCRIPT =
   "$s = Get-AuthenticodeSignature -LiteralPath $env:ARTIFACT; " +
-  "\"$($s.Status)|$($s.SignerCertificate.Subject)|$([bool]$s.TimeStamperCertificate)\"";
+  "($s.Status, $s.SignerCertificate.Subject, [bool]$s.TimeStamperCertificate) -join '|'";
 
-export const parseAuthenticode = (text) => {
-  const [status, subject = "", stamped = "False"] = text.trim().split("|");
-  return { status, subject, timestamped: stamped === "True" };
+export const authenticodeArgs = () => ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(AUTHENTICODE_SCRIPT, "utf16le").toString("base64")];
+
+const firstLine = (text) => String(text ?? "").trim().split(/\r?\n/)[0];
+
+/**
+ * Reads the answer of AUTHENTICODE_SCRIPT. An empty or garbled answer is status "Unknown" with the reason in
+ * `note`, never a blank status: a value that was not measured must say so.
+ */
+export const parseAuthenticode = (text, { code = 0, err = "" } = {}) => {
+  const [status = "", subject = "", stamped = "False"] = String(text ?? "").trim().split(/\r?\n/)[0].split("|");
+  if (!status.trim()) {
+    const why = firstLine(err);
+    return { status: "Unknown", subject: "", timestamped: false, note: `powershell exited ${code} with no status${why ? `: ${why}` : ""}` };
+  }
+  return { status: status.trim(), subject: subject.trim(), timestamped: stamped.trim() === "True" };
+};
+
+// ---- source checkout facts ----
+
+/** Paths `git status --porcelain=v1` lists, one per line (LF or CRLF), as a sorted array. */
+export const parsePorcelain = (text) => String(text ?? "").split(/\r?\n/).filter(Boolean).sort();
+
+/** What a run changed in the checkout: lines that appeared or vanished between two porcelain listings. */
+export const diffPorcelain = (before, after) => {
+  const was = new Set(before);
+  const is = new Set(after);
+  return { added: after.filter((line) => !was.has(line)), removed: before.filter((line) => !is.has(line)) };
+};
+
+/** The commit, the tree and the checkout state around a run; `before`/`after` are porcelain arrays, or null when git failed. */
+export const describeSource = ({ head, tree, before, after }) => {
+  const known = before !== null && after !== null;
+  const changed = known ? diffPorcelain(before, after) : null;
+  const state = (list) => (list === null ? "unknown (git status failed)" : list.length === 0 ? "clean" : `${list.length} path(s) listed`);
+  const lines = [
+    `source commit: ${head ?? "unknown"}`,
+    `source tree: ${tree ?? "unknown"}`,
+    `source checkout before the run: ${state(before)}`,
+    `source checkout after the run: ${state(after)}`,
+    ...(known ? [changed.added.length || changed.removed.length
+      ? `changed by this run: ${[...changed.added.map((l) => `+ ${l}`), ...changed.removed.map((l) => `- ${l}`)].join("; ")}`
+      : "changed by this run: nothing"] : []),
+    ...(after !== null && after.length ? [`still listed after the run: ${after.join("; ")}`] : []),
+  ];
+  return { head, tree, statusBefore: before, statusAfter: after, changedByRun: changed, cleanAfterRun: after === null ? null : after.length === 0, lines };
 };
 
 export const checkAuthenticode = (facts) => {
   const problems = [];
-  if (facts.status !== "Valid") problems.push(`Authenticode status is ${facts.status}, expected Valid`);
+  if (facts.status !== "Valid") problems.push(`Authenticode status is ${facts.status}${facts.note ? ` (${facts.note})` : ""}, expected Valid`);
   if (!facts.subject) problems.push("no signer certificate");
   if (!facts.timestamped) problems.push("no countersignature timestamp (the signature would expire with the certificate)");
   return problems;
@@ -272,7 +316,11 @@ export const runWindows = (ctx) => {
   const steps = new Steps();
   const { run } = ctx;
   const installDir = join(ctx.work, "AgentOrchestrator");
-  const authenticode = (path) => parseAuthenticode(run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", AUTHENTICODE_SCRIPT], { env: { ARTIFACT: path } }).out);
+  // A PowerShell 7 parent leaves a PSModulePath that Windows PowerShell cannot load Microsoft.PowerShell.Security from, so it is dropped.
+  const authenticode = (path) => {
+    const answer = run("powershell.exe", authenticodeArgs(), { env: { ARTIFACT: path, PSModulePath: undefined } });
+    return parseAuthenticode(answer.out, answer);
+  };
 
   const prepared = {};
   for (const [label, dir] of [["new", ctx.artifactDir], ["old", ctx.oldArtifactDir]].filter(([, d]) => d)) {
@@ -281,7 +329,7 @@ export const runWindows = (ctx) => {
     const installer = join(dir, info.artifacts[0].file);
     const facts = authenticode(installer);
     if (info.signed) steps.check(`${label}: installer Authenticode signature`, checkAuthenticode(facts), facts.subject);
-    else steps.add(ctx.requireSigned && label === "new" ? "FAIL" : "INFO", `${label}: UNSIGNED installer (Authenticode status ${facts.status})`, "SmartScreen will warn on a download");
+    else steps.add(ctx.requireSigned && label === "new" ? "FAIL" : "INFO", `${label}: UNSIGNED installer (Authenticode status ${facts.status})`, `SmartScreen will warn on a download${facts.note ? `; the status was NOT measured: ${facts.note}` : ""}`);
     prepared[label] = { info, installer };
   }
 

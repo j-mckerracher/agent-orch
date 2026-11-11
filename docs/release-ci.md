@@ -35,7 +35,7 @@ The Windows list is the published runbook
 
 | Gate | Command | Where |
 | --- | --- | --- |
-| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (95 tests on both; the exit code is in `node-self-tests.result.json`) | both |
+| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (97 tests on both; the exit code is in `node-self-tests.result.json`) | both |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
@@ -177,7 +177,7 @@ derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
   tolerate an alias was not cheap or safe (it would need `preserveSymlinks` or a path mapping in every
   project), so the harness refuses instead.
 - D4, the node self-tests' exit code was in no evidence: they are now the first gate (`node-self-tests`), with
-  the summary (`# pass N`, or `ℹ pass N`) checked for 95 tests and no fail, cancelled, skipped or todo, and the exit
+  the summary (`# pass N`, or `ℹ pass N`) checked for 97 tests and no fail, cancelled, skipped or todo, and the exit
   code in `node-self-tests.result.json`. `ci.yml` keeps its own "Harness self-tests" step.
 - D5, uncounted tests: `store-tests`, `lock-takeover-test` and `diagnostics-tests` are gates, so the M6-01 (lock
   owner-only) and M6-03 (diagnostics) counts are measured by the harness. 27 Windows gates and 26 on macOS.
@@ -189,8 +189,12 @@ Counts: macOS (measured) `store-tests` `[35,9,2,13,8,11,3,4,3,11,5,1,0]` = 104 p
 three gates select tests it already counts). Windows (derived from `cfg`, not measured) `store-tests`
 `[33,9,2,13,8,11,3,3,3,11,4,1,0]` = 100 passed + 1 ignored (the four `cfg(unix)` tests are absent: file mode of the
 database files, the private lock directory, the symlink at the lock path, and the real SQLite process exit);
-`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 95 (71 plus the 24 of M6-04's
-`install-lib.test.mjs`), measured on macOS (no test is platform-gated).
+`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 97 (71 plus the 26 of M6-04's
+`install-lib.test.mjs`: 24 from M6-04 and 2 added by M6-04r), measured on macOS (no test is platform-gated).
+M6-04's native Windows run measured 94 of 95 passing: test 71 hard-coded POSIX `/w/...` paths while the macOS flow
+builds them with `node:path`, which gives backslashes on Windows. M6-04r builds every expected path with
+`path.join` and checks the file under a Windows-separator simulation (see "Windows path simulation" below); that
+is a check of separators only, so the Windows count of 97 stays **DERIVED** until a Windows run measures it.
 
 ### Maximum path lengths on Windows
 
@@ -399,4 +403,30 @@ results in `docs/evidence/m6-04-clean-machine-runbook.md`. The Windows flow, the
 branches and the new workflow step have never run on Windows or on a runner. The pure logic and both
 flows are covered by `scripts/release/install-lib.test.mjs` against a fake machine
 (`node --test "scripts/**/*.test.mjs"`); they add no `run-gates.mjs` gate, but they raise the `node-self-tests`
-count from 71 to 95. The other gate counts above are unchanged.
+count from 71 to 97 (95 after M6-04, plus the 2 M6-04r added). The other gate counts above are unchanged.
+
+### Windows path simulation (M6-04r)
+
+The first native Windows run failed `install-lib.test.mjs` (94 of 95): a test spelled the stand-in paths as `/w/...`,
+the code builds them with `node:path`. Every expected path in the file is now built with `path.join`, and
+`SHA256SUMS` and PowerShell output are parsed with CRLF line endings. To check that without a Windows host:
+
+```sh
+node --import ./scripts/release/win32-path-sim/register.mjs --test scripts/release/install-lib.test.mjs
+```
+
+The hook swaps `node:path` for `path.win32` in `install-lib.mjs` and its test only (the rest of the scripts touch the
+real file system). Control: the M6-04 test file (`632c77d`) passes 24 of 24 on macOS and fails exactly the test
+the Windows run failed (`macOS signed with a genuinely older build`) under the simulation. The simulation proves
+separator agreement only; drive letters, the real file system, PowerShell and the installer are not exercised.
+
+### What the install smoke records about itself (M6-04r)
+
+- Authenticode status is measured with `-EncodedCommand` (no quoting of the script is possible) and without the
+  parent's `PSModulePath`. A status that could not be read is `Unknown` with the exit code and the first line of
+  stderr, never blank: `INFO new: UNSIGNED installer (Authenticode status Unknown)` followed by `the status was NOT
+  measured: ...`. An unsigned installer that was measured reads `NotSigned`. A signed artifact whose status is
+  `Unknown` fails.
+- `install-smoke` prints, and writes under `source` in `--out`, the commit, `HEAD^{tree}`, the porcelain status of
+  the checkout before and after the run, `changed by this run` (paths that appeared or vanished) and `cleanAfterRun`.
+  A dirty checkout after a run is therefore explained by the paths it names; it is reported, never judged.

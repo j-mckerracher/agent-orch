@@ -64,9 +64,12 @@ node scripts/release/install-smoke.mjs <macos|windows> --artifact-dir <new dir> 
 Exactly one of `--require-signed` and `--allow-unsigned` is required (exit 2 otherwise), so an unsigned build can
 never pass the install gate by omission. Keep `--work` short (a macOS Unix socket path is limited to about 100
 bytes; `release_smoke` refuses a longer one). Exit 0 means no step is `FAIL`; `UNPROVEN` steps are listed and are
-never passes. `--require-signed` makes an unsigned artifact a `FAIL`. A failed smoke keeps its work directory
-(named in the output) for inspection; a passing one deletes it. Fake agents stop on their own at the end of a run,
-including a failed one.
+never passes. `--require-signed` makes an unsigned artifact a `FAIL`. A failed smoke keeps its smoke work directory
+(`<work>/s`, named in the output) for inspection; a passing one deletes `<work>/s` only. `install-smoke` never
+removes `--work` itself: on Windows it keeps `AgentOrchestrator/uninstall.exe` (the NSIS uninstaller stays when it
+is pinned with `_?=`) and `release-smoke-result.json`; delete `--work` by hand, or use a throwaway user or VM. Fake
+agents stop on their own at the end of a run, including a failed one. At the end the script prints the source commit,
+`HEAD^{tree}` and what the run changed in the checkout (see `docs/release-ci.md`).
 
 ## 3. MEASURED on a Mac (unsigned, arm64, base `136646d95` plus the M6-04 changes)
 
@@ -206,9 +209,13 @@ $env:CARGO_TARGET_DIR = Join-Path $env:USERPROFILE 'target-aor'
 New-Item -ItemType Directory -Force -Path $Evidence | Out-Null
 Remove-Item -Recurse -Force $Work, $Out -ErrorAction SilentlyContinue
 git rev-parse HEAD | Tee-Object -FilePath (Join-Path $Evidence 'head.txt')
+git rev-parse 'HEAD^{tree}' | Tee-Object -FilePath (Join-Path $Evidence 'tree.txt')
+git status --porcelain=v1 --untracked-files=all | Tee-Object -FilePath (Join-Path $Evidence 'status-before.txt')
 [System.Environment]::OSVersion.VersionString | Tee-Object -FilePath (Join-Path $Evidence 'os.txt')
+"node=$(node -v) npm=$(npm.cmd -v)" | Tee-Object -FilePath (Join-Path $Evidence 'versions.txt')
 
-Push-Location apps/desktop; npm ci; Pop-Location
+# Use npm.cmd: the npm.ps1 shim fails in some shells with `Unknown command: "pm"`.
+Push-Location apps/desktop; npm.cmd ci; Pop-Location
 node scripts/release/package.mjs windows --out $Out 2>&1 | Tee-Object -FilePath (Join-Path $Evidence 'package.txt')
 if ($LASTEXITCODE -ne 0) { throw "package.mjs exited $LASTEXITCODE" }
 cargo build --locked -p orchestrator-daemon --example release_smoke 2>&1 | Tee-Object -FilePath (Join-Path $Evidence 'cargo-build.txt')
@@ -226,12 +233,28 @@ node scripts/release/install-smoke.mjs windows --artifact-dir $Out --work $Work 
 "exit=$LASTEXITCODE" | Tee-Object -FilePath (Join-Path $Evidence 'install-smoke-win.exit')
 Get-Process orchestrator-daemon, release_smoke -ErrorAction SilentlyContinue |
   Tee-Object -FilePath (Join-Path $Evidence 'leftover-processes.txt')
+# Explain the checkout state: an empty status-after.txt means clean; otherwise the paths are the explanation.
+git status --porcelain=v1 --untracked-files=all | Tee-Object -FilePath (Join-Path $Evidence 'status-after.txt')
+git diff --stat | Tee-Object -FilePath (Join-Path $Evidence 'diff-stat-after.txt')
 ```
+
+`install-smoke` itself prints the commit, `HEAD^{tree}`, the porcelain status before and after, and `changed by this
+run`, and writes them under `source` in its JSON. Do not report a bare `checkout_clean_after_run=False`: attach
+`status-before.txt`, `status-after.txt` and the paths the run changed. `target/`, `node_modules/` and
+`src-tauri/binaries/` are ignored and cannot make a checkout dirty; a listed path is a real change (a tracked file
+rewritten, for example by line-ending conversion when `core.autocrlf` is `true`, or a new untracked file).
+
+Notes from the first native run (`m6-04-windows`): `npm ci` printed `EBADENGINE` warnings because `release.yml`
+pins Windows Node 22.20.0 while `jsdom` 31.0.0 and `w3c-xmlserializer` 6.0.0 declare `^22.22.2`. They are warnings,
+not failures, and the pin was **not** changed in M6-04r (the Windows gates were proven on 22.20.0); record `node -v`
+and `npm.cmd -v` (`versions.txt`) and treat a pin bump as its own change. Record the installer's Authenticode status
+(`Get-AuthenticodeSignature`) yourself as well: `install-smoke` prints `NotSigned` for an unsigned installer and
+`Unknown` plus the reason when PowerShell could not answer; it is never blank.
 
 Expected (DERIVED, not run on Windows): exit 0 for an unsigned build with `--allow-unsigned`; `PASS` for the
 artifact directory, the silent install, the product version, the three installed files, the daemon smoke
 (`release_smoke: PASS`, 12 steps), the silent uninstall, "uninstall removed the app", and the sentinel survived
-the uninstall; `INFO` for the unsigned installer; `UNPROVEN` for SmartScreen/UAC/Defender and for the N-1 upgrade
+the uninstall; `INFO` for the unsigned installer (`Authenticode status NotSigned`); `UNPROVEN` for SmartScreen/UAC/Defender and for the N-1 upgrade
 (no `--old-artifact-dir`); final line `upgrade: NOT proven (none)`. No `orchestrator-daemon` or `release_smoke`
 process is left. A `FAIL` at smoke step 3 or 6 is a finding about the Windows daemon (job object, recovery), a
 `FAIL` on the sentinel after the uninstall means the `/S` uninstaller deletes the user data directory (M-2's

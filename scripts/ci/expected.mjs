@@ -55,8 +55,9 @@ export const MACOS = {
   e2eFiles: 1,
 };
 
-// `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number.
-export const NODE_SELF_TESTS = { passed: 95 };
+// `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
+// tests of install-lib.test.mjs build paths with node:path (checked under scripts/release/win32-path-sim).
+export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
 export const VITEST = { files: 15, tests: 290 };
