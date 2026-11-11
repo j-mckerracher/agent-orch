@@ -10,8 +10,8 @@
   color: var(--blue);
 }
 .ui-tone-ok {
-  background: var(--green-bg);
-  color: var(--green);
+  background: var(--success-bg);
+  color: var(--success);
 }
 .ui-tone-warn,
 .ui-tone-placeholder {

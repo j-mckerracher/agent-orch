@@ -31,31 +31,50 @@ const themes: Record<string, Tokens> = {
   dark: { ...light, ...darkOverrides },
 };
 
+type Rgb = [number, number, number];
+
 function channel(value: number): number {
   const c = value / 255;
   return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
-function luminance(hex: string): number {
+function channels(hex: string): Rgb {
   const match = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!match) throw new Error(`expected a 6-digit hex colour, got ${hex}`);
   const n = parseInt(match[1], 16);
-  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-function ratio(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+function luminanceRgb([r, g, b]: Rgb): number {
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function ratio(a: string | Rgb, b: string | Rgb): number {
+  const foreground = typeof a === "string" ? channels(a) : a;
+  const background = typeof b === "string" ? channels(b) : b;
+  const [hi, lo] = [luminanceRgb(foreground), luminanceRgb(background)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const SURFACES = ["paper", "panel", "soft", "soft-strong", "sidebar"];
-const TINTS: Record<string, string> = { blue: "blue-bg", green: "green-bg", amber: "amber-bg", red: "red-bg" };
+function blend(foreground: Rgb, background: Rgb, opacity: number): Rgb {
+  return foreground.map((value, index) => value * opacity + background[index] * (1 - opacity)) as Rgb;
+}
+
+const SURFACES = ["paper", "panel", "soft", "soft-strong", "control-surface"];
+const TEXT = ["ink", "muted", "subtle", "blue", "green", "amber", "red", "success", "component-muted", "control-ink"];
+const TINTS: Record<string, string> = {
+  blue: "blue-bg",
+  green: "green-bg",
+  amber: "amber-bg",
+  red: "red-bg",
+  success: "success-bg",
+};
 
 /** [foreground, background, minimum ratio, why] for every colour pairing the primitives use. */
 function pairs(): Array<[string, string, number, string]> {
   const out: Array<[string, string, number, string]> = [];
   for (const surface of SURFACES) {
-    for (const text of ["ink", "muted", "subtle", "blue", "green", "amber", "red"]) {
+    for (const text of TEXT) {
       out.push([text, surface, 4.5, "text"]);
     }
     for (const nonText of ["control-border", "focus"]) out.push([nonText, surface, 3, "non-text"]);
@@ -67,6 +86,10 @@ function pairs(): Array<[string, string, number, string]> {
     out.push(["focus", tint, 3, "focus ring on tint"]);
     out.push(["control-border", tint, 3, "control boundary on tint"]);
   }
+  out.push(["sidebar-ink", "sidebar", 4.5, "sidebar text"]);
+  out.push(["sidebar-link", "sidebar", 4.5, "sidebar link"]);
+  out.push(["sidebar-focus", "sidebar", 3, "sidebar focus ring"]);
+  out.push(["sidebar-control-border", "sidebar", 3, "sidebar control boundary"]);
   out.push(["on-accent", "accent", 4.5, "primary button label"]);
   out.push(["accent", "paper", 3, "primary button boundary"]);
   out.push(["accent", "panel", 3, "primary button boundary"]);
@@ -84,11 +107,14 @@ describe("design tokens", () => {
   });
   it("defines every token the header contract names, in both themes", () => {
     const required = [
-      "paper", "panel", "soft", "soft-strong", "sidebar", "ink", "muted", "subtle", "on-accent", "line", "line-soft",
-      "control-border", "blue", "blue-bg", "accent", "focus", "green", "green-bg", "amber", "amber-bg", "red", "red-bg",
-      "meter-gradient", "meter-stop-1", "meter-stop-2", "meter-stop-3", "meter-stop-4", "meter-stop-5", "meter-track",
-      "meter-marker", "meter-marker-ring", "font-sans", "font-display", "font-mono", "radius-sm", "radius-md",
-      "radius-lg", "shadow-popover", "focus-width",
+      "paper", "panel", "soft", "soft-strong", "sidebar", "sidebar-ink", "sidebar-link", "sidebar-focus",
+      "sidebar-control-border", "control-surface", "control-ink", "component-muted", "on-accent", "ink", "muted",
+      "subtle", "line", "line-soft", "control-border", "blue", "blue-bg", "accent", "focus", "success",
+      "success-bg", "green", "green-bg", "amber", "amber-bg", "red", "red-bg", "wireframe-search-border",
+      "wireframe-composer-border", "wireframe-picker-border", "meter-gradient", "meter-stop-1", "meter-stop-2",
+      "meter-stop-3", "meter-stop-4", "meter-stop-5", "meter-track", "meter-marker", "meter-marker-ring",
+      "font-sans", "font-display", "font-mono", "radius-sm", "radius-md", "radius-lg", "shadow-popover",
+      "focus-width",
     ];
     for (const [name, tokens] of Object.entries(themes)) {
       for (const token of required) expect(tokens[`--${token}`], `${name} --${token}`).toBeTruthy();
@@ -103,6 +129,72 @@ describe("design tokens", () => {
     expect(light["--font-sans"]).toMatch(/system-ui/);
     expect(light["--font-sans"]).toMatch(/Segoe UI/);
     expect(css).not.toMatch(/@font-face/);
+  });
+  it("matches effective wireframe roles and keeps accessibility overrides explicit", () => {
+    const expected: Record<string, Tokens> = {
+      light: {
+        success: "#0057a8",
+        "success-bg": "#edf5fd",
+        green: "#2f7052",
+        "green-bg": "#e8f1e8",
+        amber: "#765000",
+        "amber-bg": "#fff5db",
+        red: "#a32d34",
+        "red-bg": "#fff0f0",
+        "soft-strong": "#e4effb",
+        "component-muted": "#333333",
+        "control-ink": "#183c60",
+        "control-surface": "#f2f7fc",
+        "control-border": "#6b7f94",
+        sidebar: "#f2f7fc",
+        "sidebar-ink": "#111111",
+        "sidebar-link": "#0057a8",
+        "sidebar-focus": "#0057a8",
+        "sidebar-control-border": "#6b7f94",
+        "wireframe-search-border": "#bdcde0",
+        "wireframe-composer-border": "#b7cbe0",
+        "wireframe-picker-border": "#d4e0ed",
+      },
+      dark: {
+        success: "#a0ceff",
+        "success-bg": "#223f5b",
+        green: "#a3d6b3",
+        "green-bg": "#264638",
+        amber: "#ffdb95",
+        "amber-bg": "#4a3a20",
+        red: "#ffbdc2",
+        "red-bg": "#503137",
+        "soft-strong": "#304a65",
+        "component-muted": "#c2d2e3",
+        "control-ink": "#f2f6fb",
+        "control-surface": "#20364a",
+        "control-border": "#829ab0",
+        sidebar: "#f2f7fc",
+        "sidebar-ink": "#111111",
+        "sidebar-link": "#0057a8",
+        "sidebar-focus": "#0057a8",
+        "sidebar-control-border": "#6b7f94",
+        "wireframe-search-border": "#40576c",
+        "wireframe-composer-border": "#40576c",
+        "wireframe-picker-border": "#40576c",
+      },
+    };
+    for (const [themeName, roles] of Object.entries(expected)) {
+      for (const [name, value] of Object.entries(roles)) {
+        expect(themes[themeName][`--${name}`], `${themeName} --${name}`).toBe(value);
+      }
+    }
+    expect(light["--success"]).not.toBe(light["--green"]);
+    expect(themes.dark["--success"]).not.toBe(themes.dark["--green"]);
+  });
+  it("keeps review diff text readable on translucent state fills", () => {
+    for (const [themeName, tokens] of Object.entries(themes)) {
+      for (const tint of ["success-bg", "red-bg"]) {
+        const background = blend(channels(tokens[`--${tint}`]), channels(tokens["--soft"]), 0.45);
+        const value = ratio(channels(tokens["--ink"]), background);
+        expect(value, `${themeName} --ink on 45% --${tint} over --soft = ${value.toFixed(2)}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 
   it("keeps the explicit dark set and the system dark set identical", () => {

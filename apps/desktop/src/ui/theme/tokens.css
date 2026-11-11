@@ -1,9 +1,9 @@
 /*
- * Design tokens (M7-01). This header is the published contract: other M7 items
- * consume these names and must not hard-code colours.
+ * Design tokens (M7-01). Other M7 items consume these published names.
+ * Updated: 2026-11-11 11:32:56 MST (-0700).
  *
- * Source: docs/operator-experience/wireframes.html (final "Mayo-inspired" cascade
- * for light, the `data-theme="dark"` block for dark). Light is the default.
+ * Source: supplied wireframe's effective light and dark cascades.
+ * Light is default; explicit data-theme wins, then prefers-color-scheme selects dark.
  *
  * Theme selection:
  *   - `<html data-theme="light|dark">` is an explicit user choice and always wins.
@@ -12,16 +12,19 @@
  * asserts the two copies are identical and checks every pair in both themes.
  *
  * Surfaces      --paper (page)  --panel (cards, menus)  --soft (tinted fill)
- *               --soft-strong (selected/hover row)  --sidebar (navigation rail)
- * Text          --ink (primary)  --muted (wireframe secondary)  --subtle (readable secondary)
- *               --on-accent (text on --accent)
- * Lines         --line (decorative dividers, not for identifying a control)
- *               --line-soft (row separators)  --control-border (3:1 boundary of controls)
- * Accent        --blue  --blue-bg  --accent (= --blue, filled controls)  --focus (focus ring)
- * State         --green/--green-bg  --amber/--amber-bg  --red/--red-bg
- *               Each pair is text-on-tint; use the text colour on --paper/--panel too.
- * Meter         --meter-gradient (green to red)  --meter-stop-1..5  --meter-track
+ *               --soft-strong (expanded or selected row)  --control-surface  --sidebar
+ * Text          --ink  --muted  --subtle  --component-muted  --control-ink  --on-accent
+ * Lines         --line (decorative)  --line-soft (row separators)
+ *               --control-border (accessible 3:1 boundary for interactive controls)
+ * Accent        --blue  --blue-bg  --accent (= --blue)  --focus
+ * State         --success/--success-bg mirror the positive wireframe state.
+ *               --green remains semantic green; amber and red remain semantic states.
+ * Meter         --meter-gradient  --meter-stop-1..5  --meter-track
  *               --meter-marker  --meter-marker-ring
+ * Sidebar stays light in dark mode; pair --sidebar with --sidebar-ink, --sidebar-link,
+ * --sidebar-focus, and --sidebar-control-border for accessible contrast.
+ * Reference-only: --wireframe-search-border, --wireframe-composer-border, and
+ * --wireframe-picker-border. Use --control-border on actual controls.
  * Type          --font-sans  --font-display  --font-mono
  * Shape/motion  --radius-sm  --radius-md  --radius-lg  --shadow-popover  --focus-width
  *
@@ -36,11 +39,18 @@
   --soft: #edf4fb;
   --soft-strong: #e4effb;
   --sidebar: #f2f7fc;
+  --control-surface: #f2f7fc;
+  --sidebar-ink: #111111;
+  --sidebar-link: #0057a8;
+  --sidebar-focus: #0057a8;
+  --sidebar-control-border: #6b7f94;
 
   /* Text */
   --ink: #111111;
   --muted: #111111;
   --subtle: #34465a;
+  --component-muted: #333333;
+  --control-ink: #183c60;
   --on-accent: #ffffff;
 
   /* Lines */
@@ -61,6 +71,11 @@
   --amber-bg: #fff5db;
   --red: #a32d34;
   --red-bg: #fff0f0;
+  --success: #0057a8;
+  --success-bg: #edf5fd;
+  --wireframe-search-border: #bdcde0;
+  --wireframe-composer-border: #b7cbe0;
+  --wireframe-picker-border: #d4e0ed;
 
   /* Meter */
   --meter-stop-1: #35aa65;
@@ -99,17 +114,24 @@
   --paper: #101a25;
   --panel: #172433;
   --soft: #20364a;
-  --soft-strong: #284560;
-  --sidebar: #132030;
+  --soft-strong: #304a65;
+  --sidebar: #f2f7fc;
+  --control-surface: #20364a;
+  --sidebar-ink: #111111;
+  --sidebar-link: #0057a8;
+  --sidebar-focus: #0057a8;
+  --sidebar-control-border: #6b7f94;
 
   --ink: #f2f6fb;
   --muted: #c2d2e3;
   --subtle: #c2d2e3;
+  --component-muted: #c2d2e3;
+  --control-ink: #f2f6fb;
   --on-accent: #101a25;
 
   --line: #40576c;
   --line-soft: #2c4155;
-  --control-border: #7d95ab;
+  --control-border: #829ab0;
 
   --blue: #a0ceff;
   --blue-bg: #223f5b;
@@ -122,6 +144,11 @@
   --amber-bg: #4a3a20;
   --red: #ffbdc2;
   --red-bg: #503137;
+  --success: #a0ceff;
+  --success-bg: #223f5b;
+  --wireframe-search-border: #40576c;
+  --wireframe-composer-border: #40576c;
+  --wireframe-picker-border: #40576c;
 
   --meter-track: #40576c;
   --meter-marker: #f2f6fb;
@@ -137,17 +164,24 @@
     --paper: #101a25;
     --panel: #172433;
     --soft: #20364a;
-    --soft-strong: #284560;
-    --sidebar: #132030;
+    --soft-strong: #304a65;
+    --sidebar: #f2f7fc;
+    --control-surface: #20364a;
+    --sidebar-ink: #111111;
+    --sidebar-link: #0057a8;
+    --sidebar-focus: #0057a8;
+    --sidebar-control-border: #6b7f94;
 
     --ink: #f2f6fb;
     --muted: #c2d2e3;
     --subtle: #c2d2e3;
+    --component-muted: #c2d2e3;
+    --control-ink: #f2f6fb;
     --on-accent: #101a25;
 
     --line: #40576c;
     --line-soft: #2c4155;
-    --control-border: #7d95ab;
+    --control-border: #829ab0;
 
     --blue: #a0ceff;
     --blue-bg: #223f5b;
@@ -160,6 +194,11 @@
     --amber-bg: #4a3a20;
     --red: #ffbdc2;
     --red-bg: #503137;
+    --success: #a0ceff;
+    --success-bg: #223f5b;
+    --wireframe-search-border: #40576c;
+    --wireframe-composer-border: #40576c;
+    --wireframe-picker-border: #40576c;
 
     --meter-track: #40576c;
     --meter-marker: #f2f6fb;

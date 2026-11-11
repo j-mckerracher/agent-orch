@@ -7,6 +7,6 @@
 .review-screen .blockers { background: var(--soft); padding: 6px 10px; margin-top: 8px; }
 .review-screen .diff-region { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 12px; }
 .review-screen .diff-text { overflow: auto; max-height: 480px; background: var(--soft); border: 1px solid var(--line); padding: 6px; }
-.review-screen .diff-text .add { color: var(--green); }
-.review-screen .diff-text .del { color: var(--red); }
+.review-screen .diff-text .add { color: var(--ink); background: color-mix(in srgb, var(--success-bg) 45%, transparent); }
+.review-screen .diff-text .del { color: var(--ink); background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
 .review-screen dt { font-weight: 600; }

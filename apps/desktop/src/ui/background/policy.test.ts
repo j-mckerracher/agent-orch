@@ -36,7 +36,7 @@ const mix = (fg: Rgb, bg: Rgb, alpha: number): Rgb => fg.map((c, i) => c * alpha
 
 const lightTokens = block(tokens, ":root");
 const darkTokens = lightTokens + block(tokens, ':root[data-theme="dark"]');
-const TEXT = ["ink", "muted", "subtle", "blue", "green", "amber", "red"];
+const TEXT = ["ink", "muted", "subtle", "blue", "green", "amber", "red", "success", "component-muted", "control-ink"];
 
 describe("ambient layer opacity keeps text readable", () => {
   const reducedCss = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {"));
