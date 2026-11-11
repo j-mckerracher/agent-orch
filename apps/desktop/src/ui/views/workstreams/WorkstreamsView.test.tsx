@@ -5,6 +5,9 @@ import App from "../../../App";
 import { DaemonError } from "../../../daemon/errors";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces, type SurfaceFixtureScenario } from "../../../sources/surfaces/fixtures";
+import { okResult } from "../../../sources/surfaces/result";
+import type { SurfaceSources, Workstream } from "../../../sources/surfaces/types";
+import type { Provenance } from "../../../sources/types";
 import { FakeDaemon, mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { installFakeWorkstreams, type FakeWorkstreams } from "../../../test/fakeWorkstreams";
 import { connected } from "../../../test/render";
@@ -15,15 +18,70 @@ import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
 const A = "/work/alpha";
 const B = "/work/beta";
 const VIEW: Route = { name: "global", view: "workstreams" };
+const D9_OBSERVATION = { observedAt: "2026-01-01T11:59:55.000Z", ageMs: 5_000 };
+const D9_PROVENANCE: Provenance = {
+  kind: "daemon",
+  id: "D9",
+  methods: ["workstreams.list", "workstreams.get", "tasks.list"],
+};
 
-async function mount(fake: FakeDaemon | null, options: { scenario?: SurfaceFixtureScenario; fixtureOverBridge?: boolean } = {}) {
+function d9CountSurfaces(): SurfaceSources {
+  const base = createFixtureSurfaces({ now: () => Date.parse("2026-01-01T12:00:00.000Z") });
+  const workstream: Workstream = {
+    id: "ws-a",
+    title: "Alpha stream",
+    summary: "Parser and CLI",
+    state: "active",
+    revision: 2,
+    projectIds: [A],
+    tasks: [
+      {
+        id: "a2",
+        projectId: A,
+        objectiveId: null,
+        objective: "Wire the CLI",
+        state: "Running",
+        agent: "codex",
+        dependencies: [],
+      },
+    ],
+    counts: {
+      status: "ok",
+      value: {
+        Created: 0,
+        Queued: 0,
+        Running: 1,
+        Verifying: 0,
+        Succeeded: 0,
+        VerificationFailed: 0,
+        Failed: 0,
+        Cancelled: 0,
+      },
+      ...D9_OBSERVATION,
+    },
+    objectives: { status: "ok", value: [], ...D9_OBSERVATION },
+  };
+  return {
+    ...base,
+    workstreams: {
+      ...base.workstreams,
+      provenance: D9_PROVENANCE,
+      workstreams: () => Promise.resolve(okResult(D9_PROVENANCE, [workstream], D9_OBSERVATION)),
+    },
+  };
+}
+
+async function mount(
+  fake: FakeDaemon | null,
+  options: { scenario?: SurfaceFixtureScenario; fixtureOverBridge?: boolean; surfaces?: SurfaceSources } = {},
+) {
   const services = createServices({
     connector: fake ?? undefined,
     initialRoute: VIEW,
     connection: { backoffMs: [5], requestTimeoutMs: 250 },
     data: { coalesceMs: 10 },
     sources: createFixtureSources(),
-    surfaces: fake && !options.fixtureOverBridge ? undefined : createFixtureSurfaces({ scenario: options.scenario }),
+    surfaces: options.surfaces ?? (fake && !options.fixtureOverBridge ? undefined : createFixtureSurfaces({ scenario: options.scenario })),
   });
   const user = userEvent.setup();
   render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
@@ -99,6 +157,38 @@ describe("live data", () => {
       expect(region.textContent).not.toMatch(/PLACEHOLDER|Auth hardening|Docs refresh/);
     }
     expect(screen.getByTestId("ws-source")).toHaveTextContent("daemon records");
+  });
+  it("shows D9 count observation separately from AppData task state", async () => {
+    const fake = daemon();
+    fake.tasks = fake.tasks.map((task) => (task.contract.id === "a2" ? { ...task, state: "Failed" } : task));
+    const { services } = await mount(fake, { surfaces: d9CountSurfaces() });
+    await screen.findByTestId("task-row");
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
+
+    expect(screen.getByTestId("task-row")).toHaveTextContent("Failed");
+    expect(screen.getByTestId("count-Running")).toHaveTextContent("1 Running");
+    expect(screen.getByTestId("ws-count-observation")).toHaveTextContent(D9_OBSERVATION.observedAt);
+    expect(screen.getByTestId("ws-task-list-status")).toHaveTextContent(/AppData task list is ready as a separate snapshot/i);
+  });
+
+  it("exposes a failed AppData refresh when task rows use retained data", async () => {
+    const fake = daemon();
+    const { services } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
+    const retained = services.data.getSnapshot().tasks.data;
+    expect(retained).not.toBeNull();
+
+    fake.failNext("tasks.list", { code: -32603, message: "test refresh failure" });
+    await act(async () => services.data.refreshAll());
+
+    const taskStatus = screen.getByTestId("ws-task-list-status");
+    expect(services.data.getSnapshot().tasks).toMatchObject({ status: "error", data: retained });
+    expect(taskStatus).toHaveAttribute("role", "alert");
+    expect(taskStatus).toHaveTextContent(/refresh failed/i);
+    expect(taskStatus).toHaveTextContent(/task rows use retained data/i);
+    expect(taskStatus).toHaveTextContent("The daemon reported an internal error.");
+    expect(screen.getByTestId("ws-count-observation")).toBeInTheDocument();
   });
 
   it("keeps the header count equal to the tree groups and the view list", async () => {

@@ -191,6 +191,8 @@ describe("live workstreams adapter", () => {
     expect(first!.unreadReason).toBeUndefined();
     expect(first!.tasks.length).toBeGreaterThan(0);
     expect(unread).toMatchObject({ title: "Unreadable", revision: 7, tasks: [], objectives: { status: "unknown" } });
+    expect(unread!.counts).toMatchObject({ status: "unknown", reason: expect.stringMatching(/could not be read/i) });
+    expect(unread!.counts).not.toHaveProperty("value");
     expect(unread!.unreadReason).toMatch(/could not be read.*not-found/);
   });
 

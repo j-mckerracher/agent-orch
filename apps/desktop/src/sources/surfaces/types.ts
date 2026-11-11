@@ -101,8 +101,8 @@ export interface Workstream {
   /** The daemon's workstream id for `conversations.*`. Absent until the workstream lookup (M7-07) supplies it. */
   workstreamId?: string;
   tasks: WorkstreamTask[];
-  /** Every state is present; a zero here is a real zero over the returned tasks. Meaningless when `unreadReason` is set. */
-  counts: Record<TaskState, number>;
+  /** A zero is a real count only when this result is `ok`; unread counts are unknown. */
+  counts: Measured<Record<TaskState, number>>;
   /**
    * Set when the daemon listed this workstream but its detail read failed. Title, summary,
    * state and revision come from the list; tasks, counts and objectives are unknown, not empty.

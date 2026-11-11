@@ -12,8 +12,9 @@
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isFixtureId } from "../../../daemon/api";
+import type { Loadable } from "../../../daemon/appData";
+import { presentError } from "../../../daemon/errors";
 import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
-import { countStates } from "../../../sources/surfaces/result";
 import type {
   Measured,
   Workstream,
@@ -62,7 +63,7 @@ export interface WsGroup {
   revision: number;
   projectIds: string[];
   tasks: WsTask[];
-  counts: Record<TaskState, number>;
+  counts: Measured<Record<TaskState, number>>;
   objectives: Measured<WorkstreamObjective[]>;
   /** Set when this workstream's detail read failed; its tasks, counts and objectives are unknown. */
   unreadReason: string | null;
@@ -77,6 +78,7 @@ export type WsModel =
       status: "ready";
       mode: "live" | "fixture";
       provenance: Provenance;
+      taskList: Loadable<TaskRecord[]>;
       groups: WsGroup[];
       /** Daemon tasks linked to no workstream (live only); candidates for `workstreams.link_task`. */
       unlinked: WsTask[];
@@ -84,6 +86,29 @@ export type WsModel =
       unlinkedKnown: boolean;
       stale: boolean;
     };
+
+export function taskListNotice(taskList: Loadable<TaskRecord[]>): string {
+  switch (taskList.status) {
+    case "idle":
+      return "AppData task list has not loaded; no task snapshot is available.";
+    case "loading":
+      return taskList.data === null
+        ? "AppData task list is loading; no task snapshot is available yet."
+        : "AppData task list is refreshing; task rows use retained data with no recorded observation time.";
+    case "ready":
+      return "AppData task list is ready as a separate snapshot; its observation time is not tracked. D9 counts have their own observation time.";
+    case "error": {
+      const reason = taskList.error ? presentError(taskList.error).reason : "The failure reason is unavailable.";
+      return taskList.data === null
+        ? `AppData task list refresh failed; no task snapshot is available. ${reason}`
+        : `AppData task list refresh failed; task rows use retained data that may be stale. ${reason}`;
+    }
+    default: {
+      const exhaustive: never = taskList.status;
+      return exhaustive;
+    }
+  }
+}
 
 /** "1 task", "2 tasks". */
 export function taskCount(count: number): string {
@@ -200,7 +225,7 @@ export function deriveLiveGroups(
       revision: ws.revision,
       projectIds: ws.projectIds,
       tasks: own,
-      counts: countStates(own.map((task) => task.state)),
+      counts: ws.counts,
       objectives: ws.objectives,
       unreadReason: ws.unreadReason ?? null,
     };
@@ -319,6 +344,7 @@ export function useWorkstreamModel(): WsModel {
       status: "ready",
       mode: fixture ? "fixture" : "live",
       provenance,
+      taskList: tasks,
       groups: derived.groups,
       unlinked: derived.unlinked,
       unlinkedKnown: derived.unlinkedKnown,

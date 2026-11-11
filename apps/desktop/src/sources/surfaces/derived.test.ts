@@ -41,7 +41,7 @@ describe("derived D9 workstreams", () => {
       ["t-done", BETA, null, "Succeeded"],
     ]);
     expect(first.tasks[1]).toMatchObject({ objective: "Document the session model", dependencies: ["t-run"] });
-    expect(first.counts).toMatchObject({ Running: 1, Queued: 1, Succeeded: 1, Failed: 0 });
+    expect(first.counts).toMatchObject({ status: "ok", value: { Running: 1, Queued: 1, Succeeded: 1, Failed: 0 } });
     expect(first.objectives).toMatchObject({
       status: "ok",
       value: [
@@ -59,7 +59,7 @@ describe("derived D9 workstreams", () => {
     });
     // The empty workstream is a real, known-empty answer, not an unsupported one.
     expect(result.data[1]).toMatchObject({ tasks: [], projectIds: [], objectives: { status: "ok", value: [] } });
-    expect(result.data[1]!.counts.Running).toBe(0);
+    expect(result.data[1]!.counts).toMatchObject({ status: "ok", value: { Running: 0 } });
   });
 
   it("keeps the daemon's task state and marks a linked task that tasks.list no longer returns", async () => {

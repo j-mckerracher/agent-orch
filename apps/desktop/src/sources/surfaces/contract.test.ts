@@ -186,10 +186,14 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
     if (result.status !== "ok") return;
     expect(result.data.length).toBeGreaterThan(0);
     for (const workstream of result.data) {
-      expect(Object.keys(workstream.counts).sort()).toEqual(
+      expect(workstream.counts.status).toBe("ok");
+      if (workstream.counts.status !== "ok") continue;
+      expect(Number.isNaN(Date.parse(workstream.counts.observedAt))).toBe(false);
+      expect(workstream.counts.ageMs).toBeGreaterThanOrEqual(0);
+      expect(Object.keys(workstream.counts.value).sort()).toEqual(
         ["Cancelled", "Created", "Failed", "Queued", "Running", "Succeeded", "Verifying", "VerificationFailed"].sort(),
       );
-      const total = Object.values(workstream.counts).reduce((a, b) => a + b, 0);
+      const total = Object.values(workstream.counts.value).reduce((a, b) => a + b, 0);
       expect(total).toBe(workstream.tasks.length);
       expect(workstream.objectives.status === "ok" || "reason" in workstream.objectives).toBe(true);
     }

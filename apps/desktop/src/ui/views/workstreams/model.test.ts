@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { layoutGraph, MAX_GRAPH_NODES, textDependencies } from "./graph";
-import { countStates } from "../../../sources/surfaces/result";
+import { countStates, measured } from "../../../sources/surfaces/result";
 import type { Workstream, WorkstreamTask } from "../../../sources/surfaces/types";
 import { deriveLiveGroups, requiredEvidence, type WsTask } from "./model";
 
@@ -41,13 +41,13 @@ const stream = (id: string, tasks: WorkstreamTask[], extra: Partial<Workstream> 
   revision: 1,
   projectIds: [...new Set(tasks.map((task) => task.projectId))],
   tasks,
-  counts: countStates(tasks.map((task) => task.state)),
+  counts: measured(countStates(tasks.map((task) => task.state)), { observedAt: "2026-01-01T00:00:00.000Z", ageMs: 0 }),
   objectives: { status: "ok", value: [], observedAt: "2026-01-01T00:00:00.000Z", ageMs: 0 },
   ...extra,
 });
 
 describe("deriveLiveGroups", () => {
-  it("keeps the daemon's workstreams, joins the fresher task record and counts the joined states", () => {
+  it("keeps D9 count measurements while joining fresher task records", () => {
     const t1 = mkTask("t1", A, { state: "Running", sessions: [mkSession("s1", { adapter: "codex", state: "Running" })] });
     const t2 = mkTask("t2", B, { state: "Failed", attempts: [{ attempt_number: 1, state: "Failed" }, { attempt_number: 2, state: "Failed" }] as never });
     const { groups, unlinked } = deriveLiveGroups(
@@ -63,9 +63,23 @@ describe("deriveLiveGroups", () => {
     expect(groups[0]!.tasks[0]).toMatchObject({ objectiveId: "o1", state: "Running", objective: "objective of t1" });
     expect(groups[0]!.tasks[0]!.workers).toEqual([{ sessionId: "s1", adapter: "codex", state: "Running" }]);
     expect(groups[1]!.tasks[0]!.attempt).toBe(2);
-    expect(groups[1]!.counts).toMatchObject({ Failed: 1, Queued: 0 });
-    expect(groups[0]!.counts.Running).toBe(1);
+    expect(groups[1]!.counts).toMatchObject({ status: "ok", value: { Queued: 1, Failed: 0 } });
+    expect(groups[0]!.counts).toMatchObject({ status: "ok", value: { Queued: 1, Running: 0 } });
     expect(unlinked).toEqual([]);
+  });
+
+  it("keeps D9 counts paired with their observation when AppData retains old tasks", () => {
+    const sourceCounts = {
+      status: "ok" as const,
+      value: countStates(["Running"]),
+      observedAt: "2026-01-01T11:59:55.000Z",
+      ageMs: 5_000,
+    };
+    const source = stream("w1", [link("t1", A, null, "Running")], { counts: sourceCounts });
+    const retainedTask = mkTask("t1", A, { state: "Failed" });
+    const { groups } = deriveLiveGroups([source], [retainedTask], null, []);
+    expect(groups[0]!.tasks[0]!.state).toBe("Failed");
+    expect(groups[0]!.counts).toEqual(sourceCounts);
   });
 
   it("falls back to the daemon link when AppData has no record, and reports tasks no workstream links", () => {
@@ -82,6 +96,7 @@ describe("deriveLiveGroups", () => {
 
   it("does not guess unlinked tasks while a workstream is unread, since its tasks would look unlinked", () => {
     const unread = stream("w2", [], {
+      counts: { status: "unknown", reason: "Details could not be read." },
       unreadReason: "Details could not be read.",
       objectives: { status: "unknown", reason: "Details could not be read." },
     });
@@ -93,6 +108,8 @@ describe("deriveLiveGroups", () => {
     );
     expect(groups.map((group) => group.unreadReason)).toEqual([null, "Details could not be read."]);
     expect(unlinkedKnown).toBe(false);
+    expect(groups[1]!.counts).toMatchObject({ status: "unknown", reason: "Details could not be read." });
+    expect(groups[1]!.counts).not.toHaveProperty("value");
     expect(unlinked).toEqual([]);
   });
 

@@ -39,6 +39,7 @@ function objectiveOf(wire: ObjectiveWire): WorkstreamObjective {
 }
 
 function workstreamOf(summary: WorkstreamWire, detail: WorkstreamDetailWire, tasks: Map<string, TaskRecord>, nowMs: number): Workstream {
+  const observed = observation(nowMs);
   const joined = detail.tasks.map((link) => {
     const record = tasks.get(link.task_id);
     return {
@@ -59,8 +60,8 @@ function workstreamOf(summary: WorkstreamWire, detail: WorkstreamDetailWire, tas
     revision: detail.workstream.revision,
     projectIds: detail.project_ids,
     tasks: joined,
-    counts: countStates(joined.map((task) => task.state)),
-    objectives: measured(detail.objectives.map(objectiveOf), observation(nowMs)),
+    counts: measured(countStates(joined.map((task) => task.state)), observed),
+    objectives: measured(detail.objectives.map(objectiveOf), observed),
   };
 }
 
@@ -78,7 +79,7 @@ function unreadWorkstream(summary: WorkstreamWire, error: DaemonError): Workstre
     revision: summary.revision,
     projectIds: [],
     tasks: [],
-    counts: countStates([]),
+    counts: { status: "unknown", reason },
     objectives: { status: "unknown", reason },
     unreadReason: reason,
   };

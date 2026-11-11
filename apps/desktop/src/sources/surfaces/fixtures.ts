@@ -14,7 +14,7 @@ import modelFixture from "../../fixtures/ui/model-catalog.json";
 import metricsFixture from "../../fixtures/ui/system-metrics.json";
 import usageFixture from "../../fixtures/ui/usage.json";
 import workstreamFixture from "../../fixtures/ui/workstreams.json";
-import { countStates, notOk, observation, okResult } from "./result";
+import { countStates, measured, notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import type {
   ActivitySnapshot,
@@ -127,11 +127,13 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
         "D9",
         envelope,
         ctx,
-        (data, nowMs) =>
-          stamp(data.workstreams, nowMs).map((item) => ({
+        (data, nowMs) => {
+          const observed = observation(nowMs, envelope.scenarios.success.ageMs);
+          return stamp(data.workstreams, nowMs).map((item) => ({
             ...item,
-            counts: countStates((item.tasks as WorkstreamTask[]).map((task) => task.state)),
-          })),
+            counts: measured(countStates((item.tasks as WorkstreamTask[]).map((task) => task.state)), observed),
+          }));
+        },
         () => [],
       ),
     simulateCreate: (title) => Promise.resolve(receipt("D9", envelope, ctx, counter, `workstream "${title}"`)),

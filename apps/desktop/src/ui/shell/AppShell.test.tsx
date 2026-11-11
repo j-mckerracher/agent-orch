@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import App, { type AppProps } from "../../App";
 import { DaemonError } from "../../daemon/errors";
 import { createFixtureSources } from "../../sources/fixtures";
+import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
 import { THEME_STORAGE_KEY } from "../theme/theme";
+import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
 
 const shellCss = readFileSync("src/ui/shell/shell.css", "utf8");
 
@@ -240,6 +242,37 @@ describe("navigation", () => {
   });
 });
 
+describe("persistent WorkstreamTree task freshness", () => {
+  it("shows retained AppData task state warnings after navigating away from Workstreams", async () => {
+    const fake = daemon();
+    installFakeWorkstreams(fake, {
+      workstreams: [{ id: "ws-1", title: "Sessions", summary: "", state: "active", revision: 1 }],
+      links: [{ task_id: "t1", workstream_id: "ws-1", objective_id: null }],
+    });
+    const { user, services } = await mount(fake, {
+      route: { name: "global", view: "workstreams" },
+      shellSlots: workstreamsShellSlots,
+      globalViews: workstreamsGlobalViews,
+    });
+    const tree = await screen.findByTestId("workstream-tree");
+    await within(tree).findByRole("treeitem", { name: /objective of t1/ });
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
+    const retained = services.data.getSnapshot().tasks.data;
+    expect(retained?.find((task) => task.contract.id === "t1")?.state).toBe("Running");
+
+    fake.tasks = fake.tasks.map((task) => (task.contract.id === "t1" ? { ...task, state: "Failed" } : task));
+    fake.failNext("tasks.list", { code: -32603, message: "task refresh failed" });
+    await act(async () => services.data.refreshAll());
+    expect(services.data.getSnapshot().tasks).toMatchObject({ status: "error", data: retained });
+
+    await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /Agents & Sessions/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Agents & Sessions" })).toBeInTheDocument();
+    const persistentTree = screen.getByTestId("workstream-tree");
+    expect(within(persistentTree).getByRole("treeitem", { name: /objective of t1/ })).toHaveTextContent("Running");
+    expect(within(persistentTree).getByTestId("workstream-tree-task-list-status")).toHaveAttribute("role", "alert");
+    expect(within(persistentTree).getByTestId("workstream-tree-task-list-status")).toHaveTextContent(/retained data that may be stale/);
+  });
+});
 describe("counts and placeholders", () => {
   it("derives the review count and top-bar counts from the same lists", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });

@@ -19,7 +19,15 @@ import {
   useMutationRunner,
   type Controls,
 } from "./Manage";
-import { reloadWorkstreams, taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "./model";
+import {
+  reloadWorkstreams,
+  taskCount,
+  taskLabelOf,
+  taskListNotice,
+  useWorkstreamModel,
+  type WsGroup,
+  type WsTask,
+} from "./model";
 import { STATE_TONE } from "./tone";
 import "./workstreams.css";
 
@@ -116,6 +124,15 @@ export function WorkstreamsView() {
             : "Workstreams, objectives, gates and task links are daemon records; task states, workers and dependencies are live daemon data."}
           {model.stale && <strong> Stale: the connection was lost; this is the last data received.</strong>}
         </p>
+        {live && (
+          <p
+            className="ws-source"
+            data-testid="ws-task-list-status"
+            role={model.taskList.status === "error" ? "alert" : "status"}
+          >
+            {taskListNotice(model.taskList)}
+          </p>
+        )}
         <form className="ws-create" onSubmit={create} aria-label="Create workstream">
           <label>
             New workstream title
@@ -322,6 +339,7 @@ function Detail({
   const decision = group.tasks.find((task) => task.pendingDecision);
   const evidence = useReviewEvidence(group.tasks, !fixture);
   const objectives = group.objectives.status === "ok" ? group.objectives.value : [];
+  const counts = group.counts.status === "ok" ? group.counts.value : null;
   return (
     <section className="ws-detail" aria-label={`Workstream ${group.title}`} data-testid="ws-detail">
       <Panel title={group.title} headingLevel={2} actions={marker} className="ws-summary">
@@ -335,14 +353,27 @@ function Detail({
           ) : (
             <>
               <Badge>{taskCount(group.tasks.length)}</Badge>{" "}
-              {TASK_STATES.filter((state) => group.counts[state] > 0).map((state) => (
-                <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
-                  {group.counts[state]} {state}
-                </Pill>
-              ))}
+              {counts !== null &&
+                TASK_STATES.filter((state) => counts[state] > 0).map((state) => (
+                  <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
+                    {counts[state]} {state}
+                  </Pill>
+                ))}
             </>
           )}
         </p>
+        {!fixture && (
+          <p className="ws-subtle" data-testid="ws-count-observation">
+            {group.counts.status === "ok" ? (
+              <>
+                D9 counts observed at{" "}
+                <time dateTime={group.counts.observedAt}>{group.counts.observedAt}</time>
+              </>
+            ) : (
+              `D9 counts ${group.counts.status}: ${group.counts.reason}`
+            )}
+          </p>
+        )}
         {group.unreadReason !== null && (
           <p role="status" data-testid="ws-unread-reason">
             {group.unreadReason} Its tasks and objectives are unknown, not empty.

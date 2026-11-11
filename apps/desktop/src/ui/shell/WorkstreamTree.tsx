@@ -1,7 +1,14 @@
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { formatRoute } from "../router";
 import { useServices, useStore } from "../services";
-import { taskCount, taskLabelOf, useWorkstreamModel, type WsGroup, type WsTask } from "../views/workstreams/model";
+import {
+  taskCount,
+  taskLabelOf,
+  taskListNotice,
+  useWorkstreamModel,
+  type WsGroup,
+  type WsTask,
+} from "../views/workstreams/model";
 import { Badge } from "../theme";
 import { PlaceholderBadge } from "../widgets";
 import "../views/workstreams/workstreams.css";
@@ -171,6 +178,15 @@ export function WorkstreamTree() {
         {model.unlinked.length > 0 && <span> · {taskCount(model.unlinked.length)} not in any workstream</span>}
         {model.stale && <span> · stale: connection lost</span>}
       </p>
+      {model.mode === "live" && model.taskList.status !== "ready" && (
+        <p
+          className="ws-subtle"
+          data-testid="workstream-tree-task-list-status"
+          role={model.taskList.status === "error" ? "alert" : "status"}
+        >
+          {taskListNotice(model.taskList)}
+        </p>
+      )}
       <ul role="tree" aria-label="Workstreams" className="ws-tree-root" onKeyDown={onKeyDown}>
         {groups.map((group, index) => {
           const key = groupKey(group);

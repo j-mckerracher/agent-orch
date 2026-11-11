@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFixtureSurfaces } from "./fixtures";
-import { notOk, observation, okResult } from "./result";
+import { measured, notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { NOW, clock } from "./testkit";
 import type {
@@ -45,7 +45,7 @@ const workstream = (id: string, title: string, tasks: Array<[string, string]>): 
   revision: 1,
   projectIds: [id],
   tasks: tasks.map(([taskId, objective]) => ({ id: taskId, projectId: id, objectiveId: null, objective, state: "Queued", agent: "codex", dependencies: [] })),
-  counts: countStates(tasks.map(() => "Queued")),
+  counts: measured(countStates(tasks.map(() => "Queued")), observation(NOW)),
   objectives: { status: "ok", value: [], observedAt: new Date(NOW).toISOString(), ageMs: 0 },
 });
 const emptyQueue: DecisionQueue = { items: [], actions: { postpone: { available: false, reason: "r" }, dismiss: { available: false, reason: "r" }, escalate: { available: false, reason: "r" } } };
