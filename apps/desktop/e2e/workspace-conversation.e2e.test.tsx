@@ -8,7 +8,7 @@ import { M5_03_CAPABILITIES } from "../src/daemon/types";
 import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
 import { WorkspaceView } from "../src/ui/views/workspace/WorkspaceView";
-import { NodeConnector, startDaemon } from "./harness";
+import { NodeConnector, fakeAgentEnv, noAgentsEnv, startDaemon } from "./harness";
 
 afterEach(cleanup);
 
@@ -22,8 +22,8 @@ async function until<T>(read: () => T | undefined | false | Promise<T | undefine
   }
 }
 
-async function prepare() {
-  const daemon = await startDaemon();
+async function prepare(env: Record<string, string> = noAgentsEnv()) {
+  const daemon = await startDaemon(env);
   const connector = new NodeConnector(daemon.dataDir);
   const direct = async <T,>(fn: (api: DaemonApi) => Promise<T>): Promise<T> => {
     const s = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
@@ -44,9 +44,9 @@ async function prepare() {
   return { daemon, services, direct, stop };
 }
 
-// The conversation runtime in the shipped daemon is a stub that fails closed with
-// `runtime_unavailable`, and workstream lookup is not wired (M7-07). These tests prove the UI
-// reports exactly that, and never produces a reply of its own.
+// With no installed agent the daemon's runtime fails closed with `runtime_unavailable`. These
+// tests prove the UI reports exactly that and never produces a reply of its own. The tests after
+// them use the deterministic fake agent (`examples/fake_agent`) as the only installed agent.
 describe("Workspace conversation and model selector over the real daemon", () => {
   it("sends to Global, records it, and shows the runtime-unavailable state with no reply", async () => {
     const t = await prepare();
@@ -119,7 +119,7 @@ describe("Workspace conversation and model selector over the real daemon", () =>
   }, 60000);
 
   it("binds the real catalog and checks selections with agents.validate_selection", async () => {
-    const t = await prepare();
+    const t = await prepare({});
     try {
       const catalog = await until(async () => {
         const r = await t.services.surfaces.models.catalog();
@@ -151,4 +151,109 @@ describe("Workspace conversation and model selector over the real daemon", () =>
       await t.stop();
     }
   }, 60000);
+});
+
+// M7-25: the fake agent is the only installed agent, pinned at its own version.
+describe("Workspace conversation with a launchable agent (deterministic fake)", () => {
+  /** The first send can race the daemon's cold agent catalog and is then refused as a conflict. */
+  async function sendWhenReady(t: Awaited<ReturnType<typeof prepare>>, target: Parameters<typeof t.services.surfaces.conversation.send>[0], text: string) {
+    return until(async () => {
+      try {
+        return await t.services.surfaces.conversation.send(target, text);
+      } catch (error) {
+        if ((error as { kind?: string }).kind === "conflict") return undefined;
+        throw error;
+      }
+    }, "send accepted");
+  }
+
+  async function settled(t: Awaited<ReturnType<typeof prepare>>, target: Parameters<typeof t.services.surfaces.conversation.transcript>[0]) {
+    return until(async () => {
+      const r = await t.services.surfaces.conversation.transcript(target);
+      return r.status === "ok" && r.data.turn && r.data.turn.state !== "running" ? r : undefined;
+    }, "turn settled");
+  }
+
+  it("shows the agent's reply in the UI, with no task, approval or simulated text", async () => {
+    const t = await prepare(fakeAgentEnv());
+    try {
+      // A cold agent catalog makes the first send a retryable conflict; warm it first.
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+      await userEvent.type(box, "hello fake agent");
+      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+
+      expect(await screen.findByText("fake reply to: hello fake agent", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(screen.queryByText(/Orchestrator runtime unavailable/)).toBeNull();
+      expect(screen.queryByText(/SIMULATED/)).toBeNull();
+
+      const page = await t.direct((api) => api.conversationsGet({ kind: "global" }));
+      expect(page.entries.map((e) => e.kind)).toEqual(["user_message", "reply_chunk", "turn_completed"]);
+      expect(page.turn).toMatchObject({ state: "completed", runtime: { name: "codex", version: "0.0.0-fake" } });
+      expect(await t.direct((api) => api.tasksList())).toEqual([]);
+      expect(await t.direct((api) => api.approvalsList())).toEqual([]);
+    } finally {
+      await t.stop();
+    }
+  }, 90000);
+
+  it("keeps ordered replies across a daemon restart and answers a workstream conversation", async () => {
+    const t = await prepare(fakeAgentEnv());
+    try {
+      const { conversation } = t.services.surfaces;
+      const global = { kind: "global" } as const;
+      await sendWhenReady(t, global, "one");
+      await settled(t, global);
+      await conversation.send(global, "two");
+      const before = await settled(t, global);
+      expect(before.data.entries.map((e) => [e.role, e.text])).toEqual([
+        ["user", "one"],
+        ["coordinator", "fake reply to: one"],
+        ["user", "two"],
+        ["coordinator", "fake reply to: two"],
+      ]);
+
+      await t.daemon.restart();
+      const after = await until(async () => {
+        const r = await conversation.transcript(global);
+        return r.status === "ok" ? r : undefined;
+      }, "transcript after restart");
+      expect(after.data.entries.map((e) => [e.role, e.text])).toEqual(before.data.entries.map((e) => [e.role, e.text]));
+      expect(after.data.turn).toMatchObject({ state: "completed" });
+
+      const workstream = await t.direct((api) => api.workstreamsCreate("Auth rewrite", "Replace session cookies", "e2e-ws-1"));
+      const target = { kind: "workstream", workstreamId: workstream.id } as const;
+      await sendWhenReady(t, target, "[fake:echo]");
+      const echoed = await settled(t, target);
+      const reply = echoed.data.entries.find((e) => e.role === "coordinator")!.text;
+      expect(reply).toContain("Scope: one workstream.");
+      expect(reply).toContain("Auth rewrite");
+      const globalAgain = await settled(t, global);
+      expect(globalAgain.data.entries).toHaveLength(4);
+    } finally {
+      await t.stop();
+    }
+  }, 120000);
+
+  it("turns an agent failure into a named status, never reply text", async () => {
+    const t = await prepare(fakeAgentEnv());
+    try {
+      const global = { kind: "global" } as const;
+      await sendWhenReady(t, global, "[fake:fail]");
+      const result = await settled(t, global);
+      expect(result.data.turn).toMatchObject({ state: "failed", errorCode: "runtime_failed" });
+      expect(result.data.entries.map((e) => e.kind)).toEqual(["message", "status"]);
+      expect(result.data.entries.some((e) => e.role === "coordinator")).toBe(false);
+    } finally {
+      await t.stop();
+    }
+  }, 90000);
 });

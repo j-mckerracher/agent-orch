@@ -2,15 +2,16 @@
 
 Plan: `/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/docs/technical-implementation-plan.md`.
 Board item: M7-08 (depends on M7-00, M5-02c). Status: backend service and
-tests implemented; live runtime adapter and UI binding are separate items.
+tests implemented in M7-08; the UI binding is M7-24; the real agent runtime is
+M7-25 (see "M7-25: the agent runtime" below).
 
 ## Decision summary
 
 | Question | Decision |
 | --- | --- |
 | Runtime behind the conversation | **Provider-neutral.** The daemon depends on the `ConversationRuntime` trait (`api_conversation_runtime.rs`), not on a product. The OMP/model clauses of `orch-impl-m.md` are overridden by the UI gap analysis. No OMP behaviour is invented. |
-| Runtime that ships in this item | `UnavailableRuntime` (name `unavailable`, version `none`). Every turn fails closed with `runtime_unavailable`. A real adapter is bound by M7-24; the catalog and selection are M7-09. |
-| Version pin | **Mandatory.** `ConversationService` takes `Option<RuntimeIdentity>` (name + exact version). A runtime that requires a pin and has none gets `runtime_unpinned`. A pin that differs from the runtime's reported identity gets `version_mismatch`. In both cases the runtime never receives the message. The pin value is set by the adapter item together with its evidence; this item pins nothing because it ships no real runtime. |
+| Runtime that ships | M7-08 shipped `UnavailableRuntime` (every turn failed with `runtime_unavailable`). **M7-25 replaced it** with `AgentRuntime` (`api_conversation_agent.rs`), which launches an installed agent. When no agent is launchable the turn still fails closed with `runtime_unavailable`. |
+| Version pin | **Mandatory.** `ConversationService` takes the list of accepted `RuntimeIdentity` values (name + exact version). A runtime that requires a pin and has an empty list gets `runtime_unpinned`. An identity not in the list gets `version_mismatch`. In both cases the runtime never receives the message. M7-25 pins the versions it was live-checked against (see below). |
 | Persistence and recovery owner | The **daemon** owns the transcript (SQLite, migration `0031_conversations.sql`, renumbered from 0030 at integration). Runtime state is never trusted or resumed. On startup `with_config` marks every `running` turn `failed` with `interrupted_by_restart`. |
 | Authority | **None.** Conversation methods only read and write conversation rows. Text (user or runtime) is data; it is never parsed into methods. Proposals still go through `coordinator.propose` and engine validation. Every response carries `"authority": "none"`. |
 
@@ -54,7 +55,7 @@ Names are proposals so concurrent daemon work does not collide; no new
 
 Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 `permission_denied`, `version_mismatch`, `runtime_unpinned`, `runtime_failed`,
-`reply_too_large`, `interrupted_by_restart`.
+`runtime_timeout`, `runtime_busy`, `reply_too_large`, `interrupted_by_restart`.
 
 ## Ordering, idempotency, replay
 
@@ -73,13 +74,12 @@ Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 
 ## M7-07 seam (workstreams)
 
-M7-07 is not merged. This item stores `workstream_id` as an opaque, nullable,
-length-bounded text column with **no foreign key**, and resolves it through the
-`WorkstreamDirectory` trait. The default `NoWorkstreams` resolves nothing, so
-every workstream target returns `NotFound`; global works. M7-07 must (1) supply a
-`WorkstreamDirectory` backed by its table and pass it to
-`ConversationService::new` in `DaemonApi::with_config`, and (2) optionally add a
-foreign key in its own migration. Nothing else changes.
+M7-07 stored workstreams after this item was written. The conversation keeps
+`workstream_id` as an opaque, nullable, length-bounded text column with **no
+foreign key**, and resolves it through the `WorkstreamDirectory` trait. M7-25
+supplies the store-backed directory (`StoreWorkstreams`): an unknown workstream
+is `NotFound`, and `describe` gives the agent a bounded one-line context
+(title, state, summary). A foreign key remains optional for a later migration.
 
 ## Concurrency
 
@@ -88,7 +88,60 @@ adapters spawn work and return a control handle. The control registry is only
 populated while the store shows the turn `running`; terminal commits happen in
 the store first, so a stale control is never left registered.
 
+## M7-25: the agent runtime
+
+`AgentRuntime` implements `ConversationRuntime` over the M7-09 catalog and the
+M7-06 adapters. It is bound in `DaemonApi::with_config`; the daemon binary needs
+no flag.
+
+- **Selection.** `AGENT_ORCH_CONVERSATION_AGENT` (`codex` or `claude-code`)
+  names the agent; without it the first launchable one in catalog order is used
+  (`codex`, then `claude-code`). `AGENT_ORCH_CONVERSATION_MODEL` and
+  `AGENT_ORCH_CONVERSATION_EFFORT` are checked against the catalog; an option
+  the catalog does not offer fails closed. Agent program paths are the existing
+  `AGENT_ORCH_CODEX_PROGRAM` / `AGENT_ORCH_CLAUDE_PROGRAM`.
+- **Launchable.** The adapter's `detect()` must succeed, the catalog must report
+  the agent `available` (signed in), and a bounded `--version` probe must give a
+  version. Otherwise the turn fails `runtime_unavailable`. The selection and
+  version are cached for 30 s; `conversations.send` calls `prepare()` before the
+  idempotency gate, so a cold catalog is a retryable `Conflict`, not a hang.
+- **Pins.** Known-good versions are compiled in (`codex` 0.167.0, `claude-code`
+  2.1.311, the versions live-checked for this item). The operator can add more
+  with `AGENT_ORCH_CONVERSATION_PINS=name@version,...`. An unpinned version gets
+  `version_mismatch` and never receives the message. `start_turn` compares the
+  identity again, but only against the cached selection: an upgrade of the CLI
+  inside the 30 s window is not detected.
+- **Prompt.** A fixed frame (talk only, no actions), the scope, a bounded
+  workstream context, up to 6 earlier completed turns (4 KiB per reply, 12 KiB
+  in total, which keeps the Windows command line short) and the current message
+  last. The message is passed as one argument after `--`, never through a shell.
+- **Process.** Read-only agent arguments (`args_for_conversation`), working
+  directory `<data-dir>/conversation-scratch` (empty, daemon-owned). The
+  adapter's `ChildSupervisor` provides a Unix process group (killed as a
+  group), a Windows Job Object, and a 64 KiB line cap. Turn deadline 180 s
+  (`AGENT_ORCH_CONVERSATION_TIMEOUT_MS`, clamped 100 ms to 600 s) gives
+  `runtime_timeout`; at most 4 turns run at once, otherwise `runtime_busy`.
+  The catalog and version probes kill only the direct child on Windows; a Job
+  Object for those probes is a follow-up.
+- **Text.** Replies and prompt text lose control characters (except newline
+  and tab), carriage returns and bidirectional controls before they are stored
+  or passed on.
+- **Authority.** The runtime holds no store, task, approval or delivery handle
+  beyond the reply sink. A reply is data. Nothing is parsed from it.
+- **Recovery.** Unchanged: the daemon owns the transcript, a turn the daemon
+  lost fails with `interrupted_by_restart`, and replay is by sequence.
+- **Known limit.** A launched agent can read the user's files and runs the
+  user's own agent settings and hooks, as any run of that CLI does. The
+  read-only sandbox and the empty working directory limit what it changes, not
+  what it can read.
+
+Tests: in-process (`api_conversations_tests.rs`, `api_conversation_agent.rs`),
+process level with `examples/fake_agent.rs` (`tests/conversation_runtime.rs`),
+desktop e2e (`apps/desktop/e2e/workspace-conversation.e2e.test.tsx`), and one
+opt-in live test (`AGENT_ORCH_LIVE_CONVERSATION=1 cargo test -p
+orchestrator-daemon --test conversation_runtime -- --ignored`).
+
 ## Not covered here
 
-Real adapter and its pinned version/evidence, push streaming, client wrappers
-and UI binding (M7-24), native macOS/Windows end-to-end.
+Push streaming, native macOS/Windows end-to-end, and Windows Job Object
+cleanup for the catalog and version probes.
