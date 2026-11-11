@@ -579,7 +579,8 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
-    let monitored = monitor_agent(handle, store, &owner).await;
+    let requested_model = requested_codex_model(job);
+    let monitored = monitor_agent(handle, store, &owner, requested_model.as_deref()).await;
     let current = store
         .get(&job.task_id)
         .map_err(|error| format!("cannot reload task after agent exit: {error}"))?;
@@ -606,13 +607,26 @@ struct MonitorOutcome {
     supervision_error: Option<String>,
 }
 
+/// The model a Codex run was asked for. Codex's stream names no model, so this
+/// is the only model a Codex receipt can carry; it is the requested model, not
+/// one the provider reported, and is `None` when the run used Codex's default.
+/// Claude is left out because its own result names the models that ran.
+fn requested_codex_model(job: &Job) -> Option<String> {
+    if job.agent != CODEX_AGENT {
+        return None;
+    }
+    job.model_selection.as_ref()?.model.clone()
+}
+
 /// Persists usage the agent reported so far. A usage failure is logged and
 /// never fails or delays the run; the receipt key makes a repeat harmless.
+/// `requested_model` fills in a model the report does not name.
 fn record_usage(
     handle: &mut dyn AgentHandle,
     store: &SqliteStore,
     owner: &CancellationOwner,
     started_ms: u64,
+    requested_model: Option<&str>,
 ) {
     for report in handle.take_usage() {
         let now = unix_now_ms();
@@ -633,7 +647,7 @@ fn record_usage(
             output_tokens: report.output_tokens,
             reasoning_tokens: report.reasoning_tokens,
             cost: report.cost.map(|cost| (cost.nanos, cost.currency)),
-            model: report.model,
+            model: report.model.or_else(|| requested_model.map(str::to_owned)),
         };
         if let Err(error) = store.record_usage_receipt(&receipt) {
             eprintln!(
@@ -659,6 +673,7 @@ async fn monitor_agent(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
+    requested_model: Option<&str>,
 ) -> Result<MonitorOutcome, String> {
     let mut requested = false;
     let mut attempted = false;
@@ -677,7 +692,7 @@ async fn monitor_agent(
                         Ok(()) => {
                             let exit = handle.wait().await;
                             // Keep what the agent reported before it was stopped.
-                            record_usage(&mut *handle, store, owner, started_ms);
+                            record_usage(&mut *handle, store, owner, started_ms, requested_model);
                             let exit = exit.map_err(|error| {
                                 format!("cancelled but termination was not confirmed: {error}")
                             })?;
@@ -711,7 +726,7 @@ async fn monitor_agent(
         match event {
             None => continue,
             Some(Ok(Some(AgentEvent::SessionExited { .. }))) => {
-                record_usage(&mut *handle, store, owner, started_ms);
+                record_usage(&mut *handle, store, owner, started_ms, requested_model);
                 let exit = handle
                     .wait()
                     .await
@@ -724,15 +739,17 @@ async fn monitor_agent(
                     supervision_error,
                 });
             }
-            Some(Ok(Some(_))) => record_usage(&mut *handle, store, owner, started_ms),
+            Some(Ok(Some(_))) => {
+                record_usage(&mut *handle, store, owner, started_ms, requested_model)
+            }
             Some(Ok(None)) => {
-                record_usage(&mut *handle, store, owner, started_ms);
+                record_usage(&mut *handle, store, owner, started_ms, requested_model);
                 supervision_error =
                     Some("agent event stream ended without a process exit event".to_string());
                 break;
             }
             Some(Err(error)) => {
-                record_usage(&mut *handle, store, owner, started_ms);
+                record_usage(&mut *handle, store, owner, started_ms, requested_model);
                 supervision_error = Some(format!("agent event stream failed: {error}"));
                 break;
             }
@@ -753,7 +770,7 @@ async fn monitor_agent(
         Err(_) => {}
     }
     let exit = handle.wait().await;
-    record_usage(&mut *handle, store, owner, started_ms);
+    record_usage(&mut *handle, store, owner, started_ms, requested_model);
     let exit = exit.map_err(|error| {
         format!(
             "{}; termination was not confirmed: {error}",

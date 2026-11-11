@@ -37,11 +37,26 @@ interface BucketOptions {
   withCost?: number;
   reported?: Array<[string, string]>;
   estimated?: Array<[string, string]>;
+  /** M7-26 fields, present only when given (an older daemon sends none of them). */
+  needing?: number;
+  estimatedSessions?: number;
+  known?: number;
 }
 
-function bucket({ sessions = 0, withTokens = 0, withCost = 0, reported = [], estimated = [] }: BucketOptions = {}) {
+function bucket({ sessions = 0, withTokens = 0, withCost = 0, reported = [], estimated = [], needing, estimatedSessions, known }: BucketOptions = {}) {
   const status = (covered: number) => (covered === 0 ? "unknown" : covered < sessions ? "partial" : "complete");
+  const native =
+    needing === undefined || estimatedSessions === undefined
+      ? {}
+      : {
+          sessions_needing_estimate: needing,
+          sessions_with_estimated_cost: estimatedSessions,
+          estimated_cost_status: estimatedSessions === 0 ? "unknown" : estimatedSessions < needing ? "partial" : "complete",
+        };
+  const knownFields = known === undefined ? {} : { sessions_with_known_cost: known, known_cost_status: status(known) };
   return {
+    ...native,
+    ...knownFields,
     sessions,
     sessions_with_tokens: withTokens,
     sessions_with_cost: withCost,
@@ -52,13 +67,16 @@ function bucket({ sessions = 0, withTokens = 0, withCost = 0, reported = [], est
   };
 }
 
-function summary(totals: ReturnType<typeof bucket>, providers: Array<[string, ReturnType<typeof bucket>]> = []) {
+function summary(totals: ReturnType<typeof bucket>, providers: Array<[string, ReturnType<typeof bucket>]> = [], price_table?: unknown) {
   return {
     window: { start_unix_ms: START, end_unix_ms: START + 86_400_000, timezone: "America/Denver", utc_offset_seconds: -25_200 },
     totals,
     providers: providers.map(([provider, value]) => ({ provider, ...value })),
+    ...(price_table === undefined ? {} : { price_table }),
   };
 }
+
+const TABLE = { version: "2026-11-11.1", basis: "list_price_standard_tier", source: "LiteLLM, 2026-11-11", currency: "USD", models: 16 };
 
 async function read(wire: unknown) {
   const fake = new FakeDaemon();
@@ -191,6 +209,54 @@ describe("live usage adapter mapping", () => {
       { provider: "pi", reporting: "none" },
     ]);
     expect(JSON.stringify(result)).not.toMatch(/"value":0\b/);
+  });
+
+  it("tolerates an older daemon that sends no price table and none of the estimate fields", async () => {
+    const result = await data(summary(bucket({ sessions: 1, withTokens: 1, withCost: 1, reported: [["USD", "1"]] })));
+    expect(result.priceTable).toBeUndefined();
+    expect(result.estimateCoverage).toBeUndefined();
+    expect(result.knownCostCoverage).toBeUndefined();
+    expect(result.estimated).toMatchObject({ status: "unknown", reason: expect.stringContaining("the daemon has no price table") });
+  });
+
+  it("rejects a malformed price table or a malformed new count rather than guessing", () => {
+    const base = summary(bucket({ sessions: 1 }));
+    expect(() => parseUsageSummary({ ...base, price_table: { version: "v1" } })).toThrow(/basis/);
+    expect(() => parseUsageSummary({ ...base, price_table: "x" })).toThrow();
+    expect(() => parseUsageSummary({ ...base, totals: { ...base.totals, sessions_needing_estimate: -1 } })).toThrow(/sessions_needing_estimate/);
+    expect(() => parseUsageSummary({ ...base, totals: { ...base.totals, known_cost_status: "maybe" } })).toThrow(/known_cost_status/);
+  });
+
+  it("keeps a price-table estimate separate from reported, with coverage and the table version", async () => {
+    const result = await data(
+      summary(
+        bucket({ sessions: 3, withTokens: 3, withCost: 1, reported: [["USD", "1.5"]], estimated: [["USD", "0.152"]], needing: 2, estimatedSessions: 1, known: 2 }),
+        [
+          ["claude-code", bucket({ sessions: 1, withTokens: 1, withCost: 1, reported: [["USD", "1.5"]], needing: 0, estimatedSessions: 0, known: 1 })],
+          ["codex", bucket({ sessions: 2, withTokens: 2, estimated: [["USD", "0.152"]], needing: 2, estimatedSessions: 1, known: 1 })],
+        ],
+        TABLE,
+      ),
+    );
+    expect(result.reported).toMatchObject({ status: "ok", value: 1.5 });
+    expect(result.estimated).toMatchObject({ status: "ok", value: 0.152 });
+    expect(result.estimateCoverage).toEqual({ status: "partial", sessionsNeedingEstimate: 2, sessionsEstimated: 1 });
+    expect(result.knownCostCoverage).toEqual({ status: "partial", sessions: 3, sessionsWithKnownCost: 2 });
+    expect(result.priceTable).toEqual({ version: "2026-11-11.1", basis: "list_price_standard_tier", source: "LiteLLM, 2026-11-11" });
+    expect(result.costCoverage).toEqual({ status: "partial", sessions: 3, sessionsWithCost: 1 });
+  });
+
+  it("says why an estimate is unknown: unpriceable sessions, or nothing that needs one", async () => {
+    const unpriced = await data(summary(bucket({ sessions: 2, withTokens: 2, needing: 2, estimatedSessions: 0, known: 0 }), [], TABLE));
+    expect(unpriced.estimated).toMatchObject({
+      status: "unknown",
+      reason: expect.stringMatching(/2 sessions have tokens but no reported cost and could not be priced.*2026-11-11\.1/),
+    });
+    expect("value" in unpriced.estimated).toBe(false);
+    const none = await data(
+      summary(bucket({ sessions: 1, withTokens: 1, withCost: 1, reported: [["USD", "1"]], needing: 0, estimatedSessions: 0, known: 1 }), [], TABLE),
+    );
+    expect(none.estimated).toMatchObject({ status: "unknown", reason: expect.stringContaining("No session in this window needs an estimate (price table 2026-11-11.1)") });
   });
 
   it("is unknown, not zero, for an empty day", async () => {
@@ -421,6 +487,73 @@ describe("usage pill with the live adapter", () => {
     await waitFor(() => expect(valueOf()).toHaveTextContent("$2.00"));
     expect(pill).toHaveTextContent("reported (partial)");
     expect(screen.getByTestId("top-usage-partial")).toHaveTextContent("1 of 4 sessions reported a cost, so this is a lower bound");
+  });
+
+  it("shows an estimate-only headline as estimated with the table version, never as reported", async () => {
+    const fake = new FakeDaemon();
+    fake.stub(
+      "usage.summary",
+      summary(bucket({ sessions: 1, withTokens: 1, estimated: [["USD", "0.000152"]], needing: 1, estimatedSessions: 1, known: 1 }), [], TABLE),
+    );
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("≈ <$0.01"));
+    expect(screen.getByTestId("top-usage-basis")).toHaveTextContent("estimated · table 2026-11-11.1");
+    expect(screen.getByTestId("top-usage-basis")).not.toHaveTextContent("partial");
+    expect(screen.queryByText(/^reported( \(partial\))?$/)).toBeNull();
+    expect(screen.getByTestId("top-usage-estimate")).toHaveTextContent("List-price estimate from price table 2026-11-11.1, list_price_standard_tier, not a bill");
+    expect(screen.getByTestId("top-usage-price-table")).toHaveTextContent("Price table 2026-11-11.1 · basis list_price_standard_tier · LiteLLM, 2026-11-11");
+    expect(screen.queryByTestId("top-usage-estimate-partial")).toBeNull();
+    expect(screen.queryByTestId("top-usage-unknown")).toBeNull();
+  });
+
+  it("keeps the reported headline and does not add an estimate to it", async () => {
+    const fake = new FakeDaemon();
+    fake.stub(
+      "usage.summary",
+      summary(
+        bucket({ sessions: 2, withTokens: 2, withCost: 1, reported: [["USD", "2"]], estimated: [["USD", "3"]], needing: 1, estimatedSessions: 1, known: 2 }),
+        [],
+        TABLE,
+      ),
+    );
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent(/^\$2\.00$/));
+    expect(screen.queryByTestId("top-usage-basis")).toBeNull();
+    expect(screen.getByTestId("top-usage")).not.toHaveTextContent("$5");
+    expect(screen.getByTestId("top-usage-info")).toHaveTextContent("Estimated, not reported: $3.00");
+  });
+
+  it("flags a partial estimate and the unknown sessions", async () => {
+    const fake = new FakeDaemon();
+    fake.stub(
+      "usage.summary",
+      summary(bucket({ sessions: 4, withTokens: 4, estimated: [["USD", "1"]], needing: 4, estimatedSessions: 1, known: 1 }), [], TABLE),
+    );
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("≈ $1.00"));
+    expect(screen.getByTestId("top-usage-basis")).toHaveTextContent("estimated (partial) · table 2026-11-11.1");
+    expect(screen.getByTestId("top-usage-estimate-partial")).toHaveTextContent("1 of 4 sessions with tokens but no reported cost could be priced, so this is a lower bound");
+    expect(screen.getByTestId("top-usage-unknown")).toHaveTextContent("Unknown: 3 of 4 sessions have neither a reported nor an estimated cost");
+  });
+
+  it("stays not available, with the table named, when nothing could be priced", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", summary(bucket({ sessions: 2, withTokens: 2, needing: 2, estimatedSessions: 0, known: 0 }), [], TABLE));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("not available"));
+    expect(screen.getByTestId("top-usage").textContent).not.toMatch(/\$|≈/);
+    expect(screen.queryByTestId("top-usage-basis")).toBeNull();
+    expect(screen.getByTestId("top-usage-unknown")).toHaveTextContent("Unknown: 2 of 2 sessions");
+    expect(screen.getByTestId("top-usage-price-table")).toHaveTextContent("Price table 2026-11-11.1");
+  });
+
+  it("says an older daemon reports no estimates", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", oneCost("2"));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("$2.00"));
+    expect(screen.getByTestId("top-usage-price-table")).toHaveTextContent("No price table: this daemon reports no estimates.");
+    expect(screen.queryByTestId("top-usage-unknown")).toBeNull();
   });
 
   it("does not flag a complete headline as partial", async () => {

@@ -986,7 +986,7 @@ mod usage_paths {
             .enable_time()
             .build()
             .unwrap()
-            .block_on(monitor_agent(Box::new(handle), store, owner))
+            .block_on(monitor_agent(Box::new(handle), store, owner, None))
     }
 
     fn assert_cost_recorded_and_tokens_unknown(store: &SqliteStore) {
@@ -1063,7 +1063,7 @@ mod usage_paths {
             events: Vec::new(),
             usage: vec![cost_only_report(Some(occurred))],
         };
-        record_usage(&mut handle, &store, &owner, started);
+        record_usage(&mut handle, &store, &owner, started, None);
         let at_provider_time = store
             .usage_window_summary(occurred, occurred + 1_000)
             .unwrap();
@@ -1076,6 +1076,102 @@ mod usage_paths {
             .usage_window_summary(now - 1_000, now + 3_600_000)
             .unwrap();
         assert!(at_observation.totals.reported.costs.is_empty());
+    }
+
+    fn token_report(model: Option<&str>) -> UsageReport {
+        UsageReport {
+            receipt_key: "turn.completed:1".into(),
+            model: model.map(str::to_owned),
+            input_tokens: Some(1_000),
+            cache_read_tokens: Some(200),
+            cache_write_tokens: Some(0),
+            output_tokens: Some(100),
+            reasoning_tokens: None,
+            cost: None,
+            occurred_at_ms: None,
+        }
+    }
+
+    fn estimated_usd(store: &SqliteStore) -> Option<u128> {
+        let now = now_ms();
+        store
+            .usage_window_summary(now - 3_600_000, now + 3_600_000)
+            .unwrap()
+            .totals
+            .estimated
+            .costs
+            .get("USD")
+            .copied()
+    }
+
+    #[test]
+    fn the_requested_model_prices_a_report_that_names_none() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "requested-model");
+        let mut handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: vec![token_report(None)],
+        };
+        record_usage(
+            &mut handle,
+            &store,
+            &owner,
+            now_ms() - 1_000,
+            Some("gpt-6-luna"),
+        );
+        assert_eq!(estimated_usd(&store), Some(152_000));
+    }
+
+    #[test]
+    fn a_run_without_a_model_stays_unpriced_and_a_reported_model_wins() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "no-model");
+        let mut handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: vec![token_report(None)],
+        };
+        record_usage(&mut handle, &store, &owner, now_ms() - 1_000, None);
+        assert_eq!(estimated_usd(&store), None);
+
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "reported-wins");
+        let mut handle = ScriptedHandle {
+            events: Vec::new(),
+            usage: vec![token_report(Some("gpt-6-sol"))],
+        };
+        record_usage(
+            &mut handle,
+            &store,
+            &owner,
+            now_ms() - 1_000,
+            Some("gpt-6-luna"),
+        );
+        assert_eq!(estimated_usd(&store), Some(3_040_000));
+    }
+
+    #[test]
+    fn only_codex_falls_back_to_the_requested_model() {
+        let job = |agent: &str, model: Option<&str>| Job {
+            task_id: "t".into(),
+            attempt_id: "a".into(),
+            session_id: "s".into(),
+            agent: agent.into(),
+            objective: "o".into(),
+            model_selection: Some(ModelSelection {
+                model: model.map(str::to_owned),
+                effort: None,
+            }),
+            worktree: PathBuf::from("."),
+        };
+        assert_eq!(
+            requested_codex_model(&job(CODEX_AGENT, Some("gpt-6-luna"))).as_deref(),
+            Some("gpt-6-luna")
+        );
+        assert_eq!(requested_codex_model(&job(CODEX_AGENT, None)), None);
+        assert_eq!(
+            requested_codex_model(&job(CLAUDE_AGENT, Some("claude-opus-5-5"))),
+            None
+        );
     }
 }
 

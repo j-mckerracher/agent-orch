@@ -15,13 +15,24 @@
 //! no start time and are excluded from coverage counts. Their receipts, if any,
 //! are still summed by `window_end_ms`.
 //!
-//! Updated: 2026-11-10T18:30:00+00:00.
+//! # Estimated cost (M7-26)
+//!
+//! A provider-reported receipt that has tokens but no cost (Codex always) is
+//! priced at summary time from the native table in `usage_prices`. The result
+//! is added to the `estimated` figures only; the stored receipt is not touched
+//! and nothing is written. A session is estimated only if every cost-less
+//! token receipt of it in the window can be priced; otherwise its estimate is
+//! unknown, not a partial sum. A session that already has a stored `estimated`
+//! cost receipt is not estimated again. Reported costs are never replaced.
+//!
+//! Updated: 2026-11-11T01:30:00+00:00.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
 use sqlx::Row;
 
+use crate::usage_prices::{estimate_cost_nanos, TokenCounts, PRICE_TABLE_CURRENCY};
 use crate::{SqliteStore, StoreError};
 
 const MAX_RECEIPT_KEY_BYTES: usize = 128;
@@ -151,6 +162,12 @@ pub struct UsageBucket {
     pub sessions_with_tokens: u64,
     /// Of those, sessions with at least one receipt carrying a cost.
     pub sessions_with_cost: u64,
+    /// Sessions with a cost-less token receipt, the ones an estimate can fill.
+    pub sessions_needing_estimate: u64,
+    /// Sessions with an estimated cost (native table or stored estimate).
+    pub sessions_with_estimated_cost: u64,
+    /// Sessions with a reported or an estimated cost.
+    pub sessions_with_known_cost: u64,
     pub reported: UsageFigures,
     pub estimated: UsageFigures,
 }
@@ -181,9 +198,19 @@ struct ReceiptRow {
     output_tokens: Option<u64>,
     reasoning_tokens: Option<u64>,
     cost: Option<(u64, String)>,
+    model: Option<String>,
 }
 
 impl ReceiptRow {
+    fn token_counts(&self) -> TokenCounts {
+        TokenCounts {
+            input: self.input_tokens,
+            cache_read: self.cache_read_tokens,
+            cache_write: self.cache_write_tokens,
+            output: self.output_tokens,
+        }
+    }
+
     fn has_tokens(&self) -> bool {
         [
             self.input_tokens,
@@ -202,8 +229,31 @@ struct ProviderAccumulator {
     sessions: BTreeSet<(String, String)>,
     with_tokens: BTreeSet<(String, String)>,
     with_cost: BTreeSet<(String, String)>,
+    /// Sessions with a stored estimate; they are not estimated again.
+    with_stored_estimate: BTreeSet<(String, String)>,
+    /// Per session: summed native estimate in nano-USD, `None` once any of
+    /// its cost-less token receipts could not be priced.
+    native: BTreeMap<(String, String), Option<u128>>,
     reported: UsageFigures,
     estimated: UsageFigures,
+}
+
+impl ProviderAccumulator {
+    /// Fold the native estimates into the estimated figures.
+    fn settle_native_estimates(&mut self) -> BTreeSet<(String, String)> {
+        let mut estimated_sessions = self.with_stored_estimate.clone();
+        for (key, nanos) in &self.native {
+            if let (Some(nanos), false) = (nanos, self.with_stored_estimate.contains(key)) {
+                *self
+                    .estimated
+                    .costs
+                    .entry(PRICE_TABLE_CURRENCY.to_owned())
+                    .or_insert(0) += nanos;
+                estimated_sessions.insert(key.clone());
+            }
+        }
+        estimated_sessions
+    }
 }
 
 fn invalid(detail: &'static str) -> StoreError {
@@ -378,7 +428,7 @@ impl SqliteStore {
             .fetch_all(&pool)
             .await?;
             let receipts = sqlx::query(
-                "SELECT s.adapter AS adapter, r.task_id AS task_id, r.session_id AS session_id, r.source AS source, r.input_tokens AS input_tokens, r.cache_read_tokens AS cache_read_tokens, r.cache_write_tokens AS cache_write_tokens, r.output_tokens AS output_tokens, r.reasoning_tokens AS reasoning_tokens, r.cost_nanos AS cost_nanos, r.currency AS currency FROM usage_receipts r JOIN sessions s ON s.task_id = r.task_id AND s.id = r.session_id WHERE r.window_end_ms >= ? AND r.window_end_ms < ?",
+                "SELECT s.adapter AS adapter, r.task_id AS task_id, r.session_id AS session_id, r.source AS source, r.input_tokens AS input_tokens, r.cache_read_tokens AS cache_read_tokens, r.cache_write_tokens AS cache_write_tokens, r.output_tokens AS output_tokens, r.reasoning_tokens AS reasoning_tokens, r.cost_nanos AS cost_nanos, r.currency AS currency, r.model AS model FROM usage_receipts r JOIN sessions s ON s.task_id = r.task_id AND s.id = r.session_id WHERE r.window_end_ms >= ? AND r.window_end_ms < ?",
             )
             .bind(start)
             .bind(end)
@@ -412,6 +462,7 @@ impl SqliteStore {
                     output_tokens: optional_u64(&row, "output_tokens")?,
                     reasoning_tokens: optional_u64(&row, "reasoning_tokens")?,
                     cost,
+                    model: row.try_get("model")?,
                 };
                 let key = (parsed.task_id.clone(), parsed.session_id.clone());
                 let provider = providers.entry(parsed.adapter.clone()).or_default();
@@ -420,26 +471,52 @@ impl SqliteStore {
                     provider.with_tokens.insert(key.clone());
                 }
                 if parsed.cost.is_some() {
-                    provider.with_cost.insert(key);
+                    provider.with_cost.insert(key.clone());
                 }
                 match parsed.source {
-                    UsageSource::ProviderReported => provider.reported.add(&parsed),
-                    UsageSource::Estimated => provider.estimated.add(&parsed),
+                    UsageSource::ProviderReported => {
+                        provider.reported.add(&parsed);
+                        if parsed.cost.is_none() && parsed.has_tokens() {
+                            let nanos =
+                                estimate_cost_nanos(parsed.model.as_deref(), &parsed.token_counts())
+                                    .map(u128::from);
+                            let session = provider.native.entry(key).or_insert(Some(0));
+                            *session = session.zip(nanos).map(|(sum, add)| sum + add);
+                        }
+                    }
+                    UsageSource::Estimated => {
+                        provider.estimated.add(&parsed);
+                        if parsed.cost.is_some() {
+                            provider.with_stored_estimate.insert(key);
+                        }
+                    }
                 }
             }
 
             let mut summary = UsageWindowSummary::default();
-            for (provider, accumulator) in providers {
+            for (provider, mut accumulator) in providers {
+                let needing = accumulator.native.len() as u64;
+                let estimated_sessions = accumulator.settle_native_estimates();
+                let known = accumulator
+                    .with_cost
+                    .union(&estimated_sessions)
+                    .count() as u64;
                 let bucket = UsageBucket {
                     sessions: accumulator.sessions.len() as u64,
                     sessions_with_tokens: accumulator.with_tokens.len() as u64,
                     sessions_with_cost: accumulator.with_cost.len() as u64,
+                    sessions_needing_estimate: needing,
+                    sessions_with_estimated_cost: estimated_sessions.len() as u64,
+                    sessions_with_known_cost: known,
                     reported: accumulator.reported,
                     estimated: accumulator.estimated,
                 };
                 summary.totals.sessions += bucket.sessions;
                 summary.totals.sessions_with_tokens += bucket.sessions_with_tokens;
                 summary.totals.sessions_with_cost += bucket.sessions_with_cost;
+                summary.totals.sessions_needing_estimate += bucket.sessions_needing_estimate;
+                summary.totals.sessions_with_estimated_cost += bucket.sessions_with_estimated_cost;
+                summary.totals.sessions_with_known_cost += bucket.sessions_with_known_cost;
                 summary.totals.reported.merge(&bucket.reported);
                 summary.totals.estimated.merge(&bucket.estimated);
                 summary.providers.push(ProviderUsage { provider, bucket });
@@ -711,6 +788,206 @@ mod tests {
         assert_eq!(summary.totals.sessions, 3);
         assert_eq!(summary.totals.sessions_with_tokens, 2);
         assert_eq!(summary.totals.reported.input_tokens, Some(20));
+    }
+
+    /// A cost-less receipt with full token counts for `model`.
+    fn priced(session: &str, key: &str, model: Option<&str>, tokens: [u64; 4]) -> UsageReceipt {
+        let mut base = receipt(session, key, NOON, 1);
+        base.input_tokens = Some(tokens[0]);
+        base.cache_read_tokens = Some(tokens[1]);
+        base.cache_write_tokens = Some(tokens[2]);
+        base.output_tokens = Some(tokens[3]);
+        base.model = model.map(str::to_owned);
+        base
+    }
+
+    fn summary_of(
+        receipts: &[UsageReceipt],
+    ) -> (tempfile::TempDir, SqliteStore, UsageWindowSummary) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        for receipt in receipts {
+            store.record_usage_receipt(receipt).unwrap();
+        }
+        let summary = store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        (directory, store, summary)
+    }
+
+    #[test]
+    fn each_model_is_estimated_from_its_own_price_and_kept_out_of_reported() {
+        let (_dir, _store, summary) = summary_of(&[
+            priced(
+                "s-codex",
+                "turn:1",
+                Some("gpt-6-luna"),
+                [1_000, 200, 0, 100],
+            ),
+            priced(
+                "s-claude",
+                "result",
+                Some("claude-opus-5-5"),
+                [2, 2_254, 1_360, 69],
+            ),
+        ]);
+        let codex = provider(&summary, "codex");
+        assert_eq!(codex.estimated.costs.get("USD"), Some(&152_000));
+        assert_eq!(codex.sessions_with_estimated_cost, 1);
+        assert_eq!(codex.sessions_needing_estimate, 1);
+        assert_eq!(codex.sessions_with_known_cost, 1);
+        assert_eq!(codex.sessions_with_cost, 0);
+        assert!(codex.reported.costs.is_empty(), "never stored as reported");
+        assert_eq!(codex.estimated.input_tokens, None, "tokens are not doubled");
+        let claude = provider(&summary, "claude-code");
+        assert_eq!(claude.estimated.costs.get("USD"), Some(&8_638_800));
+        assert_eq!(summary.totals.estimated.costs.get("USD"), Some(&8_790_800));
+        assert_eq!(summary.totals.sessions_with_estimated_cost, 2);
+    }
+
+    #[test]
+    fn an_unknown_or_missing_model_is_unknown_not_zero() {
+        let (_dir, _store, summary) = summary_of(&[
+            priced(
+                "s-codex",
+                "turn:1",
+                Some("gpt-9-future"),
+                [1_000, 0, 0, 100],
+            ),
+            priced("s-claude", "result", None, [1_000, 0, 0, 100]),
+        ]);
+        for name in ["codex", "claude-code"] {
+            let bucket = provider(&summary, name);
+            assert!(bucket.estimated.costs.is_empty(), "{name}");
+            assert_eq!(bucket.sessions_with_estimated_cost, 0, "{name}");
+            assert_eq!(bucket.sessions_needing_estimate, 1, "{name}");
+            assert_eq!(bucket.sessions_with_known_cost, 0, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_missing_token_count_leaves_the_estimate_unknown() {
+        let mut no_output = priced("s-codex", "turn:1", Some("gpt-6-luna"), [1_000, 0, 0, 100]);
+        no_output.output_tokens = None;
+        let mut no_cache = priced(
+            "s-claude",
+            "result",
+            Some("claude-opus-5-5"),
+            [10, 0, 0, 10],
+        );
+        no_cache.cache_read_tokens = None;
+        let (_dir, _store, summary) = summary_of(&[no_output, no_cache]);
+        assert!(summary.totals.estimated.costs.is_empty());
+        assert_eq!(summary.totals.sessions_needing_estimate, 2);
+        assert_eq!(summary.totals.sessions_with_estimated_cost, 0);
+    }
+
+    #[test]
+    fn a_session_is_estimated_whole_or_not_at_all() {
+        let (_dir, _store, summary) = summary_of(&[
+            priced(
+                "s-codex",
+                "turn:1",
+                Some("gpt-6-luna"),
+                [1_000, 200, 0, 100],
+            ),
+            priced("s-codex", "turn:2", None, [1_000, 200, 0, 100]),
+        ]);
+        let codex = provider(&summary, "codex");
+        assert!(codex.estimated.costs.is_empty(), "no partial sum");
+        assert_eq!(codex.sessions_needing_estimate, 1);
+        assert_eq!(codex.sessions_with_estimated_cost, 0);
+    }
+
+    #[test]
+    fn reported_and_estimated_mix_without_double_counting_or_overwriting() {
+        let mut reported = priced(
+            "s-claude",
+            "result",
+            Some("claude-opus-5-5"),
+            [2, 2_254, 1_360, 69],
+        );
+        reported.cost = Some((9_000_000, "USD".into()));
+        let (_dir, _store, summary) = summary_of(&[
+            reported,
+            priced(
+                "s-codex",
+                "turn:1",
+                Some("gpt-6-luna"),
+                [1_000, 200, 0, 100],
+            ),
+            priced("s-pi", "response:r1", Some("gpt-9-future"), [1, 1, 0, 1]),
+        ]);
+        let claude = provider(&summary, "claude-code");
+        assert_eq!(claude.reported.costs.get("USD"), Some(&9_000_000));
+        assert!(
+            claude.estimated.costs.is_empty(),
+            "reported is not re-estimated"
+        );
+        assert_eq!(claude.sessions_needing_estimate, 0);
+        assert_eq!(claude.sessions_with_known_cost, 1);
+        assert_eq!(summary.totals.reported.costs.get("USD"), Some(&9_000_000));
+        assert_eq!(summary.totals.estimated.costs.get("USD"), Some(&152_000));
+        assert_eq!(summary.totals.sessions, 3);
+        assert_eq!(summary.totals.sessions_with_cost, 1);
+        assert_eq!(summary.totals.sessions_with_estimated_cost, 1);
+        assert_eq!(summary.totals.sessions_with_known_cost, 2);
+        assert_eq!(summary.totals.sessions_needing_estimate, 2);
+    }
+
+    #[test]
+    fn a_stored_estimate_suppresses_the_native_one() {
+        let mut stored = priced("s-codex", "turn:1", Some("gpt-6-luna"), [1, 1, 0, 1]);
+        stored.source = UsageSource::Estimated;
+        stored.cost = Some((5, "USD".into()));
+        let (_dir, _store, summary) = summary_of(&[
+            stored,
+            priced(
+                "s-codex",
+                "turn:2",
+                Some("gpt-6-luna"),
+                [1_000, 200, 0, 100],
+            ),
+        ]);
+        let codex = provider(&summary, "codex");
+        assert_eq!(codex.estimated.costs.get("USD"), Some(&5));
+        assert_eq!(codex.sessions_with_estimated_cost, 1);
+    }
+
+    #[test]
+    fn summarising_does_not_rewrite_stored_receipts() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = store_with_sessions(&directory.path().join("s.sqlite"));
+        let original = priced(
+            "s-codex",
+            "turn:1",
+            Some("gpt-6-luna"),
+            [1_000, 200, 0, 100],
+        );
+        store.record_usage_receipt(&original).unwrap();
+        store.usage_window_summary(DAY_START, DAY_END).unwrap();
+        let rows = store
+            .call(|pool| async move {
+                Ok(
+                    sqlx::query("SELECT source, cost_nanos, currency, model FROM usage_receipts")
+                        .fetch_all(&pool)
+                        .await?
+                        .into_iter()
+                        .map(|row| {
+                            (
+                                row.get::<String, _>("source"),
+                                row.get::<Option<i64>, _>("cost_nanos"),
+                                row.get::<Option<String>, _>("currency"),
+                                row.get::<Option<String>, _>("model"),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].1, None);
+        assert_eq!(rows[0].2, None);
+        assert_eq!(rows[0].3.as_deref(), Some("gpt-6-luna"));
+        assert_ne!(rows[0].0, "estimated");
     }
 
     #[test]

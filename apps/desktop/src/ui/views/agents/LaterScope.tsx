@@ -78,15 +78,20 @@ export function LaterScope() {
               <tbody>
                 {(
                   [
-                    ["Reported spend", usage.data.reported],
-                    ["Estimated spend", usage.data.estimated],
-                    ["Budget", usage.data.budget],
+                    ["Reported spend", usage.data.reported, "reported"],
+                    ["Estimated spend", usage.data.estimated, "estimated"],
+                    ["Budget", usage.data.budget, ""],
                   ] as const
-                ).map(([label, value]) => (
+                ).map(([label, value, kind]) => (
                   <tr key={label}>
                     <th scope="row">{label}</th>
                     <td>
                       {measured(value, (n) => `${usage.data.currency} ${n > 0 && n < 0.01 ? "<0.01" : n.toFixed(2)}`)}
+                      {value.status === "ok" && kind === "estimated" && usage.data.priceTable
+                        ? ` (estimated, table ${usage.data.priceTable.version})`
+                        : value.status === "ok" && kind
+                          ? ` (${kind})`
+                          : ""}
                     </td>
                   </tr>
                 ))}
@@ -102,6 +107,36 @@ export function LaterScope() {
                     <td>
                       partial: {usage.data.costCoverage.sessionsWithCost} of {usage.data.costCoverage.sessions} sessions
                       reported a cost
+                    </td>
+                  </tr>
+                )}
+                {usage.data.estimateCoverage &&
+                  usage.data.estimateCoverage.sessionsNeedingEstimate > usage.data.estimateCoverage.sessionsEstimated && (
+                    <tr data-testid="agents-usage-estimate-coverage">
+                      <th scope="row">Estimate coverage</th>
+                      <td>
+                        partial: {usage.data.estimateCoverage.sessionsEstimated} of{" "}
+                        {usage.data.estimateCoverage.sessionsNeedingEstimate} sessions with tokens but no reported cost
+                        could be priced; the rest are unknown
+                      </td>
+                    </tr>
+                  )}
+                {usage.data.knownCostCoverage &&
+                  usage.data.knownCostCoverage.sessions > usage.data.knownCostCoverage.sessionsWithKnownCost && (
+                    <tr data-testid="agents-usage-unknown">
+                      <th scope="row">Unknown cost</th>
+                      <td>
+                        {usage.data.knownCostCoverage.sessions - usage.data.knownCostCoverage.sessionsWithKnownCost} of{" "}
+                        {usage.data.knownCostCoverage.sessions} sessions have neither a reported nor an estimated cost
+                      </td>
+                    </tr>
+                  )}
+                {usage.data.priceTable && (
+                  <tr data-testid="agents-usage-price-table">
+                    <th scope="row">Price table</th>
+                    <td>
+                      {usage.data.priceTable.version} · basis {usage.data.priceTable.basis}
+                      {usage.data.priceTable.source ? ` · ${usage.data.priceTable.source}` : ""} · list prices, not a bill
                     </td>
                   </tr>
                 )}

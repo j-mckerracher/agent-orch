@@ -18,9 +18,18 @@
 //!   receipt reported is `null`, never 0. Costs are a list of
 //!   `{currency, amount}` with decimal-string amounts, never merged across
 //!   currencies; an empty list means no cost was reported.
+//! * Estimated cost (M7-26): a reported receipt with tokens but no cost is
+//!   priced from the native table at summary time, into `estimated` only (see
+//!   `orchestrator_store::usage_prices`). Buckets add
+//!   `sessions_needing_estimate`, `sessions_with_estimated_cost`,
+//!   `sessions_with_known_cost`, `estimated_cost_status` and
+//!   `known_cost_status`. The result adds `price_table`
+//!   `{version, basis, source, currency, models}`. All of these are additive;
+//!   a client must ignore unknown fields and tolerate their absence.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use orchestrator_store::usage_prices::price_table_info;
 use orchestrator_store::{UsageBucket, UsageFigures};
 
 use super::*;
@@ -84,6 +93,7 @@ impl DaemonApi {
                 "utc_offset_seconds": request.utc_offset_seconds,
             },
             "totals": bucket_json(&summary.totals),
+            "price_table": price_table_json(),
             "providers": summary
                 .providers
                 .iter()
@@ -128,10 +138,29 @@ fn bucket_json(bucket: &UsageBucket) -> Value {
         "sessions": bucket.sessions,
         "sessions_with_tokens": bucket.sessions_with_tokens,
         "sessions_with_cost": bucket.sessions_with_cost,
+        "sessions_needing_estimate": bucket.sessions_needing_estimate,
+        "sessions_with_estimated_cost": bucket.sessions_with_estimated_cost,
+        "sessions_with_known_cost": bucket.sessions_with_known_cost,
         "token_status": coverage_status(bucket.sessions_with_tokens, bucket.sessions),
         "cost_status": coverage_status(bucket.sessions_with_cost, bucket.sessions),
+        "estimated_cost_status": coverage_status(
+            bucket.sessions_with_estimated_cost,
+            bucket.sessions_needing_estimate,
+        ),
+        "known_cost_status": coverage_status(bucket.sessions_with_known_cost, bucket.sessions),
         "reported": figures_json(&bucket.reported),
         "estimated": figures_json(&bucket.estimated),
+    })
+}
+
+fn price_table_json() -> Value {
+    let info = price_table_info();
+    json!({
+        "version": info.version,
+        "basis": info.basis,
+        "source": info.source,
+        "currency": info.currency,
+        "models": info.models,
     })
 }
 

@@ -271,12 +271,34 @@ export interface UsageCostCoverage {
   sessions: number;
   sessionsWithCost: number;
 }
+/** Of the sessions that have tokens but no reported cost, how many the price table could price. Live adapter only. */
+export interface UsageEstimateCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessionsNeedingEstimate: number;
+  sessionsEstimated: number;
+}
+/** Sessions with a reported or an estimated cost; the rest are unknown. Live adapter only. */
+export interface UsageKnownCostCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessions: number;
+  sessionsWithKnownCost: number;
+}
+/** The native price table behind `estimated`; absent when the daemon predates it. */
+export interface UsagePriceTable {
+  version: string;
+  basis: string;
+  source?: string;
+}
 export interface UsageSummary {
   windowStart: string;
   timezone: string;
   currency: string;
   /** Live adapter only; fixtures omit it. */
   costCoverage?: UsageCostCoverage;
+  /** Live adapter only, and only from a daemon with the price table. */
+  estimateCoverage?: UsageEstimateCoverage;
+  knownCostCoverage?: UsageKnownCostCoverage;
+  priceTable?: UsagePriceTable;
   reported: Measured<number>;
   estimated: Measured<number>;
   budget: Measured<number>;

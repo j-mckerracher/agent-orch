@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { Measured, UsageCostCoverage, UsageSummary } from "../../sources/surfaces/types";
+import type { Measured, UsageCostCoverage, UsageEstimateCoverage, UsagePriceTable, UsageSummary } from "../../sources/surfaces/types";
 import { useServices, useSurface, type SurfaceRefresh } from "../services";
 import { PlaceholderBadge } from "../widgets";
 import "./topbar.css";
@@ -33,6 +33,16 @@ function isPartial(coverage: UsageCostCoverage | undefined): coverage is UsageCo
   return coverage !== undefined && coverage.status !== "complete";
 }
 
+/** Only a daemon with the price table reports estimate coverage; it is partial when some priceable-looking sessions were not priced. */
+function partialEstimate(summary: UsageSummary): UsageEstimateCoverage | null {
+  const coverage = summary.estimateCoverage;
+  return coverage && coverage.sessionsNeedingEstimate > coverage.sessionsEstimated ? coverage : null;
+}
+
+function tableLabel(table: UsagePriceTable): string {
+  return `price table ${table.version}, ${table.basis}`;
+}
+
 function age(ageMs: number): string {
   const minutes = Math.round(ageMs / 60_000);
   return minutes < 1 ? "just now" : `${minutes} min ago`;
@@ -60,9 +70,11 @@ function figure(label: string, value: Measured<number>, currency: string): strin
 }
 
 function UsageDetails({ summary }: { summary: UsageSummary }) {
-  const { reported, estimated, budget, currency, timezone, windowStart, coverage, costCoverage } = summary;
+  const { reported, estimated, budget, currency, timezone, windowStart, coverage, costCoverage, priceTable, knownCostCoverage } = summary;
   const zone = clip(timezone);
   const since = `since ${windowLabel(windowStart, timezone)} (${zone.text})`;
+  const unpricedEstimate = partialEstimate(summary);
+  const unknownSessions = knownCostCoverage ? knownCostCoverage.sessions - knownCostCoverage.sessionsWithKnownCost : 0;
   return (
     <>
       <p title={zone.title}>
@@ -76,7 +88,31 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
           {costCoverage.sessions === 1 ? "session" : "sessions"} reported a cost, so this is a lower bound.
         </p>
       )}
-      <p>{figure("Estimated, not reported", estimated, currency)} Estimates are never added to the reported figure.</p>
+      <p data-testid="top-usage-estimate">
+        {figure("Estimated, not reported", estimated, currency)} Estimates are never added to the reported figure.
+        {priceTable && estimated.status === "ok" ? ` List-price estimate from ${tableLabel(priceTable)}, not a bill.` : ""}
+      </p>
+      {estimated.status === "ok" && unpricedEstimate && (
+        <p data-testid="top-usage-estimate-partial">
+          Partial estimate: {unpricedEstimate.sessionsEstimated} of {unpricedEstimate.sessionsNeedingEstimate}{" "}
+          {unpricedEstimate.sessionsNeedingEstimate === 1 ? "session" : "sessions"} with tokens but no reported cost could be
+          priced, so this is a lower bound.
+        </p>
+      )}
+      {unknownSessions > 0 && (
+        <p data-testid="top-usage-unknown">
+          Unknown: {unknownSessions} of {knownCostCoverage!.sessions} {knownCostCoverage!.sessions === 1 ? "session has" : "sessions have"}{" "}
+          neither a reported nor an estimated cost. Unknown is not zero.
+        </p>
+      )}
+      {priceTable ? (
+        <p data-testid="top-usage-price-table">
+          Price table {priceTable.version} · basis {priceTable.basis}
+          {priceTable.source ? ` · ${priceTable.source}` : ""}
+        </p>
+      ) : costCoverage ? (
+        <p data-testid="top-usage-price-table">No price table: this daemon reports no estimates.</p>
+      ) : null}
       <p>{figure("Budget", budget, currency)}</p>
       <ul aria-label="Reporting coverage">
         {coverage.map((entry, index) => {
@@ -93,10 +129,11 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
 }
 
 /**
- * Daily usage pill (D12) with an info popover. A figure is rendered only when the source
- * answered `ok` with a reported amount; anything else reads "not available" and is never
- * drawn as $0. Fixture amounts carry the PLACEHOLDER badge. The popover keeps the
- * reporting window, timezone, currency and per-provider coverage next to the figure.
+ * Daily usage pill (D12) with an info popover. The headline is the reported amount. With nothing
+ * reported it may be a price-table estimate, drawn "≈ $x" and labelled "estimated" with the table
+ * version; an estimate is never added to a reported figure. Anything else reads "not available"
+ * (unknown) and is never drawn as $0. Fixture amounts carry the PLACEHOLDER badge. The popover keeps
+ * the reporting window, timezone, currency, price table and per-provider coverage next to the figure.
  */
 export function UsagePill() {
   const { surfaces } = useServices();
@@ -105,12 +142,16 @@ export function UsagePill() {
   const details = useRef<HTMLDetailsElement>(null);
   const summary = result.status === "ok" ? result.data : null;
   const reported = summary?.reported.status === "ok" ? summary.reported.value : null;
+  // With nothing reported, a price-table estimate may stand in, marked "estimated" and never as reported.
+  const estimate = summary && reported === null && summary.estimated.status === "ok" ? summary.estimated.value : null;
   const text =
     result.status === "loading"
       ? "loading…"
       : summary && reported !== null
         ? money(reported, summary.currency)
-        : "not available";
+        : summary && estimate !== null
+          ? `≈ ${money(estimate, summary.currency)}`
+          : "not available";
   const reason =
     result.status === "loading" || result.status === "ok" ? null : `Usage is ${result.status}: ${trimStop(result.reason)}.`;
 
@@ -134,6 +175,15 @@ export function UsagePill() {
       {summary && reported !== null && (
         <span title={isPartial(summary.costCoverage) ? "Only some sessions reported a cost; this is a lower bound." : undefined}>
           {isPartial(summary.costCoverage) ? "reported (partial)" : "reported"}
+        </span>
+      )}
+      {summary && estimate !== null && (
+        <span
+          data-testid="top-usage-basis"
+          title={`${partialEstimate(summary) ? "Only some sessions could be priced; this is a lower bound. " : ""}List-price estimate${summary.priceTable ? ` from ${tableLabel(summary.priceTable)}` : ""}, not a bill.`}
+        >
+          {partialEstimate(summary) ? "estimated (partial)" : "estimated"}
+          {summary.priceTable ? ` · table ${summary.priceTable.version}` : ""}
         </span>
       )}
       {source.provenance.kind === "fixture" && result.status !== "loading" && <PlaceholderBadge provenance={source.provenance} />}

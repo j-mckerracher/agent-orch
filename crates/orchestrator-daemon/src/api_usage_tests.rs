@@ -239,6 +239,61 @@ fn local_midnight_boundary_decides_the_day() {
 }
 
 #[test]
+fn native_estimate_is_additive_labelled_and_never_reported() {
+    let (_directory, api) = new_api();
+    task_with_sessions(
+        &api,
+        &[
+            ("s-codex", "codex"),
+            ("s-claude", "claude-code"),
+            ("s-pi", "pi"),
+        ],
+    );
+    let now = now_ms();
+    let mut priced = receipt("s-codex", "turn.completed:1", now);
+    priced.input_tokens = Some(1_000);
+    priced.cache_read_tokens = Some(200);
+    priced.cache_write_tokens = Some(0);
+    priced.output_tokens = Some(100);
+    priced.model = Some("gpt-6-luna".into());
+    api.store.record_usage_receipt(&priced).unwrap();
+    let mut unpriced = receipt("s-pi", "response:r1", now);
+    unpriced.model = Some("mystery-model".into());
+    api.store.record_usage_receipt(&unpriced).unwrap();
+
+    let summary = api.usage_summary(around_now()).unwrap();
+    let table = &summary["price_table"];
+    assert_eq!(table["version"], "2026-11-11.1");
+    assert_eq!(table["basis"], "list_price_standard_tier");
+    assert_eq!(table["currency"], "USD");
+    assert!(table["models"].as_u64().unwrap() > 0);
+
+    let codex = provider(&summary, "codex");
+    assert_eq!(codex["reported"]["costs"], json!([]));
+    assert_eq!(
+        codex["estimated"]["costs"],
+        json!([{"currency": "USD", "amount": "0.000152"}])
+    );
+    assert_eq!(codex["sessions_with_estimated_cost"], 1);
+    assert_eq!(codex["estimated_cost_status"], "complete");
+    assert_eq!(codex["known_cost_status"], "complete");
+    assert_eq!(codex["cost_status"], "unknown");
+
+    let pi = provider(&summary, "pi");
+    assert_eq!(pi["estimated"]["costs"], json!([]));
+    assert_eq!(pi["estimated_cost_status"], "unknown");
+    assert_eq!(pi["sessions_needing_estimate"], 1);
+
+    let totals = &summary["totals"];
+    assert_eq!(totals["sessions"], 3);
+    assert_eq!(totals["sessions_needing_estimate"], 2);
+    assert_eq!(totals["sessions_with_estimated_cost"], 1);
+    assert_eq!(totals["estimated_cost_status"], "partial");
+    assert_eq!(totals["known_cost_status"], "partial");
+    assert_eq!(totals["cost_status"], "unknown");
+}
+
+#[test]
 fn estimated_figures_stay_apart_from_reported_ones() {
     let (_directory, api) = new_api();
     task_with_sessions(&api, &[("s-1", "codex")]);
