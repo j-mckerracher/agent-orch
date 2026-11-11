@@ -1,23 +1,25 @@
 /**
  * Live D11 adapter (M7-20): workspace activity from `queue.snapshot` (capability `queue`),
  * joined with `tasks.list` and `approvals.list`.
+ * Updated: 2026-11-11 03:46:08 -0700 MST.
  *
  * Rules:
- * - Never imports fixtures. A failed `queue.snapshot` is `unavailable`, or `unsupported` when the
- *   daemon or this connection lacks the method or capability (an older daemon without `queue`);
- *   it is never answered with fixture data. A failed `tasks.list` or `approvals.list` degrades
- *   only its own part, named in `degraded`, and is never shown as empty.
- * - `queue.snapshot` decides who runs, who waits, the order and the limits. `tasks.list` only adds
- *   text (objective, queued agent) and the `Verifying` tasks, which hold no slot and so appear in
- *   neither snapshot list. The two reads are not atomic: the pair is re-read when they disagree on
- *   who is `Running` or `Queued`, and the snapshot stays authoritative if they still disagree.
- * - `slots.used` counts snapshot `running` only, so `Verifying` rows do not use a slot.
- *   `slots.limit` is the global limit; the per-project limit is named in the wait detail.
- * - Unknown is never zero: there is no queue position without a snapshot position, and
- *   `dispatchPaused` is always `unsupported` because the daemon has no pause. The snapshot's
- *   `dispatch_blocked` is the restart gate, not a pause, and is reported as text only.
+ * - Never imports fixtures. `queue.snapshot` is authoritative when supported. Only missing-feature
+ *   errors fall back to `tasks.list` and `approvals.list`; other snapshot failures stay unavailable.
+ * - The task-list fallback reports `Running`, `Verifying`, and `Queued` task states plus requested
+ *   approvals. It cannot establish wait reasons, queue order, slot limits, or a pause state, so
+ *   those remain unknown or unsupported. A task-list failure fails the fallback; approval failure
+ *   degrades only attention.
+ * - In the snapshot path, failed `tasks.list` or `approvals.list` reads degrade only their own
+ *   part, named in `degraded`, and are never shown as empty. The two reads are not atomic: the pair
+ *   is re-read when they disagree on `Running` or `Queued`, and the snapshot stays authoritative.
+ * - Snapshot `slots.used` counts `running` only, so `Verifying` rows do not use a slot. Its limit
+ *   is global; the per-project limit is named in the wait detail.
+ * - `dispatchPaused` is unsupported because the daemon has no pause. The snapshot's
+ *   `dispatch_blocked` is a restart gate, not a pause, and is reported as text only.
  * - `simulate*` calls reject: they exist for fixture adapters only. This adapter has no mutation.
  */
+import type { DaemonApi } from "../../daemon/api";
 import type { ConnectionManager } from "../../daemon/connection";
 import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import type { QueueQueuedEntry, QueueSnapshotWire } from "../../daemon/queue";
@@ -39,7 +41,11 @@ const MAX_READ_ATTEMPTS = 3;
 const OBJECTIVE_UNAVAILABLE = "Objective not available";
 const AGENT_UNAVAILABLE = "agent not reported";
 
-const PROVENANCE: Provenance = { kind: "daemon", id: "D11", methods: ["queue.snapshot", "tasks.list", "approvals.list"] };
+const daemonProvenance = (methods: readonly string[]): Provenance => ({ kind: "daemon", id: "D11", methods });
+const PROVENANCE = daemonProvenance(["queue.snapshot", "tasks.list", "approvals.list"]);
+const QUEUE_PROVENANCE = daemonProvenance(["queue.snapshot"]);
+const TASK_LIST_PROVENANCE = daemonProvenance(["tasks.list", "approvals.list"]);
+const EMPTY_PROVENANCE = daemonProvenance([]);
 
 const fixtureOnly = (what: string) => new DaemonError("method-unavailable", `Simulated ${what} exists only for fixture data.`);
 
@@ -48,24 +54,40 @@ function approvalKind(approval: Approval): string {
   return kind.type === "delivery" ? kind.kind : kind.type;
 }
 
+function attentionOf(approvals: readonly Approval[], projects: ReadonlyMap<string, string>): AttentionItem[] {
+  return approvals
+    .filter((approval) => approval.state.state === "requested")
+    .map<AttentionItem>((approval) => ({
+      approvalId: approval.id,
+      taskId: approval.action.task_id,
+      projectId: projects.get(approval.action.task_id) ?? null,
+      kind: approvalKind(approval),
+      priority: "unknown",
+    }));
+}
+
 function reasonOf(failed: DaemonError): string {
   return `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
 }
 
-function failure<T>(error: unknown): SurfaceResult<T> {
+function failure<T>(error: unknown, provenance: Provenance): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = reasonOf(failed);
-  return notOk(PROVENANCE, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
 }
 
-/** A read that failed after the snapshot succeeded, kept as its reason so only that part degrades. */
+/** A failed read retained when the remaining data can still form a partial snapshot. */
 type Part<T> = { ok: true; value: T } | { ok: false; reason: string };
 
-interface Reading {
-  snapshot: QueueSnapshotWire;
-  tasks: Part<TaskRecord[]>;
-  approvals: Part<Approval[]>;
-}
+type Reading =
+  | {
+      source: "queue.snapshot";
+      snapshot: QueueSnapshotWire;
+      tasks: Part<TaskRecord[]>;
+      approvals: Part<Approval[]>;
+    }
+  | { source: "tasks.list"; tasks: TaskRecord[]; approvals: Part<Approval[]> };
+type ReadResult = Reading | { source: "failure"; error: unknown; provenance: Provenance };
 
 function settle<T>(result: PromiseSettledResult<T>): Part<T> {
   return result.status === "fulfilled"
@@ -82,13 +104,32 @@ function agree(snapshot: QueueSnapshotWire, tasks: readonly TaskRecord[]): boole
   });
 }
 
-async function read(connection: ConnectionManager): Promise<Reading> {
-  const api = connection.api();
-  let reading: Reading | null = null;
+async function read(connection: ConnectionManager): Promise<ReadResult> {
+  let api: DaemonApi;
+  try {
+    api = connection.api();
+  } catch (error) {
+    return { source: "failure", error, provenance: EMPTY_PROVENANCE };
+  }
+
+  let reading: Extract<Reading, { source: "queue.snapshot" }> | null = null;
   for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt++) {
-    const snapshot = await api.queueSnapshot();
+    let snapshot: QueueSnapshotWire;
+    try {
+      snapshot = await api.queueSnapshot();
+    } catch (error) {
+      if (!isMissingFeature(asDaemonError(error))) {
+        return { source: "failure", error, provenance: QUEUE_PROVENANCE };
+      }
+      const [tasks, approvals] = await Promise.allSettled([api.tasksList(), api.approvalsList()]);
+      if (tasks.status === "rejected") {
+        return { source: "failure", error: tasks.reason, provenance: TASK_LIST_PROVENANCE };
+      }
+      return { source: "tasks.list", tasks: tasks.value, approvals: settle(approvals) };
+    }
+
     const [tasks, approvals] = await Promise.allSettled([api.tasksList(), api.approvalsList()]);
-    reading = { snapshot, tasks: settle(tasks), approvals: settle(approvals) };
+    reading = { source: "queue.snapshot", snapshot, tasks: settle(tasks), approvals: settle(approvals) };
     // Without a task list there is nothing to compare, and a re-read would not repair it.
     if (!reading.tasks.ok || agree(snapshot, reading.tasks.value)) break;
   }
@@ -126,6 +167,7 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNul
 }
 
 function snapshotOf(reading: Reading, at: Observation): ActivitySnapshot {
+  if (reading.source === "tasks.list") return taskListSnapshotOf(reading);
   const { snapshot } = reading;
   const tasks = reading.tasks.ok ? reading.tasks.value : [];
   const approvals = reading.approvals.ok ? reading.approvals.value : [];
@@ -164,15 +206,7 @@ function snapshotOf(reading: Reading, at: Observation): ActivitySnapshot {
     };
   });
 
-  const attention = approvals
-    .filter((approval) => approval.state.state === "requested")
-    .map<AttentionItem>((approval) => ({
-      approvalId: approval.id,
-      taskId: approval.action.task_id,
-      projectId: projects.get(approval.action.task_id) ?? null,
-      kind: approvalKind(approval),
-      priority: "unknown",
-    }));
+  const attention = attentionOf(approvals, projects);
 
   const next = snapshot.queued.find((entry) => entry.position === 1);
   let upNext: Measured<string>;
@@ -206,16 +240,53 @@ function snapshotOf(reading: Reading, at: Observation): ActivitySnapshot {
   };
 }
 
+function taskListSnapshotOf(reading: Extract<Reading, { source: "tasks.list" }>): ActivitySnapshot {
+  const projects = new Map(reading.tasks.map((task) => [task.contract.id, task.contract.project_id]));
+  const running: QueueEntry[] = reading.tasks
+    .filter((task) => task.state === "Running" || task.state === "Verifying")
+    .map((task): QueueEntry => ({
+      taskId: task.contract.id,
+      projectId: task.contract.project_id,
+      objective: task.contract.objective,
+      agent: task.contract.agent,
+      state: task.state,
+      waiting: null,
+    }));
+  const queued: QueueEntry[] = reading.tasks
+    .filter((task) => task.state === "Queued")
+    .map((task): QueueEntry => ({
+      taskId: task.contract.id,
+      projectId: task.contract.project_id,
+      objective: task.contract.objective,
+      agent: task.contract.agent,
+      state: "Queued",
+      waiting: { reason: "unknown", detail: "Queue order and wait reason are unavailable without queue.snapshot." },
+    }));
+
+  return {
+    running,
+    queued,
+    attention: attentionOf(reading.approvals.ok ? reading.approvals.value : [], projects),
+    slots: unsupportedValue("Scheduler slot limits are unavailable without queue.snapshot."),
+    upNext: { status: "unknown", reason: "Dispatch order is unavailable without queue.snapshot." },
+    dispatchPaused: unsupportedValue("The daemon has no dispatch pause contract."),
+    ...(reading.approvals.ok ? {} : { degraded: { approvals: reading.approvals.reason } }),
+  };
+}
+
 export function createDerivedActivity(connection: ConnectionManager, now: () => number): ActivitySource {
   return {
     provenance: PROVENANCE,
     async activity() {
+      let provenance = EMPTY_PROVENANCE;
       try {
         const reading = await read(connection);
+        if (reading.source === "failure") return failure(reading.error, reading.provenance);
+        provenance = reading.source === "tasks.list" ? TASK_LIST_PROVENANCE : PROVENANCE;
         const at = observation(now());
-        return okResult(PROVENANCE, snapshotOf(reading, at), at);
+        return okResult(provenance, snapshotOf(reading, at), at);
       } catch (error) {
-        return failure(error);
+        return failure(error, provenance);
       }
     },
     simulatePauseDispatch: () => Promise.reject(fixtureOnly("pause of dispatch")),

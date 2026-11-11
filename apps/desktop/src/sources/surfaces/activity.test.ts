@@ -161,30 +161,61 @@ describe("live D11 activity adapter", () => {
   });
 
   describe("failure states", () => {
-    it("is unsupported when the daemon does not answer queue.snapshot", async () => {
-      const fake = new FakeDaemon();
-      fake.failNext("queue.snapshot", { code: -32601, message: "method unavailable: queue.snapshot" });
-      const result = await activityOf(fake);
-      expect(result).toMatchObject({ status: "unsupported", provenance: { kind: "daemon", id: "D11" } });
-      expect(JSON.stringify(result)).not.toMatch(/fixture/i);
-    });
-
-    it("is unsupported when the connection did not negotiate the queue capability", async () => {
+    it("uses tasks and approvals when queue capability is unavailable", async () => {
       const fake = new FakeDaemon();
       fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "queue");
-      expect(await activityOf(fake)).toMatchObject({ status: "unsupported" });
+      fake.tasks = [
+        mkTask("r1", ALPHA, { state: "Running" }),
+        mkTask("v1", BETA, { state: "Verifying" }),
+        mkTask("q1", ALPHA, { state: "Queued" }),
+        mkTask("q2", BETA, { state: "Queued" }),
+        mkTask("c1", ALPHA, { state: "Created" }),
+      ];
+      fake.approvals = [mkApproval("a1", "q1"), mkApproval("a2", "r1", "approved")];
+
+      const result = await activityOf(fake);
+      if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+      expect(result.provenance).toMatchObject({ methods: ["tasks.list", "approvals.list"] });
+      const data = result.data;
+
+      expect(data.running.map((entry) => entry.taskId).sort()).toEqual(["r1", "v1"]);
+      expect(data.queued.map((entry) => entry.taskId).sort()).toEqual(["q1", "q2"]);
+      expect(data.queued.every((entry) => entry.waiting?.reason === "unknown")).toBe(true);
+      expect(data.attention.map((item) => [item.approvalId, item.taskId, item.projectId])).toEqual([["a1", "q1", ALPHA]]);
+      expect(data.upNext).toMatchObject({ status: "unknown" });
+      expect(data.slots).toMatchObject({ status: "unsupported" });
+      expect(data.dispatchPaused).toMatchObject({ status: "unsupported" });
       expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
+      expect(fake.callsTo("tasks.list")).toHaveLength(1);
+      expect(fake.callsTo("approvals.list")).toHaveLength(1);
     });
 
-    it("is unsupported on an older daemon that does not know the queue capability", async () => {
+    it("uses task and approval lists when the daemon does not implement queue.snapshot", async () => {
+      const fake = new FakeDaemon();
+      fake.failNext("queue.snapshot", { code: -32601, message: "method unavailable: queue.snapshot" });
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" })];
+
+      const result = await activityOf(fake);
+      if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+      expect(result).toMatchObject({ provenance: { kind: "daemon", methods: ["tasks.list", "approvals.list"] } });
+      const data = result.data;
+
+      expect(data.running.map((entry) => entry.taskId)).toEqual(["r1"]);
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(1);
+      expect(fake.callsTo("tasks.list")).toHaveLength(1);
+      expect(fake.callsTo("approvals.list")).toHaveLength(1);
+    });
+
+    it("uses task and approval lists on an older daemon without the queue capability", async () => {
       const fake = new FakeDaemon();
       fake.unknownCapabilities = ["queue"];
-      const connected = await connect(fake);
-      stops.push(connected.stop);
-      expect(connected.connection.getSnapshot().status).toBe("connected");
-      expect(await connected.surfaces.activity.activity()).toMatchObject({ status: "unsupported", provenance: { id: "D11" } });
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" })];
+      const data = await okActivity(fake);
+
+      expect(data.running.map((entry) => entry.taskId)).toEqual(["r1"]);
       expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
-      expect(fake.callsTo("tasks.list")).toHaveLength(0);
+      expect(fake.callsTo("tasks.list")).toHaveLength(1);
+      expect(fake.callsTo("approvals.list")).toHaveLength(1);
     });
 
     it("is unavailable, not unsupported and not fixture data, when the daemon errors", async () => {
@@ -192,7 +223,39 @@ describe("live D11 activity adapter", () => {
       fake.failNext("queue.snapshot", { code: -32603, message: "boom" });
       const result = await activityOf(fake);
       expect(result).toMatchObject({ status: "unavailable", provenance: { kind: "daemon", id: "D11" } });
+      expect(result).toMatchObject({ provenance: { kind: "daemon", methods: ["queue.snapshot"] } });
       expect(JSON.stringify(result)).toMatch(/boom/);
+      expect(fake.callsTo("tasks.list")).toHaveLength(0);
+      expect(fake.callsTo("approvals.list")).toHaveLength(0);
+    });
+
+    it("is unavailable when tasks.list fails during the task-list fallback", async () => {
+      const fake = new FakeDaemon();
+      fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "queue");
+      fake.failNext("tasks.list", { code: -32603, message: "tasks boom" });
+      const result = await activityOf(fake);
+      expect(result).toMatchObject({ status: "unavailable", provenance: { kind: "daemon", id: "D11" } });
+      expect(result).toMatchObject({ provenance: { kind: "daemon", methods: ["tasks.list", "approvals.list"] } });
+      expect(JSON.stringify(result)).toMatch(/tasks boom/);
+      expect(JSON.stringify(result)).not.toMatch(/fixture/i);
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
+      expect(fake.callsTo("tasks.list")).toHaveLength(1);
+      expect(fake.callsTo("approvals.list")).toHaveLength(1);
+    });
+
+    it("marks fallback attention unavailable when approvals.list fails", async () => {
+      const fake = new FakeDaemon();
+      fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "queue");
+      fake.tasks = [mkTask("r1", ALPHA, { state: "Running" })];
+      fake.failNext("approvals.list", { code: -32603, message: "approvals boom" });
+      const result = await activityOf(fake);
+      if (result.status !== "ok") throw new Error(`expected ok, got ${result.status}`);
+      expect(result).toMatchObject({ provenance: { kind: "daemon", methods: ["tasks.list", "approvals.list"] } });
+      const data = result.data;
+      expect(data.attention).toEqual([]);
+      expect(data.degraded?.approvals).toMatch(/approvals boom/);
+      expect(data.degraded?.tasks).toBeUndefined();
+      expect(data.running.map((entry) => entry.taskId)).toEqual(["r1"]);
     });
 
     it("degrades only the task details when tasks.list fails after the snapshot succeeded", async () => {
@@ -266,7 +329,9 @@ describe("live D11 activity adapter", () => {
       const fake = new FakeDaemon();
       const connected = await connect(fake, false);
       stops.push(connected.stop);
-      expect((await connected.surfaces.activity.activity()).status).toBe("unavailable");
+      const result = await connected.surfaces.activity.activity();
+      expect(result.status).toBe("unavailable");
+      expect(result).toMatchObject({ provenance: { kind: "daemon", methods: [] } });
       expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
     });
   });

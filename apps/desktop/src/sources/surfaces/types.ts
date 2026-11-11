@@ -237,14 +237,18 @@ export interface ActivitySnapshot {
   queued: QueueEntry[];
   /** Pending approvals only. */
   attention: AttentionItem[];
-  /** Scheduler limits are not exposed by the daemon: derived adapters answer `unsupported`. */
+  /**
+   * Queue limits require `queue.snapshot`; task-list fallback reports `unsupported`.
+   * Updated: 2026-11-11 03:46:08 -0700 MST.
+   */
   slots: Measured<SlotUsage>;
   upNext: Measured<string>;
   dispatchPaused: Measured<boolean>;
   /**
-   * Reads that failed while the queue snapshot succeeded. A listed part is unknown, not empty:
-   * `tasks` means objectives, queued agents and Verifying tasks are missing; `approvals` means
-   * `attention` is not known and holds nothing.
+   * Partial reads remain unknown, not empty. After `queue.snapshot` succeeds, `tasks` marks missing
+   * task details and Verifying rows; `approvals` marks unknown attention. The task-list fallback
+   * requires `tasks.list`, so that failure fails the result. Its `approvals.list` read can degrade
+   * attention. Updated: 2026-11-11 04:34:06 -0700 MST.
    */
   degraded?: { tasks?: string; approvals?: string };
 }

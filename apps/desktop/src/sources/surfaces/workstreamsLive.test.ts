@@ -50,7 +50,7 @@ describe("live workstreams adapter", () => {
     expect(fake.callsTo("workstreams.create")).toHaveLength(0);
   });
 
-  it("stays connected and shows queue, host and workstreams as unsupported on a daemon that refuses them", async () => {
+  it("keeps M5 activity when daemon refuses optional M7 capabilities", async () => {
     const fake = populate(new FakeDaemon());
     fake.unknownCapabilities = ["queue", "host", "workstreams"];
     const connected = await connect(fake);
@@ -59,10 +59,18 @@ describe("live workstreams adapter", () => {
     expect(fake.openRequests).toHaveLength(2);
     expect(await connected.surfaces.workstreams.workstreams()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
     expect(await connected.surfaces.metrics.metrics()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
-    expect(await connected.surfaces.activity.activity()).toMatchObject({ status: "unsupported", provenance: { kind: "daemon" } });
+    const activity = await connected.surfaces.activity.activity();
+    if (activity.status !== "ok") throw new Error(`expected activity fallback, got ${activity.status}`);
+    expect(activity.data.running.map((task) => task.taskId)).toEqual(["t-run"]);
+    expect(activity.data.queued.map((task) => task.taskId).sort()).toEqual(["t-free", "t-wait"]);
+    expect(activity.data.slots).toMatchObject({ status: "unsupported" });
+    expect(activity.data.upNext).toMatchObject({ status: "unknown" });
+    expect(activity.data.dispatchPaused).toMatchObject({ status: "unsupported" });
     expect(fake.callsTo("workstreams.list")).toHaveLength(0);
     expect(fake.callsTo("host.metrics")).toHaveLength(0);
     expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
+    expect(fake.callsTo("tasks.list")).toHaveLength(1);
+    expect(fake.callsTo("approvals.list")).toHaveLength(1);
   });
 
   it("creates a workstream and returns the daemon's id and revision", async () => {
