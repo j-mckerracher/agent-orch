@@ -111,6 +111,11 @@ impl Daemon {
     /// authenticate. Panics, with the daemon log, if it exits or is not ready
     /// within `READY`.
     pub fn start(layout: &Layout) -> Self {
+        Self::start_with_env(layout, &[])
+    }
+
+    /// Like [`Self::start`], with extra environment variables for the daemon.
+    pub fn start_with_env(layout: &Layout, env: &[(&str, &str)]) -> Self {
         TIMINGS.with(|timings| timings.borrow_mut().clear());
         let log = File::options()
             .create(true)
@@ -120,6 +125,7 @@ impl Daemon {
         let child = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")
             .arg(&layout.data)
+            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
             .stderr(log)
@@ -151,6 +157,12 @@ impl Daemon {
                 }
             }
         }
+    }
+
+    /// Ends the daemon without giving it a chance to clean up.
+    pub fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 
     pub fn wait_for_exit(&mut self) {
