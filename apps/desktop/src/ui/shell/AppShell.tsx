@@ -31,12 +31,14 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
   useEffect(() => setMenuOpen(false), [route]);
   const hasActivity = slots.activity !== null && slots.activity !== undefined;
   const hasResources = slots.resources !== null && slots.resources !== undefined;
+  // Main is the scroll container only in the full and medium tiers, so only there must it be keyboard-focusable (axe scrollable-region-focusable).
+  const mainTabIndex = tier === "full" || tier === "medium" ? 0 : -1;
   const main = mainLandmark ? (
-    <main id="shell-main" className="shell-main" tabIndex={-1}>
+    <main id="shell-main" className="shell-main" tabIndex={mainTabIndex}>
       {children}
     </main>
   ) : (
-    <div id="shell-main" className="shell-main" tabIndex={-1}>
+    <div id="shell-main" className="shell-main" tabIndex={mainTabIndex}>
       {children}
     </div>
   );

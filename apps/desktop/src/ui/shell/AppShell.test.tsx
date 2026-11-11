@@ -334,6 +334,18 @@ describe("responsive behaviour", () => {
     expect(screen.getByTestId("shell-sidebar")).toBeInTheDocument();
   });
 
+  it.each([
+    [1280, 0],
+    [1150, 0],
+    [960, -1],
+    [760, -1],
+    [390, -1],
+  ])("at %i px the main region has tabindex %i (focusable only where it is the scroller)", async (width, tabIndex) => {
+    setViewport(width);
+    await mount(daemon());
+    expect(screen.getByRole("main")).toHaveAttribute("tabindex", String(tabIndex));
+  });
+
   it("keeps the sidebar open and has no menu button above the narrow breakpoint", async () => {
     setViewport(961);
     await mount(daemon());

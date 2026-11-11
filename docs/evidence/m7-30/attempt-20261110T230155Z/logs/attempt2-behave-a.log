@@ -1,0 +1,14 @@
+PASS  theme-toggle-persist-fixture: {"dataThemeBeforeToggle":null,"toggled":{"t":"dark","p":"true","ls":"dark"},"afterReload":"dark"}
+PASS  theme-toggle-persist-nobridge: {"dataThemeBeforeToggle":null,"toggled":{"t":"dark","p":"true","ls":"dark"},"afterReload":"dark"}
+PASS  theme-os-preference-dark: {"attr":null,"pressed":"true","bg":"rgb(16, 26, 37)"}
+PASS  theme-os-preference-light: {"attr":null,"pressed":"false","bg":"rgb(255, 255, 255)"}
+PASS  reduced-motion-reduce: {"ambientOffByDefault":true,"motionLongerThan1ms":{"elements":390,"bad":[],"badCount":0},"ambientAfterToggle":{"pressed":"true","host":true,"canvas":2},"ambientReducedAttrs":[]}
+PASS  reduced-motion-no-preference: {"ambientOffByDefault":true,"motionLongerThan1ms":{"elements":390,"bad":[],"badCount":0},"ambientAfterToggle":{"pressed":"true","host":true,"canvas":2},"ambientReducedAttrs":[]}
+PASS  nav-four-routes: {"workspace":{"hash":"#/workspace","h1":"Orchestrator Workspace","title":"Agent Orchestrator","focus":"body","current":"▦ Orchestrator Workspace"},"agents":{"hash":"#/agents","h1":"Agents & Sessions","title":"Agent Orchestrator","focus":"body","current":"☷ Agents & Sessions"},"review":{"hash":"#/review","h1":"Review & Decisions","title":"Agent Orchestrator","focus":"body","current":"✓ Review & Decisions —"},"workstreams":{"hash":"#/projects","h1":"Projects","title":"Agent Orchestrator","focus":"body","current":"▤ Projects"}}
+PASS  nav-back-forward: {"back":"#/review","forward":"#/projects"}
+PASS  nav-deeplink #/project/legacy-id: {"hash":"#/project/legacy-id","h1":"legacy-id","blank":false}
+PASS  nav-deeplink #/project/legacy-id/tasks/t1: {"hash":"#/project/legacy-id/tasks/t1","h1":"Tasks","blank":false}
+PASS  nav-deeplink #/does-not-exist: {"hash":"#/workspace","h1":"Orchestrator Workspace","blank":false}
+PASS  nav-deeplink #/: {"hash":"#/workspace","h1":"Orchestrator Workspace","blank":false}
+PASS  nav-deeplink #/workstreams/nope: {"hash":"#/workstreams","h1":"Workstreams","blank":false}
+checks: 13; FAIL: 0

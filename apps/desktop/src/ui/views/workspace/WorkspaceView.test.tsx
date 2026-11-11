@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
+import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
 import { CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
@@ -324,6 +325,30 @@ describe("workspace view, live (daemon-derived) mode", () => {
 });
 
 describe("workspace view, fixture mode", () => {
+  it("sends nothing to a connected daemon when the fixture surfaces are active (every target, placeholder ids included)", async () => {
+    const fake = liveDaemon();
+    const services = track(
+      createServices({
+        connector: fake,
+        connection: { backoffMs: [5], requestTimeoutMs: 250 },
+        data: { coalesceMs: 10 },
+        sources: createFixtureSources(),
+        surfaces: createFixtureSurfaces(),
+      }),
+    );
+    const { user } = await mountView(services);
+    const before = fake.calls.length;
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "plan it");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    expect(await screen.findByText(/SIMULATED: this message was not sent or recorded anywhere/)).toBeInTheDocument();
+    await pickTarget(user, /Auth hardening/);
+    await user.type(await screen.findByRole("textbox", { name: /^Message / }), "and this");
+    await user.click(screen.getByRole("button", { name: /^Send message to / }));
+    await screen.findAllByText(/SIMULATED/);
+    expect(fake.calls.slice(before).filter((call) => /^(conversations|coordinator)\./.test(call.method) && call.method !== "coordinator.get")).toEqual([]);
+    expect(fake.calls.slice(before).filter((call) => /fixture:/.test(JSON.stringify(call.params)))).toEqual([]);
+  });
+
   it("defaults to the PLACEHOLDER Global conversation and simulates a send without any daemon", async () => {
     const services = build();
     const { user } = await mountView(services);
