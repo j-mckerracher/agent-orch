@@ -56,7 +56,7 @@ export const MACOS = {
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number.
-export const NODE_SELF_TESTS = { passed: 71 };
+export const NODE_SELF_TESTS = { passed: 95 };
 
 // Platform independent.
 export const VITEST = { files: 15, tests: 290 };

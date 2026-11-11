@@ -35,7 +35,7 @@ The Windows list is the published runbook
 
 | Gate | Command | Where |
 | --- | --- | --- |
-| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (71 tests on both; the exit code is in `node-self-tests.result.json`) | both |
+| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (95 tests on both; the exit code is in `node-self-tests.result.json`) | both |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (46 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
@@ -177,7 +177,7 @@ derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
   tolerate an alias was not cheap or safe (it would need `preserveSymlinks` or a path mapping in every
   project), so the harness refuses instead.
 - D4, the node self-tests' exit code was in no evidence: they are now the first gate (`node-self-tests`), with
-  the summary (`# pass N`, or `ℹ pass N`) checked for 71 tests and no fail, cancelled, skipped or todo, and the exit
+  the summary (`# pass N`, or `ℹ pass N`) checked for 95 tests and no fail, cancelled, skipped or todo, and the exit
   code in `node-self-tests.result.json`. `ci.yml` keeps its own "Harness self-tests" step.
 - D5, uncounted tests: `store-tests`, `lock-takeover-test` and `diagnostics-tests` are gates, so the M6-01 (lock
   owner-only) and M6-03 (diagnostics) counts are measured by the harness. 27 Windows gates and 26 on macOS.
@@ -189,8 +189,8 @@ Counts: macOS (measured) `store-tests` `[35,9,2,13,8,11,3,4,3,11,5,1,0]` = 104 p
 three gates select tests it already counts). Windows (derived from `cfg`, not measured) `store-tests`
 `[33,9,2,13,8,11,3,3,3,11,4,1,0]` = 100 passed + 1 ignored (the four `cfg(unix)` tests are absent: file mode of the
 database files, the private lock directory, the symlink at the lock path, and the real SQLite process exit);
-`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 71, measured on macOS (no test is
-platform-gated).
+`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 95 (71 plus the 24 of M6-04's
+`install-lib.test.mjs`), measured on macOS (no test is platform-gated).
 
 ### Maximum path lengths on Windows
 
@@ -398,5 +398,5 @@ a previous-release upgrade and the clean-machine procedures are **UNPROVEN** and
 results in `docs/evidence/m6-04-clean-machine-runbook.md`. The Windows flow, the `release_smoke` Windows
 branches and the new workflow step have never run on Windows or on a runner. The pure logic and both
 flows are covered by `scripts/release/install-lib.test.mjs` against a fake machine
-(`node --test "scripts/**/*.test.mjs"`); they add no `run-gates.mjs` gate, so the gate counts above are
-unchanged.
+(`node --test "scripts/**/*.test.mjs"`); they add no `run-gates.mjs` gate, but they raise the `node-self-tests`
+count from 71 to 95. The other gate counts above are unchanged.
