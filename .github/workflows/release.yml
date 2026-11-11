@@ -96,6 +96,44 @@ jobs:
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: node scripts/release/package.mjs "${{ matrix.name }}" --out "$RUNNER_TEMP/release"
 
+      # Installs the artifact just built, runs the packaged daemon through install, cancel, recovery and
+      # approvals, and (for a signed build) verifies the signatures. Not a clean machine: see docs/release-ci.md.
+      - name: Install smoke
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/target
+          SIGNED: ${{ steps.package.outputs.signed }}
+          PLATFORM: ${{ matrix.name }}
+          ALLOW_UNSIGNED_RELEASE: ${{ vars.ALLOW_UNSIGNED_RELEASE }}
+        run: |
+          cargo build --locked -p orchestrator-daemon --example release_smoke
+          exe=""; if [ "$PLATFORM" = "windows" ]; then exe=".exe"; fi
+          # The signing policy is explicit: a signed build must verify as signed; an unsigned build is
+          # only accepted off a tag, or on a tag when ALLOW_UNSIGNED_RELEASE=true was set on purpose.
+          if [ "$SIGNED" = "true" ]; then
+            policy="--require-signed"
+          else
+            if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$ALLOW_UNSIGNED_RELEASE" != "true" ]; then
+              echo "::error::unsigned build on a tag without ALLOW_UNSIGNED_RELEASE=true"
+              exit 1
+            fi
+            echo "::warning::unsigned build: this install smoke proves nothing about code signing or SmartScreen/Gatekeeper"
+            policy="--allow-unsigned"
+          fi
+          mkdir -p "$RUNNER_TEMP/smoke-evidence"
+          node scripts/release/install-smoke.mjs "$PLATFORM" \
+            --artifact-dir "$RUNNER_TEMP/release" --work "$RUNNER_TEMP/smk" \
+            --smoke-bin "$CARGO_TARGET_DIR/debug/examples/release_smoke$exe" \
+            --out "$RUNNER_TEMP/smoke-evidence/install-smoke.json" "$policy"
+
+      - name: Upload install smoke evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: install-smoke-${{ matrix.name }}
+          path: ${{ runner.temp }}/smoke-evidence
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
