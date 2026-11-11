@@ -26,10 +26,10 @@ import "./ResourceStrip.css";
  *   range would be invented, and unavailable/unsupported meters (GPU) have no value at all.
  *   Those rows are `role="group"` with the same name, value, scope and age as visible text.
  *
- * The shell renders this slot in its `Device resources` section and owns responsive placement.
- * Below 960 px it stays sticky in the scrolling content and is capped at 15dvh (`shell.css`).
- * The supplied wireframe has no matching body element, so keep existing app behavior.
- * Updated: 2026-11-11 18:12:43 UTC.
+ * The shell renders this slot in its `Device resources` section and owns placement.
+ * Its normal-flow region keeps the summary and expanded readings reachable at every width.
+ * The supplied wireframe has no matching body element, so no separate target is inferred.
+ * Updated: 2026-11-11 20:16:54 UTC.
  */
 
 type MeterKey = "cpu" | "memory" | "gpu" | "disk";

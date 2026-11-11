@@ -1,8 +1,9 @@
 /*
  * Global app shell layout. Token names fall back to M7-01 defaults.
- * At 1150 px the sidebar narrows and the activity panel stays 300 px wide on the right.
- * At 960 px activity moves above main; at 760 px sidebar navigation stays visible in two columns.
- * Updated: 2026-11-11 18:12:43 UTC.
+ * At 1150 px the sidebar narrows and activity stays 300 px wide on the right.
+ * At 960 px activity moves above main; the resource slot stays in normal flow.
+ * At 760 px sidebar navigation stays visible in two columns.
+ * Updated: 2026-11-11 20:16:54 UTC.
  */
 body:has(.shell) {
   margin: 0;
@@ -339,8 +340,6 @@ body:has(.shell) {
       "main"
       "res";
     overflow: auto;
-    /* The sticky resource strip must never cover the element that receives focus (WCAG 2.4.11). */
-    scroll-padding-bottom: 15dvh;
   }
 
   .shell-main {
@@ -358,24 +357,12 @@ body:has(.shell) {
     min-height: 0;
   }
 
-  /*
-   * Keep the existing resource slot pinned to the bottom of its scrolling content below 960 px.
-   * The supplied wireframe has no matching body element to define another resource-strip target.
-   */
-  .shell-resources {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    max-height: 15dvh;
-    overflow: auto;
-  }
 }
 
 @media (max-width: 760px) {
   .shell-body {
     display: block;
     overflow: auto;
-    scroll-padding-bottom: 15dvh;
   }
 
   .shell-sidebar {
