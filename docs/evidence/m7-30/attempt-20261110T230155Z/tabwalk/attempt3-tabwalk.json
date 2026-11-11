@@ -1,0 +1,616 @@
+[
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 35,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 34,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 35,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 34,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 19,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 18,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 19,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 18,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 31,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 30,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 31,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 30,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 34,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 33,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 34,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 33,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 24,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": [
+   {
+    "tag": "div",
+    "id": null,
+    "testid": null,
+    "role": "region",
+    "name": "Adapter inventory table",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     38,
+     210,
+     326,
+     879
+    ],
+    "key": "DIV#.agents-scroll|Configured adapter\tA"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 24,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": [
+   {
+    "tag": "div",
+    "id": null,
+    "testid": null,
+    "role": "region",
+    "name": "Adapter inventory table",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     38,
+     210,
+     326,
+     879
+    ],
+    "key": "DIV#.agents-scroll|Configured adapter\tA"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "dark",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "dark",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "dark",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "dark",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ }
+]

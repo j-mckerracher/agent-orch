@@ -34,4 +34,31 @@ describe("shell.css resources region", () => {
   it("keeps the strip a grid area of the content column", () => {
     expect(bodies.some((body) => /grid-area\s*:\s*res\b/.test(body))).toBe(true);
   });
+
+  it("reserves scroll padding under the sticky strip so focused controls are never obscured (WCAG 2.4.11)", () => {
+    const stacked = shellCss.indexOf("@media (max-width: 960px)");
+    const narrow = shellCss.indexOf("@media (max-width: 760px)");
+    const stackedBlock = shellCss.slice(stacked, narrow);
+    const narrowBlock = shellCss.slice(narrow);
+    expect(stackedBlock).toMatch(/\.shell-content\.has-activity\s*\{[^}]*scroll-padding-bottom\s*:\s*15dvh/);
+    expect(narrowBlock).toMatch(/\.shell-body\s*\{[^}]*scroll-padding-bottom\s*:\s*15dvh/);
+  });
+
+  it("draws a visible focus ring on the focusable scroll container", () => {
+    expect(shellCss).toMatch(/\.shell-main:focus-visible\s*\{[^}]*outline\s*:\s*3px/);
+  });
+
+  it("lets the stacked main row size to its content so the activity panel cannot cover the composer", () => {
+    const stacked = shellCss.slice(shellCss.indexOf("@media (max-width: 960px)"), shellCss.indexOf("@media (max-width: 760px)"));
+    expect(stacked).toMatch(/\.shell-main\s*\{[^}]*min-height\s*:\s*auto/);
+    expect(stacked).toMatch(/\.shell-activity\s*\{[^}]*min-height\s*:\s*auto/);
+  });
+
+  it("makes every scroll container the containing block of absolutely positioned descendants so the document never scrolls", () => {
+    for (const selector of [".shell-body", ".shell-content", ".shell-main", ".shell-activity"]) {
+      const rule = new RegExp(`^${selector.replace(".", "\\.")}\\s*\\{([^}]*)\\}`, "m").exec(shellCss);
+      expect(rule, selector).not.toBeNull();
+      expect(rule![1], selector).toMatch(/position\s*:\s*relative/);
+    }
+  });
 });

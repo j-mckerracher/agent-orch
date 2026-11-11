@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import App from "../../App";
 import { DaemonError } from "../../daemon/errors";
 import { createFixtureSources } from "../../sources/fixtures";
+import { createFixtureSurfaces } from "../../sources/surfaces/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
@@ -45,6 +46,30 @@ afterEach(() => {
 });
 
 describe("fixture mode", () => {
+  it("sends no mutation to a connected daemon when the fixture surfaces are active (Stop, Pause)", async () => {
+    const fake = liveDaemon();
+    const services = createServices({
+      connector: fake,
+      initialRoute: DEFAULT_ROUTE,
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+      surfaces: createFixtureSurfaces(),
+    });
+    const user = userEvent.setup();
+    render(<App services={services} shellSlots={{ activity: <ActivityPanel /> }} />);
+    await connected();
+    const panel = await screen.findByTestId("workspace-activity");
+    const before = fake.calls.length;
+    await user.click(await within(panel).findByRole("button", { name: /Stop Add refresh-token expiry/ }));
+    await user.click(within(panel).getByRole("button", { name: "Confirm stop" }));
+    await waitFor(() => expect(within(panel).getAllByTestId("simulated-receipt")).toHaveLength(1));
+    await user.click(within(panel).getByRole("button", { name: "Pause new dispatch" }));
+    await waitFor(() => expect(within(panel).getAllByTestId("simulated-receipt")).toHaveLength(2));
+    expect(fake.calls.slice(before).filter((call) => /^(tasks\.(cancel|retry|submit)|approvals\.resolve|queue\.(pause|resume))$/.test(call.method))).toEqual([]);
+    expect(fake.calls.slice(before).filter((call) => /fixture:/.test(JSON.stringify(call.params)))).toEqual([]);
+  });
+
   it("labels every placeholder group and shows the sample numbers", async () => {
     const { panel } = await mountPanel(null);
     await waitFor(() => expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("20 of 24"));

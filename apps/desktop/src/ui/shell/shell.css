@@ -52,8 +52,14 @@ body:has(.shell) {
   transform: none;
 }
 
+/* The main region scrolls, so it is a keyboard stop (axe scrollable-region-focusable); it needs a visible ring. */
 .shell-main:focus {
   outline: none;
+}
+
+.shell-main:focus-visible {
+  outline: 3px solid var(--shell-blue);
+  outline-offset: -3px;
 }
 
 .shell-strip {
@@ -68,6 +74,9 @@ body:has(.shell) {
 }
 
 .shell-body {
+  /* Scroll containers are the containing block of absolutely positioned descendants (visually-hidden text),
+     otherwise those escape the container and make the document itself scroll. */
+  position: relative;
   display: grid;
   grid-template-columns: 214px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
@@ -215,6 +224,7 @@ body:has(.shell) {
 }
 
 .shell-content {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -269,6 +279,7 @@ body:has(.shell) {
 }
 
 .shell-main {
+  position: relative;
   grid-area: main;
   min-width: 0;
   min-height: 0;
@@ -277,6 +288,7 @@ body:has(.shell) {
 }
 
 .shell-activity {
+  position: relative;
   grid-area: activity;
   min-width: 0;
   min-height: 0;
@@ -336,15 +348,21 @@ body:has(.shell) {
       "activity"
       "res";
     overflow: auto;
+    /* The sticky resource strip must never cover the element that receives focus (WCAG 2.4.11). */
+    scroll-padding-bottom: 15dvh;
   }
 
   .shell-main {
     overflow: visible;
+    /* A zero minimum lets the auto grid row shrink below its content, so the activity panel is painted over the main region. */
+    min-height: auto;
   }
 
   .shell-activity {
     margin: 0 22px 16px;
     overflow: visible;
+    /* Same reason as .shell-main: otherwise the panel overflows its row and paints under the sticky strip. */
+    min-height: auto;
   }
 
   /*
@@ -366,6 +384,7 @@ body:has(.shell) {
   .shell-body {
     display: block;
     overflow: auto;
+    scroll-padding-bottom: 15dvh;
   }
 
   .shell-sidebar {
