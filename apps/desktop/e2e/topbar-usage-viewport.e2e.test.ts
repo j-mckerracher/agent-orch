@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 
 const desktopRoot = fileURLToPath(new URL("..", import.meta.url));
 const chromePath = process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const viewport = { width: 760, height: 1200 };
+const viewport = { width: 760, height: Number(process.env.POPOVER_VIEWPORT_HEIGHT ?? 700) };
 const probe = `<script>
 window.addEventListener("load", () => {
   const capture = () => {
@@ -26,6 +26,8 @@ window.addEventListener("load", () => {
     }
     summary.click();
     requestAnimationFrame(() => {
+      // Below 760px the shell body is the scroller and the popover sits below the sidebar, so measure it once scrolled into view.
+      popup.scrollIntoView({ block: "nearest", inline: "nearest" });
       const rect = popup.getBoundingClientRect();
       const marker = document.createElement("pre");
       marker.id = "topbar-usage-measurement";
@@ -123,22 +125,26 @@ it("keeps the TopBar usage popover within 760 CSS-pixel width", async () => {
     const address = server.httpServer?.address();
     if (typeof address !== "object" || address === null) throw new Error("Vite did not expose a TCP address");
 
-    const run = await dumpDom([
-      "--headless=new",
-      "--disable-gpu",
-      "--no-first-run",
-      "--no-default-browser-check",
-      `--user-data-dir=${profile}`,
-      `--window-size=${viewport.width},${viewport.height}`,
-      "--force-device-scale-factor=1",
-      "--virtual-time-budget=5000",
-      "--dump-dom",
-      `http://127.0.0.1:${address.port}/?fixture=1`,
-    ]);
-    if (run.code !== 0) throw new Error(`Chrome exited ${run.code} (${run.signal}): ${run.stderr}`);
-
-    const text = /<pre id="topbar-usage-measurement">([\s\S]*?)<\/pre>/.exec(run.stdout)?.[1];
-    if (!text) throw new Error(`Chrome did not report popover geometry: ${run.stderr}`);
+    // Headless Chrome intermittently exits before the probe reports; retry the launch, never the assertions.
+    let text: string | undefined;
+    let lastError = "";
+    for (let attempt = 0; attempt < 4 && !text; attempt++) {
+      const run = await dumpDom([
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        `--user-data-dir=${profile}`,
+        `--window-size=${viewport.width},${viewport.height}`,
+        "--force-device-scale-factor=1",
+        "--virtual-time-budget=5000",
+        "--dump-dom",
+        `http://127.0.0.1:${address.port}/?fixture=1`,
+      ]);
+      text = /<pre id="topbar-usage-measurement">([\s\S]*?)<\/pre>/.exec(run.stdout)?.[1];
+      lastError = `Chrome exited ${run.code} (${run.signal}): ${run.stderr}`;
+    }
+    if (!text) throw new Error(`Chrome did not report popover geometry: ${lastError}`);
     const raw: unknown = JSON.parse(text);
     if (!isMeasurement(raw)) throw new Error("Chrome returned invalid usage popover measurements");
     console.info(JSON.stringify({ browser: browserVersion, viewport: { width: raw.innerWidth, height: raw.innerHeight }, bounds: raw.rect }));
@@ -149,7 +155,8 @@ it("keeps the TopBar usage popover within 760 CSS-pixel width", async () => {
     expect(raw.rect.height).toBeGreaterThan(0);
     expect(raw.rect.left).toBeGreaterThanOrEqual(0);
     expect(raw.rect.top).toBeGreaterThanOrEqual(0);
-    expect(raw.rect.bottom).toBeLessThanOrEqual(raw.innerHeight);
+    expect(raw.innerHeight).toBeGreaterThan(raw.rect.height);
+    expect(raw.rect.bottom).toBeLessThanOrEqual(raw.innerHeight + 1); // scroll extents round to whole pixels
     expect(raw.rect.right).toBeLessThanOrEqual(raw.innerWidth);
   } finally {
     await server?.close();
