@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   THEME_STORAGE_KEY,
@@ -10,6 +12,8 @@ import {
   writePreference,
   type ThemeStorage,
 } from "./theme";
+
+const themeBootstrap = readFileSync("public/theme-init.js", "utf8");
 
 function memoryStorage(initial: Record<string, string> = {}): ThemeStorage & { data: Record<string, string> } {
   const data = { ...initial };
@@ -79,6 +83,26 @@ describe("theme preference storage", () => {
       },
     };
     expect(defaultStorage(win)).toBeNull();
+  });
+});
+
+describe("pre-app theme bootstrap", () => {
+  it("applies a stored choice to the document before app content", () => {
+    document.documentElement.removeAttribute("data-theme");
+    const storage = memoryStorage({ [THEME_STORAGE_KEY]: "dark" });
+    runInNewContext(themeBootstrap, { document, window: { localStorage: storage } });
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  });
+
+  it("leaves the system choice available when bootstrap storage throws", () => {
+    document.documentElement.removeAttribute("data-theme");
+    const blockedWindow = Object.defineProperty({}, "localStorage", {
+      get: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    });
+    runInNewContext(themeBootstrap, { document, window: blockedWindow });
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   });
 });
 

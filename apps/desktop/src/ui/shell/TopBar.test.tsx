@@ -53,9 +53,30 @@ function daemon() {
   return fake;
 }
 
+const originalMatchMedia = window.matchMedia;
+
 afterEach(() => {
   window.location.hash = "";
+  window.matchMedia = originalMatchMedia;
 });
+
+function setViewport(width: number) {
+  window.matchMedia = (query) => {
+    const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query);
+    return {
+      matches: maxWidth !== null && width <= Number(maxWidth[1]),
+      media: query,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return true;
+      },
+    };
+  };
+}
 
 describe("top bar counts", () => {
   it("fixture mode shows the PLACEHOLDER D9/D11 numbers with a badge", async () => {
@@ -177,6 +198,23 @@ describe("usage pill", () => {
     expect(details.open).toBe(true);
     await user.click(document.body);
     expect(details.open).toBe(false);
+  });
+});
+
+describe("narrow top bar keyboard order", () => {
+  it("keeps usage, search, and counts in DOM order at 760 px", async () => {
+    setViewport(760);
+    const { user } = await mount(daemon());
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    const usage = screen.getByRole("group", { name: "Daily usage" }).querySelector<HTMLElement>("summary");
+    if (!usage) throw new Error("usage disclosure is missing");
+    const firstCount = within(screen.getByTestId("top-counts")).getAllByRole("link")[0];
+
+    usage.focus();
+    await user.tab();
+    expect(screen.getByRole("combobox", { name: "Search" })).toHaveFocus();
+    await user.tab();
+    expect(firstCount).toHaveFocus();
   });
 });
 

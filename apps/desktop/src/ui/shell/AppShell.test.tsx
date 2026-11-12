@@ -164,7 +164,9 @@ describe("navigation", () => {
     const skip = screen.getByRole("link", { name: "Skip to main content" });
     expect(skip).toHaveFocus();
     await user.keyboard("{Enter}");
-    expect(screen.getByRole("main")).toHaveFocus();
+    const main = screen.getByRole("main");
+    expect(main).toHaveFocus();
+    expect(window.getComputedStyle(main).outlineWidth).toBe("3px");
     expect(services.router.getSnapshot()).toEqual(route);
   });
 
