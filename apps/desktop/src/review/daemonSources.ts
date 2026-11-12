@@ -4,9 +4,10 @@
 // a request the daemon cannot answer is reported as unavailable or an error,
 // never as made-up evidence.
 import type { DaemonApi } from "../daemon/api";
-import { asDaemonError } from "../daemon/errors";
+import { asDaemonError, DaemonError } from "../daemon/errors";
 import { IdempotencyTracker } from "../daemon/idempotency";
 import type { ReviewEvidenceWire, ReviewVerificationRun } from "../daemon/types";
+import { reviewCandidateBlocker } from "./binding";
 import type {
   ChangeRequestHistory,
   ChangeRequestInput,
@@ -172,6 +173,8 @@ export function createDaemonChangeRequestSource(api: () => DaemonApi): ChangeReq
       }
     },
     async submit(input: ChangeRequestInput) {
+      const refusal = reviewCandidateBlocker(input.candidateCommit);
+      if (refusal) throw new DaemonError("invalid-params", refusal);
       const scope = `changes:${input.approvalId}`;
       const key = keys.keyFor(scope, `${input.candidateCommit}|${input.feedback}`);
       try {
