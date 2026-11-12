@@ -345,7 +345,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 | OX-A6 | Top-bar daily-usage pill and info popover (reported vs estimated, window, timezone) | Usage pill | none | missing | D12 | M7-06 (backend), M7-16 (UI) |
 | OX-A7 | Top-bar search "Search tasks, sessions, artifacts, decisions, errors" | Local search over loaded records, with an explicit "searches loaded records only" note | Loaded `projects.list`, `tasks.list`, `sessions.list`, `approvals.list` | existing (local); global index deferred | D15 | M7-16 |
 | OX-A8 | Counts "N workstreams · N tasks · N running · N require attention" | Top-bar counts | derived: projects, `tasks.list`, `approvals.list` | existing (derived) | D9, D11 | M7-16 |
-| OX-A9 | Bottom resource strip: CPU, Memory, GPU, Disk (`role="meter"`) | Resource strip; unsupported or unavailable shown as text, never 0 | none | missing (GPU deferred) | D13 | M7-04, M7-17 |
+| OX-A9 | System Usage in the activity panel: CPU, Memory, GPU, Disk (`role="meter"`) | Resource strip; unsupported or unavailable shown as text, never 0 | none | missing (GPU deferred) | D13 | M7-04, M7-17 |
 | OX-A10 | Ambient particle-wave background (WebGPU, Canvas2D fallback) | Optional bundled module | none (client) | deferred (D-9) | — | M7-18 (optional) |
 | OX-A11 | (not drawn) Connection state | C1 re-hosted in the shell | `health`, `events.subscribe` epoch and sequence | existing | D6 | M7-02, M7-15 |
 
