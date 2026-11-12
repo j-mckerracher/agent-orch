@@ -11,7 +11,7 @@ git -C /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mc
 git -C /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-02-close rev-parse HEAD
 node --version
 npm --version
-npm run tauri dev
+CARGO_TARGET_DIR=/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-02-close/target/m7-02-close npm run tauri dev
 ```
 
 Keep Cargo output isolated by setting `CARGO_TARGET_DIR=/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-02-close/target/m7-02-close` before the launch. Use a unique evidence directory under `target/m7-02-close-logs/native-<UTC timestamp>-<UUID>/`. Capture launch stdout/stderr and exit status. Preserve failures and rerun in a new directory after any source correction. Do not overwrite earlier evidence.
