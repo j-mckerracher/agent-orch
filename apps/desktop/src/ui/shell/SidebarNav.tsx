@@ -43,7 +43,7 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
       label: "Projects",
       icon: "▤",
       to: { name: "projects" },
-      isCurrent: (current) => (current.name !== "global" ? "true" : false),
+      isCurrent: (current) => (current.name !== "global" ? "page" : false),
     },
   ];
   return (
