@@ -242,7 +242,6 @@ function AgingStrip({ metrics, defaultOpen, now, state }: StripBodyProps & { sta
         timer = setInterval(() => setNowMs(now()), AGE_TICK_MS);
       }
     };
-    setNowMs(now());
     sync();
     document.addEventListener("visibilitychange", sync);
     return () => {

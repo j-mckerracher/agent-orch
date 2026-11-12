@@ -207,6 +207,31 @@ describe("ResourceStrip with a watched source", () => {
     expect(screen.queryByTestId("badge-D13")).toBeNull();
     expect(metrics).not.toHaveBeenCalled();
   });
+  it("preserves observation age when a reading arrives while hidden", async () => {
+    let clock = NOW;
+    const { services, watch, push } = watchedServices();
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    render(
+      <ServicesProvider services={services}>
+        <ResourceStrip defaultOpen now={() => clock} />
+      </ServicesProvider>,
+    );
+    expect(watch).toHaveBeenCalledTimes(1);
+    try {
+      act(() => setHidden(true));
+      clock = NOW + 120_000;
+      act(() => push(liveResult(42)));
+      const meter = await screen.findByRole("meter", { name: "CPU utilization" });
+      expect(meter).toHaveAttribute("aria-valuetext", expect.stringContaining("observed 1 s ago"));
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      Reflect.deleteProperty(document, "hidden");
+    }
+  });
 
   it("stops watching when unmounted", () => {
     const { services, watch, stop } = watchedServices();
