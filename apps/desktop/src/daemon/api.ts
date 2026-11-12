@@ -1,7 +1,7 @@
 /**
  * Typed wrapper over the accepted M5-02 methods used by M5-03.
  *
- * Mutation helpers refuse ids minted by UI fixtures (prefix `fixture:`), so a
+ * Mutation helpers refuse fixture-like ids, including historical colon-less ids, so a
  * placeholder id can never reach a real daemon mutation even if a caller wires
  * a fixture record into a real action by mistake.
  */
@@ -51,7 +51,7 @@ import type { UsageSummaryRequest } from "./usageWire";
 export const FIXTURE_ID_PREFIX = "fixture:";
 
 export function isFixtureId(id: string): boolean {
-  return id.trim().toLowerCase().startsWith(FIXTURE_ID_PREFIX);
+  return id.trim().toLowerCase().startsWith("fixture");
 }
 
 /** Guard failures reject asynchronously, like every other API failure. */
@@ -60,6 +60,26 @@ function realId(id: string): string {
     throw new DaemonError("invalid-params", "placeholder ids cannot be sent to the daemon");
   }
   return id;
+}
+
+/**
+ * Check ID-bearing fields before forwarding spread contracts or proposal JSON.
+ * Walk nested records and ID arrays, including unknown extension fields, so a spread
+ * cannot bypass the guard. Free text and verification commands stay unchanged.
+ * Schema validation and authorization remain the daemon's responsibility.
+ */
+function realIdFields(value: unknown, idField = false): void {
+  if (typeof value === "string") {
+    if (idField) realId(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) realIdFields(item, idField);
+  } else if (value !== null && typeof value === "object") {
+    for (const [field, item] of Object.entries(value)) {
+      const isId = /^(id|ids|dependencies|agent|model|effort|candidate_commit|candidateCommit)$/.test(field)
+        || /(_ids?$|[a-z]Ids?$)/.test(field);
+      realIdFields(item, isId);
+    }
+  }
 }
 
 export class DaemonApi {
@@ -87,6 +107,7 @@ export class DaemonApi {
 
   /** `tasks.submit` queues work; it does not prove an agent launched. */
   async tasksSubmit(idempotencyKey: string, contract: TaskSubmission): Promise<TaskRecord> {
+    realIdFields(contract);
     return this.session.request("tasks.submit", {
       idempotency_key: idempotencyKey,
       contract: {
@@ -194,8 +215,15 @@ export class DaemonApi {
     });
   }
 
-  /** Validates a proposal (a JSON string) without creating tasks or approvals. */
+  /** Validates proposal JSON without creating tasks or approvals; malformed JSON and fixture IDs reject locally. */
   async coordinatorPropose(projectId: string, proposal: string, idempotencyKey: string): Promise<CoordinatorEntry> {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(proposal);
+    } catch {
+      throw new DaemonError("invalid-params", "The coordinator proposal must be valid JSON.");
+    }
+    realIdFields(payload);
     return this.session.request("coordinator.propose", {
       project_id: realId(projectId),
       proposal,
@@ -236,7 +264,7 @@ export class DaemonApi {
   ): Promise<ReviewChangesResult> {
     return this.session.request("review.request_changes", {
       approval_id: realId(approvalId),
-      candidate_commit: candidateCommit,
+      candidate_commit: realId(candidateCommit),
       feedback,
       idempotency_key: idempotencyKey,
     });
