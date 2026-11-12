@@ -77,6 +77,19 @@ describe("fixture surfaces (D9-D16)", () => {
     expect(project.status === "ok" && project.data.entries.map((e) => e.kind)).toEqual(["message", "proposal"]);
   });
 
+  it("keeps workstream transcripts unknown instead of showing project notes", async () => {
+    const target = { kind: "workstream", workstreamId: "fixture:ws-infra" } as const;
+    const s = createFixtureSurfaces({ now: clock });
+    const transcript = await s.conversation.transcript(target);
+    expect(transcript).toMatchObject({ status: "unknown", provenance: { kind: "fixture" } });
+    expect(transcript).not.toHaveProperty("data");
+    const receipt = await s.conversation.send(target, "hi");
+    expect(receipt.notice).toContain("a workstream");
+    expect(receipt.notice).not.toContain("a project");
+    const empty = createFixtureSurfaces({ scenario: "empty", now: clock });
+    expect(await empty.conversation.transcript(target)).toMatchObject({ status: "unknown" });
+  });
+
   it("shows an unknown objective and an unsupported GPU rather than inventing values", async () => {
     const s = createFixtureSurfaces({ now: clock });
     const ws = await s.workstreams.workstreams();

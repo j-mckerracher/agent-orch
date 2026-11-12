@@ -86,7 +86,7 @@ function resolve<D, T>(
   id: SurfaceId,
   envelope: Envelope<D>,
   ctx: Ctx,
-  build: (data: D, nowMs: number) => T,
+  build: (data: D, nowMs: number) => T | null,
   empty: (data: D, nowMs: number) => T | null,
 ): Promise<SurfaceResult<T>> {
   const prov = provenance(id, envelope);
@@ -97,13 +97,10 @@ function resolve<D, T>(
   const nowMs = ctx.now();
   const { ageMs, data } = envelope.scenarios.success;
   const obs = observation(nowMs, ageMs);
-  if (ctx.scenario === "empty") {
-    const value = empty(data, nowMs);
-    return Promise.resolve(
-      value === null ? notOk(prov, "unknown", "Fixture scenario: nothing has been observed yet.") : okResult(prov, value, obs),
-    );
-  }
-  return Promise.resolve(okResult(prov, build(data, nowMs), obs));
+  const value = ctx.scenario === "empty" ? empty(data, nowMs) : build(data, nowMs);
+  return Promise.resolve(
+    value === null ? notOk(prov, "unknown", "Fixture scenario: nothing has been observed yet.") : okResult(prov, value, obs),
+  );
 }
 
 function receipt(id: SurfaceId, envelope: { fixture: string }, ctx: Ctx, counter: { n: number }, what: string): SurfaceReceipt {
@@ -156,6 +153,9 @@ function conversationSource(ctx: Ctx): ConversationSource {
   type Data = { global: ConversationEntry[]; project: ConversationEntry[] };
   const envelope = conversationFixture as unknown as Envelope<Data>;
   const counter = { n: 0 };
+  // The fixture has no workstream transcripts; project notes must not stand in for one.
+  const transcriptOf = (target: ConversationTarget, entries: ConversationEntry[]) =>
+    target.kind === "workstream" ? null : { target, entries, repliesExpected: true, truncated: false };
   return {
     provenance: provenance("D10", envelope),
     transcript: (target: ConversationTarget) =>
@@ -163,11 +163,12 @@ function conversationSource(ctx: Ctx): ConversationSource {
         "D10",
         envelope,
         ctx,
-        (data) => ({ target, entries: data[target.kind === "global" ? "global" : "project"], repliesExpected: true, truncated: false }),
-        () => ({ target, entries: [], repliesExpected: true, truncated: false }),
+        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"]),
+        () => transcriptOf(target, []),
       ),
     send: (target: ConversationTarget, text: string): Promise<SendReceipt> => {
-      const base = receipt("D10", envelope, ctx, counter, `message to ${target.kind === "global" ? "the coordinator" : "a project"}`);
+      const where = { global: "the coordinator", project: "a project", workstream: "a workstream" }[target.kind];
+      const base = receipt("D10", envelope, ctx, counter, `message to ${where}`);
       return Promise.resolve({
         simulated: true,
         provenance: base.provenance,
