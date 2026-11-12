@@ -126,7 +126,7 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
         }));
         console.log(JSON.stringify({ route, fixture, ...geometry }));
         expect(geometry.width).toBe(width);
-        for (const slot of geometry.slots) expect(slot.overflow, `${route} fixture=${fixture} ${slot.slot}`).toBeLessThanOrEqual(1);
+        for (const slot of geometry.slots) expect.soft(slot.overflow, `${route} fixture=${fixture} ${slot.slot}`).toBeLessThanOrEqual(1);
         if (width === 760) expect(geometry.sidebarHeight).toBeLessThanOrEqual(geometry.height * 0.42 + 1);
       }
     }
