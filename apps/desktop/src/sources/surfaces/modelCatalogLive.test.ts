@@ -36,6 +36,19 @@ function withAgents(fake: FakeDaemon) {
 }
 
 describe("live model catalog", () => {
+  it("keeps an absent catalog row unknown after a successful catalog read", async () => {
+    const fake = withAgents(populate(new FakeDaemon()));
+    fake.stub("agents.catalog", []);
+    const result = await (await live(fake)).models.catalog();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.data.providers.length).toBeGreaterThan(0);
+    for (const provider of result.data.providers) {
+      expect(provider.models).toMatchObject({ status: "unknown", reason: expect.stringContaining("no row") });
+      expect(provider.efforts).toMatchObject({ status: "unknown" });
+    }
+  });
+
   it("binds per-model efforts for Codex, adapter-wide efforts for Claude, and Pi as unsupported", async () => {
     const fake = withAgents(populate(new FakeDaemon()));
     fake.stub("agents.catalog", [CODEX_CATALOG, CLAUDE_CATALOG, PI_CATALOG]);

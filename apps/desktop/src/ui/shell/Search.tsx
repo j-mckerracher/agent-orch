@@ -154,6 +154,8 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
             query: trimmed,
             result: {
               status: "unavailable",
+              observedAt: new Date().toISOString(),
+              ageMs: 0,
               reason: error instanceof Error ? error.message : "search failed",
               provenance: surfaces.search.provenance,
             },

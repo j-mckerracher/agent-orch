@@ -70,10 +70,10 @@ function reasonOf(failed: DaemonError): string {
   return `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
 }
 
-function failure<T>(error: unknown, provenance: Provenance): SurfaceResult<T> {
+function failure<T>(error: unknown, provenance: Provenance, now: () => number): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = reasonOf(failed);
-  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));
 }
 
 /** A failed read retained when the remaining data can still form a partial snapshot. */
@@ -281,12 +281,12 @@ export function createDerivedActivity(connection: ConnectionManager, now: () => 
       let provenance = EMPTY_PROVENANCE;
       try {
         const reading = await read(connection);
-        if (reading.source === "failure") return failure(reading.error, reading.provenance);
+        if (reading.source === "failure") return failure(reading.error, reading.provenance, now);
         provenance = reading.source === "tasks.list" ? TASK_LIST_PROVENANCE : PROVENANCE;
         const at = observation(now());
         return okResult(provenance, snapshotOf(reading, at), at);
       } catch (error) {
-        return failure(error, provenance);
+        return failure(error, provenance, now);
       }
     },
     simulatePauseDispatch: () => Promise.reject(fixtureOnly("pause of dispatch")),

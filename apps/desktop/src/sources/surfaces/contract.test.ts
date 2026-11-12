@@ -144,6 +144,8 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
       const label = `${id}/${scenario}`;
       expect(result.status, label).toBe(expectedStatus(harness.kind, id, scenario));
       expect(result.provenance.id, label).toBe(id);
+      expect(result.observedAt, label).toBe(new Date(clock() - (result.ageMs ?? -1)).toISOString());
+      expect(result.ageMs, label).toBeGreaterThanOrEqual(0);
       if (result.status === "ok") {
         expect(result.provenance.kind, label).toBe(harness.kind);
         expect(Number.isNaN(Date.parse(result.observedAt)), label).toBe(false);
