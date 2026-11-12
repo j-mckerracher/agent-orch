@@ -201,10 +201,10 @@
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 960px) {
   /* Updated: 2026-11-11 18:12:43 UTC. Preserve visual and keyboard order; shell.css wraps search. */
 
-  /* Anchor the popover to the top bar, not the pill, so it spans the viewport width. */
+  /* Anchor the popover to the top bar, not the pill, so it stays inside the stacked (761-960 px) and narrow scroll containers. */
   .shell-topbar {
     position: relative;
   }
