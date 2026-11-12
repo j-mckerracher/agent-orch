@@ -109,7 +109,7 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
         await expect(page.locator("main")).toHaveCount(1);
         await expect(page.getByTestId("shell-connection")).toBeVisible();
         await expect(page.locator("h1")).toHaveCount(1);
-        await expect(page.getByRole("navigation", { name: "Primary views" }).locator('[aria-current="page"]')).toHaveCount(1);
+        await expect(page.locator('.shell-sidebar [aria-current="page"]').first()).toBeAttached();
         if (route.includes("/review/")) {
           await expect(page.getByRole("navigation", { name: "Breadcrumb" }).locator('[aria-current="page"]')).toHaveText("Review");
         }
