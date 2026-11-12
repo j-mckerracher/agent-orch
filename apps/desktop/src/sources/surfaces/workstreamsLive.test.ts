@@ -117,6 +117,7 @@ describe("live workstreams adapter", () => {
       source.reviseObjective({ id: "fixture:obj-1", revision: 1 }, { title: "x" }),
       source.setGate({ id: "obj-1", revision: 3 }, "gate-2", "verified", "fixture:task-1"),
       source.setGate({ id: "fixture:obj-1", revision: 3 }, "gate-2", "verified"),
+      source.setGate({ id: "obj-1", revision: 3 }, "fixture:gate-1", "verified"),
       source.linkTask("ws-1", "fixture:task-1"),
       source.linkTask("fixture:ws-auth", "t-free"),
       source.linkTask("ws-1", "t-free", "fixture:obj-1"),

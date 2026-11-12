@@ -67,6 +67,12 @@ const ROWS: Row[] = [
     (a) => a.workstreamsSetGate({ objective_id: REAL, expected_revision: 1, gate_id: "g", state: "verified", evidence_task_id: FX }, "k"),
     (a) => a.workstreamsSetGate({ objective_id: REAL, expected_revision: 1, gate_id: "g", state: "verified", evidence_task_id: "t1" }, "k"),
   ),
+  row(
+    "workstreamsSetGate",
+    "workstreams.set_gate",
+    (a) => a.workstreamsSetGate({ objective_id: REAL, expected_revision: 1, gate_id: FX, state: "verified" }, "k"),
+    (a) => a.workstreamsSetGate({ objective_id: REAL, expected_revision: 1, gate_id: "g", state: "verified" }, "k"),
+  ),
   row("workstreamsLinkTask", "workstreams.link_task", (a) => a.workstreamsLinkTask(REAL, FX, undefined, "k"), (a) => a.workstreamsLinkTask(REAL, "t1", undefined, "k")),
   row("workstreamsUnlinkTask", "workstreams.unlink_task", (a) => a.workstreamsUnlinkTask(FX, REAL, "k"), (a) => a.workstreamsUnlinkTask(REAL, "t1", "k")),
   row("conversationsSend", "conversations.send", (a) => a.conversationsSend({ kind: "workstream", workstream_id: FX }, "hi", "k"), (a) => a.conversationsSend({ kind: "global" }, "hi", "k")),

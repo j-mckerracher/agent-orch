@@ -193,7 +193,7 @@ export function createLiveWorkstreams(
       mutate(
         `ws:set-gate:${target.id}:${gateId}`,
         [target.revision, state, evidenceTaskId],
-        [target.id, evidenceTaskId],
+        [target.id, gateId, evidenceTaskId],
         async (key) => {
           const gated = await connection.api().workstreamsSetGate(
             {

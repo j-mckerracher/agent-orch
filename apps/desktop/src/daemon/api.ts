@@ -290,6 +290,7 @@ export class DaemonApi {
     return this.session.request("workstreams.set_gate", {
       ...request,
       objective_id: realId(request.objective_id),
+      gate_id: realId(request.gate_id),
       ...(request.evidence_task_id === undefined ? {} : { evidence_task_id: realId(request.evidence_task_id) }),
       idempotency_key: idempotencyKey,
     });
