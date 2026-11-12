@@ -167,7 +167,8 @@ describe("live data", () => {
 
     expect(screen.getByTestId("task-row")).toHaveTextContent("Failed");
     expect(screen.getByTestId("count-Running")).toHaveTextContent("1 Running");
-    expect(screen.getByTestId("ws-count-observation")).toHaveTextContent(D9_OBSERVATION.observedAt);
+    expect(screen.getByTestId("ws-count-observation")).toHaveTextContent(/D9 counts observed \d+ (s|min|h|d) ago/);
+    expect(screen.getByTestId("ws-count-observation")).not.toHaveTextContent(D9_OBSERVATION.observedAt);
     expect(screen.getByTestId("ws-task-list-status")).toHaveTextContent(/AppData task list is ready as a separate snapshot/i);
   });
 

@@ -4,6 +4,7 @@ import type { Provenance } from "../../../sources/types";
 import { TASK_STATES, basename } from "../../format";
 import { useServices } from "../../services";
 import { NavLink } from "../../shell/NavLink";
+import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
 import { PlaceholderBadge, SimulatedReceipts } from "../../widgets";
 import { DependencyGraph } from "./DependencyGraph";
@@ -366,8 +367,10 @@ function Detail({
           <p className="ws-subtle" data-testid="ws-count-observation">
             {group.counts.status === "ok" ? (
               <>
-                D9 counts observed at{" "}
-                <time dateTime={group.counts.observedAt}>{group.counts.observedAt}</time>
+                D9 counts observed{" "}
+                <time dateTime={group.counts.observedAt}>
+                  {formatAge(group.counts.observedAt, group.counts.ageMs, Date.now())}
+                </time>
               </>
             ) : (
               `D9 counts ${group.counts.status}: ${group.counts.reason}`
