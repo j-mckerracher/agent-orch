@@ -65,7 +65,6 @@ body:has(.shell) {
 
 .shell-strip {
   min-width: 0;
-  max-height: 30dvh;
   overflow: auto;
   border-bottom: 1px solid var(--shell-line);
 }
