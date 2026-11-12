@@ -5,6 +5,7 @@ export default defineConfig({
   testMatch: "**/geometry.spec.ts",
   use: {
     browserName: "chromium",
+    channel: "chrome",
     viewport: { width: 960, height: 900 },
   },
   webServer: {
