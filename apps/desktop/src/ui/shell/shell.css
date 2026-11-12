@@ -65,7 +65,6 @@ body:has(.shell) {
 
 .shell-strip {
   min-width: 0;
-  max-height: 30dvh;
   overflow: auto;
   border-bottom: 1px solid var(--shell-line);
 }
@@ -161,7 +160,8 @@ body:has(.shell) {
   background: var(--soft-strong);
 }
 
-.shell-nav-link[aria-current="page"] {
+.shell-nav-link[aria-current="page"],
+.shell-nav-link[aria-current="true"] {
   background: var(--soft-strong);
   border-color: var(--sidebar-control-border, #6b7f94);
   color: var(--sidebar-ink, #111);

@@ -147,6 +147,13 @@ describe("ConnectionStrip hosting", () => {
       ),
     );
   });
+
+  it("is a labeled group rather than a landmark, so the connection banner stays top-level", async () => {
+    await mount(daemon(), { route: { name: "global", view: "agents" } });
+    const strip = screen.getByRole("group", { name: "Connection status" });
+    expect(within(strip).getByRole("banner", { name: "Connection" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Connection status" })).not.toBeInTheDocument();
+  });
 });
 
 describe("navigation", () => {
