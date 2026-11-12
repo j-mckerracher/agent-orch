@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const vitePort = Number(process.env.VITE_PORT);
+if (!Number.isInteger(vitePort) || vitePort < 1 || vitePort > 65_535) {
+  throw new Error("Playwright did not capture Vite's assigned port");
+}
+test.use({ baseURL: `http://127.0.0.1:${vitePort}` });
+
 const viewport = { width: 960, height: 900 };
 const resourceLabels = ["CPU", "Memory", "GPU", "Disk"] as const;
 
