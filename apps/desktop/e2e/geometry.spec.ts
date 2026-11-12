@@ -161,3 +161,35 @@ test("Back and Forward traverse canonical and non-canonical routes", async ({ pa
     await expect(page).toHaveURL(new RegExp(route + "$"));
   }
 });
+
+
+test("keyboard Tab census, reverse traversal and skip link", async ({ page }) => {
+  for (const width of [760, 900, 1280]) {
+    await page.setViewportSize({ width, height: width === 760 ? 600 : 800 });
+    await page.goto("/?fixture=1#/workspace");
+    await expect(page.getByRole("heading", { name: "Orchestrator Workspace", exact: true })).toBeVisible();
+    const stops: number[] = [];
+    const identity = () => page.evaluate(() => Array.from(document.querySelectorAll("*")).indexOf(document.activeElement!));
+    for (let i = 0; i < 150; i++) {
+      await page.keyboard.press("Tab");
+      const id = await identity();
+      if (stops.length && id === stops[0]) break;
+      // Chrome can focus the browser chrome between document cycles.
+      if (await page.evaluate(() => document.activeElement === document.body)) continue;
+      expect(stops).not.toContain(id);
+      stops.push(id);
+    }
+    expect(stops.length).toBeGreaterThan(10);
+    expect(stops.length).toBeLessThan(150);
+    await page.keyboard.press("Shift+Tab");
+    if (await page.evaluate(() => document.activeElement === document.body)) await page.keyboard.press("Shift+Tab");
+    expect(await identity()).toBe(stops.at(-1));
+    console.log(JSON.stringify({ keyboardWidth: width, tabStops: stops.length }));
+    await page.getByRole("link", { name: "Skip to main content" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#shell-main")).toBeFocused();
+    await page.getByRole("link", { name: /Agents & Sessions/ }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/#\/agents$/);
+  }
+});
