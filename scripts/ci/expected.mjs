@@ -64,7 +64,7 @@ export const MACOS = {
   store: { passed: 157, ignored: 1, sequence: [65, 9, 2, 13, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
-  e2eFiles: 8,
+  e2eFiles: 9,
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
@@ -73,7 +73,7 @@ export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
 export const VITEST = { files: 51, tests: 1105 };
-export const E2E_TESTS = 43;
+export const E2E_TESTS = 44;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;
