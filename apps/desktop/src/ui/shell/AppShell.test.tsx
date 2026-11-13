@@ -148,11 +148,12 @@ describe("ConnectionStrip hosting", () => {
     );
   });
 
-  it("keeps the connection strip inside a named landmark", async () => {
+  it("exposes the connection strip as a top-level named banner containing the live status", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
-    const region = screen.getByRole("region", { name: "Connection status" });
-    expect(region).toHaveAttribute("data-testid", "shell-connection");
-    const status = within(region).getByTestId("connection-status");
+    const banner = screen.getByRole("banner", { name: "Connection status" });
+    expect(banner).toHaveAttribute("data-testid", "shell-connection");
+    expect(banner.parentElement).toHaveClass("shell");
+    const status = within(banner).getByTestId("connection-status");
     expect(status).toHaveAttribute("role", "status");
     expect(status).toHaveTextContent("Connected");
   });

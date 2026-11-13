@@ -53,14 +53,14 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
       >
         Skip to main content
       </a>
-      <section
+      <header
         className="shell-strip"
         aria-label="Connection status"
         tabIndex={0}
         data-testid="shell-connection"
       >
         {connection}
-      </section>
+      </header>
       <div className="shell-body">
         <section className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
           <header className="shell-brand">

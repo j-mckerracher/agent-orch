@@ -41,7 +41,7 @@ export function ConnectionStrip() {
   // verbatim, because the host redacts it before it reaches the webview.
   const launchDetail = snap.error?.kind === "daemon-unavailable" ? snap.error.message.trim() : "";
   return (
-    <header className="strip conn-strip" aria-label="Connection">
+    <div className="strip conn-strip">
       <div className="conn-main">
         <Pill
           tone={STATE_STYLE[snap.status].tone}
@@ -110,7 +110,7 @@ export function ConnectionStrip() {
               ? `unknown (${journal.reason})`
               : "unknown (journal identity could not be read)"}
       </p>
-    </header>
+    </div>
   );
 }
 
