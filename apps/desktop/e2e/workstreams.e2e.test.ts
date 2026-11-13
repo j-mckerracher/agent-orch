@@ -16,13 +16,13 @@ let api: DaemonApi;
 let session: DaemonSession;
 const taskIds: string[] = [];
 
-const submission = (projectId: string, objective: string): TaskSubmission => ({
+const submission = (projectId: string, objective: string, dependencies: string[] = []): TaskSubmission => ({
   project_id: projectId,
   parent_id: null,
   objective,
   kind: "Implement",
   agent: "e2e-agent",
-  dependencies: [],
+  dependencies,
   verification: "None",
   delivery: "LocalReview",
   autonomy: "ApprovalRequired",
@@ -53,8 +53,10 @@ beforeAll(async () => {
   session = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
   api = new DaemonApi(session);
   await api.projectsRegister(daemon.repo);
+  // The unsupported blocker cannot succeed; linked tasks remain queued.
+  const blocker = await api.tasksSubmit("ws-blocker", submission(projectId, "workstreams blocker"));
   for (const [index, objective] of ["first task", "second task", "third task"].entries()) {
-    taskIds.push((await api.tasksSubmit(`ws-e2e-submit-${index}`, submission(projectId, objective))).contract.id);
+    taskIds.push((await api.tasksSubmit(`ws-e2e-submit-${index}`, submission(projectId, objective, [blocker.contract.id]))).contract.id);
   }
   connection = new ConnectionManager({ connector, backoffMs: [50], requestTimeoutMs: 8000 });
   connection.start();

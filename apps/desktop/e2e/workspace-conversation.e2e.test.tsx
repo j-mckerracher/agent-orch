@@ -195,7 +195,10 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(screen.queryByText(/Orchestrator runtime unavailable/)).toBeNull();
       expect(screen.queryByText(/SIMULATED/)).toBeNull();
 
-      const page = await t.direct((api) => api.conversationsGet({ kind: "global" }));
+      const page = await until(async () => {
+        const current = await t.direct((api) => api.conversationsGet({ kind: "global" }));
+        return current.turn?.state === "completed" && current;
+      }, "completed conversation turn");
       expect(page.entries.map((e) => e.kind)).toEqual(["user_message", "reply_chunk", "turn_completed"]);
       expect(page.turn).toMatchObject({ state: "completed", runtime: { name: "codex", version: "0.0.0-fake" } });
       expect(await t.direct((api) => api.tasksList())).toEqual([]);

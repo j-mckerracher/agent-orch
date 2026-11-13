@@ -54,7 +54,7 @@ export const MACOS = {
   ipc: { passed: 55, sequence: [55, 0] },
   daemon: { passed: 208, ignored: 1, sequence: [175, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 981, ignored: 2 },
+  workspace: { passed: 984, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 49, sequence: [49] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -72,7 +72,7 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
-export const VITEST = { files: 51, tests: 1105 };
+export const VITEST = { files: 50, tests: 1171 };
 export const E2E_TESTS = 44;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
