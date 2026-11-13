@@ -51,7 +51,7 @@ const workstream = (id: string, title: string, tasks: Array<[string, string]>): 
 const emptyQueue: DecisionQueue = { items: [], actions: { postpone: { available: false, reason: "r" }, dismiss: { available: false, reason: "r" }, escalate: { available: false, reason: "r" } } };
 
 describe("D15 local search", () => {
-  const ws = okResult(daemon("D9", ["projects.list", "tasks.list"]), [workstream("/r/alpha", "alpha", [["t1", "Fix Login Bug"], ["t2", "Write docs"]])], observation(NOW, 5_000));
+  const ws = okResult(daemon("D9", ["workstreams.list", "tasks.list"]), [workstream("/r/alpha", "alpha", [["t1", "Fix Login Bug"], ["t2", "Write docs"]])], observation(NOW, 5_000));
   const dq = okResult(daemon("D16", ["approvals.list", "tasks.list"]), { ...emptyQueue, items: [{ id: "a1", taskId: "t1", projectId: "/r/alpha", kind: "LocalReviewMerge", candidateCommit: "c", state: "requested" as const, priority: "unknown" as const, latestResponseAt: null }] }, observation(NOW, 9_000));
 
   it("matches case-insensitively, requires every term, and labels origin real", async () => {
@@ -68,7 +68,7 @@ describe("D15 local search", () => {
     const result = await createSearchSource(wsSource(ws), dqSource(dq), clock).search("   ");
     expect(result).toMatchObject({
       status: "ok",
-      provenance: { kind: "daemon", id: "D15", methods: ["approvals.list", "projects.list", "tasks.list"] },
+      provenance: { kind: "daemon", id: "D15", methods: ["approvals.list", "tasks.list", "workstreams.list"] },
       ageMs: 9_000,
       data: { hits: [], truncated: false, skipped: [] },
     });

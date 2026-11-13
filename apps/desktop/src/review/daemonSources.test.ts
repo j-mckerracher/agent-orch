@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DaemonError } from "../daemon/errors";
 import { ConnectionManager } from "../daemon/connection";
 import type { ReviewEvidenceWire } from "../daemon/types";
 import { FakeDaemon, until } from "../test/fakeDaemon";
@@ -148,6 +149,19 @@ describe("daemon D7 and D8 sources", () => {
     });
     fake.stub("review.evidence", wire({ change_request: record }));
     expect(await source.loadHistory("task-1")).toMatchObject({ state: "available", items: [{ requestId: "cr-1" }] });
+  });
+
+  it.each(["fixture:commit", "fixture0001", "  FIXTURE0001  "])("D8 refuses bound candidate %j before API access or transport", async (candidateCommit) => {
+    const fake = new FakeDaemon();
+    const connection = await connected(fake);
+    const api = vi.fn(() => connection.api());
+    const source = createDaemonChangeRequestSource(api);
+    const before = fake.calls.length;
+    const failure = source.submit({ taskId: "task-1", approvalId: "approval-1", candidateCommit, feedback: "fix" });
+    await expect(failure).rejects.toBeInstanceOf(DaemonError);
+    await expect(failure).rejects.toMatchObject({ kind: "invalid-params" });
+    expect(api).not.toHaveBeenCalled();
+    expect(fake.calls.length).toBe(before);
   });
 
   it("D8 rejects with the daemon's error", async () => {

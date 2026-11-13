@@ -1,6 +1,5 @@
 /**
- * Helpers shared by the D9-D16 adapters. Imports only types, so fixture
- * adapters can use it without reaching the daemon client.
+ * Helpers shared by the D9-D16 adapters. Imports only types.
  */
 import type { TaskState } from "../../daemon/types";
 import type { Measured, Observation, Provenance, SurfaceResult } from "./types";
@@ -28,8 +27,9 @@ export function notOk<T>(
   provenance: Provenance,
   status: "unavailable" | "unsupported" | "unknown",
   reason: string,
+  obs: Observation = observation(Date.now()),
 ): SurfaceResult<T> {
-  return { status, reason, provenance };
+  return { status, reason, provenance, ...obs };
 }
 
 export function measured<T>(value: T, obs: Observation): Measured<T> {

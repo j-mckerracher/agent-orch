@@ -147,3 +147,14 @@ describe("digestHex / evidenceBlockers", () => {
     expect(evidenceBlockers(ctx({ approval: null }))).toEqual([]);
   });
 });
+
+
+describe("A1b bound candidate policy", () => {
+  it.each(["fixture:commit", "fixture0001", "  FIXTURE0001  "])("blocks accept, reject and delivery for candidate %j", (commit) => {
+    const a = approval({ commit });
+    const context = ctx({ approval: a, evidence: { state: "available", evidence: evidenceFor(a) } });
+    expect(acceptBlockers(context).join(" ")).toMatch(/PLACEHOLDER DATA/);
+    expect(rejectBlockers(context).join(" ")).toMatch(/PLACEHOLDER DATA/);
+    expect(deliveryPlan(context).request).toBeNull();
+  });
+});

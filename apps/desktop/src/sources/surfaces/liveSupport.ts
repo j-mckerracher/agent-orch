@@ -8,10 +8,10 @@ import { notOk, observation, okResult } from "./result";
 import type { Provenance, SurfaceResult } from "./types";
 
 /** A failed live call is `unsupported` when the daemon lacks the method, else `unavailable`. */
-export function liveFailure<T>(provenance: Provenance, error: unknown, override?: string): SurfaceResult<T> {
+export function liveFailure<T>(provenance: Provenance, error: unknown, override?: string, now: () => number = Date.now): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = override ?? `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));
 }
 
 export async function liveRead<T>(
@@ -23,6 +23,6 @@ export async function liveRead<T>(
   try {
     return okResult(provenance, await read(), observation(now()));
   } catch (error) {
-    return liveFailure(provenance, error, describe?.(error));
+    return liveFailure(provenance, error, describe?.(error), now);
   }
 }

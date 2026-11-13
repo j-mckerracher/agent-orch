@@ -1,22 +1,18 @@
 /**
- * Daemon-derived adapters for D9-D16 (M7-03). They read only methods the
- * daemon already has: projects.list, tasks.list, approvals.list,
- * agents.capabilities, coordinator.get, coordinator.send_message, queue.snapshot
- * (D11, `activity.ts`), usage.summary (D12, `usageLive.ts`), host.metrics (D13,
- * `liveMetrics.ts`) and the workstreams.* methods (D9, `workstreamsLive.ts`).
- * No method is added.
+ * Daemon-derived D9-D16 adapters. D9 uses workstreams.list/get and tasks.list;
+ * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
+ * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
+ * approvals.list. D12 uses usage.summary; D13 uses host.metrics; D14 uses
+ * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list.
+ * D15 indexes D9 and D16 locally. No daemon method is added here.
  *
- * Rules:
- * - This file never imports fixtures. A failed live call is `unavailable` (or
- *   `unsupported` when the daemon lacks the method) with daemon provenance; it
- *   is never answered with fixture data.
- * - Values the daemon does not record (models, objectives, priorities,
- *   deadlines) are `unsupported` or `unknown`, never zero or an invented
- *   number.
- * - `simulate*` calls reject: they exist for fixture adapters only.
+ * Failed reads retain daemon provenance and never fall back to fixtures. Missing
+ * methods are unsupported; other failures are unavailable. Unobserved metadata
+ * stays unknown or explicitly nullable. Simulated actions reject with DaemonError.
+ * Writes reject on failure and never return simulated receipts.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { isFixtureId } from "../../daemon/api";
+import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
@@ -52,10 +48,10 @@ function fixtureOnly(what: string): DaemonError {
 }
 
 /** Maps a failed live call. Retry may help for `unavailable`; it will not for `unsupported`. */
-function failure<T>(provenance: Provenance, error: unknown): SurfaceResult<T> {
+function failure<T>(provenance: Provenance, error: unknown, now: () => number): SurfaceResult<T> {
   const failed = asDaemonError(error);
   const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+  return notOk(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));
 }
 
 async function guarded<T>(provenance: Provenance, now: () => number, read: () => Promise<T>): Promise<SurfaceResult<T>> {
@@ -63,7 +59,7 @@ async function guarded<T>(provenance: Provenance, now: () => number, read: () =>
     const data = await read();
     return okResult(provenance, data, observation(now()));
   } catch (error) {
-    return failure(provenance, error);
+    return failure(provenance, error, now);
   }
 }
 
@@ -87,15 +83,16 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   };
 
   const conversationProvenance = prov("D10", ["coordinator.get", "coordinator.send_message", ...LIVE_METHODS]);
-  const liveConversation = createLiveConversation(connection, conversationProvenance, keys, now);
+  const projectProvenance = prov("D10", ["coordinator.get", "coordinator.send_message"]);
+  const liveConversation = createLiveConversation(connection, prov("D10", LIVE_METHODS), keys, now);
   const conversation: ConversationSource = {
     provenance: conversationProvenance,
     async transcript(target: ConversationTarget) {
       if (isLiveTarget(target)) return liveConversation.transcript(target);
-      if (isFixtureId(target.projectId)) {
-        return notOk(conversationProvenance, "unsupported", "Fixture ids have no daemon conversation.");
+      if (isFixtureLikeId(target.projectId)) {
+        return notOk(projectProvenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
-      return guarded(conversationProvenance, now, async () => {
+      return guarded(projectProvenance, now, async () => {
         const api = connection.api();
         const entries: CoordinatorEntry[] = [];
         let after: number | undefined;
@@ -123,7 +120,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     },
     async send(target, text) {
       if (isLiveTarget(target)) return liveConversation.send(target, text);
-      if (isFixtureId(target.projectId)) {
+      if (isFixtureLikeId(target.projectId)) {
         throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
       }
       const scope = `send:${target.projectId}`;
@@ -133,7 +130,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         keys.settle(scope, null);
         return {
           simulated: false,
-          provenance: conversationProvenance,
+          provenance: projectProvenance,
           notice: "Recorded by the daemon. The coordinator does not reply.",
           at: entry.created_at,
           entryId: entry.id,

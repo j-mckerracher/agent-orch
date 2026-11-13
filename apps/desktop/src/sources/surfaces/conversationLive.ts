@@ -15,7 +15,7 @@
  *   log shows its newest entries; the oldest are cut and the result says so.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { isFixtureId } from "../../daemon/api";
+import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type {
@@ -24,7 +24,7 @@ import type {
   ConversationWireTurn,
 } from "../../daemon/types";
 import { liveRead } from "./liveSupport";
-import { notOk } from "./result";
+import { notOk, observation } from "./result";
 import type {
   ConversationEntry,
   ConversationSource,
@@ -143,11 +143,11 @@ export const sendNotice = (turn: ConversationTurnInfo): string =>
 
 const describeNotFound = (target: LiveTarget) => (error: unknown) =>
   target.kind === "workstream" && asDaemonError(error).kind === "not-found"
-    ? "The daemon does not know this workstream (not-found). Workstream conversations need the daemon's workstream lookup, which is not wired yet."
+    ? "The daemon's workstream lookup did not find this workstream (not-found)."
     : undefined;
 
 function refuseFixture(target: LiveTarget): void {
-  if (target.kind === "workstream" && isFixtureId(target.workstreamId)) {
+  if (target.kind === "workstream" && isFixtureLikeId(target.workstreamId)) {
     throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
   }
 }
@@ -165,8 +165,8 @@ export function createLiveConversation(
 
   return {
     async transcript(target) {
-      if (target.kind === "workstream" && isFixtureId(target.workstreamId)) {
-        return notOk(provenance, "unsupported", "Fixture ids have no daemon conversation.");
+      if (target.kind === "workstream" && isFixtureLikeId(target.workstreamId)) {
+        return notOk(provenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
       return liveRead(
         provenance,
@@ -238,6 +238,7 @@ export function createLiveConversation(
     async cancel(target, turnId) {
       if (!isLiveTarget(target)) throw new DaemonError("method-unavailable", "Only Global and workstream turns can be cancelled.");
       refuseFixture(target);
+      if (isFixtureLikeId(turnId)) throw new DaemonError("invalid-params", "Fixture turn ids are never sent to the daemon.");
       const scope = `cancel:${scopeOf(target)}:${turnId}`;
       const key = keys.keyFor(scope, turnId);
       try {

@@ -74,9 +74,9 @@ export function createLiveModels(
         const failed = "failed" in catalog ? catalog.failed : null;
 
         const withoutRow = <T,>(what: string): Measured<T> => {
-          if (failed === null) return unsupportedValue<T>(`The daemon lists agents, not their ${what}.`);
+          if (failed === null) return { status: "unknown", reason: `The catalog returned no row for this agent; ${what} have not been observed.` };
           if (failed.kind === "method-unavailable" || failed.kind === "capability-unavailable") {
-            return unsupportedValue<T>(`The daemon lists agents, not their ${what}.`);
+            return unsupportedValue<T>(`This daemon does not support the model catalog; ${what} are unavailable.`);
           }
           if (failed.kind === "conflict") return { status: "unknown", reason: RETRY_SHORTLY };
           return { status: "unavailable", reason: presentError(failed).reason };
@@ -118,7 +118,7 @@ export function createLiveModels(
 
     validate: async (agent, selection) => {
       if (selection.model === undefined && selection.effort === undefined) {
-        return notOk(provenance, "unknown", "Choose a model or an effort to check.");
+        return notOk(provenance, "unknown", "Choose a model or an effort to check.", observation(now()));
       }
       return liveRead(provenance, now, async () => {
         const check = await connection.api().agentsValidateSelection(agent, selection);

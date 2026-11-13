@@ -45,7 +45,7 @@ describe("fixture surfaces (D9-D16)", () => {
     const ws = await s.workstreams.workstreams();
     if (ws.status === "ok") for (const w of ws.data) ids.push(w.id, ...w.projectIds, ...w.tasks.map((t) => t.id));
     const dq = await s.decisions.queue();
-    if (dq.status === "ok") for (const item of dq.data.items) ids.push(item.id, item.taskId, item.projectId!);
+    if (dq.status === "ok") for (const item of dq.data.items) ids.push(item.id, item.taskId, item.projectId!, item.candidateCommit);
     const act = await s.activity.activity();
     if (act.status === "ok") {
       for (const e of [...act.data.running, ...act.data.queued]) ids.push(e.taskId, e.projectId);
@@ -104,7 +104,7 @@ describe("fixture surfaces (D9-D16)", () => {
       const s = createFixtureSurfaces({ scenario, now: clock });
       const results = await Promise.all([s.workstreams.workstreams(), s.activity.activity(), s.decisions.queue()]);
       for (const result of results) {
-        expect(result).toMatchObject({ status: scenario, provenance: { kind: "fixture" } });
+        expect(result).toMatchObject({ status: scenario, provenance: { kind: "fixture" }, observedAt: new Date(clock()).toISOString(), ageMs: 0 });
         expect(result).not.toHaveProperty("data");
       }
     },
@@ -122,7 +122,10 @@ describe("fixture surfaces (D9-D16)", () => {
 
   it("imports no daemon client at runtime", () => {
     for (const source of [fixturesSource, searchSource, resultSource]) {
-      for (const specifier of runtimeImports(source)) expect(specifier).not.toMatch(/daemon/);
+      for (const specifier of runtimeImports(source)) {
+        if (specifier === "../../daemon/errors") continue; // Error class only, no client or requests.
+        expect(specifier).not.toMatch(/daemon/);
+      }
     }
   });
 

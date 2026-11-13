@@ -1,6 +1,7 @@
 // Pure policy for which S6 actions are enabled. Real evidence must be bound to
 // the exact approval, candidate, action, digest and workspace being reviewed;
 // fixture evidence can never enable Accept or delivery.
+import { isFixtureId } from "../daemon/api";
 import type { Approval, DeliveryActionName, TaskRecord } from "../daemon/types";
 import type { ReviewEvidenceResult } from "./sources";
 
@@ -32,6 +33,13 @@ export function deliveryKindOf(approval: Approval): string | null {
   return approval.action.kind.type === "delivery" ? approval.action.kind.kind : null;
 }
 
+/** Uses the candidate already bound to the selected approval; never fetches a replacement. */
+export function reviewCandidateBlocker(candidateCommit: string): string | null {
+  return isFixtureId(candidateCommit)
+    ? "The candidate is PLACEHOLDER DATA; fixture-like commits cannot authorize real review actions."
+    : null;
+}
+
 function commonBlockers(ctx: ActionContext): string[] {
   const blockers: string[] = [];
   if (!ctx.connected) blockers.push("The daemon connection is not established; actions are unavailable.");
@@ -43,6 +51,10 @@ function commonBlockers(ctx: ActionContext): string[] {
   if (!ctx.approval) blockers.push("No decision is selected.");
   else if (ctx.approval.action.kind.type !== "delivery") {
     blockers.push("This decision is not a delivery candidate review.");
+  }
+  if (ctx.approval) {
+    const reason = reviewCandidateBlocker(ctx.approval.action.candidate_commit);
+    if (reason) blockers.push(reason);
   }
   return blockers;
 }

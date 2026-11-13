@@ -1,12 +1,13 @@
 /**
  * Fixture adapters for D9-D16 (M7-03). They read only the JSON under
- * `fixtures/ui/` and never import the daemon client. Every result carries
+ * `fixtures/ui/` and never send daemon requests. Every result carries
  * fixture provenance so screens label it PLACEHOLDER DATA. Illustrative
  * numbers from the wireframes live in that JSON and nowhere else.
  *
  * D15 search has no fixture of its own: `createFixtureSurfaces` builds it
  * over the fixture D9 and D16 sources (`surfaces/search.ts`).
  */
+import { DaemonError } from "../../daemon/errors";
 import activityFixture from "../../fixtures/ui/activity.json";
 import conversationFixture from "../../fixtures/ui/conversation.json";
 import decisionFixture from "../../fixtures/ui/decision-queue.json";
@@ -92,14 +93,14 @@ function resolve<D, T>(
   const prov = provenance(id, envelope);
   if (ctx.scenario === "loading") return new Promise(() => undefined);
   if (ctx.scenario === "unavailable" || ctx.scenario === "unsupported" || ctx.scenario === "unknown") {
-    return Promise.resolve(notOk(prov, ctx.scenario, envelope.scenarios[ctx.scenario].reason));
+    return Promise.resolve(notOk(prov, ctx.scenario, envelope.scenarios[ctx.scenario].reason, observation(ctx.now())));
   }
   const nowMs = ctx.now();
   const { ageMs, data } = envelope.scenarios.success;
   const obs = observation(nowMs, ageMs);
   const value = ctx.scenario === "empty" ? empty(data, nowMs) : build(data, nowMs);
   return Promise.resolve(
-    value === null ? notOk(prov, "unknown", "Fixture scenario: nothing has been observed yet.") : okResult(prov, value, obs),
+    value === null ? notOk(prov, "unknown", "Fixture scenario: nothing has been observed yet.", observation(nowMs)) : okResult(prov, value, obs),
   );
 }
 
@@ -146,7 +147,7 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
 }
 
 function notMutable(): Promise<never> {
-  return Promise.reject(new Error("Fixture workstreams cannot be changed; nothing was sent to the daemon."));
+  return Promise.reject(new DaemonError("method-unavailable", "Fixture workstreams cannot be changed; nothing was sent to the daemon."));
 }
 
 function conversationSource(ctx: Ctx): ConversationSource {

@@ -115,10 +115,10 @@ function mapGpu(meters: readonly HostMeterWire[], nowMs: number): Measured<Meter
 /** Maps one `host.metrics` result. Exported for tests. */
 export function mapHostMetrics(wire: HostMetricsWire, nowMs: number): SurfaceResult<SystemMetrics> {
   if (typeof wire !== "object" || wire === null || !Array.isArray(wire.meters)) {
-    return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with an unrecognised shape.");
+    return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with an unrecognised shape.", observation(nowMs));
   }
   if (wire.schema_version !== SCHEMA_VERSION) {
-    return notOk(PROVENANCE, "unsupported", `host.metrics schema ${String(wire.schema_version)} is not understood (expected ${SCHEMA_VERSION}).`);
+    return notOk(PROVENANCE, "unsupported", `host.metrics schema ${String(wire.schema_version)} is not understood (expected ${SCHEMA_VERSION}).`, observation(nowMs));
   }
   // A null or non-object entry is treated as a meter the daemon did not list.
   const meters = wire.meters.filter((item): item is HostMeterWire => typeof item === "object" && item !== null);
@@ -173,13 +173,13 @@ export function createLiveMetrics(connection: ConnectionManager, options: LiveMe
       // Only a DaemonError message is the daemon's own words; any other error text is a JS detail and stays out of the UI.
       const detail = error instanceof DaemonError ? ` (${failed.kind}: ${failed.message})` : "";
       const reason = `${presentError(failed).reason}${detail}`;
-      return notOk(PROVENANCE, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+      return notOk(PROVENANCE, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));
     }
     intervalMs = pollIntervalMs(wire);
     try {
       return mapHostMetrics(wire, now());
     } catch {
-      return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with data this app cannot read.");
+      return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with data this app cannot read.", observation(now()));
     }
   }
 

@@ -11,7 +11,7 @@
  *   is reused only while the previous outcome is unknown. Writes pass the revision the caller read.
  */
 import type { ConnectionManager } from "../../daemon/connection";
-import { isFixtureId } from "../../daemon/api";
+import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type { ObjectiveWire, TaskRecord, WorkstreamDetailWire, WorkstreamWire } from "../../daemon/types";
@@ -107,7 +107,7 @@ export function createLiveWorkstreams(
     ids: readonly (string | undefined)[],
     send: (key: string) => Promise<T>,
   ): Promise<T> {
-    if (ids.some((id) => id !== undefined && isFixtureId(id))) {
+    if (ids.some((id) => id !== undefined && isFixtureLikeId(id))) {
       throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
     }
     const key = keys.keyFor(scope, JSON.stringify(fingerprint));
