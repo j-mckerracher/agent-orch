@@ -1,0 +1,6 @@
+P02=PASS; isolated source checkout reused from v2 evidence ref evidence/m7-32-win2-6f2fe17f-20261113T140758Z at the same pinned commit.
+P03=PASS; local core.autocrlf=false; local core.longpaths=true.
+P04=PASS; detached checkout remained at the required pin.
+P05=PASS; HEAD=6f2fe17f6334a1fb61f1f27cd9765de2ffbb4d5d.
+P06=PASS; tree=62524d7c14d68bcca58c5b6d7cad762885eaf4f9.
+P07=PASS; git status --porcelain=v1 --untracked-files=all was empty.

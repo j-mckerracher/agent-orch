@@ -1,0 +1,8 @@
+daemon_stop=observed
+reconnecting_state=true
+stale_indicators=true
+mutations_disabled=true
+daemon_restart=ready
+recovered_connected_state=true
+placeholder_badge_in_live_connected_stale_and_recovered_states=true
+result=FAIL; live mode displayed PLACEHOLDER DATA (D3)

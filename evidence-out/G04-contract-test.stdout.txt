@@ -1,0 +1,8 @@
+
+ RUN  v5.1.0 C:/Users/<USER_PROFILE>/Code/m7-32-v2-e0fe78991cd34866b2a4e4ca70064c82/src/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  06:45:54
+   Duration  1.14s (environment 60%, setup 16%, tests 14%, transform 7%, import 3%)

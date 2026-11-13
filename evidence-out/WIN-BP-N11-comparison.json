@@ -1,0 +1,23 @@
+{
+  "method": "browser-proxy",
+  "observedAt": "2026-11-13T16:00:09.764Z",
+  "ui": {
+    "cpu": 99.7,
+    "memory": 63.5,
+    "disk": 97.7
+  },
+  "daemon": {
+    "cpu": 99.71599578857422,
+    "memory": 63.52209441336021,
+    "disk": 97.6653170524295,
+    "gpuState": "unsupported",
+    "gpuReason": "no vetted GPU utilization source for this platform"
+  },
+  "delta": {
+    "cpu": 0.015995788574215908,
+    "memory": 0.022094413360207454,
+    "disk": 0.034682947570502165
+  },
+  "gpuUnsupported": true,
+  "pass": true
+}

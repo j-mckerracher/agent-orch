@@ -1,0 +1,1 @@
+result=git version 2.46.2.windows.1

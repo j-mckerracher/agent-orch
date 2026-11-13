@@ -1,0 +1,5 @@
+status=BLOCKED-no-native-window
+observed_reason=GetCursorPos failed: Access is denied. (0x80070005)
+native_portion_stopped_after_capture_denial=true
+package_exit_code=0
+installer_signature=NotSigned

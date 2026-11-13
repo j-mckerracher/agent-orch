@@ -1,0 +1,60 @@
+{
+  "method": "browser-proxy",
+  "rpc": "host.metrics",
+  "pipe_hash": "0e7142ef79feccaf",
+  "queriedAt": "2026-11-13T16:00:09.76Z",
+  "result": {
+    "meters": [
+      {
+        "kind": "utilization",
+        "meter": "cpu",
+        "observed_at": "2026-11-13T16:00:08.513Z",
+        "reason": null,
+        "sample_interval_ms": 2000,
+        "scope": "all logical CPUs",
+        "state": "ok",
+        "total": null,
+        "unit": "percent",
+        "value": 99.71599578857422
+      },
+      {
+        "kind": "capacity",
+        "meter": "memory",
+        "observed_at": "2026-11-13T16:00:08.513Z",
+        "reason": null,
+        "sample_interval_ms": 2000,
+        "scope": "physical memory",
+        "state": "ok",
+        "total": 34029125632,
+        "unit": "bytes",
+        "value": 21616013312
+      },
+      {
+        "kind": "capacity",
+        "meter": "disk",
+        "observed_at": "2026-11-13T16:00:08.513Z",
+        "reason": null,
+        "sample_interval_ms": 2000,
+        "scope": "<SYSTEM_VOLUME>",
+        "state": "ok",
+        "total": 1013309239296,
+        "unit": "bytes",
+        "value": 989651681280
+      },
+      {
+        "kind": "utilization",
+        "meter": "gpu",
+        "observed_at": "2026-11-13T16:00:08.513Z",
+        "reason": "no vetted GPU utilization source for this platform",
+        "sample_interval_ms": 2000,
+        "scope": null,
+        "state": "unsupported",
+        "total": null,
+        "unit": "percent",
+        "value": null
+      }
+    ],
+    "sample_interval_ms": 2000,
+    "schema_version": 1
+  }
+}

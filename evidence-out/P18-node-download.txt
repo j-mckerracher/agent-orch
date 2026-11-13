@@ -1,0 +1,5 @@
+source=https://nodejs.org/dist/v24.22.3/node-v24.22.3-win-x64.zip
+sums=https://nodejs.org/dist/v24.22.3/SHASUMS256.txt
+expected_sha256=e612af99f626ab415ea225af6bce5c971feb448cb5cae250bb1c3fa50c5f7d9f
+actual_sha256=e612af99f626ab415ea225af6bce5c971feb448cb5cae250bb1c3fa50c5f7d9f
+result=PASS

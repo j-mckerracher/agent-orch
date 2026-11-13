@@ -1,0 +1,5 @@
+version=codex-cli 0.20.0
+required_version=0.167.0
+signed_in_status=not verified
+authentication_output=not queried or recorded
+result=BLOCKED-EXTERNAL for live-agent portions

@@ -1,0 +1,60 @@
+{
+  "method": "browser-proxy",
+  "browser": "Microsoft Edge 157.0.4341.46",
+  "rows": [
+    {
+      "id": "WIN-BP-N02",
+      "status": "PASS",
+      "systemDark": true,
+      "explicitDarkPersistedAfterReload": true,
+      "systemLight": true
+    },
+    {
+      "id": "WIN-BP-N03",
+      "status": "PASS",
+      "viewportCases": 10,
+      "horizontalOverflow": 0,
+      "focusObscured": 0,
+      "focusNotVisible": 0
+    },
+    {
+      "id": "WIN-BP-N04",
+      "status": "PASS",
+      "skipLinkReachedMain": true,
+      "keyboardNavigation": true,
+      "escapeRestoredFocus": true,
+      "reviewTabsArrowNavigation": true
+    },
+    {
+      "id": "WIN-BP-N06",
+      "status": "PASS",
+      "reducedMotionHonored": true
+    },
+    {
+      "id": "WIN-BP-N07",
+      "status": "BLOCKED",
+      "globalAndLegacyRoutes": true,
+      "unknownRouteFallbackAndHistory": true,
+      "taskAndTaskReviewRoutes": "BLOCKED: no genuine task ID was available; submit was not invoked"
+    },
+    {
+      "id": "WIN-BP-N08",
+      "status": "FAIL",
+      "reconnectingAndStaleStates": true,
+      "mutationsDisabled": true,
+      "recoveredAfterRestart": true,
+      "placeholderBadgeSeenInLiveMode": true
+    },
+    {
+      "id": "WIN-BP-N11",
+      "status": "FAIL",
+      "cpuDeltaPercentagePoints": 0.016,
+      "memoryDeltaPercentagePoints": 0.022,
+      "diskDeltaPercentagePoints": 0.035,
+      "gpuUnsupported": true,
+      "usageNotAvailable": true,
+      "fakeUsageValuesSeen": false,
+      "placeholderBadgeSeenInLiveMode": true
+    }
+  ]
+}

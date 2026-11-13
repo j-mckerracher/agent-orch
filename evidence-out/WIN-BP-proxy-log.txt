@@ -1,0 +1,4 @@
+browser=Microsoft Edge 157.0.4341.46
+isolated_real_daemon=true
+named_pipe_connection=true
+console_errors=0

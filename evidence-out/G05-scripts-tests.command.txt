@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src
+command=node --test scripts/**/*.test.mjs

@@ -1,0 +1,4 @@
+command=npm run test:browser
+exit_code=0
+result=PASS
+tests_passed=11

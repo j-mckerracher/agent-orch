@@ -1,0 +1,2 @@
+version=22.20.0
+result=FAIL for pinned desktop toolchain; unsupported host Node version

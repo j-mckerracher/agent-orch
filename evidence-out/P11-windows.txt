@@ -1,0 +1,3 @@
+caption=Microsoft Windows 11 Education
+version=10.0.26200
+build=26200

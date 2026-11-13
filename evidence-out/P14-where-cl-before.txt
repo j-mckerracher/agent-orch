@@ -1,0 +1,2 @@
+vs_cpp_tools=present
+cl_before=not-on-current-path

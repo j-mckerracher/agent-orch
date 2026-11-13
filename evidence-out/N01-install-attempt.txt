@@ -1,0 +1,6 @@
+elevation=none
+launch=interactive current-user
+inspectable_window=false
+installer_cleanup=CloseMainWindow sent; installer exited
+read_only_current_user_uninstall_entry=false
+start_menu_shortcut_present=false

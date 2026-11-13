@@ -1,0 +1,33 @@
+cargo.exe :    Compiling windows-sys v0.61.2
+At line:6 char:9
++   try { & $Exe @Arguments 1> "$Prefix.stdout.txt" 2> "$Prefix.stderr. ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling windows-sys v0.61.2:
+   String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling orchestrator-git v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78991
+cd34866b2a4e4ca70064c82\src\crates\orchestrator-git)
+   Compiling orchestrator-private-fs v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0
+fe78991cd34866b2a4e4ca70064c82\src\crates\orchestrator-private-fs)
+   Compiling orchestrator-ipc v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78991
+cd34866b2a4e4ca70064c82\src\crates\orchestrator-ipc)
+   Compiling tempfile v3.27.0
+   Compiling tokio v1.54.1
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe7
+8991cd34866b2a4e4ca70064c82\src\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-agents)
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe789
+91cd34866b2a4e4ca70064c82\src\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-engine)
+   Compiling orchestrator-daemon v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 55.40s

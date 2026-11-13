@@ -1,0 +1,6 @@
+status=BUILT
+exit_code=0
+installer_name=Agent Orchestrator_0.1.0_x64-setup.exe
+bytes=4648325
+signature=NotSigned
+path=<REDACTED>
