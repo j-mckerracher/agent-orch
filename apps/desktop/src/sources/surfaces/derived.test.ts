@@ -105,6 +105,7 @@ describe("derived D10 conversation", () => {
     const result = await s.conversation.transcript({ kind: "project", projectId: ALPHA });
     expect(result).toMatchObject({
       status: "ok",
+      provenance: { methods: ["coordinator.get", "coordinator.send_message"] },
       data: { repliesExpected: false, truncated: false, entries: [{ id: "c-1", role: "user", text: "hello", kind: "message" }] },
     });
   });
@@ -130,7 +131,7 @@ describe("derived D10 conversation", () => {
     const fake = populate(new FakeDaemon());
     stubConversation(fake);
     const result = await (await live(fake)).conversation.transcript({ kind: "global" });
-    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null } });
+    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null }, provenance: { methods: ["conversations.get", "conversations.send", "conversations.cancel"] } });
     expect(fake.callsTo("conversations.get")).toHaveLength(1);
     expect(fake.callsTo("coordinator.get")).toHaveLength(0);
   });
@@ -259,7 +260,7 @@ describe("fixture ids cannot reach a real mutation", () => {
 describe("a failed live call never falls back to fixtures", () => {
   it("returns non-ok daemon results with no data when the daemon errors", async () => {
     const fake = populate(new FakeDaemon());
-    for (const method of ["projects.list", "tasks.list", "approvals.list", "queue.snapshot", "agents.capabilities", "coordinator.get"]) {
+    for (const method of ["workstreams.list", "tasks.list", "approvals.list", "queue.snapshot", "agents.capabilities", "coordinator.get"]) {
       fake.failNext(method, { code: -32603, message: "boom" }, 10);
     }
     const s = await live(fake);

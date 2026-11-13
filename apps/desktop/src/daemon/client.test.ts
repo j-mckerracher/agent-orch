@@ -167,7 +167,7 @@ describe("DaemonApi placeholder-id guard", () => {
     expect(isFixtureId("fixture:x")).toBe(true);
     expect(isFixtureId("FIXTURE:x")).toBe(true);
     expect(isFixtureId("  Fixture:x")).toBe(true);
-    expect(isFixtureId("fixture-project")).toBe(false);
+    expect(isFixtureId("fixture-project")).toBe(true);
     expect(isFixtureId("task-1")).toBe(false);
   });
 

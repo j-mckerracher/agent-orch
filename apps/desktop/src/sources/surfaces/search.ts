@@ -2,7 +2,8 @@
  * D15 search: a local, in-memory index over what D9 (workstreams and tasks)
  * and D16 (decisions) return. It has no daemon method and no fixture of its
  * own; its provenance mirrors its inputs, so fixture-backed inputs are labelled
- * PLACEHOLDER DATA and daemon-backed inputs are labelled DAEMON.
+ * PLACEHOLDER DATA. Any mixed input also gives the aggregate fixture provenance;
+ * individual hits retain their own origin. Daemon inputs list their source methods.
  *
  * Failure semantics: an input that is not `ok` is listed in `skipped` and its
  * records are not searched, so a miss there is not evidence of absence. When
@@ -21,6 +22,8 @@ import type {
   WorkstreamSource,
 } from "./types";
 
+// One global cap, in source order: each workstream then its tasks, followed by decisions.
+// Later hits, including decisions, are dropped first when the combined list exceeds 50.
 const MAX_HITS = 50;
 const STATUS_RANK: Record<Exclude<SurfaceStatus, "ok">, number> = { unavailable: 0, unknown: 1, unsupported: 2 };
 
@@ -54,7 +57,11 @@ export function createSearchSource(
       if (dq.status !== "ok") skipped.push({ source: "D16", status: dq.status, reason: dq.reason });
       if (ws.status !== "ok" && dq.status !== "ok") {
         const worst = skipped.reduce((a, b) => (STATUS_RANK[b.status] < STATUS_RANK[a.status] ? b : a));
-        return notOk(provenance, worst.status, skipped.map((item) => `${item.source}: ${item.reason}`).join("; "));
+        return notOk(
+          provenance, worst.status,
+          skipped.map((item) => `${item.source}: ${item.reason}`).join("; "),
+          observation(now()),
+        );
       }
 
       const terms = query.toLowerCase().split(/\s+/).filter(Boolean);

@@ -146,6 +146,8 @@ export function useSurface<T>(
         apply,
         (error: unknown) =>
           apply({
+            observedAt: new Date().toISOString(),
+            ageMs: 0,
             status: "unavailable",
             reason: error instanceof Error ? error.message : "source failed",
             provenance,

@@ -115,14 +115,13 @@ export const HOST_METRICS_WIRE = {
 };
 
 export const READ_METHODS = [
-  "projects.list",
+  "workstreams.list",
   "tasks.list",
   "host.metrics",
   "approvals.list",
   "queue.snapshot",
   "agents.capabilities",
   "coordinator.get",
-  "workstreams.list",
 ] as const;
 
 export async function connect(fake: FakeDaemon, start = true) {
