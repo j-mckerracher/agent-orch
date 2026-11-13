@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 import { gatesFor } from "./gates.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +27,10 @@ test("each expected total equals the length of its name list, so a merge updates
   assert.equal(win["windows-transport"].length, WINDOWS.windowsTransport.passed);
   assert.equal(win.tauri.length, WINDOWS.tauri.passed);
   const mac = names("macos-test-names.json").macos;
+  const desktop = names("desktop-test-names.json");
+  assert.equal(desktop.files.length, VITEST.files);
+  assert.equal(desktop.tests.length, VITEST.tests);
+  assert.equal(names("macos-workspace-test-names.json").length, MACOS.workspace.passed);
   const suites = [
     ["git-lib", "gitLib"],
     ["cli-cleanup-safety", "cliCleanupSafety"],
