@@ -432,6 +432,18 @@ describe("usage pill with the live adapter", () => {
     expect(info.textContent).not.toMatch(/\$|\b26\.00\b/);
   });
 
+  it("keeps a provider with no data unknown instead of showing zero", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", summary(bucket({ sessions: 1 }), [["codex", bucket({ sessions: 1 })]]));
+    await mountLive(fake);
+    await waitFor(() => expect(valueOf()).toHaveTextContent("not available"));
+    const info = screen.getByTestId("top-usage-info");
+    expect(info).toHaveTextContent("Reported usage since");
+    expect(info).toHaveTextContent("is unknown");
+    expect(info).toHaveTextContent("codex: no usage reported");
+    expect(info.textContent).not.toMatch(/\$/);
+  });
+
   it("shows the daemon failure, not fixture data, when the call fails", async () => {
     const fake = new FakeDaemon();
     fake.failNext("usage.summary", { code: -32603, message: "boom" }, 5);
