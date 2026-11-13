@@ -1,0 +1,5 @@
+text_files_scanned=14
+known_profile_and_host_needles=0 matches
+screenshots=visually inspected after exact path redaction
+raw logs and daemon data=excluded
+node_modules and cargo-target=excluded

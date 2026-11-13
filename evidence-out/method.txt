@@ -1,0 +1,5 @@
+method=browser-proxy
+browser=Microsoft Edge via Playwright channel
+transport=real isolated daemon over Windows named pipe
+source_commit=9312e34d520bf4df1e535caf90617aa95da5fac8
+rerun_scope=WIN-BP-N08 and WIN-BP-N11 only

@@ -1,0 +1,21 @@
+{
+  "method": "browser-proxy",
+  "rpc": "host.metrics",
+  "uiPercent": {
+    "memory": 64.0,
+    "disk": 97.0,
+    "cpu": 65.1
+  },
+  "daemonPercent": {
+    "memory": 63.99,
+    "disk": 96.96,
+    "cpu": 65.12
+  },
+  "deltaPercentagePoints": {
+    "memory": 0.006,
+    "disk": 0.039,
+    "cpu": 0.019
+  },
+  "gpuUnsupported": true,
+  "withinThresholds": true
+}

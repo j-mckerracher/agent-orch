@@ -1,0 +1,34 @@
+{
+  "method": "browser-proxy",
+  "sourceCommit": "9312e34d520bf4df1e535caf90617aa95da5fac8",
+  "browser": "157.0.4341.46",
+  "rows": [
+    {
+      "id": "WIN-BP-N08",
+      "status": "PASS",
+      "initial": {
+        "connected": true,
+        "placeholderBadge": false
+      },
+      "afterStop": {
+        "connected": false,
+        "placeholderBadge": false,
+        "reconnecting": true
+      },
+      "afterRestart": {
+        "connected": true,
+        "placeholderBadge": false
+      }
+    },
+    {
+      "id": "WIN-BP-N11",
+      "status": "PASS",
+      "connected": true,
+      "usageUnavailable": true,
+      "placeholderBadge": false,
+      "fabricatedCost": false,
+      "fabricatedCounts": false,
+      "metricsWithinThresholds": true
+    }
+  ]
+}

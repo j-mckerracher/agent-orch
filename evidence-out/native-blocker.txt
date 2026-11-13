@@ -1,0 +1,3 @@
+The v3 native capture step was blocked when GetCursorPos returned access denied (0x80070005).
+This follow-up ran browser-proxy checks only; they are not WebView2/native acceptance.
+The merged checklist row remains UNVERIFIED pending a native-capable consolidated pass.

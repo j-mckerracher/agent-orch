@@ -1,0 +1,6 @@
+command=npm.cmd test -- src/native/native.test.tsx src/sources/daemon.test.ts src/sources/fixtures.test.ts
+node=24.22.3
+npm=11.19.1
+exit=0
+test_files=3 passed
+tests=42 passed

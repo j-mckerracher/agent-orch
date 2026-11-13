@@ -1,0 +1,4 @@
+source_commit=9312e34d520bf4df1e535caf90617aa95da5fac8
+run_kind=supplemental failed-row rerun after PR #36 merge
+source_checkout=detached and clean
+original_v3_source_pin=6f2fe17f6334a1fb61f1f27cd9765de2ffbb4d5d

@@ -1,0 +1,3 @@
+First wrapper attempt recorded both browser-proxy assertions as PASS and the script wrote exit=0.
+The host wrapper timed out while waiting for Node to exit because the detached restart daemon retained its stderr log stream.
+A fresh isolated rerun waited for the script completion record, stopped only the daemon and Vite processes whose executable and run-specific arguments matched, and recorded both rows PASS.

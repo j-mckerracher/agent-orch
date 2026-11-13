@@ -1,0 +1,2 @@
+The isolated real daemon had no real task ID or active task. No task was submitted because that would start the executor and require a verified live-agent configuration.
+The focused PR tests cover the live task-detail wiring with a FakeDaemon; a real-daemon task-detail screen was not exercised.

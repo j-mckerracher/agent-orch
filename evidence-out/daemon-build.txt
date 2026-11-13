@@ -1,0 +1,3 @@
+command=cargo build --locked -p orchestrator-daemon --examples --bins
+exit=0
+orchestrator-daemon.exe=present

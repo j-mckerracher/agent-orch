@@ -1,0 +1,7 @@
+command=npm.cmd ci
+node=24.22.3
+npm=11.19.1
+exit=0
+packages_added=104
+packages_audited=105
+vulnerabilities=0
