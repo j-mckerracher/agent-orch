@@ -66,7 +66,10 @@ describe("WorkstreamsView over the real daemon", () => {
 
       await user.selectOptions(screen.getByLabelText("Evidence task for gate It works"), task.contract.id);
       await user.click(screen.getByRole("button", { name: "Apply to It works" }));
-      await waitFor(() => expect(screen.getByTestId("ws-gate").textContent).toContain("verified"), { timeout: 15000 });
+      await waitFor(
+        () => expect(within(screen.getByTestId("ws-gate")).getByText("verified", { exact: true })).toBeTruthy(),
+        { timeout: 15000 },
+      );
 
       const [stored] = await api.workstreamsList();
       const detail = await api.workstreamsGet(stored!.id);
