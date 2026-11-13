@@ -53,16 +53,14 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
       >
         Skip to main content
       </a>
-      {/* A group, not a region: a landmark here would nest the connection banner inside it (axe landmark-banner-is-top-level). */}
-      <div
+      <header
         className="shell-strip"
-        role="group"
         aria-label="Connection status"
         tabIndex={0}
         data-testid="shell-connection"
       >
         {connection}
-      </div>
+      </header>
       <div className="shell-body">
         <section className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
           <header className="shell-brand">

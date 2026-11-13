@@ -148,11 +148,14 @@ describe("ConnectionStrip hosting", () => {
     );
   });
 
-  it("is a labeled group rather than a landmark, so the connection banner stays top-level", async () => {
+  it("exposes the connection strip as a top-level named banner containing the live status", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
-    const strip = screen.getByRole("group", { name: "Connection status" });
-    expect(within(strip).getByRole("banner", { name: "Connection" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Connection status" })).not.toBeInTheDocument();
+    const banner = screen.getByRole("banner", { name: "Connection status" });
+    expect(banner).toHaveAttribute("data-testid", "shell-connection");
+    expect(banner.parentElement).toHaveClass("shell");
+    const status = within(banner).getByTestId("connection-status");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveTextContent("Connected");
   });
 });
 

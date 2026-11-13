@@ -64,11 +64,11 @@ describe("M7-15 restyled project screens: widgets", () => {
 });
 
 describe("M7-15 restyled project screens: connection strip", () => {
-  it("exposes the strip as a labelled landmark and the status as role=status", async () => {
+  it("preserves connection-status semantics", async () => {
     await mount(new FakeDaemon());
-    expect(screen.getByRole("banner", { name: "Connection" })).toBeInTheDocument();
-    expect(screen.getByTestId("connection-status")).toHaveAttribute("role", "status");
-    expect(screen.getByTestId("connection-status")).toHaveTextContent("Connected");
+    const status = screen.getByTestId("connection-status");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveTextContent("Connected");
     expect(glyphOf("connection-status")).toBe("✓");
   });
 
