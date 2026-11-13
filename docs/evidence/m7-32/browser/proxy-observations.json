@@ -1,0 +1,331 @@
+{
+  "run": {
+    "date": "2026-11-13T08:46:37.869Z",
+    "worktree": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-browser",
+    "browser": "Chromium via Playwright",
+    "mode": "browser-proxy",
+    "daemon": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-browser/target/m7-32-browser/debug/orchestrator-daemon"
+  },
+  "rows": [
+    {
+      "id": "N01",
+      "status": "BLOCKED",
+      "detail": "Package installation, native window, and offline asset behavior require the native app; Chrome/Vite is not a substitute.",
+      "evidence": []
+    },
+    {
+      "id": "N02",
+      "status": "PASS",
+      "detail": "explicit light/dark persistence and both prefers-color-scheme palettes observed (#ffffff vs #101a25)",
+      "evidence": [
+        "workspace-system-light.png",
+        "agents-explicit-dark.png",
+        "workspace-system-dark.png"
+      ]
+    },
+    {
+      "id": "N03",
+      "status": "FAIL",
+      "detail": "1/10 size cases failed; [{\"width\":760,\"height\":700,\"rootOverflow\":0,\"tier\":\"narrow\",\"stackOrder\":true,\"focus\":{\"id\":\"shell-main\",\"visible\":true,\"unobscured\":false},\"overflow\":[]}]",
+      "evidence": []
+    },
+    {
+      "id": "N04",
+      "status": "PASS",
+      "detail": "skip link focus visible/unobscured; nav activation, workstream tree ArrowDown, target picker keyboard (3 radios), and review tabs ArrowRight all worked",
+      "evidence": [
+        "workspace-live-connected.png"
+      ]
+    },
+    {
+      "id": "N05",
+      "status": "BLOCKED",
+      "detail": "VoiceOver/native accessibility tree traversal cannot be proven in Chromium browser-proxy mode.",
+      "evidence": []
+    },
+    {
+      "id": "N06",
+      "status": "PASS",
+      "detail": "reduced motion rendered a stable canvas; hidden pause/resume observed using synthetic document.hidden",
+      "evidence": [
+        "ambient-reduced-motion-static.png",
+        "ambient-hidden-paused.png"
+      ]
+    },
+    {
+      "id": "N07",
+      "status": "PASS",
+      "detail": "11 global/legacy routes, unknown fallback, and back/forward passed in live mode",
+      "evidence": [
+        "routes-live-review.png"
+      ]
+    },
+    {
+      "id": "N08",
+      "status": "PASS",
+      "detail": "daemon stop exposed stale cached state without fixtures; restart recovered to Connected",
+      "evidence": [
+        "daemon-stopped-stale.png",
+        "daemon-restarted-connected.png"
+      ]
+    },
+    {
+      "id": "N09",
+      "status": "BLOCKED",
+      "detail": "Desktop process/window close-reopen continuity with a real agent requires the native app; the browser session does not prove it.",
+      "evidence": []
+    },
+    {
+      "id": "N10",
+      "status": "BLOCKED",
+      "detail": "real daemon accepted a seed_review candidate; approvals.resolve replayed twice with the same idempotency key and identical receipts, and the pending item cleared. The repo has a fake_agent CLI but no agent-generated review candidate in this scenario, so the assignment's fake-agent-candidate criterion remains blocked.",
+      "evidence": [
+        "approval-candidate-before.png",
+        "approval-idempotent-retry.png",
+        "proxy-observations.json"
+      ]
+    },
+    {
+      "id": "N11",
+      "status": "PASS",
+      "detail": "connected live mode; not available; recovery and journal explicitly unknown; no fixture mode; 1 provenance marker(s) identify unavailable fields rather than substituting values",
+      "evidence": [
+        "workspace-live-connected.png",
+        "proxy-observations.json"
+      ]
+    },
+    {
+      "id": "N12",
+      "status": "BLOCKED",
+      "detail": "Vite dev response supplied no Content-Security-Policy header; no browser violation was emitted because this dev page did not enforce a policy. Production/native enforcement remains blocked and is not claimed as proven.",
+      "evidence": [
+        "proxy-observations.json"
+      ]
+    }
+  ],
+  "daemonRetry": {
+    "method": "approvals.resolve",
+    "idempotencyKey": "bf901e0c-861d-43b7-b8bb-0e537e842235",
+    "calls": 2,
+    "identicalResults": true,
+    "approvalId": "review-approval-62badc97e8d3b4f1b6202e4d91e96736d227c21399de5968f7512d9ff47a87ca",
+    "finalState": "approved"
+  },
+  "screenshots": [
+    "workspace-live-connected.png",
+    "workspace-system-light.png",
+    "agents-explicit-dark.png",
+    "workspace-system-dark.png",
+    "workspace-1280x700.png",
+    "workspace-1280x900.png",
+    "workspace-1150x700.png",
+    "workspace-1150x900.png",
+    "workspace-960x700.png",
+    "workspace-960x900.png",
+    "workspace-760x700.png",
+    "workspace-760x900.png",
+    "workspace-480x700.png",
+    "workspace-480x900.png",
+    "ambient-reduced-motion-static.png",
+    "ambient-hidden-paused.png",
+    "routes-live-review.png",
+    "approval-candidate-before.png",
+    "approval-idempotent-retry.png",
+    "daemon-stopped-stale.png",
+    "daemon-restarted-connected.png"
+  ],
+  "csp": {
+    "devResponseHeader": null,
+    "violations": [],
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+      "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+      "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    ]
+  },
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ],
+  "direct": {
+    "seeded": {
+      "projectId": "e2e-project",
+      "taskId": "m7-32-browser-task",
+      "candidateCommit": "7d9f2430d60841604b28d871d12f6cc505966e3d"
+    },
+    "requestApprovalId": "review-approval-62badc97e8d3b4f1b6202e4d91e96736d227c21399de5968f7512d9ff47a87ca",
+    "workstream": {
+      "id": "workstream-131abaa3df1db4e512a48c81be0aa8d1d1b9addb8e9fc3a8c1ae915eeac48da1",
+      "title": "Browser proxy stream"
+    },
+    "liveData": {
+      "connection": "✓Connected",
+      "recovery": "Recovery: unknown PLACEHOLDER DATA (D3) The daemon does not expose recovery status yet; no process is assumed safe from a PID or from a successful connection.",
+      "journal": "Journal continuity DAEMON (D6): unknown (never proof that history is complete)",
+      "usage": "not available",
+      "fixtureBanner": null,
+      "fixtureMode": false,
+      "placeholderMarkers": 1
+    },
+    "geometry": [
+      {
+        "width": 1280,
+        "height": 700,
+        "tier": "full",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 1280,
+        "height": 900,
+        "tier": "full",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 1150,
+        "height": 700,
+        "tier": "medium",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 1150,
+        "height": 900,
+        "tier": "medium",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 960,
+        "height": 700,
+        "tier": "stacked",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 960,
+        "height": 900,
+        "tier": "stacked",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 760,
+        "height": 700,
+        "tier": "narrow",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": false
+        },
+        "failed": true
+      },
+      {
+        "width": 760,
+        "height": 900,
+        "tier": "narrow",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 480,
+        "height": 700,
+        "tier": "narrow",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      },
+      {
+        "width": 480,
+        "height": 900,
+        "tier": "narrow",
+        "rootOverflow": 0,
+        "stackOrder": true,
+        "focus": {
+          "id": "shell-main",
+          "visible": true,
+          "unobscured": true
+        },
+        "failed": false
+      }
+    ],
+    "motion": {
+      "staticStable": true,
+      "hiddenMode": "synthetic document.hidden",
+      "hiddenStable": true,
+      "resumed": true
+    },
+    "bridgeCalls": 330,
+    "rpcMethodCounts": {
+      "agents.capabilities": 15,
+      "agents.catalog": 6,
+      "approvals.list": 42,
+      "approvals.resolve": 1,
+      "coordinator.get": 7,
+      "events.subscribe": 6,
+      "host.metrics": 10,
+      "projects.list": 10,
+      "queue.snapshot": 25,
+      "review.evidence": 6,
+      "sessions.list": 13,
+      "tasks.get": 8,
+      "tasks.list": 69,
+      "usage.summary": 25,
+      "workspaces.diff": 5,
+      "workstreams.get": 38,
+      "workstreams.list": 44
+    },
+    "candidateGeneratedByFakeAgent": false
+  }
+}
