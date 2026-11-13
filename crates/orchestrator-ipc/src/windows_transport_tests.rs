@@ -7,10 +7,10 @@ use crate::{protocol, Client, Server, ServerConfig};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW, GetSecurityInfo,
-    SE_FILE_OBJECT, SE_KERNEL_OBJECT,
+    ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertStringSidToSidW,
+    GetNamedSecurityInfoW, GetSecurityInfo, SE_FILE_OBJECT, SE_KERNEL_OBJECT,
 };
-use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
+use windows_sys::Win32::Security::{EqualSid, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
 
 fn wide_to_string(text: *const u16) -> String {
     // SAFETY: callers pass a live NUL-terminated UTF-16 string returned by a
@@ -93,11 +93,32 @@ fn file_dacl(path: &Path) -> String {
 /// with one of `masks` (SDDL text; the OS may render generic-all as `FA`).
 fn assert_current_user_only(sddl: &str, masks: &[&str]) {
     let sid = current_user_sid().unwrap();
-    assert!(
-        masks
-            .iter()
-            .any(|mask| sddl == format!("D:P(A;;{mask};;;{sid})")),
-        "DACL is not a protected single {masks:?} ACE for {sid}: {sddl}"
+    let trustee = masks
+        .iter()
+        .find_map(|mask| {
+            sddl.strip_prefix(&format!("D:P(A;;{mask};;;"))?
+                .strip_suffix(')')
+        })
+        .expect("DACL must be protected and contain exactly one allow ACE with an expected mask");
+    let parse_sid = |value: &str| {
+        let wide: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut parsed = std::ptr::null_mut();
+        // SAFETY: wide is NUL terminated and parsed is a valid output pointer.
+        assert_ne!(
+            unsafe { ConvertStringSidToSidW(wide.as_ptr(), &mut parsed) },
+            0,
+            "invalid trustee SID {value}: {}",
+            last_error()
+        );
+        LocalAllocation(parsed)
+    };
+    let expected = parse_sid(&sid);
+    let actual = parse_sid(trustee);
+    // SAFETY: both allocations contain live SIDs returned by Windows.
+    assert_ne!(
+        unsafe { EqualSid(expected.0, actual.0) },
+        0,
+        "DACL trustee {trustee} is not current user {sid}: {sddl}"
     );
 }
 
