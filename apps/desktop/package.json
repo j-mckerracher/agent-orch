@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:browser": "playwright test",
     "tauri": "tauri",
     "prepare:sidecar": "node scripts/prepare-daemon-sidecar.mjs",
     "package:mac": "node scripts/package.mjs app",
@@ -20,6 +21,7 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.0",
     "@tauri-apps/cli": "2.12.4",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "7.0.1",

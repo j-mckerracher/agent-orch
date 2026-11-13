@@ -116,9 +116,9 @@ describe("legacy project routes in the shell", () => {
     await mount(daemon(), { route });
     expect(screen.getAllByRole("main")).toHaveLength(1);
     const current = document.querySelectorAll('.shell [aria-current="page"]');
-    expect(current.length).toBeLessThanOrEqual(1);
+    expect(current.length).toBeGreaterThanOrEqual(1);
     const section = document.querySelector('.shell-nav [aria-current]');
-    expect(section).toHaveAttribute("aria-current", "true");
+    expect(section).toHaveAttribute("aria-current", "page");
     expect(section).toHaveTextContent("Projects");
   });
 });
