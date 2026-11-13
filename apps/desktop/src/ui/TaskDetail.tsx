@@ -1,4 +1,4 @@
-/** S4: real task detail, plus the DUMMY D2/D3/D4 panels shared with the fixture-only view. */
+/** S4: real task detail, plus D2/D3/D4 source-status panels shared with the fixture-only view. */
 import { useEffect, useState } from "react";
 import { timelineKey } from "../daemon/appData";
 import { asDaemonError, type DaemonError } from "../daemon/errors";

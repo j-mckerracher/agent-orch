@@ -167,7 +167,10 @@ describe("shipped app wiring", () => {
     expect(screen.queryByTestId("fixture-banner")).toBeNull();
     expect(screen.queryByText(/PLACEHOLDER DATA \(D1\)/)).toBeNull();
     expect(screen.getByTestId("recovery-unknown")).toHaveTextContent("Recovery: unknown");
-    expect(screen.getByTestId("badge-D3")).toHaveTextContent("PLACEHOLDER DATA");
+    expect(screen.getByTestId("badge-D3")).toHaveTextContent("DAEMON (D3)");
+    expect(screen.getByTestId("recovery-unknown")).not.toHaveTextContent(
+      /PLACEHOLDER DATA|recoverable|reconciling|worktree present|no delivery recorded/i,
+    );
   });
 
   it("native: live daemon data, connected note, and no fixture banner", async () => {
@@ -226,11 +229,12 @@ describe("shipped app wiring", () => {
     });
     render(<App services={services} />);
     await waitFor(() => expect(status()).toHaveTextContent("Connected"));
-    const region = await screen.findByRole("region", { name: "Recovery classification (placeholder)" });
+    const region = await screen.findByRole("region", { name: "Recovery classification" });
     await waitFor(() => expect(region).toHaveTextContent(/Unavailable: the daemon exposes no recovery status yet/));
     expect(region).toHaveTextContent("unknown");
-    expect(region).toHaveTextContent("PLACEHOLDER DATA (D3)");
-    expect(region).not.toHaveTextContent(/worktree present|no delivery recorded|reconciling/);
+    expect(region).not.toHaveTextContent(
+      /PLACEHOLDER DATA|recoverable|worktree present|no delivery recorded|reconciling/,
+    );
   });
 
   it("native S6 shows the live failure instead of falling back to fixture data", async () => {

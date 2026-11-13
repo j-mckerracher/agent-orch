@@ -10,5 +10,7 @@ For each row, record tester, date, full tested SHA, OS/WebView and screen-reader
 4. **DPI / scaling — native app.** At 100%, 150%, and 200% scaling on each supported platform, verify the connection strip remains visible, readable, and visually unchanged with no overflow. On Windows, also repeat the gate/evidence interaction at 100%, 125%, 150%, and 200%; confirm controls and labels do not overlap or clip. Capture screenshots at each applicable scale.
 
 5. **Narrow-window keyboard focus — macOS and Windows.** In WKWebView and WebView2 at 760×700 CSS px, activate “Skip to main content” and verify the focused main region/indicator stays below the connection banner with no horizontal overflow. Record the OS/WebView build and capture the viewport.
+6. **N08/N11 — Windows live D3 recovery honesty.** With a real daemon, inspect connected, stale-after-stop, and reconnected states on the Agents and task-detail screens. Recovery must remain unknown/unavailable, with no D3 placeholder badge or fixture-derived classifications, counts, or IDs.
+   Keep this row UNVERIFIED until the consolidated native/browser-proxy pass.
 
 Mark unrun rows **UNVERIFIED**; automated e2e results do not establish native acceptance.
