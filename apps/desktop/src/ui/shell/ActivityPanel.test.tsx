@@ -159,6 +159,38 @@ describe("live mode", () => {
     expect(within(panel).getByTestId("activity-status")).toHaveTextContent("2 running, 3 queued");
   });
 
+  it("refreshes the live queue after the daemon reconnects", async () => {
+    const fake = liveDaemon();
+    const { panel, services } = await mountPanel(fake);
+    await waitFor(() =>
+      expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("1 of 2 slots in use"),
+    );
+
+    const generation = services.connection.getSnapshot().generation;
+    fake.tasks = [
+      mkTask("t1", REPO, { state: "Running" }),
+      mkTask("t2", REPO, { state: "Running" }),
+      mkTask("q1", REPO, { state: "Queued" }),
+      mkTask("q2", REPO, { state: "Queued" }),
+      mkTask("q3", REPO, { state: "Queued", contract: { dependencies: ["t1"] } }),
+    ];
+    act(() => fake.drop());
+
+    await waitFor(() => {
+      expect(services.connection.getSnapshot().status).toBe("connected");
+      expect(services.connection.getSnapshot().generation).toBeGreaterThan(generation);
+    });
+    await waitFor(() => {
+      expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("2 of 2 slots in use · 0 available");
+      expect(within(panel).getByTestId("activity-status")).toHaveTextContent("2 running, 3 queued");
+    });
+    const upNext = within(panel).getByTestId("activity-queue-up-next");
+    expect(within(upNext).getAllByText("All 2 worker slots are in use.")).toHaveLength(2);
+    const waiting = within(panel).getByTestId("activity-queue-waiting");
+    expect(within(waiting).getByTestId("activity-task-q3")).toBeInTheDocument();
+    expect(within(waiting).getByText("Waiting for t1.")).toBeInTheDocument();
+  });
+
   it("shows slots as unavailable, never zero or sample numbers, when queue.snapshot is malformed", async () => {
     const fake = liveDaemon();
     fake.stub("queue.snapshot", {});
