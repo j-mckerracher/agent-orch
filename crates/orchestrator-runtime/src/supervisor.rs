@@ -428,9 +428,8 @@ impl ChildSupervisor {
         }
         self.cancelled = true;
         #[cfg(windows)]
-        match std::mem::take(&mut self.job.0) {
-            Some(job) => windows_impl::terminate_job(job),
-            None => {}
+        if let Some(job) = std::mem::take(&mut self.job.0) {
+            windows_impl::terminate_job(job)
         }
         #[cfg(unix)]
         {
@@ -451,9 +450,8 @@ impl Drop for ChildSupervisor {
         // a live tree. Same kill path as `cancel`; safe if the tree is
         // already gone (signalling a dead pid/job is a no-op).
         #[cfg(windows)]
-        match std::mem::take(&mut self.job.0) {
-            Some(job) => windows_impl::terminate_job(job),
-            None => {}
+        if let Some(job) = std::mem::take(&mut self.job.0) {
+            windows_impl::terminate_job(job)
         }
         #[cfg(unix)]
         {
