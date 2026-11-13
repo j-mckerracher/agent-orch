@@ -5,7 +5,7 @@
   background: var(--amber-bg); color: var(--amber); border: 1px dashed var(--amber); padding: 0 4px; font-weight: 600; font-size: 0.8em;
 }
 .review-screen .blockers { background: var(--soft); padding: 6px 10px; margin-top: 8px; }
-.review-screen .diff-region { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 12px; }
+.review-screen .diff-region { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 12px; }
 .review-screen .diff-text { overflow: auto; max-height: 480px; background: var(--soft); border: 1px solid var(--line); padding: 6px; }
 .review-screen .diff-text .add { color: var(--ink); background: color-mix(in srgb, var(--success-bg) 45%, transparent); }
 .review-screen .diff-text .del { color: var(--ink); background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
