@@ -44,7 +44,12 @@ export function SessionList({
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const rows = work.status === "ready" ? work.data : [];
-  const assignable = inventory.status === "ready" ? inventory.data.filter((row) => row.assignable) : null;
+  const assignable =
+    inventory.status === "empty"
+      ? []
+      : inventory.status === "ready"
+        ? inventory.data.filter((row) => row.assignable)
+        : null;
   const unknownDisconnected = disconnected(rows, recovery);
 
   const label = (id: TabId, text: string): string => {
