@@ -1,7 +1,7 @@
 # M6-04 verification report
 
 Plan: `/Users/mckerracher.joshua/.copilot/session-state/94be28cc-e6d3-4f21-ae92-c66da3c1e707/files/prompts/C-m6-04-verify.md`; fast-delivery addendum followed.
-Code build/package/smoke tested at `dc33a7eb9a08b8ed253718243e3022f01a59806d`. Later merges `517e080a1aa73bf251465dc61467a9e48bff913d` (docs-only) and `3d0fda560` (test-only: `ActivityPanel.test.tsx` plus M7-12 checklist) added no product code. After the latest merge, installer tests and the changed desktop test were revalidated (26/26 and 17/17). Board M6-04 is priority 13, status `todo`; details require install, upgrade, approvals, cancellation and recovery on macOS and Windows, with no formal acceptance array. The criteria below group that scope.
+Code build/package/smoke tested at `dc33a7eb9a08b8ed253718243e3022f01a59806d`. Later integ2 merges through `cb39970c2` add docs-only changes; the intervening test-only merge changed `ActivityPanel.test.tsx`, which passed 17/17, and installer tests passed 26/26 after that merge. No tested product code changed. Board M6-04 is priority 13, status `todo`; details require install, upgrade, approvals, cancellation and recovery on macOS and Windows, with no formal acceptance array. The criteria below group that scope.
 
 | Criterion | Implementation and test | Result / gap |
 |---|---|---|
