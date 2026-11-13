@@ -222,8 +222,9 @@ mod tests {
     }
 
     #[test]
-    fn reproduces_the_recorded_claude_code_cost_exactly() {
-        // M4-02 capture: total_cost_usd 0.0086388 on claude-opus-5-5.
+    fn matches_codeburn_synthetic_fixture_and_recorded_claude_cost() {
+        // codeburn 0.9.28 synthetic output: $0.0086388 for the same model and counts.
+        // This is also the recorded Claude Code CLI cost from M4-02.
         assert_eq!(
             estimate_cost_nanos(Some("claude-opus-5-5"), &counts(2, 2_254, 1_360, 69)),
             Some(8_638_800)
