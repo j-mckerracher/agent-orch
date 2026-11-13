@@ -1,0 +1,763 @@
+   Compiling orchestrator-store v0.1.0 (/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/crates/orchestrator-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.92s
+     Running unittests src/main.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/orchestrator_daemon-4efbfb2a5f42e7e5)
+
+running 176 tests
+test api::conversation_agent::tests::launch::a_present_runtime_that_cannot_run_fails_closed_without_waiting_out_a_window ... ok
+test api::conversation_agent::tests::launch::a_version_probe_that_does_not_answer_is_only_provisionally_bad ... ok
+test api::conversation_agent::tests::launch::a_version_probe_that_hangs_conflicts_only_for_the_retry_window ... ok
+test api::conversation_agent::tests::launch::a_version_probe_that_is_not_a_version_is_rejected ... ok
+test api::conversation_agent::tests::launch::an_unsettled_catalog_conflicts_only_for_the_retry_window ... ok
+test api::conversation_agent::tests::pins_accept_known_agents_with_a_plain_version_only ... ok
+test api::conversation_agent::tests::running_turns_are_capped_and_released ... ok
+test api::conversation_agent::tests::sanitize_drops_characters_that_render_as_nothing ... ok
+test api::conversation_agent::tests::sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it ... ok
+test api::conversation_agent::tests::the_prompt_ends_with_the_current_message_and_carries_history_and_context ... ok
+test api::conversation_agent::tests::versions_parse_from_both_cli_formats_and_refuse_junk ... ok
+test api::conversation_orphans::tests::a_group_whose_leader_is_gone_cannot_be_identified_so_it_is_left_alone ... ok
+test api::conversation_orphans::tests::a_live_group_with_the_recorded_identity_is_killed_with_its_descendants ... ok
+test api::conversation_orphans::tests::a_record_for_a_process_that_is_gone_is_cleared_without_a_signal ... ok
+test api::conversation_orphans::tests::a_record_is_removed_when_its_turn_ends ... ok
+test api::conversation_orphans::tests::a_record_whose_start_time_differs_is_a_reused_pid_and_is_never_signalled ... ok
+test api::conversation_orphans::tests::unreadable_or_oversized_records_are_removed_and_signal_nothing ... ok
+test api::conversations::tests::a_large_delta_is_split_without_breaking_characters ... ok
+test api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context ... ok
+test api::conversations::tests::a_replayed_send_shows_the_turn_as_it_is_now_not_as_it_was_recorded ... ok
+test api::conversations::tests::a_reply_over_the_turn_bound_fails_the_turn_and_stops_the_runtime ... ok
+test api::conversations::tests::a_reply_streams_in_order_and_is_correlated_with_its_message ... ok
+test api::conversations::tests::a_retried_send_returns_the_first_result_and_runs_once ... {"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T07:18:19Z"}
+ok
+test api::conversations::tests::a_running_turn_blocks_the_next_message_until_it_ends ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T07:18:19Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T07:18:19Z"}
+ok
+test api::conversations::tests::a_runtime_that_does_not_match_its_pin_never_sees_the_message ... ok
+test api::conversations::tests::an_unused_conversation_reads_as_empty_not_as_an_error ... ok
+test api::conversations::tests::cancel_closes_the_turn_stops_the_runtime_and_discards_late_output ... ok
+test api::conversations::tests::cancel_is_scoped_to_its_conversation_and_turn ... ok
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+test api::conversations::tests::malformed_requests_are_rejected_without_side_effects ... ok
+test api::conversations::tests::replay_pages_are_bounded_and_cursors_are_checked ... {"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-13T07:18:19Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-13T07:18:19Z"}
+ok
+test api::conversations::tests::restart_keeps_the_transcript_fails_open_turns_and_resumes_replay ... {"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T07:18:19Z"}
+ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+test api::conversations::tests::without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable ... {"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T07:18:19Z"}
+ok
+test api::conversations::tests::workstream_targets_need_a_resolvable_workstream_and_stay_separate ... ok
+test api::host::tests::dispatch_returns_a_snapshot_with_every_resource_before_any_sample ... ok
+test api::host::tests::parameters_are_rejected ... ok
+test api::host::tests::the_host_capability_is_advertised ... ok
+test api::queue_tests::a_retried_task_is_judged_by_its_newest_workspace ... ok
+test api::queue_tests::consistent_reading_gives_up_after_its_attempts_with_the_last_reading ... ok
+test api::queue_tests::consistent_reading_reads_once_when_the_journal_is_still ... ok
+test api::queue_tests::consistent_reading_retries_a_moving_journal_and_keeps_the_settled_reading ... ok
+test api::queue_tests::created_tasks_are_not_part_of_the_queue ... ok
+test api::queue_tests::dependency_blocked_task_names_its_dependency_and_has_no_position ... ok
+test api::queue_tests::empty_daemon_reports_limits_and_nothing_else ... ok
+test api::queue_tests::fairness_cursor_moves_the_up_next_order_past_the_last_started_project ... ok
+test api::queue_tests::global_cap_blocks_queued_tasks_behind_a_full_worker_pool ... ok
+test api::queue_tests::limits_are_reported_in_their_own_wire_fields ... ok
+test api::queue_tests::project_cap_blocks_only_the_full_project ... ok
+test api::queue_tests::queue_snapshot_is_advertised_as_a_capability ... ok
+test api::queue_tests::queue_snapshot_rejects_params ... ok
+test api::queue_tests::restart_gate_marks_startable_tasks_as_blocked ... ok
+test api::queue_tests::running_and_queued_are_sorted_whatever_order_the_records_arrive_in ... ok
+test api::queue_tests::snapshot_agrees_with_tasks_list_at_its_sequence ... ok
+test api::queue_tests::up_next_order_round_robins_across_projects ... ok
+test api::queue_tests::verifying_tasks_are_in_neither_list_and_hold_no_capacity ... ok
+test api::queue_tests::withheld_start_authorization_waits_for_approval ... ok
+test api::review_tests::approval_from_review_request_delivers_end_to_end ... ok
+test api::review_tests::capabilities_include_coordinator_and_review ... ok
+test api::review_tests::coordinator_enforces_project_existence_and_size_limits ... ok
+test api::review_tests::coordinator_get_pages_at_one_hundred_entries ... ok
+test api::review_tests::coordinator_messages_are_idempotent_ordered_and_user_authored ... {"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-13T07:18:22Z"}
+ok
+test api::review_tests::evidence_for_unknown_task_or_approval_is_not_found ... ok
+test api::review_tests::evidence_is_current_for_a_fresh_approval_and_stale_after_the_workspace_moves ... ok
+test api::review_tests::evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale ... ok
+test api::review_tests::evidence_marks_an_unverified_unknown_candidate_stale ... ok
+test api::review_tests::evidence_snapshot_is_size_bounded_and_path_filterable ... ok
+test api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files ... ok
+test api::review_tests::evidence_without_an_approval_is_missing_and_pinned_to_head ... ok
+test api::review_tests::invalid_proposals_report_stable_codes ... ok
+test api::review_tests::new_methods_reject_malformed_parameters ... ok
+test api::review_tests::proposals_cannot_smuggle_authority_fields ... ok
+test api::review_tests::request_approval_binds_the_delivery_digest_and_is_replayable ... ok
+test api::review_tests::request_approval_refuses_unsafe_requests ... {"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T07:18:33Z"}
+ok
+test api::review_tests::request_approval_requires_passed_verification_of_the_current_head ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T07:18:34Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T07:18:34Z"}
+ok
+test api::review_tests::request_changes_blocks_approval_but_not_rejection ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-13T07:18:35Z"}
+ok
+test api::review_tests::request_changes_refuses_a_decided_approval ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T07:18:35Z"}
+ok
+test api::review_tests::request_changes_refuses_stale_duplicate_and_unknown_requests ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T07:18:36Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T07:18:36Z"}
+ok
+test api::review_tests::valid_proposal_is_validated_without_authority_or_side_effects ... ok
+test api::tests::agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::tests::idempotency_store_failures_report_their_cause_too ... ok
+test api::tests::internal_causes_do_not_leak_into_the_next_request ... ok
+test api::tests::internal_error_causes_reach_the_injected_redacting_sink ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... {"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-13T07:18:37Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T07:18:37Z"}
+ok
+test api::tests::running_task_cancellation_requests_owner_without_mutating_run_state ... ok
+test api::tests::running_task_cancellation_with_crashed_owner_conflicts_and_retires_generation ... {"component":"api","event":"cancellation_owner_exited","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"request marked Failed and the task remains Running. Stop the daemon and use `agent-orch inspect running-with-crashed-owner` to review the preserved state","task_id":"running-with-crashed-owner","ts":"2026-11-13T07:18:37Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T07:18:37Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T07:18:37Z"}
+ok
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+test api::tests::running_task_without_owner_rejects_cancellation_without_partial_updates ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T07:18:37Z"}
+ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... {"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-13T07:18:39Z"}
+ok
+test api::tests::safety::submit_refuses_read_only_autonomy_because_the_agent_would_write ... {"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-13T07:18:40Z"}
+ok
+test api::tests::safety::submit_rejects_oversized_and_nul_contract_fields ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_symlink_escape_before_git ... ok
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... {"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-13T07:18:42Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... {"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::usage::tests::local_midnight_boundaries_follow_the_offset ... ok
+test api::usage::tests::nanos_format_as_trimmed_decimals ... ok
+test api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals ... ok
+test api::usage_tests::bad_parameters_are_rejected ... ok
+test api::usage_tests::estimated_figures_stay_apart_from_reported_ones ... ok
+test api::usage_tests::local_midnight_boundary_decides_the_day ... ok
+test api::usage_tests::native_estimate_is_additive_labelled_and_never_reported ... ok
+test api::usage_tests::silent_provider_is_unknown_and_never_zero ... ok
+test api::usage_tests::the_exact_utc_offset_limits_are_accepted ... ok
+test api::usage_tests::usage_summary_is_dispatched_by_method_name ... ok
+test api::workstreams_tests::archived_is_terminal_and_illegal_transitions_conflict ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::workstreams_tests::capability_is_advertised ... ok
+test api::workstreams_tests::create_get_list_and_update_round_trip ... ok
+test api::workstreams_tests::idempotent_replay_returns_the_same_result ... {"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::workstreams_tests::invalid_parameters_are_rejected ... ok
+test api::workstreams_tests::linking_leaves_tasks_untouched_and_spans_projects ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::workstreams_tests::objectives_gates_and_evidence_flow ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-13T07:18:42Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-13T07:18:42Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::workstreams_tests::stale_revision_is_a_conflict_and_writes_nothing ... {"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-13T07:18:42Z"}
+ok
+test api::workstreams_tests::task_submission_is_unchanged_by_the_workstream_model ... ok
+test api::workstreams_tests::unknown_records_are_not_found ... ok
+test executor::running_listing_tests::a_failed_listing_is_logged_and_never_reads_as_nothing_running ... ok
+test executor::running_listing_tests::a_readable_empty_listing_is_quiet_and_empty ... ok
+test executor::running_listing_tests::interrupted_tasks_are_unknown_when_either_listing_failed ... ok
+test executor::tests::agents_capabilities_reports_installed_state_without_paths ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmphKbK9A/repo/.git/
+[main (root-commit) a7a9233] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::cancelling_a_running_task_stops_the_agent_through_its_owner ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpzb71D5/repo/.git/
+[main (root-commit) 716c209] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::capabilities_probe_is_bounded_and_kills_a_wedged_agent_by_pid ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpcHM07m/repo/.git/
+[main (root-commit) 28f929a] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::failed_agent_fails_the_task_and_retry_appends_a_second_attempt ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpnr1R1e/repo/.git/
+[main (root-commit) 97c6bbb] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::failed_agent_is_reported_with_its_exit_and_the_preserved_worktree ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmptq8ium/repo/.git/
+[main (root-commit) b458073] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::fast_exit_before_identity_preserves_failure_status ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpQBiRHY/repo/.git/
+[main (root-commit) fd4f5c0] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::launch_failure_is_reported_without_leaking_the_credential_in_the_program_path ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpQyWbpA/repo/.git/
+[main (root-commit) bef827d] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::a_read_that_outlasts_the_wait_is_refused_with_a_retry_hint_and_the_key_stays_usable ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpdWkOZ1/repo/.git/
+[main (root-commit) bef827d] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::a_slow_catalog_read_does_not_block_an_unrelated_submit ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpu4Ekz8/repo/.git/
+[main (root-commit) 51cfbba] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::a_timed_out_facet_is_not_cached_but_a_definitive_read_is ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpuyhgv9/repo/.git/
+[main (root-commit) 6831286] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpyoyK6R/repo/.git/
+[main (root-commit) a5becb6] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::catalog_lists_only_what_the_installed_clis_report ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpsMOPv6/repo/.git/
+[main (root-commit) 4f5e322] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::claude_effort_selection_reaches_the_agent ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpPOtZTc/repo/.git/
+[main (root-commit) ad337a3] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::concurrent_cold_reads_share_one_set_of_probes ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpRJxifN/repo/.git/
+[main (root-commit) f376874] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::launch_checks_the_selection_again_against_a_fresh_catalog ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpdmaQsm/repo/.git/
+[main (root-commit) f6c11a6] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::logged_text_cannot_carry_control_characters ... ok
+test executor::tests::model_selection::signed_out_or_missing_agents_offer_nothing_rather_than_an_empty_list ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpa0snnC/repo/.git/
+[main (root-commit) 03a9bd1] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::submit_refuses_a_selection_for_a_signed_out_or_missing_agent ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmplQvAxG/repo/.git/
+[main (root-commit) 03a9bd1] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::submit_refuses_a_selection_the_adapter_does_not_offer_and_creates_no_task ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpsOBPLU/repo/.git/
+[main (root-commit) ba11012] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_unknown ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpaF9h09/repo/.git/
+[main (root-commit) ba11012] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::validate_selection_gives_a_precise_reason_for_every_refusal ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpR2V3IR/repo/.git/
+[main (root-commit) 6e25dae] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::model_selection::validate_selection_reports_authentication_failure ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpsLor4w/repo/.git/
+[main (root-commit) 324596f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::queue_snapshot_orders_the_queue_from_the_executors_fairness_cursor ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpT5ScXo/repo/.git/
+[main (root-commit) 324596f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::queue_snapshot_reports_a_closed_restart_gate_from_the_running_executor ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpXxF6dr/repo/.git/
+[main (root-commit) 6f6b04e] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_fails_a_run_whose_agent_already_exited ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpIfa7eO/repo/.git/
+[main (root-commit) 6f6b04e] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_gate_blocks_launches_while_a_run_cannot_be_proven_dead ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpODmSWu/repo/.git/
+[main (root-commit) d2f77f7] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_gate_refusal_is_reported_once_with_its_blocker ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmp5aGXVs/repo/.git/
+[main (root-commit) d2f77f7] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_never_signals_a_process_whose_identity_differs_from_the_recorded_one ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpVvpOi9/repo/.git/
+[main (root-commit) c2fe63a] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_never_signals_an_agent_whose_owner_daemon_is_still_alive ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmphY4rhP/repo/.git/
+[main (root-commit) c2fe63a] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_reports_the_orphan_it_stopped_and_the_runs_it_interrupted ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpTggvgf/repo/.git/
+[main (root-commit) 6162c06] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::restart_terminates_an_orphaned_agent_then_fails_its_task_and_resumes_scheduling ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpbDqy5u/repo/.git/
+[main (root-commit) 3449aae] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::retry_is_bounded_by_the_contract_and_only_for_failed_tasks ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpKsqaNd/repo/.git/
+[main (root-commit) fae116a] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::rpc_failures_are_reported_by_method_and_class_but_never_with_parameters ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpw4WGPL/repo/.git/
+[main (root-commit) cdfeec5] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::scheduler_limits_hold_and_a_finished_task_releases_its_slot ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpKMh6OA/repo/.git/
+[main (root-commit) cdfeec5] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::submitted_task_runs_to_candidate_ready_with_every_transition_journaled ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpVl39Kw/repo/.git/
+[main (root-commit) bb33d54] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::unlaunchable_task_fails_with_a_recorded_attempt_instead_of_hanging ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpBo9r6n/repo/.git/
+[main (root-commit) 70e5e3f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::a_run_without_a_model_stays_unpriced_and_a_reported_model_wins ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpkJbP0C/repo/.git/
+[main (root-commit) 70e5e3f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpkFJMv8/repo/.git/
+[main (root-commit) 70e5e3f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::a_silent_cancelled_run_records_nothing ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpq8mKtw/repo/.git/
+[main (root-commit) 895e182] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::only_codex_falls_back_to_the_requested_model ... ok
+test executor::tests::usage_paths::the_provider_timestamp_sets_the_receipt_window_end ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmp3cgZNI/repo/.git/
+[main (root-commit) 895e182] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::the_requested_model_prices_a_report_that_names_none ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpbKguab/repo/.git/
+[main (root-commit) 895e182] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::usage_is_recorded_when_the_event_stream_fails ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpGNBWVN/repo/.git/
+[main (root-commit) 895e182] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_paths::usage_is_recorded_when_the_run_is_cancelled_before_any_event ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpaPmJEu/repo/.git/
+[main (root-commit) fe221b3] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test executor::tests::usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmptpKWHY/repo/.git/
+[main (root-commit) fe221b3] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpoUmJnK/repo/.git/
+[main (root-commit) b1e2014] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test tests::lock_conflict_reports_live_holder_pid ... ok
+
+test result: ok. 176 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.14s
+
+     Running tests/conversation_runtime.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/conversation_runtime-a530eb715a2d1d87)
+
+running 14 tests
+test a_configured_model_the_catalog_does_not_offer_fails_closed ... ok
+test a_hung_agent_is_killed_at_the_deadline ... ok
+test a_runtime_that_is_present_but_not_executable_fails_closed ... ok
+test a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict ... ok
+test a_turn_the_daemon_lost_is_failed_on_restart_not_left_running ... ok
+test a_version_that_is_not_pinned_never_receives_the_message ... ok
+test agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes ... ok
+test an_agent_orphaned_by_a_killed_daemon_is_reaped_on_the_next_start ... ok
+test cancel_stops_a_streaming_reply_and_later_output_is_discarded ... ok
+test control_characters_never_reach_the_transcript ... ok
+test live_codex_answers_a_global_message ... ignored, needs a signed-in codex CLI; set AGENT_ORCH_LIVE_CONVERSATION=1
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+test replies_survive_a_restart_replay_by_sequence_and_stay_idempotent ... ok
+test the_agent_runs_read_only_in_an_empty_scratch_directory ... ok
+
+test result: ok. 13 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 60.41s
+
+     Running tests/conversations.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/conversations-dda1437828753b82)
+
+running 2 tests
+test conversation_methods_require_the_coordinator_capability ... ok
+test transcript_fails_closed_survives_restart_and_grants_no_authority ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+     Running tests/coordinator_review.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/coordinator_review-fc608862039525ad)
+
+running 4 tests
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.86s
+
+     Running tests/daemon.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/daemon-9462eaca9083b42b)
+
+running 11 tests
+test daemon_cancel_reaches_cancelled_through_real_run_owner ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.91s
+Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmp7pRXxO/repo/.git/
+[main (root-commit) bcc4236] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_clients_submit_cancel_and_resume_durable_events ... ok
+test daemon_launches_submitted_work_and_a_client_disconnect_does_not_stop_it ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmp57wejH/repo/.git/
+[main (root-commit) 267fb88] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_log_never_holds_a_passthrough_value_and_the_data_dir_is_private ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmp42Jv7C/repo/.git/
+[main (root-commit) beef832] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_refuses_to_resume_a_cursor_against_a_replaced_journal ... ok
+test daemon_reports_agent_capabilities_without_paths ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpoNLxxJ/repo/.git/
+[main (root-commit) 64c4dbc] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_restart_after_sigkill_terminates_the_orphan_and_retry_relaunches ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpkPOJ14/repo/.git/
+[main (root-commit) 64c4dbc] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_serves_the_agent_catalog_and_selection_check_over_ipc ... Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpRFeYmy/repo/.git/
+[main (root-commit) 2a01a1f] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+ok
+test daemon_survives_accept_descriptor_exhaustion ... ok
+test rejected_authentication_does_not_log_either_token ... ok
+test second_daemon_reports_holder_and_shutdown_removes_resources ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.69s
+
+     Running tests/diagnostics_log.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/diagnostics_log-3c5604014b3f06ee)
+
+running 1 test
+test a_failed_launch_is_explained_in_the_log_without_the_credential ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+     Running tests/host_metrics.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/host_metrics-33bf7445c0a5ae26)
+
+running 2 tests
+test host_metrics_needs_the_host_capability ... ok
+test host_metrics_serves_every_resource_through_the_real_daemon ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/lifecycle.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/lifecycle-99819ff77efaae1d)
+Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmpZCcdVd/repo/.git/
+[main (root-commit) b7cb2ec] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+     Running tests/queue_snapshot.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/queue_snapshot-a6b48c323ba32028)
+Initialized empty Git repository in /private/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/.tmppkUUfD/repo/.git/
+[main (root-commit) b3cd2a7] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 cancelling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS
+     Running unittests src/lib.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/orchestrator_store-eb72ad20c6d9dfd4)
+
+running 65 tests
+test data_lock::tests::acquire_creates_a_private_directory_and_lock_and_tightens_an_existing_one ... ok
+test data_lock::tests::fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact ... ok
+test data_lock::tests::fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact ... ok
+test data_lock::tests::identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock ... ok
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test data_lock::tests::platform_without_identity_still_retries_and_preserves_the_lock ... ok
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+test data_lock::tests::the_lock_file_is_owner_only_when_created_and_when_taken_over ... ok
+test data_lock::tests::verified_creation_is_cleaned_up_on_drop ... ok
+test sqlite::tests::database_files_are_owner_only_new_or_existing ... ok
+test sqlite::tests::foreign_keys_reject_orphan_attempts_on_each_handle ... ok
+test sqlite::tests::new_database_uses_wal_mode ... ok
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test sqlite_ops::tests::separate_handles_serialize_writes_or_return_database_errors ... ok
+test sqlite_ops::tests::task_records_and_event_sequence_survive_reopen ... ok
+test sqlite_ops::tests::transition_rolls_back_state_when_event_insert_fails ... ok
+test sqlite_usage::tests::a_missing_token_count_leaves_the_estimate_unknown ... ok
+test sqlite_usage::tests::a_null_field_inside_a_receipt_stays_unknown_not_zero ... ok
+test sqlite_usage::tests::a_session_is_estimated_whole_or_not_at_all ... ok
+test sqlite_usage::tests::a_stored_estimate_suppresses_the_native_one ... ok
+test sqlite_usage::tests::an_empty_window_has_no_providers ... ok
+test sqlite_usage::tests::an_unknown_or_missing_model_is_unknown_not_zero ... ok
+test sqlite_usage::tests::costs_are_summed_per_provider_and_in_the_grand_total ... ok
+test sqlite_usage::tests::each_model_is_estimated_from_its_own_price_and_kept_out_of_reported ... ok
+test sqlite_usage::tests::invalid_receipts_and_unknown_sessions_are_rejected ... ok
+test sqlite_usage::tests::late_receipt_is_attributed_to_its_window_end_day ... ok
+test sqlite_usage::tests::migration_applies_to_an_existing_data_directory_without_losing_data ... ok
+test sqlite_usage::tests::model_text_is_truncated_on_a_character_boundary ... ok
+test sqlite_usage::tests::receipts_are_idempotent_and_only_newer_observations_replace ... ok
+test sqlite_usage::tests::receipts_survive_reopen ... ok
+test sqlite_usage::tests::reported_and_estimated_mix_without_double_counting_or_overwriting ... ok
+test sqlite_usage::tests::session_coverage_follows_start_time_and_receipts ... ok
+test sqlite_usage::tests::silent_providers_are_unknown_not_zero_and_sources_stay_apart ... ok
+test sqlite_usage::tests::summarising_does_not_rewrite_stored_receipts ... ok
+test sqlite_usage::tests::token_sums_saturate_instead_of_wrapping ... ok
+test sqlite_workstreams::tests::existing_data_directory_migrates_without_loss ... ok
+test tests::attempt_must_match_task_and_sequence ... ok
+test tests::attempt_state_moves_follow_central_table ... ok
+test tests::close_and_reopen_preserves_everything ... ok
+test tests::concurrent_creates_same_id_exactly_one_wins ... ok
+test tests::concurrent_mutations_do_not_lose_a_transition ... ok
+test tests::create_persists_validated_contract_and_rejects_invalid ... ok
+test tests::failed_attempt_preserved_and_retry_appends_new_one ... ok
+test tests::invalid_task_ids_are_rejected_not_panics ... ok
+test tests::invalid_transition_changes_nothing ... ok
+test tests::list_ignores_foreign_files ... ok
+test tests::malformed_stored_attempt_is_not_linked_to_new_rows ... ok
+test tests::new_attempt_must_be_pending_with_nonempty_id ... ok
+test tests::new_attempt_requires_queued_task ... ok
+test tests::new_session_must_start_spawning ... ok
+test tests::session_cannot_carry_a_foreign_attempt ... ok
+test tests::session_exit_does_not_affect_task_state ... ok
+test tests::session_must_reference_recorded_attempt ... ok
+test tests::session_state_moves_follow_central_table ... ok
+test tests::state_change_and_audit_event_persist_together ... ok
+test usage_prices::tests::a_missing_token_count_is_unknown_never_zero ... ok
+test usage_prices::tests::codex_recorded_turn_matches_a_hand_computation ... ok
+test usage_prices::tests::every_model_prices_from_its_own_row ... ok
+test usage_prices::tests::info_names_the_version_basis_and_size ... ok
+test usage_prices::tests::matches_codeburn_synthetic_fixture_and_recorded_claude_cost ... ok
+test usage_prices::tests::model_names_are_normalised_before_lookup ... ok
+test usage_prices::tests::no_cache_write_price_accepts_unknown_or_zero_but_not_positive_counts ... ok
+test usage_prices::tests::overflow_is_unknown_not_a_wrapped_figure ... ok
+test usage_prices::tests::table_rows_are_unique_canonical_and_priced ... ok
+test usage_prices::tests::unknown_or_missing_model_is_unknown_never_zero ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running tests/approvals.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/approvals-679d76535b73723a)
+
+running 9 tests
+test agent_cannot_approve_its_own_request ... ok
+test approval_state_and_event_roll_back_together ... ok
+test approvals_and_events_survive_reopen ... ok
+test changed_candidate_commit_fails_check_and_supersedes_old_approval ... ok
+test changed_parameters_fail_check_and_require_reapproval ... ok
+test policy_change_requires_approved_policy_approval ... ok
+test rejected_approval_cannot_transition_to_approved ... ok
+test request_approve_and_check_round_trip ... ok
+test superseded_approval_cannot_be_reused ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/attempt_history.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/attempt_history-3571fb2535500ab9)
+
+running 2 tests
+test attempt_history_rejects_unknown_task ... ok
+test retry_appends_attempt_and_preserves_failure_after_reopen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/cancellation_owner.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/cancellation_owner-517a362316412a16)
+
+running 13 tests
+test absent_or_stale_owner_cannot_acknowledge_cancellation ... ok
+test crashed_owner_leaves_durable_request_pending_not_cancelled ... ok
+test duplicate_concurrent_requests_share_one_pending_result ... ok
+test manual_owner_recovery_is_auditable_and_preserves_lifecycle ... ok
+test manual_owner_recovery_requires_terminal_target_lifecycle ... ok
+test manual_recovery_releases_only_stale_generation_before_successor ... ok
+test non_cancelled_owner_exit_resolves_request_without_cancelling_task ... ok
+test request_stays_pending_until_owner_confirms_reaped_handle ... ok
+test stale_generation_is_retired_before_retry_owner_can_register ... ok
+test stale_owner_recovery_requires_the_recorded_process_identity ... ok
+test stale_owner_recovery_resolves_request_without_changing_lifecycle ... ok
+test stale_owner_without_process_identity_is_not_retired ... ok
+test windows_owner_creation_time_precision_survives_reopen ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/conversations.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/conversations-266fe62921edbb0c)
+
+running 11 tests
+test a_second_message_is_refused_while_a_turn_runs ... ok
+test an_unused_target_reads_as_an_empty_transcript ... ok
+test failures_carry_a_bounded_code_and_a_new_message_can_follow ... ok
+test input_and_reply_bounds_are_enforced ... ok
+test messages_and_replies_are_ordered_and_correlated_by_turn ... ok
+test repeating_a_turn_id_returns_the_stored_turn_without_new_entries ... ok
+test replay_returns_only_entries_after_the_cursor_and_survives_reopen ... ok
+test restart_fails_open_turns_and_keeps_the_transcript ... ok
+test targets_are_independent_conversations ... ok
+test the_first_terminal_state_wins_and_late_output_is_refused ... ok
+test the_transcript_is_append_only_at_the_database_level ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests/data_lock.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/data_lock-7ee46d4cebba081f)
+
+running 8 tests
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... ok
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... ok
+test foreign_non_lock_file_is_never_removed ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test live_pid_with_different_start_identity_is_taken_over ... ok
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test separate_process_cannot_acquire_a_live_lock ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/delivery.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/delivery-89735740230bc6a9)
+
+running 11 tests
+test all_delivery_steps_survive_reopen ... ok
+test delivery_refuses_changed_action_kind ... ok
+test delivery_refuses_changed_candidate_sha ... ok
+test delivery_refuses_changed_parameter_digest ... ok
+test delivery_refuses_missing_approval ... ok
+test delivery_step_and_audit_event_roll_back_together ... ok
+test delivery_step_and_audit_event_survive_reopen ... ok
+test refused_delivery_step_and_audit_event_are_retained ... ok
+test report_only_step_persists_report_and_audit_event ... ok
+test verification_revalidation_rejects_nonpassed_run ... ok
+test verification_revalidation_requires_exact_candidate_and_passed_run ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/delivery_acceptance_contract.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/delivery_acceptance_contract-230224e528065cf3)
+
+running 3 tests
+test delivery_step_is_append_only_and_a_reused_id_changes_nothing ... ok
+test only_an_approved_current_exact_approval_authorizes_delivery ... ok
+test outcome_that_does_not_match_a_delivery_action_persists_nothing ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/lock_identity_contract.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/lock_identity_contract-7279938c6fd9add1)
+
+running 4 tests
+test directory_at_the_lock_path_is_never_removed ... ok
+test malformed_records_are_never_taken_over ... ok
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test symlink_at_the_lock_path_is_neither_followed_nor_removed ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/reconnectable_events.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/reconnectable_events-58e44133e666e7b7)
+
+running 3 tests
+test idempotency_result_and_parameter_binding_survive_reopen ... ok
+test session_replay_is_global_sequence_ordered_and_reconnectable ... ok
+test store_epoch_is_stable_across_reopen_and_unique_per_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/review.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/review-7964555ee355d411)
+
+running 11 tests
+test approval_is_blocked_by_a_change_request_but_rejection_is_not ... ok
+test approval_parameters_commit_with_the_approval ... ok
+test concurrent_approve_and_request_changes_never_both_succeed ... ok
+test coordinator_entries_are_ordered_paged_and_project_scoped ... ok
+test coordinator_entries_enforce_schema_invariants_and_survive_reopen ... ok
+test plain_approve_approval_cannot_bypass_a_change_request ... ok
+test request_changes_is_single_use_and_needs_a_pending_approval ... ok
+test request_changes_records_feedback_without_deciding_the_approval ... ok
+test request_changes_refuses_invalid_input_and_unauthorized_actors ... ok
+test reviewed_approval_authorizes_before_looking_at_the_approval ... ok
+test reviewed_approval_matches_plain_approval_without_changes ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/sqlite_reconcile.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/sqlite_reconcile-cc96120dabf59b2b)
+
+running 5 tests
+test conflicting_identity_does_not_replace_first_record ... ok
+test identity_for_unknown_session_is_rejected ... ok
+test list_workspaces_returns_all_rows_in_stable_order ... ok
+test real_sqlite_process_exit_is_interrupted_not_succeeded ... ok
+test session_identity_round_trips_after_reopen ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/verification.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/verification-51aa9d0743e89d3a)
+
+running 1 test
+test appends_and_reopens_results_without_overwriting_failed_runs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/workstreams.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/workstreams-b99f2694d5972560)
+
+running 12 tests
+test archived_workstream_is_terminal_and_refuses_new_work ... ok
+test concurrent_writers_cannot_both_win_the_same_revision ... ok
+test create_get_and_list_round_trip_in_creation_order ... ok
+test duplicate_and_missing_workstreams_are_typed_errors ... ok
+test every_accepted_change_appends_an_immutable_revision ... ok
+test gate_state_requires_a_task_linked_to_the_same_workstream ... ok
+test link_is_idempotent_exclusive_and_validated ... ok
+test linking_derives_projects_and_leaves_the_task_untouched ... ok
+test objectives_revise_append_only_with_stale_rejection ... ok
+test rule_violations_are_rejected_without_a_revision ... ok
+test state_survives_reopening_the_database ... ok
+test update_rejects_stale_revision_and_writes_nothing ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+   Doc-tests orchestrator_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

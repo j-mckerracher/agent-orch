@@ -1,0 +1,47 @@
+   Compiling uuid v1.29.1
+   Compiling errno v0.3.14
+   Compiling rustix v1.1.6
+   Compiling cfb v0.14.0
+   Compiling schemars v0.8.22
+   Compiling infer v0.22.0
+   Compiling tempfile v3.27.0
+   Compiling tauri-utils v2.10.2
+   Compiling tauri-build v2.7.4
+   Compiling tauri-codegen v2.7.4
+   Compiling tauri v2.12.5
+   Compiling agent-orch-desktop v0.1.0 (/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/apps/desktop/src-tauri)
+   Compiling tauri-macros v2.7.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.01s
+     Running unittests src/lib.rs (/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/agent_orch_desktop_lib-e0a77b2dea04a9bd)
+
+running 16 tests
+test bridge::tests::no_daemon_and_no_executable_is_daemon_unavailable ... ok
+test bridge::tests::a_daemon_executable_that_cannot_start_is_daemon_unavailable ... ok
+test bridge::tests::a_daemon_that_cannot_be_started_shows_the_redacted_end_of_the_log ... ok
+test launch::tests::a_launch_failure_quotes_only_the_redacted_end_of_the_log ... ok
+test launch::tests::an_oversized_log_is_rotated_and_a_small_one_is_kept ... ok
+test launch::tests::a_new_and_an_existing_log_are_owner_only_on_every_platform ... ok
+test launch::tests::the_data_dir_and_log_are_owner_only_new_or_existing ... ok
+test launch::tests::the_whole_message_is_redacted_and_the_daemon_token_is_masked_exactly ... ok
+test bridge::tests::the_ui_cannot_shut_the_daemon_down_or_use_another_windows_connection ... ok
+test bridge::tests::forwards_frames_and_closing_a_window_leaves_the_daemon_running ... ok
+test bridge::tests::a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log ... ok
+test bridge::tests::a_daemon_that_exits_at_once_is_reported_with_its_log_location ... ok
+test bridge::tests::a_daemon_that_stops_is_reported_as_a_closed_connection_not_a_task_state ... ok
+test bridge::real_tests::the_host_forwards_capability_and_token_gating_from_the_real_daemon ... ok
+test bridge::real_tests::the_host_drives_reject_and_request_changes_through_the_real_daemon ... ok
+test bridge::real_tests::the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.64s
+
+     Running unittests src/main.rs (/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/agent_orch_desktop-abd28a1aa3d2d5df)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agent_orch_desktop_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
