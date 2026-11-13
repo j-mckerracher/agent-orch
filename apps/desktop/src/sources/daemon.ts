@@ -1,12 +1,10 @@
 /**
- * Daemon-backed adapters for D1, D2, D4, D5 and D6 (M5-02b, M5-02c).
+ * Daemon-backed adapters for D1-D6 (M5-02b, M5-02c).
  *
- * D3 (recovery status) has no daemon RPC. It stays a labelled placeholder that
- * reports "not available" for every task: it never serves fixture recovery
- * facts for real tasks. Every other result here
- * carries `provenance.kind === "daemon"`; a disconnected or un-negotiated
- * capability is `unavailable`, never an empty list. Nothing in this file mints
- * a `fixture:` id or fabricates data.
+ * D3 (recovery status) has no daemon RPC. Its live adapter reports unavailable
+ * for every task without inventing recovery facts. Disconnected or
+ * un-negotiated capabilities are unavailable, never empty. Nothing in this
+ * file mints a `fixture:` id or fabricates data.
  */
 import type { ConnectionManager } from "../daemon/connection";
 import { DaemonError, asDaemonError, presentError } from "../daemon/errors";
@@ -298,11 +296,10 @@ export function createDaemonSources(connection: ConnectionManager, now: () => nu
       }),
   };
 
-  // D3 stays a labelled placeholder: the daemon has no recovery RPC (the
-  // recovery gate, interrupted runs and preserved worktrees are reported only
-  // in its structured `daemon.log` events). It must never report "recovered".
+  // The daemon exposes no recovery RPC; report unknown instead of inferring a
+  // task's process, workspace or delivery state from its other events.
   const recovery: RecoveryStatusSource = {
-    provenance: { kind: "fixture", id: "D3", fixture: "recovery-unavailable" },
+    provenance: { kind: "daemon", id: "D3" },
     recoveryFor: () =>
       Promise.resolve({
         state: "unavailable",

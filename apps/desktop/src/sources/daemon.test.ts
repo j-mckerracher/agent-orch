@@ -30,14 +30,14 @@ const FEATURES = {
 };
 
 describe("daemon-backed D1-D6 adapters", () => {
-  it("labels every adapter daemon except the D3 recovery fixture", async () => {
+  it("labels every live adapter daemon-backed, including D3 recovery availability", async () => {
     const { sources } = await setup(new FakeDaemon());
     expect(sources.agents.provenance).toEqual({ kind: "daemon", id: "D1" });
     expect(sources.execution.provenance).toEqual({ kind: "daemon", id: "D2" });
+    expect(sources.recovery.provenance).toEqual({ kind: "daemon", id: "D3" });
     expect(sources.retry.provenance).toEqual({ kind: "daemon", id: "D4" });
     expect(sources.coordinator.provenance).toEqual({ kind: "daemon", id: "D5" });
     expect(sources.journal.provenance).toEqual({ kind: "daemon", id: "D6" });
-    expect(sources.recovery.provenance.kind).toBe("fixture");
   });
 
   it("D3 reports recovery as unavailable for real tasks and fabricates no per-task facts", async () => {
