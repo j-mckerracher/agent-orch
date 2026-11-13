@@ -72,7 +72,7 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
-export const VITEST = { files: 50, tests: 1174 };
+export const VITEST = { files: 50, tests: 1178 };
 export const E2E_TESTS = 44;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.

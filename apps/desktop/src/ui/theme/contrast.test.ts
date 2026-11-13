@@ -92,9 +92,7 @@ function pairs(): Array<[string, string, number, string]> {
   out.push(["sidebar-focus", "sidebar", 3, "sidebar focus ring"]);
   out.push(["sidebar-control-border", "sidebar", 3, "sidebar control boundary"]);
   out.push(["on-accent", "accent", 4.5, "primary button label"]);
-  out.push(["accent", "paper", 3, "primary button boundary"]);
-  out.push(["accent", "panel", 3, "primary button boundary"]);
-  out.push(["accent", "soft", 3, "primary button boundary"]);
+  for (const surface of SURFACES) out.push(["accent", surface, 3, "primary button boundary"]);
   out.push(["meter-marker", "meter-marker-ring", 3, "meter marker vs ring"]);
   out.push(["meter-marker", "meter-track", 3, "meter marker on unfilled track"]);
   for (let i = 1; i <= 5; i++) out.push(["meter-fill-pattern", `meter-stop-${i}`, 3, "meter fill pattern"]);
