@@ -43,6 +43,7 @@ import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
 import { NavLink } from "./NavLink";
+import { formatAge } from "./ResourceStrip";
 import "./ActivityPanel.css";
 
 type Loaded<T> = { status: "loading" } | SurfaceResult<T>;
@@ -58,13 +59,17 @@ function useRefreshing<T>(load: () => Promise<SurfaceResult<T>>, provenance: Pro
     let live = true;
     load().then(
       (value) => live && setResult(value),
-      (error: unknown) =>
-        live &&
+      (error: unknown) => {
+        if (!live) return;
+        const observedAtMs = Date.now();
         setResult({
           status: "unavailable",
           reason: error instanceof Error ? error.message : "source failed",
           provenance,
-        }),
+          observedAt: new Date(observedAtMs).toISOString(),
+          ageMs: 0,
+        });
+      },
     );
     return () => {
       live = false;
@@ -340,7 +345,7 @@ export function ActivityPanel() {
     ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${attention.length} require attention` : "attention not available"}.`
     : activity.status === "loading"
       ? "Loading workspace activity."
-      : `Workspace activity is ${activity.status}.`;
+      : `Workspace activity is ${activity.status} (observed ${formatAge(activity.observedAt, activity.ageMs, Date.now())}).`;
   const offline = activity.status === "loading" || activity.status === "ok" ? null : activity;
 
   const pauseReason = fixture
@@ -381,7 +386,8 @@ export function ActivityPanel() {
         </p>
         {offline && (
           <p className="activity-note" role="status" data-testid="activity-offline">
-            Activity is {offline.status}: {offline.reason}
+            Activity is {offline.status}: {offline.reason} · observed{" "}
+            <time dateTime={offline.observedAt}>{formatAge(offline.observedAt, offline.ageMs, Date.now())}</time>
           </p>
         )}
         {stopBlockedReason && (

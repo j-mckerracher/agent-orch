@@ -222,6 +222,9 @@ describe("workspace view, live (daemon-derived) mode", () => {
       const last = fake.callsTo("agents.validate_selection").at(-1)!.params as Record<string, unknown>;
       expect(last).toEqual({ agent: "codex", model: "gpt-b", effort: "medium" });
     });
+    fake.failNext("agents.validate_selection", { code: -32603, message: "validation unavailable" });
+    await user.selectOptions(model, "gpt-a");
+    expect(await screen.findByText(/This choice could not be checked/)).toHaveTextContent(/observed \d+ s ago/);
     expect(screen.getByText(/task submission only/)).toBeInTheDocument();
   });
 
@@ -310,6 +313,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     expect(await screen.findByText(/The conversation is unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/The conversation is unavailable:.*observed \d+ s ago/);
     await user.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("hello")).toBeInTheDocument();
   });

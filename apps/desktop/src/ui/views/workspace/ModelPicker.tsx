@@ -10,6 +10,7 @@ import type {
   SurfaceResult,
 } from "../../../sources/surfaces/types";
 import type { SurfaceState } from "../../services";
+import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "./usePopover";
 
@@ -110,16 +111,20 @@ export function ModelPicker({
       ...(chosenEffort ? { effort: chosenEffort } : {}),
     }).then(
       (result) => current && setCheck({ key: selectionKey, result }),
-      (error: unknown) =>
-        current &&
+      (error: unknown) => {
+        if (!current) return;
+        const observedAtMs = Date.now();
         setCheck({
           key: selectionKey,
           result: {
             status: "unavailable",
             reason: error instanceof Error ? error.message : "check failed",
             provenance,
+            observedAt: new Date(observedAtMs).toISOString(),
+            ageMs: 0,
           },
-        }),
+        });
+      },
     );
     return () => {
       current = false;
@@ -129,14 +134,18 @@ export function ModelPicker({
 
   let unavailable: string | null = null;
   if (catalog.status === "loading") unavailable = "Loading the model catalog…";
-  else if (catalog.status !== "ok") unavailable = `Model settings are not available: ${catalog.reason}`;
+  else if (catalog.status !== "ok") {
+    unavailable = `Model settings are not available: ${catalog.reason} (observed ${formatAge(catalog.observedAt, catalog.ageMs, Date.now())})`;
+  }
   else if (providers.length === 0) unavailable = "No providers are reported.";
 
   const verdict = check?.key === selectionKey ? check.result : null;
   let verdictText: string | null = null;
   if (live && verdict !== null) {
     if (verdict === "checking") verdictText = "Checking this choice with the daemon…";
-    else if (verdict.status !== "ok") verdictText = `This choice could not be checked: ${verdict.reason}`;
+    else if (verdict.status !== "ok") {
+      verdictText = `This choice could not be checked: ${verdict.reason} (observed ${formatAge(verdict.observedAt, verdict.ageMs, Date.now())})`;
+    }
     else if (verdict.data.valid) verdictText = "The daemon supports this choice.";
     else if (COLD_REASONS.has(verdict.data.reason)) {
       verdictText = `Not confirmed yet: the catalog is still being read; retry shortly. (${verdict.data.reason})`;

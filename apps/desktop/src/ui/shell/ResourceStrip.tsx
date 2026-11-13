@@ -47,7 +47,7 @@ type RowState =
   | { kind: "gauge"; level: number; text: string; scope: string; observedAt: string; ageMs: number }
   | { kind: "value"; text: string; scope: string; observedAt: string; ageMs: number }
   | { kind: "loading" }
-  | { kind: "unavailable" | "unsupported" | "unknown"; reason: string };
+  | { kind: "unavailable" | "unsupported" | "unknown"; reason: string; observedAt?: string; ageMs?: number };
 
 function formatNumber(value: number): string {
   return String(Number(value.toFixed(1)));
@@ -76,7 +76,7 @@ function rowsFor(state: SurfaceState<SystemMetrics>): Array<{ key: MeterKey; row
   return METERS.map(({ key }) => {
     if (state.status === "loading") return { key, row: { kind: "loading" } };
     if (state.status === "ok") return { key, row: rowState(state.data[key]) };
-    return { key, row: { kind: state.status, reason: state.reason } };
+    return { key, row: { kind: state.status, reason: state.reason, observedAt: state.observedAt, ageMs: state.ageMs } };
   });
 }
 
@@ -94,11 +94,15 @@ export function formatAge(observedAt: string, reportedAgeMs: number, nowMs: numb
 
 const STATE_TEXT = { loading: "loading…", unavailable: "unavailable", unsupported: "unsupported", unknown: "unknown" } as const;
 
-function compactText(rows: Array<{ key: MeterKey; row: RowState }>): string {
+function compactText(rows: Array<{ key: MeterKey; row: RowState }>, nowMs: number): string {
   return rows
     .map(({ key, row }) => {
       const name = METERS.find((meter) => meter.key === key)!.name;
-      return `${name} ${row.kind === "gauge" || row.kind === "value" ? row.text : STATE_TEXT[row.kind]}`;
+      const value = row.kind === "gauge" || row.kind === "value" ? row.text : STATE_TEXT[row.kind];
+      const age = row.kind !== "gauge" && row.kind !== "value" && row.kind !== "loading" && row.observedAt && row.ageMs !== undefined
+        ? `, observed ${formatAge(row.observedAt, row.ageMs, nowMs)}`
+        : "";
+      return `${name} ${value}${age}`;
     })
     .join(" · ");
 }
@@ -127,7 +131,7 @@ export function ResourceStripView({ state, provenance, nowMs, defaultOpen = fals
           {effective.kind === "fixture" && <PlaceholderBadge provenance={effective} />}
         </span>
       }
-      count={<span data-testid="resource-strip-compact">{compactText(rows)}</span>}
+      count={<span data-testid="resource-strip-compact">{compactText(rows, nowMs)}</span>}
     >
       <div className="rs-list">
         {rows.map(({ key, row }) => {
@@ -177,7 +181,14 @@ function ResourceItem({ name, accessibleName, row, nowMs }: { name: string; acce
         ) : row.kind === "loading" ? (
           "Waiting for the metrics source."
         ) : (
-          row.reason
+          <>
+            {row.reason}
+            {row.observedAt && row.ageMs !== undefined && (
+              <>
+                {" "}· observed <time dateTime={row.observedAt}>{formatAge(row.observedAt, row.ageMs, nowMs)}</time>
+              </>
+            )}
+          </>
         )}
       </p>
     </div>

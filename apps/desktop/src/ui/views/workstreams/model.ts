@@ -71,9 +71,9 @@ export interface WsGroup {
 
 export type WsModel =
   | { status: "loading" }
-  | { status: "offline" }
-  | { status: "error"; message: string }
-  | { status: "unavailable" | "unsupported" | "unknown"; reason: string; provenance: Provenance }
+  | { status: "offline"; observedAt: string; ageMs: number }
+  | { status: "error"; message: string; observedAt: string; ageMs: number }
+  | { status: "unavailable" | "unsupported" | "unknown"; reason: string; provenance: Provenance; observedAt: string; ageMs: number }
   | {
       status: "ready";
       mode: "live" | "fixture";
@@ -353,11 +353,11 @@ export function useWorkstreamModel(): WsModel {
   }
   if (state.status === "loading" || state.status === "ok") return { status: "loading" };
   if (fixture || state.status === "unsupported") {
-    return { status: state.status, reason: state.reason, provenance: state.provenance };
+    return { status: state.status, reason: state.reason, provenance: state.provenance, observedAt: state.observedAt, ageMs: state.ageMs };
   }
   const settling = ["idle", "connecting", "reconnecting"].includes(gate.connection.status);
-  if (!gate.connected) return settling ? { status: "loading" } : { status: "offline" };
+  if (!gate.connected) return settling ? { status: "loading" } : { status: "offline", observedAt: state.observedAt, ageMs: state.ageMs };
   return state.status === "unknown"
-    ? { status: "unknown", reason: state.reason, provenance: state.provenance }
-    : { status: "error", message: state.reason };
+    ? { status: "unknown", reason: state.reason, provenance: state.provenance, observedAt: state.observedAt, ageMs: state.ageMs }
+    : { status: "error", message: state.reason, observedAt: state.observedAt, ageMs: state.ageMs };
 }

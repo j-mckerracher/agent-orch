@@ -956,13 +956,13 @@ async fn monitor_agent(
         }
     }
 
-    if !cancellation_requested {
-        if matches!(
+    if !cancellation_requested
+        && matches!(
             store.cancellation_request(owner),
             Ok(Some(CancellationStatus::Pending))
-        ) {
-            cancellation_requested = true;
-        }
+        )
+    {
+        cancellation_requested = true;
     }
     match handle.cancel().await {
         Ok(()) => cancellation_succeeded = true,

@@ -119,17 +119,21 @@ describe("ResourceStrip with D13 fixtures", () => {
     ["unavailable", "Fixture scenario: the metrics source is unavailable."],
     ["unsupported", "Fixture scenario: system metrics are not supported."],
     ["unknown", "Fixture scenario: system metrics are unknown."],
-  ] as const)("renders the %s scenario as text on every row, with no meter and no number", async (scenario, reason) => {
+  ] as const)("renders the %s scenario as text on every row, with no meter or invented metric value", async (scenario, reason) => {
     renderStrip(fixtureServices({ scenario }));
-    const rows = await screen.findAllByText(reason);
-    expect(rows).toHaveLength(4);
+    await waitFor(() => {
+      const current = screen.getAllByRole("group").filter((group) => group.classList.contains("rs-item"));
+      expect(current).toHaveLength(4);
+      expect(current.every((group) => group.getAttribute("data-state") === scenario)).toBe(true);
+    });
     expect(screen.queryAllByRole("meter")).toHaveLength(0);
     const groups = screen.getAllByRole("group").filter((group) => group.classList.contains("rs-item"));
     expect(groups).toHaveLength(4);
     for (const group of groups) {
       expect(group).toHaveAttribute("data-state", scenario);
       expect(group).toHaveTextContent(scenario);
-      expect(group).not.toHaveTextContent(/\d/);
+      expect(group).toHaveTextContent(reason);
+      expect(group.querySelector(".ui-meter-value")).toHaveTextContent(scenario);
     }
     expect(screen.getByTestId("badge-D13")).toBeInTheDocument();
   });
@@ -279,9 +283,17 @@ describe("ResourceStripView", () => {
   });
 
   it("uses the failure result's own provenance for the badge", () => {
-    const failed: SurfaceResult<SystemMetrics> = { status: "unsupported", reason: "nope", provenance: fixtureProvenance };
+    const failed: SurfaceResult<SystemMetrics> = {
+      status: "unsupported",
+      reason: "nope",
+      provenance: fixtureProvenance,
+      observedAt: new Date(NOW).toISOString(),
+      ageMs: 0,
+    };
     view(failed, daemonProvenance);
     expect(screen.getByTestId("badge-D13")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "CPU utilization" })).toHaveTextContent(/observed 0 s ago/);
+    expect(screen.getByTestId("resource-strip-compact")).toHaveTextContent(/observed 0 s ago/);
   });
 
   it("states that the colour scale is not an alert threshold and that disk means capacity", () => {

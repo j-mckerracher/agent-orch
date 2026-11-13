@@ -228,6 +228,7 @@ describe("live mode", () => {
     expect(within(panel).queryByRole("button", { name: /^Stop .*\(/ })).not.toBeInTheDocument();
     expect(within(panel).getByText("Queue not available.")).toBeInTheDocument();
     expect(within(panel).getByTestId("activity-badge")).toHaveTextContent(/not available/);
+    expect(within(panel).getByTestId("activity-offline")).toHaveTextContent(/observed \d+ s ago/);
   });
 });
 

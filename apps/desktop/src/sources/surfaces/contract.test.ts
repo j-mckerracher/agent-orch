@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { createFixtureSurfaces } from "./fixtures";
+import { notOk, observation } from "./result";
 import { ALPHA, READ_METHODS, clock, connect, populate } from "./testkit";
 import type { ConversationTarget, SurfaceResult, SurfaceSources } from "./types";
 
@@ -144,7 +145,7 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
       const label = `${id}/${scenario}`;
       expect(result.status, label).toBe(expectedStatus(harness.kind, id, scenario));
       expect(result.provenance.id, label).toBe(id);
-      expect(result.observedAt, label).toBe(new Date(clock() - (result.ageMs ?? -1)).toISOString());
+      expect(result.observedAt, label).toBe(new Date(clock() - result.ageMs).toISOString());
       expect(result.ageMs, label).toBeGreaterThanOrEqual(0);
       if (result.status === "ok") {
         expect(result.provenance.kind, label).toBe(harness.kind);
@@ -228,4 +229,19 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
       );
     return harness.build("ok").then((built) => expect(shape(built.surfaces)).toEqual(shape(fixture)));
   });
+});
+
+it("requires observation metadata for non-ok results and preserves an explicit clock observation", () => {
+  // @ts-expect-error Non-ok SurfaceResult values require observedAt and ageMs.
+  const missingObservation: SurfaceResult<unknown> = {
+    status: "unavailable",
+    reason: "read failed",
+    provenance: { kind: "daemon", id: "D11" },
+  };
+  void missingObservation;
+
+  const expected = observation(clock(), 4_000);
+  const result = notOk({ kind: "daemon", id: "D11" }, "unavailable", "read failed", expected);
+  expect(result).toMatchObject(expected);
+  expect(result.observedAt).toBe(new Date(clock() - result.ageMs).toISOString());
 });
