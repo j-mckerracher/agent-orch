@@ -67,9 +67,11 @@ describe("real daemon: queue.snapshot and the live D11 adapter", () => {
     const session = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
     const api = new DaemonApi(session);
     await api.projectsRegister(daemon.repo);
-    const first = await api.tasksSubmit("q-key-1", submission("first queued"));
-    const second = await api.tasksSubmit("q-key-2", submission("second queued"));
-    const third = await api.tasksSubmit("q-key-3", submission("third queued"));
+    // This unsupported agent cannot succeed; dependants stay in the queue.
+    const blocker = await api.tasksSubmit("q-blocker", submission("queue blocker"));
+    const first = await api.tasksSubmit("q-key-1", submission("first queued", [blocker.contract.id]));
+    const second = await api.tasksSubmit("q-key-2", submission("second queued", [blocker.contract.id]));
+    const third = await api.tasksSubmit("q-key-3", submission("third queued", [blocker.contract.id]));
     const dependent = await api.tasksSubmit("q-key-4", submission("depends on first", [first.contract.id]));
     const ids = [first, second, third, dependent].map((task) => task.contract.id);
     session.close();

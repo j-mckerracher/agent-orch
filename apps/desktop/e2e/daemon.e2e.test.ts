@@ -194,7 +194,11 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     await until(() => data.getSnapshot().tasks.status === "ready", "tasks loaded");
     expect(data.getSnapshot().projects.data).toEqual([{ id: projectId }]);
 
-    const result = await data.submitTask(submission({ objective: "via app data" }));
+    // An unsupported agent cannot succeed, so its dependent remains cancellable.
+    const blockerSession = await openSession();
+    const blocker = await new DaemonApi(blockerSession).tasksSubmit("app-data-blocker", submission({ objective: "blocker" }));
+    blockerSession.close();
+    const result = await data.submitTask(submission({ objective: "via app data", dependencies: [blocker.contract.id] }));
     expect(result.ok).toBe(true);
     const id = result.ok ? result.value.contract.id : "";
     await until(
