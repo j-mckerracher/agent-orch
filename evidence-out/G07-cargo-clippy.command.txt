@@ -1,0 +1,3 @@
+cwd=<CHECKOUT>
+command=cargo clippy --locked --workspace -- -D warnings
+candidate_sha=22092e9e216369c7aaad3fa50b7eea3f2d495acb

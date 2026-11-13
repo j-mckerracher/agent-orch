@@ -1,0 +1,7 @@
+expected_sha=22092e9e216369c7aaad3fa50b7eea3f2d495acb
+actual_sha=22092e9e216369c7aaad3fa50b7eea3f2d495acb
+tree=62524d7c14d68bcca58c5b6d7cad762885eaf4f9
+parent=4b3ae153e6d213ef01571090499412b7c5d922b1
+core.autocrlf=false
+core.longpaths=true
+status=

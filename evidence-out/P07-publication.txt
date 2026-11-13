@@ -1,0 +1,5 @@
+evidence_branch=evidence/m7-32-win-g07-22092e9-20261113T133101Z
+candidate_sha=22092e9e216369c7aaad3fa50b7eea3f2d495acb
+evidence_parent_sha=22092e9e216369c7aaad3fa50b7eea3f2d495acb
+runbook_pin=92f56c3af9cd34741a09667f499164edcafec696
+published_utc=2026-11-13T13:31:01.7964634Z

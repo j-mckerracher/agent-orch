@@ -1,0 +1,7 @@
+run_started_utc=2026-11-13T13:25:11.1619787Z
+run_id=f02ec6da677c49a4a4901d366e165c73
+candidate_ref=refs/remotes/origin/orch/0eca0ef2-m7-32-fix-clippy
+candidate_commit=22092e9e216369c7aaad3fa50b7eea3f2d495acb
+original_assignment_pin=92f56c3af9cd34741a09667f499164edcafec696
+free_gib_before=32.52
+runbase=existing local path without spaces
