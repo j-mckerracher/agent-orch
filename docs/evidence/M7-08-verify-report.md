@@ -7,6 +7,12 @@
 | AC3 no task, approval, or delivery authority | `api_conversation_runtime.rs`; `api_conversations.rs` | `conversation_text_and_replies_create_no_task_approval_or_delivery` | PASS; malicious message/reply text is inert for Global and workstream targets; no delivery rows. |
 | AC4 sequence replay | `api_conversations.rs`; `sqlite_conversations.rs` | `replies_survive_a_restart_replay_by_sequence_and_stay_idempotent` | PASS; exact native reconnect remains deferred. |
 
+## Decisions
+
+| Status | Decision | Reason |
+|---|---|---|
+| Applied | Retain merged M7-25 runtime; add focused both-target authority test and native checklist. | Product code was already present; native proof is deferred by the fast-delivery addendum. |
+
 **Gates:** examples build passed. Default-parallel daemon test run: 176 passed, 6 process tests failed with version-probe timeouts, 1 ignored. Full serial daemon suite passed (176 unit; conversation runtime 13 passed/1 ignored; all other targets passed). `orchestrator-agents`: 127 passed. Daemon clippy with `-D warnings`: passed. CI disabled by owner; local gates only.
 
 **Native/live gaps:** real Codex/WebView and Windows runs were not attempted per fast-delivery instructions; see `M7-08-native-checklist.md`. The ignored live Codex test is not a pass. No product behavior change; only a focused authority regression test and required evidence docs.
