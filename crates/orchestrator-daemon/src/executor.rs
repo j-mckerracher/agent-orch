@@ -64,6 +64,8 @@ pub(crate) struct ExecutorConfig {
     pub(crate) pi_program: Option<PathBuf>,
     pub(crate) limits: SchedulerLimits,
     pub(crate) poll: Duration,
+    #[cfg(test)]
+    pub(crate) wait_for_exit_before_identity: bool,
     /// Upper bound for one `agents.capabilities` probe of an agent binary.
     pub(crate) probe_timeout: Duration,
     /// Where failures and recovery actions are reported (stderr in the daemon).
@@ -131,6 +133,8 @@ impl ExecutorConfig {
             pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(500),
+            #[cfg(test)]
+            wait_for_exit_before_identity: false,
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
             diagnostics: Diagnostics::stderr(),
@@ -281,10 +285,7 @@ fn running_ids_from(
 
 /// Ids in `before` that are no longer in `after`, or `None` when either
 /// listing failed.
-fn interrupted_between(
-    before: Option<&[String]>,
-    after: Option<&[String]>,
-) -> Option<Vec<String>> {
+fn interrupted_between(before: Option<&[String]>, after: Option<&[String]>) -> Option<Vec<String>> {
     let (before, after) = (before?, after?);
     Some(
         before
@@ -324,8 +325,10 @@ impl Inner {
                         *lock(&self.blocked) = None;
                         let running_after =
                             running_task_ids(&self.store, diag, "after_recovery_gate");
-                        let interrupted =
-                            interrupted_between(running_before.as_deref(), running_after.as_deref());
+                        let interrupted = interrupted_between(
+                            running_before.as_deref(),
+                            running_after.as_deref(),
+                        );
                         let interrupted_ids = join_or_unknown(interrupted.as_deref());
                         let still_running = join_or_unknown(running_after.as_deref());
                         let fields = [
@@ -576,9 +579,12 @@ fn uncommitted_paths(worktree: &Path) -> Option<usize> {
     if worktree.as_os_str().is_empty() {
         return None;
     }
-    git_checked(worktree, &["status", "--porcelain", "--untracked-files=all"])
-        .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).lines().count())
+    git_checked(
+        worktree,
+        &["status", "--porcelain", "--untracked-files=all"],
+    )
+    .ok()
+    .map(|output| String::from_utf8_lossy(&output.stdout).lines().count())
 }
 
 /// The preserved-work facts every failure event carries.
@@ -680,8 +686,7 @@ pub(crate) fn agent_command(
 
 async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
     let selection = job.model_selection.as_ref();
-    let Some((program, args)) =
-        agent_command(&inner.config, &job.agent, &job.objective, selection)
+    let Some((program, args)) = agent_command(&inner.config, &job.agent, &job.objective, selection)
     else {
         return Err(format!("agent {:?} has no daemon launcher", job.agent));
     };
@@ -749,15 +754,29 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
             return Ok(());
         }
     };
-    // A Running session without a recorded identity cannot be reconciled
-    // later, so identity capture and persistence are mandatory.
-    let identity = capture_process_identity(handle.pid())
-        .map_err(|error| format!("process identity unavailable: {error}"))
-        .and_then(|identity| {
-            store
-                .record_session_identity(&job.task_id, &job.session_id, &identity)
-                .map_err(|error| format!("cannot persist process identity: {error}"))
-        });
+    #[cfg(test)]
+    if inner.config.wait_for_exit_before_identity {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !handle.try_exited().map_err(|error| error.to_string())? {
+            if std::time::Instant::now() >= deadline {
+                return Err("agent did not exit".into());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+    let identity = match capture_process_identity(handle.pid()) {
+        Ok(identity) => store
+            .record_session_identity(&job.task_id, &job.session_id, &identity)
+            .map_err(|error| format!("cannot persist process identity: {error}")),
+        Err(error) => match handle.try_exited() {
+            Ok(true) => {
+                job.diag
+                    .warn(LOG, "identity_skipped_agent_exited", &job.event_fields(&[]));
+                Ok(())
+            }
+            _ => Err(format!("process identity unavailable: {error}")),
+        },
+    };
     if let Err(message) = identity {
         reap(&mut *handle, job).await;
         fail_before_agent_exit(store, job);
@@ -1059,8 +1078,14 @@ fn finish(
             ("outcome", outcome),
             ("exit_code", &code),
             ("reason", &reason),
-            ("supervision_error", monitored.supervision_error.as_deref().unwrap_or("")),
-            ("cancellation_error", monitored.cancellation_error.as_deref().unwrap_or("")),
+            (
+                "supervision_error",
+                monitored.supervision_error.as_deref().unwrap_or(""),
+            ),
+            (
+                "cancellation_error",
+                monitored.cancellation_error.as_deref().unwrap_or(""),
+            ),
         ]),
     );
     let resolution = if monitored.cancellation_error.is_some() {
@@ -1083,7 +1108,10 @@ fn finish(
                 job.diag.info(
                     LOG,
                     "cancellation_confirmed",
-                    &job.event_fields(&[("worktree", &worktree), ("uncommitted_paths", &uncommitted)]),
+                    &job.event_fields(&[
+                        ("worktree", &worktree),
+                        ("uncommitted_paths", &uncommitted),
+                    ]),
                 );
             }
             return confirmed;
@@ -1119,7 +1147,10 @@ fn finish(
                         ("error", &error),
                         ("worktree", &worktree),
                         ("uncommitted_paths", &uncommitted),
-                        ("recovery", "worktree kept with the agent's changes; retry the task"),
+                        (
+                            "recovery",
+                            "worktree kept with the agent's changes; retry the task",
+                        ),
                     ]),
                 );
                 close(resolution)?;
@@ -1131,7 +1162,8 @@ fn finish(
             store
                 .transition(&job.task_id, TaskEvent::CandidateReady)
                 .map_err(|error| format!("cannot record candidate: {error}"))?;
-            job.diag.info(LOG, "candidate_ready", &job.event_fields(&[]));
+            job.diag
+                .info(LOG, "candidate_ready", &job.event_fields(&[]));
             close(resolution)
         }
         _ => {
@@ -1180,10 +1212,16 @@ fn fail_records(store: &SqliteStore, job: &Job, session: SessionState) {
         LOG,
         "task_attempt_failed",
         &job.event_fields(&[
-            ("records_complete", if write_failed { "false" } else { "true" }),
+            (
+                "records_complete",
+                if write_failed { "false" } else { "true" },
+            ),
             ("worktree", &worktree),
             ("uncommitted_paths", &uncommitted),
-            ("recovery", "worktree kept; retry the task or inspect the worktree"),
+            (
+                "recovery",
+                "worktree kept; retry the task or inspect the worktree",
+            ),
         ]),
     );
 }
@@ -1328,14 +1366,20 @@ mod running_listing_tests {
         assert_eq!(result, None);
         let lines = diag.lines().join("\n");
         assert!(lines.contains("\"level\":\"error\""), "{lines}");
-        assert!(lines.contains("\"event\":\"running_tasks_unreadable\""), "{lines}");
+        assert!(
+            lines.contains("\"event\":\"running_tasks_unreadable\""),
+            "{lines}"
+        );
         assert!(lines.contains("\"context\":\"shutdown\""), "{lines}");
     }
 
     #[test]
     fn a_readable_empty_listing_is_quiet_and_empty() {
         let diag = Diagnostics::memory();
-        assert_eq!(running_ids_from(Ok(Vec::new()), &diag, "x"), Some(Vec::new()));
+        assert_eq!(
+            running_ids_from(Ok(Vec::new()), &diag, "x"),
+            Some(Vec::new())
+        );
         assert!(diag.lines().is_empty());
     }
 

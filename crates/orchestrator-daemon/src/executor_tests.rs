@@ -78,6 +78,7 @@ impl Fixture {
             pi_program: None,
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(25),
+            wait_for_exit_before_identity: false,
             probe_timeout: Duration::from_secs(5),
             diagnostics: orchestrator_diagnostics::Diagnostics::memory(),
             catalog_timeout: Duration::from_secs(5),
@@ -687,6 +688,29 @@ fn events(diag: &orchestrator_diagnostics::Diagnostics, name: &str) -> Vec<Value
 }
 
 #[test]
+fn fast_exit_before_identity_preserves_failure_status() {
+    let fixture = Fixture::new();
+    let agent = fixture.script("fast-agent", &format!("{THREAD_STARTED}exit 3\n"));
+    let diag = Diagnostics::memory();
+    let api = fixture.api_with(&agent, |config| {
+        config.diagnostics = diag.clone();
+        config.wait_for_exit_before_identity = true;
+    });
+    let task_id = fixture.submit(&api, "fast-exit", 0);
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["state"], "Failed");
+    wait_until("exit diagnostic", || {
+        !events(&diag, "agent_exited").is_empty()
+    });
+    assert_eq!(events(&diag, "agent_exited")[0]["exit_code"], "3");
+    assert_eq!(events(&diag, "identity_skipped_agent_exited").len(), 1);
+    let session = failed["sessions"][0]["id"].as_str().unwrap();
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.session_identity(&task_id, session).unwrap().is_none());
+    api.shutdown();
+}
+
+#[test]
 fn failed_agent_is_reported_with_its_exit_and_the_preserved_worktree() {
     let fixture = Fixture::new();
     let agent = fixture.script(
@@ -760,12 +784,19 @@ fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
         Err(RpcError::Conflict)
     );
     assert_eq!(
-        api.dispatch("tasks.retry", json!({"task_id": "missing", "idempotency_key": "k"})),
+        api.dispatch(
+            "tasks.retry",
+            json!({"task_id": "missing", "idempotency_key": "k"})
+        ),
         Err(RpcError::NotFound)
     );
 
     let failed = events(&diag, "rpc_failed");
-    assert_eq!(failed.len(), 1, "caller mistakes such as NotFound stay quiet");
+    assert_eq!(
+        failed.len(),
+        1,
+        "caller mistakes such as NotFound stay quiet"
+    );
     assert_eq!(failed[0]["method"], "tasks.retry");
     assert_eq!(failed[0]["level"], "warn");
     assert_eq!(failed[0]["error"], "Conflict");
@@ -1054,6 +1085,9 @@ mod usage_paths {
     impl AgentHandle for ScriptedHandle {
         fn pid(&self) -> u32 {
             0
+        }
+        fn try_exited(&self) -> std::io::Result<bool> {
+            Ok(false)
         }
         fn next_event<'a, 'b>(&'a mut self) -> Pin<Box<dyn Future<Output = Next> + Send + 'b>>
         where
