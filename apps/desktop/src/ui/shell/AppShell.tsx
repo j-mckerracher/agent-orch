@@ -48,7 +48,12 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
         onClick={(event) => {
           // The hash carries the route, so focus the region instead of following the anchor.
           event.preventDefault();
-          document.getElementById("shell-main")?.focus();
+          const main = document.getElementById("shell-main");
+          const banner = document.querySelector<HTMLElement>(".shell-strip");
+          if (main && banner) {
+            main.style.setProperty("--shell-strip-height", `${banner.getBoundingClientRect().height}px`);
+          }
+          main?.focus();
         }}
       >
         Skip to main content

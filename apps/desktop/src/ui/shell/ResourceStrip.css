@@ -23,6 +23,7 @@
 }
 
 .rs-strip > summary .ui-disclosure-count {
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--subtle);
   font-size: 11px;
