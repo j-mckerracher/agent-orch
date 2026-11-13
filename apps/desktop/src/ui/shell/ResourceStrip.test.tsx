@@ -313,12 +313,22 @@ describe("ResourceStrip behaviour", () => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
       document.dispatchEvent(new Event("visibilitychange"));
     };
+    const fixture = services.surfaces.metrics;
+    const snapshot = await fixture.metrics();
+    const source = {
+      provenance: fixture.provenance,
+      metrics: fixture.metrics,
+      watch: (onResult: (result: SurfaceResult<SystemMetrics>) => void) => {
+        onResult(snapshot);
+        return () => undefined;
+      },
+    };
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const spy = vi.spyOn(globalThis, "setInterval");
     const now = () => clock;
     render(
       <ServicesProvider services={services}>
-        <ResourceStrip defaultOpen now={now} />
+        <ResourceStrip defaultOpen now={now} source={source} />
       </ServicesProvider>,
     );
     const meter = await screen.findByRole("meter", { name: "CPU utilization" });
