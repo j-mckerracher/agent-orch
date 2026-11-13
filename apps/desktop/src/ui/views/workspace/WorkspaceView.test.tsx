@@ -428,6 +428,61 @@ describe("drafts and target selection", () => {
     expect(await screen.findByRole("textbox", { name: "Message beta coordinator" })).toHaveValue("beta draft");
   });
 
+  it("keeps each target's recorded transcript distinct while switching and across a reload", async () => {
+    const storage = memoryStorage();
+    const fake = liveDaemon();
+    const transcripts = new Map([
+      [ALPHA, "alpha recorded note"],
+      [BETA, "beta recorded note"],
+    ]);
+    fake.stub("coordinator.get", (params: Record<string, unknown>) => {
+      const projectId = String(params.project_id);
+      return {
+        project_id: projectId,
+        entries: [
+          {
+            sequence: 1,
+            id: `note-${projectId}`,
+            project_id: projectId,
+            kind: "message",
+            author: "user",
+            body: transcripts.get(projectId) ?? "",
+            validation: null,
+            created_at: "2026-01-01T09:00:00Z",
+          },
+        ],
+        more: false,
+        next_after_sequence: 1,
+      };
+    });
+
+    const first = track(build({ fake, storage }));
+    const { user, view } = await mountView(first, false);
+    await waitLive(first);
+    const alphaLog = await screen.findByRole("log", { name: "Conversation with alpha coordinator" });
+    expect(await within(alphaLog).findByText("alpha recorded note")).toBeInTheDocument();
+
+    await pickTarget(user, /beta coordinator/);
+    const betaLog = await screen.findByRole("log", { name: "Conversation with beta coordinator" });
+    expect(await within(betaLog).findByText("beta recorded note")).toBeInTheDocument();
+    expect(within(betaLog).queryByText("alpha recorded note")).toBeNull();
+    view.unmount();
+    first.connection.stop();
+
+    const second = track(build({ fake, storage }));
+    const { user: secondUser } = await mountView(second, false);
+    await waitLive(second);
+    expect(await screen.findByRole("heading", { name: "Talking to: beta coordinator" })).toBeInTheDocument();
+    const restoredBetaLog = await screen.findByRole("log", { name: "Conversation with beta coordinator" });
+    expect(await within(restoredBetaLog).findByText("beta recorded note")).toBeInTheDocument();
+    expect(within(restoredBetaLog).queryByText("alpha recorded note")).toBeNull();
+
+    await pickTarget(secondUser, /alpha coordinator/);
+    const restoredAlphaLog = await screen.findByRole("log", { name: "Conversation with alpha coordinator" });
+    expect(await within(restoredAlphaLog).findByText("alpha recorded note")).toBeInTheDocument();
+    expect(within(restoredAlphaLog).queryByText("beta recorded note")).toBeNull();
+  });
+
   it("restores the stored target on reload", async () => {
     const storage = memoryStorage();
     const first = build({ fake: liveDaemon(), storage });
