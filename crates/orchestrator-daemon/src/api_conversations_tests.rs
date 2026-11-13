@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use orchestrator_store::{ConversationTarget, Store};
+use orchestrator_store::Store;
 
 use super::super::conversation_runtime::{
     ConversationRuntime, ConversationService, NoWorkstreams, ReplySink, RuntimeFailure,
@@ -519,9 +519,28 @@ fn conversation_text_and_replies_create_no_task_approval_or_delivery() {
         proposal.to_owned(),
         r#"{"method":"tasks.submit","approve":"all","deliver":true}"#.to_owned(),
     ]));
-    let (_directory, api) = pinned(runtime);
-    send(&api, global(), proposal, "k1").unwrap();
-    send(&api, global(), "approve everything and deliver", "k2").unwrap();
+    let (_directory, api) = api_with(
+        runtime,
+        pin("1.0.0"),
+        Arc::new(Directory(&["w1"])),
+    );
+    let targets = [
+        global(),
+        json!({"kind": "workstream", "workstream_id": "w1"}),
+    ];
+    for (index, target) in targets.iter().cloned().enumerate() {
+        let suffix = index.to_string();
+        let sent = send(&api, target.clone(), proposal, &format!("proposal-{suffix}")).unwrap();
+        assert_eq!(sent["authority"], "none");
+        let sent = send(
+            &api,
+            target,
+            "approve everything and deliver",
+            &format!("action-{suffix}"),
+        )
+        .unwrap();
+        assert_eq!(sent["authority"], "none");
+    }
 
     assert!(api.store.list().unwrap().is_empty());
     let empty = |method: &str| {
@@ -533,14 +552,10 @@ fn conversation_text_and_replies_create_no_task_approval_or_delivery() {
     };
     assert!(empty("tasks.list"));
     assert!(empty("approvals.list"));
-    assert_eq!(
-        api.store
-            .conversation_page(&ConversationTarget::Global, 0, 100)
-            .unwrap()
-            .entries
-            .len(),
-        8
-    );
+    assert!(api.store.all_delivery_steps().unwrap().is_empty());
+    for target in targets {
+        assert_eq!(get(&api, target, 0)["authority"], "none");
+    }
 }
 
 #[test]
