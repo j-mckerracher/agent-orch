@@ -52,9 +52,10 @@ export const WINDOWS = {
 export const MACOS = {
   // Measured on the M7 final integration merge (macOS, this branch).
   ipc: { passed: 55, sequence: [55, 0] },
-  daemon: { passed: 208, ignored: 1, sequence: [175, 14, 2, 4, 11, 1, 2] },
+  // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
+  daemon: { passed: 209, ignored: 1, sequence: [176, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 984, ignored: 2 },
+  workspace: { passed: 985, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 49, sequence: [49] },
   cliCleanupSafety: { passed: 4, sequence: [4] },

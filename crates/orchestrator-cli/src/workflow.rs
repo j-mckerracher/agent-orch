@@ -107,7 +107,18 @@ mod fault_injection {
         Ok(())
     }
 
-    pub fn before_identity_capture() -> std::io::Result<()> {
+    pub fn before_identity_capture(
+        handle: &dyn orchestrator_agents::AgentHandle,
+    ) -> std::io::Result<()> {
+        if enabled("wait-agent-exit-before-identity") {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !handle.try_exited()? {
+                if Instant::now() >= deadline {
+                    return Err(std::io::Error::other("agent did not exit"));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
         if enabled("fail-identity-capture") {
             return Err(std::io::Error::other("injected identity capture failure"));
         }
@@ -177,7 +188,9 @@ mod fault_injection {
         Ok(())
     }
 
-    pub fn before_identity_capture() -> std::io::Result<()> {
+    pub fn before_identity_capture(
+        _handle: &dyn orchestrator_agents::AgentHandle,
+    ) -> std::io::Result<()> {
         Ok(())
     }
 
@@ -451,18 +464,23 @@ pub async fn run_task(
             task_paths.metadata.display()
         ));
     }
-    // A Running session without a recorded identity cannot be reconciled or
-    // recovered later, so identity capture and persistence are mandatory.
-    let identity_recorded = fault_injection::before_identity_capture()
+    let identity_recorded = match fault_injection::before_identity_capture(&*handle)
         .and_then(|()| capture_process_identity(agent_pid))
-        .map_err(|error| format!("process identity unavailable for session {session_id}: {error}"))
-        .and_then(|identity| {
-            store
-                .record_session_identity(&task_id, &session_id, &identity)
-                .map_err(|error| {
-                    format!("cannot persist identity for session {session_id}: {error}")
-                })
-        });
+    {
+        Ok(identity) => store
+            .record_session_identity(&task_id, &session_id, &identity)
+            .map_err(|error| format!("cannot persist identity for session {session_id}: {error}")),
+        Err(error) => match handle.try_exited() {
+            Ok(true) => {
+                let _ =
+                    log_session_message(&task_paths.session_log, "identity_skipped_agent_exited");
+                Ok(())
+            }
+            _ => Err(format!(
+                "process identity unavailable for session {session_id}: {error}"
+            )),
+        },
+    };
     if let Err(message) = identity_recorded {
         let _ = log_session_message(&task_paths.session_log, &message);
         let mut handle = handle;
@@ -2796,8 +2814,14 @@ mod tests {
         let error = reconcile_before_scheduling_with(&store, &diagnostics).unwrap_err();
         assert!(error.contains("recover-owner"), "{error}");
         let lines = diagnostics.lines().join("\n");
-        assert!(lines.contains("\"event\":\"reconcile_interrupted_task\""), "{lines}");
-        assert!(lines.contains("\"event\":\"reconcile_blocking_record\""), "{lines}");
+        assert!(
+            lines.contains("\"event\":\"reconcile_interrupted_task\""),
+            "{lines}"
+        );
+        assert!(
+            lines.contains("\"event\":\"reconcile_blocking_record\""),
+            "{lines}"
+        );
         assert!(lines.contains("task-running-dead-owner"), "{lines}");
         let record = store.get(&owner.task_id).unwrap();
         assert_eq!(record.state, TaskState::Failed);
@@ -2893,9 +2917,15 @@ mod tests {
             .unwrap();
         let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
         let error = reconcile_before_scheduling_with(&store, &diagnostics).unwrap_err();
-        assert!(error.contains("Running without an unfinished session"), "{error}");
+        assert!(
+            error.contains("Running without an unfinished session"),
+            "{error}"
+        );
         let lines = diagnostics.lines().join("\n");
-        assert!(lines.contains("\"event\":\"reconcile_blocking_record\""), "{lines}");
+        assert!(
+            lines.contains("\"event\":\"reconcile_blocking_record\""),
+            "{lines}"
+        );
         assert!(lines.contains("\"component\":\"engine\""), "{lines}");
         assert!(!lines.contains(&secret), "{lines}");
     }

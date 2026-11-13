@@ -30,6 +30,17 @@ fn main() {
     out.flush().unwrap();
     match scenario.as_str() {
         "edit" => {
+            if let Some(path) = std::env::var_os("FAKE_AGENT_RELEASE") {
+                let deadline = std::time::Instant::now() + SELF_EXPIRY;
+                while !std::path::Path::new(&path).exists() && std::time::Instant::now() < deadline
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                assert!(
+                    std::path::Path::new(&path).exists(),
+                    "release gate timed out"
+                );
+            }
             std::fs::write("sample.txt", "candidate\n").unwrap();
             std::fs::write("new-file.txt", "untracked candidate\n").unwrap();
             writeln!(

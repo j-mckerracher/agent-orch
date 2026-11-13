@@ -61,14 +61,33 @@ pub struct AgentCapabilities {
 /// which callers may keep for debugging.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentEvent {
-    SessionStarted { session_id: Uuid },
-    MessageDelta { text: String },
-    ToolStarted { tool_id: String, name: String },
-    ToolFinished { tool_id: String, success: bool },
-    ApprovalRequested { approval_id: Uuid, description: String },
-    TurnFinished { outcome: TurnOutcome },
-    SessionExited { exit_code: Option<i32> },
-    ProtocolError { message: String },
+    SessionStarted {
+        session_id: Uuid,
+    },
+    MessageDelta {
+        text: String,
+    },
+    ToolStarted {
+        tool_id: String,
+        name: String,
+    },
+    ToolFinished {
+        tool_id: String,
+        success: bool,
+    },
+    ApprovalRequested {
+        approval_id: Uuid,
+        description: String,
+    },
+    TurnFinished {
+        outcome: TurnOutcome,
+    },
+    SessionExited {
+        exit_code: Option<i32>,
+    },
+    ProtocolError {
+        message: String,
+    },
 }
 
 /// Outcome of a completed turn.
@@ -90,9 +109,15 @@ pub enum AgentExit {
     },
     /// The process exited without a completed turn, or the protocol was
     /// violated (`reason` carries the first violation, if any).
-    Failed { code: Option<i32>, reason: Option<String> },
+    Failed {
+        code: Option<i32>,
+        reason: Option<String>,
+    },
     /// Cancellation was requested before the process exited.
-    Cancelled { code: Option<i32>, last_message: Option<String> },
+    Cancelled {
+        code: Option<i32>,
+        last_message: Option<String>,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -116,6 +141,8 @@ pub trait AgentAdapter: Send + Sync {
 pub trait AgentHandle: Send {
     /// The child's PID (the process-tree root).
     fn pid(&self) -> u32;
+    /// Checks whether the child has exited without consuming its events.
+    fn try_exited(&self) -> std::io::Result<bool>;
     /// The next canonical event, or `None` once the process has exited and
     /// the stream is exhausted (after the `SessionExited` event).
     async fn next_event(&mut self) -> Result<Option<AgentEvent>>;

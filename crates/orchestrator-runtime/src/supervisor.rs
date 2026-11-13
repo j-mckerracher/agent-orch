@@ -30,7 +30,7 @@
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 #[cfg(unix)]
 use std::time::Duration;
@@ -189,6 +189,7 @@ unsafe impl Send for JobHandle {}
 /// A supervised child process.
 pub struct ChildSupervisor {
     rx: mpsc::Receiver<SupervisionEvent>,
+    child: Arc<Mutex<tokio::process::Child>>,
     pid: u32,
     identity: Option<ProcessIdentity>,
     cancelled: bool,
@@ -304,11 +305,17 @@ impl ChildSupervisor {
         // indefinitely; instead the line readers run concurrently with a
         // `try_wait` poll, and the exit is reported as soon as the child
         // process itself is dead.
+        let child = Arc::new(Mutex::new(child));
+        let reaper_child = Arc::clone(&child);
         tokio::spawn(async move {
             let mut status: Option<std::process::ExitStatus> = None;
             while status.is_none() {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                match child.try_wait() {
+                match reaper_child
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .try_wait()
+                {
                     Ok(s) => status = s,
                     Err(_) => break,
                 }
@@ -342,6 +349,7 @@ impl ChildSupervisor {
         Ok((
             Self {
                 rx,
+                child,
                 pid,
                 identity,
                 cancelled: false,
@@ -356,6 +364,15 @@ impl ChildSupervisor {
     /// The child's PID (the process-group leader on Unix).
     pub fn pid(&self) -> u32 {
         self.pid
+    }
+
+    /// Checks whether the child has exited without consuming its output events.
+    pub fn try_exited(&self) -> std::io::Result<bool> {
+        self.child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .try_wait()
+            .map(|status| status.is_some())
     }
 
     /// Returns launch identity when platform metadata capture succeeds.

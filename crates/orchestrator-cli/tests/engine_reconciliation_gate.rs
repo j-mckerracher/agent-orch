@@ -107,7 +107,7 @@ fn pin_git(command: &mut Command) -> &mut Command {
         // The supervisor forwards only an allowlisted environment to agents.
         .env(
             "AGENT_ORCH_ENV_PASSTHROUGH",
-            "GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,FAKE_AGENT_SCENARIO,FAKE_AGENT_PIDFILE",
+            "GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,FAKE_AGENT_SCENARIO,FAKE_AGENT_PIDFILE,FAKE_AGENT_RELEASE",
         )
 }
 
@@ -640,9 +640,31 @@ fn run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated() {
     let legacy_bytes = br#"{"legacy":"pre-SQLite record, never migrated"}"#;
     fs::write(&legacy, legacy_bytes).unwrap();
 
-    let run = run_command(&fixture, "ident-run", "edit")
-        .output()
+    let release = fixture.root.path().join("identity-release");
+    let child = run_command(&fixture, "ident-run", "edit")
+        .env("FAKE_AGENT_RELEASE", &release)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("run CLI");
+    let deadline = Instant::now() + STEP_TIMEOUT;
+    loop {
+        if let Ok(store) = SqliteStore::new(&fixture.data.join("store.sqlite")) {
+            if matches!(
+                store.session_identity("ident-run", "ident-run-session-1"),
+                Ok(Some(_))
+            ) {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "identity not recorded before deadline"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    fs::write(&release, "release").unwrap();
+    let run = child.wait_with_output().expect("wait for CLI");
     assert_success(&run, "run");
 
     assert!(
