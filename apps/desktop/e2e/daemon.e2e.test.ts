@@ -287,7 +287,8 @@ describe("real daemon: journal epoch", () => {
   it("ConnectionManager drops its cursor, reports incomplete history and re-baselines on a replaced store", async () => {
     const own = await startDaemon();
     const own_connector = new NodeConnector(own.dataDir);
-    const manager = new ConnectionManager({ connector: own_connector, backoffMs: [50], requestTimeoutMs: 5000 });
+    // Restart may take longer than five short retries on CI.
+    const manager = new ConnectionManager({ connector: own_connector, backoffMs: [50], maxAutoAttempts: 400, requestTimeoutMs: 5000 });
     try {
       const session = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
       const seedApi = new DaemonApi(session);
