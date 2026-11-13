@@ -68,11 +68,17 @@ export function WorkstreamsView() {
   if (model.status === "loading") {
     body = <p role="status">Loading workstreams…</p>;
   } else if (model.status === "offline") {
-    body = <p role="status">Offline: no cached workstreams. This is not an empty list.</p>;
+    body = (
+      <p role="status">
+        Offline: no cached workstreams. This is not an empty list. · observed{" "}
+        <time dateTime={model.observedAt}>{formatAge(model.observedAt, model.ageMs, Date.now())}</time>
+      </p>
+    );
   } else if (model.status === "error") {
     body = (
       <p role="alert" className="notice notice-error">
-        Workstreams failed to load: {model.message}
+        Workstreams failed to load: {model.message} · observed{" "}
+        <time dateTime={model.observedAt}>{formatAge(model.observedAt, model.ageMs, Date.now())}</time>
       </p>
     );
   } else if (model.status !== "ready") {
@@ -80,7 +86,7 @@ export function WorkstreamsView() {
       <p role="status">
         <PlaceholderBadge provenance={model.provenance} />{" "}
         {model.status === "unsupported" ? "Not supported" : model.status === "unknown" ? "Unknown" : "Unavailable"}:{" "}
-        {model.reason}
+        {model.reason} · observed <time dateTime={model.observedAt}>{formatAge(model.observedAt, model.ageMs, Date.now())}</time>
       </p>
     );
   } else {

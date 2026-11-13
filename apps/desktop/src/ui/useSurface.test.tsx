@@ -16,8 +16,9 @@ const ok = (data: string): SurfaceResult<string> => ({
   status: "ok",
   data,
   provenance: daemon,
-  observation: { observedAtMs: 0, ageMs: 0 },
-} as unknown as SurfaceResult<string>);
+  observedAt: new Date(0).toISOString(),
+  ageMs: 0,
+});
 
 function Probe({ load, refresh }: { load: () => Promise<SurfaceResult<string>>; refresh?: SurfaceRefresh }) {
   const state = useSurface(load, "probe", daemon, refresh);

@@ -6,6 +6,7 @@ import type { Route } from "../router";
 import { useServices, useStore } from "../services";
 import { Badge } from "../theme";
 import { PlaceholderBadge } from "../widgets";
+import { formatAge } from "./ResourceStrip";
 import "./topbar.css";
 
 const MAX_SESSION_HITS = 20;
@@ -110,7 +111,9 @@ function summarize(state: SearchState, count: number, notice: string | null, pen
   if (notice) return notice;
   if (state.status === "idle") return pending ? "Searching…" : "";
   const { result, query } = state;
-  if (result.status !== "ok") return `Search is ${result.status}: ${result.reason}`;
+  if (result.status !== "ok") {
+    return `Search is ${result.status}: ${result.reason} · observed ${formatAge(result.observedAt, result.ageMs, Date.now())}`;
+  }
   if (count === 0) return `No loaded records match “${query}”.`;
   const noun = count === 1 ? "result" : "results";
   return result.data.truncated ? `${count} ${noun} shown for “${query}”; more exist, refine the query.` : `${count} ${noun} for “${query}”.`;

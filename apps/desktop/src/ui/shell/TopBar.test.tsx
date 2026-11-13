@@ -274,8 +274,8 @@ describe("local search", () => {
     expect(services.router.getSnapshot()).toEqual({ name: "project", projectId: "/work/other" });
   });
 
-  it("announces when nothing matches and closes with Escape, then clears", async () => {
-    const { user } = await mount(daemon());
+  it("announces empty and unavailable results, then closes with Escape and clears", async () => {
+    const { user, services } = await mount(daemon());
     await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
     await user.type(search(), "zzzz");
     await waitFor(() => expect(status()).toHaveTextContent("No loaded records match “zzzz”."));
@@ -284,6 +284,15 @@ describe("local search", () => {
     expect(search()).toHaveValue("zzzz");
     await user.keyboard("{Escape}");
     expect(search()).toHaveValue("");
+    services.surfaces.search.search = async () => ({
+      status: "unavailable",
+      reason: "local index failed",
+      provenance: services.surfaces.search.provenance,
+      observedAt: new Date().toISOString(),
+      ageMs: 0,
+    });
+    await user.type(search(), "failure");
+    await waitFor(() => expect(status()).toHaveTextContent(/Search is unavailable: local index failed · observed \d+ s ago/));
   });
 
   it("fixture hits carry PLACEHOLDER badges and never route to a daemon record", async () => {

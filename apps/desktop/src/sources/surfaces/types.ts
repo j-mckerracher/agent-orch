@@ -34,7 +34,6 @@
  *   silently inert and none can reach a real mutation.
  * - Every adapter result carries an observation. Non-ok observations date the status
  *   attempt, not a successful data read; they never imply retained data is fresh.
- *   Fields remain optional for legacy UI-created errors; adapters populate both.
  * - The derived mutations are D10 `send` (`coordinator.send_message` or
  *   `conversations.send`), `cancel` (`conversations.cancel`) and D9 `workstreams.*`
  *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
@@ -57,7 +56,7 @@ export interface Observation {
 /** Result of one source read; always carries the provenance to label it. */
 export type SurfaceResult<T> =
   | ({ status: "ok"; data: T; provenance: Provenance } & Observation)
-  | ({ status: Exclude<SurfaceStatus, "ok">; reason: string; provenance: Provenance } & Partial<Observation>);
+  | ({ status: Exclude<SurfaceStatus, "ok">; reason: string; provenance: Provenance } & Observation);
 
 /** One value inside a snapshot, with its own state and observation age. */
 export type Measured<T> =

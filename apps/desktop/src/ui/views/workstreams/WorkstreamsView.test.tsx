@@ -727,7 +727,10 @@ describe("fixture mode", () => {
     ["unknown", /Unknown: Fixture scenario/],
   ])("reports the %s scenario with its reason", async (scenario, text) => {
     await mount(null, { scenario });
-    await waitFor(() => expect(within(screen.getByTestId("workstreams-view")).getByText(text)).toBeInTheDocument());
+    await waitFor(() => {
+      const message = within(screen.getByTestId("workstreams-view")).getByText(text);
+      expect(message).toHaveTextContent(/observed \d+ s ago/);
+    });
     expect(screen.queryAllByTestId("task-row")).toHaveLength(0);
   });
 

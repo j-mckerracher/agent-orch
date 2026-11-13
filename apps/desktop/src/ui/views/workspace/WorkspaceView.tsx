@@ -5,6 +5,7 @@ import type { ProjectRow } from "../../../daemon/types";
 import type { ConversationEntry, ConversationTranscript, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
+import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Bubble, Button, EmptyState } from "../../theme";
 import { ErrorNotice } from "../../widgets";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
@@ -56,8 +57,10 @@ export function WorkspaceView() {
   const known = stored !== null && options.some((option) => option.key === stored);
   const workstreamsLoading = workstreams.status === "loading";
   const listLoading = live ? workstreamsLoading || (projectList.data === null && projectList.status !== "error") : workstreamsLoading;
-  const workstreamsReason = workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams.reason : null;
+  const workstreamsFailure = workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams : null;
+  const workstreamsReason = workstreamsFailure?.reason ?? null;
   const listError = live ? (projectList.error?.message ?? workstreamsReason) : workstreamsReason;
+  const listErrorObservation = projectList.error ? null : workstreamsFailure;
   const resolved = resolveKey(stored, known, options, listLoading, live);
 
   if (resolved === null) {
@@ -77,6 +80,11 @@ export function WorkspaceView() {
       {listError !== null && (
         <p role="status" className="ws-note">
           Project conversations could not be listed: {listError}
+          {listErrorObservation && (
+            <>
+              {" "}· observed <time dateTime={listErrorObservation.observedAt}>{formatAge(listErrorObservation.observedAt, listErrorObservation.ageMs, Date.now())}</time>
+            </>
+          )}
         </p>
       )}
       <Conversation
@@ -452,7 +460,10 @@ function TranscriptBody({
     return (
       <>
         <div role="alert" className="ws-state">
-          <p>The conversation is unavailable: {transcript.reason}</p>
+          <p>
+            The conversation is unavailable: {transcript.reason} · observed{" "}
+            <time dateTime={transcript.observedAt}>{formatAge(transcript.observedAt, transcript.ageMs, Date.now())}</time>
+          </p>
           <Button onClick={onRetry}>Retry</Button>
         </div>
         {sim}
@@ -463,7 +474,8 @@ function TranscriptBody({
     return (
       <>
         <p role="status" className="ws-state">
-          {transcript.status === "unsupported" ? "Not supported" : "Not known"}: {transcript.reason}
+          {transcript.status === "unsupported" ? "Not supported" : "Not known"}: {transcript.reason} · observed{" "}
+          <time dateTime={transcript.observedAt}>{formatAge(transcript.observedAt, transcript.ageMs, Date.now())}</time>
         </p>
         {sim}
       </>
