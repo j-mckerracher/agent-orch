@@ -256,6 +256,29 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(provider).toHaveValue("codex");
   });
 
+  it("does not offer model settings when no provider is launchable", async () => {
+    const fake = liveDaemon();
+    fake.stub("agents.capabilities", [
+      { agent: "codex", installed: false, launchable: false, capabilities: null },
+    ]);
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+
+    const provider = await screen.findByRole("combobox", { name: "Provider" });
+    expect(provider).toBeDisabled();
+    expect(provider).toHaveValue("");
+    expect(within(provider).getByRole("option", { name: "No launchable providers" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Effort" })).toBeDisabled();
+    expect(screen.getByText("No launchable providers are reported.")).toBeInTheDocument();
+    expect(fake.callsTo("agents.validate_selection")).toHaveLength(0);
+  });
+
   it("retries a cold catalog shortly and then lists the models", async () => {
     const fake = liveDaemon();
     let reads = 0;
