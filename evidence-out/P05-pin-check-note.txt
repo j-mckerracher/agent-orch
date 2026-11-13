@@ -1,0 +1,1 @@
+P05/P06 verification succeeded on direct evidence read; the first PowerShell wrapper expression incorrectly passed -TotalCount to Join-Path, so no verification result was accepted until this corrected read. No tests ran during the failed expression.

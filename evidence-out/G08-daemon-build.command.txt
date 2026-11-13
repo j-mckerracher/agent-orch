@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src
+command=cargo build --locked -p orchestrator-daemon --examples --bins

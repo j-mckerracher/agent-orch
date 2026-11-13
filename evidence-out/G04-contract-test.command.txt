@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src\apps\desktop
+command=<RUN_PATH>\src\apps\desktop\node_modules\.bin\vitest.cmd run src/sources/surfaces/contract.test.ts

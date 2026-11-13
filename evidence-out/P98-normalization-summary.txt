@@ -1,0 +1,9 @@
+text_files_seen=75
+files_normalized=12
+trailing_spaces_removed=true
+excess_blank_lines_at_eof_removed=true
+text_encoding=UTF-8 without BOM; LF
+RESULTS.md content preserved
+raw run evidence retained locally
+additional_sensitive_fields_redacted=0
+additional_field_kinds=

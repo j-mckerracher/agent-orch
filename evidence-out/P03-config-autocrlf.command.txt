@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src
+command=git config --local core.autocrlf false

@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>
+command=git clone --no-checkout https://github.com/j-mckerracher/agent-orch.git <RUN_PATH>\src

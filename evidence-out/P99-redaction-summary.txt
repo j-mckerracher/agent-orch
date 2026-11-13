@@ -1,0 +1,4 @@
+file=G06-cargo-test-workspace.stdout.txt
+redacted_fields=11
+field_kinds=authorization
+values=omitted from publication copy; raw run evidence retained locally

@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src
+command=cargo clippy --locked --workspace -- -D warnings

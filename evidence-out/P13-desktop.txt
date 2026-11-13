@@ -1,0 +1,7 @@
+session_id=1
+user_interactive=True
+explorer_same_session=True
+explorer_pid_session=8884:1
+foreground_window_handle=0x0
+status=BLOCKED
+reason=foreground window handle is zero or unavailable

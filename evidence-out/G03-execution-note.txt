@@ -1,0 +1,1 @@
+G03 helper note update: PowerShell 7 began with ErrorActionPreference=Stop instead of the runbook value Continue. The build command emitted a native-command diagnostic; the helper terminated before writing G03 exit evidence. Captured G03 stdout/stderr are retained; exit status is unverified, so G03 is BLOCKED. The gate was not rerun because it had already executed.

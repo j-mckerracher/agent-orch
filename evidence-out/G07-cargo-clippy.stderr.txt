@@ -1,0 +1,149 @@
+cargo.exe :     Checking windows-link v0.2.1
+At line:6 char:9
++   try { & $Exe @Arguments 1> "$Prefix.stdout.txt" 2> "$Prefix.stderr. ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking windows-link v0.2.1:
+   String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+   Compiling stable_deref_trait v1.2.1
+    Checking memchr v2.8.3
+    Checking serde_core v1.0.229
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling smallvec v1.16.5
+   Compiling zerofrom v0.1.8
+   Compiling utf_types v1.0.0
+    Checking windows-sys v0.61.2
+   Compiling futures-core v0.3.34
+    Checking pin-project-lite v0.2.17
+    Checking yoke v0.8.4
+   Compiling typenum v1.20.1
+   Compiling utf8_iter v1.1.0
+   Compiling scopeguard v1.2.0
+    Checking cfg-if v1.0.5
+    Checking zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling lock_api v0.4.14
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling futures-sink v0.3.34
+    Checking tinystr v0.8.5
+    Checking potential_utf v0.1.6
+    Checking icu_collections v2.4.0
+    Checking icu_locale_core v2.4.0
+    Checking serde v1.0.229
+   Compiling equivalent v1.0.3
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+    Checking thiserror v2.0.21
+   Compiling parking_lot_core v0.9.12
+   Compiling allocator-api2 v0.2.21
+   Compiling bytes v1.12.1
+    Checking icu_provider v2.4.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling futures-io v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling once_cell v1.21.4
+   Compiling slab v0.4.12
+   Compiling futures-task v0.3.34
+   Compiling foldhash v0.2.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling tokio v1.54.1
+   Compiling tracing-core v0.1.36
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling form_urlencoded v1.2.2
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling crossbeam-utils v0.8.23
+    Checking zmij v1.0.23
+   Compiling cpufeatures v0.2.17
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling crc-catalog v2.5.0
+    Checking itoa v1.0.18
+   Compiling parking v2.2.1
+   Compiling idna_adapter v1.2.2
+   Compiling crossbeam-queue v0.3.14
+    Checking serde_json v1.0.154
+   Compiling event-listener v5.4.2
+   Compiling idna v1.1.0
+   Compiling tracing v0.1.44
+   Compiling crc v3.4.0
+   Compiling indexmap v2.14.2
+   Compiling sha2 v0.10.9
+   Compiling either v1.19.0
+   Compiling hashlink v0.11.1
+   Compiling futures-intrusive v0.5.0
+   Compiling url v2.5.8
+   Compiling spin v0.9.9
+   Compiling num-traits v0.2.19
+   Compiling base64 v0.22.1
+   Compiling futures-executor v0.3.34
+   Compiling atoi v2.0.0
+   Compiling flume v0.12.0
+   Compiling futures-channel v0.3.34
+   Compiling tokio-stream v0.1.19
+    Checking windows-strings v0.5.1
+    Checking windows-result v0.4.1
+    Checking libsqlite3-sys v0.37.0
+   Compiling sqlx-core v0.9.0
+    Checking orchestrator-core v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe7899
+1cd34866b2a4e4ca70064c82\src\crates\orchestrator-core)
+    Checking windows-core v0.62.2
+    Checking orchestrator-git v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78991
+cd34866b2a4e4ca70064c82\src\crates\orchestrator-git)
+    Checking utf8parse v0.2.2
+    Checking once_cell_polyfill v1.70.2
+    Checking anstyle v1.0.14
+    Checking anstyle-parse v1.0.0
+    Checking getrandom v0.3.4
+    Checking anstyle-query v1.1.5
+    Checking orchestrator-private-fs v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0
+fe78991cd34866b2a4e4ca70064c82\src\crates\orchestrator-private-fs)
+    Checking windows-threading v0.2.1
+    Checking anstyle-wincon v3.0.11
+    Checking colorchoice v1.0.5
+    Checking is_terminal_polyfill v1.70.2
+    Checking uuid v1.18.1
+    Checking windows-numerics v0.3.1
+    Checking windows-future v0.3.2
+    Checking windows-collections v0.3.2
+    Checking winapi v0.3.9
+    Checking orchestrator-diagnostics v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e
+0fe78991cd34866b2a4e4ca70064c82\src\crates\orchestrator-diagnostics)
+    Checking anstream v1.0.0
+    Checking strsim v0.11.1
+    Checking clap_lex v1.1.1
+    Checking libc v0.2.191
+    Checking subtle v2.6.1
+    Checking clap_builder v4.6.7
+    Checking orchestrator-ipc v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78991
+cd34866b2a4e4ca70064c82\src\crates\orchestrator-ipc)
+    Checking windows v0.62.2
+    Checking orchestrator-runtime v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe7
+8991cd34866b2a4e4ca70064c82\src\crates\orchestrator-runtime)
+    Checking ntapi v0.4.3
+   Compiling sqlx-sqlite v0.9.0
+    Checking orchestrator-agents v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-agents)
+    Checking clap v4.6.7
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe789
+91cd34866b2a4e4ca70064c82\src\crates\orchestrator-store)
+    Checking orchestrator-engine v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-engine)
+    Checking orchestrator-cli v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78991
+cd34866b2a4e4ca70064c82\src\crates\orchestrator-cli)
+    Checking sysinfo v0.40.1
+    Checking orchestrator-host-metrics v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-
+e0fe78991cd34866b2a4e4ca70064c82\src\crates\orchestrator-host-metrics)
+    Checking orchestrator-daemon v0.1.0 (<USER_PROFILE>\Code\m7-32-v2-e0fe78
+991cd34866b2a4e4ca70064c82\src\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 00s

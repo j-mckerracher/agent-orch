@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src\apps\desktop
+command=npm.cmd run build

@@ -1,0 +1,5 @@
+Disposition source: M7-32 Windows v2 runbook.
+M6-04 W10 signed-installer validation: WAIVED by owner.
+M6-04 W13 N-1-to-N upgrade: WAIVED by owner.
+M6-04 W14 signed-installer smoke: WAIVED by owner.
+M7-32 fix-e2e focused real-daemon harness: N/A on Windows because it is Unix-socket-only.

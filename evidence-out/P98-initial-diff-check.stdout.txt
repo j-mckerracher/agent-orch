@@ -1,0 +1,66 @@
+evidence-out/G02-npm-test.stdout.txt:17: new blank line at EOF.
+evidence-out/G03-npm-build.stdout.txt:14: new blank line at EOF.
+evidence-out/G04-contract-test.stdout.txt:9: new blank line at EOF.
+evidence-out/G06-cargo-test-workspace.stderr.txt:5: trailing whitespace.
++    + CategoryInfo          : NotSpecified: (   Compiling proc-macro2 v1.0.107
+evidence-out/G06-cargo-test-workspace.stderr.txt:8: trailing whitespace.
++
+evidence-out/G06-cargo-test-workspace.stderr.txt:180: trailing whitespace.
++warning: unused import:
+evidence-out/G06-cargo-test-workspace.stderr.txt:189: trailing whitespace.
++warning: unused imports: `ProcessAction`, `ProcessClassification`,
+evidence-out/G06-cargo-test-workspace.stderr.txt:193: trailing whitespace.
++5 |     plan_process_reconciliation, ProcessAction, ProcessClassification,
+evidence-out/G06-cargo-test-workspace.stderr.txt:209: trailing whitespace.
++warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings
+evidence-out/G06-cargo-test-workspace.stderr.txt:210: trailing whitespace.
++(run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1
+evidence-out/G06-cargo-test-workspace.stderr.txt:212: trailing whitespace.
++warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix
+evidence-out/G06-cargo-test-workspace.stderr.txt:237: trailing whitespace.
++{"blocker":"attempt task-unowned/task-unowned-attempt-1 is Pending but has no
+evidence-out/G06-cargo-test-workspace.stderr.txt:238: trailing whitespace.
++unfinished session, so no owner or process identity can be proven gone; the
+evidence-out/G06-cargo-test-workspace.stderr.txt:239: trailing whitespace.
++task, worktree and history are preserved. Next step: run `agent-orch inspect
+evidence-out/G06-cargo-test-workspace.stderr.txt:242: trailing whitespace.
++{"blocker":"task task-confirmed-failed has Confirmed delivery evidence while
+evidence-out/G06-cargo-test-workspace.stderr.txt:243: trailing whitespace.
++Failed; the delivery journal, review refs, worktree and history are preserved.
+evidence-out/G06-cargo-test-workspace.stderr.txt:244: trailing whitespace.
++Next step: run `agent-orch inspect task-confirmed-failed` and review the
+evidence-out/G06-cargo-test-workspace.stderr.txt:245: trailing whitespace.
++recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No
+evidence-out/G06-cargo-test-workspace.stderr.txt:246: trailing whitespace.
++override exists and nothing here applies or removes a delivery, so scheduling
+evidence-out/G06-cargo-test-workspace.stderr.txt:249: trailing whitespace.
++{"blocker":"task task-ambiguous has Ambiguous delivery evidence while Failed;
+evidence-out/G06-cargo-test-workspace.stderr.txt:250: trailing whitespace.
++the delivery journal, review refs, worktree and history are preserved. Next
+evidence-out/G06-cargo-test-workspace.stderr.txt:251: trailing whitespace.
++step: run `agent-orch inspect task-ambiguous` and review the recorded delivery
+evidence-out/G06-cargo-test-workspace.stderr.txt:252: trailing whitespace.
++steps and `refs/heads/orchestrator/review/` refs by hand. No override exists
+evidence-out/G06-cargo-test-workspace.stderr.txt:253: trailing whitespace.
++and nothing here applies or removes a delivery, so scheduling stays blocked
+evidence-out/G06-cargo-test-workspace.stderr.txt:314: trailing whitespace.
++overy":"no cancellation was requested. Stop the daemon, confirm the owner and
+evidence-out/G06-cargo-test-workspace.stderr.txt:315: trailing whitespace.
++agent processes have exited, then run `agent-orch recover-owner
+evidence-out/G06-cargo-test-workspace.stderr.txt:316: trailing whitespace.
++running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1
+evidence-out/G06-cargo-test-workspace.stderr.txt:317: trailing whitespace.
++--generation 0123456789abcdef0123456789abcdef --confirm-processes-exited
+evidence-out/G06-cargo-test-workspace.stderr.txt:318: trailing whitespace.
++--reason \"<reason>\"`. This Conflict is cached for the idempotency key, so
+evidence-out/G06-cargo-test-workspace.stderr.txt:431: trailing whitespace.
++orchestrator: ignoring AGENT_ORCH_ENV_PASSTHROUGH entry #2
+evidence-out/G06-cargo-test-workspace.stdout.txt:1250: new blank line at EOF.
+evidence-out/G07-cargo-clippy.stderr.txt:5: trailing whitespace.
++    + CategoryInfo          : NotSpecified: (    Checking windows-link v0.2.1:
+evidence-out/G07-cargo-clippy.stderr.txt:8: trailing whitespace.
++
+evidence-out/G08-daemon-build.stderr.txt:5: trailing whitespace.
++    + CategoryInfo          : NotSpecified: (   Compiling windows-sys v0.61.2:
+evidence-out/G08-daemon-build.stderr.txt:8: trailing whitespace.
++

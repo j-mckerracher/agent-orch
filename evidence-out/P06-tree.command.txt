@@ -1,0 +1,2 @@
+cwd=<RUN_PATH>\src
+command=git rev-parse HEAD^{tree}
