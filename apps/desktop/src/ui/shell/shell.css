@@ -381,7 +381,9 @@ body:has(.shell) {
 
   .shell-sidebar {
     padding: 14px 18px;
-    overflow: visible;
+    box-sizing: border-box;
+    max-height: 42dvh;
+    overflow-y: auto;
     border-right: 0;
     border-bottom: 1px solid var(--shell-line);
   }

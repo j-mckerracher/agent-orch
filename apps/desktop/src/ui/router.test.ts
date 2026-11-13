@@ -99,3 +99,30 @@ describe("hash synchronisation", () => {
     off();
   });
 });
+
+
+describe("non-canonical browser history", () => {
+  it.each([
+    ["#/project/fixture:project-alpha", "#/project/fixture%3Aproject-alpha"],
+    ["#/unknown", "#/workspace"],
+  ])("Back and Forward preserve the entry for %s", async (incoming, canonical) => {
+    const original = location.href;
+    history.replaceState(null, "", "#/agents");
+    const router = new RouterStore();
+    const off = syncRouterToHash(router);
+    try {
+      location.hash = incoming;
+      await expect.poll(() => location.hash).toBe(canonical);
+      expect(router.getSnapshot()).toEqual(parseRoute(canonical));
+      history.back();
+      await expect.poll(() => location.hash).toBe("#/agents");
+      await expect.poll(() => router.getSnapshot()).toEqual({ name: "global", view: "agents" });
+      history.forward();
+      await expect.poll(() => location.hash).toBe(canonical);
+      await expect.poll(() => router.getSnapshot()).toEqual(parseRoute(canonical));
+    } finally {
+      off();
+      history.replaceState(null, "", original);
+    }
+  });
+});
