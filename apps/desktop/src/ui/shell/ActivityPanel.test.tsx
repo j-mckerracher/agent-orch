@@ -196,9 +196,13 @@ describe("live mode", () => {
     fake.tasks = [...fake.tasks, mkTask("t4", REPO, { state: "Running" })];
     fake.approvals = [...fake.approvals, mkApproval("a3", "t4")];
     act(() => fake.emit(mkEvent(1, "t4", null, "TaskAdmitted")));
-    await waitFor(() => expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2"));
-    expect(within(panel).getByTestId("activity-task-t4")).toBeInTheDocument();
-    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
+    await waitFor(() => {
+      expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
+      expect(within(panel).getByTestId("activity-task-t4")).toBeInTheDocument();
+      expect(within(panel).getByTestId("activity-attention-a3")).toBeInTheDocument();
+      expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
+      expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
+    });
   });
 
   it("stops a task through tasks.cancel only after confirmation", async () => {
