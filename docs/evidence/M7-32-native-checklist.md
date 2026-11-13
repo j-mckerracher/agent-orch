@@ -9,4 +9,6 @@ For each row, record tester, date, full tested SHA, OS/WebView and screen-reader
 3. **Assistive technology.** With VoiceOver on macOS and Narrator or NVDA on Windows, use keyboard navigation to select a task as gate evidence and verify the gate. Confirm gate state, evidence selector labels, named connection banner, and polite status updates are announced and controls remain operable.
 4. **DPI / scaling — native app.** At 100%, 150%, and 200% scaling on each supported platform, verify the connection strip remains visible, readable, and visually unchanged with no overflow. On Windows, also repeat the gate/evidence interaction at 100%, 125%, 150%, and 200%; confirm controls and labels do not overlap or clip. Capture screenshots at each applicable scale.
 
+5. **Narrow-window keyboard focus — macOS and Windows.** In WKWebView and WebView2 at 760×700 CSS px, activate “Skip to main content” and verify the focused main region/indicator stays below the connection banner with no horizontal overflow. Record the OS/WebView build and capture the viewport.
+
 Mark unrun rows **UNVERIFIED**; automated e2e results do not establish native acceptance.

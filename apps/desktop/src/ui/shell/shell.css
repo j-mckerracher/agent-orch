@@ -291,6 +291,7 @@ body:has(.shell) {
   min-height: 0;
   padding: 0 24px 24px;
   overflow: auto;
+  scroll-margin-top: var(--shell-strip-height, 0px);
 }
 
 .shell-activity {

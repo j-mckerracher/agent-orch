@@ -193,3 +193,26 @@ test("keyboard Tab census, reverse traversal and skip link", async ({ page }) =>
     await expect(page).toHaveURL(/#\/agents$/);
   }
 });
+
+test("focused main stays below the connection banner at 760x700", async ({ page }) => {
+  await page.setViewportSize({ width: 760, height: 700 });
+  await page.goto("/#/workspace");
+
+  const skipLink = page.getByRole("link", { name: "Skip to main content" });
+  await skipLink.focus();
+  await page.keyboard.press("Enter");
+  const main = page.locator("#shell-main");
+  await expect(main).toBeFocused();
+  const geometry = await page.evaluate(() => {
+    const banner = document.querySelector<HTMLElement>(".shell-strip");
+    const focusedMain = document.querySelector<HTMLElement>("#shell-main");
+    if (!banner || !focusedMain) throw new Error("shell banner or main region is missing");
+    return {
+      bannerBottom: banner.getBoundingClientRect().bottom,
+      mainTop: focusedMain.getBoundingClientRect().top,
+    };
+  });
+  expect(geometry.mainTop, "focused main is not obscured by the connection banner").toBeGreaterThanOrEqual(
+    geometry.bannerBottom,
+  );
+});
