@@ -1,7 +1,7 @@
 # M6-04 verification report
 
 Plan: `/Users/mckerracher.joshua/.copilot/session-state/94be28cc-e6d3-4f21-ae92-c66da3c1e707/files/prompts/C-m6-04-verify.md`; fast-delivery addendum followed.
-Latest integ2 base: `350cd9dd993da25072fb7a7f4af6bcdd0a030af0` (docs-only). Desktop/package build used product head `f423454210133ed6e9c63a593c8da81f9aa687fe` after the AgentsView/SessionList UI merge; the later test-only merge produced source head `dfbf7d0b62cba21bda4ceb396e60ea461ce4ec7f` and changed no product code. The post-merge desktop suite passed 52 files/1249 tests and installer tests passed 26/26. Board M6-04 is priority 13, status `todo`; details require install, upgrade, approvals, cancellation and recovery on macOS and Windows, with no formal acceptance array. The criteria below group that scope.
+Latest integ2 base: `fe57c5164e22006f7f9eb4a2c9e4ec5c4d86cf6f` (docs-only M7-18). Desktop/package build used product head `f423454210133ed6e9c63a593c8da81f9aa687fe` after the AgentsView/SessionList UI merge; the later test-only merge produced source head `dfbf7d0b62cba21bda4ceb396e60ea461ce4ec7f` and changed no product code. The post-merge desktop suite passed 52 files/1249 tests and installer tests passed 26/26. Board M6-04 is priority 13, status `todo`; details require install, upgrade, approvals, cancellation and recovery on macOS and Windows, with no formal acceptance array. The criteria below group that scope.
 
 | Criterion | Implementation and test | Result / gap |
 |---|---|---|
