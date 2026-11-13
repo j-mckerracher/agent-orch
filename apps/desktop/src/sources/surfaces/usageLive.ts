@@ -238,10 +238,10 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
   };
 }
 
-function failure<T>(provenance: Provenance, error: unknown) {
+function failure<T>(provenance: Provenance, error: unknown, now: () => number) {
   const failed = asDaemonError(error);
   const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
-  return notOk<T>(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason);
+  return notOk<T>(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));
 }
 
 export function createLiveUsageSource(
@@ -258,7 +258,7 @@ export function createLiveUsageSource(
         const wire = parseUsageSummary(await connection.api().usageSummary(usageRequest(localDay(at), at)));
         return okResult(provenance, mapUsageSummary(wire, at), observation(at));
       } catch (error) {
-        return failure<UsageSummary>(provenance, error);
+        return failure<UsageSummary>(provenance, error, now);
       }
     },
   };
