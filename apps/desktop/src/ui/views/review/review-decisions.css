@@ -338,7 +338,7 @@
   font: 11px/1.4 var(--font-mono);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1150px) {
   .rd-fact {
     grid-template-columns: minmax(0, 1fr);
   }

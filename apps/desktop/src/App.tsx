@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { ConnectionStrip } from "./ui/ConnectionStrip";
+import { ConnectionStrip, Crumbs } from "./ui/ConnectionStrip";
 import { Coordinator } from "./ui/Coordinator";
 import { ProjectDetail } from "./ui/ProjectDetail";
 import { ProjectList } from "./ui/ProjectList";
@@ -53,7 +53,14 @@ function Screen({ route, globalViews }: { route: Route; globalViews: Partial<Rec
       return <Coordinator projectId={route.projectId} />;
     case "review":
       return renderReview ? (
-        <>{renderReview({ projectId: route.projectId, taskId: route.taskId, query: route.query })}</>
+        <>
+          <Crumbs items={[
+            { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
+            { label: route.projectId, onClick: () => router.navigate({ name: "project", projectId: route.projectId }) },
+            { label: "Review" },
+          ]} />
+          {renderReview({ projectId: route.projectId, taskId: route.taskId, query: route.query })}
+        </>
       ) : (
         <main>
           <h1>Review</h1>

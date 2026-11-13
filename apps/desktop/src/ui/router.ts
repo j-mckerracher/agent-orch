@@ -103,7 +103,14 @@ export class RouterStore extends Store<Route> {
 
 /** Mirrors a router to `location.hash` in a browser; returns a disposer. */
 export function syncRouterToHash(router: RouterStore, target: Window = window): () => void {
-  const fromHash = () => router.navigate(parseRoute(target.location.hash));
+  const fromHash = () => {
+    const route = parseRoute(target.location.hash);
+    const canonical = formatRoute(route);
+    // Normalise this entry before notifying subscribers. Pushing a second entry here
+    // would trap Back on the original non-canonical hash and discard Forward history.
+    if (target.location.hash !== canonical) target.history.replaceState(target.history.state, "", canonical);
+    router.navigate(route);
+  };
   if (target.location.hash) fromHash();
   const off = router.subscribe(() => {
     const next = formatRoute(router.getSnapshot());
