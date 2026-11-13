@@ -195,7 +195,7 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     expect(data.getSnapshot().projects.data).toEqual([{ id: projectId }]);
 
     // An unsupported agent cannot succeed, so its dependent remains cancellable.
-    const blockerSession = await openSession();
+    const blockerSession = new DaemonSession(await new NodeConnector(daemon.dataDir).open(M5_03_CAPABILITIES));
     const blocker = await new DaemonApi(blockerSession).tasksSubmit("app-data-blocker", submission({ objective: "blocker" }));
     blockerSession.close();
     const result = await data.submitTask(submission({ objective: "via app data", dependencies: [blocker.contract.id] }));
