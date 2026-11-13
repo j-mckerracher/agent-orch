@@ -1,0 +1,14 @@
+{
+  "productionCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "scriptSrcSelf": true,
+  "unsafeEval": false,
+  "htmlScriptSources": [
+    "/theme-init.js",
+    "/assets/index-B-eGo-ea.js"
+  ],
+  "htmlCssSources": [
+    "/assets/index-DU_Uwg-l.css"
+  ],
+  "externalHtmlScripts": [],
+  "bundledRenderer": true
+}

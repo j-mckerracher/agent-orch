@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.84s
+     Running tests/conversation_runtime.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/conversation_runtime-a530eb715a2d1d87)
+
+running 1 test
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 3.36s

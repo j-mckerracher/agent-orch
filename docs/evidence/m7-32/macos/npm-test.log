@@ -1,0 +1,16 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/apps/desktop
+
+
+ Test Files  52 passed (52)
+      Tests  1253 passed (1253)
+   Start at  23:51:49
+   Duration  17.75s (environment 54%, tests 21%, setup 14%, import 6%, transform 5%)
+
+Environment  jsdom was created 52 times · 76.64s total, 54% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
