@@ -63,6 +63,11 @@ describe("C1 connection strip", () => {
     await screen.findByText("repo");
     fake.openError = new DaemonError("disconnected", "down");
     fake.drop();
+    await waitFor(() => {
+      const status = screen.getByTestId("connection-status");
+      expect(status).toHaveTextContent("Reconnecting...");
+      expect(status.querySelector(".conn-glyph")).toHaveTextContent("↻");
+    });
     await waitFor(() => expect(screen.getByTestId("offline-note")).toHaveTextContent("Showing cached data (stale)"));
     expect(screen.getByTestId("stale-projects")).toBeInTheDocument();
     expect(screen.getByText("repo")).toBeInTheDocument();
