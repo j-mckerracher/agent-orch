@@ -39,7 +39,7 @@ use windows_sys::Win32::System::Threading::{
 };
 
 /// Captures launch-time OS metadata. Unsupported or unavailable metadata
-/// returns an error so the supervisor can retain `None` without failing launch.
+/// returns an error; callers must distinguish an exited child from an unverified live process.
 pub fn capture_process_identity(pid: u32) -> io::Result<ProcessIdentity> {
     capture_exact_process_identity(pid).map(|identity| identity.identity)
 }

@@ -629,3 +629,32 @@ fn audit_journal_is_complete_after_concurrent_failure_and_crash_paths() {
     assert_eq!(store.event_journal(0).unwrap().len(), 9);
     assert_audit_complete(&store);
 }
+
+#[cfg(feature = "fault-injection")]
+#[test]
+fn fast_exit_before_identity_preserves_failure_status() {
+    let fixture = Fixture::new("#!/bin/sh\nexit 3\n");
+    let mut command = run_command(&fixture, "fast-exit", "fast exit");
+    command.env(
+        "AGENT_ORCH_FAULT_INJECTION",
+        "wait-agent-exit-before-identity",
+    );
+    let output = run_bounded(command);
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("process identity unavailable"));
+    let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
+    let task = store.get("fast-exit").unwrap();
+    assert_eq!(task.state, TaskState::Failed);
+    assert_eq!(task.attempts[0].state, AttemptState::Failed);
+    assert!(store
+        .session_identity("fast-exit", "fast-exit-session-1")
+        .unwrap()
+        .is_none());
+    let metadata: serde_json::Value = serde_json::from_slice(
+        &fs::read(fixture.data.join("cli/fast-exit/metadata.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(metadata["exit_code"], 3);
+    let log = fs::read_to_string(fixture.data.join("cli/fast-exit/session.log")).unwrap();
+    assert!(log.contains("identity_skipped_agent_exited"));
+}

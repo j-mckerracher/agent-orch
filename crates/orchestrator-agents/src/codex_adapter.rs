@@ -124,6 +124,10 @@ impl AgentHandle for CodexHandle {
         self.sup.pid()
     }
 
+    fn try_exited(&self) -> std::io::Result<bool> {
+        self.sup.try_exited()
+    }
+
     fn take_usage(&mut self) -> Vec<UsageReport> {
         self.parser.take_usage()
     }

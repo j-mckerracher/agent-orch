@@ -436,6 +436,10 @@ impl AgentHandle for PiRpcHandle {
         self.supervisor.pid()
     }
 
+    fn try_exited(&self) -> std::io::Result<bool> {
+        self.supervisor.try_exited()
+    }
+
     fn take_usage(&mut self) -> Vec<UsageReport> {
         std::mem::take(&mut self.usage)
     }

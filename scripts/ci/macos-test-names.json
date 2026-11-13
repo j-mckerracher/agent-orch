@@ -265,7 +265,8 @@
    "daemon_cancel_reaches_cancelled_through_real_run_owner",
    "a_failed_launch_is_explained_in_the_log_without_the_credential",
    "host_metrics_needs_the_host_capability",
-   "host_metrics_serves_every_resource_through_the_real_daemon"
+   "host_metrics_serves_every_resource_through_the_real_daemon",
+   "fast_exit_before_identity_preserves_failure_status"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
