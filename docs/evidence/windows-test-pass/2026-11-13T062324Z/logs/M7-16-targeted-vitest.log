@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/ui/shell/ActivityPanel.test.tsx src/sources/surfaces/search.test.ts src/native/native.test.tsx
+
+
+ RUN  v5.1.0 <isolated-run-root>/worktrees/m7-16/apps/desktop
+
+
+ Test Files  3 passed (3)
+      Tests  42 passed (42)
+   Start at  22:54:17
+   Duration  17.64s (environment 56%, setup 16%, tests 12%, transform 11%, import 4%)

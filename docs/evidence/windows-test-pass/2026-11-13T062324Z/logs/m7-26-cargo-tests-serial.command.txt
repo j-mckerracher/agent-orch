@@ -1,0 +1,1 @@
+cargo test --locked -p orchestrator-store -p orchestrator-daemon -- --test-threads=1; exact assignment pin 1fe8d9f7c4ceaab8b186655c0cce5de10fde8226

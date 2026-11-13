@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/sources/surfaces/usageLive.test.tsx
+
+
+ RUN  v5.1.0 <isolated-run-root>/worktrees/m7-22-exact/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  47 passed (47)
+   Start at  23:19:25
+   Duration  5.01s (environment 36%, transform 27%, tests 22%, setup 9%, import 7%)

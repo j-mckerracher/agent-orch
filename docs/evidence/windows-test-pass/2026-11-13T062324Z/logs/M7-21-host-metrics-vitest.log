@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/ui/shell/ResourceStrip.test.tsx src/sources/surfaces/liveMetrics.test.ts
+
+
+ RUN  v5.1.0 <isolated-run-root>/worktrees/m7-21-exact/apps/desktop
+
+
+ Test Files  2 passed (2)
+      Tests  59 passed (59)
+   Start at  23:19:06
+   Duration  9.82s (tests 51%, environment 29%, transform 10%, setup 7%, import 3%)

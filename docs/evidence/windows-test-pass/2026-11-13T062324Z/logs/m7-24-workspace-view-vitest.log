@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/ui/views/workspace/WorkspaceView.test.tsx
+
+
+ RUN  v5.1.0 <RUN_ROOT>/worktrees/m7-24-exact/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  31 passed (31)
+   Start at  23:36:20
+   Duration  12.84s (tests 75%, environment 12%, transform 7%, setup 3%, import 2%)

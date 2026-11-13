@@ -1,0 +1,216 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling serde_core v1.0.229
+   Compiling pin-project-lite v0.2.17
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling version_check v0.9.5
+   Compiling utf_types v1.0.0
+   Compiling smallvec v1.16.5
+   Compiling litemap v0.8.3
+   Compiling futures-core v0.3.34
+   Compiling writeable v0.6.4
+   Compiling windows-sys v0.61.2
+   Compiling utf8_iter v1.1.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling bytes v1.12.1
+   Compiling icu_properties_data v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling scopeguard v1.2.0
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.23
+   Compiling parking_lot_core v0.9.12
+   Compiling lock_api v0.4.14
+   Compiling pkg-config v0.3.34
+   Compiling cc v1.11.1
+   Compiling vcpkg v0.2.15
+   Compiling futures-sink v0.3.34
+   Compiling equivalent v1.0.3
+   Compiling serde_json v1.0.154
+   Compiling once_cell v1.21.4
+   Compiling crossbeam-utils v0.8.23
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling itoa v1.0.18
+   Compiling thiserror v2.0.21
+   Compiling futures-task v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling futures-io v0.3.34
+   Compiling autocfg v1.5.1
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling slab v0.4.12
+   Compiling form_urlencoded v1.2.2
+   Compiling hashbrown v0.16.1
+   Compiling num-traits v0.2.19
+   Compiling futures-util v0.3.34
+   Compiling digest v0.10.7
+   Compiling parking_lot v0.12.5
+   Compiling tracing-core v0.1.36
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling cpufeatures v0.2.17
+   Compiling event-listener v5.4.2
+   Compiling hashlink v0.11.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling sha2 v0.10.9
+   Compiling crc v3.4.0
+   Compiling indexmap v2.14.2
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling futures-intrusive v0.5.0
+   Compiling base64 v0.22.1
+   Compiling synstructure v0.14.0
+   Compiling tokio v1.54.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling spin v0.9.9
+   Compiling futures-channel v0.3.34
+   Compiling windows-strings v0.5.1
+   Compiling futures-executor v0.3.34
+   Compiling atoi v2.0.0
+   Compiling windows-result v0.4.1
+   Compiling flume v0.12.0
+   Compiling dotenvy v0.15.7
+   Compiling winapi v0.3.9
+   Compiling hex v0.4.3
+   Compiling heck v0.5.0
+   Compiling tracing-attributes v0.1.31
+   Compiling windows-implement v0.60.2
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling windows-interface v0.59.3
+   Compiling windows-core v0.62.2
+   Compiling windows-threading v0.2.1
+   Compiling getrandom v0.3.4
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling ntapi v0.4.3
+   Compiling libc v0.2.191
+   Compiling yoke v0.8.4
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-git v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-git)
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling windows-future v0.3.2
+   Compiling orchestrator-private-fs v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-private-fs)
+   Compiling getrandom v0.4.3
+   Compiling async-trait v0.1.89
+   Compiling orchestrator-diagnostics v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-diagnostics)
+   Compiling subtle v2.6.1
+   Compiling windows v0.62.2
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling either v1.19.0
+   Compiling orchestrator-core v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-core)
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling uuid v1.18.1
+   Compiling orchestrator-ipc v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-ipc)
+   Compiling fastrand v2.5.0
+   Compiling tempfile v3.27.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling orchestrator-runtime v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-runtime)
+   Compiling orchestrator-agents v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-agents)
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-store)
+   Compiling orchestrator-engine v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-engine)
+   Compiling sysinfo v0.40.1
+   Compiling orchestrator-host-metrics v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-host-metrics)
+   Compiling orchestrator-daemon v0.1.0 (<isolated-run-root>\worktrees\integ2-latest-7cf0a99\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 29s
+     Running unittests src\main.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+
+running 1 test
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 117 filtered out; finished in 0.13s
+
+     Running tests\conversation_runtime.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests\conversations.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\conversations-b568dacb962dbd9e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\coordinator_review.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\coordinator_review-567715bea0697ecf.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests\daemon.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\daemon-ea1b8a70ee742a30.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics_log.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\diagnostics_log-ba071ea02020da6e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests\host_metrics.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\host_metrics-652ebc476e7888e4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\lifecycle.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\lifecycle-0f4970ff71d2b2f1.exe)
+Initialized empty Git repository in <local-user-path>
+[main (root-commit) 86be978] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+     Running tests\queue_snapshot.rs (<isolated-run-root>\integ2-latest-cargo\debug\deps\queue_snapshot-21c82c2d8cb1d381.exe)
+Initialized empty Git repository in <local-user-path>
+[main (root-commit) 00db679] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 cancelling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS

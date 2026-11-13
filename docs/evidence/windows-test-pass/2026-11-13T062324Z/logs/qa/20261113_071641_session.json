@@ -1,0 +1,33 @@
+{
+  "log_type": "qa",
+  "timestamp": "2026-11-13T07:16:41Z",
+  "change_id": "windows-assignment-pass-20261113T062324Z",
+  "iteration": 1,
+  "session_summary": {
+    "input_artifacts_read": [
+      "report.md",
+      "decision-log.tsv",
+      "remote-heads-relevant.tsv",
+      "remote-heads-all-20261113T070825Z.tsv",
+      "remote-scan-delta.tsv",
+      "M7-24/25/26 checklists",
+      "M7-30 native matrix",
+      "M7-24/25/26 test logs",
+      "M6-04 current and historical runbooks/evidence"
+    ],
+    "output_artifacts_written": [
+      "logs/qa/20261113_071641_session.json"
+    ]
+  },
+  "decisions_made": [
+    "Checked the M7-24, M7-25, and M7-26 pass counts and tree identity.",
+    "Kept M7-25 and M7-30 native/deferred status distinct from automated results.",
+    "Kept the separate M6-04 27-gate runbook open because existing evidence references an older runbook."
+  ],
+  "issues_encountered": [
+    "Draft decision and delta rows were malformed and were corrected before publication.",
+    "An M7-24 command sidecar did not match the captured npm script and was removed.",
+    "Current profile data blocks the M6-04 installer smoke under its safety precondition."
+  ],
+  "notes": "Read-only review. No agent-transcripts directory was present in the workspace. Requested reviewer model override/runtime identity was not independently exposed and is not claimed."
+}

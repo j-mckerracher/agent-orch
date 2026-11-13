@@ -1,0 +1,12 @@
+from	to	change
+2026-11-13T05:10:56Z	2026-11-13T05:52:01Z	Integration cb39970 -> 350cd9d; new M7-08 and M7-10 verification refs; M7-15, M7-17 and M7-18 advanced
+2026-11-13T05:52:01Z	2026-11-13T06:04:25Z	Integration 350cd9d -> 7cf0a99; M6-04, M7-08, M7-10 and M7-18 refs advanced
+2026-11-13T06:04:25Z	2026-11-13T06:15:36Z	Integration 7cf0a99 -> 9b46c07; M7-08 advanced; new M7-20 through M7-23 refs appeared
+2026-11-13T06:15:36Z	2026-11-13T06:20:20Z	Integration 9b46c07 -> 930e0b8; M7-21 advanced from 54adab5 to 0986196
+2026-11-13T06:20:20Z	2026-11-13T06:21:43Z	No ref changes; 143 heads remained
+2026-11-13T06:21:43Z	2026-11-13T06:34:23Z	Integration 930e0b8 -> 25ec683; new M7-24, M7-25 and M7-30 assignment refs appeared
+2026-11-13T06:34:23Z	2026-11-13T06:41:48Z	Integration 25ec683 -> c5e0b18; M7-24 advanced 4ea4a7f -> c35a597; new M7-26 assignment ref at 1fe8d9f
+2026-11-13T06:41:48Z	2026-11-13T06:44:08Z	Integration c5e0b18 -> 92f56c3 after M7-26 merge
+2026-11-13T06:44:08Z	2026-11-13T06:52:46Z	No ref changes; all 147 heads remained stable
+2026-11-13T06:52:46Z	2026-11-13T07:08:25Z	No ref changes; all 147 heads remained stable
+2026-11-13T07:08:25Z	2026-11-13T07:17:13Z	No ref changes; all 147 heads remained stable

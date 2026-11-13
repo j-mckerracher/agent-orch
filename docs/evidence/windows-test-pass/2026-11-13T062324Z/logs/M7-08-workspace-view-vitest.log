@@ -1,0 +1,8 @@
+
+ RUN  v5.1.0 <isolated-run-root>/worktrees/integ2-latest-7cf0a99/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  23:06:51
+   Duration  12.41s (tests 76%, environment 12%, transform 7%, setup 3%, import 2%)

@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/ui/views/workstreams/WorkstreamsView.test.tsx src/sources/surfaces/workstreamsLive.test.ts src/ui/shell/ActivityPanel.test.tsx src/ui/views/agents/AgentsView.test.tsx src/ui/screens1.test.tsx src/native/native.test.tsx src/ui/shell/ResourceStrip.test.tsx src/sources/surfaces/liveMetrics.test.ts src/sources/surfaces/search.test.ts src/ui/views/workspace/WorkspaceView.test.tsx src/sources/surfaces/usageLive.test.tsx
+
+
+ RUN  v5.1.0 <isolated-run-root>/worktrees/integ2-final-930e0b/apps/desktop
+
+
+ Test Files  11 passed (11)
+      Tests  298 passed (298)
+   Start at  23:21:13
+   Duration  20.45s (environment 43%, tests 31%, setup 13%, transform 8%, import 5%)
