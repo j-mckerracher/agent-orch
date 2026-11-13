@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running unittests src\main.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\orchestrator_daemon-6e1ac016a1089a97.exe)
+     Running tests\conversation_runtime.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\conversation_runtime-db9b742795347a9b.exe)
+     Running tests\conversations.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\conversations-b568dacb962dbd9e.exe)
+     Running tests\coordinator_review.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\coordinator_review-567715bea0697ecf.exe)
+     Running tests\daemon.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\daemon-ea1b8a70ee742a30.exe)
+     Running tests\diagnostics_log.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\diagnostics_log-ba071ea02020da6e.exe)
+     Running tests\host_metrics.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\host_metrics-652ebc476e7888e4.exe)
+     Running tests\lifecycle.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\lifecycle-0f4970ff71d2b2f1.exe)
+     Running tests\queue_snapshot.rs (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\cargo-target\debug\deps\queue_snapshot-21c82c2d8cb1d381.exe)

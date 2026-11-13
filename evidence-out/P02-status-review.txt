@@ -1,0 +1,1 @@
+P02-clone command completed successfully: P02-clone.exit.txt contains 0. The earlier wrapper emitted a label plus the integer and misread the result; no clone failure occurred.

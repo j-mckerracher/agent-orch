@@ -1,0 +1,7 @@
+privacy_scan_text_files=180
+privacy_scan_text_matches=0
+additional_tsv_files_scanned=5
+privacy_all_text_matches=0
+publication_files_redacted=4
+text_and_tsv_files_normalized=45
+files_with_trailing_blank_lines_trimmed=149

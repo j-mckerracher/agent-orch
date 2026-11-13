@@ -1,0 +1,12 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run src/ui/shell/AppShell.test.tsx
+
+
+ RUN  v5.1.0 C:/Users/Public/t/m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a/src-axe/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  53 passed (53)
+   Start at  01:19:28
+   Duration  7.73s (transform 43%, import 25%, tests 19%, environment 10%, setup 3%)

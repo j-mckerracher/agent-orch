@@ -1,0 +1,12 @@
+   Compiling orchestrator-core v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-core)
+   Compiling orchestrator-git v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-git)
+   Compiling orchestrator-private-fs v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-private-fs)
+   Compiling orchestrator-diagnostics v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-diagnostics)
+   Compiling orchestrator-ipc v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-ipc)
+   Compiling orchestrator-host-metrics v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-host-metrics)
+   Compiling orchestrator-runtime v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-runtime)
+   Compiling orchestrator-store v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-store)
+   Compiling orchestrator-agents v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-agents)
+   Compiling orchestrator-engine v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-engine)
+   Compiling orchestrator-daemon v0.1.0 (C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-e2e\crates\orchestrator-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 48.00s

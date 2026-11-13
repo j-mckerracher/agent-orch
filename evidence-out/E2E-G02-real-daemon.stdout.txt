@@ -1,0 +1,15 @@
+
+> agent-orch-desktop@0.1.0 test:e2e
+> vitest run --config vitest.e2e.config.ts e2e/workstreams-view.e2e.test.tsx
+
+
+ RUN  v5.1.0 C:/Users/Public/t/m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a/src-e2e/apps/desktop
+
+ ❯ e2e/workstreams-view.e2e.test.tsx (1 test | 1 failed) 15928ms
+   ❯ WorkstreamsView over the real daemon (1)
+     × creates, adds an objective, links a task and verifies a gate, all persisted by the daemon 15927ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  01:36:03
+   Duration  21.19s (tests 76%, transform 12%, import 8%, environment 4%)

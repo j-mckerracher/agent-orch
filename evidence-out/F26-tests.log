@@ -1,0 +1,1 @@
+The full G06 cargo test --locked --workspace run passed: 858 passed, 0 failed, 2 ignored across 73 test-result records. This includes orchestrator-store and orchestrator-daemon tests. The real Codex task, usage summary capture, and UI checks were blocked by P20/P13; no live usage values are claimed.

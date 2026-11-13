@@ -1,0 +1,18 @@
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  e2e/workstreams-view.e2e.test.tsx > WorkstreamsView over the real daemon > creates, adds an objective, links a task and verifies a gate, all persisted by the daemon
+Error: daemon did not become ready: {"component":"daemon","event":"daemon_start","level":"info","pid":"28472","ts":"2026-11-13T08:36:09Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T08:36:09Z"}
+
+ ❯ launch e2e/harness.ts:230:38
+    228|   while (!(await probe(dataDir))) {
+    229|     if (child.exitCode !== null) throw new Error(`daemon exited early:…
+    230|     if (Date.now() > deadline) throw new Error(`daemon did not become …
+       |                                      ^
+    231|     await new Promise((r) => setTimeout(r, 50));
+    232|   }
+ ❯ startDaemon e2e/harness.ts:249:17
+ ❯ e2e/workstreams-view.e2e.test.tsx:20:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯

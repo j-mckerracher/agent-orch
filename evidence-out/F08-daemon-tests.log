@@ -1,0 +1,9 @@
+Source log: G06-cargo-test-workspace.stdout.txt; command exit 0. The following exact test names were observed passing:
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+test replies_survive_a_restart_replay_by_sequence_and_stay_idempotent ... ok
+test cancel_stops_a_streaming_reply_and_later_output_is_discarded ... ok
+test a_turn_the_daemon_lost_is_failed_on_restart_not_left_running ... ok
+test catalog::tests::codex_without_credentials_offers_nothing ... ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+test a_version_that_is_not_pinned_never_receives_the_message ... ok
+test api::conversations::tests::without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable ... ok

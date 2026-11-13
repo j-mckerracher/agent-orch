@@ -1,0 +1,10 @@
+object_id	ref
+9744a2790b765837e46409ff7f2f785de0e77c63	refs/heads/docs/m6-04-windows-acceptance-632c77d
+393636ac01a413541a4cd122eb037ac597ba4a0d	refs/heads/evidence/m6-04-clean-machine-windows-acceptance-632c77d-20261111T010453Z-f652fb41
+8f66dc9f175a60bf739fcf8e8c8b66e5feeb554e	refs/heads/orch/0eca0ef2-integ2
+e970494b0a5c51bd9ffa9bff758aad28dc33fc75	refs/heads/orch/0eca0ef2-m6-04-verify
+32059d14b4a48da405b003cd2db299bda6694ee6	refs/heads/orch/0eca0ef2-m7-32-fix-axe
+e89a8643ad1d46158d299a17cb7c48cd56877ef0	refs/heads/orch/0eca0ef2-m7-32-macos
+4c8b9589c72d8257bf964851e4d937c4230f0a3e	refs/heads/orch/0eca0ef2-m7-32-winrunbook
+632c77db2d41a72bd5283013aa444798278fa9be	refs/heads/orch/m6-04-integ-632c77d
+4c8b9589c72d8257bf964851e4d937c4230f0a3e	refs/heads/runbook/m7-32-windows-92f56c3af

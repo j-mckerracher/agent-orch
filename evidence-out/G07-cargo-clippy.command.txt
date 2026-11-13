@@ -1,0 +1,2 @@
+cwd=C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src
+command=cargo clippy --locked --workspace -- -D warnings

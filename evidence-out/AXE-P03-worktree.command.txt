@@ -1,0 +1,2 @@
+cwd=C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src
+command=git worktree add --detach C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src-axe 32059d14b4a48da405b003cd2db299bda6694ee6

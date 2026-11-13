@@ -1,0 +1,4 @@
+Source log: G06-cargo-test-workspace.stdout.txt; command exit 0. Negative-path tests observed passing:
+test catalog::tests::codex_without_credentials_offers_nothing ... ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+test a_version_that_is_not_pinned_never_receives_the_message ... ok

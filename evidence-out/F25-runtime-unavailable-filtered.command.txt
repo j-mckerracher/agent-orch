@@ -1,0 +1,2 @@
+cwd=C:\Users\Public\t\m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a\src
+command=cargo test --locked -p orchestrator-daemon without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable -- --test-threads=1

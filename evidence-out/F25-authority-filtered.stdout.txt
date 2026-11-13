@@ -1,0 +1,61 @@
+
+running 1 test
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 117 filtered out; finished in 0.12s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+Initialized empty Git repository in <USER_PROFILE>/AppData/Local/Temp/.tmpEnOWhJ/repo/.git/
+[main (root-commit) 4e16607] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+Initialized empty Git repository in <USER_PROFILE>/AppData/Local/Temp/.tmpBF2GJc/repo/.git/
+[main (root-commit) 041e644] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 cancelling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS

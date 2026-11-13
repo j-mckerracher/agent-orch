@@ -1,0 +1,1 @@
+BLOCKED: query.exe missing from PATH and Windows System32.

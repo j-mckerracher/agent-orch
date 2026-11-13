@@ -1,0 +1,8 @@
+
+ RUN  v5.1.0 C:/Users/Public/t/m7-32-e3a91fd3aa124b7e93fc5f2e3c456d6a/src/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  00:56:59
+   Duration  1.33s (environment 64%, setup 14%, tests 13%, transform 6%, import 3%)
