@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=git -c core.autocrlf=false -c core.longpaths=true clone --no-checkout https://github.com/j-mckerracher/agent-orch.git &lt;RUN_ROOT&gt;\src

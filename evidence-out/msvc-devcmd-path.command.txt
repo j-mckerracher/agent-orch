@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=call &lt;VS_DEVCMD&gt; -arch=x64 -host_arch=x64 >nul && where.exe cl.exe

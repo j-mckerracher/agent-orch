@@ -1,0 +1,14 @@
+﻿Static source contract review was corrected after an overly narrow initial text predicate missed coverage split across the theme tests and `3:1` written notation. The original review is preserved unchanged. These checks inspect source only and do not establish native UI behavior.
+
+PASS — Four global routes are declared: workspace, workstreams, agents, review.
+PASS — Legacy route formats are encoded/decoded and covered by router tests.
+PASS — Blocking theme bootstrap appears before the module application script.
+PASS — UI font stack includes Segoe UI and a system sans-serif fallback.
+PASS — No @font-face appears in the reviewed bootstrap, theme, and shell styles.
+PASS — Shell exposes named Primary views and Workstreams navigation; tests cover Workspace activity complementary landmark.
+PASS — Visible focus styles exist for links, buttons, and main region; shell tests exercise skip-link focus and keyboard navigation.
+PASS — Responsive breakpoints at 1150, 960, and 760 px.
+PASS — Tauri window defaults to 1280x800 with minimum 760x600.
+PASS — Theme tests cover storage/system preference behavior; contrast tests assert text 4.5:1 and non-text 3:1 thresholds.
+
+UNVERIFIED / NOT RUN — Native window appearance, resizing, keyboard/accessibility tree, live daemon values, WebView2 version from Settings, reduced-motion preference changes, and native screenshots. No authorized native desktop interaction/capture tool was available during this run.

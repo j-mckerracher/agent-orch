@@ -1,0 +1,1 @@
+﻿Initial vswhere invocation failed because cmd.exe parsed the quoted path incorrectly. The subsequent verified short-path invocation succeeded. The raw stderr remains unchanged in private evidence.

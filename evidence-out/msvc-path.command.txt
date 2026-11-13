@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=where.exe cl.exe

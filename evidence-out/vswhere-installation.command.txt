@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command="&lt;VS_INSTALLER&gt;\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

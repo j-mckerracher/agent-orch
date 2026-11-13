@@ -1,0 +1,1 @@
+﻿Initial PowerShell clean-tree assertion failed while calling Trim on null from an empty stdout file. Preserved original captures. Rechecked pinned source root and HEAD; git status exit=0, output_bytes=0.`r`n

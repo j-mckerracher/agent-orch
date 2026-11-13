@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=npm.cmd --version

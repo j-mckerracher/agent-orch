@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;\src
+command=git fetch origin 53c0272b3e5df60f48dba90aad1c7a14cf3a19a9

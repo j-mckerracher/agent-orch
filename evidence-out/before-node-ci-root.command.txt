@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;\src
+command=git rev-parse --show-toplevel

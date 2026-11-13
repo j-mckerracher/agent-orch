@@ -1,0 +1,14 @@
+﻿Source contract review is static only; it does not establish native UI behavior.
+Pinned source SHA: 53c0272b3e5df60f48dba90aad1c7a14cf3a19a9
+Pinned source tree: 1150197734de6ffdc8a672f2422649fe3dca6eda
+PASS four global routes declared workspace/workstreams/agents/review
+PASS legacy route serializer/parser formats present and covered by router tests
+PASS blocking theme bootstrap precedes module application script
+PASS font stack names Segoe UI and system sans-serif fallback
+PASS no @font-face declarations in bootstrap/shell/theme styles
+PASS named Primary views and Workstreams nav landmarks in shell
+PASS visible focus styles are present for links/buttons/main
+PASS 1150/960/760 responsive breakpoints declared
+PASS Tauri default 1280x800 and minimum 760x600
+FAIL theme storage/system behavior and contrast have automated source tests
+UI interaction, viewport/resizing, accessibility-tree, live-daemon values, WebView2 Settings version, and native screenshots: UNVERIFIED / NOT RUN; authorized native desktop interaction/capture is unavailable in this run.

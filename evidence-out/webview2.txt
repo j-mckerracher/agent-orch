@@ -1,0 +1,1 @@
+﻿WebView2 Runtime version was not read from Settings > Apps > Installed apps because this run has no authorized native desktop interaction tool; native launch/UI checks will remain unverified.

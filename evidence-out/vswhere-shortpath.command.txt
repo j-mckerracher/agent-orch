@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=for %I in ("&lt;VS_INSTALLER&gt;\vswhere.exe") do @echo %~sI

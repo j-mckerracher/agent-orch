@@ -1,0 +1,298 @@
+﻿   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling windows-link v0.2.1
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling windows-sys v0.61.2
+   Compiling thiserror v2.0.21
+   Compiling pin-project-lite v0.2.17
+   Compiling getrandom v0.4.3
+   Compiling fastrand v2.5.0
+   Compiling bytes v1.12.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling writeable v0.6.4
+   Compiling utf_types v1.0.0
+   Compiling version_check v0.9.5
+   Compiling litemap v0.8.3
+   Compiling futures-core v0.3.34
+   Compiling smallvec v1.16.5
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling find-msvc-tools v0.1.15
+   Compiling typenum v1.20.1
+   Compiling shlex v2.0.1
+   Compiling scopeguard v1.2.0
+   Compiling generic-array v0.14.9
+   Compiling pkg-config v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling vcpkg v0.2.15
+   Compiling tempfile v3.27.0
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling cc v1.11.1
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling parking_lot_core v0.9.12
+   Compiling futures-sink v0.3.34
+   Compiling crossbeam-utils v0.8.23
+   Compiling equivalent v1.0.3
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling futures-task v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling autocfg v1.5.1
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling parking_lot v0.12.5
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-util v0.3.34
+   Compiling digest v0.10.7
+   Compiling num-traits v0.2.19
+   Compiling hashbrown v0.16.1
+   Compiling tracing-core v0.1.36
+   Compiling log v0.4.35
+   Compiling cpufeatures v0.2.17
+   Compiling hashbrown v0.17.1
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling sha2 v0.10.9
+   Compiling event-listener v5.4.2
+   Compiling crc v3.4.0
+   Compiling hashlink v0.11.1
+   Compiling crossbeam-queue v0.3.14
+   Compiling futures-intrusive v0.5.0
+   Compiling indexmap v2.14.2
+   Compiling base64 v0.22.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling spin v0.9.9
+   Compiling synstructure v0.14.0
+   Compiling tokio v1.54.1
+   Compiling flume v0.12.0
+   Compiling futures-channel v0.3.34
+   Compiling heck v0.5.0
+   Compiling hex v0.4.3
+   Compiling atoi v2.0.0
+   Compiling dotenvy v0.15.7
+   Compiling orchestrator-private-fs v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-private-fs)
+   Compiling getrandom v0.3.4
+   Compiling orchestrator-diagnostics v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-diagnostics)
+   Compiling windows-result v0.4.1
+   Compiling tracing-attributes v0.1.31
+   Compiling async-trait v0.1.89
+   Compiling windows-implement v0.60.2
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling tokio-macros v2.7.2
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tracing v0.1.44
+   Compiling futures-executor v0.3.34
+   Compiling windows-interface v0.59.3
+   Compiling windows-strings v0.5.1
+   Compiling zerofrom v0.1.8
+   Compiling winapi v0.3.9
+   Compiling windows-threading v0.2.1
+   Compiling libc v0.2.191
+   Compiling ntapi v0.4.3
+   Compiling utf8parse v0.2.2
+   Compiling windows-core v0.62.2
+   Compiling anstyle v1.0.14
+   Compiling yoke v0.8.4
+   Compiling once_cell_polyfill v1.70.2
+   Compiling orchestrator-git v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-git)
+   Compiling anstyle-parse v1.0.0
+   Compiling anstyle-query v1.1.5
+   Compiling colorchoice v1.0.5
+   Compiling windows-future v0.3.2
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling anstyle-wincon v3.0.11
+   Compiling subtle v2.6.1
+   Compiling windows v0.62.2
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling strsim v0.11.1
+   Compiling clap_lex v1.1.1
+   Compiling clap_derive v4.6.7
+   Compiling orchestrator-core v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-core)
+   Compiling either v1.19.0
+   Compiling uuid v1.18.1
+   Compiling anstream v1.0.0
+   Compiling orchestrator-ipc v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-ipc)
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling clap_builder v4.6.7
+   Compiling tokio-stream v0.1.19
+   Compiling orchestrator-runtime v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-runtime)
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling orchestrator-agents v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-agents)
+   Compiling clap v4.6.7
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-store)
+   Compiling sysinfo v0.40.1
+   Compiling orchestrator-host-metrics v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-host-metrics)
+   Compiling orchestrator-engine v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-engine)
+   Compiling orchestrator-cli v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-cli)
+   Compiling orchestrator-daemon v0.1.0 (&lt;RUN_ROOT&gt;\src\crates\orchestrator-daemon)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:93:4
+   |
+93 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix --lib -p orchestrator-cli --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 04s
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_agents-4a716f94ccc9c963.exe)
+     Running tests\claude_code_adapter.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\claude_code_adapter-b13679bbc32948c8.exe)
+     Running tests\codex_adapter.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\codex_adapter-97ed0efd198be446.exe)
+     Running tests\conformance.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\conformance-9174bfff98a19fe7.exe)
+     Running tests\pi_rpc_adapter.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\pi_rpc_adapter-e319f84ea8a6e40d.exe)
+     Running tests\routing.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\routing-de20b8d764179f5c.exe)
+     Running tests\usage_replay.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\usage_replay-2d5acb7ed205b482.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_cli-5d42568b455cc59c.exe)
+{"blocker":"attempt task-unowned/task-unowned-attempt-1 is Pending but has no unfinished session, so no owner or process identity can be proven gone; the task, worktree and history are preserved. Next step: run `agent-orch inspect task-unowned`; no override exists","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-13T04:22:57Z"}
+{"blocker":"task task-confirmed-failed has Confirmed delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-confirmed-failed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-13T04:22:59Z"}
+{"blocker":"task task-ambiguous has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-ambiguous` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-13T04:23:00Z"}
+     Running unittests src\main.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_cli-22692ca84cce2f4f.exe)
+     Running tests\cleanup_safety.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\cleanup_safety-9193a1b425c80f7c.exe)
+     Running tests\cli.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\cli-d5cc95b2392d6209.exe)
+     Running tests\crash_concurrency.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\crash_concurrency-0096eb34ee5673f9.exe)
+     Running tests\delivery_reconciliation_contract.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery_reconciliation_contract-a8f65c08068a43d3.exe)
+     Running tests\engine_reconciliation_gate.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\engine_reconciliation_gate-97acbfa8e1bc5433.exe)
+     Running tests\multi_task_review.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\multi_task_review-496bdcbbd850a810.exe)
+     Running tests\portable_acceptance.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\portable_acceptance-773c571a7c0e2dcb.exe)
+     Running tests\recovery.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\recovery-e25b0497822d5abe.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_core-9e80a625b14b4680.exe)
+     Running tests\decomposition.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\decomposition-f4ca3495ece63f60.exe)
+     Running tests\retry.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\retry-4b7b8ea36a57bdd8.exe)
+     Running tests\scheduler.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\scheduler-3a8808a5bad3074a.exe)
+     Running unittests src\main.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_daemon-9cb71facd6422260.exe)
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T04:27:26Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T04:27:26Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-13T04:27:26Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T04:27:27Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T04:27:27Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-13T04:27:27Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-13T04:27:27Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-13T04:27:39Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T04:27:56Z"}
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-13T04:27:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T04:27:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T04:27:59Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T04:28:03Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-13T04:28:03Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-13T04:28:04Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-13T04:28:04Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-13T04:28:04Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-13T04:28:05Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-13T04:28:05Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-13T04:28:06Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-13T04:28:06Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-13T04:28:07Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-13T04:28:10Z"}
+     Running tests\conversation_runtime.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\conversation_runtime-c1d5f8764a9ca4e2.exe)
+     Running tests\conversations.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\conversations-93b905890e33937e.exe)
+     Running tests\coordinator_review.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\coordinator_review-1fea18a11d5b9ccd.exe)
+     Running tests\daemon.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\daemon-0873f123aeee201f.exe)
+     Running tests\diagnostics_log.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\diagnostics_log-fde24b46e2a34f32.exe)
+     Running tests\host_metrics.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\host_metrics-9f4ab970ae4c74ac.exe)
+     Running tests\lifecycle.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\lifecycle-8f558d4018a17479.exe)
+     Running tests\queue_snapshot.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\queue_snapshot-cf75b8705c2ecd7e.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_diagnostics-add3c637878278b4.exe)
+     Running tests\diagnostics.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\diagnostics-129f6a8c97464d50.exe)
+     Running tests\known_secrets.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\known_secrets-694dc72a1de44d81.exe)
+     Running tests\redaction.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\redaction-3b2a73c59c373d89.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_engine-831324e6377f7a29.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_git-0eff86802de90f50.exe)
+     Running tests\delivery.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery-8e7cf5bef084edc3.exe)
+     Running tests\delivery_acceptance_contract.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery_acceptance_contract-251def04d0747211.exe)
+     Running tests\delivery_reconcile.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery_reconcile-73da78b7f4d08634.exe)
+     Running tests\pinned_diff.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\pinned_diff-0ae69bd0948d5981.exe)
+     Running tests\reconcile.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\reconcile-73861929cd2ed01c.exe)
+     Running tests\repository_discovery.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\repository_discovery-fd30328716e0831d.exe)
+     Running tests\scoped_diff.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\scoped_diff-66ce3ef70eab74fb.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_host_metrics-c56de6b9f223a8dc.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_ipc-ae00bc8d90e6f6c1.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_private_fs-221c847f258575f2.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_runtime-92aaf5edd390e93c.exe)
+     Running tests\env_isolation.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\env_isolation-16b0fac17b3ac752.exe)
+orchestrator: ignoring AGENT_ORCH_ENV_PASSTHROUGH entry #2 (AGENT_ORCH_DATA_DIR): orchestrator-internal variables are never forwarded
+     Running tests\reconcile.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\reconcile-e49432d2bbd463a7.exe)
+     Running tests\reconciliation_contract.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\reconciliation_contract-b13400630ec4e683.exe)
+     Running unittests src\lib.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\orchestrator_store-bd958efcba42d159.exe)
+     Running tests\approvals.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\approvals-032212df8ac61b1e.exe)
+     Running tests\attempt_history.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\attempt_history-cd9edf83cda9b098.exe)
+     Running tests\cancellation_owner.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\cancellation_owner-9c76ae21c742a101.exe)
+     Running tests\conversations.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\conversations-3492d6767176af76.exe)
+     Running tests\data_lock.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\data_lock-599005d3fa97e816.exe)
+     Running tests\delivery.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery-e2b4aa6a09bddf53.exe)
+     Running tests\delivery_acceptance_contract.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\delivery_acceptance_contract-0b96d5a7d3871108.exe)
+     Running tests\lock_identity_contract.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\lock_identity_contract-0949fb914e007470.exe)
+     Running tests\reconnectable_events.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\reconnectable_events-bcf512415fe49b28.exe)
+     Running tests\review.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\review-f208ab466a86f769.exe)
+     Running tests\sqlite_reconcile.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\sqlite_reconcile-4e40b66f73258ea1.exe)
+     Running tests\verification.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\verification-1899041d502bb667.exe)
+     Running tests\workstreams.rs (&lt;RUN_ROOT&gt;\cargo-target\debug\deps\workstreams-ce3a7ebf0d8da6d8.exe)
+   Doc-tests orchestrator_agents
+   Doc-tests orchestrator_cli
+   Doc-tests orchestrator_core
+   Doc-tests orchestrator_diagnostics
+   Doc-tests orchestrator_engine
+   Doc-tests orchestrator_git
+   Doc-tests orchestrator_host_metrics
+   Doc-tests orchestrator_ipc
+   Doc-tests orchestrator_private_fs
+   Doc-tests orchestrator_runtime
+   Doc-tests orchestrator_store

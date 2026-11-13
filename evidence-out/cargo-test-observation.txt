@@ -1,0 +1,7 @@
+﻿result_summaries=73
+passed=858
+failed=0
+ignored=2
+failed_summaries=0
+listed_test_binaries=64
+process_exit=NOT_CAPTURED; PowerShell Start-Process wait remained open after Cargo/test processes exited; runner interrupted; raw output retained.

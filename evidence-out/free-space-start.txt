@@ -1,0 +1,4 @@
+﻿utc=2026-11-13T04:10:55.1282124Z
+volume=C
+free_gib=58.51
+method=Get-PSDrive

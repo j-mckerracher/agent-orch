@@ -1,0 +1,2 @@
+﻿cwd=&lt;RUN_ROOT&gt;
+command=for %I in ("&lt;VISUAL_STUDIO&gt;\Common7\Tools\VsDevCmd.bat") do @echo %~sI

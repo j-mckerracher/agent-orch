@@ -1,0 +1,6 @@
+﻿files_scanned=204
+private_or_host_matches=0
+absolute_unc_escaped_short_or_scp_paths=0
+secret_pattern_matches=0
+manual_text_review=YES
+screenshots_reviewed=0
