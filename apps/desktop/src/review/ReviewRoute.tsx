@@ -10,6 +10,8 @@ import { createReviewClient } from "./client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "./daemonSources";
 import { createFixtureDaemonClient } from "./fixtureDaemon";
 import { ReviewScreen } from "./ReviewScreen";
+import { DecisionBehavior } from "../ui/views/review/DecisionBehavior";
+import { SixFactsRecord } from "../ui/views/review/ReviewRecord";
 import { createFixtureChangeRequestSource, createFixtureReviewEvidenceSource } from "./sources";
 
 export interface ReviewRouteProps {
@@ -50,6 +52,12 @@ export function ReviewRoute({ projectId, taskId, query }: ReviewRouteProps) {
       evidenceSource={evidenceSource}
       changeRequestSource={changeRequestSource}
       scope={scope}
+      record={(state) => (
+        <>
+          <SixFactsRecord state={state} fixture={client.provenance === "fixture"} />
+          <DecisionBehavior task={state.task} fixture={client.provenance === "fixture"} />
+        </>
+      )}
       onBack={(back) =>
         router.navigate(
           back.taskId

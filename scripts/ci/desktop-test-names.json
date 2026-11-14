@@ -277,6 +277,7 @@
     "src/review/ReviewScreen.test.tsx :: self-originated delivery events (`delivery.<outcome>` durable events) are not suppressed when our delivery request failed",
     "src/review/ReviewScreen.test.tsx :: self-originated delivery events (`delivery.<outcome>` durable events) arriving after the receipt do not mark the review stale, but a second one does",
     "src/review/ReviewScreen.test.tsx :: self-originated delivery events (`delivery.<outcome>` durable events) still mark the review stale when the delivery event is for another task",
+    "src/review/ReviewScreen.test.tsx :: six-fact record placement renders the record after the diff and before the Decision actions",
     "src/review/binding.test.ts :: A1b bound candidate policy blocks accept, reject and delivery for candidate \"  FIXTURE0001  \"",
     "src/review/binding.test.ts :: A1b bound candidate policy blocks accept, reject and delivery for candidate \"fixture0001\"",
     "src/review/binding.test.ts :: A1b bound candidate policy blocks accept, reject and delivery for candidate \"fixture:commit\"",

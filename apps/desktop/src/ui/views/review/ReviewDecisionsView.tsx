@@ -7,7 +7,6 @@
 // D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon.
 import { useMemo } from "react";
 import type { ReviewClient } from "../../../review/client";
-import { evidenceBlockers, type ActionContext } from "../../../review/binding";
 import { createReviewClient } from "../../../review/client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "../../../review/daemonSources";
 import { createFixtureDaemonClient } from "../../../review/fixtureDaemon";
@@ -24,7 +23,7 @@ import { Badge, Button, Pill } from "../../theme";
 import { useServices, useSurface } from "../../services";
 import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
-import { SixFacts, deriveFacts } from "./SixFacts";
+import { SixFactsRecord } from "./ReviewRecord";
 import { indexMeta } from "./queue";
 import "./review-decisions.css";
 
@@ -127,19 +126,6 @@ export function ReviewDecisionsView({
         </>
       ),
       queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} />,
-      facts: (state: ReviewState) =>
-        state.approval && (
-          <SixFacts
-            fixture={fixture}
-            facts={deriveFacts({
-              approval: state.approval,
-              task: state.task,
-              evidence: state.evidence,
-              delivery: state.mutation.delivery,
-              evidenceProblems: state.loading ? [] : evidenceBlockers(bindingContext(state)),
-            })}
-          />
-        ),
       behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
     }),
     [meta, fixture],
@@ -156,23 +142,10 @@ export function ReviewDecisionsView({
         newKey={newKey}
         session={session}
         embedded={slots}
+        record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} />}
       />
     </div>
   );
-}
-
-/** Only `approval`, `evidence` and `diff` are read by evidenceBlockers; the rest is inert here. */
-function bindingContext(state: ReviewState): ActionContext {
-  return {
-    connected: true,
-    loading: false,
-    stale: false,
-    refreshRequired: false,
-    approval: state.approval,
-    task: state.task,
-    diff: state.diff,
-    evidence: state.evidence,
-  };
 }
 
 function Heading({ state }: { state: ReviewState }) {

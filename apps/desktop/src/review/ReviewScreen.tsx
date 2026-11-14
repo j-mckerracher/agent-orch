@@ -17,8 +17,6 @@ export interface ReviewEmbedSlots {
   header?: (state: ReviewState) => ReactNode;
   /** Replaces the plain "Pending decision" selector. */
   queue: (state: ReviewState) => ReactNode;
-  /** Rendered between the candidate identity and the diff. */
-  facts?: (state: ReviewState) => ReactNode;
   /** Rendered after the delivery section. */
   behavior?: (state: ReviewState) => ReactNode;
 }
@@ -37,6 +35,12 @@ export interface ReviewScreenProps {
    * queue-plus-detail layout. The accepted decision, delivery and idempotency logic is the same.
    */
   embedded?: ReviewEmbedSlots;
+  /**
+   * Six-fact completion record, rendered after the diff and evidence and before the decision
+   * actions (OX-R6, S9). The project route also puts decision behavior and history here so they
+   * are visible before Accept, Reject or Request delivery.
+   */
+  record?: (state: ReviewState) => ReactNode;
   /** Keeps resolved decisions and receipts across remounts (the global view shares one per connection). */
   session?: ReviewSession;
 }
@@ -76,7 +80,17 @@ function MutationStatus<T>({
   );
 }
 
-export function ReviewScreen({ client, evidenceSource, changeRequestSource, scope, onBack, newKey, embedded, session }: ReviewScreenProps) {
+export function ReviewScreen({
+  client,
+  evidenceSource,
+  changeRequestSource,
+  scope,
+  onBack,
+  newKey,
+  embedded,
+  record,
+  session,
+}: ReviewScreenProps) {
   const r = useReview({ client, evidenceSource, scope, newKey, session });
   const { approval, task } = r;
   const back: ReviewScope = scope.taskId ? scope : { projectId: task?.contract.project_id ?? scope.projectId, taskId: scope.taskId };
@@ -111,8 +125,6 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
           </dl>
         </section>
       )}
-
-      {approval && embedded?.facts?.(r)}
 
       {approval && (
         <section aria-label="Diff" className="diff-region">
@@ -167,6 +179,8 @@ export function ReviewScreen({ client, evidenceSource, changeRequestSource, scop
             loading={r.loading && r.evidence === null}
             fixtureSource={evidenceSource.provenance === "fixture"}
           />
+
+          {record?.(r)}
 
           <section aria-label="Decision" className="panel">
             <button
