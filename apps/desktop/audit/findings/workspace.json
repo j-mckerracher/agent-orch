@@ -120,7 +120,7 @@
       "justification": "none. operational-design.md line 831 (section 21): 'compact expandable rows matching the left workstream tree.'",
       "suspected_root_cause": "apps/desktop/src/ui/shell/ActivityPanel.tsx QueueRow (line 118) renders each entry as a card; TaskGroup (line 190) lists them directly inside the Disclosure rather than behind a per-item disclosure row.",
       "check": "test('queue rows are compact disclosure rows', async ({ page }) => { await openApp(page, '#/workspace', 'populated', 'desktop'); const running = page.locator('details.activity-sub').filter({ has: page.locator('summary', { hasText: 'Running' }) }).first(); await running.evaluate((el) => ((el as HTMLDetailsElement).open = true)); const row = running.locator('li').first(); expect((await row.boundingBox())!.height).toBeLessThanOrEqual(48); });",
-      "covered_by": null
+      "covered_by": "main d9aaef92f (#17): row height passes after the DPES-1105 check repair (39.5 px); be553261e fails at 102.5 px"
     },
     {
       "id": "workspace-08",
