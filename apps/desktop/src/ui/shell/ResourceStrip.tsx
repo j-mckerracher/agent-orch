@@ -123,6 +123,7 @@ export function ResourceStripView({ state, provenance, nowMs, defaultOpen = fals
   return (
     <Disclosure
       className="system-usage activity-group"
+      aria-label="This device resource usage"
       data-testid="resource-strip"
       defaultOpen={defaultOpen}
       summary={
