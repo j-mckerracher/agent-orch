@@ -583,3 +583,67 @@ test.describe("RC-23 sidebar tree row markup and names", () => {
     expect(content).not.toBe("none");
   });
 });
+
+// ---------------------------------------------------------------------------
+// RC-24 Workspace inspector has its own column (DPES-1105)
+// ---------------------------------------------------------------------------
+// The wireframe (command-center) reserves 324 px on the right of the conversation at 961 px and up:
+// the 300 px inspector card and a 24 px gutter. The conversation never runs under the card, and the
+// reserve stays when the card is collapsed.
+const INSPECTOR_GAP = 24;
+
+interface Edges {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function edgesOf(b: { x: number; y: number; width: number; height: number }): Edges {
+  return { left: b.x, right: b.x + b.width, top: b.y, bottom: b.y + b.height };
+}
+
+function overlaps(a: Edges, b: Edges): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+/** Edges of every conversation part that could run under the card: sections, log messages, composer controls. */
+async function conversationParts(page: Page): Promise<Array<Edges & { label: string }>> {
+  return page.locator(".ws-conversation > *, .ws-log > *, .ws-composer-row > *").evaluateAll((els) =>
+    els
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { label: `${el.tagName.toLowerCase()}.${el.getAttribute("class") ?? ""}`, left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      })
+      .filter((e) => e.right > e.left && e.bottom > e.top),
+  );
+}
+
+test.describe("RC-24 workspace inspector has its own column", () => {
+  for (const [width, height] of [
+    [1440, 900],
+    [1920, 1080],
+  ] as const) {
+    test(`workspace-inspector-${width}: the conversation stops short of the open inspector at ${width}x${height}`, async ({ page }) => {
+      await openApp(page, "#/workspace", "populated", "desktop");
+      await page.setViewportSize({ width, height });
+      const conversation = page.locator(".ws-conversation");
+      const conversationRight = async () => edgesOf(await box(conversation)).right;
+
+      // Collapsed first: the column is reserved whether or not the card is open.
+      const collapsedRight = await conversationRight();
+      await openWorkspaceActivity(page);
+      const card = edgesOf(await box(page.getByTestId("activity-popover")));
+      const parts = await conversationParts(page);
+      expect(parts.length, "conversation parts measured").toBeGreaterThan(0);
+
+      for (const part of parts) {
+        expect(overlaps(part, card), `${part.label} runs under the inspector card`).toBe(false);
+      }
+      expect(await conversationRight(), "conversation right edge (px) vs inspector left edge minus gap").toBeLessThanOrEqual(
+        card.left - INSPECTOR_GAP,
+      );
+      expect(await conversationRight(), "column stays reserved while the card is open").toBeCloseTo(collapsedRight, 0);
+    });
+  }
+});

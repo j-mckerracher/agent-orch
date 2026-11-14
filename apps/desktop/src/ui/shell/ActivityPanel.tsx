@@ -21,8 +21,9 @@
  *   confirmation. Fixture rows use the source's simulated stop and never reach the daemon.
  *
  * Layout: a compact trigger button ("Workspace activity", attention count) sits in the shell's
- * activity slot at the top-right of main. Its disclosure is a popover anchored under the trigger
- * (`aria-expanded`/`aria-controls`), closed on load and not remembered. Escape, a pointer press
+ * activity column at the top-right, beside main. Its disclosure is a card anchored under the trigger
+ * (`aria-expanded`/`aria-controls`), closed on load and not remembered; the column is reserved whether
+ * or not the card is open, so the card never covers the conversation. Escape, a pointer press
  * outside, or focus leaving it closes it and returns focus to the trigger (`usePopover`). The
  * sections are direct children of `.activity-sections`: Execution queue, Attention, Agent slots,
  * then System Usage (the shell's `resources` slot, reserved as the last child). Every section and

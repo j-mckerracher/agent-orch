@@ -1,6 +1,6 @@
 /*
  * Global app shell layout. Token names fall back to M7-01 defaults.
- * At 1150 px the sidebar narrows. The activity control is a top-right trigger over main, not a column.
+ * At 1150 px the sidebar narrows. Above 960 px the activity control is a top-right trigger in its own column beside main.
  * At 960 px the activity control moves above main. System Usage lives inside the activity popover,
  * so the shell has no bottom resource row at any width.
  * At 760 px sidebar navigation stays visible in two columns.
@@ -328,16 +328,22 @@ body:has(.shell) {
   scroll-margin-top: var(--shell-strip-height, 0px);
 }
 
-/* The activity control shares main's grid cell and is pinned to its top-right, so it takes no column.
-   Its popover is anchored to the control and overlays main (ActivityPanel.css). Views whose header
-   row sits under the control reserve `--shell-activity-reserve` on their right (workspace.css). */
-.shell-content.has-activity {
-  --shell-activity-reserve: 220px;
+/* Workspace only (`.has-activity`, set by App.tsx). Above 960 px the activity control has a column of its own,
+   beside main, as in the wireframe (command-center): the reserve is the 300 px inspector card plus a 24 px
+   gutter, and it stays when the card is collapsed. Main never runs under the card (ActivityPanel.css). The
+   top bar spans both columns. Other routes have no activity slot and keep one full-width column. */
+@media (min-width: 961px) {
+  .shell-content.has-activity {
+    --shell-activity-reserve: 324px;
+    grid-template-columns: minmax(0, 1fr) var(--shell-activity-reserve);
+    grid-template-areas:
+      "top top"
+      "main activity";
+  }
 }
 
 .shell-activity {
-  grid-area: main;
-  z-index: 2;
+  grid-area: activity;
   align-self: start;
   justify-self: end;
   min-width: 0;
@@ -362,10 +368,6 @@ body:has(.shell) {
     padding: 0 22px 24px;
   }
 
-  .shell-content.has-activity {
-    --shell-activity-reserve: 200px;
-  }
-
   .shell-activity {
     margin-right: 22px;
   }
@@ -388,12 +390,7 @@ body:has(.shell) {
     min-height: auto;
   }
 
-  .shell-content.has-activity {
-    --shell-activity-reserve: 0px;
-  }
-
   .shell-activity {
-    grid-area: activity;
     margin: 8px 22px 0 auto;
   }
 }

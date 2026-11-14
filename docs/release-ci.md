@@ -58,6 +58,7 @@ The Windows list is the published runbook
 | `workspace-tests` | `cargo test --locked --workspace` (981 passed, 2 ignored) | macOS |
 | `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (51 files, 1105 tests) | both |
 | `desktop-e2e` | `npm run test:e2e` (8 files, 43 tests, real daemon over a Unix socket) | macOS |
+| `desktop-geometry` | `npx playwright test` in `apps/desktop`: browser layout checks in `e2e/geometry.spec.ts` (installed Chrome, Vite dev server) | macOS |
 | `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 14, macOS 16), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
 
@@ -446,6 +447,7 @@ measured on the merged branch; Windows is derived from `cfg` gates, not measured
 | `workspace-tests` | 981 + 2 ignored | not a Windows gate |
 | `desktop-vitest` | 51 files, 1105 tests | same |
 | `desktop-e2e` | 8 files, 43 tests | not a Windows gate |
+| `desktop-geometry` | 30 tests in `e2e/geometry.spec.ts` (run as `playwright test`) | not a Windows gate |
 
 On Windows the daemon library excludes `executor::tests`, `conversation_orphans`, `conversation_agent::launch` and
 four other unix-only tests, and gains `windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent`;

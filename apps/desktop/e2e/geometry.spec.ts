@@ -387,3 +387,45 @@ test("agents split is 1.1 to 1 at desktop width, with the first running task sel
   expect(selected).not.toBeNull();
   expect(selected!.width / work!.width).toBeCloseTo(1 / 1.1, 2);
 });
+
+// DPES-1105 (RC-24): the wireframe reserves 324 px for the inspector column at 961 px and up, a 300 px card
+// and a 24 px gutter. The conversation must stop short of the open card, and the column stays when collapsed.
+const INSPECTOR_GAP = 24;
+for (const [width, height] of [
+  [1440, 900],
+  [1920, 1080],
+] as const) {
+  test(`workspace inspector has its own column at ${width} CSS px: the conversation stops short of the open card`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/?fixture=1#/workspace");
+    await expect(page.getByTestId("fixture-banner")).toBeVisible();
+    await expect(page.locator(".ws-head h2")).toBeVisible();
+
+    const conversation = page.locator(".ws-conversation");
+    const conversationRight = async () => {
+      const b = (await conversation.boundingBox())!;
+      return b.x + b.width;
+    };
+    const collapsedRight = await conversationRight();
+
+    await page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ }).click();
+    const card = page.getByTestId("activity-popover");
+    await expect(card).toBeVisible();
+    const cardBox = (await card.boundingBox())!;
+    expect(await conversationRight(), "conversation right edge vs inspector left edge").toBeLessThanOrEqual(cardBox.x - INSPECTOR_GAP);
+    expect(await conversationRight(), "column stays reserved while the card is open").toBeCloseTo(collapsedRight, 0);
+
+    const parts = await page.locator(".ws-conversation > *, .ws-log > *, .ws-composer-row > *").evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { right: r.right, bottom: r.bottom, left: r.left, top: r.top };
+      }),
+    );
+    expect(parts.length, "conversation parts measured").toBeGreaterThan(0);
+    for (const part of parts) {
+      const overlapsCard =
+        part.left < cardBox.x + cardBox.width && part.right > cardBox.x && part.top < cardBox.y + cardBox.height && part.bottom > cardBox.y;
+      expect(overlapsCard, "a conversation part runs under the inspector card").toBe(false);
+    }
+  });
+}
