@@ -19,7 +19,7 @@ body:has(.shell) {
   --shell-soft: var(--soft, #f2f7fc);
   --shell-muted: var(--muted, #3a4652);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   min-width: 0;
   max-width: 1800px;
@@ -65,6 +65,8 @@ body:has(.shell) {
 }
 
 .shell-strip {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   overflow: auto;
   border-bottom: 1px solid var(--shell-line);
@@ -84,7 +86,8 @@ body:has(.shell) {
   --shell-sidebar-col: clamp(160px, var(--shell-sidebar-width, var(--shell-sidebar-default)), min(480px, 40vw));
   display: grid;
   grid-template-columns: var(--shell-sidebar-col) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+  /* Row 1 is the connection strip over the content column; the sidebar spans both rows (full window height). */
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -109,6 +112,8 @@ body:has(.shell) {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  grid-column: 1;
+  grid-row: 1 / span 2;
   padding: 24px 16px 14px;
   overflow-y: auto;
   /* Translucent tint of the theme surface (wireframe `.sidebar`): the ambient background shows through,
@@ -257,6 +262,8 @@ body:has(.shell) {
 
 .shell-content {
   position: relative;
+  grid-column: 2;
+  grid-row: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
@@ -385,6 +392,15 @@ body:has(.shell) {
   .shell-body {
     display: block;
     overflow: auto;
+    /* Focus scrolling (skip link) must land below the pinned strip. */
+    scroll-padding-top: var(--shell-strip-height, 0px);
+  }
+
+  /* The body is the scroller here, so the strip stays pinned above the sidebar as it was when it sat outside the body. */
+  .shell-strip {
+    position: sticky;
+    top: 0;
+    z-index: 3;
   }
 
   .shell-sidebar {

@@ -63,22 +63,24 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
           const main = document.getElementById("shell-main");
           const banner = document.querySelector<HTMLElement>(".shell-strip");
           if (main && banner) {
-            main.style.setProperty("--shell-strip-height", `${banner.getBoundingClientRect().height}px`);
+            // The body is the scroller at narrow widths and the strip is pinned over it, so the height goes on the body.
+            banner.parentElement?.style.setProperty("--shell-strip-height", `${banner.getBoundingClientRect().height}px`);
           }
           main?.focus();
         }}
       >
         Skip to main content
       </a>
-      <header
-        className="shell-strip"
-        aria-label="Connection status"
-        tabIndex={0}
-        data-testid="shell-connection"
-      >
-        {connection}
-      </header>
       <div className="shell-body" style={bodyStyle} data-sidebar-collapsed={resizable && sidebarCollapsed ? "" : undefined}>
+        {/* Over the content column only: the sidebar runs the full window height, as in the wireframe. */}
+        <header
+          className="shell-strip"
+          aria-label="Connection status"
+          tabIndex={0}
+          data-testid="shell-connection"
+        >
+          {connection}
+        </header>
         <section id="shell-sidebar" className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
           <header className="shell-brand">
             <div>
