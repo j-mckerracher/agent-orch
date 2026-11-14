@@ -659,7 +659,7 @@ describe("states without data", () => {
   it("is empty only when the daemon says no workstreams exist, and never shows fixtures", async () => {
     await mount(daemon((fake, state) => ((fake.projects = []), (fake.tasks = []), (state.workstreams = []), (state.objectives = []), (state.links = []))));
     expect(await screen.findByText("No workstreams")).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Workstreams" })).getByText(/No workstreams exist yet/)).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByText(/No workstreams exist yet/)).toBeInTheDocument();
     expect(within(screen.getByTestId("workstreams-view")).getByText(/Create one above/)).toBeInTheDocument();
     expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER|Harden session/);
   });

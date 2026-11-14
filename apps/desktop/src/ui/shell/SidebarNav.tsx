@@ -63,7 +63,7 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
 export function SidebarWorkstreams({ route, count, children }: { route: Route; count: ReactNode; children: ReactNode }) {
   const current = route.name !== "global" || route.view === "workstreams";
   return (
-    <nav aria-label="Workstreams" className="shell-tree">
+    <nav aria-label="Workstreams and individual workers" className="shell-tree">
       <h2 className="shell-tree-heading">
         <NavLink to={{ name: "global", view: "workstreams" }} current={current}>
           Workstreams
