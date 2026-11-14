@@ -63,7 +63,13 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
       <p>{source.labels.description}</p>
       <button type="button" disabled={!approval || busy} onClick={() => setOpen((o) => !o)}>
         Request changes
+      </button>{" "}
+      <button type="button" disabled aria-describedby="request-additional-checks-reason">
+        Request additional checks
       </button>
+      <p id="request-additional-checks-reason" className="rd-reason">
+        The daemon has no method to request more checks.
+      </p>
       {open && (
         <div>
           <label>

@@ -41,6 +41,8 @@ export interface ReviewScreenProps {
    * are visible before Accept, Reject or Request delivery.
    */
   record?: (state: ReviewState) => ReactNode;
+  /** Workstream title for a task; null or absent shows "not available" in the identity panel. */
+  workstreamOf?: (taskId: string) => string | null;
   /** Keeps resolved decisions and receipts across remounts (the global view shares one per connection). */
   session?: ReviewSession;
 }
@@ -89,6 +91,7 @@ export function ReviewScreen({
   newKey,
   embedded,
   record,
+  workstreamOf,
   session,
 }: ReviewScreenProps) {
   const r = useReview({ client, evidenceSource, scope, newKey, session });
@@ -104,6 +107,10 @@ export function ReviewScreen({
       {approval && (
         <section aria-label="Candidate identity" className="panel">
           <dl>
+            <dt>Project</dt>
+            <dd>{task?.contract.project_id ?? "not available"}</dd>
+            <dt>Workstream</dt>
+            <dd>{workstreamOf?.(approval.action.task_id) ?? "not available"}</dd>
             <dt>Task</dt>
             <dd>
               {approval.action.task_id}
@@ -123,6 +130,10 @@ export function ReviewScreen({
               <code>{digestHex(approval.action.parameter_digest)}</code>
             </dd>
           </dl>
+          <p>
+            Decision needed: {deliveryKindOf(approval) ?? approval.action.kind.type} on candidate{" "}
+            <code>{approval.action.candidate_commit.slice(0, 10)}</code>, currently {approval.state.state}.
+          </p>
         </section>
       )}
 

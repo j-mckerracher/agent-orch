@@ -25,6 +25,7 @@ import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
 import { DecisionTabs } from "./DecisionTabs";
 import { SixFactsRecord } from "./ReviewRecord";
+import { useWorkstreamOf } from "../../../review/workstreamOf";
 import { indexMeta, type TabId } from "./queue";
 import "./review-decisions.css";
 
@@ -83,6 +84,7 @@ export function ReviewDecisionsView({
 }: ReviewDecisionsViewProps) {
   const { connection, surfaces } = useServices();
   const [tab, setTab] = useState<TabId>("actionable");
+  const workstreamOf = useWorkstreamOf();
   const client = useMemo(
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [clientOverride, fixtureMode, connection],
@@ -145,6 +147,7 @@ export function ReviewDecisionsView({
         newKey={newKey}
         session={session}
         embedded={slots}
+        workstreamOf={workstreamOf}
         record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} />}
       />
     </div>

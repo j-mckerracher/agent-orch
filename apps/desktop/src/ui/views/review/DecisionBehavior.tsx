@@ -9,7 +9,6 @@ export const UNSUPPORTED_ACTIONS: ReadonlyArray<{ id: string; label: string; rea
   { id: "postpone", label: "Postpone", reason: "The daemon cannot postpone a decision; it stays pending until resolved." },
   { id: "dismiss", label: "Dismiss", reason: "The daemon cannot dismiss a decision; use Reject to refuse it." },
   { id: "escalate", label: "Escalate", reason: "Escalation is not defined for any source yet." },
-  { id: "extra-checks", label: "Request additional checks", reason: "The daemon has no method to request more checks." },
   {
     id: "pr-authorization",
     label: "Review PR creation authorization",
