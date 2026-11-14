@@ -1,10 +1,10 @@
 /** Data for the Agents & Sessions view: one shape for daemon-backed (live) and fixture mode. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { asDaemonError, presentError } from "../../../daemon/errors";
 import type { SourceResult } from "../../../sources/types";
 import { useGate, useServices, useSource, useStore } from "../../services";
 import { inventoryFromDaemon, inventoryFromPreview, type InventoryRow } from "./inventoryModel";
-import { isActive, rowsFromDaemon, rowsFromPreview, taskRef, type RecoveryMap, type WorkRow } from "./model";
+import { rowsFromDaemon, rowsFromPreview, type WorkRow } from "./model";
 
 export type Load<T> =
   | { status: "loading" }
@@ -18,7 +18,6 @@ export interface AgentsData {
   live: boolean;
   work: Load<WorkRow[]>;
   inventory: Load<InventoryRow[]>;
-  recovery: RecoveryMap;
   reloadWork: () => void;
   reloadInventory: () => void;
 }
@@ -81,37 +80,10 @@ export function useAgentsData(): AgentsData {
     return { status: "loading" };
   }, [live, preview, snapshot, gate.connected]);
 
-  const rows = work.status === "ready" ? work.data : null;
-  const activeKey = (rows ?? [])
-    .filter(isActive)
-    .map((row) => row.id)
-    .join("|");
-  const [recovery, setRecovery] = useState<RecoveryMap>({});
-  useEffect(() => {
-    let alive = true;
-    const active = (rows ?? []).filter(isActive);
-    void Promise.all(
-      active.map(async (row) => {
-        const result = await sources.recovery.recoveryFor(taskRef(row)).catch(
-          (error: unknown): SourceResult<never> => ({
-            state: "error",
-            message: error instanceof Error ? error.message : "recovery lookup failed",
-          }),
-        );
-        return [row.id, result] as const;
-      }),
-    ).then((entries) => alive && setRecovery(Object.fromEntries(entries)));
-    return () => {
-      alive = false;
-    };
-    // Rows are summarised by the active ids; other row changes do not alter classification.
-  }, [activeKey, live, sources]);
-
   return {
     live,
     work,
     inventory: asLoad(inventorySource, (list) => list),
-    recovery,
     reloadWork: () => void data.refreshAll(),
     reloadInventory: () => setNonce((n) => n + 1),
   };

@@ -6,11 +6,9 @@ import { LaterScope } from "./LaterScope";
 import { SessionDetail } from "./SessionDetail";
 import { SessionList } from "./SessionList";
 import { DisabledAction, PlaceholderMark } from "./common";
-import { headline, type Count, type TabId } from "./model";
+import { headline, type TabId } from "./model";
 import { useAgentsData } from "./useAgentsData";
 import "./agents.css";
-
-const countText = (count: Count): string => (count.kind === "known" ? String(count.value) : "unknown");
 
 export function AgentsView() {
   const model = useAgentsData();
@@ -18,7 +16,7 @@ export function AgentsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const rows = model.work.status === "ready" ? model.work.data : null;
   const selected = rows?.find((row) => row.id === selectedId) ?? null;
-  const stats = rows ? headline(rows, model.recovery) : null;
+  const stats = rows ? headline(rows) : null;
 
   return (
     <div className="agents-view" data-testid="agents-view">
@@ -51,12 +49,8 @@ export function AgentsView() {
               <Pill tone={stats.blocked > 0 ? "warn" : "neutral"}>{stats.blocked} tasks blocked</Pill>
             </li>
             <li>
-              <Pill tone={stats.disconnected.kind === "known" ? "neutral" : "warn"}>
-                {countText(stats.disconnected)} disconnected sessions
-              </Pill>
-              {stats.disconnected.kind === "unknown" && (
-                <span className="agents-sub"> Not counted: {stats.disconnected.reason}</span>
-              )}
+              <Pill tone="warn">Disconnected sessions not available</Pill>
+              <span className="agents-sub"> Not counted: the daemon has no method that reports them (D3).</span>
             </li>
             <li>
               <span className="agents-sub">Historical failures retained separately</span>
@@ -82,8 +76,6 @@ export function AgentsView() {
       <div className="agents-layout">
         <SessionList
           work={model.work}
-          inventory={model.inventory}
-          recovery={model.recovery}
           live={model.live}
           tab={tab}
           onTab={setTab}

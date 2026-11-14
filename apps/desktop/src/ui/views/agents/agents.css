@@ -35,6 +35,10 @@
   font-size: 13px;
 }
 
+.agents-filter input {
+  min-width: 14rem;
+}
+
 .agents-status {
   margin: 12px 0;
 }
