@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useLayoutSettings, type LayoutSettings } from "../layout/layoutSettings";
 import type { Route } from "../router";
+import { SidebarSplitter } from "./SidebarSplitter";
 import { SidebarNav, SidebarWorkstreams } from "./SidebarNav";
 import type { ShellSlots } from "./slots";
 import { useShellTier } from "./useShellTier";
@@ -16,6 +18,8 @@ export interface AppShellProps {
    * plain `<div>`; global views are rendered inside the shell's `<main>`.
    */
   mainLandmark: boolean;
+  /** Test seam; defaults to the application-wide persisted layout. */
+  layout?: LayoutSettings;
   children: ReactNode;
 }
 
@@ -24,8 +28,13 @@ export interface AppShellProps {
  * resource regions. CSS docks activity right above 960 px and before main at narrower widths.
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
-export function AppShell({ route, connection, slots, mainLandmark, children }: AppShellProps) {
+export function AppShell({ route, connection, slots, mainLandmark, layout, children }: AppShellProps) {
   const tier = useShellTier();
+  const { sidebarWidth, sidebarCollapsed, setSidebarWidth, setSidebarCollapsed, reset } = useLayoutSettings(layout);
+  // At 760 px and below the sidebar is a full-width block, so there is no edge to resize or collapse.
+  const resizable = tier !== "narrow";
+  const bodyStyle =
+    sidebarWidth === null ? undefined : ({ "--shell-sidebar-width": `${sidebarWidth}px` } as CSSProperties);
   const hasActivity = slots.activity !== null && slots.activity !== undefined;
   const hasResources = slots.resources !== null && slots.resources !== undefined;
   // Main is the scroll container only in the full and medium tiers, so only there must it be keyboard-focusable (axe scrollable-region-focusable).
@@ -66,8 +75,8 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
       >
         {connection}
       </header>
-      <div className="shell-body">
-        <section className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
+      <div className="shell-body" style={bodyStyle} data-sidebar-collapsed={resizable && sidebarCollapsed ? "" : undefined}>
+        <section id="shell-sidebar" className="shell-sidebar" aria-label="Sidebar" data-testid="shell-sidebar">
           <header className="shell-brand">
             <div>
               <strong>MCAO</strong>
@@ -84,6 +93,16 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
             </section>
           </div>
         </section>
+        {resizable && (
+          <SidebarSplitter
+            controls="shell-sidebar"
+            width={sidebarWidth ?? (tier === "full" ? 214 : 185)}
+            collapsed={sidebarCollapsed}
+            onResize={setSidebarWidth}
+            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onReset={reset}
+          />
+        )}
         <div className={`shell-content${hasActivity ? " has-activity" : ""}`}>
           <section className="shell-topbar" aria-label="Workspace summary">
             <div className="shell-topbar-usage">{slots.topUsage}</div>
