@@ -178,6 +178,15 @@ describe("S2 project detail and submission", () => {
     expect(screen.queryByRole("button", { name: "Pending review (0)" })).not.toBeInTheDocument();
   });
 
+  it("does not read pending review as 0 when the task list fails but approvals loaded", async () => {
+    const fake = seeded();
+    fake.failNext("tasks.list", { code: -32603, message: "boom" }, 5);
+    const { services } = await mount(fake, { route });
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("error"));
+    await waitFor(() => expect(services.data.getSnapshot().approvals.status).toBe("ready"));
+    expect(screen.queryByRole("button", { name: "Pending review (0)" })).not.toBeInTheDocument();
+  });
+
   it("derives per-state counts for this project only and links to a filtered list", async () => {
     const { user } = await mount(seeded(), { route });
     expect(await screen.findByTestId("task-total")).toHaveTextContent("2 tasks in this project");

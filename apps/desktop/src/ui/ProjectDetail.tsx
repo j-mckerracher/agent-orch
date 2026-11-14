@@ -27,7 +27,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const known = projects.data?.some((row) => row.id === projectId) ?? null;
   const own = tasks.data?.filter((task) => task.contract.project_id === projectId) ?? null;
   const ownIds = new Set(own?.map((task) => task.contract.id));
-  const pending = approvals.data ? pendingApprovals(approvals.data).filter((approval) => ownIds.has(approval.action.task_id)) : null;
+  // Pending review needs both lists: without the task list no approval can be matched to this project.
+  const pending =
+    tasks.data && approvals.data
+      ? pendingApprovals(approvals.data).filter((approval) => ownIds.has(approval.action.task_id))
+      : null;
   // Unread is never zero: "…" while a daemon answer can still arrive, "unknown" once it cannot.
   const pendingText = pending ? String(pending.length) : gate.connected || gate.settling ? "…" : "unknown";
   const set = (patch: Parameters<typeof drafts.patchSubmit>[1]) => drafts.patchSubmit(projectId, patch);
