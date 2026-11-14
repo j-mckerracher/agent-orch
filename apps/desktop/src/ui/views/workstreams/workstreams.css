@@ -525,3 +525,31 @@
   line-height: 1.5;
 }
 
+.ws-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.ws-head-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ws-head-summary {
+  margin: 0;
+  color: var(--subtle);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ws-head-actions,
+.ws-head-reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}

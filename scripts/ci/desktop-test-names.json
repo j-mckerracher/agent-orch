@@ -1348,7 +1348,6 @@
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations archives only after a confirmation, then locks every control with a reason",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations clears a failure banner once the connection recovers",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations clears a failure banner when the operator refreshes, and its advice names a control that exists",
-    "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations creates a workstream through workstreams.create with an idempotency key and selects it",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations disables unlinking a task that a gate cites as evidence and says why",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations has a Refresh control that re-reads the daemon, so another client's edit shows without an own action",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations links an unlinked task under an objective and unlinks a linked one",
@@ -1388,6 +1387,7 @@
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) lists each task's state and assignment in the Activity tab, derived from recorded data",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) shows the live plan revision as not available, never a number",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) labels the fixture plan revision as PLACEHOLDER",
-    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) renders the wireframe purpose note under the workstream view"
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) renders the wireframe purpose note under the workstream view",
+    "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations keeps Create workstream in the page header, disabled with a reason, and sends nothing in live mode"
   ]
 }

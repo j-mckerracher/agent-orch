@@ -37,6 +37,8 @@ describe("WorkstreamsView over the real daemon", () => {
         max_retries: 1,
         max_repairs: 1,
       });
+      // Live create is disabled in the view (OX-W1), so the workstream is seeded through the daemon.
+      await api.workstreamsCreate("Real stream", undefined, "e2e-ws-create-real-stream");
       services.connection.start();
       await waitFor(() => expect(services.connection.getSnapshot().status).toBe("connected"), { timeout: 15000 });
       const user = userEvent.setup();
@@ -46,12 +48,9 @@ describe("WorkstreamsView over the real daemon", () => {
         </ServicesProvider>,
       );
 
-      await screen.findByText(/No workstreams exist yet/, undefined, { timeout: 15000 });
-      expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER/);
-
-      await user.type(screen.getByLabelText("New workstream title"), "Real stream");
-      await user.click(screen.getByRole("button", { name: "Create workstream" }));
       expect((await screen.findByTestId("ws-detail", undefined, { timeout: 15000 })).getAttribute("aria-label")).toBe("Workstream Real stream");
+      expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER/);
+      expect((screen.getByRole("button", { name: "Create workstream" }) as HTMLButtonElement).disabled).toBe(true);
 
       const addForm = screen.getByRole("form", { name: "Add objective" });
       await user.type(within(addForm).getByLabelText("New objective title"), "Ship");

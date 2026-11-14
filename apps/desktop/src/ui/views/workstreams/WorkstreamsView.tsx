@@ -41,9 +41,10 @@ interface Receipt {
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
+const CREATE_REASON = "Disabled: creating a workstream is not in this release (post-release, M7-07).";
 const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
 const PLAN_REASON =
-  "Disabled: the daemon has no method to split a task or reassign it. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
+  "Disabled: the daemon has no method to add, split, combine or remove tasks, reassign them, or change execution policy. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
 const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
 
 function assignment(task: WsGroup["tasks"][number]): string {
@@ -66,6 +67,7 @@ export function WorkstreamsView() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   let body;
+  let headerAction: ReactNode = null;
   if (model.status === "loading") {
     body = <p role="status">Loading workstreams…</p>;
   } else if (model.status === "offline") {
@@ -103,17 +105,6 @@ export function WorkstreamsView() {
     const create = async (event: FormEvent) => {
       event.preventDefault();
       if (title.trim() === "") return;
-      if (live) {
-        const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
-          surfaces.workstreams.create(title.trim()),
-        );
-        if (made) {
-          setTitle("");
-          setSelected(made.id);
-          setFilter("");
-        }
-        return;
-      }
       setCreateError(null);
       try {
         const receipt = await surfaces.workstreams.simulateCreate(title.trim());
@@ -123,6 +114,43 @@ export function WorkstreamsView() {
         setCreateError(error instanceof Error ? error.message : "Simulation failed.");
       }
     };
+
+    headerAction = fixture ? (
+      <form className="ws-create" onSubmit={create} aria-label="Create workstream">
+        <label>
+          New workstream title
+          <input
+            type="text"
+            value={title}
+            disabled={writeOff}
+            onChange={(event) => setTitle(event.target.value)}
+            aria-describedby={model.stale ? reasonId : undefined}
+          />
+        </label>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={writeOff || title.trim() === ""}
+          aria-describedby={model.stale ? reasonId : undefined}
+        >
+          Create workstream (simulated)
+        </Button>
+        {model.stale && (
+          <span className="ws-reason" id={reasonId}>
+            {STALE_REASON}
+          </span>
+        )}
+      </form>
+    ) : (
+      <div className="ws-head-reason">
+        <Button disabled aria-describedby={`${reasonId}-create`}>
+          Create workstream
+        </Button>
+        <p className="ws-reason" id={`${reasonId}-create`}>
+          {CREATE_REASON}
+        </p>
+      </div>
+    );
 
     body = (
       <>
@@ -141,31 +169,6 @@ export function WorkstreamsView() {
             {taskListNotice(model.taskList)}
           </p>
         )}
-        <form className="ws-create" onSubmit={create} aria-label="Create workstream">
-          <label>
-            New workstream title
-            <input
-              type="text"
-              value={title}
-              disabled={writeOff}
-              onChange={(event) => setTitle(event.target.value)}
-              aria-describedby={model.stale ? reasonId : undefined}
-            />
-          </label>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={writeOff || title.trim() === ""}
-            aria-describedby={model.stale ? reasonId : undefined}
-          >
-            {fixture ? "Create workstream (simulated)" : "Create workstream"}
-          </Button>
-          {model.stale && (
-            <span className="ws-reason" id={reasonId}>
-              {STALE_REASON}
-            </span>
-          )}
-        </form>
         {createError && (
           <p role="alert" className="notice notice-error">
             {createError}
@@ -273,22 +276,28 @@ export function WorkstreamsView() {
   return (
     <section className="ws-view" aria-labelledby={headingId} data-testid="workstreams-view">
       <header className="ws-head">
-        <p className="ws-eyebrow">Orchestration</p>
-        <h1 id={headingId}>Workstreams</h1>
-        <NavLink className="ws-link-button" to={{ name: "projects" }}>
-          Manage projects
-        </NavLink>
-        {surfaces.workstreams.provenance.kind !== "fixture" && (
-          <Button
-            disabled={mutations.busy}
-            onClick={() => {
-              mutations.clear();
-              reloadWorkstreams();
-            }}
-          >
-            Refresh
-          </Button>
-        )}
+        <div className="ws-head-title">
+          <p className="ws-eyebrow">Continuing initiatives</p>
+          <h1 id={headingId}>Workstreams</h1>
+          <p className="ws-head-summary">Explicit objectives, linked projects, validated plans, and evidence.</p>
+        </div>
+        <div className="ws-head-actions">
+          {headerAction}
+          <NavLink className="ws-link-button" to={{ name: "projects" }}>
+            Manage projects
+          </NavLink>
+          {surfaces.workstreams.provenance.kind !== "fixture" && (
+            <Button
+              disabled={mutations.busy}
+              onClick={() => {
+                mutations.clear();
+                reloadWorkstreams();
+              }}
+            >
+              Refresh
+            </Button>
+          )}
+        </div>
       </header>
       {body}
     <p className="ws-purpose">Purpose and rationale: organize outcomes across repositories, expose parallelism, and change plans without losing context. Draft plan edits, bulk operations and coordinator recommendations must pass deterministic validation before application.</p>
@@ -527,7 +536,7 @@ function Detail({
           <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />
         )}
         <div className="ws-row" role="group" aria-label="Plan editing">
-          {(fixture ? ["Add task", "Split task", "Remove task", "Reassign"] : ["Split task", "Reassign"]).map((label) => (
+          {["Add task", "Split task", "Combine tasks", "Remove task", "Reassign", "Change execution policy"].map((label) => (
             <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>
               {label}
             </Button>

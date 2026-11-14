@@ -262,7 +262,7 @@ describe("live data", () => {
   it("disables what the daemon cannot do and says why", async () => {
     await mount(daemon());
     await screen.findAllByTestId("task-row");
-    for (const name of ["Prioritize", "Split task", "Reassign", "Resolve contract decision"]) {
+    for (const name of ["Prioritize", "Split task", "Combine tasks", "Change execution policy", "Reassign", "Resolve contract decision"]) {
       const button = screen.getByRole("button", { name });
       expect(button).toBeDisabled();
       const reason = button.getAttribute("aria-describedby");
@@ -350,18 +350,16 @@ describe("live mutations", () => {
   const writes = (fake: FakeDaemon) => fake.calls.filter((call) => /^workstreams\.(create|update|add_|revise_|set_|link_|unlink_)/.test(call.method));
   const paramsOf = (fake: FakeDaemon, method: string) => fake.callsTo(method).map((call) => call.params as Record<string, unknown>);
 
-  it("creates a workstream through workstreams.create with an idempotency key and selects it", async () => {
+  it("keeps Create workstream in the page header, disabled with a reason, and sends nothing in live mode", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    await mount(fake);
     await screen.findAllByTestId("task-row");
-    await user.type(screen.getByLabelText("New workstream title"), "Gamma stream");
-    await user.click(screen.getByRole("button", { name: "Create workstream" }));
-    expect(await screen.findByText(/Create workstream "Gamma stream": recorded by the daemon/)).toBeInTheDocument();
-    const [call] = paramsOf(fake, "workstreams.create");
-    expect(call).toMatchObject({ title: "Gamma stream" });
-    expect(typeof call!.idempotency_key).toBe("string");
-    expect(await screen.findByTestId("ws-detail")).toHaveAccessibleName("Workstream Gamma stream");
-    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("3");
+    const header = screen.getByRole("heading", { level: 1, name: "Workstreams" }).closest("header") as HTMLElement;
+    const create = within(header).getByRole("button", { name: "Create workstream" });
+    expect(create).toBeDisabled();
+    expect(document.getElementById(create.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/not in this release/);
+    expect(screen.queryByLabelText("New workstream title")).not.toBeInTheDocument();
+    expect(paramsOf(fake, "workstreams.create")).toHaveLength(0);
   });
 
   it("adds an objective with its gates", async () => {
@@ -498,7 +496,7 @@ describe("live mutations", () => {
     await waitFor(() => expect(screen.getByTestId("ws-source")).toHaveTextContent("Stale"));
     expect(screen.getAllByTestId("task-row")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
-    expect(screen.getByLabelText("New workstream title")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create workstream" })).toBeDisabled();
   });
 
   it("has a Refresh control that re-reads the daemon, so another client's edit shows without an own action", async () => {
