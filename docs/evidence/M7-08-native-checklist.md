@@ -14,7 +14,7 @@ For each OS, create a unique run root before starting. macOS: `export RUN_DIR="$
    **Expected:** all pass on the native OS; chunks remain ordered/correlated, cancel freezes the transcript, restart fails a lost turn closed, and replay preserves sequence and idempotent send. Save full stdout/stderr as `m7-08-<os>-daemon-lifecycle.log`. These tests use a fake agent; row 2 covers the real agent.
 
 2. **Real Codex agent (macOS and Windows).**
-   Steps: use the same fresh `CARGO_TARGET_DIR`, confirm Codex is signed in and its version is the approved pin `0.167.0`, set `AGENT_ORCH_LIVE_CONVERSATION=1`, and run `cargo test --locked -p orchestrator-daemon --test conversation_runtime -- --ignored --exact live_codex_answers_a_global_message --nocapture`. Do not add a new pin to make an unsupported version pass.
+   Steps: use the same fresh `CARGO_TARGET_DIR`, confirm Codex is signed in and its version is an approved pin (`0.167.0` or `0.167.2`), set `AGENT_ORCH_LIVE_CONVERSATION=1`, and run `cargo test --locked -p orchestrator-daemon --test conversation_runtime -- --ignored --exact live_codex_answers_a_global_message --nocapture`. Do not add a new pin to make an unsupported version pass.
    **Expected:** the live test runs (not skipped), completes a global turn with a reply containing `pong`, and leaves task/approval lists empty. Record CLI version and authentication state; save full stdout/stderr as `m7-08-<os>-codex-live.log`.
 
 3. **Native desktop WebView with a real daemon and Codex (macOS WKWebView; Windows WebView2).**

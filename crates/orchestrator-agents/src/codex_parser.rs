@@ -269,6 +269,42 @@ mod tests {
             Some(Ok(AgentEvent::TurnFinished { .. }))
         ));
 
+        // Captured from codex-cli 0.167.2 `codex exec --json` (paths redacted): four pre-turn
+        // error items, then `turn.started`, an intermediate agent message, a `command_execution`
+        // lifecycle and the final message.
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        for warning in [
+            r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`[features].codex_hooks` is deprecated. Use `[features].hooks` instead. (Enable it with `--enable hooks` or `[features].hooks` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details.)"}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_2","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_3","type":"error","message":"Under-development features enabled: local_thread_store_compression. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /Users/example/.codex/config.toml."}}"#,
+        ] {
+            assert_eq!(p.feed(warning), None);
+        }
+        assert_eq!(p.violation(), None);
+        assert_eq!(p.feed(TURN_STARTED), None);
+        assert!(matches!(
+            p.feed(r#"{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"Running the requested shell command."}}"#),
+            Some(Ok(AgentEvent::MessageDelta { text })) if text == "Running the requested shell command."
+        ));
+        assert_eq!(
+            p.feed(r#"{"type":"item.started","item":{"id":"item_5","type":"command_execution","command":"/bin/zsh -lc 'printf ok'","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#),
+            None
+        );
+        assert_eq!(
+            p.feed(r#"{"type":"item.completed","item":{"id":"item_5","type":"command_execution","command":"/bin/zsh -lc 'printf ok'","aggregated_output":"ok","exit_code":0,"status":"completed"}}"#),
+            None
+        );
+        assert!(
+            matches!(p.feed(r#"{"type":"item.completed","item":{"id":"item_6","type":"agent_message","text":"PONG"}}"#), Some(Ok(AgentEvent::MessageDelta { text })) if text == "PONG")
+        );
+        assert!(matches!(
+            p.feed(TURN_DONE),
+            Some(Ok(AgentEvent::TurnFinished { .. }))
+        ));
+        assert_eq!(p.violation(), None);
+
         let mut p = Parser::new();
         p.feed(&thread()).unwrap().unwrap();
         let malformed_error = r#"{"type":"item.completed","item":{"id":"item_0","type":"error"}}"#;

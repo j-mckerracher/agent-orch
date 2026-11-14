@@ -111,8 +111,9 @@ no flag.
   15 s (`conversations.send` calls `prepare()` before the idempotency gate);
   after that the turn fails `runtime_unavailable` too. The selection and
   version are cached for 30 s.
-- **Pins.** Known-good versions are compiled in (`codex` 0.167.0, `claude-code`
-  2.1.311, the versions live-checked for this item). The operator can add more
+- **Pins.** Known-good versions are compiled in (`codex` 0.167.0 and 0.167.2,
+  `claude-code` 2.1.311). 0.167.2 was checked against its `codex exec --json`
+  event order and command lifecycle. The operator can add more
   with `AGENT_ORCH_CONVERSATION_PINS=name@version,...`. An unpinned version gets
   `version_mismatch` and never receives the message. `start_turn` compares the
   identity again, but only against the cached selection: an upgrade of the CLI
