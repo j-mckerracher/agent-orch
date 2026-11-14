@@ -1,8 +1,8 @@
 [
   {
     "identifier": "default",
-    "description": "Default capability for the main window.",
+    "description": "The main window may use only the daemon bridge commands; no core, shell or filesystem permissions.",
     "windows": ["main"],
-    "permissions": ["core:default"]
+    "permissions": ["allow-daemon-open", "allow-daemon-send", "allow-daemon-close"]
   }
 ]

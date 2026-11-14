@@ -12,7 +12,8 @@
 //! cancellation, and process-tree cleanup of descendants.
 
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentKind, AgentLaunchRequest, TurnOutcome,
+    AgentAdapter, AgentCapabilities, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, RoutableAdapter, TurnOutcome,
 };
 use orchestrator_runtime::{is_process_running, ChildSupervisor, LaunchRequest, SupervisionEvent};
 use std::path::PathBuf;
@@ -69,8 +70,9 @@ fn main() {
             std::process::exit(7);
         }
         "garbage" => {
-            // Not JSON at all: a protocol error, and the process still
-            // exits 0, which is NOT success.
+            // Malformed JSON after valid progress must still fail on exit 0.
+            // Test contract updated at 2026-11-07T23:12:41-07:00.
+            writeln!(out, r#"{{"type":"thread.started","thread_id":"{SID}"}}"#).unwrap();
             writeln!(out, "this is not json").unwrap();
             out.flush().unwrap();
         }
@@ -270,6 +272,7 @@ fn oversized_stdout_and_stderr_lines_are_truncated_with_a_marker() {
             program: fake_exe(),
             args: vec!["oversized".into()],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
         let mut stdout = None;
@@ -309,6 +312,7 @@ fn stream_lines_are_not_returned_after_exit_when_a_descendant_keeps_pipes_open()
                 marker.to_string_lossy().into_owned(),
             ],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
 
@@ -379,11 +383,11 @@ fn stderr_is_diagnostics_and_nonzero_exit_fails() {
         let exit = h.wait().await.expect("wait");
         assert!(
             matches!(
-                exit,
+                &exit,
                 AgentExit::Failed {
                     code: Some(7),
-                    reason: None
-                }
+                    reason: Some(reason),
+                } if reason.contains("code 7")
             ),
             "exit: {exit:?}"
         );
@@ -397,7 +401,8 @@ fn garbage_stdout_is_a_protocol_error_not_success() {
         let saw_protocol_error = loop {
             match h.next_event().await {
                 Ok(Some(AgentEvent::ProtocolError { .. })) => break true,
-                Ok(Some(_)) | Ok(None) => break false,
+                Ok(Some(_)) => continue,
+                Ok(None) => break false,
                 Err(e) => panic!("next_event: {e}"),
             }
         };
@@ -441,6 +446,7 @@ fn supervisor_cancel_kills_descendants() {
             program: fake_exe(),
             args: vec!["hang-spawn".into()],
             working_dir: WORKDIR.clone(),
+            env_names: Vec::new(),
         })
         .expect("launch");
         let root = sup.pid();
@@ -489,17 +495,25 @@ fn supervisor_cancel_kills_descendants() {
 #[test]
 fn detect_reports_capabilities_for_found_binary() {
     let adapter = orchestrator_agents::CodexAdapter::new().with_program(fake_exe());
-    let caps = with_runtime(adapter.detect()).expect("detect");
     assert_eq!(
         orchestrator_agents::CodexAdapter::new().kind(),
         AgentKind::Codex
     );
-    assert!(caps.streaming && caps.structured_output && caps.cancellation);
-    assert!(
-        !caps.interactive_input
-            && !caps.session_resumption
-            && !caps.approvals
-            && !caps.model_selection
+    assert_eq!(
+        adapter.capabilities(),
+        AgentCapabilities {
+            streaming: true,
+            interactive_input: false,
+            structured_output: true,
+            cancellation: true,
+            session_resumption: false,
+            approvals: false,
+            model_selection: true,
+        }
+    );
+    assert_eq!(
+        with_runtime(adapter.detect()).expect("detect"),
+        adapter.capabilities()
     );
 }
 

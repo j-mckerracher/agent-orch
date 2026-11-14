@@ -1,22 +1,27 @@
-//! System-git-based repository validation and task worktree creation
+//! System-Git validation, task worktree creation, and delivery.
 //! (docs/technical-implementation-plan.md section 8).
 //!
-//! Every implementation task runs in its own worktree created from a
-//! resolved base commit. The primary checkout is never modified: no branch
-//! switch, no hard reset, no deletion of uncommitted work. This crate is
-//! creation-only: on failure the partially created branch and worktree are
-//! left in place for inspection and recovery, reported by
-//! [`Error::CreationFailed`]. Nothing in this crate deletes worktrees,
-//! branches, or files. A worktree is source isolation, not a security
+//! Each implementation task runs in its own worktree from a resolved base
+//! commit. Delivery never checks out, merges, or deletes a branch or worktree.
+//! Report-only delivery leaves no lasting repository changes. Local-review
+//! delivery creates only refs under `refs/heads/orchestrator/review/`.
+//! Destination locks remove only lock files created by this process.
+//! Caller callbacks revalidate approval and verification state and persist
+//! delivery outcomes. A task worktree is source isolation, not a security
 //! sandbox.
 //!
-//! Diff capture and delivery are not implemented yet; their modules arrive
-//! with the delivery milestone.
+//! Updated: 2026-11-08T09:43:13Z.
 
+pub mod env_policy;
 mod error;
 mod git;
+mod git_path;
 mod repository;
+pub mod verification;
 mod worktree;
+pub mod reconcile;
+pub mod delivery;
+pub mod delivery_reconcile;
 
 pub use error::Error;
 pub use repository::Repository;

@@ -4,8 +4,12 @@ description = "Process supervision, cancellation, and crash recovery for agent s
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
+orchestrator-core = { path = "../orchestrator-core" }
+# Acyclic: git has no orchestrator dependencies. Reconciliation consumes its plans.
+orchestrator-git = { path = "../orchestrator-git" }
 # Pinned per the workspace root rule (direct dependencies pinned with `=`).
 tokio = { version = "=1.54.1", features = ["rt", "process", "io-util", "sync", "time", "macros"] }
 thiserror = "=2.0.21"

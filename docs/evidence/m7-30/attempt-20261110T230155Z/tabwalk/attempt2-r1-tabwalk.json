@@ -1,0 +1,608 @@
+[
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 35,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 35,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_1_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message Global orchestrator",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "div.ui-disclosure-body",
+    "inView": true,
+    "rect": [
+     220,
+     514,
+     705,
+     67
+    ],
+    "key": "TEXTAREA#_r_1_-draft.|"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 27,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 27,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 19,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 19,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 11,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "ORCHESTRATION Workstreams Workstreams, objectives, revisions",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     201,
+     760,
+     2046
+    ],
+    "key": "MAIN#shell-main.shell-main|ORCHESTRATION\n\nWorks"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 11,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "ORCHESTRATION Workstreams Workstreams, objectives, revisions",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     210,
+     390,
+     2554
+    ],
+    "key": "MAIN#shell-main.shell-main|ORCHESTRATION\n\nWorks"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 26,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 26,
+  "issues": [
+   {
+    "tag": "div",
+    "id": null,
+    "testid": null,
+    "role": "region",
+    "name": "Adapter inventory table",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     227,
+     278,
+     703,
+     317
+    ],
+    "key": "DIV#.agents-scroll|Configured adapter\tA"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 18,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "EXECUTION INVENTORY / S5 Agents & Sessions A task persists t",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     201,
+     760,
+     1144
+    ],
+    "key": "MAIN#shell-main.shell-main|EXECUTION INVENTORY "
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 18,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "EXECUTION INVENTORY / S5 Agents & Sessions A task persists t",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     210,
+     390,
+     1676
+    ],
+    "key": "MAIN#shell-main.shell-main|EXECUTION INVENTORY "
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 31,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 31,
+  "issues": [
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Task fixture-task-1 i Awaiting decision Local review merge ·",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     226,
+     507,
+     693,
+     88
+    ],
+    "key": "BUTTON#.rd-row|Task fixture-task-1\n"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 23,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "UNIFIED HUMAN DECISIONS Review & Decisions One queue for cho",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     201,
+     760,
+     2802
+    ],
+    "key": "MAIN#shell-main.shell-main|UNIFIED HUMAN DECISI"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 23,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "UNIFIED HUMAN DECISIONS Review & Decisions One queue for cho",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     210,
+     390,
+     4666
+    ],
+    "key": "MAIN#shell-main.shell-main|UNIFIED HUMAN DECISI"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 34,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 34,
+  "issues": [
+   {
+    "tag": "a",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Show dependency plan",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     341,
+     509,
+     152,
+     28
+    ],
+    "key": "A#.ws-chip-link|Show dependency plan"
+   },
+   {
+    "tag": "textarea",
+    "id": "_r_5_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message e2e-project coordinator",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     220,
+     573,
+     705,
+     67
+    ],
+    "key": "TEXTAREA#_r_5_-draft.|"
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Choose conversation target · e2e-project coordinator ⌄",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     220,
+     423,
+     330,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|Choose conversation "
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Model settings: codex · GPT-6.1-Sol · medium",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     690,
+     423,
+     197,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|codex · GPT-6.1-Sol "
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Waiting 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     232,
+     416,
+     689,
+     40
+    ],
+    "key": "SUMMARY#.|Waiting\n0"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 27,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 27,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 15,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 15,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 18,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "EXECUTION INVENTORY / S5 Agents & Sessions A task persists t",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     200,
+     760,
+     1395
+    ],
+    "key": "MAIN#shell-main.shell-main|EXECUTION INVENTORY "
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 18,
+  "issues": [
+   {
+    "tag": "main",
+    "id": "shell-main",
+    "testid": null,
+    "role": null,
+    "name": "EXECUTION INVENTORY / S5 Agents & Sessions A task persists t",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     0,
+     210,
+     390,
+     1886
+    ],
+    "key": "MAIN#shell-main.shell-main|EXECUTION INVENTORY "
+   },
+   {
+    "tag": "div",
+    "id": null,
+    "testid": null,
+    "role": "region",
+    "name": "Adapter inventory table",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     38,
+     210,
+     326,
+     879
+    ],
+    "key": "DIV#.agents-scroll|Configured adapter\tA"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 22,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 15,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 15,
+  "issues": []
+ }
+]

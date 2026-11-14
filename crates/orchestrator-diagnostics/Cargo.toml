@@ -1,0 +1,12 @@
+[package]
+name = "orchestrator-diagnostics"
+description = "Credential redaction and structured one-line JSON diagnostics shared by the daemon, its tests and the desktop host. No orchestration logic and no dependency on any other workspace crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = "=1.0.154"
+
+[dev-dependencies]
+tempfile = "=3.27.0"

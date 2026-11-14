@@ -1,0 +1,47 @@
+fixture workspace light 1280x700: stops=34 issues=1
+fixture workspace light 960x700: stops=34 issues=1
+fixture workspace light 760x700: stops=26 issues=5
+fixture workspace light 390x700: stops=26 issues=4
+fixture workstreams light 1280x700: stops=18 issues=0
+fixture workstreams light 960x700: stops=18 issues=0
+fixture workstreams light 760x700: stops=10 issues=0
+fixture workstreams light 390x700: stops=10 issues=0
+fixture agents light 1280x700: stops=25 issues=0
+fixture agents light 960x700: stops=25 issues=1
+fixture agents light 760x700: stops=17 issues=0
+fixture agents light 390x700: stops=17 issues=0
+fixture review light 1280x700: stops=30 issues=0
+fixture review light 960x700: stops=30 issues=1
+fixture review light 760x700: stops=22 issues=2
+fixture review light 390x700: stops=22 issues=1
+live workspace light 1280x700: stops=33 issues=1
+live workspace light 960x700: stops=33 issues=5
+live workspace light 760x700: stops=26 issues=6
+live workspace light 390x700: stops=26 issues=6
+live workstreams light 1280x700: stops=21 issues=0
+live workstreams light 960x700: stops=21 issues=0
+live workstreams light 760x700: stops=14 issues=0
+live workstreams light 390x700: stops=14 issues=0
+live agents light 1280x700: stops=24 issues=0
+live agents light 960x700: stops=24 issues=0
+live agents light 760x700: stops=17 issues=0
+live agents light 390x700: stops=17 issues=1
+live review light 1280x700: stops=21 issues=0
+live review light 960x700: stops=21 issues=0
+live review light 760x700: stops=14 issues=2
+live review light 390x700: stops=14 issues=0
+runs: 32, with issues: 14
+fixture workspace light 1280 [{"t":"textarea","id":"_r_1_-draft","n":"Message Global orchestrator","fi":false,"cov":null,"v":true}]
+fixture workspace light 960 [{"t":"textarea","id":"_r_1_-draft","n":"Message Global orchestrator","fi":false,"cov":"div.ui-disclosure-body","v":true}]
+fixture workspace light 760 [{"t":"textarea","id":"_r_1_-draft","n":"Message Global orchestrator","fi":false,"cov":"section.shell-resources","v":true},{"t":"summary","id":null,"n":"Running 2","fi":true,"cov":"span.ui-disclosure-count","v":true},{"t":"summary","id":null,"n":"Waiting 1","fi":true,"cov":"span.","v":true}]
+fixture workspace light 390 [{"t":"textarea","id":"_r_1_-draft","n":"Message Global orchestrator","fi":false,"cov":null,"v":true},{"t":"summary","id":null,"n":"Workspace activity PLACEHOLDER DATA (D11) — attention count ","fi":true,"cov":"span.","v":true},{"t":"button","id":"_r_a_","n":"Stop Cache dependency downloads (fixture:task-infra-1)","fi":true,"cov":"summary.","v":true}]
+fixture agents light 960 [{"t":"div","id":null,"n":"Adapter inventory table","fi":true,"cov":"span.","v":true}]
+fixture review light 960 [{"t":"button","id":null,"n":"Task fixture-task-1 i Awaiting decision Local review merge ·","fi":true,"cov":"span.","v":true}]
+fixture review light 760 [{"t":"button","id":null,"n":"Refresh","fi":true,"cov":"summary.","v":true},{"t":"button","id":null,"n":"Request changes","fi":true,"cov":"span.rs-title","v":true}]
+fixture review light 390 [{"t":"button","id":null,"n":"Task fixture-task-1 i Awaiting decision Local review merge ·","fi":true,"cov":"span.ui-badge ui-tone-placeholder","v":true}]
+live workspace light 1280 [{"t":"textarea","id":"_r_5_-draft","n":"Message e2e-project coordinator","fi":false,"cov":null,"v":true}]
+live workspace light 960 [{"t":"a","id":null,"n":"Show dependency plan","fi":true,"cov":"summary.","v":true},{"t":"textarea","id":"_r_5_-draft","n":"Message e2e-project coordinator","fi":false,"cov":"summary.","v":true},{"t":"button","id":null,"n":"Choose conversation target · e2e-project coordinator ⌄","fi":true,"cov":"span.ui-disclosure-title","v":true}]
+live workspace light 760 [{"t":"a","id":null,"n":"Show dependency plan","fi":true,"cov":"summary.","v":true},{"t":"textarea","id":"_r_5_-draft","n":"Message e2e-project coordinator","fi":false,"cov":null,"v":true},{"t":"summary","id":null,"n":"Workspace activity 0 0 require attention","fi":true,"cov":"section.shell-resources","v":true}]
+live workspace light 390 [{"t":"textarea","id":"_r_5_-draft","n":"Message e2e-project coordinator","fi":false,"cov":null,"v":true},{"t":"button","id":null,"n":"Choose conversation target · e2e-project coordinator ⌄","fi":true,"cov":"span.","v":true},{"t":"button","id":null,"n":"Model settings: codex · GPT-6.1-Sol · medium","fi":true,"cov":"span.","v":true}]
+live agents light 390 [{"t":"summary","id":null,"n":"Configured inventory and discovered capabilities 3 adapters","fi":true,"cov":"summary.","v":true}]
+live review light 760 [{"t":"button","id":null,"n":"Refresh","fi":true,"cov":"summary.","v":true},{"t":"button","id":"rd-tab-actionable","n":"Actionable","fi":true,"cov":"summary.","v":true}]

@@ -26,7 +26,9 @@
 ///
 /// Invariant: the engine, not the UI or any agent, is the only writer of this
 /// field. The frontend may observe and request; only [`transition`] decides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum TaskState {
     /// Contract validated and persisted; not yet admitted to scheduling.
     Created,
@@ -64,7 +66,9 @@ impl TaskState {
 /// Every variant names its allowed origin. Agent-origin events are *reports*
 /// about an attempt the engine launched; they are never accepted while the
 /// task is not `Running`, and they never reach task policy fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum TaskEvent {
     /// Origin: engine (authorization step).
     Admit,
@@ -82,11 +86,14 @@ pub enum TaskEvent {
     /// fresh [`Attempt`]; the failed attempt is preserved. Only legal from
     /// `Failed` or `VerificationFailed`.
     RetryRequested,
-    /// Origin: authorized user or engine shutdown. Legal from in-flight
-    /// states only (`Created`, `Queued`, `Running`, `Verifying`); settled
-    /// quiescent-failure states keep their failure record and accept only
-    /// retry.
+    /// Origin: engine before an agent process is started. Legal only from
+    /// `Created` or `Queued`; a request for a running task is not cancellation
+    /// confirmation and must not use this event.
     CancelRequested,
+    /// Origin: the process owner, after its agent handle has cancelled and
+    /// waited for the managed child to exit. A separate cancellation request
+    /// remains pending until this event is committed.
+    CancellationConfirmed,
 }
 
 /// Audit events. One is emitted per accepted transition; the pair (event,
@@ -109,7 +116,8 @@ pub enum AuditEvent {
     ExecutionFailed,
     /// `Failed | VerificationFailed -> Queued` on [`TaskEvent::RetryRequested`].
     RetryScheduled,
-    /// `* -> Cancelled` on [`TaskEvent::CancelRequested`].
+    /// `Created | Queued -> Cancelled` on [`TaskEvent::CancelRequested`], or
+    /// `Running -> Cancelled` on [`TaskEvent::CancellationConfirmed`].
     TaskCancelled,
 }
 
@@ -134,7 +142,12 @@ impl std::error::Error for TransitionError {}
 
 /// Exhaustive table of legal edges: (from, event) -> (next, audit event).
 const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
-    (TaskState::Created, TaskEvent::Admit, TaskState::Queued, AuditEvent::TaskAdmitted),
+    (
+        TaskState::Created,
+        TaskEvent::Admit,
+        TaskState::Queued,
+        AuditEvent::TaskAdmitted,
+    ),
     (
         TaskState::Queued,
         TaskEvent::ExecutionStarted,
@@ -191,13 +204,7 @@ const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
     ),
     (
         TaskState::Running,
-        TaskEvent::CancelRequested,
-        TaskState::Cancelled,
-        AuditEvent::TaskCancelled,
-    ),
-    (
-        TaskState::Verifying,
-        TaskEvent::CancelRequested,
+        TaskEvent::CancellationConfirmed,
         TaskState::Cancelled,
         AuditEvent::TaskCancelled,
     ),
@@ -209,12 +216,17 @@ const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
 /// This is the only legitimate writer of [`TaskState`]. Repairs and retries
 /// are bounded by the caller (the scheduler's retry/repair counters, per plan
 /// section 7); the table here does not track counters.
-pub fn transition(current: TaskState, event: TaskEvent) -> Result<(TaskState, AuditEvent), TransitionError> {
-    MOVE
-        .iter()
+pub fn transition(
+    current: TaskState,
+    event: TaskEvent,
+) -> Result<(TaskState, AuditEvent), TransitionError> {
+    MOVE.iter()
         .find(|(from, ev, _, _)| *from == current && *ev == event)
         .map(|(_, _, next, audit)| (*next, *audit))
-        .ok_or(TransitionError::Illegal { from: current, event })
+        .ok_or(TransitionError::Illegal {
+            from: current,
+            event,
+        })
 }
 
 /// An execution attempt of a task. Attempts are append-only: a failed attempt
@@ -308,10 +320,7 @@ const ATTEMPT_MOVE: &[(AttemptState, AttemptState)] = &[
 
 /// Validate one attempt state change. Callers must persist the change only
 /// when this accepts it; terminal states accept nothing.
-pub fn attempt_transition(
-    current: AttemptState,
-    next: AttemptState,
-) -> Result<(), LifecycleError> {
+pub fn attempt_transition(current: AttemptState, next: AttemptState) -> Result<(), LifecycleError> {
     ATTEMPT_MOVE
         .iter()
         .any(|(f, t)| *f == current && *t == next)
@@ -331,10 +340,7 @@ const SESSION_MOVE: &[(SessionState, SessionState)] = &[
 ];
 
 /// Validate one session state change; see [`attempt_transition`].
-pub fn session_transition(
-    current: SessionState,
-    next: SessionState,
-) -> Result<(), LifecycleError> {
+pub fn session_transition(current: SessionState, next: SessionState) -> Result<(), LifecycleError> {
     SESSION_MOVE
         .iter()
         .any(|(f, t)| *f == current && *t == next)
@@ -389,7 +395,7 @@ mod tests {
         ]
     }
 
-    fn all_events() -> [TaskEvent; 7] {
+    fn all_events() -> [TaskEvent; 9] {
         [
             TaskEvent::Admit,
             TaskEvent::ExecutionStarted,
@@ -398,6 +404,8 @@ mod tests {
             TaskEvent::VerificationOutcome { passed: false },
             TaskEvent::ExecutionFailed,
             TaskEvent::RetryRequested,
+            TaskEvent::CancelRequested,
+            TaskEvent::CancellationConfirmed,
         ]
     }
 
@@ -405,7 +413,10 @@ mod tests {
     fn table_edges_are_unique() {
         let mut seen = std::collections::BTreeSet::new();
         for &(from, event, _, _) in MOVE {
-            assert!(seen.insert((from, event)), "duplicate edge {from:?} -- {event:?}");
+            assert!(
+                seen.insert((from, event)),
+                "duplicate edge {from:?} -- {event:?}"
+            );
         }
     }
 
@@ -420,21 +431,18 @@ mod tests {
     fn unlisted_combinations_are_rejected() {
         for state in all_states() {
             for event in all_events() {
-                let listed = MOVE
-                    .iter()
-                    .any(|(f, e, _, _)| *f == state && *e == event);
+                let listed = MOVE.iter().any(|(f, e, _, _)| *f == state && *e == event);
                 if listed {
                     continue;
                 }
                 match transition(state, event) {
-                    Err(TransitionError::Illegal {
-                        from,
-                        event: ev,
-                    }) => {
+                    Err(TransitionError::Illegal { from, event: ev }) => {
                         assert_eq!(from, state);
                         assert_eq!(ev, event);
                     }
-                    Ok((next, _)) => panic!("expected rejection: {state:?} -- {event:?} --> {next:?}"),
+                    Ok((next, _)) => {
+                        panic!("expected rejection: {state:?} -- {event:?} --> {next:?}")
+                    }
                 }
             }
         }
@@ -463,7 +471,10 @@ mod tests {
             }
             for event in all_events() {
                 assert!(
-                    matches!(transition(state, event), Err(TransitionError::Illegal { .. })),
+                    matches!(
+                        transition(state, event),
+                        Err(TransitionError::Illegal { .. })
+                    ),
                     "irreversible {state:?} accepted {event:?}"
                 );
             }
@@ -483,7 +494,10 @@ mod tests {
                     continue;
                 }
                 assert!(
-                    matches!(transition(state, event), Err(TransitionError::Illegal { .. })),
+                    matches!(
+                        transition(state, event),
+                        Err(TransitionError::Illegal { .. })
+                    ),
                     "quiescent {state:?} accepted {event:?}"
                 );
             }
@@ -516,32 +530,46 @@ mod tests {
     }
 
     #[test]
-    fn cancel_is_legal_from_every_in_flight_state() {
-        // Cancellation stops work that is still in motion or awaiting a
-        // decision. Settled quiescent-failure states (Failed,
-        // VerificationFailed) are not in flight: they accept only retry,
-        // because cancelling them would overwrite the failure record with a
-        // less informative terminal state.
-        let in_flight = [
-            TaskState::Created,
-            TaskState::Queued,
-            TaskState::Running,
-            TaskState::Verifying,
-        ];
-        for state in in_flight {
+    fn cancel_requested_is_legal_only_before_agent_start() {
+        for state in [TaskState::Created, TaskState::Queued] {
             assert_eq!(
                 transition(state, TaskEvent::CancelRequested),
                 Ok((TaskState::Cancelled, AuditEvent::TaskCancelled)),
                 "cancel not legal from {state:?}"
             );
         }
-        for state in [TaskState::Failed, TaskState::VerificationFailed] {
+        for state in [
+            TaskState::Running,
+            TaskState::Verifying,
+            TaskState::Failed,
+            TaskState::VerificationFailed,
+        ] {
             assert!(
                 matches!(
                     transition(state, TaskEvent::CancelRequested),
                     Err(TransitionError::Illegal { .. })
                 ),
-                "settled state {state:?} accepted cancel"
+                "unconfirmed cancel request was terminal from {state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn running_task_requires_cancellation_confirmation() {
+        assert_eq!(
+            transition(TaskState::Running, TaskEvent::CancellationConfirmed),
+            Ok((TaskState::Cancelled, AuditEvent::TaskCancelled))
+        );
+        for state in [
+            TaskState::Created,
+            TaskState::Queued,
+            TaskState::Verifying,
+            TaskState::Failed,
+            TaskState::VerificationFailed,
+        ] {
+            assert!(
+                transition(state, TaskEvent::CancellationConfirmed).is_err(),
+                "cancellation confirmation was legal from {state:?}"
             );
         }
     }
@@ -590,10 +618,7 @@ mod tests {
         // Guards against a new event variant sneaking in without table
         // coverage.
         for event in all_events() {
-            let covered = MOVE
-                .iter()
-                .filter(|(_, e, _, _)| *e == event)
-                .count();
+            let covered = MOVE.iter().filter(|(_, e, _, _)| *e == event).count();
             assert!(covered > 0, "event {event:?} has no edges");
         }
     }
@@ -622,7 +647,10 @@ mod tests {
     fn attempt_edges_match_the_table_exactly() {
         // Every table edge applies; every other ordered pair is rejected.
         for &(from, next) in ATTEMPT_MOVE {
-            assert!(attempt_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+            assert!(
+                attempt_transition(from, next).is_ok(),
+                "{from:?} -> {next:?}"
+            );
         }
         for &from in &all_attempt_states() {
             for &next in &all_attempt_states() {
@@ -652,22 +680,17 @@ mod tests {
         }
         // Regression: a running attempt never steps back to Pending, and a
         // candidate never steps back to Running.
-        assert!(attempt_transition(
-            AttemptState::Running,
-            AttemptState::Pending
-        )
-        .is_err());
-        assert!(attempt_transition(
-            AttemptState::CandidateReady,
-            AttemptState::Running
-        )
-        .is_err());
+        assert!(attempt_transition(AttemptState::Running, AttemptState::Pending).is_err());
+        assert!(attempt_transition(AttemptState::CandidateReady, AttemptState::Running).is_err());
     }
 
     #[test]
     fn session_edges_match_the_table_exactly() {
         for &(from, next) in SESSION_MOVE {
-            assert!(session_transition(from, next).is_ok(), "{from:?} -> {next:?}");
+            assert!(
+                session_transition(from, next).is_ok(),
+                "{from:?} -> {next:?}"
+            );
         }
         for &from in &all_session_states() {
             for &next in &all_session_states() {

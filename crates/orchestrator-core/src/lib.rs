@@ -15,8 +15,18 @@
 //! for the threat model these contracts implement.
 
 pub mod authorization;
+pub mod approval;
 pub mod contract;
+pub mod decomposition;
+pub mod identity;
+pub mod records;
+pub mod retry;
+pub mod scheduler;
 pub mod task;
+pub mod workstream;
+
+pub use records::{Artifact, Project, VerificationRun, Workspace};
+pub use identity::ProcessIdentity;
 
 pub use contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, TaskProposal, Validation,

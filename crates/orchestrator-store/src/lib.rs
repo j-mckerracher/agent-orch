@@ -1,61 +1,86 @@
-//! Local durable records for the task lifecycle (board M1-01; plan sections
-//! 5, 7, 9). One task = one JSON file under a data directory, rewritten
-//! atomically (temp file + rename) on every accepted mutation. M2-01
-//! replaces this file layout with SQLite; the [`Store`] trait is the
-//! replacement seam, and the invariants below hold for any backend.
+//! Durable task records for `orchestrator-core`.
 //!
-//! Updated: 2026-11-07T13:51:57-07:00 (M1-01 review: clarify power-loss durability).
+//! `FileStore` writes one JSON file per task. `SqliteStore` uses normalized
+//! SQLite tables, WAL, foreign keys, and embedded migrations. Both implement
+//! the synchronous [`Store`] trait. Existing `FileStore` data is not migrated.
 //!
-//! # Invariants enforced here (core owns the state tables, this crate owns
-//! their durability)
+//! Updated: 2026-11-08T16:58:08+00:00.
 //!
-//! - **Contract before state.** [`Store::create`] validates via
-//!   [`orchestrator_core::contract::validate`]; an invalid contract never
-//!   produces a record, and an admitted contract is stored verbatim and
-//!   never rewritten afterwards.
-//! - **State and audit event are one record.** [`Store::transition`]
-//!   validates via the single central table
-//!   [`orchestrator_core::task::transition`], appends the returned
-//!   [`orchestrator_core::task::AuditEvent`] to the record's ordered
-//!   journal, and persists both in one temp-file replacement. A failure
-//!   before rename leaves the previous record intact; a successful atomic
-//!   rename exposes the complete new record. This prevents an in-place
-//!   partial overwrite, but M1 does not `sync_all` the file or parent
-//!   directory and does not guarantee survival of power loss.
-//! - **Attempts and sessions are separate records of separate lifetimes.**
-//!   They are stored as their own collections with their own ids and
-//!   terminal-state rules; none of their methods touches
-//!   [`orchestrator_core::task::TaskState`]. A session exiting (even cleanly)
-//!   can never move a task to `Succeeded` — only the engine's
-//!   `VerificationOutcome { passed: true }` transition does that.
-//! - **Lifecycle edges are the core tables, applied at the store.** A new
-//!   attempt exists only while the task is `Queued` and starts `Pending`;
-//!   a new session starts `Spawning` and names an attempt this record
-//!   itself recorded with the matching `task_id`. State changes validate
-//!   against [`orchestrator_core::task::attempt_transition`] and
-//!   [`orchestrator_core::task::session_transition`]; terminal states are
-//!   immutable.
-//! - **History is append-only.** Failed attempts and terminal sessions are
-//!   immutable; retries append a new attempt and a new journal entry.
+//! # Invariants
 //!
-//! # Assumptions / limits
+//! - [`Store::create`] validates contracts through
+//!   [`orchestrator_core::contract::validate`]. An invalid contract never
+//!   produces a record. An admitted contract is stored verbatim.
+//! - [`Store::transition`] calls the central
+//!   [`orchestrator_core::task::transition`] table and records its audit event.
+//!   `FileStore` replaces one complete JSON file. `SqliteStore` commits the
+//!   state and event in one database transaction.
+//! - Attempts and sessions have separate identifiers and lifetimes. Neither
+//!   changes [`orchestrator_core::task::TaskState`]. Only a task transition can
+//!   make a task succeed.
+//! - Core state tables validate task, attempt, and session lifecycle edges.
+//!   Failed attempts and terminal sessions remain in history.
 //!
-//! - **One handle per data directory.** In-process callers on one
-//!   `FileStore` handle are serialized by its mutex, covering `create`
-//!   as well as every mutation: no shared temp path, no lost transition,
-//!   no duplicate-create race. Sequential close and reopen is supported
-//!   and tested for successful mutations. The file and parent directory
-//!   are not explicitly synced, so power-loss durability is not guaranteed.
-//!   Two separate handles over the same directory are *not* serialized
-//!   with each other in M1, and two processes writing the same directory
-//!   are last-writer-wins with no optimistic concurrency. Cross-process
-//!   locking and the WAL/journal schema are M2-01 (SQLite) scope.
-//! - `std::fs::rename` replaces the destination on both supported platforms
-//!   (Windows `MoveFileEx`, POSIX atomic rename). This is what makes the
-//!   rewrite atomic. A failed write may leave the temp file
-//!   (`<id>.<pid>.tmp`) behind: `list` skips any non-`.json` name, so a
-//!   leftover temp file is invisible to readers and harmless; the
-//!   previous record is untouched either way.
+//! # SQLite lifecycle
+//!
+//! - Each `SqliteStore` handle owns one Tokio worker and a one-connection
+//!   SQLx pool. The worker preserves the synchronous trait signatures. Calls
+//!   on one handle run in order. Separate handles use separate connections.
+//!   SQLite's five-second busy timeout serializes writers or returns a typed
+//!   database error.
+//! - Every connection enables foreign keys and WAL. Embedded versioned
+//!   migrations run before `SqliteStore::new` returns. `durable_events` assigns
+//!   one global sequence; the legacy `events` table remains task-transition-only.
+//!   `store_epoch()` names the database (migration 0007); a replaced file has a
+//!   new epoch, so a cursor from another journal can be detected.
+//! - Project, workspace, verification-log, and artifact paths are references.
+//!   The store does not open those files. Artifact contents remain outside
+//!   SQLite.
+//! - SQLite transactions protect against process interruption. This store
+//!   makes no power-loss durability guarantee. It uses SQLite's default
+//!   synchronous mode and does not explicitly sync parent-directory metadata.
+//!
+//! # FileStore limits
+//!
+//! `FileStore` serializes callers only within one handle. Separate handles or
+//! processes can overwrite each other's records and must not share a data
+//! directory. It does not sync the record file or parent directory. A failed
+//! write may leave an ignored `<id>.<pid>.tmp` file.
+mod data_lock;
+pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
+// Owner-only permissions (0700/0600 on Unix, a protected owner-only DACL on
+// Windows) live in their own crate so the desktop host shares them.
+pub use orchestrator_private_fs::{create_private_dir, create_private_file, restrict_to_owner};
+pub mod sqlite;
+mod sqlite_approvals;
+mod sqlite_attempts;
+mod sqlite_conversations;
+mod sqlite_delivery;
+mod sqlite_ops;
+mod sqlite_review;
+mod sqlite_verification;
+mod sqlite_workstreams;
+pub use sqlite_conversations::{
+    BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
+    ConversationTurn, TurnOutcome, TurnState, INTERRUPTED_BY_RESTART,
+    MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
+    MAX_WORKSTREAM_ID_BYTES,
+};
+pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
+pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
+pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
+mod sqlite_events;
+pub use sqlite_events::{IdempotencyStart, StreamEvent};
+mod sqlite_reconcile;
+mod sqlite_usage;
+pub mod usage_prices;
+pub use sqlite::SqliteStore;
+pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry};
+pub use sqlite_usage::{
+    ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,
+    UsageWindowSummary,
+};
+
 use std::path::Path;
 
 use orchestrator_core::contract::{validate as validate_contract, ContractError, TaskContract};
@@ -89,10 +114,9 @@ pub struct TaskRecord {
     pub version: u64,
 }
 
-/// Failures of a store operation. Each variant names the invariant that
-/// failed so callers (and tests) can distinguish policy violations from
-/// I/O. Not `Clone`/`PartialEq`: the I/O and serde errors it wraps are
-/// neither.
+/// Failures of store operations. Variants distinguish policy violations,
+/// filesystem failures, serialization errors, and SQLite errors. The enum is
+/// not `Clone` or `PartialEq` because wrapped errors do not implement them.
 #[derive(Debug, Error)]
 pub enum StoreError {
     /// `create` for an id that already has a record.
@@ -101,6 +125,9 @@ pub enum StoreError {
     /// The id has no record.
     #[error("task {0} not found")]
     NotFound(String),
+    /// A typed non-task record has no matching row.
+    #[error("{entity} {id} not found")]
+    RecordNotFound { entity: &'static str, id: String },
     /// The id is not a plain file name, so no record path can be formed.
     #[error("invalid task id {0:?}")]
     InvalidTaskId(String),
@@ -130,7 +157,10 @@ pub enum StoreError {
     /// The session references an attempt this task has not recorded. A
     /// session belongs to exactly one attempt.
     #[error("session {session_id} references unknown attempt {attempt_id}")]
-    UnknownAttempt { session_id: String, attempt_id: String },
+    UnknownAttempt {
+        session_id: String,
+        attempt_id: String,
+    },
     /// An attempt already records this session id.
     #[error("session {session_id} already recorded for task {task_id}")]
     DuplicateSession { session_id: String, task_id: String },
@@ -142,10 +172,16 @@ pub enum StoreError {
     NoSession { session_id: String, task_id: String },
     /// A terminal attempt cannot be updated; the history is preserved.
     #[error("attempt {attempt_id} is terminal ({state:?}) and immutable")]
-    TerminalAttempt { attempt_id: String, state: AttemptState },
+    TerminalAttempt {
+        attempt_id: String,
+        state: AttemptState,
+    },
     /// A terminal session cannot be updated.
     #[error("session {session_id} is terminal ({state:?}) and immutable")]
-    TerminalSession { session_id: String, state: SessionState },
+    TerminalSession {
+        session_id: String,
+        state: SessionState,
+    },
     /// A new attempt can only be recorded while the task is `Queued`;
     /// `Created` tasks have not been admitted, `Succeeded`/`Cancelled`
     /// tasks are settled, and `Running`/`Verifying` already own an attempt.
@@ -156,36 +192,77 @@ pub enum StoreError {
     EmptyAttemptId { task_id: String },
     /// A new attempt must start `Pending`; a fresh row is not yet running.
     #[error("new attempt {attempt_id} must start Pending, got {state:?}")]
-    AttemptNotPending { attempt_id: String, state: AttemptState },
+    AttemptNotPending {
+        attempt_id: String,
+        state: AttemptState,
+    },
     /// A new session must start `Spawning`.
     #[error("new session {session_id} must start Spawning, got {state:?}")]
-    SessionNotSpawning { session_id: String, state: SessionState },
+    SessionNotSpawning {
+        session_id: String,
+        state: SessionState,
+    },
     /// The attempt a session names is recorded on this task but carries a
     /// different `task_id` — a malformed record that must not be linked.
     #[error("session {session_id} names attempt {attempt_id} with a foreign task_id")]
-    MalformedAttempt { session_id: String, attempt_id: String },
+    MalformedAttempt {
+        session_id: String,
+        attempt_id: String,
+    },
     /// The attempt or session state change is not a legal edge.
     #[error("lifecycle: {0}")]
     Lifecycle(#[from] LifecycleError),
     /// A stored file does not parse as a [`TaskRecord`].
     #[error("corrupt record for task {task_id}: {detail}")]
     Corrupt { task_id: String, detail: String },
-    /// (De)serialization failure while writing a record.
+    /// (De)serialization failed while reading or writing a durable value.
     #[error("serialization: {0}")]
     Serde(#[from] serde_json::Error),
-    /// Filesystem failure.
+    /// Operating-system I/O failure.
     #[error("i/o: {0}")]
     Io(#[from] std::io::Error),
+    /// SQLx reported a SQLite database or connection error.
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
+    /// An embedded SQLite migration failed while opening the store.
+    #[error("database migration: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+    /// Event cursor must be nonnegative.
+    #[error("event cursor must be nonnegative")]
+    InvalidEventCursor,
+    /// Event page size must be within its bounded range.
+    #[error("event page limit is invalid")]
+    InvalidEventLimit,
+    /// Idempotency key or fingerprint is malformed.
+    #[error("idempotency key is invalid")]
+    InvalidIdempotencyKey,
+    /// A key was already bound to a different request.
+    #[error("idempotency key conflicts with prior request")]
+    IdempotencyConflict,
+    /// Cancellation owner generation is not a lowercase 128-bit hex UUID.
+    #[error("cancellation owner identity is invalid")]
+    InvalidCancellationOwner,
+    /// No active run owner is registered for the task/session.
+    #[error("no active cancellation owner for task {task_id} session {session_id}")]
+    NoActiveCancellationOwner { task_id: String, session_id: String },
+    /// Cancellation protocol conflicts with the durable task/owner state.
+    #[error("cancellation for task {task_id} conflicts with its state: {detail}")]
+    CancellationConflict {
+        task_id: String,
+        detail: &'static str,
+    },
+    /// The SQLite worker stopped before responding to a request.
+    #[error("SQLite worker stopped unexpectedly")]
+    WorkerStopped,
 }
 
-/// Durable store for task records. The single seam M2-01 will re-implement
-/// on SQLite (WAL, migrations, ordered journal table) without changing
-/// callers.
+/// Durable store for task records. `FileStore` and `SqliteStore` implement this
+/// unchanged synchronous interface.
 ///
-/// Implementations must guarantee, for each method that mutates, that the
-/// mutation (state change *and* its audit event, where applicable) is
-/// durable as one unit: a process crash may leave either the previous
-/// record or the new one, never a mix.
+/// Each successful mutation is atomic. A process interruption leaves either
+/// the prior state or the complete new state, including its audit event when
+/// the operation creates one. This contract does not promise power-loss
+/// durability.
 pub trait Store {
     /// Validate and persist a new contract as a `Created` task.
     fn create(&self, contract: &TaskContract) -> Result<(), StoreError>;
@@ -363,6 +440,12 @@ impl Store for FileStore {
     }
 
     fn transition(&self, task_id: &str, event: TaskEvent) -> Result<AuditEvent, StoreError> {
+        if event == TaskEvent::CancellationConfirmed {
+            return Err(StoreError::CancellationConflict {
+                task_id: task_id.to_owned(),
+                detail: "confirmation requires the owner acknowledgement API",
+            });
+        }
         // The next state and audit event are computed from the record
         // being mutated, inside the same locked read-modify-write, so the
         // state and its journal entry always come from the same state.
@@ -545,10 +628,7 @@ mod tests {
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn new_dir() -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "orch-store-test-{}-{n}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("orch-store-test-{}-{n}", std::process::id()));
         FileStore::new(&dir).unwrap();
         dir
     }
@@ -569,6 +649,7 @@ mod tests {
             autonomy: AutonomyPolicy::WorkspaceWrites,
             max_retries: 1,
             max_repairs: 1,
+            model_selection: None,
         }
     }
 
@@ -662,12 +743,8 @@ mod tests {
             let store = FileStore::new(&dir).unwrap();
             store.create(&contract("t1")).unwrap();
             store.transition("t1", TaskEvent::Admit).unwrap();
-            store
-                .add_attempt("t1", &attempt("a1", "t1", 1))
-                .unwrap();
-            store
-                .add_session("t1", &session("s1", "a1"))
-                .unwrap();
+            store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+            store.add_session("t1", &session("s1", "a1")).unwrap();
             store
                 .update_session_state("t1", "s1", SessionState::Running)
                 .unwrap();
@@ -709,7 +786,13 @@ mod tests {
         ] {
             let err = store.transition("t1", event).unwrap_err();
             assert!(
-                matches!(err, StoreError::IllegalTransition(TransitionError::Illegal { from: TaskState::Created, .. })),
+                matches!(
+                    err,
+                    StoreError::IllegalTransition(TransitionError::Illegal {
+                        from: TaskState::Created,
+                        ..
+                    })
+                ),
                 "expected Illegal from Created, got {err:?}"
             );
         }
@@ -743,9 +826,7 @@ mod tests {
         // Walk every edge of the state table that leads to Succeeded and
         // verify the journal matches the state one-for-one, in order.
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .transition("t1", TaskEvent::ExecutionStarted)
-            .unwrap();
+        store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
         store.transition("t1", TaskEvent::CandidateReady).unwrap();
         store
             .transition("t1", TaskEvent::VerificationOutcome { passed: true })
@@ -769,9 +850,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         store
             .update_attempt_state("t1", "a1", AttemptState::Running)
             .unwrap();
@@ -785,9 +864,7 @@ mod tests {
         store.transition("t1", TaskEvent::RetryRequested).unwrap();
         assert_eq!(store.get("t1").unwrap().state, TaskState::Queued);
         // The retry creates attempt 2. Attempt 1 stays Failed, forever.
-        store
-            .add_attempt("t1", &attempt("a2", "t1", 2))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a2", "t1", 2)).unwrap();
         let rec = store.get("t1").unwrap();
         assert_eq!(rec.attempts.len(), 2);
         assert_eq!(rec.attempts[0].id, "a1");
@@ -818,12 +895,8 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
-        store
-            .add_session("t1", &session("s1", "a1"))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+        store.add_session("t1", &session("s1", "a1")).unwrap();
         store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
         // The agent process exits (cleanly, with whatever it thinks is
         // success). None of these may move the task: session facts report
@@ -890,8 +963,8 @@ mod tests {
         // Separators, traversal, Windows drive/alternate-stream syntax,
         // dots, NUL, and empty: none of these may reach the filesystem.
         for bad in [
-            "", ".", "..", "a/b", "a\\b", "C:evil", "C:/evil", "x.json",
-            "a:b", "a\0b", "a b", "a.b",
+            "", ".", "..", "a/b", "a\\b", "C:evil", "C:/evil", "x.json", "a:b", "a\0b", "a b",
+            "a.b",
         ] {
             match store.get(bad) {
                 Err(StoreError::InvalidTaskId(_)) => {}
@@ -908,7 +981,12 @@ mod tests {
         // Nothing escaped: no sibling of the data dir was created, and
         // the tasks dir gained no record.
         assert!(!dir.parent().unwrap().join("tasks..json").exists());
-        let ids = store.list().unwrap().into_iter().map(|r| r.contract.id).collect::<Vec<_>>();
+        let ids = store
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.contract.id)
+            .collect::<Vec<_>>();
         assert!(ids.is_empty());
     }
 
@@ -926,13 +1004,21 @@ mod tests {
         // The first attempt must be number 1.
         assert!(matches!(
             store.add_attempt("t1", &attempt("a1", "t1", 2)),
-            Err(StoreError::BadAttemptNumber { expected: 1, got: 2, .. })
+            Err(StoreError::BadAttemptNumber {
+                expected: 1,
+                got: 2,
+                ..
+            })
         ));
         store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         // The next one must be 2, and the id must be fresh.
         assert!(matches!(
             store.add_attempt("t1", &attempt("a2", "t1", 1)),
-            Err(StoreError::BadAttemptNumber { expected: 2, got: 1, .. })
+            Err(StoreError::BadAttemptNumber {
+                expected: 2,
+                got: 1,
+                ..
+            })
         ));
         assert!(matches!(
             store.add_attempt("t1", &attempt("a1", "t1", 2)),
@@ -943,7 +1029,10 @@ mod tests {
         store
             .update_attempt_state("t1", "a2", AttemptState::Running)
             .unwrap();
-        assert_eq!(store.get("t1").unwrap().attempts[1].state, AttemptState::Running);
+        assert_eq!(
+            store.get("t1").unwrap().attempts[1].state,
+            AttemptState::Running
+        );
     }
 
     #[test]
@@ -992,7 +1081,11 @@ mod tests {
         let rec = store.get("t1").unwrap();
         assert!(!rec.attempts.is_empty());
         for (i, a) in rec.attempts.iter().enumerate() {
-            assert_eq!(a.attempt_number, i as u32 + 1, "sequence must stay contiguous");
+            assert_eq!(
+                a.attempt_number,
+                i as u32 + 1,
+                "sequence must stay contiguous"
+            );
         }
         assert!(ok.iter().any(|&b| b), "at least one attempt must land");
     }
@@ -1003,9 +1096,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         store
             .update_attempt_state("t1", "a1", AttemptState::Running)
             .unwrap();
@@ -1036,12 +1127,8 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
-        store
-            .add_session("t1", &session("s1", "a1"))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
+        store.add_session("t1", &session("s1", "a1")).unwrap();
         store
             .update_session_state("t1", "s1", SessionState::Running)
             .unwrap();
@@ -1076,9 +1163,7 @@ mod tests {
         assert_eq!(store.get("t1").unwrap(), before, "version must not move");
         // Settled task: no attempt can resurrect it.
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         drive(&store, "t1", TaskState::Queued, TaskState::Succeeded);
         let before = store.get("t1").unwrap();
         assert!(matches!(
@@ -1119,9 +1204,7 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         let mut running = session("s1", "a1");
         running.state = SessionState::Running;
         assert!(matches!(
@@ -1145,20 +1228,12 @@ mod tests {
         let store = FileStore::new(&dir).unwrap();
         store.create(&contract("t1")).unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();
-        store
-            .add_attempt("t1", &attempt("a1", "t1", 1))
-            .unwrap();
+        store.add_attempt("t1", &attempt("a1", "t1", 1)).unwrap();
         let path = dir.join("tasks").join("t1.json");
-        let mut rec: TaskRecord = serde_json::from_str(
-            std::fs::read_to_string(&path).unwrap().as_str(),
-        )
-        .unwrap();
+        let mut rec: TaskRecord =
+            serde_json::from_str(std::fs::read_to_string(&path).unwrap().as_str()).unwrap();
         rec.attempts[0].task_id = "other".into();
-        std::fs::write(
-            &path,
-            serde_json::to_vec_pretty(&rec).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(&path, serde_json::to_vec_pretty(&rec).unwrap()).unwrap();
         // A fresh handle (the reopen) must refuse the malformed row.
         let store = FileStore::new(&dir).unwrap();
         assert!(matches!(

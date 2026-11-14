@@ -1,0 +1,82 @@
+{
+  "fixture": "workstreams",
+  "scenarios": {
+    "success": {
+      "ageMs": 3000,
+      "data": {
+        "workstreams": [
+          {
+            "id": "fixture:ws-auth",
+            "title": "Auth hardening",
+            "summary": "Harden session handling across the service.",
+            "state": "active",
+            "revision": 3,
+            "projectIds": ["fixture:project-alpha"],
+            "objectives": {
+              "status": "ok",
+              "ageMs": 3000,
+              "value": [
+                {
+                  "id": "fixture:objective-auth-1",
+                  "title": "Harden session handling",
+                  "description": "Harden session handling across the service.",
+                  "revision": 3,
+                  "gates": [
+                    { "id": "fixture:gate-1", "label": "Threat model reviewed", "state": "verified", "evidenceTaskId": null },
+                    { "id": "fixture:gate-2", "label": "Penetration findings closed", "state": "pending", "evidenceTaskId": null }
+                  ]
+                },
+                {
+                  "id": "fixture:objective-auth-2",
+                  "title": "Document the session model",
+                  "description": "Operators can read how sessions are issued and revoked.",
+                  "revision": 1,
+                  "gates": [{ "id": "fixture:gate-3", "label": "Session guide published", "state": "failed", "evidenceTaskId": null }]
+                }
+              ]
+            },
+            "tasks": [
+              { "id": "fixture:task-auth-1", "projectId": "fixture:project-alpha", "objectiveId": "fixture:objective-auth-1", "objective": "Rotate signing keys", "state": "Succeeded", "agent": "codex", "dependencies": [] },
+              { "id": "fixture:task-auth-2", "projectId": "fixture:project-alpha", "objectiveId": "fixture:objective-auth-1", "objective": "Add refresh-token expiry", "state": "Running", "agent": "codex", "dependencies": ["fixture:task-auth-1"] },
+              { "id": "fixture:task-auth-3", "projectId": "fixture:project-alpha", "objectiveId": "fixture:objective-auth-2", "objective": "Document the session model", "state": "Queued", "agent": "claude-code", "dependencies": ["fixture:task-auth-2"] }
+            ]
+          },
+          {
+            "id": "fixture:ws-docs",
+            "title": "Docs refresh",
+            "summary": "Bring the operator guide up to date.",
+            "state": "suspended",
+            "revision": 1,
+            "projectIds": ["fixture:project-alpha"],
+            "objectives": {
+              "status": "ok",
+              "ageMs": 3000,
+              "value": [
+                { "id": "fixture:objective-docs-1", "title": "Bring the operator guide up to date.", "description": "", "revision": 1, "gates": [] }
+              ]
+            },
+            "tasks": [
+              { "id": "fixture:task-docs-1", "projectId": "fixture:project-alpha", "objectiveId": null, "objective": "Rewrite the install guide", "state": "Failed", "agent": "claude-code", "dependencies": [] },
+              { "id": "fixture:task-docs-2", "projectId": "fixture:project-alpha", "objectiveId": null, "objective": "Add a troubleshooting page", "state": "Queued", "agent": "claude-code", "dependencies": [] }
+            ]
+          },
+          {
+            "id": "fixture:ws-infra",
+            "title": "Build infrastructure",
+            "summary": "",
+            "state": "active",
+            "revision": 1,
+            "projectIds": ["fixture:project-beta"],
+            "objectives": { "status": "unknown", "reason": "The objective text was not recorded for this workstream." },
+            "tasks": [
+              { "id": "fixture:task-infra-1", "projectId": "fixture:project-beta", "objectiveId": null, "objective": "Cache dependency downloads", "state": "Verifying", "agent": "codex", "dependencies": [] }
+            ]
+          }
+        ]
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the workstream source is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: workstreams are not supported." },
+    "unknown": { "reason": "Fixture scenario: workstream state is unknown." }
+  }
+}

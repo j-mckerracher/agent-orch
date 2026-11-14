@@ -3,15 +3,28 @@
 //!
 //! Task policy, authorization, and result interpretation live in the
 //! engine, not here. The adapter reports protocol facts.
+//! A nonzero process exit fails even when Codex completed the protocol turn.
+//! Updated: 2026-11-08T11:21:26Z.
 
 use async_trait::async_trait;
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
 
 use crate::codex_parser::Parser;
 use crate::contract::{
-    AgentAdapter, AgentCapabilities, AgentEvent, AgentError, AgentExit, AgentHandle,
-    AgentKind, AgentLaunchRequest, Result,
+    AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
+    AgentLaunchRequest, Result,
 };
+use crate::routing::RoutableAdapter;
+use crate::usage::UsageReport;
+
+/// Parent variables Codex needs beyond the baseline allowlist.
+const PROVIDER_ENV: &[&str] = &[
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+    "OPENAI_PROJECT",
+    "CODEX_HOME",
+];
 
 /// The Codex adapter for `codex exec --json` one-shot execution.
 #[derive(Debug, Clone, Default)]
@@ -38,32 +51,25 @@ impl CodexAdapter {
             .unwrap_or_else(|| std::path::PathBuf::from("codex"))
     }
 
-    /// Locate the executable for detection: an explicit path is checked
-    /// as-is; a bare name is resolved against PATH (`.exe` on Windows).
-    fn locate(&self) -> Option<std::path::PathBuf> {
-        let program = self.program();
-        if program.is_file() {
-            return Some(program);
+    /// Locate the executable: an explicit path is checked as-is; a bare name
+    /// is resolved against PATH (`.exe`, then `.cmd`, on Windows). Every probe
+    /// and launch should use this one path.
+    pub fn locate(&self) -> Option<std::path::PathBuf> {
+        crate::locate::locate_program(&self.program())
+    }
+}
+
+impl RoutableAdapter for CodexAdapter {
+    fn capabilities(&self) -> AgentCapabilities {
+        AgentCapabilities {
+            streaming: true,           // CodexHandle::next_event feeds stdout to Parser::feed.
+            interactive_input: false,  // AgentHandle exposes no input method (contract.rs:116-126).
+            structured_output: true, // Parser::feed parses JSONL records (codex_parser.rs:86-113).
+            cancellation: true, // CodexHandle::cancel calls ChildSupervisor::cancel (codex_adapter.rs:158-161).
+            session_resumption: false, // `codex exec --json` is one-shot (codex_adapter.rs:16).
+            approvals: false, // Parser::translate does not map approval events (codex_parser.rs:122-214).
+            model_selection: true, // `selection_args` passes a catalog-validated model and effort (catalog.rs).
         }
-        if let Some(pathvar) = std::env::var_os("PATH") {
-            for dir in std::env::split_paths(&pathvar) {
-                let joined = dir.join(&program);
-                if joined.is_file() {
-                    return Some(joined);
-                }
-                #[cfg(windows)]
-                if !program
-                    .extension()
-                    .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("exe"))
-                {
-                    let exe = dir.join(format!("{}.exe", program.to_string_lossy()));
-                    if exe.is_file() {
-                        return Some(exe);
-                    }
-                }
-            }
-        }
-        None
     }
 }
 
@@ -79,19 +85,7 @@ impl AgentAdapter for CodexAdapter {
                 self.program().to_string_lossy().into_owned(),
             ));
         }
-        // `codex exec --json` is one-shot: NDJSON streamed live, no
-        // interactive input, no session resumption, no approvals, no model
-        // selection at this integration level. Cancellation is provided by
-        // the supervisor (process-tree kill).
-        Ok(AgentCapabilities {
-            streaming: true,
-            interactive_input: false,
-            structured_output: true,
-            cancellation: true,
-            session_resumption: false,
-            approvals: false,
-            model_selection: false,
-        })
+        Ok(self.capabilities())
     }
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {
@@ -101,6 +95,7 @@ impl AgentAdapter for CodexAdapter {
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,
+            env_names: PROVIDER_ENV.iter().map(|name| (*name).to_owned()).collect(),
         })?;
         Ok(Box::new(CodexHandle {
             sup,
@@ -129,6 +124,14 @@ impl AgentHandle for CodexHandle {
         self.sup.pid()
     }
 
+    fn try_exited(&self) -> std::io::Result<bool> {
+        self.sup.try_exited()
+    }
+
+    fn take_usage(&mut self) -> Vec<UsageReport> {
+        self.parser.take_usage()
+    }
+
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
         loop {
             let ev = match self.sup.next_event().await {
@@ -147,15 +150,17 @@ impl AgentHandle for CodexHandle {
                 SupervisionEvent::Exited { code, .. } => {
                     self.code = code;
                     self.exited = true;
-                    return Ok(Some(AgentEvent::SessionExited {
-                        exit_code: code,
-                    }));
+                    return Ok(Some(AgentEvent::SessionExited { exit_code: code }));
                 }
             }
         }
     }
 
     async fn cancel(&mut self) -> Result<()> {
+        // A natural exit already observed is terminal; do not relabel it.
+        if self.cancelled || self.exited {
+            return Ok(());
+        }
         self.cancelled = true;
         self.sup.cancel().await;
         Ok(())
@@ -177,32 +182,79 @@ impl AgentHandle for CodexHandle {
 
 impl CodexHandle {
     fn outcome(&self) -> AgentExit {
-        let last = self.parser.last_message().map(str::to_string);
-        if self.cancelled {
-            AgentExit::Cancelled {
-                code: self.code,
-                last_message: last,
-            }
-        } else if self.parser.turn_finished() {
-            AgentExit::Completed {
-                code: self.code,
-                last_message: last,
-            }
-        } else {
-            let reason = self.parser.violation().map(|v| v.to_string());
-            AgentExit::Failed {
-                code: self.code,
-                reason,
-            }
-        }
+        terminal_outcome(
+            self.cancelled,
+            self.code,
+            self.parser.turn_finished(),
+            self.parser.violation().map(ToString::to_string),
+            self.parser.last_message().map(str::to_owned),
+        )
     }
 }
 
-fn map_res(res: std::result::Result<AgentEvent, crate::codex_parser::ProtocolViolation>) -> AgentEvent {
+fn terminal_outcome(
+    cancelled: bool,
+    code: Option<i32>,
+    turn_finished: bool,
+    violation: Option<String>,
+    last_message: Option<String>,
+) -> AgentExit {
+    if cancelled {
+        return AgentExit::Cancelled { code, last_message };
+    }
+    if let Some(exit_code) = code.filter(|code| *code != 0) {
+        let mut reason = format!("agent exited with code {exit_code}");
+        if let Some(violation) = violation.as_deref() {
+            reason.push_str("; protocol violation: ");
+            reason.push_str(violation);
+        }
+        if let Some(message) = last_message.as_deref() {
+            reason.push_str("; last message: ");
+            reason.push_str(message);
+        }
+        return AgentExit::Failed {
+            code: Some(exit_code),
+            reason: Some(reason),
+        };
+    }
+    if let Some(reason) = violation {
+        AgentExit::Failed {
+            code,
+            reason: Some(reason),
+        }
+    } else if turn_finished {
+        AgentExit::Completed { code, last_message }
+    } else {
+        AgentExit::Failed { code, reason: None }
+    }
+}
+
+fn map_res(
+    res: std::result::Result<AgentEvent, crate::codex_parser::ProtocolViolation>,
+) -> AgentEvent {
     match res {
         Ok(a) => a,
         Err(v) => AgentEvent::ProtocolError {
             message: v.to_string(),
         },
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
+        let exit = terminal_outcome(false, Some(7), true, None, Some("done".to_owned()));
+        match exit {
+            AgentExit::Failed {
+                code: Some(7),
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("code 7"), "reason: {reason}");
+                assert!(reason.contains("last message: done"), "reason: {reason}");
+            }
+            other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
     }
 }

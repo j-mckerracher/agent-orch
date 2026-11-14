@@ -1,7 +1,16 @@
 //! Deterministic supervision of one child process.
 //!
 //! Launch rules: argument arrays only (never a shell), explicit working
-//! directory, stdin null, stdout and stderr captured as line streams.
+//! directory, stdin null by default, stdout and stderr captured as line
+//! streams.
+//! Stdin ownership contract updated 2026-11-07T22:32:53-07:00. `launch_with_stdin`
+//! returns the supervisor and an owned writer. The writer owns `ChildStdin`;
+//! the reaper shares only an atomic exit flag with it. Writes hold no lock
+//! across awaits, so cancellation remains independent. Closing the writer
+//! drops `ChildStdin` and signals EOF. Writes after close or observed exit
+//! return `SupervisorError`.
+//! Existing `LaunchRequest` struct literals stay valid, so piped mode uses a
+//! separate constructor.
 //! Cancellation kills the child *and its descendants*:
 //!
 //! - Unix: the child is spawned with `process_group(0)`, making it the
@@ -19,10 +28,16 @@
 //! signal-killed exit is reported, not translated into task success.
 
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 #[cfg(unix)]
 use std::time::Duration;
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, BufReader};
+use crate::reconcile::{capture_process_identity, ProcessIdentity};
+use orchestrator_git::env_policy::EnvPolicy;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 #[cfg(windows)]
@@ -55,10 +70,17 @@ pub struct LaunchRequest {
     pub args: Vec<String>,
     /// Working directory; must exist.
     pub working_dir: PathBuf,
+    /// Extra parent environment variable names to forward, for example a
+    /// provider's API key. The child receives only the baseline allowlist,
+    /// these names, and the user's `AGENT_ORCH_ENV_PASSTHROUGH` list; see
+    /// `orchestrator_git::env_policy`. Names only, never values.
+    pub env_names: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
+    #[error(transparent)]
+    CommandLineTooLong(#[from] crate::command_line::CommandLineTooLong),
     #[error("launch failed for {program}: {source}")]
     Launch {
         program: PathBuf,
@@ -75,6 +97,77 @@ pub enum SupervisorError {
     },
     #[error("event stream ended without an exit event")]
     NoExit,
+    #[error("child stdin is closed")]
+    StdinClosed,
+    #[error("child process has exited")]
+    ChildExited,
+    #[error("failed to write to child stdin: {source}")]
+    StdinWrite {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("piped stdin was unavailable after launch")]
+    StdinUnavailable,
+}
+
+/// The sole asynchronous writer for one supervised child's stdin.
+pub struct StdinWriter {
+    stdin: Option<tokio::process::ChildStdin>,
+    child_exited: Arc<AtomicBool>,
+}
+
+impl StdinWriter {
+    /// Write bytes and flush them before returning.
+    pub async fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), SupervisorError> {
+        self.write_parts(bytes, None).await
+    }
+
+    /// Write a UTF-8 line with a trailing newline and flush it.
+    pub async fn write_line(&mut self, line: &str) -> Result<(), SupervisorError> {
+        self.write_parts(line.as_bytes(), Some(b"\n")).await
+    }
+
+    /// Close stdin and signal EOF. Repeated calls have no effect.
+    pub fn close(&mut self) {
+        drop(self.stdin.take());
+    }
+
+    async fn write_parts(
+        &mut self,
+        bytes: &[u8],
+        suffix: Option<&[u8]>,
+    ) -> Result<(), SupervisorError> {
+        let child_exited = &self.child_exited;
+        let Some(stdin) = self.stdin.as_mut() else {
+            return Err(SupervisorError::StdinClosed);
+        };
+        if child_exited.load(Ordering::Acquire) {
+            return Err(SupervisorError::ChildExited);
+        }
+        if let Err(source) = stdin.write_all(bytes).await {
+            return Err(map_stdin_write_error(child_exited, source));
+        }
+        if let Some(suffix) = suffix {
+            if let Err(source) = stdin.write_all(suffix).await {
+                return Err(map_stdin_write_error(child_exited, source));
+            }
+        }
+        if let Err(source) = stdin.flush().await {
+            return Err(map_stdin_write_error(child_exited, source));
+        }
+        if child_exited.load(Ordering::Acquire) {
+            return Err(SupervisorError::ChildExited);
+        }
+        Ok(())
+    }
+}
+
+fn map_stdin_write_error(child_exited: &AtomicBool, source: std::io::Error) -> SupervisorError {
+    if child_exited.load(Ordering::Acquire) {
+        SupervisorError::ChildExited
+    } else {
+        SupervisorError::StdinWrite { source }
+    }
 }
 
 #[cfg(unix)]
@@ -96,7 +189,9 @@ unsafe impl Send for JobHandle {}
 /// A supervised child process.
 pub struct ChildSupervisor {
     rx: mpsc::Receiver<SupervisionEvent>,
+    child: Arc<Mutex<tokio::process::Child>>,
     pid: u32,
+    identity: Option<ProcessIdentity>,
     cancelled: bool,
     exited: bool,
     /// Windows: Job Object handle owning the whole descendant tree;
@@ -106,15 +201,42 @@ pub struct ChildSupervisor {
 }
 
 impl ChildSupervisor {
-    /// Launch and supervise `request`.
+    /// Launch and supervise `request` with null stdin.
     pub fn launch(request: &LaunchRequest) -> Result<Self, SupervisorError> {
+        Self::launch_inner(request, std::process::Stdio::null()).map(|(supervisor, _)| supervisor)
+    }
+
+    /// Launch and supervise `request` with piped stdin.
+    ///
+    /// Returns the supervisor and the sole writer for child stdin. Move the
+    /// writer to a separate task to write while this supervisor handles
+    /// events or cancellation.
+    pub fn launch_with_stdin(
+        request: &LaunchRequest,
+    ) -> Result<(Self, StdinWriter), SupervisorError> {
+        let (supervisor, stdin) = Self::launch_inner(request, std::process::Stdio::piped())?;
+        match stdin {
+            Some(stdin) => Ok((supervisor, stdin)),
+            None => Err(SupervisorError::StdinUnavailable),
+        }
+    }
+
+    fn launch_inner(
+        request: &LaunchRequest,
+        stdin: std::process::Stdio,
+    ) -> Result<(Self, Option<StdinWriter>), SupervisorError> {
+        // Refuse here, with a clear message, what the OS would refuse with an
+        // opaque spawn error.
+        crate::command_line::check_command_line(&request.program, &request.args)?;
         let mut cmd = tokio::process::Command::new(&request.program);
         cmd.args(&request.args)
             .current_dir(&request.working_dir)
-            .stdin(std::process::Stdio::null())
+            .stdin(stdin)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
+            .kill_on_drop(true)
+            .env_clear()
+            .envs(EnvPolicy::for_launch(&request.env_names).from_process_env());
 
         #[cfg(unix)]
         // Own process group: PGID 0 means "use the child's own PID as the
@@ -136,6 +258,7 @@ impl ChildSupervisor {
                 program: request.program.clone(),
             });
         };
+        let identity = capture_process_identity(pid).ok();
 
         #[cfg(windows)]
         let job = {
@@ -159,6 +282,19 @@ impl ChildSupervisor {
         };
 
         let (tx, rx) = mpsc::channel::<SupervisionEvent>(64);
+        let (stdin_writer, child_exited) = match child.stdin.take() {
+            Some(stdin) => {
+                let child_exited = Arc::new(AtomicBool::new(false));
+                (
+                    Some(StdinWriter {
+                        stdin: Some(stdin),
+                        child_exited: Arc::clone(&child_exited),
+                    }),
+                    Some(child_exited),
+                )
+            }
+            None => (None, None),
+        };
         let stdout = child.stdout.take().expect("stdout piped at launch");
         let stderr = child.stderr.take().expect("stderr piped at launch");
         let mut stdout_task = spawn_line_reader(stdout, tx.clone(), SupervisionEvent::StdoutLine);
@@ -169,14 +305,23 @@ impl ChildSupervisor {
         // indefinitely; instead the line readers run concurrently with a
         // `try_wait` poll, and the exit is reported as soon as the child
         // process itself is dead.
+        let child = Arc::new(Mutex::new(child));
+        let reaper_child = Arc::clone(&child);
         tokio::spawn(async move {
             let mut status: Option<std::process::ExitStatus> = None;
             while status.is_none() {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                match child.try_wait() {
+                match reaper_child
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .try_wait()
+                {
                     Ok(s) => status = s,
                     Err(_) => break,
                 }
+            }
+            if let Some(child_exited) = child_exited {
+                child_exited.store(true, Ordering::Release);
             }
             // Stop readers that a detached descendant keeps alive before
             // reporting exit, so they cannot send lines after `Exited`.
@@ -201,19 +346,41 @@ impl ChildSupervisor {
                 .await;
         });
 
-        Ok(Self {
-            rx,
-            pid,
-            cancelled: false,
-            exited: false,
-            #[cfg(windows)]
-            job,
-        })
+        Ok((
+            Self {
+                rx,
+                child,
+                pid,
+                identity,
+                cancelled: false,
+                exited: false,
+                #[cfg(windows)]
+                job,
+            },
+            stdin_writer,
+        ))
     }
 
     /// The child's PID (the process-group leader on Unix).
     pub fn pid(&self) -> u32 {
         self.pid
+    }
+
+    /// Checks whether the child has exited without consuming its output events.
+    pub fn try_exited(&self) -> std::io::Result<bool> {
+        self.child
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .try_wait()
+            .map(|status| status.is_some())
+    }
+
+    /// Returns launch identity when platform metadata capture succeeds.
+    /// Windows identity capture is deferred; this accessor never re-queries PID.
+    ///
+    /// Updated: 2026-11-08T08:17:57+00:00.
+    pub fn identity(&self) -> Option<ProcessIdentity> {
+        self.identity
     }
 
     /// The next stream line or exit event, or `None` once the stream is
@@ -261,9 +428,8 @@ impl ChildSupervisor {
         }
         self.cancelled = true;
         #[cfg(windows)]
-        match std::mem::take(&mut self.job.0) {
-            Some(job) => windows_impl::terminate_job(job),
-            None => {}
+        if let Some(job) = std::mem::take(&mut self.job.0) {
+            windows_impl::terminate_job(job)
         }
         #[cfg(unix)]
         {
@@ -284,9 +450,8 @@ impl Drop for ChildSupervisor {
         // a live tree. Same kill path as `cancel`; safe if the tree is
         // already gone (signalling a dead pid/job is a no-op).
         #[cfg(windows)]
-        match std::mem::take(&mut self.job.0) {
-            Some(job) => windows_impl::terminate_job(job),
-            None => {}
+        if let Some(job) = std::mem::take(&mut self.job.0) {
+            windows_impl::terminate_job(job)
         }
         #[cfg(unix)]
         {
@@ -305,14 +470,9 @@ fn spawn_line_reader<R: AsyncRead + Unpin + Send + 'static>(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut reader = BufReader::new(reader);
-        loop {
-            match read_bounded_line(&mut reader).await {
-                Ok(Some(line)) => {
-                    if tx.send(map(line)).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(None) | Err(_) => break,
+        while let Ok(Some(line)) = read_bounded_line(&mut reader).await {
+            if tx.send(map(line)).await.is_err() {
+                break;
             }
         }
     })
@@ -360,11 +520,21 @@ async fn read_bounded_line<R: AsyncBufRead + Unpin>(
     Ok(Some(line))
 }
 
-/// Unix: true if any process in the group led by `pid` is still alive.
+/// Unix: false only when the group led by `pid` provably no longer exists.
+///
+/// `kill(-pgid, 0)` sends no signal. Only ESRCH proves the group is gone. EPERM
+/// means a live group this user cannot signal, and any other error is
+/// inconclusive, so both count as alive: callers use `false` to release or
+/// mark a session exited, so uncertainty must fail closed.
 #[cfg(unix)]
 pub fn process_group_alive(pid: u32) -> bool {
-    // kill(-pgid, 0) sends no signal; a dead group yields ESRCH.
-    unsafe { libc::kill(-(pid as i32), 0) == 0 }
+    let probe_ok = unsafe { libc::kill(-(pid as i32), 0) } == 0;
+    group_probe_means_alive(probe_ok, std::io::Error::last_os_error().raw_os_error())
+}
+
+#[cfg(unix)]
+fn group_probe_means_alive(probe_ok: bool, errno: Option<i32>) -> bool {
+    probe_ok || errno != Some(libc::ESRCH)
 }
 
 /// Liveness check for tests and recovery code.
@@ -378,6 +548,151 @@ pub fn is_process_running(pid: u32) -> bool {
         // kill(pid, 0) sends no signal; success or EPERM means alive.
         let r = unsafe { libc::kill(pid as i32, 0) };
         r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn request(program: &str) -> LaunchRequest {
+        LaunchRequest {
+            program: PathBuf::from(program),
+            args: Vec::new(),
+            working_dir: std::env::current_dir().expect("current directory"),
+            env_names: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn group_probe_only_esrch_means_dead() {
+        assert!(group_probe_means_alive(true, None));
+        assert!(group_probe_means_alive(false, Some(libc::EPERM)));
+        assert!(group_probe_means_alive(false, Some(libc::EINVAL)));
+        assert!(group_probe_means_alive(false, None));
+        assert!(!group_probe_means_alive(false, Some(libc::ESRCH)));
+    }
+
+    #[test]
+    fn unsignalable_live_group_is_alive() {
+        // A live group we cannot signal (typically root-owned) probes as EPERM.
+        // Skip when this host exposes none, for example when running as root.
+        let group = (2..4096u32).find(|group| {
+            let rc = unsafe { libc::kill(-(*group as i32), 0) };
+            rc != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        });
+        let Some(group) = group else {
+            eprintln!("skipped: no unsignalable process group on this host");
+            return;
+        };
+        assert!(process_group_alive(group));
+    }
+
+    #[tokio::test]
+    async fn launch_keeps_stdin_null_by_default() {
+        let mut supervisor = ChildSupervisor::launch(&request("/bin/cat")).expect("launch");
+        let exit = tokio::time::timeout(std::time::Duration::from_secs(5), supervisor.wait())
+            .await
+            .expect("default child exit")
+            .expect("exit");
+        assert!(matches!(
+            exit,
+            SupervisionEvent::Exited {
+                code: Some(0),
+                cancelled: false
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn piped_stdin_round_trips_line_and_close_signals_eof() {
+        let (mut supervisor, mut stdin) =
+            ChildSupervisor::launch_with_stdin(&request("/bin/cat")).expect("launch");
+        stdin.write_line("hello").await.expect("write line");
+        let echoed_line =
+            tokio::time::timeout(std::time::Duration::from_secs(5), supervisor.next_event())
+                .await
+                .expect("echo before close");
+        assert!(matches!(
+            echoed_line,
+            Some(SupervisionEvent::StdoutLine(line)) if line == "hello"
+        ));
+        stdin.close();
+        stdin.close();
+        assert!(matches!(
+            stdin.write_bytes(b"late").await,
+            Err(SupervisorError::StdinClosed)
+        ));
+        let exit = tokio::time::timeout(std::time::Duration::from_secs(5), supervisor.wait())
+            .await
+            .expect("child exit after EOF")
+            .expect("exit");
+        assert!(matches!(
+            exit,
+            SupervisionEvent::Exited {
+                code: Some(0),
+                cancelled: false
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn write_after_exit_returns_typed_error_without_overriding_status() {
+        let mut request = request("/usr/bin/awk");
+        request.args.push("{ exit 1 }".into());
+        let (mut supervisor, mut stdin) =
+            ChildSupervisor::launch_with_stdin(&request).expect("launch");
+        stdin.write_line("hello").await.expect("write line");
+        assert!(matches!(
+            supervisor.wait().await.expect("exit"),
+            SupervisionEvent::Exited {
+                code: Some(1),
+                cancelled: false
+            }
+        ));
+        assert!(matches!(
+            stdin.write_bytes(b"late").await,
+            Err(SupervisorError::ChildExited)
+        ));
+    }
+
+    #[tokio::test]
+    async fn cancel_reaps_child_while_stdin_write_is_pending() {
+        let mut request = request("/bin/sleep");
+        request.args.push("60".into());
+        let (mut supervisor, mut stdin) =
+            ChildSupervisor::launch_with_stdin(&request).expect("launch");
+        let pid = supervisor.pid();
+        let payload = vec![b'x'; 8 * 1024 * 1024];
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let write_task = tokio::spawn(async move {
+            started_tx.send(()).expect("signal writer start");
+            stdin.write_bytes(&payload).await
+        });
+        started_rx.await.expect("writer start");
+
+        supervisor.cancel().await;
+
+        let write_result = tokio::time::timeout(std::time::Duration::from_secs(5), write_task)
+            .await
+            .expect("stdin write stopped after cancellation")
+            .expect("writer task");
+        assert!(matches!(
+            write_result,
+            Err(SupervisorError::ChildExited | SupervisorError::StdinWrite { .. })
+        ));
+        let exit = tokio::time::timeout(std::time::Duration::from_secs(5), supervisor.wait())
+            .await
+            .expect("exit event")
+            .expect("exit");
+        assert!(matches!(
+            exit,
+            SupervisionEvent::Exited {
+                cancelled: true,
+                ..
+            }
+        ));
+        assert!(!is_process_running(pid));
     }
 }
 

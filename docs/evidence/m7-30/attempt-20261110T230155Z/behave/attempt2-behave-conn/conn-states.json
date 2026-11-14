@@ -1,0 +1,37 @@
+[
+ {
+  "name": "1-connected",
+  "conn": "✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv",
+  "fixtureBanner": false,
+  "stripVisible": true,
+  "illustrative": false
+ },
+ {
+  "name": "2-severed",
+  "conn": "✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv",
+  "fixtureBanner": false,
+  "stripVisible": true,
+  "illustrative": false
+ },
+ {
+  "name": "3-after-auto-retry",
+  "conn": "✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv",
+  "fixtureBanner": false,
+  "stripVisible": true,
+  "illustrative": false
+ },
+ {
+  "name": "4-daemon-halted",
+  "conn": "↻ Reconnecting... Last durable sequence: 6 Refresh / reconnect Showing cached data (stale). Last event received: 2026-11-11T00:12:11.074Z. Actions are unavailab",
+  "fixtureBanner": false,
+  "stripVisible": true,
+  "illustrative": false
+ },
+ {
+  "name": "5-restarted",
+  "conn": "✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv",
+  "fixtureBanner": false,
+  "stripVisible": true,
+  "illustrative": false
+ }
+]
