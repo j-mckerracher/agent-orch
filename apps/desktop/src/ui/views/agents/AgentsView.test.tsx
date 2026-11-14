@@ -228,8 +228,11 @@ describe("Agents & Sessions, live mode", () => {
   it("requests cancel once and says it is not proof of a stop", async () => {
     const { fake, user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    await user.click(await screen.findByRole("button", { name: "Cancel attempt" }));
+    const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
+    expect(cancel).toHaveAccessibleDescription(/cancels the whole task, not only this attempt or session/i);
+    await user.click(cancel);
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled/)).toBeInTheDocument();
+    expect(screen.getByText(/applied to the whole task, not only this attempt or session/)).toBeInTheDocument();
     expect(screen.getByText(/not proof that any process has stopped/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());

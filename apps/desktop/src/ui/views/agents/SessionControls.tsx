@@ -1,4 +1,4 @@
-/** Session controls for the selected session: cancel its attempt (real in live mode); resume and checkpoint stay disabled with reasons. */
+/** Session controls for the selected session: cancel the whole task (real in live mode); resume and checkpoint stay disabled with reasons. */
 import { useState } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import type { DaemonError } from "../../../daemon/errors";
@@ -23,7 +23,9 @@ export function SessionControls({ row, session, live }: { row: WorkRow; session:
 
   const terminal = TERMINAL_STATES.has(row.state);
   const noLink = live && !gate.can("tasks") ? NOT_LINKED_REASON : null;
-  const cancelReason = terminal ? `The task is ${row.state}; it can no longer be cancelled.` : noLink;
+  const blockedReason = terminal ? `The task is ${row.state}; it can no longer be cancelled.` : noLink;
+  // `tasks.cancel` takes only a task id, so the daemon cannot stop one attempt or session.
+  const cancelScope = "Cancels the whole task, not only this attempt or session: the daemon has no attempt-level cancel.";
 
   const cancel = async () => {
     setNote(null);
@@ -38,7 +40,7 @@ export function SessionControls({ row, session, live }: { row: WorkRow; session:
     setBusy(false);
     if (result.ok) {
       setNote(
-        `Cancel request acknowledged; the daemon now records the task as ${result.value.state}. This is not proof that any process has stopped.`,
+        `Cancel request acknowledged; the daemon now records the task as ${result.value.state}. The cancel applied to the whole task, not only this attempt or session. This is not proof that any process has stopped.`,
       );
     } else {
       setFailure({ error: result.error, action: "Cancelling the task" });
@@ -51,8 +53,8 @@ export function SessionControls({ row, session, live }: { row: WorkRow; session:
       <Control
         label={live ? `Cancel attempt${attemptText}` : `Simulate cancel attempt${attemptText}`}
         variant="danger"
-        disabled={busy || cancelReason !== null}
-        reason={cancelReason}
+        disabled={busy || blockedReason !== null}
+        reason={blockedReason ?? cancelScope}
         onClick={() => void cancel()}
       />
       <DisabledAction
