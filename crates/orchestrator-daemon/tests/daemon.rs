@@ -170,7 +170,22 @@ fn daemon_survives_accept_descriptor_exhaustion() {
     );
     drop(idle);
 
-    let mut client = Client::connect(dir.path()).unwrap();
+    // The daemon frees its descriptors only as it reads EOF on the dropped
+    // connections, so a client that connects meanwhile can still be refused.
+    // Serving again within the deadline is the requirement.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut client = loop {
+        match Client::connect(dir.path()) {
+            Ok(client) => break client,
+            Err(error) => {
+                assert!(
+                    Instant::now() < deadline,
+                    "daemon did not serve again after descriptors were freed: {error:?}"
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    };
     client.health().unwrap();
     client.shutdown().unwrap();
     let output = daemon.finish();

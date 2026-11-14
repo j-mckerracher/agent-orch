@@ -370,7 +370,7 @@
    "model_names_are_normalised_before_lookup",
    "no_cache_write_price_accepts_unknown_or_zero_but_not_positive_counts",
    "overflow_is_unknown_not_a_wrapped_figure",
-   "reproduces_the_recorded_claude_code_cost_exactly",
+   "matches_codeburn_synthetic_fixture_and_recorded_claude_cost",
    "table_rows_are_unique_canonical_and_priced",
    "unknown_or_missing_model_is_unknown_never_zero",
    "new_attempt_must_be_pending_with_nonempty_id",
