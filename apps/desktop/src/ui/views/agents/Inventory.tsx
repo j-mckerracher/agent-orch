@@ -1,6 +1,6 @@
 /** Configured adapter inventory: flags are shown exactly as reported, unknown stays unknown. */
 import { Disclosure } from "../../theme";
-import { DisabledAction, FlagPill, LoadRegion, PlaceholderMark } from "./common";
+import { FlagPill, LoadRegion, PlaceholderMark } from "./common";
 import type { InventoryRow } from "./inventoryModel";
 import type { Load } from "./useAgentsData";
 
@@ -92,10 +92,6 @@ export function Inventory({
           </div>
         )}
       </LoadRegion>
-      <DisabledAction
-        label="Configure providers"
-        reason="Provider configuration is not available: the daemon has no method to change adapters."
-      />
     </Disclosure>
   );
 }

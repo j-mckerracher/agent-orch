@@ -1,43 +1,12 @@
-/** Task and session controls. Cancel and Retry follow the accepted TaskDetail; the rest are disabled with reasons. */
-import { useId, useState } from "react";
+/** Task controls: reassign through a new attempt (tasks.retry); amend and decomposition stay disabled with reasons. */
+import { useState } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { SimulatedReceipt } from "../../../sources/types";
-import { TERMINAL_STATES } from "../../format";
 import { useGate, useServices, useSource } from "../../services";
-import { Button } from "../../theme";
 import { ErrorNotice, SimulatedReceipts } from "../../widgets";
-import { DisabledAction } from "./common";
+import { Control, DisabledAction, NOT_LINKED_REASON } from "./common";
 import { taskRef, type WorkRow } from "./model";
-
-function Control({
-  label,
-  disabled,
-  reason,
-  variant,
-  onClick,
-}: {
-  label: string;
-  disabled: boolean;
-  /** Shown beside the button whenever it explains something: always when disabled. */
-  reason: string | null;
-  variant?: "danger" | "primary" | "secondary";
-  onClick: () => void;
-}) {
-  const id = useId();
-  return (
-    <div className="agents-action">
-      <Button variant={variant} disabled={disabled} aria-describedby={reason ? id : undefined} onClick={onClick}>
-        {label}
-      </Button>
-      {reason && (
-        <span id={id} className="agents-reason">
-          {reason}
-        </span>
-      )}
-    </div>
-  );
-}
 
 export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
   const { data, sources } = useServices();
@@ -53,46 +22,26 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
   const retryInfo = useSource(() => sources.retry.retryFor(ref), `agents-retry:${row.id}:${row.state}`, sources.retry.provenance);
   const addReceipt = (receipt: SimulatedReceipt) => setReceipts((list) => [...list, receipt]);
 
-  const terminal = TERMINAL_STATES.has(row.state);
-  const noLink = live && !gate.can("tasks") ? "Not connected, or the tasks capability was not negotiated." : null;
-  const cancelReason = terminal ? `The task is ${row.state}; it can no longer be cancelled.` : noLink;
+  const noLink = live && !gate.can("tasks") ? NOT_LINKED_REASON : null;
 
-  const cancel = async () => {
+  const reassign = async () => {
     setNote(null);
     setFailure(null);
     if (!live) {
-      void sources.execution.simulateCancel(row.id).then(addReceipt);
-      return;
-    }
-    if (!real) return;
-    setBusy(true);
-    const result = await data.cancelTask(row.id);
-    setBusy(false);
-    if (result.ok) {
-      setNote(
-        `Cancel request acknowledged; the daemon now records the task as ${result.value.state}. This is not proof that any process has stopped.`,
-      );
-    } else {
-      setFailure({ error: result.error, action: "Cancelling the task" });
-    }
-  };
-
-  const retry = async () => {
-    setNote(null);
-    setFailure(null);
-    if (!live) {
-      void sources.retry.simulateRetry(ref).then((r) => addReceipt({ ...r, notice: `${r.notice} (new attempt ${r.newAttemptId})` }));
+      void sources.retry
+        .simulateRetry(ref)
+        .then((r) => addReceipt({ ...r, notice: `${r.notice} (new attempt ${r.newAttemptId})` }));
       return;
     }
     if (!realRetry) return;
     setBusy(true);
     try {
       const result = await realRetry.call(sources.retry, ref);
-      setNote(`Retry accepted; the daemon now records the task as ${result.state} with ${result.attempts} attempt(s).`);
+      setNote(`Reassignment accepted; the daemon now records the task as ${result.state} with ${result.attempts} attempt(s).`);
       void data.watchTask(row.id);
       void data.refreshAll();
     } catch (error) {
-      setFailure({ error: asDaemonError(error), action: "Retrying the task" });
+      setFailure({ error: asDaemonError(error), action: "Reassigning the task" });
     } finally {
       setBusy(false);
     }
@@ -128,20 +77,13 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
     <section aria-label="Task controls" className="agents-controls">
       <h4>Task controls</h4>
       <Control
-        label={live ? "Request cancel" : "Simulate cancel"}
-        variant="danger"
-        disabled={busy || cancelReason !== null}
-        reason={cancelReason}
-        onClick={() => void cancel()}
-      />
-      <Control
-        label={live ? "Retry task" : "Preview retry"}
+        label={live ? "Reassign via new attempt" : "Preview reassign via new attempt"}
         disabled={busy || !retryOffered || noLink !== null}
         reason={retryReason}
-        onClick={() => void retry()}
+        onClick={() => void reassign()}
       />
       <DisabledAction
-        label="Amend TaskContract"
+        label="Amend future TaskContract"
         reason="Not available: the daemon has no method to amend a task contract."
       />
       <DisabledAction

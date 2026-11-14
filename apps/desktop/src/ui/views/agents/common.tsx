@@ -49,6 +49,38 @@ export function FlagPill({ flag }: { flag: Flag }) {
   );
 }
 
+/** Shown when a live control needs the daemon's tasks capability and this link does not have it. */
+export const NOT_LINKED_REASON = "Not connected, or the tasks capability was not negotiated.";
+
+/** A live or simulated action. Its reason sits beside it whenever it explains something: always when disabled. */
+export function Control({
+  label,
+  disabled,
+  reason,
+  variant,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  reason: string | null;
+  variant?: "danger" | "primary" | "secondary";
+  onClick: () => void;
+}) {
+  const id = useId();
+  return (
+    <div className="agents-action">
+      <Button variant={variant} disabled={disabled} aria-describedby={reason ? id : undefined} onClick={onClick}>
+        {label}
+      </Button>
+      {reason && (
+        <span id={id} className="agents-reason">
+          {reason}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** A control the daemon cannot honour: disabled, with the reason always visible and linked. */
 export function DisabledAction({ label, reason }: { label: string; reason: string }) {
   const id = useId();

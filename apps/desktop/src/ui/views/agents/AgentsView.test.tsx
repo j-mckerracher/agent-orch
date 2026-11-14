@@ -182,21 +182,32 @@ describe("Agents & Sessions, live mode", () => {
   it("requests cancel once and says it is not proof of a stop", async () => {
     const { fake, user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    await user.click(await screen.findByRole("button", { name: "Request cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Cancel attempt" }));
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled/)).toBeInTheDocument();
     expect(screen.getByText(/not proof that any process has stopped/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());
+  });
+
+  it("places cancel under Session controls and the reassignment under Task controls", async () => {
+    const { user } = await liveView();
+    await user.click(screen.getByRole("button", { name: /t-run/ }));
+    const session = within(await screen.findByRole("region", { name: "Session controls" }));
+    expect(session.getByRole("button", { name: "Cancel attempt" })).toBeEnabled();
+    expect(session.getByRole("button", { name: "Resume unavailable until capability verified" })).toBeDisabled();
+    const task = within(screen.getByRole("region", { name: "Task controls" }));
+    expect(task.queryByRole("button", { name: "Cancel attempt" })).not.toBeInTheDocument();
+    expect(task.getByRole("button", { name: "Reassign via new attempt" })).toBeInTheDocument();
   });
 
   it("retries a failed task through tasks.retry", async () => {
     const { fake, user } = await liveView();
     await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeEnabled());
     await user.click(retry);
-    expect(await screen.findByText(/Retry accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
+    expect(await screen.findByText(/Reassignment accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
   });
@@ -206,7 +217,7 @@ describe("Agents & Sessions, live mode", () => {
     fake.failNext("tasks.retry", { code: -32011, message: "retry rejected" });
     const { user } = await liveView(fake);
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel attempt" }));
     expect(await screen.findByText(/Cancelling the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
@@ -214,11 +225,11 @@ describe("Agents & Sessions, live mode", () => {
 
     await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeEnabled());
     await user.click(retry);
-    expect(await screen.findByText(/Retrying the task failed/)).toBeInTheDocument();
-    expect(screen.queryByText(/Retry accepted/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Reassigning the task failed/)).toBeInTheDocument();
+    expect(screen.queryByText(/Reassignment accepted/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
   });
 
@@ -248,14 +259,14 @@ describe("Agents & Sessions, live mode", () => {
   it("disables unsupported controls with reasons and applies Cancel only to nonterminal tasks", async () => {
     const { user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeDisabled());
     expect(retry).toHaveAccessibleDescription(/\S/);
     for (const name of [
       "Configure providers",
-      "Amend TaskContract",
+      "Amend future TaskContract",
       "Request new decomposition",
-      "Resume session",
+      "Resume unavailable until capability verified",
       "Inspect retained checkpoint",
     ]) {
       const button = screen.getByRole("button", { name });
@@ -275,10 +286,10 @@ describe("Agents & Sessions, live mode", () => {
     }
     await user.click(screen.getByRole("tab", { name: "Queued (1)" }));
     await user.click(screen.getByRole("button", { name: /t-queued/ }));
-    expect(await screen.findByRole("button", { name: "Request cancel" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Cancel attempt" })).toBeEnabled();
     await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const cancel = await screen.findByRole("button", { name: "Request cancel" });
+    const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
     expect(cancel).toBeDisabled();
     expect(cancel).toHaveAccessibleDescription(/The task is Failed/);
   });
@@ -399,15 +410,27 @@ describe("Agents & Sessions, fixture mode", () => {
     const fake = new FakeDaemon();
     const { user } = await mountAgents(fake, { bridge: false });
     await user.click(await screen.findByRole("button", { name: /fixture:task-running/ }));
-    await user.click(await screen.findByRole("button", { name: "Simulate cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Simulate cancel attempt" }));
     expect(await screen.findAllByTestId("simulated-receipt")).toHaveLength(1);
     await user.click(screen.getByRole("tab", { name: /^Failed/ }));
     await user.click(screen.getByRole("button", { name: /fixture:task-failed/ }));
-    const preview = await screen.findByRole("button", { name: "Preview retry" });
+    const preview = await screen.findByRole("button", { name: "Preview reassign via new attempt" });
     await waitFor(() => expect(preview).toBeEnabled());
     await user.click(preview);
     expect(await screen.findAllByText(/new attempt/)).not.toHaveLength(0);
     expect(fake.callsTo("tasks.cancel")).toHaveLength(0);
     expect(fake.callsTo("tasks.retry")).toHaveLength(0);
+  });
+
+  it("offers a local trace filter and disables diagnostic and branch actions in the feed", async () => {
+    const { user } = await mountAgents(new FakeDaemon(), { bridge: false });
+    await user.click(await screen.findByRole("button", { name: /fixture:task-running/ }));
+    const detail = within(screen.getByRole("complementary", { name: "Selected task / session detail" }));
+    await user.click(detail.getByText("Execution feed, side effects and supplied context"));
+    const filter = detail.getByRole("combobox", { name: "Filter raw trace" });
+    await user.selectOptions(filter, "ExecutionStarted");
+    expect(within(detail.getByRole("table", { name: "Execution feed" })).queryByText("agent.message")).not.toBeInTheDocument();
+    expect(detail.getByRole("button", { name: "Request diagnostic" })).toBeDisabled();
+    expect(detail.getByRole("button", { name: "Branch from retained evidence" })).toBeDisabled();
   });
 });

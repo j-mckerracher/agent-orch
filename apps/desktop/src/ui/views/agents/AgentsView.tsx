@@ -5,7 +5,7 @@ import { Inventory } from "./Inventory";
 import { LaterScope } from "./LaterScope";
 import { SessionDetail } from "./SessionDetail";
 import { SessionList } from "./SessionList";
-import { PlaceholderMark } from "./common";
+import { DisabledAction, PlaceholderMark } from "./common";
 import { headline, type Count, type TabId } from "./model";
 import { useAgentsData } from "./useAgentsData";
 import "./agents.css";
@@ -22,10 +22,16 @@ export function AgentsView() {
 
   return (
     <div className="agents-view" data-testid="agents-view">
-      <header className="agents-head">
-        <p className="agents-eyebrow">Execution inventory / S5</p>
-        <h1>Agents &amp; Sessions</h1>
-        <p>A task persists through failed attempts, new assignments, and changed strategies.</p>
+      <header className="agents-head agents-head-row">
+        <div>
+          <p className="agents-eyebrow">Execution inventory / S5</p>
+          <h1>Agents &amp; Sessions</h1>
+          <p>A task persists through failed attempts, new assignments, and changed strategies.</p>
+        </div>
+        <DisabledAction
+          label="Configure providers"
+          reason="Provider configuration is not available: the daemon has no method to change adapters."
+        />
       </header>
 
       <section aria-label="Execution status" className="agents-status">
