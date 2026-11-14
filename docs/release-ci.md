@@ -371,8 +371,8 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 - Windows gate counts and the Windows clippy baseline at these toolchain versions (they are the
   runbook's derived values until a Windows host measures them);
 - the NSIS download, the Windows installer build and the sidecar being bundled;
-- that `taiki-e/install-action` installs the pinned `cargo-deny` and `cargo-audit` and that the
-  advisory database is reachable from the runner;
+- that `cargo install --locked` builds the pinned `cargo-deny` and `cargo-audit` within the job's
+  time limit and that the advisory database is reachable from the runner;
 - the Apple and Windows signing, notarization and timestamp paths with real certificates;
 - artifact upload, `environment: release` behaviour, and wall-clock time against the 180-minute
   and 120-minute limits;
