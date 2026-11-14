@@ -6,6 +6,20 @@ import type { Load } from "./useAgentsData";
 
 const USAGE_TEXT = "Unknown (the daemon does not report usage)";
 
+/** Shown on the collapsed summary, so a load that is not ready is visible without opening the disclosure. */
+function inventoryCount(inventory: Load<InventoryRow[]>): string {
+  switch (inventory.status) {
+    case "ready":
+      return `${inventory.data.length} adapters`;
+    case "empty":
+      return "none reported";
+    case "loading":
+    case "unavailable":
+    case "error":
+      return inventory.status;
+  }
+}
+
 export function Inventory({
   inventory,
   live,
@@ -15,11 +29,10 @@ export function Inventory({
   live: boolean;
   onRetry: () => void;
 }) {
-  const count = inventory.status === "ready" ? `${inventory.data.length} adapters` : undefined;
   return (
     <Disclosure
       summary="Configured inventory and discovered capabilities"
-      count={count}
+      count={inventoryCount(inventory)}
       data-testid="agents-inventory"
     >
       {!live && (

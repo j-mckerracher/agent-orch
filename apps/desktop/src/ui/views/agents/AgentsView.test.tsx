@@ -447,6 +447,15 @@ describe("Agents & Sessions, live mode", () => {
     for (const pill of pills) expect(pill).toHaveClass("agents-flag");
   });
 
+  it("shows the inventory error on the collapsed summary, so it is visible without opening", async () => {
+    const fake = seeded();
+    fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
+    await mountAgents(fake, { live: true });
+    const inventory = screen.getByTestId("agents-inventory");
+    expect(await within(inventory).findByText("error")).toBeInTheDocument();
+    expect(inventory).not.toHaveAttribute("open");
+  });
+
   it("shows a retryable error when the inventory cannot load", async () => {
     const fake = seeded();
     fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
