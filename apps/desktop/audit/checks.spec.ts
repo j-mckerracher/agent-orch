@@ -185,8 +185,9 @@ test.describe("RC-06 sidebar dark theme and Workstreams heading box", () => {
     await openApp(page, "#/workspace", "populated", "desktop");
     const bg = await page.getByRole("region", { name: "Sidebar" }).evaluate((el) => getComputedStyle(el).backgroundColor);
     const [r, g, b, a = 1] = bg.match(/[\d.]+/g)!.map(Number);
+    const channelScale = bg.startsWith("color(srgb ") ? 255 : 1;
     expect(a, "sidebar has no painted background (transparent)").toBeGreaterThan(0);
-    expect((r + g + b) / 3).toBeLessThan(128);
+    expect(((r + g + b) * channelScale) / 3).toBeLessThan(128);
   });
 
   test("workstreams-10: sidebar 'Workstreams · N' heading is a bordered link box", async ({ page }) => {
