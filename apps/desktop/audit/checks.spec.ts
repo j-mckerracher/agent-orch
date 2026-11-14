@@ -112,6 +112,7 @@ test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () =
       await openApp(page, "#/workstreams", "populated", bp);
       for (const n of [2, 3]) {
         const row = page.getByRole("treeitem", { name: new RegExp(`Workstream ${n} of 3`) });
+        await row.scrollIntoViewIfNeeded();
         const hit = await row.evaluate((el) => {
           const b = el.getBoundingClientRect();
           const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
@@ -124,8 +125,11 @@ test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () =
 
   test("workstreams-03: mobile sidebar workstream tree stays inside its nav box", async ({ page }) => {
     await openApp(page, "#/workstreams", "populated", "mobile");
+    const target = page.getByRole("treeitem", { name: /Workstream 3 of 3/ });
+    await target.scrollIntoViewIfNeeded();
     const nav = await box(page.getByRole("navigation", { name: "Workstreams" }));
-    const row = await box(page.getByRole("treeitem", { name: /Workstream 3 of 3/ }));
+    const row = await box(target);
+    expect(row.y).toBeGreaterThanOrEqual(nav.y - 1);
     expect(row.y + row.height).toBeLessThanOrEqual(nav.y + nav.height + 1);
   });
 });
