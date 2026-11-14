@@ -87,10 +87,6 @@ function pairs(): Array<[string, string, number, string]> {
     out.push(["focus", tint, 3, "focus ring on tint"]);
     out.push(["control-border", tint, 3, "control boundary on tint"]);
   }
-  out.push(["sidebar-ink", "sidebar", 4.5, "sidebar text"]);
-  out.push(["sidebar-link", "sidebar", 4.5, "sidebar link"]);
-  out.push(["sidebar-focus", "sidebar", 3, "sidebar focus ring"]);
-  out.push(["sidebar-control-border", "sidebar", 3, "sidebar control boundary"]);
   out.push(["on-accent", "accent", 4.5, "primary button label"]);
   for (const surface of SURFACES) out.push(["accent", surface, 3, "primary button boundary"]);
   out.push(["meter-marker", "meter-marker-ring", 3, "meter marker vs ring"]);
@@ -107,8 +103,8 @@ describe("design tokens", () => {
   });
   it("defines every token the header contract names, in both themes", () => {
     const required = [
-      "paper", "panel", "soft", "soft-strong", "sidebar", "sidebar-ink", "sidebar-link", "sidebar-focus",
-      "sidebar-control-border", "control-surface", "control-ink", "component-muted", "on-accent", "ink", "muted",
+      "paper", "panel", "soft", "soft-strong", "control-surface", "control-ink", "component-muted", "on-accent", "ink",
+      "muted",
       "subtle", "line", "line-soft", "control-border", "blue", "blue-bg", "accent", "focus", "success",
       "success-bg", "green", "green-bg", "amber", "amber-bg", "red", "red-bg", "wireframe-search-border",
       "wireframe-composer-border", "wireframe-picker-border", "meter-gradient", "meter-stop-1", "meter-stop-2",
@@ -185,11 +181,6 @@ describe("design tokens", () => {
         "control-ink": "#183c60",
         "control-surface": "#f2f7fc",
         "control-border": "#6b7f94",
-        sidebar: "#f2f7fc",
-        "sidebar-ink": "#111111",
-        "sidebar-link": "#0057a8",
-        "sidebar-focus": "#0057a8",
-        "sidebar-control-border": "#6b7f94",
         "wireframe-search-border": "#bdcde0",
         "wireframe-composer-border": "#b7cbe0",
         "wireframe-picker-border": "#d4e0ed",
@@ -208,11 +199,6 @@ describe("design tokens", () => {
         "control-ink": "#f2f6fb",
         "control-surface": "#20364a",
         "control-border": "#829ab0",
-        sidebar: "#f2f7fc",
-        "sidebar-ink": "#111111",
-        "sidebar-link": "#0057a8",
-        "sidebar-focus": "#0057a8",
-        "sidebar-control-border": "#6b7f94",
         "wireframe-search-border": "#40576c",
         "wireframe-composer-border": "#40576c",
         "wireframe-picker-border": "#40576c",
