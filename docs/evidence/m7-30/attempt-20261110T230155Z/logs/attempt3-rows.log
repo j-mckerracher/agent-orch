@@ -1,0 +1,14 @@
+PASS       recovery-route-theme-live: {"theme1":"dark","theme2":"dark","hash":"#/workspace"}
+PASS       recovery-draft-navigation-live: draft survives reload live
+PASS       recovery-draft-reload-live: {"afterReload":"draft survives reload live"}
+PASS       recovery-route-theme-fixture: {"theme1":"dark","theme2":"dark","hash":"#/workspace"}
+PASS       recovery-draft-navigation-fixture: draft survives reload fixture
+LIMITATION recovery-draft-reload-fixture: {"afterReload":""}
+PASS       landmarks: {"banner":true,"nav":["Primary views","Workstreams"],"main":1,"aside":["Workspace activity"]}
+PASS       meters-role-value-text: {"meters":[{"label":"CPU utilization","now":"72.99867248535156","text":"73%, scope all logical CPUs, observed 2 s ago","min":"0","max":"100","visibleText":"CPU 73%"},{"label":"Memory capacity used","now":"83.37694803873697","text":"83.4%, scope physical memory · 32.2 GB of 38.7 GB, observed 2 s ago","min":"0","max":"100","visibleText":"Memory 83.4%"},{"label":"GPU utilization","now":"7","text":"7%, scope Apple M3 Pro, observed 2 s ago","min":"0","max":"100","visibleText":"GPU 7%"},{"label":"Disk capacity used","now":"94.80757108592852","text":"94.8%, scope / · 468.7 GB of 494.4 GB, observed 2 s ago","min":"0","max":"100","visibleText":"Disk 94.8%"}],"strip":"Device resources CPU 73% Scope: all logical CPUs · observed 2 s ago Memory 83.4% Scope: physical memory · 32.2 GB of 38.7 GB · observed 2 s ago GPU 7% Scope: Apple M3 Pro · observed 2 s ago Disk 94.8% Scope: / · 468.7 GB of 494.4 GB · observed 2 s ago Scale colours (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity."}
+PASS       no-colour-only-meters: ["CPU 73%","Memory 83.4%","GPU 7%","Disk 94.8%"]
+PASS       picker-empty-result-live-region: No matching conversations.
+PASS       perf-tree-120-items: {"items":120,"scroller":"DIV.shell-tree-body","scrollerTop":7716,"before":{"win":0,"docH":700,"vh":700},"docScrollAfter":0,"docOverflowY":0,"loadToTreeMs":587}
+PASS       perf-tree-keyboard-end: ▸ Bulk workstream 119
+PASS       animation-toggle-on: {"pressed":"true","rafPerSecVisible":61}
+checks: 13; FAIL: 0

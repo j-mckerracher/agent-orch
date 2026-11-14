@@ -1,0 +1,3 @@
+{"component":"daemon","event":"daemon_start","level":"info","pid":"47021","ts":"2026-11-13T07:04:14Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T07:04:14Z"}
+orchestrator-ipc: request read failed, closing connection: truncated frame header

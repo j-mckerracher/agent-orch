@@ -1,0 +1,40 @@
+{
+  "fixture": "model-catalog",
+  "scenarios": {
+    "success": {
+      "ageMs": 5000,
+      "data": {
+        "providers": [
+          {
+            "id": "fixture:provider-codex",
+            "name": "Codex (placeholder)",
+            "installed": true,
+            "launchable": true,
+            "modelSelection": "supported",
+            "models": {
+              "status": "ok",
+              "ageMs": 5000,
+              "value": [
+                { "id": "fixture:model-large", "label": "Placeholder large model" },
+                { "id": "fixture:model-small", "label": "Placeholder small model" }
+              ]
+            },
+            "efforts": { "status": "ok", "ageMs": 5000, "value": ["low", "medium", "high"] }
+          },
+          {
+            "id": "fixture:provider-claude",
+            "name": "Claude Code (placeholder)",
+            "installed": true,
+            "launchable": true,
+            "modelSelection": "unknown",
+            "models": { "status": "unknown", "reason": "The adapter did not report its models." },
+            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+          }
+        ]
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the model catalog is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: model catalogs are not supported." },
+    "unknown": { "reason": "Fixture scenario: the model catalog is unknown." }
+  }
+}

@@ -1,0 +1,33 @@
+title = "motif-mcao gitleaks config"
+
+# Super-linter reads this file from LINTER_RULES_PATH. Keep the default rules and only
+# exempt values that are known not to be secrets. Allowlists match the exact value or its
+# key context, never a path: a path entry makes gitleaks skip the whole file, which would
+# hide a real secret added next to a fixture.
+[extend]
+useDefault = true
+
+# Fake credentials that redaction and launch tests feed to the code under test
+# (crates/orchestrator-diagnostics/tests, crates/orchestrator-cli/src/workflow.rs,
+# apps/desktop/src-tauri/src/launch.rs). Exact values only.
+[[allowlists]]
+description = "Synthetic secrets in redaction and launch tests"
+regexTarget = "secret"
+regexes = [
+  '''^AKIAABCDEFGHIJKLMNOP$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.[A-Za-z0-9_-]*$''',
+  '''^(Hm3Qa8Vd5Fn1Ys6Gt0Wu|zq7Kp2mWx9Lr4TnV8bYc|ab12cd34ef56ab78|k-1234567890)$''',
+  '''^a1b2c3d4e5f60718$''',
+  '''^launchtest-Vx3Qm9Zr5Kb2Wd7Yn1Hs$''',
+]
+
+# Recorded verification evidence (docs/evidence): idempotency keys are random UUIDs and
+# api_message_id values are provider message IDs. Neither grants access to anything.
+[[allowlists]]
+description = "Idempotency keys and provider message IDs in recorded evidence"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = [
+  '''idempotency_?[kK]ey"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}''',
+  '''api_message_id"\s*:\s*"msg_[A-Za-z0-9]{24}''',
+]

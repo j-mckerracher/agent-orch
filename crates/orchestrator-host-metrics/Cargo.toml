@@ -1,0 +1,23 @@
+[package]
+name = "orchestrator-host-metrics"
+description = "Read-only host telemetry (CPU, memory, disk, GPU) behind a sampled cache for the daemon's host.metrics method. Independent of the daemon, IPC and store."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+# Only the `system` (CPU, memory) and `disk` sources are enabled; the default
+# component, network, user and GPU sources are not needed. See
+# docs/host-metrics.md for the evaluation.
+sysinfo = { version = "=0.40.1", default-features = false, features = ["system", "disk"] }
+
+# GPU utilization is read only where the source was checked against the
+# operating system's own tool (macOS IOKit). It stays off on every other
+# target; see docs/host-metrics.md.
+[target.'cfg(target_os = "macos")'.dependencies]
+sysinfo = { version = "=0.40.1", default-features = false, features = ["system", "disk", "gpu"] }
+
+[dev-dependencies]
+serde_json = "=1.0.154"
+tempfile = "=3.27.0"

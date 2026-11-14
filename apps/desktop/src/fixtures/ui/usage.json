@@ -1,0 +1,24 @@
+{
+  "fixture": "usage",
+  "scenarios": {
+    "success": {
+      "ageMs": 60000,
+      "data": {
+        "windowStart": "2026-01-01T00:00:00-07:00",
+        "timezone": "America/Denver",
+        "currency": "USD",
+        "reported": { "status": "ok", "ageMs": 60000, "value": 26 },
+        "estimated": { "status": "ok", "ageMs": 120000, "value": 6 },
+        "budget": { "status": "unknown", "reason": "No budget has been set." },
+        "coverage": [
+          { "provider": "codex", "reporting": "provider-reported" },
+          { "provider": "claude-code", "reporting": "estimated" },
+          { "provider": "pi", "reporting": "none" }
+        ]
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the usage source is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: usage is not supported." },
+    "unknown": { "reason": "Fixture scenario: usage is unknown." }
+  }
+}

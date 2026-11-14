@@ -1,0 +1,5 @@
+TEST=launch-stream PASS stdout_len=114 exit=0 child pid=87615
+TEST=stderr-exit PASS exit=7 stderr_len=16484 stdout_len=0
+TEST=fanout PASS pids=[87617, 87618, 87619, 87620]
+TEST=kill-tree PASS child pid=87621 grandchild pid=87622 both gone after tree kill
+RESULT ALL PASS

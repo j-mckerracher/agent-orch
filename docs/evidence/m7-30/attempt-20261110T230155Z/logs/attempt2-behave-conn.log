@@ -1,0 +1,13 @@
+PASS  conn-connected: {"name":"1-connected","conn":"✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv","fixtureBanner":false,"stripVisible":true,"illustrative":false}
+PASS  conn-severed-shows-degraded: {"name":"2-severed","conn":"✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv","fixtureBanner":false,"stripVisible":true,"illustrative":false}
+PASS  conn-auto-recovery-after-sever: {"name":"3-after-auto-retry","conn":"✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv","fixtureBanner":false,"stripVisible":true,"illustrative":false,"note":"daemon stayed up; connection re-established by the client's reconnect logic if PASS"}
+PASS  conn-daemon-halted: {"name":"4-daemon-halted","conn":"↻ Reconnecting... Last durable sequence: 6 Refresh / reconnect Showing cached data (stale). Last event received: 2026-11-11T00:12:11.074Z. Actions are unavailab","fixtureBanner":false,"stripVisible":true,"illustrative":false}
+PASS  conn-halted-strip-visible-agents: {"strip":true,"conn":true,"fixture":false}
+PASS  conn-halted-strip-visible-review: {"strip":true,"conn":true,"fixture":false}
+PASS  conn-halted-strip-visible-workstreams: {"strip":true,"conn":true,"fixture":false}
+PASS  conn-halted-strip-visible-workspace: {"strip":true,"conn":true,"fixture":false}
+PASS  conn-daemon-restart-recovery: {"name":"5-restarted","conn":"✓ Connected Last durable sequence: 6 Refresh / reconnect Connected to the daemon. A connection does not prove any agent is running; process, workspace and deliv","fixtureBanner":false,"stripVisible":true,"illustrative":false}
+PASS  honesty-no-illustrative-numbers-live-and-nobridge: {"scanned":8}
+PASS  honesty-fixture-illustrative-numbers-labelled: [{"route":"workspace","hit":"$26.00","placeholderLabels":24},{"route":"workstreams","hit":"$26.00","placeholderLabels":17},{"route":"agents","hit":"$26.00","placeholderLabels":14},{"route":"review","hit":"$26.00","placeholderLabels":20}]
+INFO  honesty-live-strip-source: Device resources CPU 73.9% Scope: all logical CPUs · observed 0 s ago Memory 80.6% Scope: physical memory · 31.2 GB of 38.7 GB · observed 0 s ago GPU 0% Scope: Apple M3 Pro · observed 0 s ago Disk 94.6% Scope: / · 467.5 GB of 494.4 GB · observed 0 s ago Scale colours (green to red) are a display aid
+checks: 12; FAIL: 0

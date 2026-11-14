@@ -1,0 +1,11 @@
+host=X-LT-JMCKERRA
+os=10.0.26200.0 x86
+codex_path=C:\Users\jmckerra\AppData\Local\OpenAI\Codex\bin\14b838c1d074ff01\codex.exe
+codex_version=codex-cli 0.167.0-alpha.3.2
+git_version=git version 2.46.2.windows.1
+powershell=7.5.4
+primary_checkout=C:\Users\jmckerra\Code\agent-orch-m0-05-priority3
+task_repo=C:\Users\jmckerra\AppData\Local\Temp\agent-orch-m0-05-task-43b86d1092d14e8482a5382bb91b092b
+source_head=cd0134bbc7ea38ebfed925b649b1c6df6e3cc11c
+source_branch=codex/m0-05-priority3
+login_status=Logged in using ChatGPT

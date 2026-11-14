@@ -1,0 +1,10 @@
+{
+  "browser": "157.0.8103.52",
+  "axeVersion": "4.10.3",
+  "passes": 41,
+  "violations": 1,
+  "incomplete": 2,
+  "consoleErrors": 0,
+  "report": "../../docs/evidence/m7-32/macos/n05-axe-results.json",
+  "screenshot": "../../docs/evidence/m7-32/macos/n05-headless.png"
+}

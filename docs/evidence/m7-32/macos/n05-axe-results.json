@@ -1,0 +1,44 @@
+{
+  "testedSha": "92f56c3af9cd34741a09667f499164edcafec696",
+  "runId": "6C93441BC5514685A1B1DB93A0B55F0E",
+  "surface": "headless Chrome against Vite dev server; native WebView was unavailable to CUA",
+  "browser": "157.0.8103.52",
+  "axeVersion": "4.10.3",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "url": "http://localhost:1420/",
+  "violations": [
+    {
+      "id": "region",
+      "impact": "moderate",
+      "help": "All page content should be contained by landmarks",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.10/region?application=axeAPI",
+      "nodes": [
+        {
+          "target": [
+            ".shell-strip"
+          ],
+          "html": "<div class=\"shell-strip\" role=\"group\" aria-label=\"Connection status\" tabindex=\"0\" data-testid=\"shell-connection\">",
+          "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks"
+        }
+      ]
+    }
+  ],
+  "passes": 41,
+  "incomplete": [
+    {
+      "id": "aria-prohibited-attr",
+      "impact": "serious",
+      "nodes": 1
+    },
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "nodes": 8
+    }
+  ],
+  "inapplicable": 48,
+  "consoleErrors": []
+}

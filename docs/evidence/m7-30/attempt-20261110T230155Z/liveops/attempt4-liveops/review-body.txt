@@ -1,0 +1,177 @@
+Skip to main content
+✓
+Connected
+Last durable sequence: 7
+Refresh / reconnect
+
+Connected to the daemon. A connection does not prove any agent is running; process, workspace and delivery state come from each task.
+
+Recovery: unknown
+PLACEHOLDER DATA (D3)
+The daemon does not expose recovery status yet; no process is assumed safe from a PID or from a successful connection.
+
+Journal continuity
+DAEMON (D6)
+: unknown (never proof that history is complete)
+
+MCAO
+Mayo Clinic Agent Orchestrator
+▦
+Orchestrator Workspace
+☷
+Agents & Sessions
+✓
+Review & Decisions
+1
+▤
+Projects
+WORKSTREAMS · 1
+
+Workstreams · 1 task not in any workstream
+
+▸
+M7-30 accessibility workstream
+☀
+Dark mode
+Off
+≈
+Background
+Off
+
+Decorative only; it does not show activity.
+
+Animation licences
+Usage:
+not available
+i
+Searches loaded records only.
+
+1 workstreams
+· 1 tasks
+· 0 running
+· 1 require attention
+
+UNIFIED HUMAN DECISIONS
+
+Review & Decisions
+
+One queue for choices, approvals, evidence, and controlled delivery.
+
+1 INDEPENDENT DECISION
+All workstreams · all projects
+All owners
+The daemon records no decision owner.
+By useful response time
+No response-time data from the daemon; the queue keeps the daemon's order.
+ACTIVE SILENCES: NOT AVAILABLE
+Decision queue
+Refresh
+Actionable (1)
+Approvals (1)
+Verification
+Candidates (1)
+Delivery (0)
+Resolved (0)
+
+Approvals waiting for your decision.
+
+Task live-task-1
+i
+Awaiting decision
+Local review merge · approval review-approval-5c3b0930d6a2c1c7570b0d7fb9df328cc22587da49fa6a8cdc053dea2903166d · candidate cd2b58395e
+Priority and latest response time: not available
+Candidate and action panel
+Task
+live-task-1 — Review one candidate (Succeeded, v5)
+Approval
+review-approval-5c3b0930d6a2c1c7570b0d7fb9df328cc22587da49fa6a8cdc053dea2903166d — status requested
+Candidate commit
+cd2b58395ec47b1a7b3a1c1c9467b02fd47ab14a
+Action
+LocalReviewMerge; parameter digest 5d158b0f5f53996e63335d9d82102c87f81a7d625906990137f4455fa46d8241
+Six separate facts
+
+Each fact stands alone. A passing fact never implies another one.
+
+Execution finished
+✓
+Finished
+Task state Succeeded.
+Source: tasks.get
+Agent claims completion
+–
+Not available
+The daemon does not record a completion claim from the agent.
+Source: none
+Automated checks
+✓
+Passed
+Verification run live-task-1-verification.
+Source: review.evidence
+Independent review
+–
+Not available
+The daemon has no independent reviewer record; your own decision below is separate from it.
+Source: none
+Delivery approved
+i
+Awaiting your decision
+No approval has been given.
+Source: approvals.list
+Changes integrated
+–
+Not available
+The daemon does not report whether the changes were integrated.
+Source: delivery.request
+Files
+candidate.txt added +1 −0
+Unified diff
+diff --git a/candidate.txt b/candidate.txt
+new file mode 100644
+index 0000000..02e8acd
+
+--- /dev/null
+
++++ b/candidate.txt
+
+@@ -0,0 +1 @@
+
++candidate
+
+
+
+Exact action parameters and verification evidence
+Task / approval
+live-task-1 / review-approval-5c3b0930d6a2c1c7570b0d7fb9df328cc22587da49fa6a8cdc053dea2903166d
+Candidate commit (base)
+cd2b58395ec47b1a7b3a1c1c9467b02fd47ab14a (3d843037bf68dd5957c770845d327731b3b35e81)
+Workspace
+live-task-1-workspace
+Action
+Create a local review ref → refs/heads/orchestrator/review/live-task-1
+Parameters
+base: 3d843037bf68dd5957c770845d327731b3b35e81
+target_ref: refs/heads/orchestrator/review/live-task-1
+Digest: 5d158b0f5f53996e63335d9d82102c87f81a7d625906990137f4455fa46d8241
+Verification live-task-1-verification
+passed: Verification run live-task-1-verification reported "passed" for cd2b58395ec47b1a7b3a1c1c9467b02fd47ab14a.
+Accept Reject
+Request changes
+
+Records feedback and blocks approval of this candidate until a new one exists. This is not a Reject.
+
+Request changes
+
+Change request history empty: No change requests are recorded for this task.
+
+Delivery
+
+Delivery is a separate request; approving does not deliver.
+
+Request delivery
+Delivery is unavailable:
+Delivery needs an approved decision.
+Decision behavior
+Integration, recovery and audit history
+Device resources
+CPU 33% · Memory 79.1% · GPU 0% · Disk 94.6%

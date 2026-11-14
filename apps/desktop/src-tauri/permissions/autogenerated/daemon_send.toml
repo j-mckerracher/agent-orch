@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-daemon-send"
+description = "Enables the daemon_send command without any pre-configured scope."
+commands.allow = ["daemon_send"]
+
+[[permission]]
+identifier = "deny-daemon-send"
+description = "Denies the daemon_send command without any pre-configured scope."
+commands.deny = ["daemon_send"]

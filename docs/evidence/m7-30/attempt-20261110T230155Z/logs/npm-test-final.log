@@ -1,0 +1,17 @@
+
+> agent-orch-desktop@0.1.0 test
+> vitest run
+
+
+ RUN  v5.1.0 /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/.agent-worktrees/m7-30-20261110T230155Z/apps/desktop
+
+
+ Test Files  51 passed (51)
+      Tests  1091 passed (1091)
+   Start at  17:26:20
+   Duration  15.45s (environment 56%, tests 22%, setup 14%, transform 4%, import 4%)
+
+Environment  jsdom was created 51 times · 73.12s total, 56% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+

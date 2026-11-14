@@ -1,0 +1,39 @@
+{
+  "contract": {
+    "id": "m105-codex-isolation",
+    "project_id": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup/docs/evidence/m1-05-macos/codex-run-5c27yt83/repo",
+    "parent_id": null,
+    "objective": "Replace sample.txt with exactly the text \"codex candidate\". Do not modify any other file.",
+    "kind": "Implement",
+    "agent": "codex",
+    "dependencies": [],
+    "verification": "None",
+    "delivery": "LocalReview",
+    "autonomy": "WorkspaceWrites",
+    "max_retries": 0,
+    "max_repairs": 0
+  },
+  "state": "Verifying",
+  "attempts": [
+    {
+      "id": "m105-codex-isolation-attempt-1",
+      "task_id": "m105-codex-isolation",
+      "attempt_number": 1,
+      "state": "CandidateReady"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "m105-codex-isolation-session-1",
+      "attempt_id": "m105-codex-isolation-attempt-1",
+      "adapter": "codex",
+      "state": "Exited"
+    }
+  ],
+  "events": [
+    "TaskAdmitted",
+    "ExecutionStarted",
+    "CandidateRecorded"
+  ],
+  "version": 10
+}

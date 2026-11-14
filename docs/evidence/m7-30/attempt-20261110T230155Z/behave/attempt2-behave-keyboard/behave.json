@@ -1,0 +1,115 @@
+[
+ {
+  "id": "kbd-first-stops-fixture",
+  "verdict": "PASS",
+  "detail": [
+   "a[Skip to main content]",
+   "div[○ Offline Last durable sequence: none Re]",
+   "a[▦ Orchestrator Workspace]",
+   "a[☷ Agents & Sessions]"
+  ]
+ },
+ {
+  "id": "kbd-nav-enter-fixture",
+  "verdict": "PASS",
+  "detail": {
+   "before": "#/workspace",
+   "after": "#/review",
+   "focus": "a[✓ Review & Decisions —]"
+  }
+ },
+ {
+  "id": "kbd-tree-arrows-fixture",
+  "verdict": "PASS",
+  "detail": {
+   "a0": "div[Workstream 1 of 3: Auth hardening, 3 tas]",
+   "a1": "span[Rotate signing keys Succeeded codex · no]",
+   "a2": "span[Add refresh-token expiry Running codex ·]",
+   "up": "span[Rotate signing keys Succeeded codex · no]",
+   "home": "div[Workstream 1 of 3: Auth hardening, 3 tas]",
+   "end": "div[Workstream 3 of 3: Build infrastructure,]"
+  }
+ },
+ {
+  "id": "kbd-target-picker-fixture",
+  "verdict": "PASS",
+  "detail": {
+   "trigger": "Choose conversation target\n· G",
+   "openedWithEnter": true,
+   "focusInside": "input#_r_h_-search[]",
+   "afterEscape": "button[Choose conversation target · Global orch]"
+  }
+ },
+ {
+  "id": "kbd-model-menu-fixture",
+  "verdict": "PASS",
+  "detail": {
+   "trigger": "Codex (placeholder) · Placehol",
+   "openedWithEnter": true,
+   "focusInside": "button[Model settings: Codex (placeholder) · Pl]",
+   "afterEscape": "button[Model settings: Codex (placeholder) · Pl]"
+  }
+ },
+ {
+  "id": "kbd-disclosure-fixture",
+  "verdict": "PASS",
+  "detail": {
+   "start": true,
+   "afterEnter": false,
+   "afterSpace": true
+  }
+ },
+ {
+  "id": "kbd-first-stops-live",
+  "verdict": "PASS",
+  "detail": [
+   "a[Skip to main content]",
+   "div[✓ Connected Last durable sequence: 6 Ref]",
+   "button[Refresh / reconnect]",
+   "a[▦ Orchestrator Workspace]"
+  ]
+ },
+ {
+  "id": "kbd-nav-enter-live",
+  "verdict": "PASS",
+  "detail": {
+   "before": "#/workspace",
+   "after": "#/review",
+   "focus": "a[✓ Review & Decisions 0]"
+  }
+ },
+ {
+  "id": "kbd-tree-arrows-live",
+  "verdict": "LIMITATION",
+  "detail": "no tree items in this mode (no workstreams to navigate)"
+ },
+ {
+  "id": "kbd-target-picker-live",
+  "verdict": "PASS",
+  "detail": {
+   "trigger": "Choose conversation target\n· e",
+   "openedWithEnter": true,
+   "focusInside": "input#_r_d_-search[]",
+   "afterEscape": "button[Choose conversation target · e2e-project]"
+  }
+ },
+ {
+  "id": "kbd-model-menu-live",
+  "verdict": "PASS",
+  "detail": {
+   "trigger": "codex · GPT-6.1-Sol · medium\n⌄",
+   "openedWithEnter": true,
+   "focusInside": "button[Model settings: codex · GPT-6.1-Sol · me]",
+   "afterEscape": "button[Model settings: codex · GPT-6.1-Sol · me]"
+  }
+ },
+ {
+  "id": "kbd-disclosure-live",
+  "verdict": "PASS",
+  "detail": {
+   "start": true,
+   "afterEnter": false,
+   "afterSpace": true
+  }
+ }
+]

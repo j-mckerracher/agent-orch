@@ -1,0 +1,6 @@
+﻿{"type":"thread.started","thread_id":"01a1b7eb-c3c4-7953-9a99-61fd5da83862"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo UNELEVATED_PROBE_OK'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command 'echo UNELEVATED_PROBE_OK'","aggregated_output":"UNELEVATED_PROBE_OK\r\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"0"}}
+{"type":"turn.completed","usage":{"input_tokens":45032,"cached_input_tokens":35968,"cache_write_input_tokens":0,"output_tokens":39,"reasoning_output_tokens":0}}
