@@ -382,6 +382,7 @@
    "an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named"
   ],
   "store": [
+   "concurrent_first_opens_all_succeed_and_record_each_migration_once",
    "fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact",
    "fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact",
    "range_lock_does_not_block_other_handles_reading_the_record",

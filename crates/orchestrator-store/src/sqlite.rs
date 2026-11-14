@@ -123,6 +123,28 @@ fn sidecar_path(path: &Path, suffix: &str) -> std::path::PathBuf {
     name.into()
 }
 
+/// An exclusive, cross-process lock on a sidecar file, serializing the opening
+/// of one store file. sqlx's SQLite migrator takes no lock of its own (its
+/// `lock` is a no-op), so without this two openers of a fresh file both apply
+/// the same migration and one fails with "already exists". The OS releases the
+/// lock when the file closes, including when the process dies.
+struct OpenLock {
+    /// Held open for the lock's lifetime; closing it releases the lock.
+    _file: std::fs::File,
+}
+
+impl OpenLock {
+    fn acquire(database: &Path) -> std::io::Result<Self> {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let file = options.open(sidecar_path(database, "-open-lock"))?;
+        file.lock()?;
+        Ok(Self { _file: file })
+    }
+}
+
 fn run_worker(
     path: std::path::PathBuf,
     receiver: mpsc::Receiver<DbJob>,
@@ -133,6 +155,15 @@ fn run_worker(
         .build()
     {
         Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = ready_sender.send(Err(StoreError::Io(error)));
+            return;
+        }
+    };
+    // Held from connect through migration: a second opener of a fresh file waits
+    // here and then finds every migration applied, instead of re-running one.
+    let open_lock = match OpenLock::acquire(&path) {
+        Ok(lock) => lock,
         Err(error) => {
             let _ = ready_sender.send(Err(StoreError::Io(error)));
             return;
@@ -162,7 +193,9 @@ fn run_worker(
             return;
         }
     };
-    if let Err(error) = runtime.block_on(MIGRATOR.run(&pool)) {
+    let migrated = runtime.block_on(MIGRATOR.run(&pool));
+    drop(open_lock);
+    if let Err(error) = migrated {
         let _ = ready_sender.send(Err(StoreError::Migration(error)));
         runtime.block_on(pool.close());
         return;

@@ -41,7 +41,7 @@ export const WINDOWS = {
   // is the M6-01 takeover ACL check and is also its own gate.
   // Derived, not measured on Windows: the macOS list minus the same 4 cfg(unix) tests (2 lib tests, 1 in
   // lock_identity_contract, 1 in sqlite_reconcile); the sequence is the macOS one with those 4 removed.
-  store: { passed: 153, ignored: 1, sequence: [63, 9, 2, 13, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  store: { passed: 154, ignored: 1, sequence: [63, 9, 2, 13, 1, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 62 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
@@ -55,14 +55,14 @@ export const MACOS = {
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   daemon: { passed: 209, ignored: 1, sequence: [176, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 997, ignored: 2 },
+  workspace: { passed: 998, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
-  store: { passed: 157, ignored: 1, sequence: [65, 9, 2, 13, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  store: { passed: 158, ignored: 1, sequence: [65, 9, 2, 13, 1, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 9,
