@@ -1390,6 +1390,7 @@
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) renders the wireframe purpose note under the workstream view",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live mutations keeps Create workstream in the page header, disabled with a reason, and sends nothing in live mode",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) shows the read-only dependency detail with predecessors, and disables every edit action with a reason",
-    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) merges objective and project into one task table column"
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) merges objective and project into one task table column",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream list card (OX-W2) titles the list as initiatives and offers Prioritize and Archive disabled, each with a reason"
   ]
 }

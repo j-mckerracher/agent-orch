@@ -44,7 +44,8 @@ const UNREAD_REASON = "Disabled: this workstream's details could not be read. Us
 const CREATE_REASON = "Disabled: creating a workstream is not in this release (post-release, M7-07).";
 const DEPENDENCY_REASON =
   "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
-const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
+const LIST_REASON =
+  "Disabled: no daemon method orders initiatives, so Prioritize has nothing to call. Archive here is not in this release; archive the selected initiative from its detail panel.";
 const PLAN_REASON =
   "Disabled: the daemon has no method to add, split, combine or remove tasks, reassign them, or change execution policy. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
 const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
@@ -193,7 +194,7 @@ export function WorkstreamsView() {
             <Panel
               title={
                 <>
-                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "workstream" : "workstreams"}
+                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "initiative" : "initiatives"}
                 </>
               }
               headingLevel={2}
@@ -222,6 +223,7 @@ export function WorkstreamsView() {
                         {index + 1}. {group.title}
                       </span>
                       <small>
+                        {group.projectIds.length > 0 && `${group.projectIds.length} ${group.projectIds.length === 1 ? "project" : "projects"} · `}
                         {group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}
                         {group.state !== "active" && ` · ${group.state}`}
                       </small>
@@ -232,6 +234,9 @@ export function WorkstreamsView() {
               <div className="ws-row">
                 <Button disabled aria-describedby={`${reasonId}-list`}>
                   Prioritize
+                </Button>
+                <Button disabled aria-describedby={`${reasonId}-list`}>
+                  Archive
                 </Button>
               </div>
               <p className="ws-reason" id={`${reasonId}-list`}>
