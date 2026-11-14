@@ -95,8 +95,10 @@ test.describe("RC-02 workspace activity is a top-right popover, not a docked pan
     await openApp(page, "#/workspace", "populated", "desktop");
     await openWorkspaceActivity(page);
     const queue = page.locator("summary", { hasText: /^Execution queue/ }).first();
-    await queue.click();
-    const row = queue.locator("xpath=..").locator("li").first();
+    await queue.evaluate((s) => { (s.parentElement as HTMLDetailsElement).open = true; });
+    const running = queue.locator("xpath=..").locator("summary", { hasText: /^Running/ }).first();
+    await running.evaluate((s) => { (s.parentElement as HTMLDetailsElement).open = true; });
+    const row = running.locator("xpath=..").locator("li").first();
     expect((await box(row)).height).toBeLessThanOrEqual(48);
   });
 });
