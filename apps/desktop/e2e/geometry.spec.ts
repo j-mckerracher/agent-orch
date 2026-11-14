@@ -302,3 +302,30 @@ test("dragging the splitter resizes the sidebar and the toggle collapses it out 
   await page.getByRole("button", { name: "Expand sidebar" }).click();
   await expect(sidebar).toBeVisible();
 });
+
+test("agents and workstreams split columns follow the wireframe 1150 and 760 breakpoints", async ({ page }) => {
+  const trackCount = (selector: string) =>
+    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+
+  await page.setViewportSize({ width: 1150, height: viewport.height });
+  await page.goto("/?fixture=1#/agents");
+  await expect(page.locator(".agents-layout")).toBeVisible();
+  expect(await trackCount(".agents-layout"), "agents stacks at 1150 px").toBe(1);
+  await page.setViewportSize({ width: 1151, height: viewport.height });
+  expect(await trackCount(".agents-layout"), "agents splits above 1150 px").toBe(2);
+
+  await page.setViewportSize({ width: 1150, height: viewport.height });
+  await page.goto("/?fixture=1#/workstreams");
+  await expect(page.locator(".ws-layout")).toBeVisible();
+  const listColumn = await page
+    .locator(".ws-layout")
+    .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ")[0]);
+  expect(listColumn, "workstream list column is 145 px at 1150 px").toBe("145px");
+  expect(await trackCount(".ws-layout"), "workstreams keep two columns at 1150 px").toBe(2);
+  await page.setViewportSize({ width: 960, height: viewport.height });
+  expect(await trackCount(".ws-layout"), "workstreams keep two columns at 960 px").toBe(2);
+
+  await page.setViewportSize({ width: 760, height: viewport.height });
+  expect(await trackCount(".ws-layout"), "workstreams stack at 760 px").toBe(1);
+  expect(await trackCount(".ws-items"), "workstream list is two columns at 760 px").toBe(2);
+});
