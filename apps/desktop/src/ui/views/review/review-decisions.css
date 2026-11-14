@@ -52,14 +52,15 @@
   padding: 0;
 }
 
+/* Queue and candidate columns use the wireframe's task-layout split (about 599px and 545px at 1440). */
 .review-embedded .rd-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1150px) {
   .review-embedded .rd-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -344,6 +345,28 @@
   }
   .rd-fact-source {
     grid-column: 1;
+  }
+}
+
+/* The candidate column is narrower than the viewport breakpoints assume (the queue takes 1.1fr), so
+   the fact rows and the diff stack by the column's own width. Above that width they keep the wireframe
+   layout. */
+.review-embedded .rd-detail {
+  container-type: inline-size;
+}
+
+@container (max-width: 540px) {
+  .rd-fact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rd-fact-source {
+    grid-column: 1;
+  }
+}
+
+@container (max-width: 680px) {
+  .review-embedded.review-screen .diff-region {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

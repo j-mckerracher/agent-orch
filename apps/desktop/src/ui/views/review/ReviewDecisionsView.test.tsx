@@ -130,6 +130,14 @@ describe("Review & Decisions view", () => {
 });
 
 describe("tabs", () => {
+  it("is a view-level bar above the two-column queue, not inside the queue card", async () => {
+    liveSetup();
+    await screen.findByText("2 independent decisions");
+    const tablist = screen.getByRole("tablist", { name: "Decision filters" });
+    expect(queue().contains(tablist)).toBe(false);
+    expect(tablist.compareDocumentPosition(queue()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("filters by tab, is keyboard operable, and explains the unsupported Verification tab", async () => {
     liveSetup();
     await screen.findByText("2 independent decisions");

@@ -1,4 +1,3 @@
-import { useRef, useState, type KeyboardEvent } from "react";
 import type { Approval } from "../../../daemon/types";
 import type { DecisionItem } from "../../../sources/surfaces/types";
 import type { ReviewState } from "../../../review/useReview";
@@ -42,24 +41,9 @@ function MetaLine({ approval, meta }: { approval: Approval; meta: QueueMeta }) {
   );
 }
 
-export function DecisionQueue({ state, meta }: { state: ReviewState; meta: QueueMeta }) {
-  const [tab, setTab] = useState<TabId>("actionable");
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: QueueMeta; tab: TabId }) {
   const current = TABS.find((t) => t.id === tab) ?? TABS[0];
   const shown = filterByTab(tab, state.items);
-
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const index = TABS.findIndex((t) => t.id === tab);
-    let next = index;
-    if (event.key === "ArrowRight") next = (index + 1) % TABS.length;
-    else if (event.key === "ArrowLeft") next = (index - 1 + TABS.length) % TABS.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = TABS.length - 1;
-    else return;
-    event.preventDefault();
-    setTab(TABS[next].id);
-    tabRefs.current[TABS[next].id]?.focus();
-  }
 
   return (
     <section aria-labelledby="rd-queue-title" className="rd-card rd-queue-card">
@@ -69,31 +53,6 @@ export function DecisionQueue({ state, meta }: { state: ReviewState; meta: Queue
           Refresh
         </Button>
       </header>
-
-      <div role="tablist" aria-label="Decision filters" className="rd-tabs" onKeyDown={onKeyDown}>
-        {TABS.map((t) => {
-          const count = t.unsupported ? null : filterByTab(t.id, state.items).length;
-          return (
-            <button
-              key={t.id}
-              ref={(node) => {
-                tabRefs.current[t.id] = node;
-              }}
-              type="button"
-              role="tab"
-              id={`rd-tab-${t.id}`}
-              aria-selected={t.id === tab}
-              aria-controls="rd-tabpanel"
-              tabIndex={t.id === tab ? 0 : -1}
-              className="rd-tab"
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-              {count !== null && state.listState === "ready" ? ` (${count})` : ""}
-            </button>
-          );
-        })}
-      </div>
 
       <div role="tabpanel" id="rd-tabpanel" aria-labelledby={`rd-tab-${tab}`} className="rd-tabpanel">
         <p className="rd-note">{current.description}</p>

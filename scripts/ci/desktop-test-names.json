@@ -1266,6 +1266,7 @@
     "src/ui/views/review/ReviewDecisionsView.test.tsx :: tabs moves an accepted approval to Resolved and Delivery without making a delivery request",
     "src/ui/views/review/ReviewDecisionsView.test.tsx :: unsupported actions are disabled with a visible reason, and never call the daemon",
     "src/ui/views/review/ReviewDecisionsView.test.tsx :: unsupported actions scope row marks owner, response-time sort and silences as unavailable",
+    "src/ui/views/review/ReviewDecisionsView.test.tsx :: tabs is a view-level bar above the two-column queue, not inside the queue card",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: accessibility structure exposes a heading, a labelled conversation region, a log and a labelled composer",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: accessibility structure sends on Ctrl+Enter in fixture mode",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: conversation target dropdown announces matches and an empty search in the status region",

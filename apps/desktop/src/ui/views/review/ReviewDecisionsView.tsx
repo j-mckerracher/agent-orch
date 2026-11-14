@@ -5,7 +5,7 @@
 // its own <main> because the app shell already provides one. The queue lists every pending
 // approval from approvals.list across projects. Priority and latest response time come from the
 // D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ReviewClient } from "../../../review/client";
 import { createReviewClient } from "../../../review/client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "../../../review/daemonSources";
@@ -23,8 +23,9 @@ import { Badge, Button, Pill } from "../../theme";
 import { useServices, useSurface } from "../../services";
 import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
+import { DecisionTabs } from "./DecisionTabs";
 import { SixFactsRecord } from "./ReviewRecord";
-import { indexMeta } from "./queue";
+import { indexMeta, type TabId } from "./queue";
 import "./review-decisions.css";
 
 export interface ReviewDecisionsViewProps {
@@ -81,6 +82,7 @@ export function ReviewDecisionsView({
   newKey,
 }: ReviewDecisionsViewProps) {
   const { connection, surfaces } = useServices();
+  const [tab, setTab] = useState<TabId>("actionable");
   const client = useMemo(
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [clientOverride, fixtureMode, connection],
@@ -122,13 +124,14 @@ export function ReviewDecisionsView({
       header: (state: ReviewState) => (
         <>
           <Heading state={state} />
+          <DecisionTabs state={state} tab={tab} onTab={setTab} />
           <ScopeRow />
         </>
       ),
-      queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} />,
+      queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} tab={tab} />,
       behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
     }),
-    [meta, fixture],
+    [meta, fixture, tab],
   );
 
   return (
