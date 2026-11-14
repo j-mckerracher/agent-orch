@@ -16,8 +16,8 @@ import type { ReactNode } from "react";
  * | `topUsage`         | top bar, usage pill                      | M7-16      |
  * | `topSearch`        | top bar, search                          | M7-16      |
  * | `topCounts`        | top bar, portfolio counts                | M7-16      |
- * | `activity`         | right-hand `<aside>` (workspace view)    | M7-12      |
- * | `resources`        | bottom resource strip region             | M7-17      |
+ * | `activity`         | top-right control over main (workspace)  | M7-12      |
+ * | `resources`        | last section of the activity popover     | M7-17      |
  */
 export interface ShellSlots {
   reviewCount: ReactNode;
@@ -27,8 +27,8 @@ export interface ShellSlots {
   topUsage: ReactNode;
   topSearch: ReactNode;
   topCounts: ReactNode;
-  /** `null` removes the activity region entirely. */
+  /** `null` removes the activity control entirely. Its popover must render `<ResourcesSlot />`. */
   activity: ReactNode;
-  /** `null` removes the resource region entirely. */
+  /** Shown as the last section of the activity popover; `null` removes System Usage. */
   resources: ReactNode;
 }

@@ -24,8 +24,9 @@
  * activity slot at the top-right of main. Its disclosure is a popover anchored under the trigger
  * (`aria-expanded`/`aria-controls`), closed on load and not remembered. Escape, a pointer press
  * outside, or focus leaving it closes it and returns focus to the trigger (`usePopover`). The
- * sections are direct children of `.activity-sections`; a new section is appended there.
- * This component renders no landmark of its own.
+ * sections are direct children of `.activity-sections`: Execution queue, Attention, Agent slots,
+ * then System Usage (the shell's `resources` slot, reserved as the last child). Every section and
+ * every queue row starts collapsed. This component renders no landmark of its own.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { isFixtureId } from "../../daemon/api";
@@ -47,6 +48,7 @@ import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme
 import { usePopover } from "../usePopover";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
 import { NavLink } from "./NavLink";
+import { ResourcesSlot } from "./ResourcesSlot";
 import { formatAge } from "./ResourceStrip";
 import "./ActivityPanel.css";
 
@@ -119,6 +121,10 @@ interface StopControl {
   onStop: (taskId: string) => Promise<boolean>;
 }
 
+/**
+ * One queued or running task. Collapsed it is a single compact row (state and objective), like the
+ * wireframe's queue card; expanding it reveals the meta, the wait reason and the Stop control.
+ */
 function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopControl; isNext: boolean }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -135,62 +141,74 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
   const label = `${entry.objective} (${entry.taskId})`;
   return (
     <li className="activity-row" data-testid={`activity-task-${entry.taskId}`}>
-      <div className="activity-row-main">
-        <span className="activity-row-title">{entry.objective}</span>
-        <span className="activity-row-meta">
-          {basename(entry.projectId)} · {entry.agent} · {entry.taskId}
-        </span>
-        <span className="activity-row-pills">
+      <details className="activity-item">
+        <summary>
           <Pill tone={entry.state === "Running" || entry.state === "Verifying" ? "info" : "neutral"}>{entry.state}</Pill>
-          {isNext && <Pill tone="info">Next to dispatch</Pill>}
-          {waiting && <Pill tone={waiting.tone}>{waiting.text}</Pill>}
-        </span>
-        {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
-      </div>
-      {confirming ? (
-        <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
-          <Button
-            id={confirmId}
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              const noticeTookFocus = await stop.onStop(entry.taskId);
-              setBusy(false);
-              // A stopped row may unmount at the next refresh, so the notice owns focus then.
-              settled.current = !noticeTookFocus;
-              setConfirming(false);
-            }}
-          >
-            Confirm stop
-          </Button>
-          <Button
-            variant="quiet"
-            disabled={busy}
-            onClick={() => {
-              settled.current = true;
-              setConfirming(false);
-            }}
-          >
-            Keep
-          </Button>
+          <span className="activity-item-title">{entry.objective}</span>
+        </summary>
+        <div className="activity-item-body">
+          <span className="activity-row-meta">
+            {basename(entry.projectId)} · {entry.agent} · {entry.taskId}
+          </span>
+          {(isNext || waiting) && (
+            <span className="activity-row-pills">
+              {isNext && <Pill tone="info">Next to dispatch</Pill>}
+              {waiting && <Pill tone={waiting.tone}>{waiting.text}</Pill>}
+            </span>
+          )}
+          {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
+          {confirming ? (
+            <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
+              <Button
+                id={confirmId}
+                variant="danger"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const noticeTookFocus = await stop.onStop(entry.taskId);
+                  setBusy(false);
+                  // A stopped row may unmount at the next refresh, so the notice owns focus then.
+                  settled.current = !noticeTookFocus;
+                  setConfirming(false);
+                }}
+              >
+                Confirm stop
+              </Button>
+              <Button
+                variant="quiet"
+                disabled={busy}
+                onClick={() => {
+                  settled.current = true;
+                  setConfirming(false);
+                }}
+              >
+                Keep
+              </Button>
+            </div>
+          ) : (
+            <div className="activity-row-actions">
+              <Button
+                id={stopId}
+                variant="danger"
+                aria-label={`Stop ${label}`}
+                aria-describedby={stop.blockedReason ? stop.describedBy : undefined}
+                disabled={stop.blockedReason !== null}
+                onClick={() => setConfirming(true)}
+              >
+                Stop
+              </Button>
+            </div>
+          )}
         </div>
-      ) : (
-        <Button
-          id={stopId}
-          variant="danger"
-          aria-label={`Stop ${label}`}
-          aria-describedby={stop.blockedReason ? stop.describedBy : undefined}
-          disabled={stop.blockedReason !== null}
-          onClick={() => setConfirming(true)}
-        >
-          Stop
-        </Button>
-      )}
+      </details>
     </li>
   );
 }
 
+/**
+ * A labelled, always-visible group of queue rows. Groups are not disclosures: only the rows are
+ * expandable, and every row starts collapsed (spec §20-21), so Running is never expanded by default.
+ */
 function TaskGroup({
   title,
   entries,
@@ -198,7 +216,6 @@ function TaskGroup({
   note,
   stop,
   nextId,
-  defaultOpen,
 }: {
   title: string;
   entries: QueueEntry[];
@@ -206,10 +223,12 @@ function TaskGroup({
   note?: string;
   stop: StopControl;
   nextId?: string;
-  defaultOpen?: boolean;
 }) {
   return (
-    <Disclosure summary={title} count={entries.length} defaultOpen={defaultOpen} className="activity-sub" data-testid={`activity-queue-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div role="group" aria-label={title} className="activity-queue-group" data-testid={`activity-queue-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+      <p className="activity-subhead">
+        {title} <span className="activity-subcount">{entries.length}</span>
+      </p>
       {note && <p className="activity-note">{note}</p>}
       {entries.length === 0 ? (
         <p className="activity-empty">{empty}</p>
@@ -220,7 +239,7 @@ function TaskGroup({
           ))}
         </ul>
       )}
-    </Disclosure>
+    </div>
   );
 }
 
@@ -433,7 +452,7 @@ export function ActivityPanel() {
                     Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
                   </p>
                 )}
-                <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} defaultOpen />
+                <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} />
                 <TaskGroup
                   title="Up next"
                   entries={upNextEntries}
@@ -519,7 +538,8 @@ export function ActivityPanel() {
               />
             </div>
           </Disclosure>
-          {/* Add further sections (for example System Usage) as the last child of .activity-sections. */}
+          {/* System Usage: the shell's resources slot is always the last section of .activity-sections. */}
+          <ResourcesSlot />
         </div>
       </div>
     </div>

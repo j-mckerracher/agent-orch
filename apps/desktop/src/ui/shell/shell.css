@@ -1,7 +1,8 @@
 /*
  * Global app shell layout. Token names fall back to M7-01 defaults.
  * At 1150 px the sidebar narrows. The activity control is a top-right trigger over main, not a column.
- * At 960 px the activity control moves above main; the resource slot stays in normal flow.
+ * At 960 px the activity control moves above main. System Usage lives inside the activity popover,
+ * so the shell has no bottom resource row at any width.
  * At 760 px sidebar navigation stays visible in two columns.
  * Updated: 2026-11-11 20:16:54 UTC.
  */
@@ -233,11 +234,10 @@ body:has(.shell) {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "top"
-    "main"
-    "res";
+    "main";
   min-height: 0;
   min-width: 0;
 }
@@ -302,15 +302,6 @@ body:has(.shell) {
   margin: 10px 24px 0 0;
 }
 
-.shell-resources {
-  grid-area: res;
-  min-width: 0;
-  padding: 8px 24px;
-  border-top: 1px solid var(--shell-line);
-  background: var(--shell-soft);
-  font-size: 12px;
-}
-
 @media (max-width: 1150px) {
   .shell-body {
     grid-template-columns: 185px minmax(0, 1fr);
@@ -320,8 +311,7 @@ body:has(.shell) {
     padding: 20px 12px 12px;
   }
 
-  .shell-topbar,
-  .shell-resources {
+  .shell-topbar {
     padding-left: 22px;
     padding-right: 22px;
   }
@@ -342,12 +332,11 @@ body:has(.shell) {
 @media (max-width: 960px) {
   .shell-content {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto auto;
+    grid-template-rows: auto auto auto;
     grid-template-areas:
       "top"
       "activity"
-      "main"
-      "res";
+      "main";
     overflow: auto;
   }
 
@@ -430,10 +419,6 @@ body:has(.shell) {
 
   .shell-activity {
     margin: 0 18px 12px auto;
-  }
-
-  .shell-resources {
-    padding: 7px 12px;
   }
 }
 

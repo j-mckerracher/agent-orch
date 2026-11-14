@@ -7,8 +7,9 @@ import { PlaceholderBadge } from "../widgets";
 import "./ResourceStrip.css";
 
 /**
- * Bottom resource strip (OX-A9, M7-17): CPU, memory, GPU and disk of the device, read from
- * the D13 `SystemMetricsSource`.
+ * System Usage section (OX-A9, M7-17): CPU, memory, GPU and disk of the device, read from
+ * the D13 `SystemMetricsSource`. Shown as the last section of the workspace activity popover, open
+ * by default, as in the wireframe's `.system-usage` inspector section.
  *
  * Honesty rules, enforced here and covered by `ResourceStrip.test.tsx`:
  * - A meter (`role="meter"`) exists only for a measured percentage in 0-100. `unavailable`,
@@ -26,10 +27,9 @@ import "./ResourceStrip.css";
  *   range would be invented, and unavailable/unsupported meters (GPU) have no value at all.
  *   Those rows are `role="group"` with the same name, value, scope and age as visible text.
  *
- * The shell renders this slot in its `Device resources` section and owns placement.
- * Its normal-flow region keeps the summary and expanded readings reachable at every width.
- * The supplied wireframe has no matching body element, so no separate target is inferred.
- * Updated: 2026-11-11 20:16:54 UTC.
+ * The activity popover renders this slot as its last section (`ResourcesSlot.tsx`). The section
+ * stays in normal flow inside the popover, so the summary and the readings stay reachable at every
+ * width. Each row keeps its scope and observed age as visible text; no reading is shown without them.
  */
 
 type MeterKey = "cpu" | "memory" | "gpu" | "disk";
@@ -116,18 +116,18 @@ export interface ResourceStripViewProps {
   defaultOpen?: boolean;
 }
 
-/** Presentational strip; `ResourceStrip` wires it to the D13 source. */
+/** Presentational section; `ResourceStrip` wires it to the D13 source. */
 export function ResourceStripView({ state, provenance, nowMs, defaultOpen = false }: ResourceStripViewProps) {
   const rows = rowsFor(state);
   const effective = state.status === "loading" || state.status === "ok" ? provenance : state.provenance;
   return (
     <Disclosure
-      className="rs-strip"
+      className="system-usage activity-group"
       data-testid="resource-strip"
       defaultOpen={defaultOpen}
       summary={
         <span className="rs-summary">
-          <span className="rs-title">Device resources</span>
+          <span className="rs-title">System Usage</span>
           {effective.kind === "fixture" && <PlaceholderBadge provenance={effective} />}
         </span>
       }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Route } from "../router";
 import { SidebarNav, SidebarWorkstreams } from "./SidebarNav";
+import { ResourcesSlotProvider } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 import { useShellTier } from "./useShellTier";
 import "./shell.css";
@@ -20,9 +21,10 @@ export interface AppShellProps {
 }
 
 /**
- * Global shell with persistent connection strip, sidebar, top bar, main, activity, and
- * resource regions. The activity slot is a top-right control over main's row above 960 px, not a
- * column; at narrower widths it sits above main.
+ * Global shell with persistent connection strip, sidebar, top bar and main. The activity slot is a
+ * top-right control over main's row above 960 px, not a column; at narrower widths it sits above
+ * main. The resources slot has no region of its own: the activity popover renders it as its last
+ * section (see `ResourcesSlot.tsx`).
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, children }: AppShellProps) {
@@ -94,15 +96,10 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
           {/* A control, not a region: it shares main's grid cell and reserves no column (see shell.css). */}
           {hasActivity && (
             <div className="shell-activity" data-testid="shell-activity">
-              {slots.activity}
+              <ResourcesSlotProvider value={hasResources ? slots.resources : null}>{slots.activity}</ResourcesSlotProvider>
             </div>
           )}
           {main}
-          {hasResources && (
-            <section className="shell-resources" aria-label="Device resources">
-              {slots.resources}
-            </section>
-          )}
         </div>
       </div>
     </div>
