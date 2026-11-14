@@ -138,7 +138,9 @@ body:has(.shell) {
 }
 
 .shell-brand strong {
-  font-size: 18px;
+  /* Wordmark size and line height from the wireframe (`.brand-heading > strong`). */
+  font-size: 30px;
+  line-height: 1;
 }
 
 .shell-brand-name {
@@ -291,7 +293,15 @@ body:has(.shell) {
 
 .shell-topbar-search {
   flex: 1 1 260px;
-  max-width: 460px;
+  /* The wireframe search is 681 px wide at 1440 (`.topbar .search`). */
+  max-width: 681px;
+}
+
+@media (min-width: 1151px) {
+  /* A basis this large pushes the counts to their own line, so the search keeps its width on the first line. */
+  .shell-topbar-search {
+    flex-basis: 500px;
+  }
 }
 
 .shell-topbar-search input {
