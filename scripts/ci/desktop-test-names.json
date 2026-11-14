@@ -796,6 +796,7 @@
     "src/ui/screens1.test.tsx :: shell renders the injected review screen with the route identifiers",
     "src/ui/screens2.test.tsx :: S3 task list derives the Blocked filter from unmet dependencies",
     "src/ui/screens2.test.tsx :: S3 task list does not fall back to fixtures after an IPC failure",
+    "src/ui/screens2.test.tsx :: S3 task list does not filter the rows by review, or count review as 0, when the approvals list is unavailable",
     "src/ui/screens2.test.tsx :: S3 task list filters locally without another daemon call",
     "src/ui/screens2.test.tsx :: S3 task list keeps the execution preview separate and labelled as placeholder data",
     "src/ui/screens2.test.tsx :: S3 task list lists only this project's tasks with filter counts including Awaiting review",

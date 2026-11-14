@@ -115,6 +115,18 @@ describe("S3 task list", () => {
     expect(filters).not.toHaveTextContent("…");
   });
 
+  it("does not filter the rows by review, or count review as 0, when the approvals list is unavailable", async () => {
+    const fake = seeded();
+    fake.failNext("approvals.list", { code: -32603, message: "boom" }, 5);
+    const { services } = await mount(fake, { route: tasksRoute("review") });
+    await waitFor(() => expect(services.data.getSnapshot().approvals.status).toBe("error"));
+    expect(screen.getByRole("button", { name: "Awaiting review (unknown)" })).toBeInTheDocument();
+    expect(screen.getByText(/Awaiting review is unknown/)).toBeInTheDocument();
+    const table = await screen.findByRole("table", { name: "Tasks" });
+    expect(within(table).getAllByRole("row")).toHaveLength(5);
+    expect(screen.queryByText("No tasks match this filter.")).not.toBeInTheDocument();
+  });
+
   it("shows cached tasks as stale while offline", async () => {
     const fake = seeded();
     await mount(fake, { route: tasksRoute() });

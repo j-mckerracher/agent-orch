@@ -17,6 +17,9 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   // Unread counts are not zero: "…" while a daemon answer can still arrive, "unknown" once it cannot.
   const unread = (status: string): string => (status !== "error" && (gate.connected || gate.settling) ? "…" : "unknown");
   const unreadCount = tasks.data === null ? unread(tasks.status) : null;
+  const approvalsUnread = approvals.data === null ? unread(approvals.status) : null;
+  // Without approvals, review membership is unknown: the review filter does not narrow the rows.
+  const unfiltered = filter === "review" && approvals.data === null;
 
   return (
     <main className="ps-page">
@@ -37,9 +40,10 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
       <div role="group" aria-label="Task filters" className="ps-filters">
         {FILTER_LABELS.map(({ filter: value, label }) => {
           const count = own.filter((task) => matchesFilter(task, value, own, approvalList)).length;
+          const shown = unreadCount ?? (value === "review" ? approvalsUnread : null) ?? `${count}/${own.length}`;
           return (
             <Button key={value} aria-pressed={filter === value} onClick={() => go(value)}>
-              {label} ({unreadCount ?? `${count}/${own.length}`})
+              {label} ({shown})
             </Button>
           );
         })}
@@ -49,6 +53,11 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
           </Button>
         )}
       </div>
+      {unfiltered && (
+        <p role="status" className="muted">
+          Awaiting review is unknown: the approvals list has not been read. Rows are not filtered by review.
+        </p>
+      )}
       <LoadableRegion
         what="tasks"
         loadable={tasks}
@@ -58,7 +67,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
         onRetry={() => void data.refreshAll()}
       >
         {() => {
-          const rows = own.filter((task) => matchesFilter(task, filter, own, approvalList));
+          const rows = unfiltered ? own : own.filter((task) => matchesFilter(task, filter, own, approvalList));
           if (rows.length === 0) return <p>No tasks match this filter.</p>;
           return (
             <TableWrap>
