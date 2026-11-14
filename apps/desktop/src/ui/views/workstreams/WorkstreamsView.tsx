@@ -42,6 +42,8 @@ const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It woul
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
 const CREATE_REASON = "Disabled: creating a workstream is not in this release (post-release, M7-07).";
+const DEPENDENCY_REASON =
+  "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
 const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
 const PLAN_REASON =
   "Disabled: the daemon has no method to add, split, combine or remove tasks, reassign them, or change execution policy. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
@@ -305,6 +307,51 @@ export function WorkstreamsView() {
   );
 }
 
+/**
+ * OX-W7 "Dependency and resource detail": read-only. It shows each task's predecessors and
+ * their states from the loaded task records; edit, regenerate and lease actions are disabled
+ * with a reason because the daemon has no method for them.
+ */
+function DependencyDetail({ group, reasonId }: { group: WsGroup; reasonId: string }) {
+  const byId = new Map(group.tasks.map((task) => [task.id, task]));
+  const rows = group.tasks.filter((task) => task.dependencies.length > 0);
+  return (
+    <details className="ws-dependency-detail" data-testid="ws-dependency-detail">
+      <summary>Dependency and resource detail</summary>
+      {rows.length === 0 ? (
+        <p className="ws-subtle">No task in this workstream waits on a predecessor.</p>
+      ) : (
+        <ul className="ws-dependency-list" aria-label={`Predecessors of ${group.title}`}>
+          {rows.map((task) => (
+            <li key={task.id}>
+              <strong>{taskLabelOf(task)}</strong> waits on{" "}
+              {task.dependencies.map((dependency, index) => {
+                const predecessor = byId.get(dependency);
+                return (
+                  <span key={dependency}>
+                    {index > 0 && ", "}
+                    {predecessor ? `${taskLabelOf(predecessor)} (${predecessor.state})` : `${dependency} (not in this workstream)`}
+                  </span>
+                );
+              })}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="ws-row" role="group" aria-label="Dependency actions">
+        {["Edit predecessors", "Ask coordinator to regenerate subplan", "Validate draft before apply"].map((label) => (
+          <Button key={label} disabled aria-describedby={reasonId}>
+            {label}
+          </Button>
+        ))}
+      </div>
+      <p className="ws-reason" id={reasonId}>
+        {DEPENDENCY_REASON}
+      </p>
+    </details>
+  );
+}
+
 function ActivityPane({ group }: { group: WsGroup }) {
   if (group.unreadReason !== null) return <p role="status">Activity unknown: tasks could not be read.</p>;
   if (group.tasks.length === 0) return <EmptyState title="No activity" description="This workstream has no tasks yet." />;
@@ -492,8 +539,7 @@ function Detail({
               <thead>
                 <tr>
                   <th scope="col">Task</th>
-                  <th scope="col">Project</th>
-                  <th scope="col">Objective</th>
+                  <th scope="col">Objective / project</th>
                   <th scope="col">Task state</th>
                   <th scope="col">Assignment</th>
                   <th scope="col">Required next evidence</th>
@@ -514,8 +560,10 @@ function Detail({
                         </>
                       )}
                     </th>
-                    <td title={task.projectId}>{basename(task.projectId)}</td>
-                    <td>{objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"}</td>
+                    <td title={task.projectId}>
+                      {objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"} /{" "}
+                      {basename(task.projectId)}
+                    </td>
                     <td>
                       <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>
                     </td>
@@ -532,6 +580,7 @@ function Detail({
             </table>
           </div>
         )}
+        {group.unreadReason === null && <DependencyDetail group={group} reasonId={`${reasonId}-dependency`} />}
         {!fixture && (
           <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />
         )}

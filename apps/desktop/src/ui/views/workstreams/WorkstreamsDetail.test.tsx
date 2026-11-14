@@ -118,4 +118,25 @@ describe("workstream detail tabs (OX-W3)", () => {
     await mountLive();
     expect(screen.getByText(/^Purpose and rationale: organize outcomes across repositories/)).toBeVisible();
   });
+
+  it("shows the read-only dependency detail with predecessors, and disables every edit action with a reason", async () => {
+    await mountLive();
+    const detail = screen.getByTestId("ws-dependency-detail");
+    expect(within(detail).getByText("Dependency and resource detail")).toBeInTheDocument();
+    expect(detail).toHaveTextContent("Wire the CLI waits on Ship the parser (Succeeded)");
+    for (const name of ["Edit predecessors", "Ask coordinator to regenerate subplan", "Validate draft before apply"]) {
+      const button = within(detail).getByRole("button", { name });
+      expect(button).toBeDisabled();
+      const reason = document.getElementById(button.getAttribute("aria-describedby") ?? "");
+      expect(reason?.textContent).toMatch(/read-only/);
+    }
+  });
+
+  it("merges objective and project into one task table column", async () => {
+    await mountLive();
+    const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
+    expect(headers).toContain("Objective / project");
+    expect(headers).not.toContain("Project");
+    expect(screen.getByRole("row", { name: /Wire the CLI/ })).toHaveTextContent(/Workstream only \/ /);
+  });
 });
