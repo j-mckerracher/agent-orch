@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import type { Provenance } from "../../../sources/types";
 import { TASK_STATES, basename } from "../../format";
-import { useServices } from "../../services";
+import { useGate, useServices } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
@@ -30,6 +30,7 @@ import {
   type WsTask,
 } from "./model";
 import { STATE_TONE } from "./tone";
+import { WsTabs } from "./WsTabs";
 import "./workstreams.css";
 
 interface Receipt {
@@ -40,9 +41,14 @@ interface Receipt {
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
-const LIST_REASON = "Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.";
+const CREATE_REASON = "Disabled: this daemon does not offer workstream creation (post-release, M7-07).";
+const OFFLINE_CREATE_REASON = "Disabled: the daemon is not connected. Create is offered once this connection is live.";
+const DEPENDENCY_REASON =
+  "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
+const LIST_REASON =
+  "Disabled: no daemon method orders initiatives, so Prioritize has nothing to call. Archive here is not in this release; archive the selected initiative from its detail panel.";
 const PLAN_REASON =
-  "Disabled: the daemon has no method to split a task or reassign it. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
+  "Disabled: the daemon has no method to add, split, combine or remove tasks, reassign them, or change execution policy. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
 const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
 
 function assignment(task: WsGroup["tasks"][number]): string {
@@ -63,6 +69,78 @@ export function WorkstreamsView() {
   const [title, setTitle] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
+  const gate = useGate();
+  const fixtureSource = surfaces.workstreams.provenance.kind === "fixture";
+  // Live create is `workstreams.create`, offered only when this connection negotiated the `workstreams`
+  // capability (the same `gate.can` check the other daemon writes use). Fixture mode simulates instead.
+  const createOffered = !fixtureSource && gate.can("workstreams");
+  const stale = model.status === "ready" && model.stale;
+  const writeOff = mutations.busy || stale;
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (title.trim() === "") return;
+    if (!fixtureSource) {
+      const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
+        surfaces.workstreams.create(title.trim()),
+      );
+      if (made) {
+        setTitle("");
+        setSelected(made.id);
+        setFilter("");
+      }
+      return;
+    }
+    setCreateError(null);
+    try {
+      const receipt = await surfaces.workstreams.simulateCreate(title.trim());
+      setReceipts((all) => [{ provenance: receipt.provenance, notice: receipt.notice }, ...all]);
+      setTitle("");
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Simulation failed.");
+    }
+  };
+
+  const createForm = (
+    <form className="ws-create" onSubmit={create} aria-label="Create workstream">
+      <label>
+        New workstream title
+        <input
+          type="text"
+          value={title}
+          disabled={writeOff}
+          onChange={(event) => setTitle(event.target.value)}
+          aria-describedby={stale ? reasonId : undefined}
+        />
+      </label>
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={writeOff || title.trim() === ""}
+        aria-describedby={stale ? reasonId : undefined}
+      >
+        {fixtureSource ? "Create workstream (simulated)" : "Create workstream"}
+      </Button>
+      {stale && (
+        <span className="ws-reason" id={reasonId}>
+          {STALE_REASON}
+        </span>
+      )}
+    </form>
+  );
+  const createDisabled = (
+    <div className="ws-head-reason">
+      <Button disabled aria-describedby={`${reasonId}-create`}>
+        Create workstream
+      </Button>
+      <p className="ws-reason" id={`${reasonId}-create`}>
+        {gate.connected ? CREATE_REASON : OFFLINE_CREATE_REASON}
+      </p>
+    </div>
+  );
+  // Fixture mode shows its simulated form once the list is ready, as before. Live mode always shows the action.
+  const showAction = model.status === "ready" || !fixtureSource;
+  const headerAction: ReactNode = !showAction ? null : fixtureSource || createOffered ? createForm : createDisabled;
 
   let body;
   if (model.status === "loading") {
@@ -95,33 +173,8 @@ export function WorkstreamsView() {
     const needle = filter.trim().toLowerCase();
     const visible = groups.filter((group) => group.title.toLowerCase().includes(needle));
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
-    const marker = fixture ? <PlaceholderBadge provenance={model.provenance} /> : null;
+    const marker = fixture ? <PlaceholderBadge provenance={model.provenance} compact /> : null;
     const live = !fixture;
-    const writeOff = mutations.busy || model.stale;
-
-    const create = async (event: FormEvent) => {
-      event.preventDefault();
-      if (title.trim() === "") return;
-      if (live) {
-        const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
-          surfaces.workstreams.create(title.trim()),
-        );
-        if (made) {
-          setTitle("");
-          setSelected(made.id);
-          setFilter("");
-        }
-        return;
-      }
-      setCreateError(null);
-      try {
-        const receipt = await surfaces.workstreams.simulateCreate(title.trim());
-        setReceipts((all) => [{ provenance: receipt.provenance, notice: receipt.notice }, ...all]);
-        setTitle("");
-      } catch (error) {
-        setCreateError(error instanceof Error ? error.message : "Simulation failed.");
-      }
-    };
 
     body = (
       <>
@@ -140,31 +193,6 @@ export function WorkstreamsView() {
             {taskListNotice(model.taskList)}
           </p>
         )}
-        <form className="ws-create" onSubmit={create} aria-label="Create workstream">
-          <label>
-            New workstream title
-            <input
-              type="text"
-              value={title}
-              disabled={writeOff}
-              onChange={(event) => setTitle(event.target.value)}
-              aria-describedby={model.stale ? reasonId : undefined}
-            />
-          </label>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={writeOff || title.trim() === ""}
-            aria-describedby={model.stale ? reasonId : undefined}
-          >
-            {fixture ? "Create workstream (simulated)" : "Create workstream"}
-          </Button>
-          {model.stale && (
-            <span className="ws-reason" id={reasonId}>
-              {STALE_REASON}
-            </span>
-          )}
-        </form>
         {createError && (
           <p role="alert" className="notice notice-error">
             {createError}
@@ -187,14 +215,14 @@ export function WorkstreamsView() {
             <Panel
               title={
                 <>
-                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "workstream" : "workstreams"}
+                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "initiative" : "initiatives"}
                 </>
               }
               headingLevel={2}
-              actions={marker}
               className="ws-list"
               aria-label="Workstream list"
             >
+              {marker && <div className="ws-list-marker">{marker}</div>}
               <label className="ws-filter">
                 Filter workstreams
                 <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} />
@@ -216,6 +244,7 @@ export function WorkstreamsView() {
                         {index + 1}. {group.title}
                       </span>
                       <small>
+                        {group.projectIds.length > 0 && `${group.projectIds.length} ${group.projectIds.length === 1 ? "project" : "projects"} · `}
                         {group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}
                         {group.state !== "active" && ` · ${group.state}`}
                       </small>
@@ -226,6 +255,9 @@ export function WorkstreamsView() {
               <div className="ws-row">
                 <Button disabled aria-describedby={`${reasonId}-list`}>
                   Prioritize
+                </Button>
+                <Button disabled aria-describedby={`${reasonId}-list`}>
+                  Archive
                 </Button>
               </div>
               <p className="ws-reason" id={`${reasonId}-list`}>
@@ -272,25 +304,97 @@ export function WorkstreamsView() {
   return (
     <section className="ws-view" aria-labelledby={headingId} data-testid="workstreams-view">
       <header className="ws-head">
-        <p className="ws-eyebrow">Orchestration</p>
-        <h1 id={headingId}>Workstreams</h1>
-        <NavLink className="ws-link-button" to={{ name: "projects" }}>
-          Manage projects
-        </NavLink>
-        {surfaces.workstreams.provenance.kind !== "fixture" && (
-          <Button
-            disabled={mutations.busy}
-            onClick={() => {
-              mutations.clear();
-              reloadWorkstreams();
-            }}
-          >
-            Refresh
-          </Button>
-        )}
+        <div className="ws-head-title">
+          <p className="ws-eyebrow">Continuing initiatives</p>
+          <h1 id={headingId}>Workstreams</h1>
+          <p className="ws-head-summary">Explicit objectives, linked projects, validated plans, and evidence.</p>
+        </div>
+        <div className="ws-head-actions">
+          {headerAction}
+          <NavLink className="ws-link-button" to={{ name: "projects" }}>
+            Manage projects
+          </NavLink>
+          {surfaces.workstreams.provenance.kind !== "fixture" && (
+            <Button
+              disabled={mutations.busy}
+              onClick={() => {
+                mutations.clear();
+                reloadWorkstreams();
+              }}
+            >
+              Refresh
+            </Button>
+          )}
+        </div>
       </header>
       {body}
+    <p className="ws-purpose">Purpose and rationale: organize outcomes across repositories, expose parallelism, and change plans without losing context. Draft plan edits, bulk operations and coordinator recommendations must pass deterministic validation before application.</p>
     </section>
+  );
+}
+
+/**
+ * OX-W7 "Dependency and resource detail": read-only. It shows each task's predecessors and
+ * their states from the loaded task records; edit, regenerate and lease actions are disabled
+ * with a reason because the daemon has no method for them.
+ */
+function DependencyDetail({ group, reasonId }: { group: WsGroup; reasonId: string }) {
+  const byId = new Map(group.tasks.map((task) => [task.id, task]));
+  const rows = group.tasks.filter((task) => task.dependencies.length > 0);
+  return (
+    <details className="ws-dependency-detail" data-testid="ws-dependency-detail">
+      <summary>Dependency and resource detail</summary>
+      {rows.length === 0 ? (
+        <p className="ws-subtle">No task in this workstream waits on a predecessor.</p>
+      ) : (
+        <ul className="ws-dependency-list" aria-label={`Predecessors of ${group.title}`}>
+          {rows.map((task) => (
+            <li key={task.id}>
+              <strong>{taskLabelOf(task)}</strong> waits on{" "}
+              {task.dependencies.map((dependency, index) => {
+                const predecessor = byId.get(dependency);
+                return (
+                  <span key={dependency}>
+                    {index > 0 && ", "}
+                    {predecessor ? `${taskLabelOf(predecessor)} (${predecessor.state})` : `${dependency} (not in this workstream)`}
+                  </span>
+                );
+              })}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="ws-row" role="group" aria-label="Dependency actions">
+        {["Edit predecessors", "Ask coordinator to regenerate subplan", "Validate draft before apply"].map((label) => (
+          <Button key={label} disabled aria-describedby={reasonId}>
+            {label}
+          </Button>
+        ))}
+      </div>
+      <p className="ws-reason" id={reasonId}>
+        {DEPENDENCY_REASON}
+      </p>
+    </details>
+  );
+}
+
+function ActivityPane({ group }: { group: WsGroup }) {
+  if (group.unreadReason !== null) return <p role="status">Activity unknown: tasks could not be read.</p>;
+  if (group.tasks.length === 0) return <EmptyState title="No activity" description="This workstream has no tasks yet." />;
+  return (
+    <>
+      <p className="ws-subtle">
+        Derived from each task's state and recorded sessions. The session event stream is on the task detail.
+      </p>
+      <ul className="ws-activity" aria-label={`Activity of ${group.title}`}>
+        {group.tasks.map((task) => (
+          <li key={task.id} data-testid="ws-activity-row">
+            <strong>{taskLabelOf(task)}</strong> <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>{" "}
+            <span className="ws-subtle">{assignment(task)}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -358,6 +462,7 @@ function Detail({
             {group.state}
           </Pill>{" "}
           {group.projectIds.length > 0 && <Badge>Projects: {group.projectIds.map(basename).join(", ")}</Badge>}{" "}
+          <Badge data-testid="ws-plan-revision">{fixture ? "Plan revision: PLACEHOLDER" : "Plan revision not available"}</Badge>{" "}
           {group.unreadReason !== null ? (
             <Badge data-testid="ws-unread">Tasks unknown</Badge>
           ) : (
@@ -440,14 +545,15 @@ function Detail({
         )}
       </Panel>
 
-      <Panel title="Task dependencies" headingLevel={2} actions={marker}>
-        {group.unreadReason !== null ? <p role="status">Dependencies unknown: tasks could not be read.</p> : <DependencyGraph tasks={group.tasks} />}
-      </Panel>
-
-      <Panel title="Tasks" headingLevel={2} actions={marker} className="ws-tasks">
-        <p className="ws-subtle">
-          Other views of this workstream (Milestones, Context, Deliverables, Activity) are not available yet.
-        </p>
+      <WsTabs
+        label={`Views of ${group.title}`}
+        actions={marker}
+        tabs={[
+          {
+            id: "tasks",
+            label: "Tasks",
+            content: (
+              <>
         {group.unreadReason !== null ? (
           <p role="status">Tasks unknown: {group.unreadReason}</p>
         ) : group.tasks.length === 0 ? (
@@ -459,8 +565,7 @@ function Detail({
               <thead>
                 <tr>
                   <th scope="col">Task</th>
-                  <th scope="col">Project</th>
-                  <th scope="col">Objective</th>
+                  <th scope="col">Objective / project</th>
                   <th scope="col">Task state</th>
                   <th scope="col">Assignment</th>
                   <th scope="col">Required next evidence</th>
@@ -481,8 +586,10 @@ function Detail({
                         </>
                       )}
                     </th>
-                    <td title={task.projectId}>{basename(task.projectId)}</td>
-                    <td>{objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"}</td>
+                    <td title={task.projectId}>
+                      {objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"} /{" "}
+                      {basename(task.projectId)}
+                    </td>
                     <td>
                       <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>
                     </td>
@@ -499,11 +606,12 @@ function Detail({
             </table>
           </div>
         )}
+        {group.unreadReason === null && <DependencyDetail group={group} reasonId={`${reasonId}-dependency`} />}
         {!fixture && (
           <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />
         )}
         <div className="ws-row" role="group" aria-label="Plan editing">
-          {(fixture ? ["Add task", "Split task", "Remove task", "Reassign"] : ["Split task", "Reassign"]).map((label) => (
+          {["Add task", "Split task", "Combine tasks", "Remove task", "Reassign", "Change execution policy"].map((label) => (
             <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>
               {label}
             </Button>
@@ -512,7 +620,22 @@ function Detail({
         <p className="ws-reason" id={`${reasonId}-plan`}>
           {fixture ? FIXTURE_REASON : PLAN_REASON}
         </p>
-      </Panel>
+              </>
+            ),
+          },
+          {
+            id: "dependencies",
+            label: "Dependencies",
+            content:
+              group.unreadReason !== null ? (
+                <p role="status">Dependencies unknown: tasks could not be read.</p>
+              ) : (
+                <DependencyGraph tasks={group.tasks} />
+              ),
+          },
+          { id: "activity", label: "Activity", content: <ActivityPane group={group} /> },
+        ]}
+      />
     </section>
   );
 }

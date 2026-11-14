@@ -113,11 +113,13 @@ export function LoadableRegion<T>({
   );
 }
 
-export function PlaceholderBadge({ provenance }: { provenance: Provenance }) {
+/** `compact` drops "DATA" for a narrow column; the source id and tone stay the same. */
+export function PlaceholderBadge({ provenance, compact = false }: { provenance: Provenance; compact?: boolean }) {
   const fixture = provenance.kind === "fixture";
+  const label = fixture ? (compact ? "PLACEHOLDER" : "PLACEHOLDER DATA") : "DAEMON";
   return (
     <Badge tone={fixture ? "placeholder" : "info"} data-testid={`badge-${provenance.id}`}>
-      {fixture ? "PLACEHOLDER DATA" : "DAEMON"} ({provenance.id})
+      {label} ({provenance.id})
     </Badge>
   );
 }

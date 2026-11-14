@@ -165,7 +165,7 @@ describe("navigation", () => {
   it("exposes landmarks: two named navs, one main, and no nested main", async () => {
     await mount(daemon());
     expect(screen.getByRole("navigation", { name: "Primary views" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Workstreams" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeInTheDocument();
     expect(screen.getAllByRole("main")).toHaveLength(1);
   });
 
@@ -212,7 +212,7 @@ describe("navigation", () => {
 
   it("reaches the Workstreams heading link and, from its view, the legacy project list (S1)", async () => {
     const { user, services } = await mount(daemon(), { globalViews: workstreamsGlobalViews });
-    await user.click(within(screen.getByRole("navigation", { name: "Workstreams" })).getByRole("link", { name: /Workstreams/ }));
+    await user.click(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByRole("link", { name: /Workstreams/ }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
     await user.click(screen.getByRole("link", { name: "Manage projects" }));
     expect(services.router.getSnapshot()).toEqual({ name: "projects" });
@@ -230,7 +230,7 @@ describe("navigation", () => {
   it("has exactly four persistent destinations: three primary views and the Workstreams tree heading", async () => {
     await mount(daemon());
     const primary = within(screen.getByRole("navigation", { name: "Primary views" })).getAllByRole("link");
-    const tree = within(screen.getByRole("navigation", { name: "Workstreams" })).getAllByRole("link", { name: /^Workstreams/ });
+    const tree = within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getAllByRole("link", { name: /^Workstreams/ });
     expect([...primary, ...tree].map((link) => link.textContent?.trim())).toEqual([
       expect.stringContaining("Orchestrator Workspace"),
       expect.stringContaining("Agents & Sessions"),
@@ -346,7 +346,7 @@ describe("slots", () => {
     });
     const primary = screen.getByRole("navigation", { name: "Primary views" });
     expect(within(primary).getByTestId("s-review")).toBeInTheDocument();
-    const tree = screen.getByRole("navigation", { name: "Workstreams" });
+    const tree = screen.getByRole("navigation", { name: "Workstreams and individual workers" });
     expect(within(tree).getByTestId("s-wcount")).toBeInTheDocument();
     expect(within(tree).getByTestId("s-tree")).toBeInTheDocument();
     expect(within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
@@ -429,7 +429,7 @@ describe("responsive behaviour", () => {
     expect(nav).toBeVisible();
     expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
     expect(within(nav).getAllByRole("link")).toHaveLength(3);
-    expect(screen.getByRole("navigation", { name: "Workstreams" })).toBeVisible();
+    expect(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeVisible();
 
     const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });
     agents.focus();

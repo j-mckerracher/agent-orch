@@ -211,9 +211,6 @@ export function WorkstreamTree() {
                 onFocus={() => setActive(key)}
                 onClick={() => setOpen(group, !groupOpen)}
               >
-                <span className="ws-tree-chevron" aria-hidden="true">
-                  {groupOpen ? "▾" : "▸"}
-                </span>
                 <span className="ws-tree-number" aria-hidden="true" data-text={`${index + 1} / ${groups.length}`} />
                 <span className="ws-tree-title">{group.title}</span>
                 <small className="ws-tree-count" aria-hidden="true" data-text={group.unreadReason === null ? group.tasks.length : "?"} />

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import App from "../../../App";
 import { DaemonError } from "../../../daemon/errors";
+import { M5_03_CAPABILITIES, OPTIONAL_CAPABILITIES } from "../../../daemon/types";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces, type SurfaceFixtureScenario } from "../../../sources/surfaces/fixtures";
 import { okResult } from "../../../sources/surfaces/result";
@@ -262,13 +263,12 @@ describe("live data", () => {
   it("disables what the daemon cannot do and says why", async () => {
     await mount(daemon());
     await screen.findAllByTestId("task-row");
-    for (const name of ["Prioritize", "Split task", "Reassign", "Resolve contract decision"]) {
+    for (const name of ["Prioritize", "Split task", "Combine tasks", "Change execution policy", "Reassign", "Resolve contract decision"]) {
       const button = screen.getByRole("button", { name });
       expect(button).toBeDisabled();
       const reason = button.getAttribute("aria-describedby");
       expect(reason && document.getElementById(reason)?.textContent).toMatch(/Disabled|becomes a link/);
     }
-    expect(screen.getByRole("button", { name: "Create workstream" })).toBeDisabled();
     expect(screen.getByText(/Suspend is advisory/)).toBeVisible();
   });
 
@@ -354,14 +354,27 @@ describe("live mutations", () => {
     const fake = daemon();
     const { user } = await mount(fake);
     await screen.findAllByTestId("task-row");
-    await user.type(screen.getByLabelText("New workstream title"), "Gamma stream");
-    await user.click(screen.getByRole("button", { name: "Create workstream" }));
+    const header = screen.getByRole("heading", { level: 1, name: "Workstreams" }).closest("header") as HTMLElement;
+    await user.type(within(header).getByLabelText("New workstream title"), "Gamma stream");
+    await user.click(within(header).getByRole("button", { name: "Create workstream" }));
     expect(await screen.findByText(/Create workstream "Gamma stream": recorded by the daemon/)).toBeInTheDocument();
     const [call] = paramsOf(fake, "workstreams.create");
     expect(call).toMatchObject({ title: "Gamma stream" });
     expect(typeof call!.idempotency_key).toBe("string");
     expect(await screen.findByTestId("ws-detail")).toHaveAccessibleName("Workstream Gamma stream");
     expect(screen.getByTestId("ws-list-count")).toHaveTextContent("3");
+  });
+
+  it("disables Create workstream in the page header with its reason, and sends nothing, when workstreams was not negotiated", async () => {
+    const fake = daemon();
+    fake.capabilitiesOverride = [...M5_03_CAPABILITIES, ...OPTIONAL_CAPABILITIES].filter((capability) => capability !== "workstreams");
+    await mount(fake);
+    const header = screen.getByRole("heading", { level: 1, name: "Workstreams" }).closest("header") as HTMLElement;
+    const create = within(header).getByRole("button", { name: "Create workstream" });
+    expect(create).toBeDisabled();
+    expect(document.getElementById(create.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/does not offer workstream creation/);
+    expect(screen.queryByLabelText("New workstream title")).not.toBeInTheDocument();
+    expect(paramsOf(fake, "workstreams.create")).toHaveLength(0);
   });
 
   it("adds an objective with its gates", async () => {
@@ -498,7 +511,7 @@ describe("live mutations", () => {
     await waitFor(() => expect(screen.getByTestId("ws-source")).toHaveTextContent("Stale"));
     expect(screen.getAllByTestId("task-row")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
-    expect(screen.getByLabelText("New workstream title")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create workstream" })).toBeDisabled();
   });
 
   it("has a Refresh control that re-reads the daemon, so another client's edit shows without an own action", async () => {
@@ -637,7 +650,8 @@ describe("100+ tasks", () => {
 
 describe("dependency graph", () => {
   it("draws the SVG with a text equivalent on wide layouts", async () => {
-    await mount(daemon());
+    const { user } = await mount(daemon());
+    await user.click(await screen.findByRole("tab", { name: "Dependencies" }));
     const svg = await screen.findByRole("img", { name: /Task dependency graph/ });
     expect(within(svg as unknown as HTMLElement).getAllByTestId("graph-node")).toHaveLength(2);
     expect(screen.getByText("Dependencies as text").closest("details")).not.toHaveAttribute("open");
@@ -660,7 +674,7 @@ describe("states without data", () => {
   it("is empty only when the daemon says no workstreams exist, and never shows fixtures", async () => {
     await mount(daemon((fake, state) => ((fake.projects = []), (fake.tasks = []), (state.workstreams = []), (state.objectives = []), (state.links = []))));
     expect(await screen.findByText("No workstreams")).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Workstreams" })).getByText(/No workstreams exist yet/)).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByText(/No workstreams exist yet/)).toBeInTheDocument();
     expect(within(screen.getByTestId("workstreams-view")).getByText(/Create one above/)).toBeInTheDocument();
     expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER|Harden session/);
   });
