@@ -12,6 +12,7 @@
 //!
 //! Updated: 2026-11-08T09:43:13Z.
 
+mod branch_prefix;
 pub mod env_policy;
 mod error;
 mod git;
@@ -23,6 +24,7 @@ pub mod reconcile;
 pub mod delivery;
 pub mod delivery_reconcile;
 
+pub use branch_prefix::{BranchPrefix, BRANCH_PREFIX_FILE, DEFAULT_BRANCH_PREFIX};
 pub use error::Error;
 pub use repository::Repository;
 pub use worktree::{create_task_worktree, TaskWorktree};
