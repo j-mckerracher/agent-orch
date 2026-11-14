@@ -152,7 +152,7 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
             id: format!("{task_id}-workspace-1"),
             task_id: task_id.to_owned(),
             path: task_worktree(fixture, task_id).display().to_string(),
-            branch: format!("orchestrator/{task_id}"),
+            branch: format!("moa/{task_id}"),
             base_commit: git(&fixture.repo, &["rev-parse", "HEAD"]),
         })
         .unwrap();
@@ -265,8 +265,8 @@ fn run_rejects_data_directory_inside_primary_checkout_before_writing() {
 #[test]
 fn run_reports_git_cause_when_worktree_creation_fails() {
     let fixture = fixture(successful_script());
-    // A branch named `orchestrator` makes `orchestrator/<task>` uncreatable.
-    git(&fixture.repo, &["branch", "orchestrator"]);
+    // A branch named `moa` makes `moa/<task>` uncreatable.
+    git(&fixture.repo, &["branch", "moa"]);
     let output = Command::new(CLI)
         .arg("--data-dir")
         .arg(&fixture.data)
@@ -294,9 +294,69 @@ fn run_reports_git_cause_when_worktree_creation_fails() {
     // progress line, so this proves the cause reached the CLI without
     // depending on git's (localizable) wording.
     assert!(
-        stderr.contains("refs/heads/orchestrator/cause-visible"),
+        stderr.contains("refs/heads/moa/cause-visible"),
         "git's cause is lost: {stderr}"
     );
+}
+
+fn task_branches(fixture: &Fixture) -> String {
+    git(
+        &fixture.repo,
+        &["branch", "--list", "--format=%(refname:short)"],
+    )
+}
+
+#[test]
+fn run_names_the_task_branch_with_the_default_prefix() {
+    let fixture = fixture(successful_script());
+    run_success(&fixture, "default-prefix");
+    assert!(task_branches(&fixture)
+        .lines()
+        .any(|b| b == "moa/default-prefix"));
+}
+
+#[test]
+fn run_names_the_task_branch_with_the_configured_prefix() {
+    let fixture = fixture(successful_script());
+    fs::create_dir_all(fixture.data.join("config")).unwrap();
+    fs::write(fixture.data.join("config/branch-prefix"), "team1/ \n").unwrap();
+    run_success(&fixture, "custom-prefix");
+    let branches = task_branches(&fixture);
+    assert!(
+        branches.lines().any(|b| b == "team1/custom-prefix"),
+        "{branches}"
+    );
+    assert!(!branches.contains("moa/"), "{branches}");
+}
+
+#[test]
+fn run_rejects_an_invalid_configured_prefix_without_creating_a_branch() {
+    let fixture = fixture(successful_script());
+    fs::create_dir_all(fixture.data.join("config")).unwrap();
+    fs::write(fixture.data.join("config/branch-prefix"), "no-slash").unwrap();
+    let output = Command::new(CLI)
+        .arg("--data-dir")
+        .arg(&fixture.data)
+        .arg("run")
+        .arg("--repo")
+        .arg(&fixture.repo)
+        .arg("--task-id")
+        .arg("bad-prefix")
+        .arg("--objective")
+        .arg("edit sample")
+        .arg("--base-ref")
+        .arg("main")
+        .arg("--agent-program")
+        .arg(&fixture.agent)
+        .output()
+        .expect("run CLI with an invalid branch prefix");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("branch prefix \"no-slash\" is invalid"),
+        "{stderr}"
+    );
+    assert_eq!(task_branches(&fixture).trim(), "main");
 }
 
 #[test]

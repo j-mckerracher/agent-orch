@@ -54,7 +54,7 @@ pub(crate) const CLAUDE: &str = "claude-code";
 /// Versions of the agent CLIs this runtime has been proven against. A CLI at
 /// any other version is refused (`version_mismatch`) until an operator adds it
 /// to `AGENT_ORCH_CONVERSATION_PINS`.
-const KNOWN_PINS: [(&str, &str); 2] = [(CODEX, "0.167.0"), (CLAUDE, "2.1.311")];
+const KNOWN_PINS: [(&str, &str); 3] = [(CODEX, "0.167.0"), (CODEX, "0.167.2"), (CLAUDE, "2.1.311")];
 
 const AGENT_ENV: &str = "AGENT_ORCH_CONVERSATION_AGENT";
 const MODEL_ENV: &str = "AGENT_ORCH_CONVERSATION_MODEL";
@@ -852,6 +852,11 @@ mod tests {
             parse_version("codex-cli 0.167.0\n").as_deref(),
             Some("0.167.0")
         );
+        // `codex --version` on the installed codex-cli 0.167.2 must match a built-in pin.
+        let installed = parse_version("codex-cli 0.167.2\n");
+        assert_eq!(installed.as_deref(), Some("0.167.2"));
+        assert!(KNOWN_PINS.contains(&(CODEX, "0.167.2")));
+        assert!(KNOWN_PINS.contains(&(CODEX, "0.167.0")));
         assert_eq!(
             parse_version("2.1.311 (Claude Code)\n").as_deref(),
             Some("2.1.311")

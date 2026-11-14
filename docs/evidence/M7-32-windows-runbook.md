@@ -216,7 +216,7 @@ npm.cmd run tauri dev *> (Join-Path $Out 'NAT-tauri-dev-1.log')
 
 Run the command in the foreground. It returns when the operator closes the app window. Record the close time and the window size in `NAT-tauri-dev-1.log` notes (write them in RESULTS.md, not into the raw log).
 
-Live rows need Codex CLI signed in at the approved pin `0.167.0`. Check `codex --version` and record it as `P20-codex-version`. If the version differs or Codex is not signed in, mark every live row `BLOCKED`. Do not add a pin and do not substitute fixtures. Live rows must not use `?fixture=1`.
+Live rows need Codex CLI signed in at an approved pin (`0.167.0` or `0.167.2`). Check `codex --version` and record it as `P20-codex-version`. If the version differs or Codex is not signed in, mark every live row `BLOCKED`. Do not add a pin and do not substitute fixtures. Live rows must not use `?fixture=1`.
 
 Screenshots: use Windows Snipping Tool (Win+Shift+S) and save PNG files into `$Out` with the row ID as prefix. If capture is denied (for example `GetCursorPos failed: Access is denied`), record the full error text as the row's note and mark the row `BLOCKED`. Do not elevate and do not substitute a browser screenshot.
 
@@ -289,7 +289,7 @@ Evidence files are written to `$Out` (`evidence-out`). Each file name starts wit
 
 **N09 Real recovery lifecycle with a live agent.** Sources: N09; M6-04 W12 (lifecycle part); M7-08 row 3 (restart); M7-10 row 2; M7-23 row 2 (persistence); M7-25 row 3.
 
-- Steps: Needs Codex 0.167.0 signed in (P20). (1) In a disposable test repository registered in the isolated app, start a long real Codex task; record daemon and agent PIDs. (2) Close the app window, reopen; the same agent and task are still running; task state and transcript preserved. (3) Cancel the task: `Cancelled`, and the agent process exits with no orphan. (4) Start a second long task; stop only this run's daemon PID; relaunch the app; the interrupted task becomes `Failed` and is not resumed silently; no orphan process remains. (5) Targets and drafts: select two conversation targets, type a distinct unsent draft in each, quit with the app menu or Alt+F4, relaunch; the selected target and both drafts are restored; each transcript stays under its own target. (6) Route and theme persist. (7) Record whether a "history incomplete" label appears; if not reproduced, say so.
+- Steps: Needs Codex 0.167.0 or 0.167.2 signed in (P20). (1) In a disposable test repository registered in the isolated app, start a long real Codex task; record daemon and agent PIDs. (2) Close the app window, reopen; the same agent and task are still running; task state and transcript preserved. (3) Cancel the task: `Cancelled`, and the agent process exits with no orphan. (4) Start a second long task; stop only this run's daemon PID; relaunch the app; the interrupted task becomes `Failed` and is not resumed silently; no orphan process remains. (5) Targets and drafts: select two conversation targets, type a distinct unsent draft in each, quit with the app menu or Alt+F4, relaunch; the selected target and both drafts are restored; each transcript stays under its own target. (6) Route and theme persist. (7) Record whether a "history incomplete" label appears; if not reproduced, say so.
 - Expected: as listed.
 - Evidence: `N09-pids.txt`, `N09-lifecycle.txt`, `N09-restart-drafts.png`, `N09-daemon-log-excerpt.txt` (redacted).
 

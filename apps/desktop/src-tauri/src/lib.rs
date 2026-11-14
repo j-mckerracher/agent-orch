@@ -19,6 +19,7 @@ use orchestrator_ipc::Capability;
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, Window, WindowEvent};
+use tauri_plugin_window_state::StateFlags;
 
 /// Opens an authenticated daemon connection for the calling window. Frames
 /// arrive on `on_frame` as `{kind: "message", message}` and one final
@@ -84,6 +85,11 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         .manage(Bridge::from_environment())
         .invoke_handler(tauri::generate_handler![
             daemon_open,

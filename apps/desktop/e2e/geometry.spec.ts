@@ -219,3 +219,86 @@ test("focused main stays below the connection banner at 760x700", async ({ page 
     geometry.bannerBottom,
   );
 });
+
+// DPES-1102: sidebar resizing and window bounds. The window can be as small as 760x600 (tauri.conf.json) and as
+// wide as an ultrawide display; at every size, and with the sidebar at either bound or collapsed, no shell region
+// may scroll horizontally.
+const windowSizes = [
+  { width: 760, height: 600 },
+  { width: 1280, height: 800 },
+  { width: 1800, height: 900 },
+  { width: 2560, height: 1080 },
+] as const;
+const sidebarStates = ["min", "max", "collapsed"] as const;
+
+async function horizontalOverflow(page: Page) {
+  return page.evaluate(() =>
+    [".shell", ".shell-body", ".shell-sidebar", ".shell-topbar", ".shell-main", ".shell-activity", ".shell-resources", ".shell-content"]
+      .map((selector) => document.querySelector<HTMLElement>(selector))
+      .filter((element): element is HTMLElement => element !== null)
+      // scrollWidth ignores clipping; a clipped box (the collapsed 0 px sidebar) cannot scroll or show overflow.
+      .filter((element) => !["hidden", "clip"].includes(getComputedStyle(element).overflowX))
+      .map((element) => ({ selector: element.className, overflow: element.scrollWidth - element.clientWidth }))
+      .concat([{ selector: "document", overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth }]),
+  );
+}
+
+for (const size of windowSizes) {
+  for (const state of sidebarStates) {
+    test(`no horizontal overflow at ${size.width}x${size.height} with the sidebar ${state}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await page.goto("/?fixture=1#/workspace");
+      await expect(page.getByTestId("fixture-banner")).toBeVisible();
+
+      // 760 px and below the sidebar is a full-width block with no splitter; the state does not apply.
+      if (size.width > 760) {
+        const splitter = page.getByRole("separator", { name: "Resize sidebar" });
+        await splitter.focus();
+        await page.keyboard.press(state === "min" ? "Home" : state === "max" ? "End" : "Enter");
+      }
+
+      for (const { selector, overflow } of await horizontalOverflow(page)) {
+        expect(overflow, `${selector} scrolls horizontally`).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+}
+
+test("a dragged sidebar width is clamped to 40vw at the minimum window width and survives a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/?fixture=1#/workspace");
+  await page.getByRole("separator", { name: "Resize sidebar" }).focus();
+  await page.keyboard.press("End");
+  const sidebar = page.getByTestId("shell-sidebar");
+  expect((await sidebar.boundingBox())?.width).toBeCloseTo(480, 0);
+
+  // Narrow window: the saved 480 px must not take more than 40vw (304 px at 761 px wide).
+  await page.setViewportSize({ width: 761, height: 600 });
+  expect((await sidebar.boundingBox())?.width).toBeLessThanOrEqual(761 * 0.4 + 1);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.reload();
+  await expect(page.getByTestId("fixture-banner")).toBeVisible();
+  expect((await sidebar.boundingBox())?.width).toBeCloseTo(480, 0);
+});
+
+test("dragging the splitter resizes the sidebar and the toggle collapses it out of the tab order", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/?fixture=1#/workspace");
+  const sidebar = page.getByTestId("shell-sidebar");
+  const splitter = page.getByRole("separator", { name: "Resize sidebar" });
+  const box = await splitter.boundingBox();
+  if (!box) throw new Error("splitter has no box");
+  const startX = box.x + box.width / 2;
+  const startY = box.y + 200;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 60, startY, { steps: 5 });
+  await page.mouse.up();
+  expect((await sidebar.boundingBox())?.width).toBeCloseTo(274, 0);
+
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toBeHidden();
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(sidebar).toBeVisible();
+});

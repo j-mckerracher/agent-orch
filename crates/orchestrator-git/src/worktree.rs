@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::branch_prefix::BranchPrefix;
 use crate::error::{stderr_detail, Error};
 use crate::git::{git, LONG_PATHS};
 use crate::git_path;
@@ -72,6 +73,7 @@ fn ensure_worktree_path_fits(path: &Path, limit: Option<usize>) -> Result<(), Er
 
 /// Create a task branch and worktree from the resolved commit of `base_ref`.
 ///
+/// The branch is `<branch_prefix><slug>`, with a numeric suffix on collision.
 /// The worktree directory goes under `worktrees_root`, which must live
 /// outside the repository's work trees (plan section 8: a `worktrees/`
 /// directory outside the repository, not the primary checkout). The primary
@@ -82,6 +84,7 @@ pub fn create_task_worktree(
     task_id: &str,
     base_ref: &str,
     worktrees_root: &Path,
+    branch_prefix: &BranchPrefix,
 ) -> Result<TaskWorktree, Error> {
     repo.worktrees_root_is_outside(worktrees_root)?;
     // The caller may pass a verbatim `\\?\C:\..` path (from `canonicalize`),
@@ -93,9 +96,9 @@ pub fn create_task_worktree(
     let mut last_err: Option<Box<Error>> = None;
     for attempt in 0..MAX_NAME_ATTEMPTS {
         let (branch, dir) = if attempt == 0 {
-            (format!("orchestrator/{slug}"), slug.clone())
+            (format!("{branch_prefix}{slug}"), slug.clone())
         } else {
-            (format!("orchestrator/{slug}-{attempt}"), format!("{slug}-{attempt}"))
+            (format!("{branch_prefix}{slug}-{attempt}"), format!("{slug}-{attempt}"))
         };
         let path = worktrees_root.join(&dir);
         let branch_taken = git(
@@ -136,12 +139,12 @@ pub fn create_task_worktree(
     }
     match last_err {
         Some(err) if matches!(*err, Error::Git { .. }) => Err(Error::NameExhausted {
-            base: format!("orchestrator/{slug}"),
+            base: format!("{branch_prefix}{slug}"),
             attempts: MAX_NAME_ATTEMPTS,
         }),
         Some(err) => Err(*err),
         None => Err(Error::NameExhausted {
-            base: format!("orchestrator/{slug}"),
+            base: format!("{branch_prefix}{slug}"),
             attempts: MAX_NAME_ATTEMPTS,
         }),
     }
@@ -283,9 +286,9 @@ mod tests {
     fn open_accepts_repo_and_isolates_primary() {
         let (tmp, wts, repo) = fixture();
         let head = git(tmp.path().join("repo").as_path(), &["rev-parse", "HEAD"]);
-        let wt = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts).unwrap();
+        let wt = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default()).unwrap();
         assert!(wt.path().exists());
-        assert_eq!(wt.branch(), "orchestrator/task-a1b2c3");
+        assert_eq!(wt.branch(), "moa/task-a1b2c3");
         assert_eq!(wt.base_sha(), head);
         // Worktree content is the committed base (line endings per the
         // checkout on this platform).
@@ -319,7 +322,7 @@ mod tests {
             verbatim.to_string_lossy().starts_with(r"\\?\"),
             "{verbatim:?}"
         );
-        let wt = create_task_worktree(&repo, "accept-run", "HEAD", &verbatim).unwrap();
+        let wt = create_task_worktree(&repo, "accept-run", "HEAD", &verbatim, &BranchPrefix::default()).unwrap();
         assert!(wt.path().join("base.txt").exists());
         assert!(
             !wt.path().to_string_lossy().starts_with(r"\\?\"),
@@ -345,7 +348,7 @@ mod tests {
         git(&repo_dir, &["-c", "core.longpaths=true", "add", "."]);
         git(&repo_dir, &["-c", "core.longpaths=true", "commit", "-m", "deep file"]);
 
-        let wt = create_task_worktree(&repo, "deep-checkout", "HEAD", &wts).unwrap();
+        let wt = create_task_worktree(&repo, "deep-checkout", "HEAD", &wts, &BranchPrefix::default()).unwrap();
         let file = wt.path().join(&deep).join("deep.txt");
         assert!(file.as_os_str().len() > 260, "{file:?}");
         assert!(file.exists(), "{file:?}");
@@ -373,7 +376,7 @@ mod tests {
         let id = "longest";
         let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH);
         std::fs::create_dir_all(&root).unwrap();
-        let wt = create_task_worktree(&repo, id, "HEAD", &root).unwrap();
+        let wt = create_task_worktree(&repo, id, "HEAD", &root, &BranchPrefix::default()).unwrap();
         assert_eq!(wt.path().as_os_str().len(), WINDOWS_MAX_WORKTREE_PATH, "{:?}", wt.path());
         assert!(wt.path().join("base.txt").exists());
     }
@@ -408,13 +411,13 @@ mod tests {
         let id = "too-long";
         let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH + 1);
         std::fs::create_dir_all(&root).unwrap();
-        let err = create_task_worktree(&repo, id, "HEAD", &root).unwrap_err();
+        let err = create_task_worktree(&repo, id, "HEAD", &root, &BranchPrefix::default()).unwrap_err();
         assert!(matches!(err, Error::WorktreePathTooLong { .. }), "{err:?}");
         assert!(!root.join(id).exists());
         let repo_dir = tmp.path().join("repo");
         assert!(!git_ok(
             &repo_dir,
-            &["rev-parse", "--verify", "--quiet", "refs/heads/orchestrator/too-long"]
+            &["rev-parse", "--verify", "--quiet", "refs/heads/moa/too-long"]
         ));
     }
 
@@ -425,7 +428,7 @@ mod tests {
         let head = git(&repo_dir, &["rev-parse", "HEAD"]);
         std::fs::write(repo_dir.join("uncommitted.txt"), "wip\n").unwrap();
         git(&repo_dir, &["add", "uncommitted.txt"]);
-        let wt = create_task_worktree(&repo, "dirty-test", "HEAD", &wts).unwrap();
+        let wt = create_task_worktree(&repo, "dirty-test", "HEAD", &wts, &BranchPrefix::default()).unwrap();
         // Worktree carries committed content only.
         assert!(
             !wt.path().join("uncommitted.txt").exists(),
@@ -466,7 +469,7 @@ mod tests {
     fn empty_task_id_rejected() {
         let (_tmp, wts, repo) = fixture();
         for id in ["", "---", "-"] {
-            let r = create_task_worktree(&repo, id, "HEAD", &wts);
+            let r = create_task_worktree(&repo, id, "HEAD", &wts, &BranchPrefix::default());
             assert!(
                 matches!(r, Err(Error::EmptyTaskId)),
                 "task id {id:?} should be rejected, got {r:?}"
@@ -475,15 +478,15 @@ mod tests {
         // Rejected ids create nothing.
         assert!(!wts.exists());
         // Symbols are replaced, not rejected: "~~~" becomes a valid id.
-        let ok = create_task_worktree(&repo, "~~~", "HEAD", &wts).unwrap();
-        assert_eq!(ok.branch(), "orchestrator/___");
+        let ok = create_task_worktree(&repo, "~~~", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        assert_eq!(ok.branch(), "moa/___");
     }
 
     #[test]
     fn worktrees_root_inside_repository_rejected() {
         let (tmp, _wts, repo) = fixture();
         let inside = tmp.path().join("repo").join("worktrees");
-        match create_task_worktree(&repo, "inside-test", "HEAD", &inside) {
+        match create_task_worktree(&repo, "inside-test", "HEAD", &inside, &BranchPrefix::default()) {
             Err(Error::WorktreesRootInsideRepository { .. }) => {}
             other => panic!("expected WorktreesRootInsideRepository, got {other:?}"),
         }
@@ -493,10 +496,10 @@ mod tests {
     #[test]
     fn collision_allocates_suffix() {
         let (_tmp, wts, repo) = fixture();
-        let first = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts).unwrap();
-        let second = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts).unwrap();
-        assert_eq!(first.branch(), "orchestrator/task-a1b2c3");
-        assert_eq!(second.branch(), "orchestrator/task-a1b2c3-1");
+        let first = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        let second = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        assert_eq!(first.branch(), "moa/task-a1b2c3");
+        assert_eq!(second.branch(), "moa/task-a1b2c3-1");
         assert!(
             first.path().exists() && second.path().exists(),
             "both worktrees must coexist"
@@ -507,9 +510,9 @@ mod tests {
     #[test]
     fn preexisting_branch_skipped() {
         let (tmp, wts, repo) = fixture();
-        git(tmp.path().join("repo").as_path(), &["branch", "orchestrator/x"]);
-        let wt = create_task_worktree(&repo, "x", "HEAD", &wts).unwrap();
-        assert_eq!(wt.branch(), "orchestrator/x-1");
+        git(tmp.path().join("repo").as_path(), &["branch", "moa/x"]);
+        let wt = create_task_worktree(&repo, "x", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        assert_eq!(wt.branch(), "moa/x-1");
         assert!(wt.path().exists());
     }
 
@@ -524,11 +527,11 @@ mod tests {
         // worktree directory cannot be created, cross-platform.
         std::fs::write(&wts, "blocker\n").unwrap();
         std::fs::write(tmp.path().join("precious.txt"), "keep\n").unwrap();
-        let r = create_task_worktree(&repo, "fail-test", "HEAD", &wts);
+        let r = create_task_worktree(&repo, "fail-test", "HEAD", &wts, &BranchPrefix::default());
         match &r {
             Err(Error::CreationFailed { path, branch, source }) => {
                 assert_eq!(path, &wts.join("fail-test"));
-                assert_eq!(branch, "orchestrator/fail-test");
+                assert_eq!(branch, "moa/fail-test");
                 assert!(
                     matches!(**source, Error::Io(_)),
                     "expected an Io failure, got {source:?}"
@@ -546,26 +549,26 @@ mod tests {
             "unrelated files must survive a failed add"
         );
         assert!(
-            !git_ok(&repo_dir, &["rev-parse", "--verify", "--quiet", "refs/heads/orchestrator/fail-test"]),
+            !git_ok(&repo_dir, &["rev-parse", "--verify", "--quiet", "refs/heads/moa/fail-test"]),
             "no branch may remain after a failed add (git itself never created it)"
         );
         assert_eq!(git(&repo_dir, &["rev-parse", "HEAD"]), head);
     }
 
-    /// A branch named `orchestrator` makes `refs/heads/orchestrator/<slug>`
+    /// A branch named `moa` makes `refs/heads/moa/<slug>`
     /// uncreatable (ref directory/file conflict). Git prints a progress line
     /// before its `fatal:` line; the reported error must carry the `fatal:`
     /// cause, not just the progress line, and must keep the original source.
     /// The full ref name appears only on the `fatal:` line, so asserting it
     /// proves the cause survived without depending on Git's message wording.
-    const CAUSE_REF: &str = "refs/heads/orchestrator/cause-test";
+    const CAUSE_REF: &str = "refs/heads/moa/cause-test";
 
     #[test]
     fn git_add_failure_reports_git_stderr_cause() {
         let (tmp, wts, repo) = fixture();
         let repo_dir = tmp.path().join("repo");
-        git(&repo_dir, &["branch", "orchestrator"]);
-        let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts).unwrap_err();
+        git(&repo_dir, &["branch", "moa"]);
+        let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts, &BranchPrefix::default()).unwrap_err();
         let shown = err.to_string();
         assert!(shown.contains("worktree creation failed at"), "{shown}");
         assert!(shown.contains(CAUSE_REF), "git's cause is lost: {shown}");
@@ -595,7 +598,7 @@ mod tests {
         std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o555)).unwrap();
         let writable = std::fs::File::create(wts.join("probe")).is_ok();
         let started = std::time::Instant::now();
-        let r = create_task_worktree(&repo, "ro-root", "HEAD", &wts);
+        let r = create_task_worktree(&repo, "ro-root", "HEAD", &wts, &BranchPrefix::default());
         std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o755)).unwrap();
         if writable {
             return; // permission bits are not enforced (e.g. running as root)
@@ -623,14 +626,24 @@ mod tests {
         std::fs::create_dir_all(&wts).unwrap();
         // A dangling symlink: `path.exists()` is false, git says "already exists".
         std::os::unix::fs::symlink(wts.join("missing-target"), wts.join("race")).unwrap();
-        let wt = create_task_worktree(&repo, "race", "HEAD", &wts).unwrap();
+        let wt = create_task_worktree(&repo, "race", "HEAD", &wts, &BranchPrefix::default()).unwrap();
         assert_eq!(wt.path(), wts.join("race-1"));
-        assert_eq!(wt.branch(), "orchestrator/race-1");
+        assert_eq!(wt.branch(), "moa/race-1");
+    }
+
+    #[test]
+    fn configured_prefix_names_the_branch_and_collision_suffix() {
+        let (_tmp, wts, repo) = fixture();
+        let prefix = BranchPrefix::parse("team1/").unwrap();
+        let first = create_task_worktree(&repo, "t", "HEAD", &wts, &prefix).unwrap();
+        let second = create_task_worktree(&repo, "t", "HEAD", &wts, &prefix).unwrap();
+        assert_eq!(first.branch(), "team1/t");
+        assert_eq!(second.branch(), "team1/t-1");
     }
 
     #[test]
     fn name_collision_is_recognized_only_for_gits_own_conflict_lines() {
-        let branch = "a branch named 'orchestrator/t' already exists";
+        let branch = "a branch named 'moa/t' already exists";
         assert!(is_name_collision(&format!("Preparing worktree; fatal: {branch}")));
         assert!(is_name_collision("fatal: '/w/t' already exists"));
         assert!(!is_name_collision(
