@@ -33,7 +33,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       ? pendingApprovals(approvals.data).filter((approval) => ownIds.has(approval.action.task_id))
       : null;
   // Unread is never zero: "…" while a daemon answer can still arrive, "unknown" once it cannot.
-  const pendingText = pending ? String(pending.length) : gate.connected || gate.settling ? "…" : "unknown";
+  const answerPending = tasks.status !== "error" && approvals.status !== "error" && (gate.connected || gate.settling);
+  const pendingText = pending ? String(pending.length) : answerPending ? "…" : "unknown";
   const set = (patch: Parameters<typeof drafts.patchSubmit>[1]) => drafts.patchSubmit(projectId, patch);
 
   const submit = async () => {

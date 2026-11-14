@@ -782,6 +782,7 @@
     "src/ui/screens1.test.tsx :: S2 project detail and submission explains local validation failures and does not call the daemon",
     "src/ui/screens1.test.tsx :: S2 project detail and submission keeps the form draft across navigation",
     "src/ui/screens1.test.tsx :: S2 project detail and submission labels D1 and D2 as placeholder data and never auto-fills the agent from D1",
+    "src/ui/screens1.test.tsx :: S2 project detail and submission reads pending review as unknown, not loading, when the approvals list fails while connected",
     "src/ui/screens1.test.tsx :: S2 project detail and submission renders the D1 empty state",
     "src/ui/screens1.test.tsx :: S2 project detail and submission renders the D1 error state",
     "src/ui/screens1.test.tsx :: S2 project detail and submission renders the D1 loading state",
