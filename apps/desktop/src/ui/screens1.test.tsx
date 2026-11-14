@@ -170,6 +170,14 @@ describe("S2 project detail and submission", () => {
     return fake;
   }
 
+  it("reads pending review as unknown, never 0, while the daemon is unreachable", async () => {
+    const fake = seeded();
+    fake.openError = new DaemonError("disconnected", "down");
+    await mount(fake, { route, waitConnected: false });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pending review (unknown)" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Pending review (0)" })).not.toBeInTheDocument();
+  });
+
   it("derives per-state counts for this project only and links to a filtered list", async () => {
     const { user } = await mount(seeded(), { route });
     expect(await screen.findByTestId("task-total")).toHaveTextContent("2 tasks in this project");

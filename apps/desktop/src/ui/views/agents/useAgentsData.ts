@@ -69,7 +69,11 @@ export function useAgentsData(): AgentsData {
   );
 
   const work = useMemo<Load<WorkRow[]>>(() => {
-    if (!live) return asLoad(preview, rowsFromPreview);
+    if (!live) {
+      // A known-empty preview is an answer: zero running, zero queued, not an unavailable list.
+      const mapped = asLoad(preview, rowsFromPreview);
+      return mapped.status === "empty" ? { status: "ready", data: [], stale: null } : mapped;
+    }
     const { tasks, sessions, approvals } = snapshot;
     if (tasks.data) {
       const failed = tasks.status === "error" || sessions.status === "error";
@@ -77,9 +81,9 @@ export function useAgentsData(): AgentsData {
       return { status: "ready", data: rowsFromDaemon(tasks.data, sessions.data, approvals.data ?? []), stale };
     }
     if (tasks.status === "error") return { status: "error", message: tasks.error?.message ?? "tasks.list failed" };
-    if (!gate.connected) return { status: "unavailable", reason: "Not connected to the daemon, so tasks cannot be read." };
-    return { status: "loading" };
-  }, [live, preview, snapshot, gate.connected]);
+    if (gate.connected || gate.settling) return { status: "loading" };
+    return { status: "unavailable", reason: "Not connected to the daemon, so tasks cannot be read." };
+  }, [live, preview, snapshot, gate.connected, gate.settling]);
 
   return {
     live,

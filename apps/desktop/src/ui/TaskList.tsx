@@ -14,6 +14,8 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   const go = (next: TaskFilter) => router.navigate({ name: "tasks", projectId, filter: next });
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
   const approvalList = approvals.data ?? [];
+  // Unread counts are not zero: "…" while a daemon answer can still arrive, "unknown" once it cannot.
+  const unreadCount = tasks.data === null ? (gate.connected || gate.settling ? "…" : "unknown") : null;
 
   return (
     <main className="ps-page">
@@ -36,7 +38,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
           const count = own.filter((task) => matchesFilter(task, value, own, approvalList)).length;
           return (
             <Button key={value} aria-pressed={filter === value} onClick={() => go(value)}>
-              {label} ({count}/{own.length})
+              {label} ({unreadCount ?? `${count}/${own.length}`})
             </Button>
           );
         })}

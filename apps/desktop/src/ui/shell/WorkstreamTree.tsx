@@ -29,6 +29,7 @@ const taskKey = (task: WsTask) => `t:${task.projectId}:${task.id}`;
 /** Count for the "Workstreams · N" heading; "—" while no list has loaded. */
 export function WorkstreamsCount() {
   const model = useWorkstreamModel();
+  if (model.status === "loading") return <span aria-label="workstreams: loading">—</span>;
   if (model.status !== "ready") return <span aria-label="workstreams: not available">—</span>;
   return (
     <>

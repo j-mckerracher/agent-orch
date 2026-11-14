@@ -355,8 +355,9 @@ export function useWorkstreamModel(): WsModel {
   if (fixture || state.status === "unsupported") {
     return { status: state.status, reason: state.reason, provenance: state.provenance, observedAt: state.observedAt, ageMs: state.ageMs };
   }
-  const settling = ["idle", "connecting", "reconnecting"].includes(gate.connection.status);
-  if (!gate.connected) return settling ? { status: "loading" } : { status: "offline", observedAt: state.observedAt, ageMs: state.ageMs };
+  if (!gate.connected) {
+    return gate.settling ? { status: "loading" } : { status: "offline", observedAt: state.observedAt, ageMs: state.ageMs };
+  }
   return state.status === "unknown"
     ? { status: "unknown", reason: state.reason, provenance: state.provenance, observedAt: state.observedAt, ageMs: state.ageMs }
     : { status: "error", message: state.reason, observedAt: state.observedAt, ageMs: state.ageMs };

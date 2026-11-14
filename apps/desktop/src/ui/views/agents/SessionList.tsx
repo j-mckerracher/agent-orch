@@ -68,7 +68,9 @@ export function SessionList({
   const label = (id: TabId, text: string): string => {
     if (id === "available") return text;
     if (id === "disconnected") return `${text} (not available)`;
-    if (work.status !== "ready") return `${text} (…)`;
+    // Loading is the only state that may still become a count; any other unread list is unknown, never "…".
+    if (work.status === "loading") return `${text} (…)`;
+    if (work.status !== "ready") return `${text} (unknown)`;
     if (id === "failed") return sessionsKnown(rows) ? `${text} (${failedSessions(rows).length})` : `${text} (unknown)`;
     return `${text} (${tabRows(id, rows).length})`;
   };

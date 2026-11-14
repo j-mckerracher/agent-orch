@@ -1,5 +1,5 @@
 import { matchesFilter, pendingApprovals } from "../format";
-import { useServices, useStore, useSurface } from "../services";
+import { useGate, useServices, useStore, useSurface } from "../services";
 import { Badge } from "../theme";
 import type { GlobalView } from "../router";
 import { NavLink } from "./NavLink";
@@ -9,8 +9,8 @@ import { useWorkstreamsVersion } from "../views/workstreams/model";
 import type { ShellSlots } from "./slots";
 import "./topbar.css";
 
-/** `undefined` means "not loaded or not available"; it is never rendered as 0. */
-type Count = number | undefined;
+/** A count is a number once observed. Otherwise it is "loading" (an answer may still arrive) or "unavailable"; never 0. */
+type Count = number | "loading" | "unavailable";
 
 interface CountValues {
   workstreams: Count;
@@ -39,13 +39,15 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
               </span>
             )}
             <NavLink to={{ name: "global", view }}>
-              {value === undefined ? (
+              {typeof value === "number" ? (
+                `${value} ${label}`
+              ) : (
                 <>
                   <span aria-hidden="true">— {label}</span>
-                  <span className="top-sr">{label}: not available</span>
+                  <span className="top-sr">
+                    {label}: {value === "loading" ? "loading" : "not available"}
+                  </span>
                 </>
-              ) : (
-                `${value} ${label}`
               )}
             </NavLink>
           </span>
@@ -60,10 +62,15 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
   );
 }
 
+/** A surface that has not answered yet is loading; one that failed or cannot be read is unavailable. */
+const surfaceCount = (status: string, value: number | undefined): Count =>
+  value ?? (status === "loading" ? "loading" : "unavailable");
+
 /** Same task and approval lists as the nav, lists and Review count, so the numbers cannot drift. */
 function LiveCounts() {
   const { data, surfaces } = useServices();
   const { tasks, approvals } = useStore(data);
+  const gate = useGate();
   const taskList = tasks.data;
   // The daemon emits no workstream events, so D9 re-reads when a workstream mutation lands
   // (the version) or when the set of tasks changes, never on a timer.
@@ -75,14 +82,18 @@ function LiveCounts() {
     surfaces.workstreams.provenance,
   );
   const approvalList = approvals.data ?? [];
+  // A list nobody has read is loading only while a daemon answer can still arrive.
+  const pendingRead = (status: string): Count => (status !== "error" && (gate.connected || gate.settling) ? "loading" : "unavailable");
   return (
     <CountsLine
       placeholder={null}
       values={{
-        workstreams: workstreams.status === "ok" ? workstreams.data.length : undefined,
-        tasks: taskList?.length,
-        running: taskList?.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length,
-        attention: approvals.data ? pendingApprovals(approvals.data).length : undefined,
+        workstreams: surfaceCount(workstreams.status, workstreams.status === "ok" ? workstreams.data.length : undefined),
+        tasks: taskList ? taskList.length : pendingRead(tasks.status),
+        running: taskList
+          ? taskList.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length
+          : pendingRead(tasks.status),
+        attention: approvals.data ? pendingApprovals(approvals.data).length : pendingRead(approvals.status),
       }}
     />
   );
@@ -99,10 +110,10 @@ function FixtureCounts() {
     <CountsLine
       placeholder="D9, D11"
       values={{
-        workstreams: ws?.length,
-        tasks: ws?.reduce((total, item) => total + item.tasks.length, 0),
-        running: act?.running.length,
-        attention: act?.attention.length,
+        workstreams: surfaceCount(workstreams.status, ws?.length),
+        tasks: surfaceCount(workstreams.status, ws?.reduce((total, item) => total + item.tasks.length, 0)),
+        running: surfaceCount(activity.status, act?.running.length),
+        attention: surfaceCount(activity.status, act?.attention.length),
       }}
     />
   );

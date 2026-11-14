@@ -774,6 +774,7 @@
     "src/ui/screens1.test.tsx :: S1 project list shows a load error with retry that recovers",
     "src/ui/screens1.test.tsx :: S1 project list shows an empty state that is distinct from offline",
     "src/ui/screens1.test.tsx :: S1 project list shows the daemon's reason and a next step when registration fails, keeping the draft",
+    "src/ui/screens1.test.tsx :: S2 project detail and submission reads pending review as unknown, never 0, while the daemon is unreachable",
     "src/ui/screens1.test.tsx :: S2 project detail and submission derives per-state counts for this project only and links to a filtered list",
     "src/ui/screens1.test.tsx :: S2 project detail and submission disables submission while offline and says the draft is kept",
     "src/ui/screens1.test.tsx :: S2 project detail and submission does not offer ReadOnly autonomy, which the daemon rejects",
