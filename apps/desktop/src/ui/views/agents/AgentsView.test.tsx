@@ -392,7 +392,7 @@ describe("Agents & Sessions, live mode", () => {
     const { user } = await mountAgents(fake, { live: true });
     expect(await screen.findByText("Tasks could not be loaded")).toBeInTheDocument();
     expect(screen.getByText(/Execution status is unknown because the task list is not available/)).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Queued (…)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Queued (unknown)" })).toBeInTheDocument();
     const calls = fake.callsTo("tasks.list").length;
     await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(fake.callsTo("tasks.list").length).toBeGreaterThan(calls));

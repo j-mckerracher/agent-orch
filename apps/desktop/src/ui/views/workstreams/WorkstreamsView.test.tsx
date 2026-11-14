@@ -701,7 +701,37 @@ describe("states without data", () => {
     const services = createServices({ connector: new FakeDaemon(), initialRoute: VIEW, sources: createFixtureSources() });
     render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
     expect(screen.getAllByText("Loading workstreams…").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("workstreams: loading")).toBeInTheDocument();
     expect(screen.queryByText("No workstreams")).not.toBeInTheDocument();
+  });
+
+  it("reads workstreams as offline, not loading, once the first connection has failed", async () => {
+    const fake = daemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    const services = createServices({
+      connector: fake,
+      initialRoute: VIEW,
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+    });
+    render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+    await waitFor(() => expect(services.connection.getSnapshot().failedAttempts).toBeGreaterThan(0));
+    expect(within(screen.getByTestId("workstreams-view")).getByText(/Offline: no cached workstreams/)).toBeInTheDocument();
+    expect(screen.queryByText("Loading workstreams…")).not.toBeInTheDocument();
+  });
+
+  it("says the connection is still being established, not that the daemon is not connected, while the first connection opens", () => {
+    const services = createServices({
+      connector: daemon(),
+      initialRoute: VIEW,
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+    });
+    render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+    expect(screen.getAllByText(/still being established/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/the daemon is not connected/)).not.toBeInTheDocument();
   });
 });
 

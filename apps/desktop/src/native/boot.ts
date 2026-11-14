@@ -43,7 +43,8 @@ export function bootServices(target: BootTarget & object, options: BootOptions =
     initialRoute: parseRoute(target.location.hash),
     renderReview: options.renderReview,
     draftStorage: mode === "fixture" ? undefined : options.storage,
-    connection: options.connection,
+    // Without a bridge no daemon can appear, so retrying only delays the honest "unavailable" state.
+    connection: mode === "no-bridge" ? { ...options.connection, maxAutoAttempts: 0 } : options.connection,
   });
   return { services, mode };
 }

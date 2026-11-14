@@ -41,21 +41,29 @@ export function useStore<T>(store: Store<T>): T {
 export interface Gate {
   connection: ConnectionSnapshot;
   connected: boolean;
+  /**
+   * A first daemon answer can still arrive: the first connection is being opened. False once a connection
+   * attempt has failed (reconnecting with an error included), when the state is unavailable, and with no
+   * bridge; those states report unavailable, never loading.
+   */
+  settling: boolean;
   /** Mutations need a live connection and the negotiated capability. */
   can(capability: Capability): boolean;
 }
 
 export function useGate(): Gate {
-  const { connection } = useServices();
+  const { connection, bridgeBound } = useServices();
   const snapshot = useStore(connection);
   return useMemo(() => {
     const connected = snapshot.status === "connected";
+    const settling = (snapshot.status === "idle" && bridgeBound) || snapshot.status === "connecting";
     return {
       connection: snapshot,
       connected,
+      settling,
       can: (capability: Capability) => connected && snapshot.capabilities.includes(capability),
     };
-  }, [snapshot]);
+  }, [snapshot, bridgeBound]);
 }
 
 export type SourceState<T> = { state: "loading" } | SourceResult<T>;

@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
+import { DaemonError } from "../../../daemon/errors";
 import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
@@ -349,6 +350,16 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await mountView(services, false);
     await waitLive(services);
     expect(await screen.findByText("No messages yet")).toBeInTheDocument();
+  });
+
+  it("does not show loading conversations once the daemon is unreachable", async () => {
+    const fake = liveDaemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    const services = track(build({ fake }));
+    await mountView(services, false);
+    await waitFor(() => expect(services.connection.getSnapshot().failedAttempts).toBeGreaterThan(0));
+    // The failure is recorded before the view re-renders, so wait for the rendered state to settle.
+    await waitFor(() => expect(screen.queryByText("Loading conversations…")).not.toBeInTheDocument());
   });
 });
 

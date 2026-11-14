@@ -123,9 +123,11 @@ describe("top bar counts", () => {
     fake.openError = new DaemonError("disconnected", "down");
     await mount(fake, { waitConnected: false });
     const counts = screen.getByTestId("top-counts");
+    // First connection attempt is still loading; once it fails, the counts must read unavailable, not loading.
+    await waitFor(() => expect(counts).toHaveTextContent("tasks: not available"));
     expect(counts).toHaveTextContent("— tasks");
-    expect(counts).toHaveTextContent("tasks: not available");
     expect(counts.textContent).not.toMatch(/\b0\b/);
+    expect(counts.textContent).not.toMatch(/loading/);
   });
 
   it("is a link set to the matching global views", async () => {

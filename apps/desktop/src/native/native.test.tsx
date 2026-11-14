@@ -164,6 +164,8 @@ describe("shipped app wiring", () => {
     const { services } = bootServices(browserWindow(), { connection: FAST });
     render(<App services={services} />);
     await waitFor(() => expect(status()).toHaveTextContent("Daemon unavailable"));
+    // No bridge cannot recover by retrying, so it reports unavailable after one attempt instead of reconnecting.
+    expect(services.connection.getSnapshot()).toMatchObject({ status: "unavailable", failedAttempts: 1 });
     expect(screen.queryByTestId("fixture-banner")).toBeNull();
     expect(screen.queryByText(/PLACEHOLDER DATA \(D1\)/)).toBeNull();
     expect(screen.getByTestId("recovery-unknown")).toHaveTextContent("Recovery: unknown");
@@ -171,6 +173,13 @@ describe("shipped app wiring", () => {
     expect(screen.getByTestId("recovery-unknown")).not.toHaveTextContent(
       /PLACEHOLDER DATA|recoverable|reconciling|worktree present|no delivery recorded/i,
     );
+  });
+
+  it("without a bridge ignores a caller's retry budget and reports unavailable after one attempt", async () => {
+    const { services } = bootServices(browserWindow(), { connection: { ...FAST, maxAutoAttempts: 5 } });
+    render(<App services={services} />);
+    await waitFor(() => expect(status()).toHaveTextContent("Daemon unavailable"));
+    expect(services.connection.getSnapshot()).toMatchObject({ status: "unavailable", failedAttempts: 1 });
   });
 
   it("native: live daemon data, connected note, and no fixture banner", async () => {

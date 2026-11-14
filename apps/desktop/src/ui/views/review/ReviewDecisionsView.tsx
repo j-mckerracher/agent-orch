@@ -167,6 +167,8 @@ function Heading({ state }: { state: ReviewState }) {
         <Badge tone={waiting > 0 ? "info" : "neutral"}>
           {waiting} independent decision{waiting === 1 ? "" : "s"}
         </Badge>
+      ) : state.listState === "error" ? (
+        <Badge tone="bad">Decisions: unavailable</Badge>
       ) : (
         <Badge>Decisions: loading</Badge>
       )}

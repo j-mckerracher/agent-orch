@@ -40,6 +40,7 @@ export function WorkspaceView() {
   const { surfaces, drafts, data } = useServices();
   const snapshot = useStore(drafts);
   const projectList = useStore(data).projects;
+  const gate = useGate();
   const live = surfaces.conversation.provenance.kind === "daemon";
   // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
   // notes only); fixtures derive project targets from the placeholder workstreams.
@@ -57,7 +58,9 @@ export function WorkspaceView() {
   const stored = snapshot.workspace?.target ?? null;
   const known = stored !== null && options.some((option) => option.key === stored);
   const workstreamsLoading = workstreams.status === "loading";
-  const listLoading = live ? workstreamsLoading || (projectList.data === null && projectList.status !== "error") : workstreamsLoading;
+  // Unread projects are loading only while a daemon answer can still arrive; disconnected, they are unavailable.
+  const projectsPending = projectList.data === null && projectList.status !== "error" && (gate.connected || gate.settling);
+  const listLoading = live ? workstreamsLoading || projectsPending : workstreamsLoading;
   const workstreamsFailure = workstreams.status !== "ok" && workstreams.status !== "loading" ? workstreams : null;
   const workstreamsReason = workstreamsFailure?.reason ?? null;
   const listError = live ? (projectList.error?.message ?? workstreamsReason) : workstreamsReason;

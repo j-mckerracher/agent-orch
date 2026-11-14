@@ -143,6 +143,14 @@ describe("Review & Decisions view", () => {
     expect(client.callsOf("tasks.get").map((p) => p.task_id)).toContain("task-2");
     expect(row("task-2")).toHaveAttribute("aria-current", "true");
   });
+  it("reads the decisions count as unavailable, not loading, when the approvals list fails", async () => {
+    const { client, remount } = liveSetup();
+    await screen.findByText("2 independent decisions");
+    client.setHandler("approvals.list", () => fail("timeout"));
+    remount();
+    expect(await screen.findByText("Decisions: unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Decisions: loading")).not.toBeInTheDocument();
+  });
 });
 
 describe("tabs", () => {

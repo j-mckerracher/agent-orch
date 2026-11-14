@@ -43,6 +43,8 @@ const STALE_REASON = "Disabled: the connection was lost. Changes resume when the
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
 const CREATE_REASON = "Disabled: this daemon does not offer workstream creation (post-release, M7-07).";
 const OFFLINE_CREATE_REASON = "Disabled: the daemon is not connected. Create is offered once this connection is live.";
+// While the first connection is still opening, "not connected" would read as a failure; the answer may still arrive.
+const SETTLING_CREATE_REASON = "Disabled: the daemon connection is still being established. Create is offered once it is live.";
 const DEPENDENCY_REASON =
   "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
 const LIST_REASON =
@@ -134,7 +136,7 @@ export function WorkstreamsView() {
         Create workstream
       </Button>
       <p className="ws-reason" id={`${reasonId}-create`}>
-        {gate.connected ? CREATE_REASON : OFFLINE_CREATE_REASON}
+        {gate.connected ? CREATE_REASON : gate.settling ? SETTLING_CREATE_REASON : OFFLINE_CREATE_REASON}
       </p>
     </div>
   );
