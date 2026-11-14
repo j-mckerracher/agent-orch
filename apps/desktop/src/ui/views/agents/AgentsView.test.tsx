@@ -59,13 +59,21 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByRole("tablist", { name: "Task and session lists" })).toBeInTheDocument();
   });
 
-  it("keeps tab counts equal to the lists and shows disconnected as unknown", async () => {
+  it("starts with the first running task selected and the configured inventory collapsed", async () => {
+    await liveView();
+    const detail = screen.getByRole("complementary", { name: "Selected task / session detail" });
+    expect(within(detail).getByText("t-run")).toBeInTheDocument();
+    expect(within(detail).queryByText("No task selected")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agents-inventory")).not.toHaveAttribute("open");
+  });
+
+  it("keeps tab counts equal to the lists, counts failed sessions and marks disconnected not available", async () => {
     const { user } = await liveView();
     expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Queued (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Failed (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Available (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Disconnected (unknown)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Failed sessions (0)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Available / idle" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Disconnected (not available)" })).toBeInTheDocument();
     expect(screen.getByText("1 running task(s), 1 running session(s)")).toBeInTheDocument();
     expect(screen.getByText("1 tasks queued (1 ready)")).toBeInTheDocument();
     expect(screen.getByText("0 tasks blocked")).toBeInTheDocument();
@@ -75,31 +83,69 @@ describe("Agents & Sessions, live mode", () => {
     const queued = within(screen.getByRole("list", { name: "queued tasks" }));
     expect(queued.getAllByRole("button")).toHaveLength(1);
     expect(queued.getByText("t-queued")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
-    const failed = within(screen.getByRole("list", { name: "failed tasks" }));
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
+    const orphans = within(screen.getByRole("list", { name: "failed tasks without a session" }));
+    expect(orphans.getAllByRole("button")).toHaveLength(1);
+    expect(orphans.getByText("t-failed")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Available / idle" }));
+    expect(screen.getByText("Available / idle workers are not available")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Available adapters" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Disconnected (not available)" }));
+    expect(screen.getByText("Disconnected sessions are not available")).toBeInTheDocument();
+    expect(screen.getByText("Disconnected sessions not available")).toBeInTheDocument();
+    expect(screen.queryByText(/0 disconnected sessions/)).not.toBeInTheDocument();
+  });
+
+  it("filters assigned work locally and shows the attempt number on each row", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-run", REPO, {
+        state: "Running",
+        sessions: [mkSession("s-1")],
+        attempts: [{ id: "a-1", task_id: "t-run", attempt_number: 3, state: "Running" }],
+      }),
+      mkTask("t-other", REPO, { state: "Running", contract: { objective: "Repair desktop build" } }),
+    ];
+    const { user } = await mountAgents(fake, { live: true });
+    await screen.findByRole("tab", { name: "Active (2)" });
+    expect(screen.getByRole("button", { name: /t-run/ })).toHaveTextContent("Attempt 3");
+    await user.type(screen.getByRole("searchbox", { name: "Filter by task, objective or agent" }), "repair");
+    expect(screen.getByText("Showing 1 of 2.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /t-run/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /t-other/ })).toBeInTheDocument();
+    expect(fake.callsTo("tasks.list").length).toBeGreaterThan(0);
+  });
+
+  it("lists a failed session as one row and counts sessions, not tasks", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-f", REPO, {
+        state: "Failed",
+        attempts: [{ id: "a-f", task_id: "t-f", attempt_number: 1, state: "Failed" }],
+        sessions: [mkSession("s-f", { state: "Aborted", attempt_id: "a-f" })],
+      }),
+    ];
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Failed sessions (1)" }));
+    const failed = within(screen.getByRole("list", { name: "failed sessions" }));
     expect(failed.getAllByRole("button")).toHaveLength(1);
-    expect(failed.getByText("t-failed")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Available (1)" }));
-    const available = within(screen.getByRole("list", { name: "Available adapters" }));
-    expect(available.getAllByRole("listitem")).toHaveLength(1);
-    expect(available.getByText("codex")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Disconnected (unknown)" }));
-    expect(screen.getByText("Disconnected sessions are unknown")).toBeInTheDocument();
-    expect(screen.getByText(/disconnected sessions/)).toHaveTextContent(/unknown disconnected sessions/);
+    expect(failed.getByRole("button", { name: /t-f/ })).toHaveTextContent("Attempt 1");
+    expect(failed.getByRole("button", { name: /t-f/ })).toHaveTextContent("s-f");
+    expect(screen.queryByRole("list", { name: "failed tasks without a session" })).not.toBeInTheDocument();
   });
 
   it("moves between tabs with the arrow keys, Home and End", async () => {
     const { user } = await liveView();
     screen.getByRole("tab", { name: "Active (1)" }).focus();
     await user.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: "Available (1)" })).toHaveFocus();
-    expect(screen.getByRole("tab", { name: "Available (1)" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Available / idle" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Available / idle" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{End}");
-    expect(screen.getByRole("tab", { name: "Disconnected (unknown)" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Disconnected (not available)" })).toHaveFocus();
     await user.keyboard("{Home}");
     expect(screen.getByRole("tab", { name: "Active (1)" })).toHaveFocus();
     await user.keyboard("{ArrowLeft}");
-    expect(screen.getByRole("tab", { name: "Disconnected (unknown)" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Disconnected (not available)" })).toHaveFocus();
   });
 
   it("reports the daemon's exact installed and launchable flags and unknown usage", async () => {
@@ -182,21 +228,35 @@ describe("Agents & Sessions, live mode", () => {
   it("requests cancel once and says it is not proof of a stop", async () => {
     const { fake, user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    await user.click(await screen.findByRole("button", { name: "Request cancel" }));
+    const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
+    expect(cancel).toHaveAccessibleDescription(/cancels the whole task, not only this attempt or session/i);
+    await user.click(cancel);
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled/)).toBeInTheDocument();
+    expect(screen.getByText(/applied to the whole task, not only this attempt or session/)).toBeInTheDocument();
     expect(screen.getByText(/not proof that any process has stopped/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());
+  });
+
+  it("places cancel under Session controls and the reassignment under Task controls", async () => {
+    const { user } = await liveView();
+    await user.click(screen.getByRole("button", { name: /t-run/ }));
+    const session = within(await screen.findByRole("region", { name: "Session controls" }));
+    expect(session.getByRole("button", { name: "Cancel attempt" })).toBeEnabled();
+    expect(session.getByRole("button", { name: "Resume unavailable until capability verified" })).toBeDisabled();
+    const task = within(screen.getByRole("region", { name: "Task controls" }));
+    expect(task.queryByRole("button", { name: "Cancel attempt" })).not.toBeInTheDocument();
+    expect(task.getByRole("button", { name: "Reassign via new attempt" })).toBeInTheDocument();
   });
 
   it("retries a failed task through tasks.retry", async () => {
     const { fake, user } = await liveView();
-    await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeEnabled());
     await user.click(retry);
-    expect(await screen.findByText(/Retry accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
+    expect(await screen.findByText(/Reassignment accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
   });
@@ -206,19 +266,19 @@ describe("Agents & Sessions, live mode", () => {
     fake.failNext("tasks.retry", { code: -32011, message: "retry rejected" });
     const { user } = await liveView(fake);
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel attempt" }));
     expect(await screen.findByText(/Cancelling the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ idempotency_key: expect.any(String) });
 
-    await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeEnabled());
     await user.click(retry);
-    expect(await screen.findByText(/Retrying the task failed/)).toBeInTheDocument();
-    expect(screen.queryByText(/Retry accepted/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Reassigning the task failed/)).toBeInTheDocument();
+    expect(screen.queryByText(/Reassignment accepted/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
   });
 
@@ -248,14 +308,14 @@ describe("Agents & Sessions, live mode", () => {
   it("disables unsupported controls with reasons and applies Cancel only to nonterminal tasks", async () => {
     const { user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    const retry = await screen.findByRole("button", { name: "Retry task" });
+    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeDisabled());
     expect(retry).toHaveAccessibleDescription(/\S/);
     for (const name of [
       "Configure providers",
-      "Amend TaskContract",
+      "Amend future TaskContract",
       "Request new decomposition",
-      "Resume session",
+      "Resume unavailable until capability verified",
       "Inspect retained checkpoint",
     ]) {
       const button = screen.getByRole("button", { name });
@@ -275,10 +335,10 @@ describe("Agents & Sessions, live mode", () => {
     }
     await user.click(screen.getByRole("tab", { name: "Queued (1)" }));
     await user.click(screen.getByRole("button", { name: /t-queued/ }));
-    expect(await screen.findByRole("button", { name: "Request cancel" })).toBeEnabled();
-    await user.click(screen.getByRole("tab", { name: "Failed (1)" }));
+    expect(await screen.findByRole("button", { name: "Cancel attempt" })).toBeEnabled();
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const cancel = await screen.findByRole("button", { name: "Request cancel" });
+    const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
     expect(cancel).toBeDisabled();
     expect(cancel).toHaveAccessibleDescription(/The task is Failed/);
   });
@@ -298,17 +358,18 @@ describe("Agents & Sessions, live mode", () => {
     const { user } = await mountAgents(fake, { live: true });
     await user.click(await screen.findByRole("tab", { name: "Queued (0)" }));
     expect(screen.getByText("No queued tasks.")).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Failed (0)" }));
-    expect(screen.getByText(/^No failed tasks\./)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
+    expect(screen.getByText(/^No failed sessions\./)).toBeInTheDocument();
   });
 
-  it("shows a known-zero Disconnected empty state when no task is active", async () => {
+  it("never shows disconnected sessions as zero, even when no task is active", async () => {
     const fake = seeded();
     fake.tasks = [mkTask("t-queued", REPO, { state: "Queued" })];
     const { user } = await mountAgents(fake, { live: true });
-    await user.click(await screen.findByRole("tab", { name: "Disconnected (0)" }));
-    expect(screen.getByText("No disconnected tasks.")).toBeInTheDocument();
-    expect(screen.getByText(/0 disconnected sessions/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("tab", { name: "Disconnected (not available)" }));
+    expect(screen.getByText("Disconnected sessions are not available")).toBeInTheDocument();
+    expect(screen.getByText("Disconnected sessions not available")).toBeInTheDocument();
+    expect(screen.queryByText(/0 disconnected sessions/)).not.toBeInTheDocument();
   });
 
   it("agrees between the headline and the Queued tab when a queued task is blocked", async () => {
@@ -362,6 +423,22 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();
   });
 
+  it("shows sessions as unknown, not zero or none, while the session list cannot load", async () => {
+    const fake = seeded();
+    fake.failNext("sessions.list", { code: -32603, message: "sessions failed" }, 2);
+    const { user } = await mountAgents(fake, { live: true });
+    const detail = within(screen.getByRole("complementary", { name: "Selected task / session detail" }));
+    expect(await detail.findByText(/Sessions unknown/)).toBeInTheDocument();
+    expect(detail.queryByText("No session recorded.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /t-run/ })).toHaveTextContent("sessions unknown");
+    expect(screen.getByText("1 running task(s), unknown running session(s)")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (unknown)" }));
+    expect(screen.getByText("Failed sessions are unknown.")).toBeInTheDocument();
+    expect(screen.queryByText(/No session recorded/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Failed sessions (0)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "failed tasks without a session" })).not.toBeInTheDocument();
+  });
+
   it("keeps the Unknown flag pill on one line", async () => {
     await liveView();
     const table = await screen.findByRole("table", { name: /inventory/i });
@@ -370,19 +447,32 @@ describe("Agents & Sessions, live mode", () => {
     for (const pill of pills) expect(pill).toHaveClass("agents-flag");
   });
 
+  it("shows the inventory error on the collapsed summary, so it is visible without opening", async () => {
+    const fake = seeded();
+    fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
+    await mountAgents(fake, { live: true });
+    const inventory = screen.getByTestId("agents-inventory");
+    expect(await within(inventory).findByText("error")).toBeInTheDocument();
+    expect(inventory).not.toHaveAttribute("open");
+  });
+
   it("shows a retryable error when the inventory cannot load", async () => {
     const fake = seeded();
     fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
     const { user } = await mountAgents(fake, { live: true });
-    await user.click(await screen.findByRole("tab", { name: "Available (unknown)" }));
-    expect(await screen.findAllByRole("button", { name: /Retry/ })).not.toHaveLength(0);
+    const inventory = within(screen.getByTestId("agents-inventory"));
+    await user.click(inventory.getByText("Configured inventory and discovered capabilities"));
+    expect(await inventory.findByRole("alert")).toHaveTextContent("Adapter inventory could not be loaded");
+    expect(inventory.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
-  it("shows Available as zero when the daemon reports no adapters", async () => {
+  it("never counts Available / idle workers, even when the daemon reports no adapters", async () => {
     const fake = seeded();
     fake.stub("agents.capabilities", []);
     const { user } = await mountAgents(fake, { live: true });
-    await user.click(await screen.findByRole("tab", { name: "Available (0)" }));
-    expect(within(screen.getByRole("tabpanel")).getByText("No adapters reported")).toBeInTheDocument();
+    const tab = await screen.findByRole("tab", { name: "Available / idle" });
+    expect(tab.textContent).not.toMatch(/\d/);
+    await user.click(tab);
+    expect(screen.getByText("Available / idle workers are not available")).toBeInTheDocument();
   });
 
 });
@@ -399,15 +489,27 @@ describe("Agents & Sessions, fixture mode", () => {
     const fake = new FakeDaemon();
     const { user } = await mountAgents(fake, { bridge: false });
     await user.click(await screen.findByRole("button", { name: /fixture:task-running/ }));
-    await user.click(await screen.findByRole("button", { name: "Simulate cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Simulate cancel attempt" }));
     expect(await screen.findAllByTestId("simulated-receipt")).toHaveLength(1);
     await user.click(screen.getByRole("tab", { name: /^Failed/ }));
     await user.click(screen.getByRole("button", { name: /fixture:task-failed/ }));
-    const preview = await screen.findByRole("button", { name: "Preview retry" });
+    const preview = await screen.findByRole("button", { name: "Preview reassign via new attempt" });
     await waitFor(() => expect(preview).toBeEnabled());
     await user.click(preview);
     expect(await screen.findAllByText(/new attempt/)).not.toHaveLength(0);
     expect(fake.callsTo("tasks.cancel")).toHaveLength(0);
     expect(fake.callsTo("tasks.retry")).toHaveLength(0);
+  });
+
+  it("offers a local trace filter and disables diagnostic and branch actions in the feed", async () => {
+    const { user } = await mountAgents(new FakeDaemon(), { bridge: false });
+    await user.click(await screen.findByRole("button", { name: /fixture:task-running/ }));
+    const detail = within(screen.getByRole("complementary", { name: "Selected task / session detail" }));
+    await user.click(detail.getByText("Execution feed, side effects and supplied context"));
+    const filter = detail.getByRole("combobox", { name: "Filter raw trace" });
+    await user.selectOptions(filter, "ExecutionStarted");
+    expect(within(detail.getByRole("table", { name: "Execution feed" })).queryByText("agent.message")).not.toBeInTheDocument();
+    expect(detail.getByRole("button", { name: "Request diagnostic" })).toBeDisabled();
+    expect(detail.getByRole("button", { name: "Branch from retained evidence" })).toBeDisabled();
   });
 });

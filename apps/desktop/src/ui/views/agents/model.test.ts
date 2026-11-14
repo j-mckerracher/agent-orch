@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { mkSession, mkTask } from "../../../test/fakeDaemon";
-import type { RecoveryStatus, SourceResult } from "../../../sources/types";
 import { assignmentText, inventoryFromDaemon, inventoryFromPreview } from "./inventoryModel";
-import { disconnected, headline, rowsFromDaemon, tabRows, type RecoveryMap } from "./model";
+import { failedSessions, failedWithoutSession, headline, latestAttempt, rowsFromDaemon, sessionsKnown, tabRows } from "./model";
 
 const REPO = "/work/repo";
-const recovery = (classification: RecoveryStatus["classification"]): SourceResult<RecoveryStatus> => ({
-  state: "ready",
-  data: { phase: "p", checks: { process: "a", workspace: "b", delivery: "c" }, classification, reason: "r" },
-});
 
 const tasks = [
   mkTask("run", REPO, { state: "Running", sessions: [mkSession("s1"), mkSession("s2", { state: "Aborted" })] }),
@@ -21,29 +16,52 @@ const tasks = [
 ];
 
 describe("agents model", () => {
-  const rows = rowsFromDaemon(tasks, null, []);
+  const rows = rowsFromDaemon(tasks, [], []);
 
-  it("derives tab lists that agree with the headline", () => {
-    const stats = headline(rows, {});
-    expect(tabRows("active", rows, {}).map((r) => r.id)).toEqual(["run", "ver"]);
-    expect(stats.runningTasks).toBe(2);
-    expect(stats.runningSessions).toBe(1);
-    expect(tabRows("queued", rows, {}).map((r) => r.id)).toEqual(["dep", "q"]);
-    expect(stats.readyQueued).toBe(1);
-    expect(stats.queued).toBe(2);
-    expect(stats.queued).toBe(tabRows("queued", rows, {}).length);
-    expect(stats.blocked).toBe(1);
-    expect(tabRows("failed", rows, {}).map((r) => r.id)).toEqual(["fail", "vfail"]);
+  it("reports sessions as unknown, not zero or none, until the session list has loaded", () => {
+    const unknown = rowsFromDaemon(tasks, null, []);
+    expect(sessionsKnown(unknown)).toBe(false);
+    expect(sessionsKnown(rows)).toBe(true);
+    expect(headline(unknown).runningSessions).toBeNull();
+    expect(headline(unknown).runningTasks).toBe(2);
+    expect(failedWithoutSession(unknown)).toEqual([]);
+    expect(unknown.find((row) => row.id === "fail")?.sessions).toBeNull();
   });
 
-  it("counts disconnected only from resolved classifications and never as zero when unknown", () => {
-    expect(disconnected(rows, {})).toEqual({ kind: "unknown", reason: "recovery classification is still loading" });
-    const unavailable: RecoveryMap = { run: { state: "unavailable", reason: "no rpc" }, ver: recovery("completed") };
-    expect(disconnected(rows, unavailable)).toEqual({ kind: "unknown", reason: "no rpc" });
-    const known: RecoveryMap = { run: recovery("needs-inspection"), ver: recovery("recoverable") };
-    expect(disconnected(rows, known)).toEqual({ kind: "known", value: 1 });
-    expect(tabRows("disconnected", rows, known).map((r) => r.id)).toEqual(["run"]);
-    expect(disconnected([], {})).toEqual({ kind: "known", value: 0 });
+  it("derives tab lists that agree with the headline", () => {
+    const stats = headline(rows);
+    expect(tabRows("active", rows).map((r) => r.id)).toEqual(["run", "ver"]);
+    expect(stats.runningTasks).toBe(2);
+    expect(stats.runningSessions).toBe(1);
+    expect(tabRows("queued", rows).map((r) => r.id)).toEqual(["dep", "q"]);
+    expect(stats.readyQueued).toBe(1);
+    expect(stats.queued).toBe(2);
+    expect(stats.queued).toBe(tabRows("queued", rows).length);
+    expect(stats.blocked).toBe(1);
+  });
+
+  it("counts failed sessions, not tasks, and keeps failed tasks with no session apart", () => {
+    expect(failedSessions(rows).map((f) => [f.row.id, f.session.id])).toEqual([["run", "s2"]]);
+    expect(failedWithoutSession(rows).map((r) => r.id)).toEqual(["fail", "vfail"]);
+  });
+
+  it("links a failed session to the attempt the daemon names for it", () => {
+    const linked = rowsFromDaemon(
+      [
+        mkTask("t", REPO, {
+          state: "Failed",
+          attempts: [{ id: "a1", task_id: "t", state: "Failed", attempt_number: 2 }],
+          sessions: [mkSession("s9", { state: "Exited", attempt_id: "a1" })],
+        }),
+      ],
+      [],
+      [],
+    );
+    expect(failedSessions(linked).map((f) => [f.session.id, f.attempt])).toEqual([
+      ["s9", { id: "a1", state: "Failed", number: 2 }],
+    ]);
+    expect(failedWithoutSession(linked)).toEqual([]);
+    expect(latestAttempt(linked[0]!)).toEqual({ id: "a1", state: "Failed", number: 2 });
   });
 });
 

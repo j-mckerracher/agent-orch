@@ -5,27 +5,32 @@ import { Inventory } from "./Inventory";
 import { LaterScope } from "./LaterScope";
 import { SessionDetail } from "./SessionDetail";
 import { SessionList } from "./SessionList";
-import { PlaceholderMark } from "./common";
-import { headline, type Count, type TabId } from "./model";
+import { DisabledAction, PlaceholderMark } from "./common";
+import { headline, isActive, type TabId } from "./model";
 import { useAgentsData } from "./useAgentsData";
 import "./agents.css";
-
-const countText = (count: Count): string => (count.kind === "known" ? String(count.value) : "unknown");
 
 export function AgentsView() {
   const model = useAgentsData();
   const [tab, setTab] = useState<TabId>("active");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const rows = model.work.status === "ready" ? model.work.data : null;
-  const selected = rows?.find((row) => row.id === selectedId) ?? null;
-  const stats = rows ? headline(rows, model.recovery) : null;
+  // The first running task is selected until the operator picks another, as in the wireframe (T12).
+  const selected = rows?.find((row) => row.id === selectedId) ?? rows?.find(isActive) ?? null;
+  const stats = rows ? headline(rows) : null;
 
   return (
     <div className="agents-view" data-testid="agents-view">
-      <header className="agents-head">
-        <p className="agents-eyebrow">Execution inventory / S5</p>
-        <h1>Agents &amp; Sessions</h1>
-        <p>A task persists through failed attempts, new assignments, and changed strategies.</p>
+      <header className="agents-head agents-head-row">
+        <div>
+          <p className="agents-eyebrow">Execution inventory / S5</p>
+          <h1>Agents &amp; Sessions</h1>
+          <p>A task persists through failed attempts, new assignments, and changed strategies.</p>
+        </div>
+        <DisabledAction
+          label="Configure providers"
+          reason="Provider configuration is not available: the daemon has no method to change adapters."
+        />
       </header>
 
       <section aria-label="Execution status" className="agents-status">
@@ -33,7 +38,7 @@ export function AgentsView() {
           <ul className="agents-plain agents-status-list">
             <li>
               <Pill tone="info">
-                {stats.runningTasks} running task(s), {stats.runningSessions} running session(s)
+                {stats.runningTasks} running task(s), {stats.runningSessions ?? "unknown"} running session(s)
               </Pill>
             </li>
             <li>
@@ -45,12 +50,8 @@ export function AgentsView() {
               <Pill tone={stats.blocked > 0 ? "warn" : "neutral"}>{stats.blocked} tasks blocked</Pill>
             </li>
             <li>
-              <Pill tone={stats.disconnected.kind === "known" ? "neutral" : "warn"}>
-                {countText(stats.disconnected)} disconnected sessions
-              </Pill>
-              {stats.disconnected.kind === "unknown" && (
-                <span className="agents-sub"> Not counted: {stats.disconnected.reason}</span>
-              )}
+              <Pill tone="warn">Disconnected sessions not available</Pill>
+              <span className="agents-sub"> Not counted: the daemon has no method that reports them (D3).</span>
             </li>
             <li>
               <span className="agents-sub">Historical failures retained separately</span>
@@ -76,8 +77,6 @@ export function AgentsView() {
       <div className="agents-layout">
         <SessionList
           work={model.work}
-          inventory={model.inventory}
-          recovery={model.recovery}
           live={model.live}
           tab={tab}
           onTab={setTab}

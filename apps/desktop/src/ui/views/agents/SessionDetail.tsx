@@ -1,10 +1,11 @@
 /** Selected task and session detail: attempt history, sessions, controls and the execution feed. */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { timelineKey, type Timeline } from "../../../daemon/appData";
 import { useServices, useStore } from "../../services";
 import { Button, Disclosure, EmptyState } from "../../theme";
 import { DisabledAction, PlaceholderMark, StatePill } from "./common";
 import { rowFromTask, type WorkRow } from "./model";
+import { SessionControls } from "./SessionControls";
 import { TaskControls } from "./TaskControls";
 
 const PAYLOAD_LIMIT = 200;
@@ -33,10 +34,15 @@ export function SessionDetail({ row, live }: { row: WorkRow | null; live: boolea
   );
 }
 
+function uniqueKinds(entries: ReadonlyArray<{ kind: string }>): string[] {
+  return [...new Set(entries.map((entry) => entry.kind))];
+}
+
 function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
   const { data } = useServices();
   const snapshot = useStore(data);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [kind, setKind] = useState("");
   const real = live && initial.origin === "real";
 
   useEffect(() => {
@@ -45,7 +51,8 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
 
   const record = real ? snapshot.taskDetails[initial.id]?.data : null;
   const row = record ? rowFromTask(record, snapshot.taskSessions[initial.id]?.data ?? null, initial.blocked) : initial;
-  const session = row.sessions.find((s) => s.id === chosen) ?? row.sessions[row.sessions.length - 1] ?? null;
+  const sessions = row.sessions ?? [];
+  const session = sessions.find((s) => s.id === chosen) ?? sessions[sessions.length - 1] ?? null;
 
   useEffect(() => {
     if (!real || !session) return;
@@ -54,6 +61,8 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
   }, [real, row.id, session?.id, data]);
 
   const timeline = real && session ? snapshot.timelines[timelineKey(row.id, session.id)] : undefined;
+  const kinds = uniqueKinds(real ? (timeline?.events ?? []) : row.timeline);
+  const activeKind = kinds.includes(kind) ? kind : "";
 
   return (
     <div className="agents-detail">
@@ -81,7 +90,9 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
 
       <section aria-label="Sessions">
         <h3>Sessions</h3>
-        {row.sessions.length === 0 ? (
+        {row.sessions === null ? (
+          <p role="status">Sessions unknown: this task's session list has not loaded.</p>
+        ) : row.sessions.length === 0 ? (
           <p>No session recorded.</p>
         ) : (
           <ul className="agents-plain">
@@ -99,35 +110,60 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
       </section>
 
       <TaskControls key={row.id} row={row} live={live} />
-
-      <section aria-label="Session controls" className="agents-controls">
-        <h4>Session controls</h4>
-        <DisabledAction
-          label="Resume session"
-          reason="Not available: the daemon has no method to resume a session, whatever an adapter reports for session resumption."
-        />
-        <DisabledAction
-          label="Inspect retained checkpoint"
-          reason="Not available: the daemon does not expose retained checkpoints."
-        />
-      </section>
+      <SessionControls row={row} session={session} live={live} />
 
       <Disclosure summary="Execution feed, side effects and supplied context">
         <p className="agents-sub">
           Side effects and supplied context are not recorded by the daemon, so none are listed here.
         </p>
+        {kinds.length > 0 && <TraceFilter kinds={kinds} value={activeKind} onChange={setKind} />}
         {live ? (
-          <Feed timeline={timeline} sessionId={session?.id ?? null} taskId={row.id} />
+          <Feed
+            timeline={timeline}
+            sessionsKnown={row.sessions !== null}
+            sessionId={session?.id ?? null}
+            taskId={row.id}
+            kind={activeKind}
+          />
         ) : (
-          <PreviewFeed entries={row.timeline} />
+          <PreviewFeed entries={row.timeline} kind={activeKind} />
         )}
+        <section aria-label="Feed actions" className="agents-controls">
+          <DisabledAction
+            label="Request diagnostic"
+            reason="Not available: the daemon has no method to request a diagnostic for a session."
+          />
+          <DisabledAction
+            label="Branch from retained evidence"
+            reason="Not available: the daemon does not expose retained evidence to branch from."
+          />
+        </section>
       </Disclosure>
     </div>
   );
 }
 
-function PreviewFeed({ entries }: { entries: Array<{ at: string; kind: string; detail: string }> }) {
+/** Local filter over the feed rows already loaded; it never asks the daemon for anything. */
+function TraceFilter({ kinds, value, onChange }: { kinds: string[]; value: string; onChange: (kind: string) => void }) {
+  const id = useId();
+  return (
+    <div className="agents-filter">
+      <label htmlFor={id}>Filter raw trace</label>
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">All event kinds</option>
+        {kinds.map((kind) => (
+          <option key={kind} value={kind}>
+            {kind}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function PreviewFeed({ entries, kind }: { entries: Array<{ at: string; kind: string; detail: string }>; kind: string }) {
   if (entries.length === 0) return <p>No preview events.</p>;
+  const shown = kind ? entries.filter((entry) => entry.kind === kind) : entries;
   return (
     <table aria-label="Execution feed">
       <thead>
@@ -138,7 +174,7 @@ function PreviewFeed({ entries }: { entries: Array<{ at: string; kind: string; d
         </tr>
       </thead>
       <tbody>
-        {entries.map((entry, index) => (
+        {shown.map((entry, index) => (
           <tr key={index}>
             <td>{entry.at}</td>
             <td>{entry.kind}</td>
@@ -152,14 +188,19 @@ function PreviewFeed({ entries }: { entries: Array<{ at: string; kind: string; d
 
 function Feed({
   timeline,
+  sessionsKnown,
   sessionId,
   taskId,
+  kind,
 }: {
   timeline: Timeline | undefined;
+  sessionsKnown: boolean;
   sessionId: string | null;
   taskId: string;
+  kind: string;
 }) {
   const { data } = useServices();
+  if (!sessionsKnown) return <p role="status">Execution feed unknown: this task's session list has not loaded.</p>;
   if (!sessionId) return <p>No session recorded, so there is no execution feed.</p>;
   if (!timeline || timeline.status === "loading") return <p role="status">Loading execution feed…</p>;
   if (timeline.status === "error") {
@@ -170,6 +211,7 @@ function Feed({
       </div>
     );
   }
+  const shown = kind ? timeline.events.filter((event) => event.kind === kind) : timeline.events;
   return (
     <>
       {timeline.events.length === 0 ? (
@@ -185,7 +227,7 @@ function Feed({
             </tr>
           </thead>
           <tbody>
-            {timeline.events.map((event) => (
+            {shown.map((event) => (
               <tr key={event.sequence}>
                 <td>{event.sequence}</td>
                 <td>{event.created_at}</td>

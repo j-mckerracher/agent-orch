@@ -1,20 +1,20 @@
 /**
  * Pure derivations for the Agents & Sessions view (M7-14). No React, no I/O.
  *
- * Unknown is never zero: a count that cannot be derived is `{ kind: "unknown" }`
- * with the reason, and the UI says so.
+ * Failed counts are sessions, not tasks. Disconnected has no daemon source (D3), so it is never
+ * counted: the view says "not available" instead of a number.
  */
 import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
-import type { PreviewTask, RecoveryStatus, SourceResult, TaskRef } from "../../../sources/types";
+import type { PreviewTask, TaskRef } from "../../../sources/types";
 import { matchesFilter } from "../../format";
 
 export type TabId = "active" | "available" | "queued" | "failed" | "disconnected";
 
 export const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "active", label: "Active" },
-  { id: "available", label: "Available" },
+  { id: "available", label: "Available / idle" },
   { id: "queued", label: "Queued" },
-  { id: "failed", label: "Failed" },
+  { id: "failed", label: "Failed sessions" },
   { id: "disconnected", label: "Disconnected" },
 ];
 
@@ -31,7 +31,7 @@ export interface WorkAttempt {
   number: number | null;
 }
 
-/** One task as the view lists it, from either the daemon (`real`) or the D2 preview (`fixture`). */
+/** One task as view lists it, from either daemon (`real`) or D2 preview (`fixture`). */
 export interface WorkRow {
   id: string;
   origin: "real" | "fixture";
@@ -39,25 +39,29 @@ export interface WorkRow {
   agent: string;
   state: TaskState;
   attempts: WorkAttempt[];
-  sessions: WorkSession[];
+  /** Null until the daemon's session list has loaded: session counts and rows are then unknown, never zero. */
+  sessions: WorkSession[] | null;
   blocked: boolean;
   /** D2 preview events; empty for daemon tasks, whose feed comes from `sessions.events`. */
   timeline: Array<{ at: string; kind: string; detail: string }>;
 }
 
-export type RecoveryMap = Record<string, SourceResult<RecoveryStatus> | undefined>;
-
-export type Count = { kind: "known"; value: number } | { kind: "unknown"; reason: string };
+/** A session that ended unsuccessfully, with the attempt it belonged to when the daemon links one. */
+export interface FailedSession {
+  row: WorkRow;
+  session: WorkSession;
+  attempt: WorkAttempt | null;
+}
 
 export interface Headline {
   runningTasks: number;
-  runningSessions: number;
+  /** Null while any row's session list is unknown. */
+  runningSessions: number | null;
   /** Every Created or Queued task; equals the Queued tab length. */
   queued: number;
   /** The queued tasks whose dependencies are met (`queued - blocked`). */
   readyQueued: number;
   blocked: number;
-  disconnected: Count;
 }
 
 const RUNNING_SESSION = new Set(["Spawning", "Running"]);
@@ -87,7 +91,7 @@ export function rowFromTask(task: TaskRecord, entries: readonly SessionEntry[] |
     agent: task.contract.agent,
     state: task.state,
     attempts: task.attempts.map((a) => ({ id: a.id, state: a.state, number: a.attempt_number })),
-    sessions: [...sessions.values()],
+    sessions: entries === null ? null : [...sessions.values()],
     blocked,
     timeline: [],
   };
@@ -115,48 +119,53 @@ export function rowsFromPreview(previews: readonly PreviewTask[]): WorkRow[] {
   }));
 }
 
-/** Active tasks whose D3 classification is `needs-inspection`. Any unresolved lookup makes the count unknown. */
-export function disconnected(rows: readonly WorkRow[], recovery: RecoveryMap): Count {
-  let found = 0;
-  for (const row of rows.filter(isActive)) {
-    const result = recovery[row.id];
-    if (!result) return { kind: "unknown", reason: "recovery classification is still loading" };
-    if (result.state === "unavailable") return { kind: "unknown", reason: result.reason };
-    if (result.state === "error") return { kind: "unknown", reason: result.message };
-    if (result.state === "empty") return { kind: "unknown", reason: "no recovery classification was returned" };
-    if (result.data.classification === "needs-inspection") found += 1;
+/** The attempt with the highest number, the one the row's attempt label names. */
+export function latestAttempt(row: WorkRow): WorkAttempt | null {
+  let best: WorkAttempt | null = null;
+  for (const attempt of row.attempts) {
+    if (best === null || (attempt.number ?? 0) >= (best.number ?? 0)) best = attempt;
   }
-  return { kind: "known", value: found };
+  return best;
 }
 
-export function disconnectedRows(rows: readonly WorkRow[], recovery: RecoveryMap): WorkRow[] {
-  return rows.filter((row) => {
-    const result = isActive(row) ? recovery[row.id] : undefined;
-    return result?.state === "ready" && result.data.classification === "needs-inspection";
-  });
+/** True once every row's session list has loaded. Only then can session counts be stated. */
+export const sessionsKnown = (rows: readonly WorkRow[]): boolean => rows.every((row) => row.sessions !== null);
+
+/**
+ * Sessions that ended unsuccessfully: aborted, or belonging to an attempt that failed.
+ * Rows with unknown sessions contribute none, so check `sessionsKnown` before showing a count.
+ */
+export function failedSessions(rows: readonly WorkRow[]): FailedSession[] {
+  const found: FailedSession[] = [];
+  for (const row of rows) {
+    for (const session of row.sessions ?? []) {
+      const attempt = row.attempts.find((a) => a.id === session.attemptId) ?? null;
+      if (session.state === "Aborted" || attempt?.state === "Failed") found.push({ row, session, attempt });
+    }
+  }
+  return found;
 }
 
-export function headline(rows: readonly WorkRow[], recovery: RecoveryMap): Headline {
+/** Failed tasks with no failed session on record. Unknown sessions are never "no session on record". */
+export function failedWithoutSession(rows: readonly WorkRow[]): WorkRow[] {
+  const counted = new Set(failedSessions(rows).map((failed) => failed.row.id));
+  return rows.filter((row) => row.sessions !== null && isFailed(row) && !counted.has(row.id));
+}
+
+export function headline(rows: readonly WorkRow[]): Headline {
   const queued = rows.filter(isQueued);
   return {
     runningTasks: rows.filter(isActive).length,
-    runningSessions: rows.reduce((n, row) => n + row.sessions.filter((s) => isRunningSession(s.state)).length, 0),
+    runningSessions: sessionsKnown(rows)
+      ? rows.reduce((n, row) => n + (row.sessions ?? []).filter((s) => isRunningSession(s.state)).length, 0)
+      : null,
     queued: queued.length,
     readyQueued: queued.filter((row) => !row.blocked).length,
     blocked: queued.filter((row) => row.blocked).length,
-    disconnected: disconnected(rows, recovery),
   };
 }
 
-export function tabRows(tab: Exclude<TabId, "available">, rows: readonly WorkRow[], recovery: RecoveryMap): WorkRow[] {
-  switch (tab) {
-    case "active":
-      return rows.filter(isActive);
-    case "queued":
-      return rows.filter(isQueued);
-    case "failed":
-      return rows.filter(isFailed);
-    case "disconnected":
-      return disconnectedRows(rows, recovery);
-  }
+/** Task lists for the Active and Queued tabs. The other tabs derive their own rows. */
+export function tabRows(tab: "active" | "queued", rows: readonly WorkRow[]): WorkRow[] {
+  return tab === "active" ? rows.filter(isActive) : rows.filter(isQueued);
 }

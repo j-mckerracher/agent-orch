@@ -1,10 +1,24 @@
 /** Configured adapter inventory: flags are shown exactly as reported, unknown stays unknown. */
 import { Disclosure } from "../../theme";
-import { DisabledAction, FlagPill, LoadRegion, PlaceholderMark } from "./common";
+import { FlagPill, LoadRegion, PlaceholderMark } from "./common";
 import type { InventoryRow } from "./inventoryModel";
 import type { Load } from "./useAgentsData";
 
 const USAGE_TEXT = "Unknown (the daemon does not report usage)";
+
+/** Shown on the collapsed summary, so a load that is not ready is visible without opening the disclosure. */
+function inventoryCount(inventory: Load<InventoryRow[]>): string {
+  switch (inventory.status) {
+    case "ready":
+      return `${inventory.data.length} adapters`;
+    case "empty":
+      return "none reported";
+    case "loading":
+    case "unavailable":
+    case "error":
+      return inventory.status;
+  }
+}
 
 export function Inventory({
   inventory,
@@ -15,12 +29,10 @@ export function Inventory({
   live: boolean;
   onRetry: () => void;
 }) {
-  const count = inventory.status === "ready" ? `${inventory.data.length} adapters` : undefined;
   return (
     <Disclosure
-      defaultOpen
       summary="Configured inventory and discovered capabilities"
-      count={count}
+      count={inventoryCount(inventory)}
       data-testid="agents-inventory"
     >
       {!live && (
@@ -92,10 +104,6 @@ export function Inventory({
           </div>
         )}
       </LoadRegion>
-      <DisabledAction
-        label="Configure providers"
-        reason="Provider configuration is not available: the daemon has no method to change adapters."
-      />
     </Disclosure>
   );
 }

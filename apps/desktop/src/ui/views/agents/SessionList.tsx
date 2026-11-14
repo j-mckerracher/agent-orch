@@ -1,30 +1,50 @@
-/** "Assigned work and sessions": tabs over the derived task lists. Counts in tab labels equal the list lengths. */
-import { useRef, type KeyboardEvent } from "react";
-import { EmptyState, Pill } from "../../theme";
+/**
+ * "Assigned work and sessions": tabs over the derived lists, with local filters. Counts in tab labels
+ * state what they count: tasks for Active and Queued, sessions for Failed. Unavailable data is never a number.
+ */
+import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { Button, EmptyState, Pill } from "../../theme";
 import { LoadRegion, PlaceholderMark, StatePill } from "./common";
-import type { InventoryRow } from "./inventoryModel";
 import {
+  failedSessions,
+  failedWithoutSession,
   isRunningSession,
+  latestAttempt,
+  sessionsKnown,
   tabRows,
   TABS,
-  disconnected,
-  type RecoveryMap,
+  type FailedSession,
   type TabId,
   type WorkRow,
 } from "./model";
 import type { Load } from "./useAgentsData";
 
-const EMPTY_TEXT: Record<Exclude<TabId, "available">, string> = {
+const EMPTY_TEXT: Record<"active" | "queued", string> = {
   active: "No active tasks.",
   queued: "No queued tasks.",
-  failed: "No failed tasks. Failed attempts of retried tasks stay in the task's attempt history.",
-  disconnected: "No disconnected tasks.",
 };
+
+/** Local filter over task id, objective and agent. Nothing is sent to the daemon. */
+function matchesQuery(row: WorkRow, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return true;
+  return [row.id, row.objective, row.agent].some((text) => text.toLowerCase().includes(needle));
+}
+
+function attemptText(row: WorkRow): string {
+  const latest = latestAttempt(row);
+  if (latest === null) return "No attempt recorded";
+  return latest.number === null ? "Attempt" : `Attempt ${latest.number}`;
+}
+
+function sessionsText(row: WorkRow): string {
+  if (row.sessions === null) return "sessions unknown";
+  const running = row.sessions.filter((s) => isRunningSession(s.state)).length;
+  return `${row.sessions.length} session(s)${running > 0 ? `, ${running} running` : ""}`;
+}
 
 export function SessionList({
   work,
-  inventory,
-  recovery,
   live,
   tab,
   onTab,
@@ -33,8 +53,6 @@ export function SessionList({
   onRetry,
 }: {
   work: Load<WorkRow[]>;
-  inventory: Load<InventoryRow[]>;
-  recovery: RecoveryMap;
   live: boolean;
   tab: TabId;
   onTab: (tab: TabId) => void;
@@ -43,20 +61,16 @@ export function SessionList({
   onRetry: () => void;
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const filterId = useId();
+  const [query, setQuery] = useState("");
   const rows = work.status === "ready" ? work.data : [];
-  const assignable =
-    inventory.status === "empty"
-      ? []
-      : inventory.status === "ready"
-        ? inventory.data.filter((row) => row.assignable)
-        : null;
-  const unknownDisconnected = disconnected(rows, recovery);
 
   const label = (id: TabId, text: string): string => {
-    if (id === "available") return `${text} (${assignable ? assignable.length : "unknown"})`;
+    if (id === "available") return text;
+    if (id === "disconnected") return `${text} (not available)`;
     if (work.status !== "ready") return `${text} (…)`;
-    if (id === "disconnected" && unknownDisconnected.kind === "unknown") return `${text} (unknown)`;
-    return `${text} (${tabRows(id, rows, recovery).length})`;
+    if (id === "failed") return sessionsKnown(rows) ? `${text} (${failedSessions(rows).length})` : `${text} (unknown)`;
+    return `${text} (${tabRows(id, rows).length})`;
   };
 
   const onKey = (event: KeyboardEvent, index: number) => {
@@ -101,108 +115,220 @@ export function SessionList({
       </div>
       <div role="tabpanel" id="agents-tabpanel" aria-labelledby={`agents-tab-${tab}`} className="agents-panel">
         {tab === "available" ? (
-          <Available inventory={inventory} />
+          <EmptyState
+            role="status"
+            title="Available / idle workers are not available"
+            description="The daemon reports no idle-worker count. Adapter launchability is not an idle-worker count; see Configured inventory."
+          />
+        ) : tab === "disconnected" ? (
+          <EmptyState
+            role="status"
+            title="Disconnected sessions are not available"
+            description="The daemon has no method that reports them (D3), so they are not counted as zero."
+          />
         ) : (
-          <LoadRegion
-            what="Tasks"
-            load={work}
-            emptyTitle="No tasks"
-            onRetry={live ? onRetry : undefined}
-          >
-            {() => (
-              <Rows
-                tab={tab}
-                rows={rows}
-                recovery={recovery}
-                selectedId={selectedId}
-                onSelect={onSelect}
-              />
-            )}
-          </LoadRegion>
+          <>
+            <div className="agents-filter">
+              <label htmlFor={filterId}>Filter by task, objective or agent</label>
+              <input id={filterId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+            </div>
+            <p className="agents-sub">
+              Provider, model and progress-age filters are not available: the daemon does not report them.
+            </p>
+            <LoadRegion
+              what="Tasks"
+              load={work}
+              emptyTitle="No tasks"
+              onRetry={live ? onRetry : undefined}
+            >
+              {() =>
+                tab === "failed" ? (
+                  <FailedRows
+                    rows={rows}
+                    query={query}
+                    selectedId={selectedId}
+                    onSelect={onSelect}
+                    onRetry={onRetry}
+                  />
+                ) : (
+                  <TaskRows
+                    tab={tab}
+                    rows={rows}
+                    query={query}
+                    selectedId={selectedId}
+                    onSelect={onSelect}
+                  />
+                )
+              }
+            </LoadRegion>
+          </>
         )}
       </div>
     </section>
   );
 }
 
-function Available({ inventory }: { inventory: Load<InventoryRow[]> }) {
-  return (
-    <LoadRegion what="Adapter inventory" load={inventory} emptyTitle="No adapters reported">
-      {(list) => {
-        const ready = list.filter((row) => row.assignable);
-        if (ready.length === 0) {
-          return <EmptyState title="No adapter is available for assignment" description="An adapter must be installed and launchable." />;
-        }
-        return (
-          <ul className="agents-list" aria-label="Available adapters">
-            {ready.map((row) => (
-              <li key={row.id} className="agents-row">
-                <code>{row.name}</code>
-                <Pill tone="ok">{row.assignment}</Pill>
-              </li>
-            ))}
-          </ul>
-        );
-      }}
-    </LoadRegion>
-  );
-}
-
-function Rows({
+function TaskRows({
   tab,
   rows,
-  recovery,
+  query,
   selectedId,
   onSelect,
 }: {
-  tab: Exclude<TabId, "available">;
+  tab: "active" | "queued";
   rows: WorkRow[];
-  recovery: RecoveryMap;
+  query: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  if (tab === "disconnected") {
-    const count = disconnected(rows, recovery);
-    if (count.kind === "unknown") {
-      return (
-        <EmptyState
-          role="status"
-          title="Disconnected sessions are unknown"
-          description={`They cannot be counted: ${count.reason}`}
-        />
-      );
-    }
-  }
-  const list = tabRows(tab, rows, recovery);
-  if (list.length === 0) return <EmptyState title={EMPTY_TEXT[tab]} />;
+  const all = tabRows(tab, rows);
+  const list = all.filter((row) => matchesQuery(row, query));
+  if (all.length === 0) return <EmptyState title={EMPTY_TEXT[tab]} />;
+  if (list.length === 0) return <EmptyState title="No tasks match the filter." />;
   return (
-    <ul className="agents-list" aria-label={`${tab} tasks`}>
-      {list.map((row) => {
-        const running = row.sessions.filter((s) => isRunningSession(s.state)).length;
-        return (
-          <li key={row.id}>
-            <button
-              type="button"
-              className="agents-row"
-              aria-pressed={selectedId === row.id}
-              onClick={() => onSelect(row.id)}
-            >
-              <span className="agents-row-main">
-                <code>{row.id}</code>
-                <span>{row.objective}</span>
-                <span className="agents-sub">
-                  Agent {row.agent}; {row.attempts.length} attempt(s); {row.sessions.length} session(s)
-                  {running > 0 ? `, ${running} running` : ""}
-                </span>
-              </span>
-              <span className="agents-row-state">
-                <StatePill state={row.state} />
-                {row.blocked && <Pill tone="warn">Blocked</Pill>}
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      {list.length !== all.length && <p className="agents-sub">Showing {list.length} of {all.length}.</p>}
+      <ul className="agents-list" aria-label={`${tab} tasks`}>
+        {list.map((row) => (
+          <TaskButton
+            key={row.id}
+            row={row}
+            selected={selectedId === row.id}
+            onSelect={onSelect}
+            detail={`Agent ${row.agent}; ${attemptText(row)}; ${sessionsText(row)}; provider and model: not available`}
+          />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function FailedRows({
+  rows,
+  query,
+  selectedId,
+  onSelect,
+  onRetry,
+}: {
+  rows: WorkRow[];
+  query: string;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onRetry: () => void;
+}) {
+  if (!sessionsKnown(rows)) {
+    return (
+      <EmptyState
+        role="status"
+        title="Failed sessions are unknown."
+        description="The daemon's session list has not loaded, so failed sessions cannot be counted or listed."
+        action={<Button onClick={onRetry}>Retry</Button>}
+      />
+    );
+  }
+  const sessions = failedSessions(rows);
+  const orphans = failedWithoutSession(rows);
+  const shownSessions = sessions.filter((failed) => matchesQuery(failed.row, query));
+  const shownOrphans = orphans.filter((row) => matchesQuery(row, query));
+  if (sessions.length === 0 && orphans.length === 0) {
+    return (
+      <EmptyState
+        title="No failed sessions."
+        description="Failed attempts of retried tasks stay in the task's attempt history."
+      />
+    );
+  }
+  if (shownSessions.length === 0 && shownOrphans.length === 0) return <EmptyState title="No sessions match the filter." />;
+  return (
+    <>
+      {shownSessions.length > 0 && (
+        <ul className="agents-list" aria-label="failed sessions">
+          {shownSessions.map((failed) => (
+            <FailedSessionButton
+              key={`${failed.row.id}:${failed.session.id}`}
+              failed={failed}
+              selected={selectedId === failed.row.id}
+              onSelect={onSelect}
+            />
+          ))}
+        </ul>
+      )}
+      {shownOrphans.length > 0 && (
+        <>
+          <p className="agents-sub">
+            Failed tasks with no session on record ({shownOrphans.length}). They are not sessions, so they are not counted
+            above.
+          </p>
+          <ul className="agents-list" aria-label="failed tasks without a session">
+            {shownOrphans.map((row) => (
+              <TaskButton
+                key={row.id}
+                row={row}
+                selected={selectedId === row.id}
+                onSelect={onSelect}
+                detail={`Agent ${row.agent}; ${attemptText(row)}; no session recorded`}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+function TaskButton({
+  row,
+  selected,
+  onSelect,
+  detail,
+}: {
+  row: WorkRow;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  detail: string;
+}) {
+  return (
+    <li>
+      <button type="button" className="agents-row" aria-pressed={selected} onClick={() => onSelect(row.id)}>
+        <span className="agents-row-main">
+          <code>{row.id}</code>
+          <span>{row.objective}</span>
+          <span className="agents-sub">{detail}</span>
+        </span>
+        <span className="agents-row-state">
+          <StatePill state={row.state} />
+          {row.blocked && <Pill tone="warn">Blocked</Pill>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function FailedSessionButton({
+  failed,
+  selected,
+  onSelect,
+}: {
+  failed: FailedSession;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const { row, session, attempt } = failed;
+  const attemptLabel = attempt?.number != null ? `Attempt ${attempt.number}; ` : "";
+  return (
+    <li>
+      <button type="button" className="agents-row" aria-pressed={selected} onClick={() => onSelect(row.id)}>
+        <span className="agents-row-main">
+          <code>{row.id}</code>
+          <span>{row.objective}</span>
+          <span className="agents-sub">
+            {attemptLabel}session <code>{session.id}</code>
+          </span>
+        </span>
+        <span className="agents-row-state">
+          <StatePill state={session.state} />
+        </span>
+      </button>
+    </li>
   );
 }
