@@ -154,7 +154,7 @@ describe("ConnectionStrip hosting", () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
     const banner = screen.getByRole("banner", { name: "Connection status" });
     expect(banner).toHaveAttribute("data-testid", "shell-connection");
-    expect(banner.parentElement).toHaveClass("shell");
+    expect(banner.parentElement).toHaveClass("shell-body");
     const status = within(banner).getByTestId("connection-status");
     expect(status).toHaveAttribute("role", "status");
     expect(status).toHaveTextContent("Connected");

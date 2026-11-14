@@ -58,38 +58,53 @@ function matchMediaOrNull(): MediaQueryList | null {
   return typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 }
 
-/** Opt-in switch plus the attribution that MIT licensing of the bundled renderer requires. */
+/**
+ * Opt-in switch for the sidebar theme row. The row is 38 px, the Dark mode toggle's height, so the switch is a compact
+ * icon. Its name, state, the "decorative only" note and the MIT attribution the bundled renderer requires sit in a
+ * disclosure on that icon: the summary is keyboard-operable and the content is in the DOM for screen readers.
+ */
 export function AmbientBackgroundControl({ settings, className }: { settings?: AmbientSettings; className?: string }) {
   const { enabled, persisted, setEnabled } = useAmbientSettings(settings ?? ambientSettings());
   const reduced = useReducedMotion();
+  const state = enabled ? "on" : "off";
   return (
-    <div className={["ambient-control", className].filter(Boolean).join(" ")} data-testid="ambient-control">
-      <button
-        type="button"
-        className="ui-theme-toggle"
-        aria-pressed={enabled}
-        aria-describedby="ambient-note"
-        onClick={() => setEnabled(!enabled)}
+    <details className={["ambient-control", className].filter(Boolean).join(" ")} data-testid="ambient-control">
+      <summary
+        className="ambient-summary"
+        aria-label={`Background animation: ${state}`}
+        title={`Background animation: ${state}`}
+        data-on={enabled ? "" : undefined}
       >
         <span aria-hidden="true">≈</span>
-        <span>Background</span>
-        <span className="ui-theme-state">
-          {enabled ? "On" : "Off"}
-          {persisted ? "" : " (this session)"}
-        </span>
-      </button>
-      <p id="ambient-note" className="ambient-note">
-        Decorative only; it does not show activity.
-        {reduced ? " Reduced motion is on, so the pattern stays still." : ""}
-      </p>
-      <details className="ambient-licences">
-        <summary>Animation licences</summary>
-        <p className="ambient-note">
-          The wave uses the MIT-licensed ocean renderer from Agent-Native (Builder.io) and the vgpu library (Vercel).
+      </summary>
+      <div className="ambient-panel">
+        <button
+          type="button"
+          className="ui-theme-toggle"
+          aria-pressed={enabled}
+          aria-describedby="ambient-note"
+          onClick={() => setEnabled(!enabled)}
+        >
+          <span aria-hidden="true">≈</span>
+          <span>Background</span>
+          <span className="ui-theme-state">
+            {enabled ? "On" : "Off"}
+            {persisted ? "" : " (this session)"}
+          </span>
+        </button>
+        <p id="ambient-note" className="ambient-note">
+          Decorative only; it does not show activity.
+          {reduced ? " Reduced motion is on, so the pattern stays still." : ""}
         </p>
-        <pre tabIndex={0} aria-label="Agent-Native licence">{agentNativeLicense}</pre>
-        <pre tabIndex={0} aria-label="vgpu licence">{vgpuLicense}</pre>
-      </details>
-    </div>
+        <details className="ambient-licences">
+          <summary>Animation licences</summary>
+          <p className="ambient-note">
+            The wave uses the MIT-licensed ocean renderer from Agent-Native (Builder.io) and the vgpu library (Vercel).
+          </p>
+          <pre tabIndex={0} aria-label="Agent-Native licence">{agentNativeLicense}</pre>
+          <pre tabIndex={0} aria-label="vgpu licence">{vgpuLicense}</pre>
+        </details>
+      </div>
+    </details>
   );
 }

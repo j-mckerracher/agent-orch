@@ -121,6 +121,11 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
           width: innerWidth, height: innerHeight,
           stripHeight: document.querySelector(".shell-strip")!.getBoundingClientRect().height,
           sidebarHeight: document.querySelector(".shell-sidebar")!.getBoundingClientRect().height,
+          stripLeft: document.querySelector(".shell-strip")!.getBoundingClientRect().left,
+          stripBottom: document.querySelector(".shell-strip")!.getBoundingClientRect().bottom,
+          sidebarTop: document.querySelector(".shell-sidebar")!.getBoundingClientRect().top,
+          sidebarRight: document.querySelector(".shell-sidebar")!.getBoundingClientRect().right,
+          sidebarBottom: document.querySelector(".shell-sidebar")!.getBoundingClientRect().bottom,
           slots: [document.documentElement, ...document.querySelectorAll<HTMLElement>(
             ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-activity,.shell-content")]
             .map(el => ({ slot: el.className || el.tagName, overflow: el.scrollWidth - el.clientWidth })),
@@ -131,6 +136,14 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
         expect(geometry.width).toBe(width);
         for (const slot of geometry.slots) expect.soft(slot.overflow, `${route} fixture=${fixture} ${slot.slot}`).toBeLessThanOrEqual(1);
         if (width === 760) expect(geometry.sidebarHeight).toBeLessThanOrEqual(geometry.height * 0.42 + 1);
+        // The sidebar spans the window height and the connection strip sits over the content column; the narrow
+        // tier stacks the strip above the sidebar instead.
+        if (width > 760) {
+          expect.soft(Math.abs(geometry.sidebarBottom - geometry.sidebarTop - geometry.height), `${route} sidebar height`).toBeLessThanOrEqual(1);
+          expect.soft(geometry.stripLeft, `${route} strip over content column`).toBeGreaterThanOrEqual(geometry.sidebarRight - 1);
+        } else {
+          expect.soft(geometry.stripBottom, `${route} strip above sidebar`).toBeLessThanOrEqual(geometry.sidebarTop + 1);
+        }
       }
     }
   });

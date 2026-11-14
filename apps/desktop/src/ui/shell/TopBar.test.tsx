@@ -225,6 +225,7 @@ describe("local search", () => {
   it("is a labelled search landmark with a visible loaded-records note", async () => {
     const { user } = await mount(daemon());
     expect(screen.getByRole("search", { name: "Search loaded records" })).toBeInTheDocument();
+    expect(search()).toHaveAttribute("placeholder", "Search projects, tasks, sessions, approvals");
     await user.click(search());
     expect(screen.getByTestId("top-search-note")).toHaveTextContent("Searches loaded records only");
   });
