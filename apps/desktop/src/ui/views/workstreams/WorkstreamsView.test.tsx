@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import App from "../../../App";
 import { DaemonError } from "../../../daemon/errors";
+import { M5_03_CAPABILITIES, OPTIONAL_CAPABILITIES } from "../../../daemon/types";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces, type SurfaceFixtureScenario } from "../../../sources/surfaces/fixtures";
 import { okResult } from "../../../sources/surfaces/result";
@@ -268,7 +269,6 @@ describe("live data", () => {
       const reason = button.getAttribute("aria-describedby");
       expect(reason && document.getElementById(reason)?.textContent).toMatch(/Disabled|becomes a link/);
     }
-    expect(screen.getByRole("button", { name: "Create workstream" })).toBeDisabled();
     expect(screen.getByText(/Suspend is advisory/)).toBeVisible();
   });
 
@@ -350,14 +350,29 @@ describe("live mutations", () => {
   const writes = (fake: FakeDaemon) => fake.calls.filter((call) => /^workstreams\.(create|update|add_|revise_|set_|link_|unlink_)/.test(call.method));
   const paramsOf = (fake: FakeDaemon, method: string) => fake.callsTo(method).map((call) => call.params as Record<string, unknown>);
 
-  it("keeps Create workstream in the page header, disabled with a reason, and sends nothing in live mode", async () => {
+  it("creates a workstream through workstreams.create with an idempotency key and selects it", async () => {
     const fake = daemon();
-    await mount(fake);
+    const { user } = await mount(fake);
     await screen.findAllByTestId("task-row");
+    const header = screen.getByRole("heading", { level: 1, name: "Workstreams" }).closest("header") as HTMLElement;
+    await user.type(within(header).getByLabelText("New workstream title"), "Gamma stream");
+    await user.click(within(header).getByRole("button", { name: "Create workstream" }));
+    expect(await screen.findByText(/Create workstream "Gamma stream": recorded by the daemon/)).toBeInTheDocument();
+    const [call] = paramsOf(fake, "workstreams.create");
+    expect(call).toMatchObject({ title: "Gamma stream" });
+    expect(typeof call!.idempotency_key).toBe("string");
+    expect(await screen.findByTestId("ws-detail")).toHaveAccessibleName("Workstream Gamma stream");
+    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("3");
+  });
+
+  it("disables Create workstream in the page header with its reason, and sends nothing, when workstreams was not negotiated", async () => {
+    const fake = daemon();
+    fake.capabilitiesOverride = [...M5_03_CAPABILITIES, ...OPTIONAL_CAPABILITIES].filter((capability) => capability !== "workstreams");
+    await mount(fake);
     const header = screen.getByRole("heading", { level: 1, name: "Workstreams" }).closest("header") as HTMLElement;
     const create = within(header).getByRole("button", { name: "Create workstream" });
     expect(create).toBeDisabled();
-    expect(document.getElementById(create.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/not in this release/);
+    expect(document.getElementById(create.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/does not offer workstream creation/);
     expect(screen.queryByLabelText("New workstream title")).not.toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.create")).toHaveLength(0);
   });

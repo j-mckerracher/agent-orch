@@ -2,7 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import type { Provenance } from "../../../sources/types";
 import { TASK_STATES, basename } from "../../format";
-import { useServices } from "../../services";
+import { useGate, useServices } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
@@ -41,7 +41,8 @@ interface Receipt {
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
-const CREATE_REASON = "Disabled: creating a workstream is not in this release (post-release, M7-07).";
+const CREATE_REASON = "Disabled: this daemon does not offer workstream creation (post-release, M7-07).";
+const OFFLINE_CREATE_REASON = "Disabled: the daemon is not connected. Create is offered once this connection is live.";
 const DEPENDENCY_REASON =
   "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
 const LIST_REASON =
@@ -68,9 +69,80 @@ export function WorkstreamsView() {
   const [title, setTitle] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [createError, setCreateError] = useState<string | null>(null);
+  const gate = useGate();
+  const fixtureSource = surfaces.workstreams.provenance.kind === "fixture";
+  // Live create is `workstreams.create`, offered only when this connection negotiated the `workstreams`
+  // capability (the same `gate.can` check the other daemon writes use). Fixture mode simulates instead.
+  const createOffered = !fixtureSource && gate.can("workstreams");
+  const stale = model.status === "ready" && model.stale;
+  const writeOff = mutations.busy || stale;
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (title.trim() === "") return;
+    if (!fixtureSource) {
+      const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
+        surfaces.workstreams.create(title.trim()),
+      );
+      if (made) {
+        setTitle("");
+        setSelected(made.id);
+        setFilter("");
+      }
+      return;
+    }
+    setCreateError(null);
+    try {
+      const receipt = await surfaces.workstreams.simulateCreate(title.trim());
+      setReceipts((all) => [{ provenance: receipt.provenance, notice: receipt.notice }, ...all]);
+      setTitle("");
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Simulation failed.");
+    }
+  };
+
+  const createForm = (
+    <form className="ws-create" onSubmit={create} aria-label="Create workstream">
+      <label>
+        New workstream title
+        <input
+          type="text"
+          value={title}
+          disabled={writeOff}
+          onChange={(event) => setTitle(event.target.value)}
+          aria-describedby={stale ? reasonId : undefined}
+        />
+      </label>
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={writeOff || title.trim() === ""}
+        aria-describedby={stale ? reasonId : undefined}
+      >
+        {fixtureSource ? "Create workstream (simulated)" : "Create workstream"}
+      </Button>
+      {stale && (
+        <span className="ws-reason" id={reasonId}>
+          {STALE_REASON}
+        </span>
+      )}
+    </form>
+  );
+  const createDisabled = (
+    <div className="ws-head-reason">
+      <Button disabled aria-describedby={`${reasonId}-create`}>
+        Create workstream
+      </Button>
+      <p className="ws-reason" id={`${reasonId}-create`}>
+        {gate.connected ? CREATE_REASON : OFFLINE_CREATE_REASON}
+      </p>
+    </div>
+  );
+  // Fixture mode shows its simulated form once the list is ready, as before. Live mode always shows the action.
+  const showAction = model.status === "ready" || !fixtureSource;
+  const headerAction: ReactNode = !showAction ? null : fixtureSource || createOffered ? createForm : createDisabled;
 
   let body;
-  let headerAction: ReactNode = null;
   if (model.status === "loading") {
     body = <p role="status">Loading workstreams…</p>;
   } else if (model.status === "offline") {
@@ -103,57 +175,6 @@ export function WorkstreamsView() {
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
     const marker = fixture ? <PlaceholderBadge provenance={model.provenance} compact /> : null;
     const live = !fixture;
-    const writeOff = mutations.busy || model.stale;
-
-    const create = async (event: FormEvent) => {
-      event.preventDefault();
-      if (title.trim() === "") return;
-      setCreateError(null);
-      try {
-        const receipt = await surfaces.workstreams.simulateCreate(title.trim());
-        setReceipts((all) => [{ provenance: receipt.provenance, notice: receipt.notice }, ...all]);
-        setTitle("");
-      } catch (error) {
-        setCreateError(error instanceof Error ? error.message : "Simulation failed.");
-      }
-    };
-
-    headerAction = fixture ? (
-      <form className="ws-create" onSubmit={create} aria-label="Create workstream">
-        <label>
-          New workstream title
-          <input
-            type="text"
-            value={title}
-            disabled={writeOff}
-            onChange={(event) => setTitle(event.target.value)}
-            aria-describedby={model.stale ? reasonId : undefined}
-          />
-        </label>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={writeOff || title.trim() === ""}
-          aria-describedby={model.stale ? reasonId : undefined}
-        >
-          Create workstream (simulated)
-        </Button>
-        {model.stale && (
-          <span className="ws-reason" id={reasonId}>
-            {STALE_REASON}
-          </span>
-        )}
-      </form>
-    ) : (
-      <div className="ws-head-reason">
-        <Button disabled aria-describedby={`${reasonId}-create`}>
-          Create workstream
-        </Button>
-        <p className="ws-reason" id={`${reasonId}-create`}>
-          {CREATE_REASON}
-        </p>
-      </div>
-    );
 
     body = (
       <>
