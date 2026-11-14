@@ -25,8 +25,8 @@ export const WINDOWS = {
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
   // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
-  // git-lib: 49 = 47 portable tests + 2 cfg(windows) tests (macOS: 47 + 2 cfg(unix) = 49).
-  gitLib: { passed: 49, sequence: [49] },
+  // git-lib: 58 = 56 portable tests + 2 cfg(windows) tests (macOS: 56 + 2 cfg(unix) = 58).
+  gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 3, sequence: [3] },
   // 4 portable tests + 7 in the cfg(windows) module (the DACL tests; the inherited-ACE regression for
   // `.orchestrator.lock` is one of them).
@@ -55,9 +55,9 @@ export const MACOS = {
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   daemon: { passed: 209, ignored: 1, sequence: [176, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 985, ignored: 2 },
+  workspace: { passed: 997, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
-  gitLib: { passed: 49, sequence: [49] },
+  gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
