@@ -176,6 +176,44 @@ fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+/// What a killed CLI left behind: its status and output, then the files under
+/// its `cli` and `tasks` directories (each capped), so a deadline miss names
+/// the step that was still running.
+fn blocked_report(fixture: &Fixture, output: &Output) -> String {
+    let mut report = format!(
+        "CLI status: {:?}\n--- stdout\n{}\n--- stderr\n{}\n",
+        output.status,
+        stdout(output),
+        stderr(output)
+    );
+    for dir in ["cli", "tasks"] {
+        describe_tree(&fixture.data.join(dir), &mut report);
+    }
+    report
+}
+
+fn describe_tree(dir: &Path, report: &mut String) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut paths: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
+    paths.sort();
+    for path in paths {
+        if path.is_dir() {
+            describe_tree(&path, report);
+            continue;
+        }
+        let contents = match fs::read(&path) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes)
+                .chars()
+                .take(2000)
+                .collect(),
+            Err(error) => format!("<unreadable: {error}>"),
+        };
+        report.push_str(&format!("--- {}\n{contents}\n", path.display()));
+    }
+}
+
 fn assert_success(output: &Output, what: &str) {
     assert!(
         output.status.success(),
@@ -641,7 +679,7 @@ fn run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated() {
     fs::write(&legacy, legacy_bytes).unwrap();
 
     let release = fixture.root.path().join("identity-release");
-    let child = run_command(&fixture, "ident-run", "edit")
+    let mut child = run_command(&fixture, "ident-run", "edit")
         .env("FAKE_AGENT_RELEASE", &release)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -657,10 +695,15 @@ fn run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated() {
                 break;
             }
         }
-        assert!(
-            Instant::now() < deadline,
-            "identity not recorded before deadline"
-        );
+        if Instant::now() >= deadline {
+            // Stop the CLI and report what it had done, so a miss shows the blocked step.
+            let _ = child.kill();
+            let blocked = child.wait_with_output().expect("collect CLI output");
+            panic!(
+                "identity not recorded before deadline\n{}",
+                blocked_report(&fixture, &blocked)
+            );
+        }
         thread::sleep(Duration::from_millis(20));
     }
     fs::write(&release, "release").unwrap();

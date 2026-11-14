@@ -130,7 +130,12 @@ impl Bridge {
                         (json!({"kind": "closed", "reason": reason.code()}), true)
                     }
                 };
-                if !emit(payload) || closed {
+                // Mark the connection dead before the close is emitted: a `send` made in
+                // response to the `closed` payload must already be refused.
+                if closed {
+                    dead.store(true, Ordering::Release);
+                }
+                if !emit(payload) {
                     dead.store(true, Ordering::Release);
                 }
             })

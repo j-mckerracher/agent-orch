@@ -274,6 +274,7 @@
   "command_line::tests::the_windows_limit_is_exact_at_the_boundary",
   "committed_worktree_branch_is_classified_branch_moved",
   "concurrent_approve_and_request_changes_never_both_succeed",
+  "concurrent_first_opens_all_succeed_and_record_each_migration_once",
   "concurrent_takeovers_have_one_holder_and_one_named_conflict",
   "concurrent_writers_cannot_both_win_the_same_revision",
   "configured_global_limit_counts_running_and_started_tasks",

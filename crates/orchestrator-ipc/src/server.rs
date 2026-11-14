@@ -74,15 +74,7 @@ impl Server {
         let mut failure = None;
         while !state.stopping.load(Ordering::Acquire) {
             reap_finished(&mut workers);
-            let idle = state.live_subscriptions.load(Ordering::Acquire) == 0
-                && state.in_flight.load(Ordering::Acquire) == 0
-                && state
-                    .last_request
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .elapsed()
-                    >= state.idle_timeout;
-            if idle {
+            if state.is_idle() {
                 if state
                     .handler
                     .as_ref()

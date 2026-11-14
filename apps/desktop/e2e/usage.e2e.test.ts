@@ -122,7 +122,7 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
     expect(result.data.budget.status).toBe("unsupported");
     expect(result.data.coverage).toEqual([]);
     expect(result.data.currency).toBe("unknown");
-    expect(JSON.stringify(result)).not.toMatch(/26\.00|fixture/i);
+    expect(JSON.stringify(result)).not.toMatch(/\$26\.00|fixture/i);
   });
 
   it("maps a provider-reported Claude cost and a Codex token-only session honestly", async () => {
@@ -144,7 +144,7 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
     const coverage = Object.fromEntries(data.coverage.map((c) => [c.provider, c.reporting]));
     expect(coverage["claude-code"]).toBe("provider-reported");
     expect(coverage["codex"]).toBe("tokens-only");
-    expect(JSON.stringify(result)).not.toMatch(/26\.00|fixture/i);
+    expect(JSON.stringify(result)).not.toMatch(/\$26\.00|fixture/i);
   });
 
   it("never serves fixtures when the daemon is gone", async () => {

@@ -224,32 +224,42 @@ fn run(
     mut on_event: impl FnMut(RelayEvent),
 ) {
     let mut frames = Reassembler::default();
-    let reason = 'serve: loop {
-        loop {
-            match queue.try_recv() {
-                Ok(Command::Send(message)) => {
-                    if stream.set_timeouts(WRITE_TIMEOUT).is_err()
-                        || protocol::write(&mut stream, &message).is_err()
-                    {
-                        break 'serve CloseReason::Io;
-                    }
-                }
-                Ok(Command::Close) | Err(TryRecvError::Disconnected) => {
-                    break 'serve CloseReason::Local;
-                }
-                Err(TryRecvError::Empty) => break,
-            }
-        }
+    // Only a write changes the socket's timeout; the poll timeout is restored after it. The
+    // poll loop never reconfigures the socket: on macOS setsockopt fails with EINVAL once the
+    // daemon has closed the stream, and that failure used to end the relay as a local I/O
+    // error instead of a remote close.
+    let reason = 'serve: {
         if stream.set_timeouts(POLL_TIMEOUT).is_err() {
-            break CloseReason::Io;
+            break 'serve CloseReason::Io;
         }
-        match frames.poll(&mut stream) {
-            Poll::Frame(message) => on_event(RelayEvent::Message(message)),
-            Poll::Idle => {}
-            Poll::Closed(reason) => break reason,
+        loop {
+            loop {
+                match queue.try_recv() {
+                    Ok(Command::Send(message)) => {
+                        if stream.set_timeouts(WRITE_TIMEOUT).is_err()
+                            || protocol::write(&mut stream, &message).is_err()
+                            || stream.set_timeouts(POLL_TIMEOUT).is_err()
+                        {
+                            break 'serve CloseReason::Io;
+                        }
+                    }
+                    Ok(Command::Close) | Err(TryRecvError::Disconnected) => {
+                        break 'serve CloseReason::Local;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+            match frames.poll(&mut stream) {
+                Poll::Frame(message) => on_event(RelayEvent::Message(message)),
+                Poll::Idle => {}
+                Poll::Closed(reason) => break 'serve reason,
+            }
         }
     };
     drop(stream);
+    // The command queue closes before the close is announced: a `send` made in response to
+    // `Closed` is refused, not queued behind a worker that has stopped reading.
+    drop(queue);
     on_event(RelayEvent::Closed(reason));
 }
 
