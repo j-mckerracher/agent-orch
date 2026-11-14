@@ -139,7 +139,11 @@ impl OpenLock {
         options.read(true).write(true).create(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        let file = options.open(sidecar_path(database, "-open-lock"))?;
+        let path = sidecar_path(database, "-open-lock");
+        let file = options.open(&path)?;
+        // Owner-only and protected, like the store file: a new file otherwise
+        // inherits the directory's ACL, and p12-windows-checks rejects that.
+        orchestrator_private_fs::restrict_to_owner(&path)?;
         file.lock()?;
         Ok(Self { _file: file })
     }
