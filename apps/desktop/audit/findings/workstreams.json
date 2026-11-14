@@ -1,0 +1,985 @@
+{
+  "scope": "workstreams",
+  "auditor_notes": "Spec authority: agent-orch-run docs/ui/wireframe.md (HEAD 9312e34d5, M7-00 revision 98ab11f8f). Captures: audit/out (dark theme). Live checks ran on a Vite server on port 5847 (re-verified after the coordinator's server-restart notice). Checks: /tmp/ws-audit/ws-checks.spec.ts (19 defect checks, all FAIL on current build).",
+  "coverage": [
+    {
+      "capture": "app/agents.empty.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'No workstreams exist yet' (finding 21). Main content is out of this scope."
+    },
+    {
+      "capture": "app/agents.loading.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/agents.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/agents.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/agents.populated.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/agents.populated.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/coordinator.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/coordinator.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/preview.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/preview.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/project-review.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/project-review.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/project.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/project.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/projects.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/projects.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.empty.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'No workstreams exist yet' (finding 21). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.loading.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.populated.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/review.populated.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/task.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/task.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/tasks.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/tasks.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.empty.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'No workstreams exist yet' (finding 21). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.inspector-toggled.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.light.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.loading.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.offline.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 'Loading workstreams…' / 'workstreams: not available' (findings 05, 20). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.populated.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.populated.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.populated.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workspace.target-nomatch.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree only (ARIA): tree shows 3 workstream rows (findings 01, 03, 17, 18). Main content is out of this scope."
+    },
+    {
+      "capture": "app/workstreams.empty.desktop",
+      "reviewed": true,
+      "note": "Empty state: finding 21 (gap). Create form remains. Tree copy 'No workstreams exist yet' (21)."
+    },
+    {
+      "capture": "app/workstreams.loading.desktop",
+      "reviewed": true,
+      "note": "Loading state: finding 20 (gap). Tree heading 'workstreams: not available'."
+    },
+    {
+      "capture": "app/workstreams.offline.desktop",
+      "reviewed": true,
+      "note": "Offline: finding 05 (defect). Main and tree both say 'Loading workstreams…'."
+    },
+    {
+      "capture": "app/workstreams.populated.desktop",
+      "reviewed": true,
+      "note": "Full review at 1440: sidebar tree (finding 01, 03 n/a, 10, 17, 18, 19, 30), list card (04, 11, 29), detail header (07), objective and gates (23), graph (24), tabs (08), S6 (09), table (13), create form (06), eyebrow (14), purpose note (16), bulk preview and shared context (25, 26), placeholder labels (27), disabled controls (28), plan editing (12). Layout from layout.json."
+    },
+    {
+      "capture": "app/workstreams.populated.mobile",
+      "reviewed": true,
+      "note": "Full review at 760: tree spill (03), list one column (15), text dependency fallback replaces SVG (matches wireframe), table scrolls horizontally inside its wrapper (matches wireframe)."
+    },
+    {
+      "capture": "app/workstreams.populated.tablet",
+      "reviewed": true,
+      "note": "Full review at 960: list stacked above detail (02), tree rows below the fold (01), tree heading and plan editing as desktop."
+    },
+    {
+      "capture": "wf/agents.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/agents.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/agents.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/review.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/review.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/review.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workspace.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workspace.inspector-open.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workspace.mobile",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workspace.tablet",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workspace.target-nomatch.desktop",
+      "reviewed": true,
+      "note": "Sidebar tree (ARIA): 10 workstream groups, first open. Main content of this screen is out of this scope."
+    },
+    {
+      "capture": "wf/workstreams.desktop",
+      "reviewed": true,
+      "note": "Wireframe reference at 1440: two-column master/detail, tree with 10 groups (1 open, 4 workers)."
+    },
+    {
+      "capture": "wf/workstreams.mobile",
+      "reviewed": true,
+      "note": "Wireframe reference at 760: tree max-height 260 with scroll (finding 03); graph text replaces SVG."
+    },
+    {
+      "capture": "wf/workstreams.tablet",
+      "reviewed": true,
+      "note": "Wireframe reference at 960: list 145 px beside detail 568 px (finding 02)."
+    }
+  ],
+  "findings": [
+    {
+      "id": "workstreams-01",
+      "title": "Sidebar workstream rows 2-3 are covered at desktop and sit below the fold at tablet",
+      "classification": "defect",
+      "severity": "high",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html line 13 (section.worker-tree: flex:1; min-height:120px; overflow:auto) and line 209 (section.worker-tree markup); /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 292 (tree \"scrolls independently\")",
+      "evidence": "app/workstreams.populated.desktop: tree rows 'Docs refresh' (y 787, h 28) and 'Build infrastructure' (y 815, h 46). Hit-test of a 9x3 grid over each row: 0% of points reach the row. Covering elements: BUTTON.ui-theme-toggle (16 of 27 points), SPAN (10), P.ambient-note (18). nav 'Workstreams' box 16,484,181x258 computed overflow:visible, height 257.5 px (fixed, no own scroll). aside.shell-sidebar clientHeight 765 equals scrollHeight 765, so the sidebar cannot scroll the rows into view. app/workstreams.populated.tablet (960x900): row 2 at y 887 is 9 of 27 points under the sidebar section; row 3 at y 915 is off-screen; sidebar clientHeight 749 equals scrollHeight 749. Wireframe desktop tree (wf/workstreams.desktop) is its own scroll container: 10 rows reachable inside a 458 px box.",
+      "justification": "",
+      "suspected_root_cause": "Hypothesis: the workstream nav in the shell sidebar has a fixed height and overflow:visible, so it does not scroll itself, and the shell's bottom Appearance block (shell-bottom, y 742) and the theme toggle overlap the spill-over rows. The wireframe gives the tree flex:1 with overflow:auto. Likely files: apps/desktop/src/ui/shell/WorkstreamTree.tsx, apps/desktop/src/ui/shell/SidebarNav.tsx, apps/desktop/src/ui/shell/shell.css (sidebar flex column).",
+      "check": "for bp of [\"desktop\",\"tablet\"]: openApp(page,\"#/workstreams\",\"populated\",bp); for n of [2,3]: row = page.getByRole(\"treeitem\",{name:/Workstream N of 3/}); receives = row.evaluate(el => { b=el.getBoundingClientRect(); t=document.elementFromPoint(b.x+b.width/2,b.y+b.height/2); return !!t && (el===t||el.contains(t)); }); expect(receives).toBe(true);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-02",
+      "title": "Tablet (960) stacks the workstream list above the objective detail instead of two columns",
+      "classification": "defect",
+      "severity": "high",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html CSS @media(max-width:1150px) .work-layout{grid-template-columns:145px minmax(0,1fr)}; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 421 (OX-X3 responsive 1150/960/760)",
+      "evidence": "wf/workstreams.tablet: .work-layout columns '145px 568px'; aside at x 207 (145 wide) beside detail at x 370 (568 wide), both at y 208. app/workstreams.populated.tablet: 'Workstream list' region at x 235, y 432, 675x333; 'Workstream Auth hardening' region at x 235, y 791 (below the list), 675 wide. Objective header and graph start at y ~791, so the detail is pushed about one viewport down.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/workstreams.css lines 386-390: `@media (max-width: 960px) .ws-layout { grid-template-columns: minmax(0,1fr) }`. The wireframe keeps the master/detail split down to 761 px (its 1150 rule). Breakpoint threshold differs.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"tablet\"); list = getByRole(\"region\",{name:\"Workstream list\"}).boundingBox(); detail = getByRole(\"region\",{name:\"Workstream Auth hardening\"}).boundingBox(); expect(detail.y).toBeLessThan(list.y + list.height);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-03",
+      "title": "Mobile sidebar workstream tree spills out of its 260 px box and is clipped",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html CSS @media(max-width:760px) .worker-tree{max-height:260px;flex:none} with overflow:auto (line 13, line 15); markup line 209",
+      "evidence": "app/workstreams.populated.mobile: nav 'Workstreams' box y 377, h 260 (computed max-height 260px, overflow:visible). Tree rows 'Docs refresh' y 593 and 'Build infrastructure' y 621 (h 28); row 3 bottom 649 is 12 px below the nav bottom (637). The sidebar (static, overflow:auto) is 335 px tall with scrollHeight 565. Hit-test at scroll 0: 'Docs refresh' centre is covered by INPUT.top-search-input. Wireframe mobile: section.worker-tree box 260 px, overflow auto, so its rows scroll inside it.",
+      "justification": "",
+      "suspected_root_cause": "Same shell nav as finding 01: max-height is set on the nav but overflow is visible, so rows overflow the nav box instead of scrolling inside it. Hypothesis; check apps/desktop/src/ui/shell/SidebarNav.tsx and shell.css @media(max-width:760px).",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"mobile\"); nav = getByRole(\"navigation\",{name:\"Workstreams\"}).boundingBox(); row = getByRole(\"treeitem\",{name:/Workstream 3 of 3/}).boundingBox(); expect(row.y + row.height).toBeLessThanOrEqual(nav.y + nav.height + 1);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-04",
+      "title": "Tree and list group workstreams by fixture workstream entity, not by project",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 235 (heading '10 initiatives', 'Authentication · Objective O1'); line 209 tree 'Workstreams · 10'",
+      "evidence": "app/workstreams.populated.desktop tree items: 'Workstream 1 of 3: Auth hardening' title=fixture:project-alpha; 'Workstream 2 of 3: Docs refresh' title=fixture:project-alpha; 'Workstream 3 of 3: Build infrastructure' title=fixture:project-beta. Three groups over two projects. Tree group key is 'g:fixture:ws-auth'. The list card reads '3 workstreams' with PLACEHOLDER DATA (D9). Values are fixture data and are not the defect; the grouping basis is.",
+      "justification": "",
+      "suspected_root_cause": "Hypothesis: apps/desktop/src/ui/views/workstreams/model.ts builds groups from fixture Workstream entities (ws-auth, ws-docs, ...) that were pulled forward from the M7-07 entity work, instead of one group per project from projects.list (interim grouping). The spec's D-4 line says the interim grouping is by project.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); titles = getByRole(\"treeitem\",{name:/^Workstream \\d+ of/}).evaluateAll(els => els.map(e => e.getAttribute(\"title\"))); expect(new Set(titles).size).toBe(titles.length);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-05",
+      "title": "Offline: workstreams view and every sidebar tree say 'Loading workstreams…' instead of an error",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review",
+        "#/projects",
+        "#/project/:id"
+      ],
+      "states": [
+        "offline"
+      ],
+      "breakpoints": [
+        "desktop"
+      ],
+      "wireframe_ref": "wireframes.html has no offline state for this view; spec /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 53 (data empty/loading/error region shows the request outcome) and line 73 (empty/loading/error via C1); shell rule line 1 (connection strip persistent)",
+      "evidence": "app/workstreams.offline.desktop (no-bridge, 'Offline' in the connection strip): main status text 'Loading workstreams…' plus a Refresh button; sidebar heading 'Workstreams · workstreams: not available' and paragraph 'Loading workstreams…'. The same tree copy appears in 11 offline captures (workspace, agents, review, workstreams, projects, project, tasks, task, preview, coordinator, project-review). Loading text stays visible while the daemon is absent, so the view never reports the failed request.",
+      "justification": "",
+      "suspected_root_cause": "Hypothesis: the workstreams source keeps status 'loading' when the bridge is absent instead of mapping the connection failure to an unavailable/error outcome. Check apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx and the source hook in apps/desktop/src/ui/services.tsx.",
+      "check": "await openApp(page,\"#/workstreams\",\"offline\",\"desktop\"); await expect(page.getByText(\"Loading workstreams\")).toHaveCount(0);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-06",
+      "title": "'Create workstream' is a title form under the heading, not a header action",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated",
+        "empty"
+      ],
+      "breakpoints": [
+        "desktop"
+      ],
+      "wireframe_ref": "wireframes.html line 235 (.heading row: <span class=\"action\">Create workstream</span> at top right); /Users/mckerracher.joshua/Code/agent-orch/docs/operator-experience/operational-design.md line 356 (S4 ASCII: '[Create workstream]' in the header row)",
+      "evidence": "app/workstreams.populated.desktop: h1 'Workstreams' at y 215; form 'Create workstream' (label 'New workstream title' + button 'Create workstream (simulated)', disabled until a title is typed) at y 294, h 64. Button top is 111 px below the h1 top. wf/workstreams.desktop: 'Create workstream' action in the header row, right side, at the h1 level.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx renders <form className='ws-create'> between the heading and the body. Placement only; the disabled-until-title rule is reasonable.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); h1 = getByRole(\"heading\",{level:1,name:\"Workstreams\"}).boundingBox(); btn = getByRole(\"button\",{name:/Create workstream/}).boundingBox(); expect(Math.abs(btn.y - h1.y)).toBeLessThan(80);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-07",
+      "title": "Objective header lacks the wireframe's Objective eyebrow, state pill and plan-revision tag",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html article.card header: eyebrow 'Authentication · Objective O1', state pill 'Integration held' (class state warn), tags 'Project: API', 'Project: Desktop', 'Objective revision 3', 'Plan revision 7'; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 378 (OX-W3)",
+      "evidence": "app/workstreams.populated.desktop: detail header is h2 'Auth hardening' with PLACEHOLDER DATA (D9), then chips 'active', 'PROJECTS: FIXTURE:PROJECT-ALPHA', '3 TASKS', '1 Queued', '1 Running', '1 Succeeded'. No eyebrow, no status pill, and no text 'Plan revision' (getByText(/Plan revision/) not found). Objective-level 'Revision 3 · 1 of 2 gates verified' exists under 'Objectives'.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx: the detail header renders workstream-level data only. The objective card (wireframe's primary card) has no status pill or plan revision field.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByText(/Plan revision/)).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-08",
+      "title": "Workstream detail has no Tasks / Dependencies / Activity tab set; Activity is missing",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html '.tabs' row: Tasks (active), Dependencies, Milestones, Context, Deliverables, Activity; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 380 (OX-W5)",
+      "evidence": "app/workstreams.populated.desktop: no role=tablist or role=tab elements. Text 'Other views of this workstream (Milestones, Context, Deliverables, Activity) are not available yet.' Spec OX-W5 marks Tasks, Dependencies and Activity as 'existing'; only Milestones, Context and Deliverables are deferred.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx line ~446 (9312e34d5) renders a sentence instead of a tab set; Activity is not wired even though the spec marks it existing (events.subscribe).",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByRole(\"tab\",{name:\"Activity\"})).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-09",
+      "title": "'Dependency and resource detail' contextual panel (S6) is missing",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html <details> 'Dependency and resource detail · Contextual panel / S6' with Edit predecessors, Ask coordinator to regenerate subplan, Validate draft before apply; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 382 (OX-W7)",
+      "evidence": "app/workstreams.populated.desktop: no text 'Dependency and resource detail'. Only the 'Dependencies as text 2' disclosure under the graph. OX-W7 lists the read-only dependency detail and a validate-only proposal as 'existing (read, validate)'; only the edit and regenerate controls are missing.",
+      "justification": "",
+      "suspected_root_cause": "Not built in apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx; the existing 'Dependencies as text' disclosure covers only the graph text.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByText(\"Dependency and resource detail\")).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-10",
+      "title": "Sidebar 'Workstreams · N' heading is a plain mono label, not the bordered link box",
+      "classification": "defect",
+      "severity": "medium",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 43 (.worker-tree>h2 bordered box: border 1px #c8d5e4, border-left 3px blue, radius 6px, padding 10px 11px; link display:block); line 209 markup",
+      "evidence": "app/workstreams.populated.desktop: h2 'Workstreams · 3' rendered as 10px uppercase mono label with PLACEHOLDER badge; computed border-left-width of the link box is 0px (wireframe: 3px). wf/workstreams.desktop: same heading as a bordered 177x41 box at x 18, y 362.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/shell/WorkstreamTree.tsx heading markup and the shell sidebar CSS. Covered by the DPES-1105 sidebar branch, which adds the box styling to the same heading.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); box = getByRole(\"link\",{name:/Workstreams · 3/}).locator(\"xpath=..\"); expect(box.evaluate(e => getComputedStyle(e).borderLeftWidth)).toBe(\"3px\");",
+      "covered_by": "fix/DPES-1105_desktop-sidebar-dark-theme (2092efbf8)"
+    },
+    {
+      "id": "workstreams-11",
+      "title": "Workstream list card: 'N workstreams' wording, no status sub-lines, no Archive or save-view action",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html aside.card: h2 '10 initiatives', items with status sub-lines ('2 projects · contract conflict', 'Candidate ready', ...), '6 more initiatives / Filter / save view / organize', buttons Prioritize and Archive; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 377 (OX-W2 'N initiatives')",
+      "evidence": "app/workstreams.populated.desktop: card heading '3 workstreams' (PLACEHOLDER DATA D9); items show name and task count, only 'Docs refresh' has a sub-line ('suspended'). Buttons: Prioritize (disabled, with reason) only. No Archive button and no save-view or organize control. Spec OX-W2 marks Archive as missing, and rule 3 says unsupported actions are shown disabled with a reason, not left out.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx list card renders only Prioritize.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByRole(\"button\",{name:\"Archive\"})).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-12",
+      "title": "Plan-editing controls: 'Combine' and 'Change execution policy' are missing",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html actions row: 'Add / split / combine tasks', 'Remove eligible task', 'Reassign selected', 'Change execution policy'; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 384 (OX-W9 'Disabled with reason')",
+      "evidence": "app/workstreams.populated.desktop group 'Plan editing': buttons Add task, Split task, Remove task, Reassign (all disabled, each with the reason sentence). No Combine and no Change execution policy. OX-W9 lists all four wireframe actions as disabled with a reason.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx plan-editing group (about line 504) lists four actions, not the wireframe's set.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByRole(\"button\",{name:/combine/i})).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-13",
+      "title": "Task table splits 'Objective / project' into two columns",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html task table thead: Task | Objective / project | Task state | Assignment | Required next evidence; /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 381 (OX-W6)",
+      "evidence": "app/workstreams.populated.desktop: columnheaders Task, Project, Objective, Task state, Assignment, Required next evidence (6 columns; wireframe has 5). Row names also carry the suffix '(placeholder: no detail page)' and have no task IDs (T12, T13, T14 in the wireframe).",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx task table header and cells.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); headers = getByRole(\"columnheader\").allTextContents(); expect(headers).not.toContain(\"Project\");",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-14",
+      "title": "Page eyebrow reads 'ORCHESTRATION' and sits inline with the title",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated",
+        "empty",
+        "loading",
+        "offline"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html line 235: <div class=\"eyebrow\">Continuing initiatives / S4</div> above <h1>Workstreams</h1>",
+      "evidence": "app/workstreams.populated.desktop: paragraph 'Orchestration' sits on the same line as h1 (h1 x 372 at desktop; wireframe h1 x 246 with the eyebrow above it). Eyebrow text differs from the wireframe.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/WorkstreamsView.tsx header block (eyebrow rendered inline). Copy not in spec.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByText(\"Continuing initiatives\")).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-15",
+      "title": "Mobile workstream list is one column; wireframe uses two",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html CSS @media(max-width:760px) .work-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}",
+      "evidence": "app/workstreams.populated.mobile: list buttons '1. Auth hardening' and '2. Docs refresh' differ by 43.6 px in y (one column). wf/workstreams.mobile: 'Authentication' and 'Platform API' share a row (two columns).",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/views/workstreams/workstreams.css: list has no 2-column grid at 760 px.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"mobile\"); a = getByRole(\"button\",{name:/1\\. Auth hardening/}).boundingBox(); b = getByRole(\"button\",{name:/2\\. Docs refresh/}).boundingBox(); expect(Math.abs(a.y - b.y)).toBeLessThan(2);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-16",
+      "title": "Wireframe 'Purpose and rationale' paragraph is not rendered",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html p.screen-purpose at the end of section#workstreams (CSS .screen-purpose: border-top, margin-top 20px, visible)",
+      "evidence": "wf/workstreams.desktop: visible paragraph 'Purpose and rationale: organize outcomes across repositories, expose parallelism, and change plans without losing context...' at the foot of the view. app/workstreams.populated.desktop: no such text. No other app view renders it either.",
+      "justification": "",
+      "suspected_root_cause": "Likely a design-rationale annotation of the wireframe that was never ported. Low impact; decide whether product UI should carry it.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByText(/Purpose and rationale/)).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-17",
+      "title": "Sidebar tree rows show a disclosure chevron glyph the wireframe does not",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 46 (.worker-tree details>summary::-webkit-details-marker{display:none}; summary has no glyph); markup line 209",
+      "evidence": "app/workstreams.populated.desktop: each group row starts with a span.ws-tree-chevron containing '▾' (open) or '▸' (closed). wf/workstreams.desktop rows have no glyph.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/shell/WorkstreamTree.tsx renders an explicit chevron span.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); expect(page.locator(\".ws-tree-chevron\")).toHaveCount(0);",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-18",
+      "title": "Sidebar tree region accessible name differs from the wireframe",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 209: section aria-label=\"Workstreams and individual workers\"",
+      "evidence": "app/workstreams.populated.desktop ARIA: navigation 'Workstreams' (tree role aria-label 'Workstreams'). wf/workstreams.desktop ARIA: region 'Workstreams and individual workers'.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/shell/SidebarNav.tsx / WorkstreamTree.tsx aria-label.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); await expect(page.getByRole(\"navigation\",{name:\"Workstreams and individual workers\"})).toBeVisible();",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-19",
+      "title": "Worker rows lack the wireframe's green bullet marker",
+      "classification": "defect",
+      "severity": "low",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop"
+      ],
+      "wireframe_ref": "wireframes.html CSS .workers .worker-name:before (6px dot, colour --green); markup line 209 (ul.workers li span.worker-name)",
+      "evidence": "wf/workstreams.desktop: a dot precedes each worker name. app/workstreams.populated.desktop: getComputedStyle(.ws-tree-task-name, '::before').content is 'none' for the first child row.",
+      "justification": "",
+      "suspected_root_cause": "apps/desktop/src/ui/shell/WorkstreamTree.tsx and workstreams.css do not add a ::before marker to child rows.",
+      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"desktop\"); content = page.locator(\".ws-tree-task-name\").first().evaluate(el => getComputedStyle(el,\"::before\").content); expect(content).not.toBe(\"none\");",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-20",
+      "title": "Loading state: sidebar heading reads 'workstreams: not available' while loading, main has no skeleton",
+      "classification": "wireframe-gap",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "loading"
+      ],
+      "breakpoints": [
+        "desktop"
+      ],
+      "wireframe_ref": "none: the wireframe defines no loading state for workstreams",
+      "evidence": "app/workstreams.loading.desktop: sidebar heading 'Workstreams · workstreams: not available', paragraph 'Loading workstreams…'; main: heading 'Workstreams', status 'Loading workstreams…', no skeleton and no list. Device strip reads 'CPU loading…'. Looks unfinished: the heading wording says 'not available' during a normal load.",
+      "justification": "Spec: /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 53 and 73 require a loading outcome for these regions; the visual treatment is not specified.",
+      "suspected_root_cause": "Heading copy falls back to the 'not available' template while the count is unknown (WorkstreamTree.tsx / WorkstreamsView.tsx count text).",
+      "check": "n/a (gap: no wireframe reference to assert against)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-21",
+      "title": "Empty state: sidebar and main say there are no workstreams, copy points at the current view",
+      "classification": "wireframe-gap",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "empty"
+      ],
+      "breakpoints": [
+        "desktop"
+      ],
+      "wireframe_ref": "none: the wireframe shows no empty state",
+      "evidence": "app/workstreams.empty.desktop: sidebar 'Workstreams · 0 Placeholder' with paragraph 'No workstreams exist yet. Create one in the Workstreams view.' (shown on the Workstreams view itself). Main: 'No workstreams' and 'There are no placeholder workstreams.', with the create form still visible (button disabled until a title is typed). Reads cleanly; the sidebar sentence is redundant on this view.",
+      "justification": "Spec: /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 53 and 73 (empty region); visual treatment not specified.",
+      "suspected_root_cause": "Sidebar empty copy is route-agnostic.",
+      "check": "n/a (gap)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-22",
+      "title": "App-only text fallback disclosure and section headings inside the detail",
+      "classification": "wireframe-gap",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet"
+      ],
+      "wireframe_ref": "wireframes.html CSS .graph-text{display:none} above 760 px (text fallback only in the mobile block); the wireframe uses tabs instead of section headings",
+      "evidence": "app/workstreams.populated.desktop: a collapsed disclosure 'Dependencies as text 2' under the graph at all widths; section headings 'Objectives', 'Task dependencies' and 'Tasks' (ui-panel-header). The wireframe shows the text fallback only at 760 px and has no such headings. Looks tidy and does not break the layout.",
+      "justification": "Spec: /Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 297 (text fallback under 761 px) and OX-W4 line 379 (equivalent predecessor/readiness table required). Text at desktop is an accessibility addition the spec does not forbid.",
+      "suspected_root_cause": "",
+      "check": "n/a (gap)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-23",
+      "title": "Acceptance gate list under each objective (verified / pending / failed chips)",
+      "classification": "wireframe-gap",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html objective text only: '2 of 5 acceptance gates verified. Remaining gates require ...'",
+      "evidence": "app/workstreams.populated.desktop: list 'Acceptance gates of Harden session handling' with items 'verified Threat model reviewed' and 'pending Penetration findings closed'; 'failed Session guide published' under the second objective. The wireframe gives only the count. Reads clearly.",
+      "justification": "Spec: /Users/mckerracher.joshua/Code/agent-orch/docs/operator-experience/operational-design.md S4 (line 350) 'objective and acceptance evidence precede scheduling activity'; gate detail is not drawn in the wireframe.",
+      "suspected_root_cause": "",
+      "check": "n/a (gap)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-24",
+      "title": "Dependency graph is task-level, not the objective-level plan drawing",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 235 svg 'Authentication objective dependency plan' (architecture -> Backend API / Frontend UI -> Integration)",
+      "evidence": "app/workstreams.populated.desktop: 'Dependency graph drawing' shows Rotate signing keys -> Add refresh-token expiry -> Document the session model (task chain). Mobile: SVG not rendered, text fallback shown (matches the wireframe's <760 rule).",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 379 (OX-W4: 'existing (task level) / missing (objective level)'); apps/desktop/src/ui/views/workstreams/DependencyGraph.tsx line 11 ('Task-level dependency graph (OX-W4)'). Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-25",
+      "title": "Bulk action preview (12 tasks selected) is not shipped",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 235 'Bulk action preview · 12 tasks selected across workstreams'",
+      "evidence": "No 'Bulk action preview' heading in app/workstreams.populated.* ARIA.",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 245 (D-5: 'Defer: ... bulk operations') and line 383 (OX-W8: 'deferred (D-5)'). Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-26",
+      "title": "Shared context and downstream handoff preview is not shipped",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 235 details 'Shared context and downstream handoff · Later-scope preview'",
+      "evidence": "No 'Shared context' text in app/workstreams.populated.* ARIA; Context and Deliverables are covered by the 'not available yet' sentence (finding 08).",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 380 (OX-W5: Milestones, Context, Deliverables deferred) and line 245 (D-5). Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-27",
+      "title": "PLACEHOLDER DATA (D9) badges and the 'placeholder data, not a daemon record' notice",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated",
+        "empty",
+        "loading"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html has no badges (fixture-only element)",
+      "evidence": "Badges on the tree heading, list card, detail, objectives, dependency section, tasks, and the notice paragraph 'Workstreams, objectives, revisions and gates are placeholder data. Nothing here is a daemon record.'",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 472 (Fixture boundary rule 1: every fixture value carries a visible 'PLACEHOLDER DATA (D#)' badge), line 244 (D-4: 'labelled PLACEHOLDER DATA (D9)'), line 343 (OX-A4). Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-28",
+      "title": "Unsupported actions are shown disabled with a stated reason",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html actions: Prioritize, Revise objective, Add objective, Suspend new dispatch, Resolve contract decision, plan-editing buttons",
+      "evidence": "app/workstreams.populated.desktop: all those buttons are disabled, each followed by a reason sentence (e.g. 'Disabled: no daemon method orders workstreams, so Prioritize has nothing to call.'). 'Resolve contract decision' becomes a link only with a pending approval, per the spec's note.",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 474 (Fixture boundary rule 3), OX-W1 line 376, OX-W2 line 377, OX-W3 line 378 (Resolve contract decision links only to a real pending approval), OX-W9 line 384. Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-29",
+      "title": "Filter input and 'Showing 3 of 3' status are app-only",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 235 aside 'Filter / save view / organize' (text only, no input)",
+      "evidence": "app/workstreams.populated.desktop: searchbox 'Filter workstreams' and status 'Showing 3 of 3' under the list card.",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 377 (OX-W2: 'Project list as interim workstreams (D-4); local filter', status 'existing (derived, filter)').",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    },
+    {
+      "id": "workstreams-30",
+      "title": "Tree children are linked tasks; sub-row shows 'adapter · no session' or 'adapter · state'",
+      "classification": "intentional",
+      "routes": [
+        "#/workstreams",
+        "#/workspace",
+        "#/agents",
+        "#/review"
+      ],
+      "states": [
+        "populated"
+      ],
+      "breakpoints": [
+        "desktop",
+        "tablet",
+        "mobile"
+      ],
+      "wireframe_ref": "wireframes.html line 209 ul.workers li: name 'Backend API' with sub-line 'Codex · Running' (worker rows)",
+      "evidence": "app/workstreams.populated.desktop: child rows 'Rotate signing keys' (task state 'Succeeded' at right) with sub-line 'codex · no session' (no sessions recorded in fixture). Children are tasks, not sessions, and the state shown beside the name is the task state.",
+      "justification": "/Users/mckerracher.joshua/Code/agent-orch-run/docs/ui/wireframe.md line 244 (D-4: 'tasks as children'), line 343 (OX-A4: 'worker rows adapter · state', per recorded session). apps/desktop/src/ui/shell/WorkstreamTree.tsx lines ~70-73 (per-session 'adapter · state' rows; 'no session' when none). Commit 98ab11f8f docs(ui): record M7 UI decisions and revise wireframe (M7-00).",
+      "suspected_root_cause": "",
+      "check": "n/a (intentional)",
+      "covered_by": null
+    }
+  ]
+}
