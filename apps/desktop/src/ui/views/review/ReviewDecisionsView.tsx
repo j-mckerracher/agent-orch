@@ -5,9 +5,8 @@
 // its own <main> because the app shell already provides one. The queue lists every pending
 // approval from approvals.list across projects. Priority and latest response time come from the
 // D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon.
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ReviewClient } from "../../../review/client";
-import { evidenceBlockers, type ActionContext } from "../../../review/binding";
 import { createReviewClient } from "../../../review/client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "../../../review/daemonSources";
 import { createFixtureDaemonClient } from "../../../review/fixtureDaemon";
@@ -24,8 +23,10 @@ import { Badge, Button, Pill } from "../../theme";
 import { useServices, useSurface } from "../../services";
 import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
-import { SixFacts, deriveFacts } from "./SixFacts";
-import { indexMeta } from "./queue";
+import { DecisionTabs } from "./DecisionTabs";
+import { SixFactsRecord } from "./ReviewRecord";
+import { useWorkstreamOf } from "../../../review/workstreamOf";
+import { indexMeta, type TabId } from "./queue";
 import "./review-decisions.css";
 
 export interface ReviewDecisionsViewProps {
@@ -82,6 +83,8 @@ export function ReviewDecisionsView({
   newKey,
 }: ReviewDecisionsViewProps) {
   const { connection, surfaces } = useServices();
+  const [tab, setTab] = useState<TabId>("actionable");
+  const workstreamOf = useWorkstreamOf();
   const client = useMemo(
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [clientOverride, fixtureMode, connection],
@@ -123,26 +126,14 @@ export function ReviewDecisionsView({
       header: (state: ReviewState) => (
         <>
           <Heading state={state} />
+          <DecisionTabs state={state} tab={tab} onTab={setTab} />
           <ScopeRow />
         </>
       ),
-      queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} />,
-      facts: (state: ReviewState) =>
-        state.approval && (
-          <SixFacts
-            fixture={fixture}
-            facts={deriveFacts({
-              approval: state.approval,
-              task: state.task,
-              evidence: state.evidence,
-              delivery: state.mutation.delivery,
-              evidenceProblems: state.loading ? [] : evidenceBlockers(bindingContext(state)),
-            })}
-          />
-        ),
+      queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} tab={tab} />,
       behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
     }),
-    [meta, fixture],
+    [meta, fixture, tab],
   );
 
   return (
@@ -156,23 +147,11 @@ export function ReviewDecisionsView({
         newKey={newKey}
         session={session}
         embedded={slots}
+        workstreamOf={workstreamOf}
+        record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} />}
       />
     </div>
   );
-}
-
-/** Only `approval`, `evidence` and `diff` are read by evidenceBlockers; the rest is inert here. */
-function bindingContext(state: ReviewState): ActionContext {
-  return {
-    connected: true,
-    loading: false,
-    stale: false,
-    refreshRequired: false,
-    approval: state.approval,
-    task: state.task,
-    diff: state.diff,
-    evidence: state.evidence,
-  };
 }
 
 function Heading({ state }: { state: ReviewState }) {

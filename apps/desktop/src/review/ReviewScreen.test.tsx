@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createServices } from "../ui/createServices";
 import { createReviewClient } from "./client";
 import { createFixtureDaemonClient } from "./fixtureDaemon";
-import { ReviewScreen } from "./ReviewScreen";
+import { ReviewScreen, type ReviewScreenProps } from "./ReviewScreen";
 import {
   createFixtureChangeRequestSource,
   createFixtureReviewEvidenceSource,
@@ -22,7 +22,7 @@ interface Setup {
   evidence: ReviewEvidenceSource;
 }
 
-function setup(opts: { approvals?: Approval[]; scope?: { projectId?: string; taskId?: string }; fixtureEvidence?: boolean; changeSource?: ChangeRequestSource } = {}) {
+function setup(opts: { approvals?: Approval[]; scope?: { projectId?: string; taskId?: string }; fixtureEvidence?: boolean; changeSource?: ChangeRequestSource; record?: ReviewScreenProps["record"]; workstreamOf?: ReviewScreenProps["workstreamOf"] } = {}) {
   const approvals = opts.approvals ?? [approval()];
   const state = { list: [...approvals] };
   const client = makeClient({
@@ -55,6 +55,8 @@ function setup(opts: { approvals?: Approval[]; scope?: { projectId?: string; tas
       scope={opts.scope ?? { taskId: "task-1" }}
       onBack={onBack}
       newKey={() => `key-${++n}`}
+      record={opts.record}
+      workstreamOf={opts.workstreamOf}
     />,
   );
   return { client, state, approvals, onBack, changeSource, evidence, ...utils } satisfies Setup & Record<string, unknown>;
@@ -625,5 +627,37 @@ describe("fixture daemon demo mode", () => {
     await userEvent.click(reject());
     const receipt = await screen.findByText(/receipt from daemon/);
     expect(receipt.textContent).toContain("PLACEHOLDER DATA");
+  });
+});
+
+describe("six-fact record placement", () => {
+  it("renders the record after the diff and before the Decision actions", async () => {
+    setup({ record: () => <section aria-label="Record probe">Record probe</section> });
+    await ready();
+    const probe = screen.getByRole("region", { name: "Record probe" });
+    const diff = screen.getByRole("region", { name: "Diff" });
+    const decision = screen.getByRole("region", { name: "Decision" });
+    expect(diff.compareDocumentPosition(probe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(probe.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("candidate identity and actions", () => {
+  it("names the project and workstream in the candidate identity", async () => {
+    setup({ workstreamOf: () => "Authentication" });
+    await ready();
+    const identity = screen.getByRole("region", { name: "Candidate identity" });
+    await waitFor(() => expect(identity).toHaveTextContent("project-1"));
+    expect(identity).toHaveTextContent("Workstream");
+    expect(identity).toHaveTextContent("Authentication");
+  });
+
+  it("shows Request additional checks disabled with its reason, beside Request changes", async () => {
+    setup();
+    await ready();
+    const button = screen.getByRole("button", { name: "Request additional checks" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription("The daemon has no method to request more checks.");
+    expect(button.parentElement).toBe(screen.getByRole("button", { name: "Request changes" }).parentElement);
   });
 });

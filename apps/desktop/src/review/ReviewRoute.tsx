@@ -10,6 +10,9 @@ import { createReviewClient } from "./client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "./daemonSources";
 import { createFixtureDaemonClient } from "./fixtureDaemon";
 import { ReviewScreen } from "./ReviewScreen";
+import { DecisionBehavior } from "../ui/views/review/DecisionBehavior";
+import { SixFactsRecord } from "../ui/views/review/ReviewRecord";
+import { useWorkstreamOf } from "./workstreamOf";
 import { createFixtureChangeRequestSource, createFixtureReviewEvidenceSource } from "./sources";
 
 export interface ReviewRouteProps {
@@ -43,6 +46,7 @@ export function ReviewRoute({ projectId, taskId, query }: ReviewRouteProps) {
     [fixtureMode, changesScenario, connection],
   );
   const scope = useMemo(() => ({ projectId, taskId: taskId ?? undefined }), [projectId, taskId]);
+  const workstreamOf = useWorkstreamOf();
 
   return (
     <ReviewScreen
@@ -50,6 +54,13 @@ export function ReviewRoute({ projectId, taskId, query }: ReviewRouteProps) {
       evidenceSource={evidenceSource}
       changeRequestSource={changeRequestSource}
       scope={scope}
+      workstreamOf={workstreamOf}
+      record={(state) => (
+        <>
+          <SixFactsRecord state={state} fixture={client.provenance === "fixture"} />
+          <DecisionBehavior task={state.task} fixture={client.provenance === "fixture"} />
+        </>
+      )}
       onBack={(back) =>
         router.navigate(
           back.taskId
