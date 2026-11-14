@@ -18,10 +18,11 @@ const globalOption = (live: boolean): TargetOption => ({
   key: "global",
   target: GLOBAL_TARGET,
   label: "Global orchestrator",
-  scope: "All projects",
+  scope: "All workstreams · Cross-workstream coordination",
   placeholder: !live,
 });
 const POLL_MS = 1000;
+const COMPOSER_PLACEHOLDER = "Ask a question, redirect work, or discuss the plan…";
 const LIVE_COPY =
   "Messages are recorded by the daemon. A reply appears only if the daemon's conversation runtime produces one; nothing is simulated here.";
 const NOTE_COPY =
@@ -363,24 +364,24 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
           <NavLink to={{ name: "global", view: "workstreams" }} className="ws-chip-link">
             Show dependency plan
           </NavLink>
-          <Button variant="quiet" disabled aria-describedby={`${ids}-chips`}>
+          <NavLink to={{ name: "global", view: "review" }} className="ws-chip-link">
             Request review
-          </Button>
+          </NavLink>
           <span id={`${ids}-chips`} className="ws-small">
-            Escalate and review requests are not available: the daemon has no operation for them.
+            Escalate to Global is not available: the daemon has no operation for it.
           </span>
         </div>
       )}
 
       <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
-        <label className="ws-visually-hidden" htmlFor={`${ids}-draft`}>
+        <label className="ws-small" htmlFor={`${ids}-draft`}>
           Message {option.label}
         </label>
         <textarea
           id={`${ids}-draft`}
           rows={3}
           value={draft}
-          placeholder={`Message ${option.label}`}
+          placeholder={COMPOSER_PLACEHOLDER}
           aria-describedby={`${hintId} ${keysId}${blocked ? ` ${sendId}` : ""}`}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={onKeyDown}

@@ -319,13 +319,14 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.getAllByText(/notes, no reply/).length).toBeGreaterThan(0);
   });
 
-  it("keeps the send hint in persistent text, not in the placeholder", async () => {
+  it("shows the target as a visible composer label and a fixed placeholder; the send hint stays in persistent text", async () => {
     const fake = liveDaemon();
     const services = track(build({ fake }));
     const { user: _user } = await mountView(services, false);
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
-    expect(box.getAttribute("placeholder")).toBe("Message alpha coordinator");
+    expect(box.getAttribute("placeholder")).toBe("Ask a question, redirect work, or discuss the plan…");
+    expect(screen.getByText("Message alpha coordinator", { selector: "label" })).not.toHaveClass("ws-visually-hidden");
     expect(screen.getByText("Press Ctrl or Cmd + Enter to send.")).toBeInTheDocument();
   });
 
@@ -413,17 +414,35 @@ describe("workspace view, fixture mode", () => {
     expect(screen.getByText(/never sent anywhere/)).toBeInTheDocument();
   });
 
-  it("shows chips for project targets: the dependency plan is navigation, the rest are disabled with a reason", async () => {
+  it("shows chips for project targets: Escalate is disabled with a reason, the dependency plan chip navigates", async () => {
     const services = build();
     const { user } = await mountView(services);
     await screen.findByRole("heading", { name: /Global orchestrator/ });
     expect(screen.queryByRole("link", { name: "Show dependency plan" })).toBeNull();
     await pickTarget(user, /Docs refresh coordinator/);
     expect(await screen.findByRole("button", { name: "Escalate to Global" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Request review" })).toBeDisabled();
-    expect(screen.getByText(/not available: the daemon has no operation for them/)).toBeInTheDocument();
+    expect(screen.getByText("Escalate to Global is not available: the daemon has no operation for it.")).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "Show dependency plan" }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
+  });
+
+  it("opens Review & Decisions from the Request review chip", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    await screen.findByRole("heading", { name: /Global orchestrator/ });
+    await pickTarget(user, /Docs refresh coordinator/);
+    const review = await screen.findByRole("link", { name: "Request review" });
+    expect(review).toHaveAttribute("href", "#/review");
+    await user.click(review);
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review" });
+  });
+
+  it("gives the Global orchestrator the wireframe scope line", async () => {
+    const services = build();
+    await mountView(services);
+    expect(
+      await screen.findByText("All workstreams · Cross-workstream coordination", { selector: "p.ws-scope" }),
+    ).toBeInTheDocument();
   });
 });
 
