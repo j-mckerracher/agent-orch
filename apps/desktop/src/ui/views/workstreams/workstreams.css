@@ -131,6 +131,16 @@
   overflow-wrap: anywhere;
 }
 
+.ws-list-marker {
+  margin: 0 0 8px;
+}
+
+.ws-list-marker .ui-badge {
+  max-width: 100%;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .ws-row {
   display: flex;
   flex-wrap: wrap;
@@ -413,6 +423,28 @@
 
   .ws-view {
     padding: 16px 12px 24px;
+  }
+}
+
+/* Narrow list column (the 1150 px split): the marker badge stays on one line and items fit the column. */
+@media (max-width: 1150px) {
+  .ws-list-marker .ui-badge {
+    letter-spacing: 0;
+    padding: 2px 6px;
+  }
+
+  .ws-item {
+    flex-direction: column;
+  }
+
+  .ws-item small {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 1150px) and (min-width: 761px) {
+  .ws-items {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

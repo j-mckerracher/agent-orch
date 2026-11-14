@@ -330,6 +330,39 @@ test("agents and workstreams split columns follow the wireframe 1150 and 760 bre
   expect(await trackCount(".ws-items"), "workstream list is two columns at 760 px").toBe(2);
 });
 
+test("the workstream list badge stays on one line and item titles do not wrap per letter at 960 px", async ({ page }) => {
+  await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  await page.goto("/?fixture=1#/workstreams");
+  const badge = page.locator(".ws-list-marker .ui-badge");
+  await expect(badge).toBeVisible();
+
+  const lineHeight = parseFloat(await badge.evaluate((el) => getComputedStyle(el).lineHeight));
+  const box = await badge.boundingBox();
+  expect(box, "badge is laid out").toBeTruthy();
+  expect(box!.height, "badge is one line tall").toBeLessThanOrEqual(lineHeight * 1.5);
+  // The rendered text, not the box: a label wider than its box overflows visibly.
+  const textRight = await badge.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getBoundingClientRect().right;
+  });
+  const contentRight = await page.locator(".ws-list").evaluate((el) => {
+    const style = getComputedStyle(el);
+    return el.getBoundingClientRect().right - parseFloat(style.paddingRight);
+  });
+  expect(textRight, "badge text stays inside the list panel's content edge").toBeLessThanOrEqual(contentRight);
+  const itemRights = await page.locator(".ws-item").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right));
+  for (const right of itemRights) {
+    expect(right, "a list item stays inside the list panel").toBeLessThanOrEqual(contentRight + 1);
+  }
+
+  const titleLine = parseFloat(await page.locator(".ws-item-title").first().evaluate((el) => getComputedStyle(el).lineHeight));
+  const titles = await page.locator(".ws-item-title").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+  for (const height of titles) {
+    expect(height, "an item title wraps at words, not per letter").toBeLessThanOrEqual(titleLine * 3);
+  }
+});
+
 test("agents split is 1.1 to 1 at desktop width, with the first running task selected", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?fixture=1#/agents");

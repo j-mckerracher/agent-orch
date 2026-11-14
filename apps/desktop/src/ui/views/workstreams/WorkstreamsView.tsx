@@ -101,7 +101,7 @@ export function WorkstreamsView() {
     const needle = filter.trim().toLowerCase();
     const visible = groups.filter((group) => group.title.toLowerCase().includes(needle));
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
-    const marker = fixture ? <PlaceholderBadge provenance={model.provenance} /> : null;
+    const marker = fixture ? <PlaceholderBadge provenance={model.provenance} compact /> : null;
     const live = !fixture;
     const writeOff = mutations.busy || model.stale;
 
@@ -198,10 +198,10 @@ export function WorkstreamsView() {
                 </>
               }
               headingLevel={2}
-              actions={marker}
               className="ws-list"
               aria-label="Workstream list"
             >
+              {marker && <div className="ws-list-marker">{marker}</div>}
               <label className="ws-filter">
                 Filter workstreams
                 <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} />
