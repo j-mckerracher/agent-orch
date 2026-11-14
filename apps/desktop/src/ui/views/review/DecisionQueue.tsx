@@ -4,6 +4,7 @@ import type { ReviewState } from "../../../review/useReview";
 import { Badge, Button, EmptyState, Pill, type Tone } from "../../theme";
 import {
   KIND_LABEL,
+  PRIMARY_ACTION_LABEL,
   STATE_LABEL,
   TABS,
   approvalKind,
@@ -41,6 +42,21 @@ function MetaLine({ approval, meta }: { approval: Approval; meta: QueueMeta }) {
   );
 }
 
+/**
+ * Partial grouping receipt (review-and-app-only-06). The daemon has no grouping key, so the group count
+ * is "not available". Raw requests and independent decisions are counted from the approvals listed here.
+ */
+function GroupingReceipt({ state }: { state: ReviewState }) {
+  const rawRequests = state.items.length;
+  const independent = state.items.filter((a) => a.state.state === "requested").length;
+  return (
+    <p className="rd-receipt">
+      Groups: not available · {rawRequests} raw request{rawRequests === 1 ? "" : "s"} · {independent} independent decision
+      {independent === 1 ? "" : "s"}
+    </p>
+  );
+}
+
 export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: QueueMeta; tab: TabId }) {
   const current = TABS.find((t) => t.id === tab) ?? TABS[0];
   const shown = filterByTab(tab, state.items);
@@ -53,6 +69,8 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
           Refresh
         </Button>
       </header>
+
+      {state.listState === "ready" && <GroupingReceipt state={state} />}
 
       <div role="tabpanel" id="rd-tabpanel" aria-labelledby={`rd-tab-${tab}`} className="rd-tabpanel">
         <p className="rd-note">{current.description}</p>
@@ -70,7 +88,7 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
             {shown.map((approval) => {
               const selected = state.approval?.id === approval.id;
               return (
-                <li key={approval.id}>
+                <li key={approval.id} className="rd-row-item">
                   <button
                     type="button"
                     className="rd-row"
@@ -87,6 +105,9 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
                     </span>
                     <MetaLine approval={approval} meta={meta} />
                   </button>
+                  <Button className="rd-row-action" onClick={() => state.select(approval.id)}>
+                    {PRIMARY_ACTION_LABEL}
+                  </Button>
                 </li>
               );
             })}

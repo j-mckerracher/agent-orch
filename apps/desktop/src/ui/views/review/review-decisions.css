@@ -263,6 +263,15 @@
   background: var(--blue-bg);
 }
 
+.rd-row-item {
+  display: grid;
+  gap: 6px;
+}
+
+.rd-row-action {
+  justify-self: end;
+}
+
 .rd-row-title {
   display: flex;
   flex-wrap: wrap;
@@ -402,5 +411,11 @@
   margin: 0 0 10px;
   padding-left: 20px;
   font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.review-embedded .rd-receipt {
+  margin: 0 0 8px;
+  color: var(--subtle);
   font-size: 12px;
 }

@@ -63,6 +63,13 @@ export const STATE_LABEL: Record<Approval["state"]["state"], string> = {
   superseded: "Superseded",
 };
 
+/**
+ * OX-R3 per-row primary action. Every daemon approval is an exact-action decision, so each row
+ * opens it for review. "Compare proposals" and "Inspect attempts" need alternatives or repair
+ * attempts linked to an approval, which the daemon does not provide.
+ */
+export const PRIMARY_ACTION_LABEL = "Review exact action";
+
 export const KIND_LABEL: Record<string, string> = {
   LocalReviewMerge: "Local review merge",
   PullRequestCreate: "Pull request creation",

@@ -119,6 +119,22 @@ describe("Review & Decisions view", () => {
     expect(within(section).getByText("And 2 more not listed.")).toBeTruthy();
   });
 
+  it("shows a partial grouping receipt: groups not available, raw requests and independent decisions counted", async () => {
+    liveSetup();
+    await screen.findByText("2 independent decisions");
+    expect(within(queue()).getByText(/Groups: not available · 2 raw requests · 2 independent decisions/)).toBeTruthy();
+  });
+
+  it("gives each queue row its primary action, which opens that candidate", async () => {
+    const { client } = liveSetup();
+    await screen.findByText("2 independent decisions");
+    const actions = within(queue()).getAllByRole("button", { name: "Review exact action" });
+    expect(actions).toHaveLength(within(queue()).getAllByRole("button", { name: /^Task / }).length);
+    await userEvent.click(actions[1]);
+    await waitFor(() => expect(screen.getByRole("region", { name: "Candidate identity" })).toHaveTextContent("approval-2"));
+    expect(client.callsOf("tasks.get").map((p) => p.task_id)).toContain("task-2");
+  });
+
   it("selecting a queue row loads that candidate's context", async () => {
     const { client } = liveSetup();
     await screen.findByText("2 independent decisions");
