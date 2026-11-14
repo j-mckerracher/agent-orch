@@ -5,8 +5,8 @@ use crate::{Health, IpcError, IpcEvent, RpcError, RpcHandler};
 use serde_json::{json, Value};
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 pub(crate) struct State {
@@ -15,13 +15,10 @@ pub(crate) struct State {
     pub(crate) started: Instant,
     pub(crate) idle_timeout: Duration,
     pub(crate) stream_timeout: Duration,
-    pub(crate) last_request: Mutex<Instant>,
-    /// Authenticated connections whose event subscription is still delivering.
-    /// While any exists the server is in use and must not idle out.
-    pub(crate) live_subscriptions: AtomicUsize,
-    /// Handler calls that have started and not finished. A call that outlasts
-    /// the idle timeout must not let the server exit under it.
-    pub(crate) in_flight: AtomicUsize,
+    /// Idle bookkeeping, read and changed under one lock so the idle decision
+    /// sees a consistent state: a count reaching zero and the idle clock
+    /// restarting are a single step.
+    activity: Mutex<Activity>,
     pub(crate) stopping: AtomicBool,
     pub(crate) handler: Option<Arc<dyn RpcHandler>>,
     pub(crate) capabilities: Vec<Capability>,
@@ -55,21 +52,53 @@ impl State {
             started,
             idle_timeout,
             stream_timeout,
-            last_request: Mutex::new(started),
-            live_subscriptions: AtomicUsize::new(0),
-            in_flight: AtomicUsize::new(0),
+            activity: Mutex::new(Activity {
+                last_request: started,
+                live_subscriptions: 0,
+                in_flight: 0,
+            }),
             stopping: AtomicBool::new(false),
             handler,
             capabilities,
         }
     }
 
-    pub(crate) fn touch(&self) {
-        *self
-            .last_request
+    fn lock_activity(&self) -> MutexGuard<'_, Activity> {
+        self.activity
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+            .unwrap_or_else(|error| error.into_inner())
     }
+
+    pub(crate) fn touch(&self) {
+        self.lock_activity().last_request = Instant::now();
+    }
+
+    /// Changes the counts and restarts the idle clock in one critical section.
+    fn change_activity(&self, change: impl FnOnce(&mut Activity)) {
+        let mut activity = self.lock_activity();
+        change(&mut activity);
+        activity.last_request = Instant::now();
+    }
+
+    /// True when nothing is in use and the idle period has passed since the
+    /// last activity.
+    pub(crate) fn is_idle(&self) -> bool {
+        let activity = self.lock_activity();
+        activity.live_subscriptions == 0
+            && activity.in_flight == 0
+            && activity.last_request.elapsed() >= self.idle_timeout
+    }
+}
+
+/// Idle bookkeeping for [`State`]; see `State::activity`.
+struct Activity {
+    last_request: Instant,
+    /// Authenticated connections whose event subscription is still delivering.
+    /// While any exists the server is in use and must not idle out.
+    live_subscriptions: usize,
+    /// Handler calls that have started and not finished. A call that outlasts
+    /// the idle timeout must not let the server exit under it.
+    in_flight: usize,
 }
 
 /// Counts one live event subscription as server activity. Dropping it, when
@@ -80,16 +109,15 @@ struct LiveSubscription(Arc<State>);
 
 impl LiveSubscription {
     fn new(state: &Arc<State>) -> Self {
-        state.live_subscriptions.fetch_add(1, Ordering::AcqRel);
-        state.touch();
+        state.change_activity(|activity| activity.live_subscriptions += 1);
         Self(state.clone())
     }
 }
 
 impl Drop for LiveSubscription {
     fn drop(&mut self) {
-        self.0.live_subscriptions.fetch_sub(1, Ordering::AcqRel);
-        self.0.touch();
+        self.0
+            .change_activity(|activity| activity.live_subscriptions -= 1);
     }
 }
 
@@ -99,15 +127,14 @@ struct InFlight<'a>(&'a State);
 
 impl<'a> InFlight<'a> {
     fn new(state: &'a State) -> Self {
-        state.in_flight.fetch_add(1, Ordering::AcqRel);
+        state.change_activity(|activity| activity.in_flight += 1);
         Self(state)
     }
 }
 
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
-        self.0.in_flight.fetch_sub(1, Ordering::AcqRel);
-        self.0.touch();
+        self.0.change_activity(|activity| activity.in_flight -= 1);
     }
 }
 
@@ -187,10 +214,7 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
     if write_result(&mut stream, request.id, welcome).is_err() {
         return;
     }
-    *state
-        .last_request
-        .lock()
-        .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+    state.touch();
 
     let mut subscription = None;
     let mut live = None;
@@ -206,10 +230,7 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
             Ok(None) => None,
         };
         if let Some(request) = request {
-            *state
-                .last_request
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+            state.touch();
             if !handle_request(
                 &mut stream,
                 &state,
@@ -475,10 +496,7 @@ fn send_events(
             return false;
         }
         subscription.cursor = event.sequence;
-        *state
-            .last_request
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Instant::now();
+        state.touch();
     }
     true
 }
