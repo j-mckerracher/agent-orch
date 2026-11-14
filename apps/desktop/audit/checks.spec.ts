@@ -545,10 +545,12 @@ test.describe("RC-22 shell brand and top-bar search sizing", () => {
     expect(size).toBeGreaterThanOrEqual(28);
   });
 
-  test("workspace-03: top-bar search is wide (about 680px) as in the wireframe", async ({ page }) => {
+  test("workspace-03: top-bar search is about 680px wide and names only the records it searches", async ({ page }) => {
     await openApp(page, "#/workspace", "populated", "desktop");
     const search = page.getByRole("combobox", { name: /^Search/ }).first();
-    expect((await box(search)).width).toBeGreaterThan(600);
+    expect((await box(search)).width).toBeGreaterThanOrEqual(660);
+    expect((await box(search)).width).toBeLessThanOrEqual(700);
+    await expect(search).toHaveAttribute("placeholder", "Search projects, tasks, sessions, approvals");
   });
 });
 

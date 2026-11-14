@@ -259,7 +259,7 @@ export function TopSearch({ debounceMs = 200 }: { debounceMs?: number }) {
         aria-controls={open && flat.length > 0 ? listId : undefined}
         aria-activedescendant={open && activeOption ? optionId(activeOption) : undefined}
         aria-describedby={hintId}
-        placeholder="Search tasks, sessions, artifacts, decisions, errors"
+        placeholder="Search projects, tasks, sessions, approvals"
         autoComplete="off"
         value={query}
         onChange={(event) => {
