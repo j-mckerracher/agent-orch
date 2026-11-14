@@ -708,7 +708,9 @@ Merge or create a PR through the configured delivery mode.
 Clean up only after a successful, verifiable delivery and safe-retention checks.
 A unique task branch might be named:
 
-orchestrator/task-a1b2c3
+moa/task-a1b2c3
+
+The `moa/` prefix is a per-machine setting: the first line of `<data_dir>/config/branch-prefix` (for example `team1/`) replaces it. A missing, unreadable, or blank file selects `moa/`; an invalid value (no trailing `/`, empty or unsafe components) fails the run before any branch is created.
 
 Do not reuse branches across unrelated tasks.
 

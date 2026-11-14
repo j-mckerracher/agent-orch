@@ -436,7 +436,7 @@ fn dead_identity(fixture: &Fixture, name: &str) -> ProcessIdentity {
 fn registered_worktree(fixture: &Fixture, task_id: &str) -> PathBuf {
     let path = fixture.data.join("worktrees").join(task_id);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let branch = format!("orchestrator/{task_id}");
+    let branch = format!("moa/{task_id}");
     git(
         &fixture.repo,
         &[
@@ -471,7 +471,7 @@ fn foreign_workspace(fixture: &Fixture, task_id: &str) -> PathBuf {
     fs::create_dir_all(&path).unwrap();
     fs::write(path.join("precious.txt"), "operator data\n").unwrap();
     let path = fs::canonicalize(path).unwrap();
-    record_workspace(fixture, task_id, &path, &format!("orchestrator/{task_id}"));
+    record_workspace(fixture, task_id, &path, &format!("moa/{task_id}"));
     path
 }
 
@@ -1054,7 +1054,7 @@ fn interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evid
         b"uncommitted new file\n"
     );
     assert!(
-        git(&fixture.repo, &["branch", "--list"]).contains("orchestrator/crash-missing"),
+        git(&fixture.repo, &["branch", "--list"]).contains("moa/crash-missing"),
         "the missing worktree's branch is preserved"
     );
     assert_eq!(

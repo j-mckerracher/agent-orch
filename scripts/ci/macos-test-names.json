@@ -341,7 +341,16 @@
    "resolve_base_ref_refuses_option_like_and_control_character_refs",
    "stderr_detail_neutralizes_terminal_control_characters",
    "worktree_at_the_longest_accepted_path_is_created",
-   "worktrees_root_inside_repository_rejected"
+   "worktrees_root_inside_repository_rejected",
+   "absent_file_reads_default",
+   "blank_file_reads_default",
+   "file_value_is_read",
+   "invalid_file_value_is_an_error_not_a_fallback",
+   "nested_prefix_is_accepted",
+   "surrounding_whitespace_is_stripped",
+   "unreadable_file_reads_default",
+   "unsafe_values_are_rejected",
+   "configured_prefix_names_the_branch_and_collision_suffix"
   ],
   "cli-cleanup-safety": [
    "cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree",

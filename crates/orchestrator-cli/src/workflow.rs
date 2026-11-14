@@ -37,7 +37,7 @@ use orchestrator_engine::reconcile::delivery_blocks;
 #[cfg(test)]
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::reconcile::{reconcile_before_scheduling, reconcile_cancellation_owners};
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 #[cfg(test)]
 use orchestrator_runtime::reconcile::DeliveryEvidence;
 use orchestrator_runtime::reconcile::{
@@ -340,16 +340,23 @@ pub async fn run_task(
         .transition(&task_id, TaskEvent::Admit)
         .map_err(|error| format!("cannot admit task {task_id}: {error}"))?;
 
-    let worktree =
-        match create_task_worktree(&repository, &task_id, base_ref, &worktrees_target.path) {
-            Ok(worktree) => worktree,
-            Err(error) => {
-                let _ = store.transition(&task_id, TaskEvent::CancelRequested);
-                return Err(format!(
-                    "cannot create worktree for task {task_id}: {error}"
-                ));
-            }
-        };
+    let branch_prefix = BranchPrefix::read(&data_target.path)
+        .map_err(|error| format!("cannot read branch prefix: {error}"))?;
+    let worktree = match create_task_worktree(
+        &repository,
+        &task_id,
+        base_ref,
+        &worktrees_target.path,
+        &branch_prefix,
+    ) {
+        Ok(worktree) => worktree,
+        Err(error) => {
+            let _ = store.transition(&task_id, TaskEvent::CancelRequested);
+            return Err(format!(
+                "cannot create worktree for task {task_id}: {error}"
+            ));
+        }
+    };
     assert!(
         !worktree.path().starts_with(repository.path()),
         "orchestrator-git returned a worktree inside the primary checkout"

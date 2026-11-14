@@ -983,5 +983,17 @@
   "worktree::tests::resolve_base_ref_refuses_option_like_and_control_character_refs",
   "worktree::tests::stderr_detail_neutralizes_terminal_control_characters",
   "worktree::tests::worktree_at_the_longest_accepted_path_is_created",
-  "worktree::tests::worktrees_root_inside_repository_rejected"
+  "worktree::tests::worktrees_root_inside_repository_rejected",
+  "absent_file_reads_default",
+  "blank_file_reads_default",
+  "file_value_is_read",
+  "invalid_file_value_is_an_error_not_a_fallback",
+  "nested_prefix_is_accepted",
+  "surrounding_whitespace_is_stripped",
+  "unreadable_file_reads_default",
+  "unsafe_values_are_rejected",
+  "configured_prefix_names_the_branch_and_collision_suffix",
+  "run_names_the_task_branch_with_the_configured_prefix",
+  "run_names_the_task_branch_with_the_default_prefix",
+  "run_rejects_an_invalid_configured_prefix_without_creating_a_branch"
 ]

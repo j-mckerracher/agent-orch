@@ -16,7 +16,7 @@ use orchestrator_core::contract::{
 };
 use orchestrator_core::records::{Project, VerificationRun, Workspace};
 use orchestrator_core::task::TaskEvent;
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use orchestrator_store::{SqliteStore, Store};
 use serde_json::{json, Value};
 
@@ -66,7 +66,14 @@ pub fn init_repo(path: &Path) {
 pub fn seed_review(data_dir: &Path, repo: &Path, worktrees: &Path, task_id: &str) -> Value {
     let repository = Repository::new(repo).expect("repository");
     let base = repository.resolve_base_ref("HEAD").expect("base");
-    let worktree = create_task_worktree(&repository, task_id, "main", worktrees).expect("worktree");
+    let worktree = create_task_worktree(
+        &repository,
+        task_id,
+        "main",
+        worktrees,
+        &BranchPrefix::default(),
+    )
+    .expect("worktree");
     let worktree_path: PathBuf = worktree.path().to_path_buf();
     std::fs::write(worktree_path.join("candidate.txt"), "candidate\n").expect("write");
     git(&worktree_path, &["add", "candidate.txt"]);

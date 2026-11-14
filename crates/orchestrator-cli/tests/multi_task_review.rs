@@ -33,7 +33,7 @@ use orchestrator_git::verification::{
     VerificationPolicy as GitVerificationPolicy, VerificationRequest, VerificationResult,
     VerificationStatus, WorkspaceRecord,
 };
-use orchestrator_git::{create_task_worktree, Repository, TaskWorktree};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, TaskWorktree};
 use orchestrator_store::{
     DeliveryOutcome as StoreDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, TaskRecord,
 };
@@ -238,6 +238,7 @@ fn candidate(workspace: &TestWorkspace, task_id: &str, path: &str, contents: &st
         task_id,
         "main",
         &workspace.worktrees_root,
+        &BranchPrefix::default(),
     )
     .expect("create task-owned worktree");
     let sha = commit_file(worktree.path(), path, contents, "candidate");

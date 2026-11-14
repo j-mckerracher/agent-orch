@@ -161,7 +161,7 @@ mod git_state {
     use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
     use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
     use orchestrator_git::reconcile::{reconcile_workspaces, RecordedWorkspace};
-    use orchestrator_git::{create_task_worktree, Repository, TaskWorktree};
+    use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, TaskWorktree};
     use orchestrator_runtime::reconcile::{
         classify_interrupted_task, delivery_evidence, scheduling_may_resume, workspace_evidence,
         DeliveryEvidence, TaskEvidence, TaskRecovery, WorkspaceEvidence,
@@ -273,9 +273,14 @@ mod git_state {
     #[test]
     fn clean_matching_worktree_is_recoverable_and_dirty_work_is_preserved() {
         let fixture = fixture();
-        let worktree =
-            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
-                .expect("create worktree");
+        let worktree = create_task_worktree(
+            &fixture.repository,
+            "task-1",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create worktree");
 
         let clean = observe_workspace(&fixture, &worktree, true);
         assert_eq!(clean, WorkspaceEvidence::Matching);
@@ -307,9 +312,14 @@ mod git_state {
     #[test]
     fn committed_unlanded_work_is_never_treated_as_matching_or_discardable() {
         let fixture = fixture();
-        let worktree =
-            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
-                .expect("create worktree");
+        let worktree = create_task_worktree(
+            &fixture.repository,
+            "task-1",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create worktree");
         fs::write(worktree.path().join("work.txt"), "work\n").expect("write work");
         git(worktree.path(), &["add", "work.txt"]);
         git(worktree.path(), &["commit", "-m", "unlanded work"]);
@@ -342,9 +352,14 @@ mod git_state {
     #[test]
     fn removed_worktree_blocks_the_task_without_blocking_other_scheduling() {
         let fixture = fixture();
-        let worktree =
-            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
-                .expect("create worktree");
+        let worktree = create_task_worktree(
+            &fixture.repository,
+            "task-1",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create worktree");
         fs::remove_dir_all(worktree.path()).expect("simulate out-of-band removal");
 
         let observed = observe_workspace(&fixture, &worktree, false);
@@ -362,9 +377,14 @@ mod git_state {
     #[test]
     fn uninspected_or_unrecorded_workspace_requires_inspection() {
         let fixture = fixture();
-        let worktree =
-            create_task_worktree(&fixture.repository, "task-1", "HEAD", &fixture.worktrees)
-                .expect("create worktree");
+        let worktree = create_task_worktree(
+            &fixture.repository,
+            "task-1",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create worktree");
 
         // Present worktree whose safety was never established.
         let uninspected = observe_workspace(&fixture, &worktree, false);
@@ -520,16 +540,26 @@ mod git_state {
     /// Real workspace evidence for each unsafe class, built from real Git state.
     /// Returns (label, evidence, path whose contents must survive).
     fn unsafe_workspaces(fixture: &Fixture) -> Vec<(&'static str, WorkspaceEvidence, PathBuf)> {
-        let dirty_tree =
-            create_task_worktree(&fixture.repository, "dirty", "HEAD", &fixture.worktrees)
-                .expect("create dirty worktree");
+        let dirty_tree = create_task_worktree(
+            &fixture.repository,
+            "dirty",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create dirty worktree");
         let dirty_file = dirty_tree.path().join("unsaved.txt");
         fs::write(&dirty_file, "uncommitted\n").expect("write uncommitted work");
         let dirty = observe_workspace(fixture, &dirty_tree, true);
 
-        let unknown_tree =
-            create_task_worktree(&fixture.repository, "unknown", "HEAD", &fixture.worktrees)
-                .expect("create uninspected worktree");
+        let unknown_tree = create_task_worktree(
+            &fixture.repository,
+            "unknown",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create uninspected worktree");
         let unknown = observe_workspace(fixture, &unknown_tree, false);
 
         let foreign_path = fixture.worktrees.join("foreign");
@@ -539,7 +569,7 @@ mod git_state {
         let recorded = [RecordedWorkspace {
             id: "workspace-foreign".into(),
             path: foreign_path,
-            branch: "orchestrator/foreign".into(),
+            branch: "moa/foreign".into(),
             base_commit: fixture.candidate_sha.clone(),
         }];
         let plan = reconcile_workspaces(&fixture.repository, &recorded).expect("workspace plan");
@@ -694,19 +724,35 @@ mod git_state {
 
     /// One real workspace per evidence class (unsafe ones via `unsafe_workspaces`).
     fn all_workspaces(fixture: &Fixture) -> Vec<(&'static str, WorkspaceEvidence)> {
-        let matching =
-            create_task_worktree(&fixture.repository, "matching", "HEAD", &fixture.worktrees)
-                .expect("create matching worktree");
+        let matching = create_task_worktree(
+            &fixture.repository,
+            "matching",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create matching worktree");
         let matching = observe_workspace(fixture, &matching, true);
 
-        let missing =
-            create_task_worktree(&fixture.repository, "missing", "HEAD", &fixture.worktrees)
-                .expect("create missing worktree");
+        let missing = create_task_worktree(
+            &fixture.repository,
+            "missing",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create missing worktree");
         fs::remove_dir_all(missing.path()).expect("simulate out-of-band removal");
         let missing = observe_workspace(fixture, &missing, false);
 
-        let moved = create_task_worktree(&fixture.repository, "moved", "HEAD", &fixture.worktrees)
-            .expect("create moved worktree");
+        let moved = create_task_worktree(
+            &fixture.repository,
+            "moved",
+            "HEAD",
+            &fixture.worktrees,
+            &BranchPrefix::default(),
+        )
+        .expect("create moved worktree");
         fs::write(moved.path().join("work.txt"), "work\n").expect("write work");
         git(moved.path(), &["add", "work.txt"]);
         git(moved.path(), &["commit", "-m", "unlanded work"]);

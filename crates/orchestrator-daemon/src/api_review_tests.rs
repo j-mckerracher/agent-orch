@@ -2,7 +2,7 @@ use super::*;
 use orchestrator_core::contract::{AutonomyPolicy, DeliveryPolicy, TaskKind, VerificationPolicy};
 use orchestrator_core::records::{Project, VerificationRun, Workspace};
 use orchestrator_core::task::TaskEvent;
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -82,6 +82,7 @@ fn fixture() -> Fixture {
         "task-1",
         "main",
         &directory.path().join("worktrees"),
+        &BranchPrefix::default(),
     )
     .unwrap();
     let worktree_path = worktree.path().to_path_buf();

@@ -43,7 +43,7 @@ use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
@@ -59,6 +59,8 @@ const LOG: &str = "executor";
 #[derive(Clone)]
 pub(crate) struct ExecutorConfig {
     pub(crate) worktrees_root: PathBuf,
+    /// Data directory holding `config/branch-prefix`, read at every launch.
+    pub(crate) data_dir: PathBuf,
     pub(crate) codex_program: Option<PathBuf>,
     pub(crate) claude_program: Option<PathBuf>,
     pub(crate) pi_program: Option<PathBuf>,
@@ -128,6 +130,7 @@ impl ExecutorConfig {
     pub(crate) fn for_data_dir(data_dir: &Path) -> Self {
         Self {
             worktrees_root: data_dir.join("worktrees"),
+            data_dir: data_dir.to_path_buf(),
             codex_program: std::env::var_os("AGENT_ORCH_CODEX_PROGRAM").map(PathBuf::from),
             claude_program: std::env::var_os("AGENT_ORCH_CLAUDE_PROGRAM").map(PathBuf::from),
             pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
@@ -471,7 +474,9 @@ impl Inner {
                     .map_err(|error| error.to_string())?;
                 let root = std::fs::canonicalize(&self.config.worktrees_root)
                     .map_err(|error| error.to_string())?;
-                create_task_worktree(&repository, &task_id, "HEAD", &root)
+                let prefix =
+                    BranchPrefix::read(&self.config.data_dir).map_err(|error| error.to_string())?;
+                create_task_worktree(&repository, &task_id, "HEAD", &root, &prefix)
                     .map_err(|error| error.to_string())
             });
         store
