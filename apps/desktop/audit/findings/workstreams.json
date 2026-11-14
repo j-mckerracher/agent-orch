@@ -328,7 +328,7 @@
     {
       "id": "workstreams-03",
       "title": "Mobile sidebar workstream tree spills out of its 260 px box and is clipped",
-      "classification": "defect",
+      "classification": "wireframe-gap",
       "severity": "medium",
       "routes": [
         "#/workstreams",
@@ -344,9 +344,9 @@
       ],
       "wireframe_ref": "wireframes.html CSS @media(max-width:760px) .worker-tree{max-height:260px;flex:none} with overflow:auto (line 13, line 15); markup line 209",
       "evidence": "app/workstreams.populated.mobile: nav 'Workstreams' box y 377, h 260 (computed max-height 260px, overflow:visible). Tree rows 'Docs refresh' y 593 and 'Build infrastructure' y 621 (h 28); row 3 bottom 649 is 12 px below the nav bottom (637). The sidebar (static, overflow:auto) is 335 px tall with scrollHeight 565. Hit-test at scroll 0: 'Docs refresh' centre is covered by INPUT.top-search-input. Wireframe mobile: section.worker-tree box 260 px, overflow auto, so its rows scroll inside it.",
-      "justification": "",
+      "justification": "Premise wrong: the wireframe does not keep rows 2-3 inside its box at 760 px either. At 760x800 section.worker-tree is 260 px tall (y 249-509) with overflow:auto (wireframes.html line 15). Workstream details 2 (\"2 / 10 Platform API\", y 540-581) and 3 (\"3 / 10 Desktop UI\", y 584-625) start below its bottom edge and are reachable only by scrolling the box. The check asserted containment in the nav box at rest, which the wireframe does not provide. Reclassified in DPES-1105; check removed from audit/checks.spec.ts.",
       "suspected_root_cause": "Same shell nav as finding 01: max-height is set on the nav but overflow is visible, so rows overflow the nav box instead of scrolling inside it. Hypothesis; check apps/desktop/src/ui/shell/SidebarNav.tsx and shell.css @media(max-width:760px).",
-      "check": "await openApp(page,\"#/workstreams\",\"populated\",\"mobile\"); nav = getByRole(\"navigation\",{name:\"Workstreams\"}).boundingBox(); row = getByRole(\"treeitem\",{name:/Workstream 3 of 3/}).boundingBox(); expect(row.y + row.height).toBeLessThanOrEqual(nav.y + nav.height + 1);",
+      "check": "Removed in DPES-1105 (wireframe-gap; see justification). The earlier check asserted the mobile row 3 bottom is inside the Workstreams nav box.",
       "covered_by": null
     },
     {

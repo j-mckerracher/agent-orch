@@ -1,5 +1,7 @@
 // Check phase: one test per remaining defect, grouped by root cause (see audit/PLAN.md).
-// Every test must FAIL on main; a test that passes on main is a wrong check or a non-defect.
+// A check for an open defect must FAIL on main. A check for a fix merged to main (#16, #17) must FAIL on
+// be553261e (pre-fix) and PASS on main. Blocked-on-data checks are test.fixme (PLAN.md section 2).
+// Checks never scroll before measuring: scrolling can hide the defect (PLAN.md section 6).
 // Scope: defects only. Intentional and wireframe-gap findings are deliberately absent.
 // Run with: npx playwright test -c audit/playwright.audit.config.ts audit/checks.spec.ts
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -49,7 +51,9 @@ test.describe("RC-01 honest states: unavailable is never loading, zero, or empty
 
   test("workstreams-20: loading state does not say workstreams are not available", async ({ page }) => {
     await openApp(page, "#/workstreams", "loading", "desktop");
-    await expect(page.getByLabel(/workstreams: not available/i)).toHaveCount(0);
+    // Two surfaces carry the text: the top bar's visually hidden count and the sidebar tree's aria-label.
+    const unavailable = /workstreams: not available/i;
+    await expect(page.getByText(unavailable).or(page.getByLabel(unavailable))).toHaveCount(0);
   });
 
   test("agents-16: empty task list does not read as an unavailable list with stuck counts", async ({ page }) => {
@@ -96,10 +100,13 @@ test.describe("RC-02 workspace activity is a top-right popover, not a docked pan
     await openWorkspaceActivity(page);
     const queue = page.locator("summary", { hasText: /^Execution queue/ }).first();
     await queue.evaluate((s) => { (s.parentElement as HTMLDetailsElement).open = true; });
-    const running = queue.locator("xpath=..").locator("summary", { hasText: /^Running/ }).first();
-    await running.evaluate((s) => { (s.parentElement as HTMLDetailsElement).open = true; });
-    const row = running.locator("xpath=..").locator("li").first();
-    expect((await box(row)).height).toBeLessThanOrEqual(48);
+    // Every rendered row of the open queue. No sub-group is opened: the sub-group labels are not
+    // disclosures on main, so opening them would measure a structure the app no longer has.
+    const heights = await queue.locator("xpath=..").locator("li").evaluateAll((els) =>
+      els.map((el) => el.getBoundingClientRect().height).filter((h) => h > 0),
+    );
+    expect(heights.length, "no rendered queue rows").toBeGreaterThan(0);
+    expect(Math.max(...heights), "tallest queue row (px)").toBeLessThanOrEqual(48);
   });
 });
 
@@ -107,30 +114,31 @@ test.describe("RC-02 workspace activity is a top-right popover, not a docked pan
 // RC-03 Sidebar workstream tree overflows and blocks its own rows
 // ---------------------------------------------------------------------------
 test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () => {
-  test("workstreams-01: sidebar workstream rows 2 and 3 receive pointer events at desktop and tablet", async ({ page }) => {
+  // At rest: no scrolling and no clicks. Rows 2 and 3 must sit inside the tree's own visible box, and
+  // nothing else may be topmost at their centres. Scrolling before measuring would hide the defect.
+  test("workstreams-01: sidebar workstream rows 2 and 3 are inside the tree box and uncovered at rest (desktop, tablet)", async ({ page }) => {
     for (const bp of ["desktop", "tablet"] as const) {
       await openApp(page, "#/workstreams", "populated", bp);
       for (const n of [2, 3]) {
         const row = page.getByRole("treeitem", { name: new RegExp(`Workstream ${n} of 3`) });
-        await row.scrollIntoViewIfNeeded();
-        const hit = await row.evaluate((el) => {
-          const b = el.getBoundingClientRect();
-          const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-          return !!top && (el === top || el.contains(top));
+        const at = await row.evaluate((el) => {
+          let scroller: HTMLElement | null = el.parentElement;
+          while (scroller && !/(auto|scroll|hidden)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+          const r = el.getBoundingClientRect();
+          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          const tree = scroller?.getBoundingClientRect();
+          return {
+            inside: !!tree && r.top >= tree.top - 1 && r.bottom <= tree.bottom + 1,
+            hit: !!top && (el === top || el.contains(top)),
+            cover: !top ? "nothing (centre is off screen)" : el.contains(top) ? "none" : `${top.tagName.toLowerCase()}.${String(top.className).split(" ")[0]}`,
+            row: `${Math.round(r.top)}-${Math.round(r.bottom)}`,
+            tree: tree ? `${Math.round(tree.top)}-${Math.round(tree.bottom)}` : "no scroll container",
+          };
         });
-        expect(hit, `${bp}: workstream ${n} of 3 is not hit-testable (below the fold or covered)`).toBe(true);
+        expect.soft(at.inside, `${bp}: workstream ${n} of 3 is outside the tree box at rest (row ${at.row}, tree ${at.tree})`).toBe(true);
+        expect.soft(at.hit, `${bp}: workstream ${n} of 3 is covered at its centre by ${at.cover}`).toBe(true);
       }
     }
-  });
-
-  test("workstreams-03: mobile sidebar workstream tree stays inside its nav box", async ({ page }) => {
-    await openApp(page, "#/workstreams", "populated", "mobile");
-    const target = page.getByRole("treeitem", { name: /Workstream 3 of 3/ });
-    await target.scrollIntoViewIfNeeded();
-    const nav = await box(page.getByRole("navigation", { name: "Workstreams" }));
-    const row = await box(target);
-    expect(row.y).toBeGreaterThanOrEqual(nav.y - 1);
-    expect(row.y + row.height).toBeLessThanOrEqual(nav.y + nav.height + 1);
   });
 });
 
@@ -227,15 +235,12 @@ test.describe("RC-07 device resources placement (bottom strip vs activity area)"
   test("agents-18: device strip does not cover the selected task detail at desktop", async ({ page }) => {
     await openApp(page, "#/agents", "populated", "desktop");
     await page.getByRole("button", { name: RUNNING_TASK }).click();
-    const detail = page.getByRole("complementary", { name: AGENT_DETAIL });
-    const control = detail.locator("summary", { hasText: "Execution feed, side effects and supplied context" });
-    await control.scrollIntoViewIfNeeded();
-    const reachable = await control.evaluate((el) => {
-      const b = el.getBoundingClientRect();
-      const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-      return !!top && (el === top || el.contains(top));
-    });
-    expect(reachable, "lower detail control is covered or clipped after scrolling").toBe(true);
+    const detail = await box(page.getByRole("complementary", { name: AGENT_DETAIL }));
+    const strip = page.getByRole("region", { name: "Device resources" });
+    if ((await strip.count()) > 0) {
+      const s = await box(strip);
+      expect(detail.y + detail.height).toBeLessThanOrEqual(s.y + 1);
+    }
   });
 });
 
@@ -416,6 +421,7 @@ test.describe("RC-15 agents selected detail facts", () => {
   // listed as missing there). The assertion is the auditor's claim; it fails on main and needs a
   // daemon field to be satisfied for real.
   test("agents-06: selected detail states the workspace base revision [blocked-on-data: base revision field]", async ({ page }) => {
+    test.fixme(true, "Blocked on DPES-1107: the daemon has no workspace base revision on a task or session");
     await openApp(page, "#/agents", "populated", "desktop");
     await page.getByRole("button", { name: RUNNING_TASK }).click();
     await expect(page.getByRole("complementary", { name: AGENT_DETAIL })).toContainText(/base revision/i);
@@ -445,6 +451,7 @@ test.describe("RC-16 global review queue layout", () => {
 // ---------------------------------------------------------------------------
 test.describe("RC-17 decision queue grouping receipt and row actions", () => {
   test("review-and-app-only-06: queue shows the grouping receipt (groups / raw requests / independent decisions) [blocked-on-data: grouping key]", async ({ page }) => {
+    test.fixme(true, "Blocked on DPES-1108: the approvals contract has no grouping key, so the groups count cannot be derived");
     await openApp(page, "#/review", "populated", "desktop");
     await expect(page.getByText(/\d+ groups? \/ \d+ raw requests? \/ \d+ independent decisions?/)).toBeVisible();
   });

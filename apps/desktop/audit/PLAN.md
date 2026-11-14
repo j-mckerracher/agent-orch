@@ -11,14 +11,15 @@ Spec citations: `wireframe.md` = `/Users/mckerracher.joshua/Code/agent-orch-run/
 
 | Class | Count | Notes |
 | --- | --- | --- |
-| defect (fix needed) | 59 | 58 have a check; `workstreams-04` is unverifiable and has none |
-| blocked-on-data | 2 | `review-and-app-only-06`, `agents-06`; checks exist and fail on main |
+| defect (fix needed) | 58 | 57 have a check; `workstreams-04` is unverifiable and has none |
+| blocked-on-data | 2 | `review-and-app-only-06` (DPES-1108), `agents-06` (DPES-1107); checks exist, marked `test.fixme` |
 | intentional | 20 | 16 original plus 4 reclassified from defect |
-| wireframe-gap | 22 | 21 original gaps plus `review-and-app-only-04` (not in wireframe) |
+| wireframe-gap | 23 | 21 original gaps, `review-and-app-only-04` (not in wireframe), and `workstreams-03` (DPES-1105) |
 | total findings | 103 | matches the 103 entries in the four findings files |
 
-Root causes: 23 (ranked in section 3). Checks: 60 tests in `audit/checks.spec.ts`, one per defect or blocked item.
-On main all 60 FAIL. Each branch turns a subset green (section 5).
+Root causes: 23 (ranked in section 3). Checks: 59 tests in `audit/checks.spec.ts`: 57 defect checks and 2 blocked-on-data checks (`test.fixme`).
+Open defect checks FAIL on main. Checks for fixes merged to main (#16, #17) FAIL on be553261e and PASS on main (section 5a).
+Each branch turns a subset green (section 5).
 
 ## 1. Reclassification table
 
@@ -47,6 +48,8 @@ Old class to new class. Coordinator-directed items are confirmed unless noted.
 | agents-07 | defect (narrowed) | "0 disconnected sessions" shows unknown as zero (OX-G2, line 392). The disconnected list itself is blocked on D3 (section 2). |
 | agents-13 | defect (narrowed) | Attempt number is existing data (OX-G4/G5). Provider and model per row is blocked on a model or version field (OX-G3, line 393). |
 | workspace-06 | defect (scope note) | The check asserts the three groups `operational-design.md` section 21 names (queue, attention, agent slots). Running is a sub-group that the spec does not address, so the check excludes it. |
+| workstreams-03 | defect → wireframe-gap (DPES-1105) | The wireframe itself does not keep rows 2-3 inside its 260 px tree box at 760 px. At 760x800, `section.worker-tree` is y 249-509 with `overflow:auto` (`wireframes.html` line 15). Workstream details 2 (`2 / 10 Platform API`, y 540-581) and 3 (`3 / 10 Desktop UI`, y 584-625) start below its bottom edge and are reachable only by scrolling. The check asserted containment at rest, which the wireframe does not give. Reclassified in `findings/workstreams.json`; check removed. |
+| workspace-07 | defect (check was wrong; app is correct on main) | The autofix ("Open both disclosures before measuring the queue row") looked for a `Running` disclosure and matched `/^Running/` against row summaries that begin with a state glyph. On main, Running is a plain group (`ActivityPanel.tsx` `TaskGroup`, `role=group`), not a disclosure, since #17. Measured queue rows: main 39.5 px; be553261e 102.5 px. The wireframe queue cards are 46 px (`details.queue-card`, `wireframes.html` line 226). Check repaired to measure every rendered row against 48 px. Passes on main. |
 
 Covered-by corrections (verified against branch heads):
 
@@ -54,7 +57,7 @@ Covered-by corrections (verified against branch heads):
 - `workspace-06` covered by popover branch: true for the three spec groups. The Running sub-group stays open (spec-silent).
 - `workspace-08` covered by usage-rail branch: true (passes). Covered by popover branch: FALSE (still full-width, measured 1440px). Covered by combined branch: true.
 - `agents-18` covered by usage-rail branch: true. Popover branch: FALSE (detail bottom 1304px, strip top 843px). Combined branch: true.
-- `workspace-07` covered_by was null. Popover branch: fails. Combined branch: passes.
+- `workspace-07` covered_by was null. Popover branch: fails. Combined branch: passes. Main (#17): passes after the DPES-1105 check repair (39.5 px; be553261e 102.5 px).
 - `workspace-01` and `workstreams-10` covered by sidebar branch: true (both pass).
 - `covered_by` is missing (undefined) in `agents-16`, `agents-17`, `agents-19`. Normalized to null.
 
@@ -68,6 +71,13 @@ Covered-by corrections (verified against branch heads):
 | agents-07 | Disconnected session list and count | D3 has no daemon method (line 197, line 451). The "0" chip fix needs no data, only the honest "not available" state. |
 | agents-13 | Provider, model and version per session | OX-G3 lists it as missing (line 393). D14 is agents-only. |
 
+Tracked daemon follow-ups (DPES-1105 decision, section 7):
+
+- `agents-06` (workspace base revision): [DPES-1107](https://mccdh.atlassian.net/browse/DPES-1107)
+- `review-and-app-only-06` (grouping key for the "N groups" receipt): [DPES-1108](https://mccdh.atlassian.net/browse/DPES-1108)
+
+Both checks are `test.fixme(true, "Blocked on DPES-110x: …")`. Their assertions are unchanged, so each goes green only when the daemon data lands. The audit reports them as known-blocked (skipped), not as open defects. Until DPES-1108 lands, PR #22's honest partial state is correct: "Groups: not available · N raw requests · N independent decisions".
+
 Not blocked (fixable without new data): review-and-app-only-01 (six facts can render "unavailable", OX-R6 line 411). Create workstream and the plan controls can render disabled with a reason (OX-W1, OX-W9).
 
 ## 3. Root causes, ranked
@@ -75,8 +85,8 @@ Not blocked (fixable without new data): review-and-app-only-01 (six facts can re
 Severity is the highest defect severity in the group, then user impact. "Status" is covered (by a branch), partial, or new. The gates line lists the CI gates the fix must pass (section 3a).
 
 1. RC-01 Honest states: unavailable is never loading, zero, or empty copy. High. 7 findings: workspace-22 (high), workstreams-05, workstreams-20, agents-16, review-and-app-only-13, -17, -19. Status: new.
-2. RC-02 Workspace activity is a docked panel, not a top-right popover. High. 3 findings: workspace-05 (high), workspace-06, workspace-07. Status: covered by popover branch for 05 and 06; 07 covered by combined branch only.
-3. RC-03 Sidebar workstream tree overflows and blocks its own rows. High. 2 findings: workstreams-01 (high), workstreams-03. Status: new.
+2. RC-02 Workspace activity is a docked panel, not a top-right popover. High. 3 findings: workspace-05 (high), workspace-06, workspace-07. Status: covered by popover branch for 05 and 06; 07 covered by combined branch, and on main (#17) after the DPES-1105 check repair.
+3. RC-03 Sidebar workstream tree overflows and blocks its own rows. High. 1 finding: workstreams-01 (high), checked at rest. workstreams-03 is a wireframe-gap (section 1). Status: new.
 4. RC-04 Breakpoint parity with wireframe media queries (960 and 760). High. 3 findings: agents-01 (high), workstreams-02 (high), workstreams-15. Status: new.
 5. RC-05 Six-fact completion record missing on project review and misplaced on global review. High. 2 findings: review-and-app-only-01 (high), -02. Status: new.
 6. RC-07 Device resources band spans the window and covers content. Medium. 2 findings: workspace-08, agents-18. Status: covered by usage-rail branch (both pass); combined branch covers both; popover branch does not.
@@ -98,7 +108,7 @@ Severity is the highest defect severity in the group, then user impact. "Status"
 22. RC-22 Shell brand and top-bar search sizing. Low. 2 findings: workspace-02, workspace-03. Status: new.
 23. RC-23 Sidebar tree row markup and names. Low. 3 findings: workstreams-17, -18, -19. Status: new.
 
-Totals: 61 findings across the 23 groups (59 defects plus 2 blocked-on-data), with workstreams-04 counted as a member with no check.
+Totals: 60 findings across the 23 groups (58 defects plus 2 blocked-on-data), with workstreams-04 counted as a member with no check. workstreams-03 is a wireframe-gap and is not a member.
 
 ### 3a. Per-root-cause detail
 
@@ -113,9 +123,9 @@ Audit gate (this plan): the RC's check names flip to PASS on the fix branch and 
 
 RC-01 honest states. Evidence: `app/workspace.offline.desktop.png` shows "Loading conversations…" with no header or composer. Offline `workstreams` shows "Loading workstreams…". Review offline shows "Decisions: loading" and "Pending review (0)" on the project page. Wireframe: C1 connection states (`wireframe.md` line 35; `operational-design.md` line 216). Suspected: `WorkspaceView.tsx` lines 42 and 59 (`live` from provenance; `listLoading` never resolves); `WorkstreamTree.tsx` and `WorkstreamsView.tsx` (loading text); `AgentsView.tsx` lines 66-68 and `SessionList.tsx` label(); `ReviewDecisionsView.tsx` heading; `ProjectDetail.tsx` pending count (`approvals.data ?? []`); `TaskList.tsx` filter counts (`tasks.data ?? []`). Checks: workspace-22, workstreams-05, workstreams-20, agents-16, review-and-app-only-13, -17, -19. Status: new. Gates: common desktop gates.
 
-RC-02 workspace activity popover. Evidence: capture `app/workspace.populated.desktop.layout.json` shows the docked aside at 300x651 when collapsed. Wireframe: OX-B6 (`wireframe.md` line 362), `wireframes.html` `command-center` inspector. Suspected: `AppShell.tsx` lines 95-97 (aside as grid column), `ActivityPanel.tsx` line 383. Checks: workspace-05, workspace-06, workspace-07. Branch: popover `b95a4b74a` passes 05 and 06; combined `978e8a96b` passes 05, 06, 07. Status: covered by popover branch (05, 06) and combined branch (07). Gates: common desktop gates, plus `desktop-e2e` (layout).
+RC-02 workspace activity popover. Evidence: capture `app/workspace.populated.desktop.layout.json` shows the docked aside at 300x651 when collapsed. Wireframe: OX-B6 (`wireframe.md` line 362), `wireframes.html` `command-center` inspector. Suspected: `AppShell.tsx` lines 95-97 (aside as grid column), `ActivityPanel.tsx` line 383. Checks: workspace-05, workspace-06, workspace-07. Branch: popover `b95a4b74a` passes 05 and 06; combined `978e8a96b` passes 05, 06, 07. Status: covered by popover branch (05, 06); 07 covered by combined branch and passes on main (#17) after the DPES-1105 check repair. Gates: common desktop gates, plus `desktop-e2e` (layout).
 
-RC-03 sidebar tree overflow. Evidence: at desktop and tablet, `treeitem` "Workstream 2 of 3" and "3 of 3" fail `elementFromPoint` hit tests (below the fold or covered). At mobile (760), tree row bottom exceeds nav bottom. Wireframe: sidebar tree `Workstream N of 10` (`wireframes.html` `workstreams`). Suspected: `shell.css` nav `max-height` with `overflow: visible`; `WorkstreamTree.tsx`. Checks: workstreams-01, workstreams-03. Status: new. Gates: common desktop gates, plus `desktop-e2e`.
+RC-03 sidebar tree overflow. Evidence: at desktop and tablet, `treeitem` "Workstream 2 of 3" and "3 of 3" fail `elementFromPoint` hit tests (below the fold or covered). At mobile (760), tree row bottom exceeds nav bottom. Wireframe: sidebar tree `Workstream N of 10` (`wireframes.html` `workstreams`). Suspected: `shell.css` nav `max-height` with `overflow: visible`; `WorkstreamTree.tsx`. Checks: workstreams-01 (at rest, no scroll). workstreams-03 removed (wireframe-gap, section 1). Status: new. Gates: common desktop gates, plus `desktop-e2e`.
 
 RC-04 breakpoint parity. Evidence: at tablet, agents detail sits beside the Assigned work card (agents-01); workstreams list and detail stack (workstreams-02). At mobile, workstream list is one column (workstreams-15). Wireframe: media queries at `max-width:960px` (4 rules), `max-width:760px` (10 rules), `max-width:1150px` (24 rules). Suspected: `agents.css` line 203 (`max-width:900px`, not 960); `workstreams.css` lines 386-392 (`.ws-layout` collapse, no two-column mobile grid). Checks: agents-01, workstreams-02, workstreams-15. Status: new. Gates: common desktop gates, plus `desktop-e2e`.
 
@@ -209,6 +219,8 @@ Counts: main 0 PASS of 60. sidebar 2 PASS. usagerail 2 PASS. popover 3 PASS. com
 
 The `workspace-08` check was revised twice during this run. The final version measures the device band width (full-width band fails) and was rerun on all four configurations. The earlier runs in `audit/out/results-*.json` used the earlier wording and are superseded for that one check.
 
+Checks changed in DPES-1105 (workstreams-01, workstreams-03, workspace-07, workstreams-20, agents-18, agents-06, review-and-app-only-06, workspace-01) have superseded rows in this matrix. Section 5a has their current results. workstreams-03 has no check now.
+
 Matrix (`PASS` = the check passes on that app, `FAIL` = it fails):
 
 | Check | main | sidebar | usagerail | popover |
@@ -256,7 +268,6 @@ Matrix (`PASS` = the check passes on that app, `FAIL` = it fails):
 | workspace-22 | FAIL | FAIL | FAIL | FAIL |
 | workstreams-01 | FAIL | FAIL | FAIL | FAIL |
 | workstreams-02 | FAIL | FAIL | FAIL | FAIL |
-| workstreams-03 | FAIL | FAIL | FAIL | FAIL |
 | workstreams-05 | FAIL | FAIL | FAIL | FAIL |
 | workstreams-06 | FAIL | FAIL | FAIL | FAIL |
 | workstreams-07 | FAIL | FAIL | FAIL | FAIL |
@@ -275,6 +286,31 @@ Matrix (`PASS` = the check passes on that app, `FAIL` = it fails):
 | workstreams-20 | FAIL | FAIL | FAIL | FAIL |
 | combined (RC-02, RC-07 checks only) | run: workspace-05 PASS, workspace-06 PASS, workspace-07 PASS, workspace-08 PASS, agents-18 PASS | | | |
 
+### 5a. Repaired checks (DPES-1105)
+
+Current `checks.spec.ts` run against three builds: be553261e (pre-fix, detached worktree), main d9aaef92f, and PR #21 at 053ae7026 (head at run time). Positions are CSS px (y ranges).
+
+| Check | be553261e (pre-fix) | main d9aaef92f | PR #21 053ae7026 | Evidence |
+| --- | --- | --- | --- | --- |
+| workstreams-01, desktop 1440x900 | FAIL | FAIL | PASS | main: rows 2 and 3 at y 809-837 and 837-883, tree box 554-742. Row 2 is covered by `button.ui-theme-toggle`, row 3 by `p.ambient-note`. #21: rows at 680-708 and 708-754, inside tree box 425-838. |
+| workstreams-01, tablet 960x900 | FAIL | FAIL | PASS | main: rows at 909-937 and 937-983, off screen (viewport 900), tree box 584-744. #21: rows at 764-792 and 793-839, inside tree box 439-840 (row 3 ends 1 px inside the bottom edge). |
+| workspace-07 | FAIL (102.5 px) | PASS (39.5 px) | not run | Tallest rendered queue row. Wireframe queue card: 46 px. |
+| workstreams-20 | FAIL | FAIL | not run | Loading state: the top-bar `span.top-sr` text and the sidebar `span[aria-label]` both match. |
+| agents-18 | FAIL | PASS | not run | be553261e: detail bottom 1304 px, strip top 843 px. Main passes without measuring: no "Device resources" region on `#/agents` (section 6). |
+| workspace-01 | FAIL (mean 247) | PASS | not run | Sidebar background; light on be553261e. |
+| workstreams-03 | removed | removed | removed | wireframe-gap (section 1). |
+| agents-06 | skipped (`test.fixme`, DPES-1107) | skipped | not run | Blocked on data (section 2). |
+| review-and-app-only-06 | skipped (`test.fixme`, DPES-1108) | skipped | not run | Blocked on data (section 2). |
+
+Autofix review. Five autofix commits (`43b4520fd` to `05ab3933c`) followed PR #18 (head before the autofix: `c3b464ac3`). Verdicts:
+
+- `workstreams-20`: the autofix changed `getByText` to `getByLabel`, which missed the top-bar text. The check now unions both locators. It fails on both builds.
+- `workspace-07`: the check was wrong (section 1). Repaired. The app passes on main.
+- `workstreams-01`: weakened. Scrolling each row into view before hit-testing made it pass on be553261e, so it detected nothing. Repaired to an at-rest check (table above). It fails on main.
+- `workstreams-03`: weakened, and the premise is wrong. Removed; reclassified as wireframe-gap.
+- `agents-18`: weakened. The reachability check passed on be553261e. The original geometric check is restored. It fails on be553261e and passes on main.
+- `workspace-01`: kept. The `color(srgb ...)` normalization only changes results for that format, where unscaled channels in 0-1 would always pass. It fails on be553261e (mean 247).
+
 ## 6. What could not be verified
 
 - Empty and loading scenarios for the review queue. The review queue has its own fixture daemon, so `openApp(..., "empty" | "loading")` does not reach it. `review-and-app-only-*` checks use populated and offline only.
@@ -288,3 +324,22 @@ Matrix (`PASS` = the check passes on that app, `FAIL` = it fails):
 - Audit checks pass or fail on fixture data. A daemon-backed build could move values (the same check still measures structure, not values).
 - The `harness.ts` default `WIREFRAME` path does not resolve from a worktree. Set `WIREFRAME=` explicitly. This is documented in the config header and is not changed here.
 - PR, CI and push have not been run. See the final report.
+- `agents-18` passes on main without measuring anything: the device strip is not rendered on `#/agents` after #17. It still fails on be553261e. A stable selector for the strip would make it a real at-rest guard.
+- Findings JSON classes lag section 1 for some items. For example, `findings/workstreams.json` still has `workstreams-20` as `wireframe-gap`, and section 1 reclassifies it to defect. Only `workstreams-03` (classification) and `workspace-07` (`covered_by`) were changed in DPES-1105.
+- The blocked checks (`agents-06`, `review-and-app-only-06`) were not run. They are skipped by `test.fixme`.
+
+## 7. Decisions log
+
+Decisions from the user (DPES-1105). They govern the checks and this plan.
+
+| Decision | Effect |
+| --- | --- |
+| TruffleHog findings are ignored. | Only Trivy gates PRs. Old TruffleHog fixture hits do not block. |
+| Search placeholder (RC-22): show the honest list of what is actually searched, not the wireframe wording. | PR #21 updates `workspace-03`. Not edited in DPES-1105. |
+| The connection strip stays in the content column. | No check. The strip is not moved to the sidebar. |
+| The ambient Background control is compacted in the sidebar. | Supports the at-rest fit of `workstreams-01` on PR #21 (section 5a). |
+| workspace-10 (objective coordinators) is intentional under D-4 and D-6. | Reclassified to intentional in section 1. No check. |
+| workspace-11 uses a link role for Request review. | PR #28 updates the check. Not edited in DPES-1105. |
+| Daemon follow-ups: DPES-1107 and DPES-1108. | `agents-06` and `review-and-app-only-06` are `test.fixme` (section 2). |
+
+Check rules applied in DPES-1105: checks measure at rest and never scroll first. A check for an open defect fails on main. A check for a fix merged to main (#16, #17) fails on be553261e and passes on main.
