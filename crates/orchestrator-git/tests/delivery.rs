@@ -3,7 +3,7 @@ use orchestrator_git::delivery::{
     DeliveryOutcome, DeliveryRequest, DeliveryStep, DestinationLockError, UnsafeToDeleteReason,
     VerificationCheck, WorktreeDeletionSafety,
 };
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
@@ -47,8 +47,14 @@ fn fixture() -> Fixture {
     git(&repository_path, &["commit", "-m", "initial"]);
     let repository = Repository::new(&repository_path).expect("validated repository");
     let worktrees_path = directory.path().join("worktrees");
-    let worktree = create_task_worktree(&repository, "task-1", "main", &worktrees_path)
-        .expect("create task worktree");
+    let worktree = create_task_worktree(
+        &repository,
+        "task-1",
+        "main",
+        &worktrees_path,
+        &BranchPrefix::default(),
+    )
+    .expect("create task worktree");
     let worktree_path = worktree.path().to_path_buf();
     let base_sha = worktree.base_sha().to_owned();
     fs::write(worktree_path.join("candidate.txt"), "candidate\n").expect("write candidate file");
@@ -860,6 +866,7 @@ fn primary_checkout_is_retained_and_a_clean_landed_worktree_is_safe() {
         "task-landed",
         "main",
         &fixture._directory.path().join("worktrees"),
+        &BranchPrefix::default(),
     )
     .expect("create landed worktree");
     let result =

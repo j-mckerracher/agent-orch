@@ -10,7 +10,7 @@ use orchestrator_git::delivery::{
     DeliveryOutcome, DeliveryRequest, DeliveryStep, DestinationLockError, UnsafeToDeleteReason,
     VerificationCheck, WorktreeDeletionSafety,
 };
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,6 +52,7 @@ fn fixture() -> Fixture {
         "task-1",
         "main",
         &directory.path().join("worktrees"),
+        &BranchPrefix::default(),
     )
     .expect("create task worktree");
     let worktree_path = worktree.path().to_path_buf();

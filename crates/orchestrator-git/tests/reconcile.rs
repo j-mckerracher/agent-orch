@@ -5,7 +5,7 @@ use std::process::Command;
 use orchestrator_git::reconcile::{
     reconcile_workspaces, RecordedWorkspace, WorkspaceClassification,
 };
-use orchestrator_git::{create_task_worktree, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 use tempfile::TempDir;
 
 struct Fixture {
@@ -87,6 +87,7 @@ fn unchanged_worktree_matches_recorded_branch_and_base() {
         "matching-worktree",
         "HEAD",
         &fixture.worktrees_path,
+        &BranchPrefix::default(),
     )
     .expect("create real worktree");
     let recorded = [RecordedWorkspace {
@@ -112,6 +113,7 @@ fn unrecorded_worktree_is_reported_as_unexpected_and_left_untouched() {
         "unexpected-worktree",
         "HEAD",
         &fixture.worktrees_path,
+        &BranchPrefix::default(),
     )
     .expect("create real worktree");
 
@@ -135,6 +137,7 @@ fn removed_real_worktree_is_classified_missing() {
         "missing-worktree",
         "HEAD",
         &fixture.worktrees_path,
+        &BranchPrefix::default(),
     )
     .expect("create real worktree");
     let recorded = [RecordedWorkspace {
@@ -161,6 +164,7 @@ fn checked_out_branch_mismatch_is_classified_branch_moved() {
         "moved-branch",
         "HEAD",
         &fixture.worktrees_path,
+        &BranchPrefix::default(),
     )
     .expect("create real worktree");
     git(worktree.path(), &["switch", "--detach"]);
@@ -187,6 +191,7 @@ fn committed_worktree_branch_is_classified_branch_moved() {
         "committed-worktree",
         "HEAD",
         &fixture.worktrees_path,
+        &BranchPrefix::default(),
     )
     .expect("create real worktree");
     let base_commit = worktree.base_sha().to_string();

@@ -17,6 +17,9 @@ pub enum Error {
     #[error("base ref {refspec:?} does not resolve to a commit: {detail}")]
     InvalidBaseRef { refspec: String, detail: String },
 
+    #[error("branch prefix {value:?} is invalid: {reason}")]
+    InvalidBranchPrefix { value: String, reason: &'static str },
+
     #[error("task id is empty after sanitizing; a branch and worktree name is required")]
     EmptyTaskId,
 

@@ -77,11 +77,30 @@ body:has(.shell) {
   /* Scroll containers are the containing block of absolutely positioned descendants (visually-hidden text),
      otherwise those escape the container and make the document itself scroll. */
   position: relative;
+  /* The saved width (--shell-sidebar-width, set inline once the user resizes) is clamped against the live
+     viewport here, so shrinking the window never rewrites the preference. */
+  --shell-sidebar-default: 214px;
+  --shell-sidebar-col: clamp(160px, var(--shell-sidebar-width, var(--shell-sidebar-default)), min(480px, 40vw));
   display: grid;
-  grid-template-columns: 214px minmax(0, 1fr);
+  grid-template-columns: var(--shell-sidebar-col) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+}
+
+/* Collapsed applies only while the sidebar is a grid column; at 760 px and below it is a full-width block. */
+@media (min-width: 761px) {
+  .shell-body[data-sidebar-collapsed] {
+    --shell-sidebar-col: 0px;
+  }
+
+  .shell-body[data-sidebar-collapsed] .shell-sidebar {
+    visibility: hidden;
+    overflow: hidden;
+    padding-left: 0;
+    padding-right: 0;
+    border-right: 0;
+  }
 }
 
 .shell-sidebar {
@@ -324,7 +343,7 @@ body:has(.shell) {
 
 @media (max-width: 1150px) {
   .shell-body {
-    grid-template-columns: 185px minmax(0, 1fr);
+    --shell-sidebar-default: 185px;
   }
 
   .shell-sidebar {

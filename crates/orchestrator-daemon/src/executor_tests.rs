@@ -73,6 +73,7 @@ impl Fixture {
     fn config(&self, data: &Path, program: &Path) -> ExecutorConfig {
         ExecutorConfig {
             worktrees_root: data.join("worktrees"),
+            data_dir: data.to_owned(),
             codex_program: Some(program.to_owned()),
             claude_program: None,
             pi_program: None,
@@ -522,6 +523,7 @@ fn seed_interrupted_run(store: &SqliteStore, fixture: &Fixture, task_id: &str, p
         task_id,
         "HEAD",
         &fs::canonicalize(worktrees).unwrap(),
+        &BranchPrefix::default(),
     )
     .unwrap();
     store

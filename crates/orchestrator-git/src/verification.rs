@@ -16,6 +16,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::branch_prefix::BranchPrefix;
 use crate::env_policy::EnvPolicy;
 use crate::repository::Repository;
 use crate::worktree::sanitize_task_id;
@@ -473,11 +474,19 @@ fn check_worktree(
     Ok(())
 }
 
+/// Suffix (`""` or `-N`) of a task branch named `<prefix><slug>[-N]`.
+///
+/// The prefix is configurable and may change after a task was created, so any
+/// valid prefix is accepted; the slug part must still belong to this task.
 fn task_branch_suffix(task_id: &str, branch: &str) -> Result<String, String> {
     let slug = sanitize_task_id(task_id).map_err(|error| error.to_string())?;
-    let prefix = format!("orchestrator/{slug}");
-    let suffix = branch
-        .strip_prefix(&prefix)
+    let (prefix, name) = branch
+        .rsplit_once('/')
+        .ok_or_else(|| format!("branch {branch:?} is not owned by task {task_id:?}"))?;
+    BranchPrefix::parse(&format!("{prefix}/"))
+        .map_err(|_| format!("branch {branch:?} is not a task worktree branch"))?;
+    let suffix = name
+        .strip_prefix(&slug)
         .ok_or_else(|| format!("branch {branch:?} is not owned by task {task_id:?}"))?;
     if suffix.is_empty() {
         return Ok(String::new());
@@ -1033,7 +1042,14 @@ mod tests {
         let repository = Repository::new(&repository_path).unwrap();
         let worktrees_root = temp.path().join("worktrees");
         fs::create_dir(&worktrees_root).unwrap();
-        let worktree = create_task_worktree(&repository, task_id, "HEAD", &worktrees_root).unwrap();
+        let worktree = create_task_worktree(
+            &repository,
+            task_id,
+            "HEAD",
+            &worktrees_root,
+            &BranchPrefix::default(),
+        )
+        .unwrap();
         (repository, worktree)
     }
 

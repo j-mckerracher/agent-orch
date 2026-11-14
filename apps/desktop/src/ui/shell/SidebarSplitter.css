@@ -1,0 +1,65 @@
+/*
+ * Sidebar splitter and collapse toggle (DPES-1102). Both sit over the sidebar's right edge inside `.shell-body`,
+ * so the grid columns and breakpoints in shell.css are unchanged. Colours come from the shell tokens only,
+ * which already carry light and dark values.
+ */
+.shell-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--shell-sidebar-col) - 4px);
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.shell-splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+}
+
+.shell-splitter:hover::after,
+.shell-splitter:focus-visible::after,
+.shell-splitter:active::after {
+  background: var(--shell-blue);
+}
+
+.shell .shell-splitter:focus-visible {
+  outline: var(--focus-width, 3px) solid var(--shell-blue);
+  outline-offset: -2px;
+}
+
+.shell-splitter-toggle {
+  position: absolute;
+  top: 12px;
+  left: calc(var(--shell-sidebar-col) - 12px);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--shell-line);
+  border-radius: 50%;
+  background: var(--shell-panel);
+  color: var(--shell-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shell-splitter-toggle:hover {
+  border-color: var(--shell-blue);
+  color: var(--shell-blue);
+}
+
+/* A zero-width column leaves no room to centre the button on the edge. */
+.shell-body[data-sidebar-collapsed] .shell-splitter-toggle {
+  left: 4px;
+}
