@@ -227,12 +227,15 @@ test.describe("RC-07 device resources placement (bottom strip vs activity area)"
   test("agents-18: device strip does not cover the selected task detail at desktop", async ({ page }) => {
     await openApp(page, "#/agents", "populated", "desktop");
     await page.getByRole("button", { name: RUNNING_TASK }).click();
-    const detail = await box(page.getByRole("complementary", { name: AGENT_DETAIL }));
-    const strip = page.getByRole("region", { name: "Device resources" });
-    if ((await strip.count()) > 0) {
-      const s = await box(strip);
-      expect(detail.y + detail.height).toBeLessThanOrEqual(s.y + 1);
-    }
+    const detail = page.getByRole("complementary", { name: AGENT_DETAIL });
+    const control = detail.locator("summary", { hasText: "Execution feed, side effects and supplied context" });
+    await control.scrollIntoViewIfNeeded();
+    const reachable = await control.evaluate((el) => {
+      const b = el.getBoundingClientRect();
+      const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return !!top && (el === top || el.contains(top));
+    });
+    expect(reachable, "lower detail control is covered or clipped after scrolling").toBe(true);
   });
 });
 
