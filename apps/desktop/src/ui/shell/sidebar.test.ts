@@ -7,9 +7,10 @@ const background = readFileSync(new URL("../background/background.css", import.m
 
 /** Body of the first rule whose selector is exactly `selector` (these rules contain no nested braces). */
 function block(source: string, selector: string): string {
-  const start = source.indexOf(`${selector} {`);
-  if (start < 0) throw new Error(`selector not found: ${selector}`);
-  const open = source.indexOf("{", start);
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const rule = new RegExp(`(?:^|\\n)[\\t ]*${escaped}[\\t ]*\\{`).exec(source);
+  if (!rule) throw new Error(`selector not found: ${selector}`);
+  const open = source.indexOf("{", rule.index);
   return source.slice(open + 1, source.indexOf("}", open));
 }
 

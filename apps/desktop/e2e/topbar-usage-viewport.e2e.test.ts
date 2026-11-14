@@ -88,9 +88,15 @@ function isMeasurement(value: unknown): value is Measurement {
   );
 }
 
+// The test may run up to four headless Chrome dumps (each capped at 20 s, see dumpDom). The vitest default
+// (30 s) is shorter than that worst case, so a run that needs retries timed out on budget, not on layout.
+const CHROME_ATTEMPTS = 4;
+const CHROME_ATTEMPT_MS = 20_000;
+const TIMEOUT_MS = CHROME_ATTEMPTS * CHROME_ATTEMPT_MS + 30_000;
+
 function dumpDom(args: string[]): Promise<{ code: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(chromePath, args, { stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 });
+    const child = spawn(chromePath, args, { stdio: ["ignore", "pipe", "pipe"], timeout: CHROME_ATTEMPT_MS });
     let stdout = "";
     let stderr = "";
     child.stdout?.setEncoding("utf8");
@@ -128,7 +134,7 @@ it("keeps the TopBar usage popover within 760 CSS-pixel width", async () => {
     // Headless Chrome intermittently exits before the probe reports; retry the launch, never the assertions.
     let text: string | undefined;
     let lastError = "";
-    for (let attempt = 0; attempt < 4 && !text; attempt++) {
+    for (let attempt = 0; attempt < CHROME_ATTEMPTS && !text; attempt++) {
       const run = await dumpDom([
         "--headless=new",
         "--disable-gpu",
@@ -162,4 +168,4 @@ it("keeps the TopBar usage popover within 760 CSS-pixel width", async () => {
     await server?.close();
     rmSync(profile, { recursive: true, force: true });
   }
-});
+}, TIMEOUT_MS);

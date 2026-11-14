@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 /**
- * Open/close behaviour shared by the workspace's two popovers: Escape closes and returns focus
- * to the trigger, a pointer press outside closes, and Tab moving focus outside closes. A blur
+ * Open/close behaviour shared by the popovers (workspace pickers, the workspace activity popover):
+ * Escape closes and returns focus to the trigger, a pointer press outside closes, and Tab moving
+ * focus outside closes. A blur
  * with no related target is ignored on purpose: Safari does not focus buttons on click, so it
  * would close the panel while the user is pressing something inside it.
  */

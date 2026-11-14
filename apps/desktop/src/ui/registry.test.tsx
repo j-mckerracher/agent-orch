@@ -26,10 +26,12 @@ describe("M7 wiring", () => {
     render(<App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />);
     expect(screen.queryByTestId(`global-view-${view}`)).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Device resources" })).toBeInTheDocument();
+    // System Usage lives inside the workspace activity popover, so only the workspace route renders it.
+    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-testid="resource-strip"]') !== null).toBe(view === "workspace");
     expect(screen.queryByTestId("slot-top-usage")).not.toBeInTheDocument();
     expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Workspace activity" }) !== null).toBe(view === "workspace");
+    expect(screen.queryByRole("button", { name: /^Workspace activity/ }) !== null).toBe(view === "workspace");
   });
 
   it("keeps the ambient background off by default and offers the opt-in control", async () => {

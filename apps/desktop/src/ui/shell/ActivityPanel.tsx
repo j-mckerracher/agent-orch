@@ -20,9 +20,13 @@
  *   live connection with the `tasks` capability, refuses `fixture:` ids, and asks for
  *   confirmation. Fixture rows use the source's simulated stop and never reach the daemon.
  *
- * Layout updated 2026-11-11 18:12:43 UTC. The shell docks this `<aside>` on the right at
- * >=961 px and places its capped popover above main at 960 px and below (`shell.css`).
- * This component renders no landmark of its own.
+ * Layout: a compact trigger button ("Workspace activity", attention count) sits in the shell's
+ * activity slot at the top-right of main. Its disclosure is a popover anchored under the trigger
+ * (`aria-expanded`/`aria-controls`), closed on load and not remembered. Escape, a pointer press
+ * outside, or focus leaving it closes it and returns focus to the trigger (`usePopover`). The
+ * sections are direct children of `.activity-sections`: Execution queue, Attention, Agent slots,
+ * then System Usage (the shell's `resources` slot, reserved as the last child). Every section and
+ * every queue row starts collapsed. This component renders no landmark of its own.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { isFixtureId } from "../../daemon/api";
@@ -41,8 +45,10 @@ import type {
 import { basename, pendingApprovals } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
+import { usePopover } from "../usePopover";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
 import { NavLink } from "./NavLink";
+import { ResourcesSlot } from "./ResourcesSlot";
 import { formatAge } from "./ResourceStrip";
 import "./ActivityPanel.css";
 
@@ -115,6 +121,10 @@ interface StopControl {
   onStop: (taskId: string) => Promise<boolean>;
 }
 
+/**
+ * One queued or running task. Collapsed it is a single compact row (state and objective), like the
+ * wireframe's queue card; expanding it reveals the meta, the wait reason and the Stop control.
+ */
 function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopControl; isNext: boolean }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -131,62 +141,74 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
   const label = `${entry.objective} (${entry.taskId})`;
   return (
     <li className="activity-row" data-testid={`activity-task-${entry.taskId}`}>
-      <div className="activity-row-main">
-        <span className="activity-row-title">{entry.objective}</span>
-        <span className="activity-row-meta">
-          {basename(entry.projectId)} · {entry.agent} · {entry.taskId}
-        </span>
-        <span className="activity-row-pills">
+      <details className="activity-item">
+        <summary>
           <Pill tone={entry.state === "Running" || entry.state === "Verifying" ? "info" : "neutral"}>{entry.state}</Pill>
-          {isNext && <Pill tone="info">Next to dispatch</Pill>}
-          {waiting && <Pill tone={waiting.tone}>{waiting.text}</Pill>}
-        </span>
-        {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
-      </div>
-      {confirming ? (
-        <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
-          <Button
-            id={confirmId}
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              const noticeTookFocus = await stop.onStop(entry.taskId);
-              setBusy(false);
-              // A stopped row may unmount at the next refresh, so the notice owns focus then.
-              settled.current = !noticeTookFocus;
-              setConfirming(false);
-            }}
-          >
-            Confirm stop
-          </Button>
-          <Button
-            variant="quiet"
-            disabled={busy}
-            onClick={() => {
-              settled.current = true;
-              setConfirming(false);
-            }}
-          >
-            Keep
-          </Button>
+          <span className="activity-item-title">{entry.objective}</span>
+        </summary>
+        <div className="activity-item-body">
+          <span className="activity-row-meta">
+            {basename(entry.projectId)} · {entry.agent} · {entry.taskId}
+          </span>
+          {(isNext || waiting) && (
+            <span className="activity-row-pills">
+              {isNext && <Pill tone="info">Next to dispatch</Pill>}
+              {waiting && <Pill tone={waiting.tone}>{waiting.text}</Pill>}
+            </span>
+          )}
+          {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
+          {confirming ? (
+            <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
+              <Button
+                id={confirmId}
+                variant="danger"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const noticeTookFocus = await stop.onStop(entry.taskId);
+                  setBusy(false);
+                  // A stopped row may unmount at the next refresh, so the notice owns focus then.
+                  settled.current = !noticeTookFocus;
+                  setConfirming(false);
+                }}
+              >
+                Confirm stop
+              </Button>
+              <Button
+                variant="quiet"
+                disabled={busy}
+                onClick={() => {
+                  settled.current = true;
+                  setConfirming(false);
+                }}
+              >
+                Keep
+              </Button>
+            </div>
+          ) : (
+            <div className="activity-row-actions">
+              <Button
+                id={stopId}
+                variant="danger"
+                aria-label={`Stop ${label}`}
+                aria-describedby={stop.blockedReason ? stop.describedBy : undefined}
+                disabled={stop.blockedReason !== null}
+                onClick={() => setConfirming(true)}
+              >
+                Stop
+              </Button>
+            </div>
+          )}
         </div>
-      ) : (
-        <Button
-          id={stopId}
-          variant="danger"
-          aria-label={`Stop ${label}`}
-          aria-describedby={stop.blockedReason ? stop.describedBy : undefined}
-          disabled={stop.blockedReason !== null}
-          onClick={() => setConfirming(true)}
-        >
-          Stop
-        </Button>
-      )}
+      </details>
     </li>
   );
 }
 
+/**
+ * A labelled, always-visible group of queue rows. Groups are not disclosures: only the rows are
+ * expandable, and every row starts collapsed (spec §20-21), so Running is never expanded by default.
+ */
 function TaskGroup({
   title,
   entries,
@@ -194,7 +216,6 @@ function TaskGroup({
   note,
   stop,
   nextId,
-  defaultOpen,
 }: {
   title: string;
   entries: QueueEntry[];
@@ -202,10 +223,12 @@ function TaskGroup({
   note?: string;
   stop: StopControl;
   nextId?: string;
-  defaultOpen?: boolean;
 }) {
   return (
-    <Disclosure summary={title} count={entries.length} defaultOpen={defaultOpen} className="activity-sub" data-testid={`activity-queue-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div role="group" aria-label={title} className="activity-queue-group" data-testid={`activity-queue-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+      <p className="activity-subhead">
+        {title} <span className="activity-subcount">{entries.length}</span>
+      </p>
       {note && <p className="activity-note">{note}</p>}
       {entries.length === 0 ? (
         <p className="activity-empty">{empty}</p>
@@ -216,7 +239,7 @@ function TaskGroup({
           ))}
         </ul>
       )}
-    </Disclosure>
+    </div>
   );
 }
 
@@ -291,6 +314,8 @@ export function ActivityPanel() {
     appData.approvals.data,
   ]);
   const usage = useRefreshing(() => surfaces.usage.usage(), surfaces.usage.provenance, [surfaces.usage, ...connectionDeps]);
+  const popover = usePopover();
+  const popoverId = useId();
 
   const snapshot: ActivitySnapshot | null = activity.status === "ok" ? activity.data : null;
   const running = snapshot?.running ?? [];
@@ -360,11 +385,6 @@ export function ActivityPanel() {
       : unavailableText(snapshot.slots);
   const budget = formatBudget(usage);
 
-  const summary = (
-    <>
-      Workspace activity {fixture && <Placeholder id="D11" />}
-    </>
-  );
   const count = (
     <span className="activity-badge" data-testid="activity-badge">
       <span aria-hidden="true">{badge}</span>
@@ -379,8 +399,27 @@ export function ActivityPanel() {
   );
 
   return (
-    <div className="activity-panel" data-testid="workspace-activity" data-source={source.provenance.kind}>
-      <Disclosure summary={summary} count={count} defaultOpen className="activity-root">
+    <div
+      className="activity-panel"
+      data-testid="workspace-activity"
+      data-source={source.provenance.kind}
+      ref={popover.rootRef}
+      onKeyDown={popover.onKeyDown}
+      onBlur={popover.onBlur}
+    >
+      <button
+        ref={popover.buttonRef}
+        type="button"
+        className="activity-trigger"
+        aria-expanded={popover.open}
+        aria-controls={popoverId}
+        onClick={() => popover.setOpen((open) => !open)}
+      >
+        <span className="activity-trigger-label">Workspace activity</span>
+        {count}
+      </button>
+      <div id={popoverId} className="activity-popover" data-testid="activity-popover" hidden={!popover.open}>
+        {fixture && <Placeholder id="D11" />}
         <p className="activity-visually-hidden" role="status" data-testid="activity-status">
           {statusLine}
         </p>
@@ -403,102 +442,106 @@ export function ActivityPanel() {
         {error && <ErrorNotice error={error} action="Stopping the task" />}
         {receipts.length > 0 && <SimulatedReceipts label="Simulated activity actions" receipts={receipts} />}
 
-        <Disclosure summary="Execution queue" count={snapshot ? running.length + queued.length : "—"} defaultOpen className="activity-group" data-testid="activity-queue">
-          {fixture && <Placeholder id="D11" />}
-          {snapshot ? (
-            <>
-              {snapshot.degraded?.tasks && (
-                <p className="activity-note" data-testid="activity-tasks-degraded">
-                  Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
-                </p>
-              )}
-              <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} defaultOpen />
-              <TaskGroup
-                title="Up next"
-                entries={upNextEntries}
-                empty="No queued task is known to be next to dispatch."
-                note={snapshot.upNext.status === "ok" ? undefined : `Dispatch order is not available: ${snapshot.upNext.reason}`}
-                stop={stop}
-                nextId={nextId}
-              />
-              <TaskGroup title="Waiting" entries={waitingEntries} empty="No task is waiting on a dependency or approval." stop={stop} />
-              <TaskGroup
-                title="Unclassified"
-                entries={unclassifiedEntries}
-                empty="Every queued task has a reported wait reason."
-                note="The daemon does not say why these queued tasks are not running or when they will dispatch."
-                stop={stop}
-              />
-            </>
-          ) : (
-            <p className="activity-empty">Queue not available.</p>
-          )}
-        </Disclosure>
+        <div className="activity-sections">
+          <Disclosure summary="Execution queue" count={snapshot ? running.length + queued.length : "—"} className="activity-group" data-testid="activity-queue">
+            {fixture && <Placeholder id="D11" />}
+            {snapshot ? (
+              <>
+                {snapshot.degraded?.tasks && (
+                  <p className="activity-note" data-testid="activity-tasks-degraded">
+                    Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
+                  </p>
+                )}
+                <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} />
+                <TaskGroup
+                  title="Up next"
+                  entries={upNextEntries}
+                  empty="No queued task is known to be next to dispatch."
+                  note={snapshot.upNext.status === "ok" ? undefined : `Dispatch order is not available: ${snapshot.upNext.reason}`}
+                  stop={stop}
+                  nextId={nextId}
+                />
+                <TaskGroup title="Waiting" entries={waitingEntries} empty="No task is waiting on a dependency or approval." stop={stop} />
+                <TaskGroup
+                  title="Unclassified"
+                  entries={unclassifiedEntries}
+                  empty="Every queued task has a reported wait reason."
+                  note="The daemon does not say why these queued tasks are not running or when they will dispatch."
+                  stop={stop}
+                />
+              </>
+            ) : (
+              <p className="activity-empty">Queue not available.</p>
+            )}
+          </Disclosure>
 
-        <Disclosure summary="Attention" count={badge} defaultOpen className="activity-group" data-testid="activity-attention">
-          {fixture && <Placeholder id="D11" />}
-          {snapshot ? (
-            <>
-              <NavLink to={{ name: "global", view: "review" }} className="activity-review-all">
-                Review all decisions
-              </NavLink>
-              {!attentionKnown ? (
-                <p className="activity-empty" data-testid="activity-attention-degraded">
-                  Attention list not available: {snapshot.degraded?.approvals}
-                </p>
-              ) : attention.length === 0 ? (
-                <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
-              ) : (
-                <ul className="activity-list">
-                  {attention.map((item) => (
-                    <AttentionRow key={item.approvalId} item={item} />
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : (
-            <p className="activity-empty">Attention list not available.</p>
-          )}
-        </Disclosure>
+          <Disclosure summary="Attention" count={badge} className="activity-group" data-testid="activity-attention">
+            {fixture && <Placeholder id="D11" />}
+            {snapshot ? (
+              <>
+                <NavLink to={{ name: "global", view: "review" }} className="activity-review-all">
+                  Review all decisions
+                </NavLink>
+                {!attentionKnown ? (
+                  <p className="activity-empty" data-testid="activity-attention-degraded">
+                    Attention list not available: {snapshot.degraded?.approvals}
+                  </p>
+                ) : attention.length === 0 ? (
+                  <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
+                ) : (
+                  <ul className="activity-list">
+                    {attention.map((item) => (
+                      <AttentionRow key={item.approvalId} item={item} />
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="activity-empty">Attention list not available.</p>
+            )}
+          </Disclosure>
 
-        <Disclosure
-          summary="Agent slots"
-          count={snapshot?.slots.status === "ok" ? `${snapshot.slots.value.used} / ${snapshot.slots.value.limit}` : "not available"}
-          className="activity-group"
-          data-testid="activity-slots"
-        >
-          {fixture && <Placeholder id="D11" />}
-          {snapshot?.slots.status === "ok" ? (
-            <p data-testid="activity-slots-value">
-              {snapshot.slots.value.used} of {snapshot.slots.value.limit} slots in use ·{" "}
-              {Math.max(0, snapshot.slots.value.limit - snapshot.slots.value.used)} available
+          <Disclosure
+            summary="Agent slots"
+            count={snapshot?.slots.status === "ok" ? `${snapshot.slots.value.used} / ${snapshot.slots.value.limit}` : "not available"}
+            className="activity-group"
+            data-testid="activity-slots"
+          >
+            {fixture && <Placeholder id="D11" />}
+            {snapshot?.slots.status === "ok" ? (
+              <p data-testid="activity-slots-value">
+                {snapshot.slots.value.used} of {snapshot.slots.value.limit} slots in use ·{" "}
+                {Math.max(0, snapshot.slots.value.limit - snapshot.slots.value.used)} available
+              </p>
+            ) : (
+              <p data-testid="activity-slots-value">Slots: not available{slotsReason ? ` (${slotsReason})` : ""}</p>
+            )}
+            {snapshot?.dispatchPaused.status === "ok" && (
+              <p>New dispatch: {snapshot.dispatchPaused.value ? "paused" : "running"}</p>
+            )}
+            <p data-testid="activity-budget">
+              {budget.text} {budget.fixture && <Placeholder id="D12" />}
             </p>
-          ) : (
-            <p data-testid="activity-slots-value">Slots: not available{slotsReason ? ` (${slotsReason})` : ""}</p>
-          )}
-          {snapshot?.dispatchPaused.status === "ok" && (
-            <p>New dispatch: {snapshot.dispatchPaused.value ? "paused" : "running"}</p>
-          )}
-          <p data-testid="activity-budget">
-            {budget.text} {budget.fixture && <Placeholder id="D12" />}
-          </p>
-          <div className="activity-controls">
-            <ReasonButton
-              label="Pause new dispatch"
-              reason={pauseReason}
-              onClick={async () => {
-                const receipt = await source.simulatePauseDispatch();
-                setReceipts((all) => [...all, receipt]);
-              }}
-            />
-            <ReasonButton label="Stop menu" reason="stopping everything at once is not supported; stop a single task from the queue." />
-            <ReasonButton
-              label="Queue settings"
-              reason={fixture ? "queue settings are not simulated." : "the daemon does not expose scheduler limits."}
-            />
-          </div>
-        </Disclosure>
-      </Disclosure>
+            <div className="activity-controls">
+              <ReasonButton
+                label="Pause new dispatch"
+                reason={pauseReason}
+                onClick={async () => {
+                  const receipt = await source.simulatePauseDispatch();
+                  setReceipts((all) => [...all, receipt]);
+                }}
+              />
+              <ReasonButton label="Stop menu" reason="stopping everything at once is not supported; stop a single task from the queue." />
+              <ReasonButton
+                label="Queue settings"
+                reason={fixture ? "queue settings are not simulated." : "the daemon does not expose scheduler limits."}
+              />
+            </div>
+          </Disclosure>
+          {/* System Usage: the shell's resources slot is always the last section of .activity-sections. */}
+          <ResourcesSlot />
+        </div>
+      </div>
     </div>
   );
 }

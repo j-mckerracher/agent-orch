@@ -3,6 +3,7 @@ import { useLayoutSettings, type LayoutSettings } from "../layout/layoutSettings
 import type { Route } from "../router";
 import { SidebarSplitter } from "./SidebarSplitter";
 import { SidebarNav, SidebarWorkstreams } from "./SidebarNav";
+import { ResourcesSlotProvider } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 import { useShellTier } from "./useShellTier";
 import "./shell.css";
@@ -24,8 +25,10 @@ export interface AppShellProps {
 }
 
 /**
- * Global shell with persistent connection strip, sidebar, top bar, main, activity, and
- * resource regions. CSS docks activity right above 960 px and before main at narrower widths.
+ * Global shell with persistent connection strip, sidebar, top bar and main. The activity slot is a
+ * top-right control over main's row above 960 px, not a column; at narrower widths it sits above
+ * main. The resources slot has no region of its own: the activity popover renders it as its last
+ * section (see `ResourcesSlot.tsx`).
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, layout, children }: AppShellProps) {
@@ -109,17 +112,13 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
             <div className="shell-topbar-search">{slots.topSearch}</div>
             <div className="shell-topbar-counts">{slots.topCounts}</div>
           </section>
-          {main}
+          {/* A control, not a region: it shares main's grid cell and reserves no column (see shell.css). */}
           {hasActivity && (
-            <aside className="shell-activity" aria-label="Workspace activity">
-              {slots.activity}
-            </aside>
+            <div className="shell-activity" data-testid="shell-activity">
+              <ResourcesSlotProvider value={hasResources ? slots.resources : null}>{slots.activity}</ResourcesSlotProvider>
+            </div>
           )}
-          {hasResources && (
-            <section className="shell-resources" aria-label="Device resources">
-              {slots.resources}
-            </section>
-          )}
+          {main}
         </div>
       </div>
     </div>

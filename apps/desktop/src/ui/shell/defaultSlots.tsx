@@ -2,6 +2,7 @@ import { matchesFilter, pendingApprovals } from "../format";
 import { useServices, useStore } from "../services";
 import { ThemeToggle } from "../theme";
 import { NavLink } from "./NavLink";
+import { ResourcesSlot } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 
 /** Pending approvals from `approvals.list`; "—" (not 0) when no list has loaded. */
@@ -66,6 +67,7 @@ export const defaultShellSlots: ShellSlots = {
     <div data-testid="slot-activity">
       <h2>Workspace activity</h2>
       {placeholder("slot-activity-note", "Not available yet.")}
+      <ResourcesSlot />
     </div>
   ),
   resources: placeholder("slot-resources", "Device resources: not available (no metrics source is connected)."),

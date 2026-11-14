@@ -1,12 +1,10 @@
-/* Resource strip (M7-17). Reads tokens only; layout of the region itself belongs to shell.css. */
-.rs-strip {
-  border-bottom: 0;
-}
-
-.rs-strip > summary {
+/*
+ * System Usage section (M7-17): device meters in the workspace activity popover, styled after the
+ * wireframe's `.system-usage` block. Reads tokens only. Section chrome comes from ActivityPanel.css
+ * (`.activity-group`); this file styles the meter rows.
+ */
+.system-usage > summary {
   flex-wrap: wrap;
-  min-height: 34px;
-  padding: 4px 8px;
 }
 
 .rs-summary {
@@ -22,7 +20,7 @@
   line-height: 20px;
 }
 
-.rs-strip > summary .ui-disclosure-count {
+.system-usage > summary .ui-disclosure-count {
   flex: 0 1 auto;
   min-width: 0;
   color: var(--subtle);
@@ -30,18 +28,18 @@
   overflow-wrap: anywhere;
 }
 
-.rs-strip[open] > summary .ui-disclosure-count {
+.system-usage[open] > summary .ui-disclosure-count {
   display: none;
 }
 
-.rs-strip .ui-disclosure-body {
-  padding: 4px 8px 4px;
+.system-usage .ui-disclosure-body {
+  padding: 4px 8px 8px;
 }
 
+/* One row per resource: label, thin gradient bar, value. The popover is a single column, so rows stack. */
 .rs-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2px 28px;
+  gap: 8px;
 }
 
 .rs-item {
@@ -49,33 +47,28 @@
 }
 
 .rs-item .ui-meter {
-  grid-template-columns: 62px minmax(0, 1fr) minmax(11ch, auto);
-  margin: 4px 0 0;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 0;
+  font-size: 11px;
 }
 
+.system-usage .ui-meter-track {
+  height: 5px;
+}
+
+/* Scope and observed age stay visible under each bar, aligned with the bar (48px label + 8px gap). */
 .rs-meta {
-  margin: 0 0 6px 72px;
+  margin: 2px 0 0 56px;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .rs-note {
-  margin: 4px 0 2px;
+  margin: 8px 0 0;
   color: var(--subtle);
   font-size: 11px;
   line-height: 1.4;
-}
-
-@media (max-width: 760px) {
-  .rs-item .ui-meter {
-    grid-template-columns: 48px minmax(0, 1fr) minmax(9ch, auto);
-    gap: 7px;
-    font-size: 10px;
-  }
-
-  .rs-meta {
-    margin-left: 55px;
-  }
 }

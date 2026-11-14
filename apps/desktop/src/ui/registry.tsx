@@ -30,7 +30,7 @@ export const appShellSlots: Partial<ShellSlots> = {
   ...workstreamsShellSlots,
   ...topBarSlots,
   activity: <ActivityPanel />,
-  resources: <ResourceStrip />,
+  resources: <ResourceStrip defaultOpen />,
   themeToggle: withAmbientBackground(<ThemeToggle />),
 };
 

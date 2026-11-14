@@ -34,6 +34,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+  /* Keeps the title clear of the shell's "Workspace activity" trigger in the same row. */
+  padding-right: var(--shell-activity-reserve, 0px);
 }
 
 .ws-head h2 {

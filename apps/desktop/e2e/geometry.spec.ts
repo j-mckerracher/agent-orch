@@ -15,28 +15,29 @@ async function openFixture(page: Page, width: number) {
   await expect(page.getByTestId("fixture-banner")).toBeVisible();
 }
 
-test("expanded resources remain reachable and unclipped at 960 CSS px", async ({ page }) => {
+test("System Usage stays reachable and unclipped in the activity popover at 960 CSS px", async ({ page }) => {
   await openFixture(page, viewport.width);
 
-  const region = page.getByRole("region", { name: "Device resources" });
-  const disclosure = region.getByTestId("resource-strip");
-  await disclosure.locator("summary").click();
-  await expect(disclosure).toHaveAttribute("open", "");
+  const activity = page.getByTestId("workspace-activity");
+  await activity.getByRole("button", { name: /^Workspace activity/ }).click();
+  const usage = activity.getByTestId("resource-strip");
+  // The System Usage section opens by default, as in the wireframe.
+  await expect(usage).toHaveAttribute("open", "");
 
   for (const name of resourceLabels) {
-    await expect(region.getByText(name, { exact: true })).toBeVisible();
+    await expect(usage.getByText(name, { exact: true })).toBeVisible();
   }
   await expect(
-    region.getByText("Scale colours (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.", {
+    usage.getByText("Scale colours (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.", {
       exact: true,
     }),
   ).toBeVisible();
 
-  await region.scrollIntoViewIfNeeded();
-  const geometry = await region.evaluate((element) => {
-    const scrollport = element.parentElement;
-    if (!(scrollport instanceof HTMLElement)) throw new Error("resource region has no shell scrollport");
-    const bounds = scrollport.getBoundingClientRect();
+  await usage.scrollIntoViewIfNeeded();
+  const geometry = await usage.evaluate((element) => {
+    const popover = element.closest<HTMLElement>(".activity-popover");
+    if (!popover) throw new Error("System Usage is not inside the activity popover");
+    const bounds = popover.getBoundingClientRect();
     return {
       clip: {
         left: Math.max(0, bounds.left),
@@ -63,7 +64,8 @@ test("expanded resources remain reachable and unclipped at 960 CSS px", async ({
 test("activity controls receive pointer input and activate at 760 CSS px", async ({ page }) => {
   await openFixture(page, 760);
 
-  const activity = page.getByRole("complementary", { name: "Workspace activity" });
+  const activity = page.getByTestId("workspace-activity");
+  await activity.getByRole("button", { name: /^Workspace activity/ }).click();
   const slots = activity.getByTestId("activity-slots");
   await slots.locator("summary").click();
   await expect(slots).toHaveAttribute("open", "");
@@ -120,9 +122,10 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
           stripHeight: document.querySelector(".shell-strip")!.getBoundingClientRect().height,
           sidebarHeight: document.querySelector(".shell-sidebar")!.getBoundingClientRect().height,
           slots: [document.documentElement, ...document.querySelectorAll<HTMLElement>(
-            ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-activity,.shell-resources,.shell-content")]
+            ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-activity,.shell-content")]
             .map(el => ({ slot: el.className || el.tagName, overflow: el.scrollWidth - el.clientWidth })),
           asides: [...document.querySelectorAll("aside")].map(el => el.getAttribute("aria-label")),
+          activityControls: document.querySelectorAll('[data-testid="shell-activity"]').length,
         }));
         console.log(JSON.stringify({ route, fixture, ...geometry }));
         expect(geometry.width).toBe(width);
