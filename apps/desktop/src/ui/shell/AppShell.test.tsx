@@ -115,14 +115,13 @@ describe("global routes in the shell", () => {
 });
 
 describe("legacy project routes in the shell", () => {
-  it.each(LEGACY_ROUTES)("%s resolves with exactly one main landmark and Projects selected", async (_name, route) => {
+  it.each(LEGACY_ROUTES)("%s resolves with exactly one main landmark and Workstreams selected", async (_name, route) => {
     await mount(daemon(), { route });
     expect(screen.getAllByRole("main")).toHaveLength(1);
     const current = document.querySelectorAll('.shell [aria-current="page"]');
     expect(current.length).toBeGreaterThanOrEqual(1);
-    const section = document.querySelector('.shell-nav [aria-current]');
-    expect(section).toHaveAttribute("aria-current", "page");
-    expect(section).toHaveTextContent("Projects");
+    const section = document.querySelector('.shell-sidebar [aria-current="page"]');
+    expect(section).toHaveTextContent("Workstreams");
   });
 });
 
@@ -203,7 +202,6 @@ describe("navigation", () => {
       expect.stringContaining("Orchestrator Workspace"),
       expect.stringContaining("Agents & Sessions"),
       expect.stringContaining("Review & Decisions"),
-      expect.stringContaining("Projects"),
     ]);
     links[0].focus();
     for (const link of links.slice(1)) {
@@ -212,11 +210,11 @@ describe("navigation", () => {
     }
   });
 
-  it("reaches the Workstreams heading link and the legacy project list (S1)", async () => {
-    const { user, services } = await mount(daemon());
+  it("reaches the Workstreams heading link and, from its view, the legacy project list (S1)", async () => {
+    const { user, services } = await mount(daemon(), { globalViews: workstreamsGlobalViews });
     await user.click(within(screen.getByRole("navigation", { name: "Workstreams" })).getByRole("link", { name: /Workstreams/ }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
-    await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /Projects/ }));
+    await user.click(screen.getByRole("link", { name: "Manage projects" }));
     expect(services.router.getSnapshot()).toEqual({ name: "projects" });
     expect(await screen.findByText("repo")).toBeInTheDocument();
   });
@@ -225,7 +223,28 @@ describe("navigation", () => {
     await mount(daemon());
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(within(nav).getByRole("link", { name: /Review & Decisions/ })).toHaveAttribute("href", "#/review");
-    expect(within(nav).getByRole("link", { name: /Projects/ })).toHaveAttribute("href", "#/projects");
+    expect(within(nav).getByRole("link", { name: /Agents & Sessions/ })).toHaveAttribute("href", "#/agents");
+    expect(screen.getByRole("link", { name: /^Workstreams/ })).toHaveAttribute("href", "#/workstreams");
+  });
+
+  it("has exactly four persistent destinations: three primary views and the Workstreams tree heading", async () => {
+    await mount(daemon());
+    const primary = within(screen.getByRole("navigation", { name: "Primary views" })).getAllByRole("link");
+    const tree = within(screen.getByRole("navigation", { name: "Workstreams" })).getAllByRole("link", { name: /^Workstreams/ });
+    expect([...primary, ...tree].map((link) => link.textContent?.trim())).toEqual([
+      expect.stringContaining("Orchestrator Workspace"),
+      expect.stringContaining("Agents & Sessions"),
+      expect.stringContaining("Review & Decisions"),
+      expect.stringContaining("Workstreams"),
+    ]);
+    expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+  });
+
+  it("keeps projects reachable from the Workstreams view and not from any primary destination", async () => {
+    const { user } = await mount(daemon(), { route: { name: "global", view: "workstreams" }, globalViews: workstreamsGlobalViews });
+    expect(within(screen.getByRole("navigation", { name: "Primary views" })).queryByRole("link", { name: /Projects/ })).toBeNull();
+    await user.click(screen.getByRole("link", { name: "Manage projects" }));
+    expect(await screen.findByText("repo")).toBeInTheDocument();
   });
 
   it("follows the browser hash: deep link in, back and forward out", async () => {
@@ -409,7 +428,7 @@ describe("responsive behaviour", () => {
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(nav).toBeVisible();
     expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
-    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
     expect(screen.getByRole("navigation", { name: "Workstreams" })).toBeVisible();
 
     const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });
