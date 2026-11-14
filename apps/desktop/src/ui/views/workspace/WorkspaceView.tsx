@@ -288,11 +288,14 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
     event.preventDefault();
     void send();
   };
+  // Enter sends. Shift+Enter keeps the default newline; Ctrl/Cmd+Enter also sends. Enter that confirms an IME
+  // composition is left to the IME. A send that is not allowed does nothing, and the newline is still
+  // suppressed, so Enter never adds a line the user did not ask for.
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      void send();
-    }
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    void send();
   };
 
   const headingId = `${ids}-heading`;
@@ -409,7 +412,7 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
           </Button>
         </div>
         <p id={keysId} className="ws-small">
-          Press Ctrl or Cmd + Enter to send.
+          Press Enter to send, Shift+Enter for a new line.
         </p>
         {blocked && (
           <p id={sendId} className="ws-small ws-blocked">

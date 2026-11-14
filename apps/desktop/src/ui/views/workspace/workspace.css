@@ -166,7 +166,7 @@
 .ws-composer textarea {
   width: 100%;
   min-height: 56px;
-  resize: vertical;
+  resize: none;
   border: 0;
   background: transparent;
   color: var(--ink);

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../../daemon/errors";
@@ -328,7 +328,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     expect(box.getAttribute("placeholder")).toBe("Ask a question, redirect work, or discuss the plan…");
     expect(screen.getByText("Message alpha coordinator", { selector: "label" })).not.toHaveClass("ws-visually-hidden");
-    expect(screen.getByText("Press Ctrl or Cmd + Enter to send.")).toBeInTheDocument();
+    expect(screen.getByText("Press Enter to send, Shift+Enter for a new line.")).toBeInTheDocument();
   });
 
   it("shows an unavailable transcript with Retry", async () => {
@@ -620,6 +620,88 @@ describe("accessibility structure", () => {
     const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
     await user.type(box, "hi{Control>}{Enter}{/Control}");
     expect(await screen.findByText(/SIMULATED:/)).toBeInTheDocument();
+  });
+});
+
+describe("composer keys", () => {
+  it("sends on Enter in fixture mode, shows the notice and clears the draft without a newline", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "plan it{Enter}");
+    expect(await screen.findByText(/SIMULATED: this message was not sent or recorded anywhere/)).toBeInTheDocument();
+    expect(within(screen.getByRole("log")).getByText("plan it")).toBeInTheDocument();
+    await waitFor(() => expect(box).toHaveValue(""));
+  });
+
+  it("still sends on Cmd+Enter (Meta)", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "hi{Meta>}{Enter}{/Meta}");
+    expect(await screen.findByText(/SIMULATED:/)).toBeInTheDocument();
+  });
+
+  it("inserts a newline on Shift+Enter and does not send", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "line one{Shift>}{Enter}{/Shift}line two");
+    expect(box).toHaveValue("line one\nline two");
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
+  });
+
+  it("leaves Enter that confirms an IME composition to the IME, with no send", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "nihon");
+    // A handled Enter calls preventDefault, which fireEvent reports as false. The IME needs the event.
+    expect(fireEvent.keyDown(box, { key: "Enter", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(box, { key: "Enter", keyCode: 229 })).toBe(true);
+    expect(box).toHaveValue("nihon");
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
+  });
+
+  it("does not send an empty or whitespace-only draft, and adds no newline", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "{Enter}");
+    expect(box).toHaveValue("");
+    await user.type(box, "   {Enter}");
+    expect(box).toHaveValue("   ");
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
+  });
+
+  it("does not send or add a newline on Enter while the orchestrator is still replying", async () => {
+    const fake = liveDaemon();
+    stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "slow{Enter}");
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+    await user.type(box, "more{Enter}");
+    expect(fake.callsTo("conversations.send")).toHaveLength(1);
+    expect(box).toHaveValue("more");
+  });
+
+  it("sends on Enter through the daemon, as the send button does", async () => {
+    const fake = liveDaemon();
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(box, "ship it{Enter}");
+    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
+    const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
+    expect(params).toMatchObject({ project_id: ALPHA, text: "ship it" });
+    await waitFor(() => expect(box).toHaveValue(""));
   });
 });
 
