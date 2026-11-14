@@ -505,11 +505,13 @@ test.describe("RC-20 primary navigation has exactly four destinations", () => {
 // RC-21 Workspace conversation: scope line, composer placeholder, coordinator chips, target label
 // ---------------------------------------------------------------------------
 test.describe("RC-21 workspace conversation copy, chips and composer", () => {
-  test("workspace-11: coordinator conversations offer Request review as an enabled navigation action", async ({ page }) => {
+  test("workspace-11: coordinator conversations offer Request review as a navigation link to Review & Decisions", async ({ page }) => {
     await openApp(page, "#/workspace", "populated", "desktop");
     await page.getByRole("button", { name: /Choose conversation target/ }).click();
     await page.getByRole("radio", { name: /Auth hardening coordinator/ }).check();
-    await expect(page.getByRole("button", { name: "Request review" })).toBeEnabled();
+    const review = page.getByRole("link", { name: "Request review" });
+    await expect(review).toBeVisible();
+    await expect(review).toHaveAttribute("href", "#/review");
   });
 
   test("workspace-12: Global scope line reads 'All workstreams · Cross-workstream coordination'", async ({ page }) => {
