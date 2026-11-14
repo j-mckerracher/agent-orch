@@ -8,6 +8,7 @@ import { FakeDaemon } from "../../test/fakeDaemon";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE } from "../router";
 import { ServicesProvider, type Services, type SurfaceState } from "../services";
+import { ActivityPanel } from "./ActivityPanel";
 import { ResourceStrip, ResourceStripView, formatAge } from "./ResourceStrip";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
@@ -296,6 +297,24 @@ describe("ResourceStripView", () => {
     expect(screen.getByTestId("resource-strip-compact")).toHaveTextContent(/observed 0 s ago/);
   });
 
+  it("exposes each measured percentage as a 0-100 meter with its value, scope and age", () => {
+    view(ok({}));
+    const cpu = screen.getByRole("meter", { name: "CPU utilization" });
+    expect(cpu).toHaveAttribute("aria-valuemin", "0");
+    expect(cpu).toHaveAttribute("aria-valuemax", "100");
+    expect(cpu).toHaveAttribute("aria-valuenow", "10");
+    expect(cpu).toHaveAttribute("aria-valuetext", "10%, scope CPU, observed 4 s ago");
+    expect(screen.getByRole("meter", { name: "Memory capacity used" })).toHaveAttribute("aria-valuenow", "20");
+    expect(screen.getByRole("meter", { name: "Disk capacity used" })).toHaveAttribute("aria-valuenow", "30");
+    expect(screen.queryByRole("meter", { name: "GPU utilization" })).toBeNull();
+  });
+
+  it("shows the scope and observed age as visible text beneath each bar", () => {
+    view(ok({}));
+    const cpuRow = screen.getByRole("meter", { name: "CPU utilization" }).closest(".rs-item")!;
+    expect(cpuRow).toHaveTextContent("Scope: CPU · observed 4 s ago");
+  });
+
   it("states that the colour scale is not an alert threshold and that disk means capacity", () => {
     view(ok({}));
     expect(screen.getByText(/not an alert threshold/)).toBeInTheDocument();
@@ -311,7 +330,7 @@ describe("ResourceStrip behaviour", () => {
     const strip = screen.getByTestId("resource-strip") as HTMLDetailsElement;
     await user.tab();
     expect(strip.querySelector("summary")).toHaveFocus();
-    await user.click(screen.getByText("Device resources"));
+    await user.click(screen.getByText("System Usage"));
     expect(strip.open).toBe(true);
     expect(screen.getByRole("meter", { name: "CPU utilization" })).toBeInTheDocument();
   });
@@ -407,13 +426,32 @@ describe("formatAge", () => {
 });
 
 describe("ResourceStrip in the shell", () => {
-  it("renders inside the Device resources region without adding a landmark, in fixture mode", async () => {
+  it("renders as the last section of the workspace activity popover, in fixture mode", async () => {
     const services = fixtureServices();
-    render(<App services={services} shellSlots={{ resources: <ResourceStrip now={() => NOW} /> }} />);
-    const region = await screen.findByRole("region", { name: "Device resources" });
-    expect(await within(region).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 44%");
-    expect(within(region).queryAllByRole("region")).toHaveLength(0);
-    expect(within(region).queryAllByRole("navigation")).toHaveLength(0);
-    expect(within(region).getByTestId("badge-D13")).toBeInTheDocument();
+    render(
+      <App
+        services={services}
+        shellSlots={{ activity: <ActivityPanel />, resources: <ResourceStrip defaultOpen now={() => NOW} /> }}
+      />,
+    );
+    const panel = await screen.findByTestId("workspace-activity");
+    await userEvent.setup().click(within(panel).getByRole("button", { name: /^Workspace activity/ }));
+    const section = within(panel).getByTestId("resource-strip");
+    expect(section.parentElement).toHaveClass("activity-sections");
+    expect(section.parentElement?.lastElementChild).toBe(section);
+    expect(section).toHaveAttribute("open");
+    expect(await within(section).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 44%");
+    expect(within(section).getByTestId("badge-D13")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
+    expect(document.querySelector(".shell-resources")).toBeNull();
+  });
+
+  it("omits System Usage from the popover when the resources slot is null", async () => {
+    const services = fixtureServices();
+    render(<App services={services} shellSlots={{ activity: <ActivityPanel />, resources: null }} />);
+    const panel = await screen.findByTestId("workspace-activity");
+    await userEvent.setup().click(within(panel).getByRole("button", { name: /^Workspace activity/ }));
+    expect(within(panel).queryByTestId("resource-strip")).toBeNull();
+    expect(within(panel).queryByRole("meter")).toBeNull();
   });
 });

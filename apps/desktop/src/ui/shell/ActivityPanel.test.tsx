@@ -375,13 +375,26 @@ describe("workspace activity popover", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("starts every top-level section collapsed, and Running open only once the queue is expanded", async () => {
+  it("starts every top-level section and every queue row collapsed, Running included", async () => {
     const { panel, user } = await mountPanel(null);
     for (const title of ["Execution queue", "Attention", "Agent slots"]) expect(detailsFor(panel, title).open).toBe(false);
     await expandSection(user, panel, "Execution queue");
-    expect(detailsFor(panel, "Running").open).toBe(true);
-    for (const title of ["Up next", "Waiting", "Unclassified"]) expect(detailsFor(panel, title).open).toBe(false);
-    expect(within(detailsFor(panel, "Running")).getByText("Add refresh-token expiry")).toBeInTheDocument();
+    // Running is a labelled group, not a disclosure; its rows (and their Stop control) stay collapsed.
+    expect(within(panel).getByRole("group", { name: "Running" })).toBeInTheDocument();
+    const runningRow = within(panel).getByText("Add refresh-token expiry", { selector: ".activity-item-title" }).closest("details") as HTMLDetailsElement;
+    expect(runningRow.open).toBe(false);
+    await user.click(runningRow.querySelector("summary") as HTMLElement);
+    expect(runningRow.open).toBe(true);
+    expect(within(runningRow).getByRole("button", { name: /^Stop Add refresh-token expiry/ })).toBeInTheDocument();
+  });
+
+  it("places System Usage as the last section, open by default, inside the popover", async () => {
+    const { panel } = await mountPanel(null);
+    const sections = panel.querySelector(".activity-sections") as HTMLElement;
+    // The shell's resources slot is reserved as the last child; here it holds the default placeholder.
+    const last = sections.lastElementChild as HTMLElement;
+    expect(last).toBe(within(panel).getByTestId("slot-resources"));
+    expect(panel.querySelector('[data-testid="activity-popover"]')).toContainElement(last);
   });
 
   it("keeps the honest empty states inside the expanded sections", async () => {
@@ -390,8 +403,7 @@ describe("workspace activity popover", () => {
     const { panel, user } = await mountPanel(fake);
     await waitFor(() => expect(within(panel).getByTestId("activity-status")).toHaveTextContent("0 require attention"));
     await expandSection(user, panel, "Execution queue");
-    await expandSection(user, panel, "Unclassified");
-    expect(within(panel).getByText("Every queued task has a reported wait reason.")).toBeInTheDocument();
+    expect(within(panel).getByRole("group", { name: "Unclassified" })).toHaveTextContent("Every queued task has a reported wait reason.");
     await expandSection(user, panel, "Attention");
     expect(within(panel).getByText("Nothing needs attention.")).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Review all decisions" })).toBeInTheDocument();

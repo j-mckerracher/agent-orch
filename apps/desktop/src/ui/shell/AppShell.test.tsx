@@ -10,6 +10,7 @@ import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
+import { ResourcesSlot } from "./ResourcesSlot";
 
 /** Like the shared `mount`, but starts on the boot default route and accepts the shell props. */
 async function mount(
@@ -301,6 +302,7 @@ describe("counts and placeholders", () => {
     expect(screen.getByTestId("top-counts")).toHaveTextContent("— tasks");
     expect(screen.getByTestId("slot-top-usage")).toHaveTextContent("Usage: not available");
     expect(screen.getByTestId("slot-resources")).toHaveTextContent("not available");
+    expect(screen.getByTestId("slot-resources").closest('[data-testid="shell-activity"]')).not.toBeNull();
   });
 });
 
@@ -315,7 +317,11 @@ describe("slots", () => {
         topUsage: <span data-testid="s-usage">U</span>,
         topSearch: <span data-testid="s-search">S</span>,
         topCounts: <span data-testid="s-counts">C</span>,
-        activity: <p data-testid="s-activity">A</p>,
+        activity: (
+          <div data-testid="s-activity">
+            A<ResourcesSlot />
+          </div>
+        ),
         resources: <p data-testid="s-resources">X</p>,
       },
     });
@@ -327,8 +333,9 @@ describe("slots", () => {
     expect(within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
     const top = screen.getByRole("region", { name: "Workspace summary" });
     for (const id of ["s-usage", "s-search", "s-counts"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
-    expect(within(screen.getByTestId("shell-activity")).getByTestId("s-activity")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Device resources" })).getByTestId("s-resources")).toBeInTheDocument();
+    const activity = within(screen.getByTestId("shell-activity")).getByTestId("s-activity");
+    expect(within(activity).getByTestId("s-resources")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
   });
 
   it("renders the M7-01 theme toggle in the shell by default and switches the theme", async () => {
@@ -344,10 +351,16 @@ describe("slots", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("removes the activity and resource regions when their slots are null", async () => {
+  it("removes the activity control and System Usage when their slots are null", async () => {
     await mount(daemon(), { shellSlots: { activity: null, resources: null } });
     expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
+  });
+
+  it("keeps the activity control, without System Usage, when resources is null", async () => {
+    await mount(daemon(), { shellSlots: { resources: null } });
+    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
+    expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
   });
 });
 
@@ -366,7 +379,8 @@ describe("responsive behaviour", () => {
     expect(screen.getByRole("region", { name: "Workspace summary" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Device resources" })).toBeInTheDocument();
+    expect(screen.getByTestId("slot-resources")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
     expect(screen.getByTestId("shell-sidebar")).toBeInTheDocument();
   });
 
