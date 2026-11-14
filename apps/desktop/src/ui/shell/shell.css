@@ -104,27 +104,17 @@ body:has(.shell) {
 }
 
 .shell-sidebar {
-  --shell-blue: var(--sidebar-focus, #0057a8);
-  --shell-muted: var(--sidebar-ink, #111);
-  --blue: var(--sidebar-link, #0057a8);
-  --blue-bg: var(--soft-strong);
-  --control-border: var(--sidebar-control-border, #6b7f94);
-  --focus: var(--sidebar-focus, #0057a8);
-  --ink: var(--sidebar-ink, #111);
-  --muted: var(--sidebar-ink, #111);
-  --panel: var(--sidebar, #f2f7fc);
-  --soft: var(--sidebar, #f2f7fc);
-  --soft-strong: color-mix(in srgb, var(--sidebar, #f2f7fc) 90%, var(--sidebar-link, #0057a8));
-  --subtle: var(--sidebar-ink, #111);
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   padding: 24px 16px 14px;
   overflow-y: auto;
-  background: var(--sidebar, #f2f7fc);
+  /* Translucent tint of the theme surface (wireframe `.sidebar`): the ambient background shows through,
+     and the theme tokens below supply the colours in both themes. */
+  background: color-mix(in srgb, var(--soft) 45%, transparent);
   border-right: 1px solid var(--shell-line);
-  color: var(--sidebar-ink, #111);
+  color: var(--ink);
 }
 
 .shell-brand {
@@ -149,6 +139,17 @@ body:has(.shell) {
   font-size: 13px;
 }
 
+/* Dark brand uses the accent blue (wireframe `.sidebar .brand`); light keeps the ink colour. */
+:root[data-theme="dark"] .shell-brand {
+  color: var(--blue);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .shell-brand {
+    color: var(--blue);
+  }
+}
+
 .shell-sidebar-body {
   display: flex;
   flex: 1;
@@ -170,7 +171,7 @@ body:has(.shell) {
   padding: 10px;
   border: 1px solid transparent;
   border-radius: 7px;
-  color: var(--sidebar-link, #0057a8);
+  color: var(--blue);
   font-size: 13px;
   text-decoration: none;
 }
@@ -182,8 +183,8 @@ body:has(.shell) {
 .shell-nav-link[aria-current="page"],
 .shell-nav-link[aria-current="true"] {
   background: var(--soft-strong);
-  border-color: var(--sidebar-control-border, #6b7f94);
-  color: var(--sidebar-ink, #111);
+  border-color: var(--control-border);
+  color: var(--ink);
   font-weight: 650;
 }
 
@@ -191,7 +192,7 @@ body:has(.shell) {
   display: inline-grid;
   place-items: center;
   width: 20px;
-  color: var(--sidebar-link, #0057a8);
+  color: var(--blue);
   font-size: 18px;
   line-height: 1;
 }
@@ -215,13 +216,18 @@ body:has(.shell) {
 
 .shell-tree-heading {
   margin: 0 0 10px;
-  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  background: var(--panel);
   font: 10px/1.6 ui-monospace, monospace;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 
 .shell-tree-heading a {
+  display: block;
+  padding: 10px 11px;
   color: inherit;
   text-decoration: none;
 }

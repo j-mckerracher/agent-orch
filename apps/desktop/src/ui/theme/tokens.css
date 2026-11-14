@@ -12,7 +12,7 @@
  * asserts the two copies are identical and checks every pair in both themes.
  *
  * Surfaces      --paper (page)  --panel (cards, menus)  --soft (tinted fill)
- *               --soft-strong (expanded or selected row)  --control-surface  --sidebar
+ *               --soft-strong (expanded or selected row)  --control-surface
  * Text          --ink  --muted  --subtle  --component-muted  --control-ink  --on-accent
  * Lines         --line (decorative)  --line-soft (row separators)
  *               --control-border (accessible 3:1 boundary for interactive controls)
@@ -21,8 +21,8 @@
  *               --green remains semantic green; amber and red remain semantic states.
  * Meter         --meter-gradient  --meter-stop-1..5  --meter-track
  *               --meter-marker  --meter-marker-ring  --meter-fill-pattern
- * Sidebar stays light in dark mode; pair --sidebar with --sidebar-ink, --sidebar-link,
- * --sidebar-focus, and --sidebar-control-border for accessible contrast.
+ * The sidebar has no palette of its own. It is a translucent tint of --soft (wireframe), so it
+ * follows the theme and lets the ambient background show through.
  * Reference-only: --wireframe-search-border, --wireframe-composer-border, and
  * --wireframe-picker-border. Use --control-border on actual controls.
  * Type          --font-sans  --font-display  --font-mono
@@ -38,12 +38,7 @@
   --panel: #ffffff;
   --soft: #edf4fb;
   --soft-strong: #e4effb;
-  --sidebar: #f2f7fc;
   --control-surface: #f2f7fc;
-  --sidebar-ink: #111111;
-  --sidebar-link: #0057a8;
-  --sidebar-focus: #0057a8;
-  --sidebar-control-border: #6b7f94;
 
   /* Text */
   --ink: #111111;
@@ -116,12 +111,7 @@
   --panel: #172433;
   --soft: #20364a;
   --soft-strong: #304a65;
-  --sidebar: #f2f7fc;
   --control-surface: #20364a;
-  --sidebar-ink: #111111;
-  --sidebar-link: #0057a8;
-  --sidebar-focus: #0057a8;
-  --sidebar-control-border: #6b7f94;
 
   --ink: #f2f6fb;
   --muted: #c2d2e3;
@@ -166,12 +156,7 @@
     --panel: #172433;
     --soft: #20364a;
     --soft-strong: #304a65;
-    --sidebar: #f2f7fc;
     --control-surface: #20364a;
-    --sidebar-ink: #111111;
-    --sidebar-link: #0057a8;
-    --sidebar-focus: #0057a8;
-    --sidebar-control-border: #6b7f94;
 
     --ink: #f2f6fb;
     --muted: #c2d2e3;
