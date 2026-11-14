@@ -449,3 +449,79 @@
 .ws-view textarea:disabled {
   opacity: 0.7;
 }
+
+.ws-tabs {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ws-tablist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ws-tab {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ws-tab[aria-selected="true"] {
+  border-bottom-color: var(--green);
+  color: var(--ink);
+}
+
+.ws-tab:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.ws-tabpanel {
+  min-width: 0;
+}
+
+.ws-tabpanel[hidden] {
+  display: none;
+}
+
+.ws-activity {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-activity li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.ws-purpose {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+

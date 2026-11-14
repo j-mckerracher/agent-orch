@@ -637,7 +637,8 @@ describe("100+ tasks", () => {
 
 describe("dependency graph", () => {
   it("draws the SVG with a text equivalent on wide layouts", async () => {
-    await mount(daemon());
+    const { user } = await mount(daemon());
+    await user.click(await screen.findByRole("tab", { name: "Dependencies" }));
     const svg = await screen.findByRole("img", { name: /Task dependency graph/ });
     expect(within(svg as unknown as HTMLElement).getAllByTestId("graph-node")).toHaveLength(2);
     expect(screen.getByText("Dependencies as text").closest("details")).not.toHaveAttribute("open");

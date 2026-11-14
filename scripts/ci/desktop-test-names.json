@@ -55,6 +55,7 @@
     "src/ui/views/agents/model.test.ts",
     "src/ui/views/review/ReviewDecisionsView.test.tsx",
     "src/ui/views/workspace/WorkspaceView.test.tsx",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
     "src/ui/views/workstreams/evidence.test.ts",
     "src/ui/views/workstreams/model.test.ts"
@@ -1381,6 +1382,12 @@
     "src/ui/views/workstreams/model.test.ts :: requiredEvidence derives from the state otherwise",
     "src/ui/views/workstreams/model.test.ts :: requiredEvidence lets a pending approval take precedence and says when approvals are not loaded",
     "src/ui/views/workstreams/model.test.ts :: requiredEvidence names unmet predecessors, treating unknown ones as unmet",
-    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers"
+    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) exposes Tasks, Dependencies and Activity as one tablist with Tasks selected",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) moves between tabs with the arrow, Home and End keys and shows the selected panel only",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) lists each task's state and assignment in the Activity tab, derived from recorded data",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) shows the live plan revision as not available, never a number",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) labels the fixture plan revision as PLACEHOLDER",
+    "src/ui/views/workstreams/WorkstreamsDetail.test.tsx :: workstream detail tabs (OX-W3) renders the wireframe purpose note under the workstream view"
   ]
 }

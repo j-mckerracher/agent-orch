@@ -30,6 +30,7 @@ import {
   type WsTask,
 } from "./model";
 import { STATE_TONE } from "./tone";
+import { WsTabs } from "./WsTabs";
 import "./workstreams.css";
 
 interface Receipt {
@@ -290,7 +291,28 @@ export function WorkstreamsView() {
         )}
       </header>
       {body}
+    <p className="ws-purpose">Purpose and rationale: organize outcomes across repositories, expose parallelism, and change plans without losing context. Draft plan edits, bulk operations and coordinator recommendations must pass deterministic validation before application.</p>
     </section>
+  );
+}
+
+function ActivityPane({ group }: { group: WsGroup }) {
+  if (group.unreadReason !== null) return <p role="status">Activity unknown: tasks could not be read.</p>;
+  if (group.tasks.length === 0) return <EmptyState title="No activity" description="This workstream has no tasks yet." />;
+  return (
+    <>
+      <p className="ws-subtle">
+        Derived from each task's state and recorded sessions. The session event stream is on the task detail.
+      </p>
+      <ul className="ws-activity" aria-label={`Activity of ${group.title}`}>
+        {group.tasks.map((task) => (
+          <li key={task.id} data-testid="ws-activity-row">
+            <strong>{taskLabelOf(task)}</strong> <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>{" "}
+            <span className="ws-subtle">{assignment(task)}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -358,6 +380,7 @@ function Detail({
             {group.state}
           </Pill>{" "}
           {group.projectIds.length > 0 && <Badge>Projects: {group.projectIds.map(basename).join(", ")}</Badge>}{" "}
+          <Badge data-testid="ws-plan-revision">{fixture ? "Plan revision: PLACEHOLDER" : "Plan revision not available"}</Badge>{" "}
           {group.unreadReason !== null ? (
             <Badge data-testid="ws-unread">Tasks unknown</Badge>
           ) : (
@@ -440,14 +463,15 @@ function Detail({
         )}
       </Panel>
 
-      <Panel title="Task dependencies" headingLevel={2} actions={marker}>
-        {group.unreadReason !== null ? <p role="status">Dependencies unknown: tasks could not be read.</p> : <DependencyGraph tasks={group.tasks} />}
-      </Panel>
-
-      <Panel title="Tasks" headingLevel={2} actions={marker} className="ws-tasks">
-        <p className="ws-subtle">
-          Other views of this workstream (Milestones, Context, Deliverables, Activity) are not available yet.
-        </p>
+      <WsTabs
+        label={`Views of ${group.title}`}
+        actions={marker}
+        tabs={[
+          {
+            id: "tasks",
+            label: "Tasks",
+            content: (
+              <>
         {group.unreadReason !== null ? (
           <p role="status">Tasks unknown: {group.unreadReason}</p>
         ) : group.tasks.length === 0 ? (
@@ -512,7 +536,22 @@ function Detail({
         <p className="ws-reason" id={`${reasonId}-plan`}>
           {fixture ? FIXTURE_REASON : PLAN_REASON}
         </p>
-      </Panel>
+              </>
+            ),
+          },
+          {
+            id: "dependencies",
+            label: "Dependencies",
+            content:
+              group.unreadReason !== null ? (
+                <p role="status">Dependencies unknown: tasks could not be read.</p>
+              ) : (
+                <DependencyGraph tasks={group.tasks} />
+              ),
+          },
+          { id: "activity", label: "Activity", content: <ActivityPane group={group} /> },
+        ]}
+      />
     </section>
   );
 }
