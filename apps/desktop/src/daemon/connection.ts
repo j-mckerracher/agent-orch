@@ -180,7 +180,9 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
   private async establish(): Promise<void> {
     const epoch = ++this.epoch;
     this.clearTimer();
-    const first = this.state_().generation === 0;
+    // A retry after a failed attempt is a reconnect, not a first connect: "connecting" reads as a pending answer.
+    const state = this.state_();
+    const first = state.generation === 0 && state.failedAttempts === 0;
     this.update({ status: first ? "connecting" : "reconnecting" });
 
     let session: DaemonSession;
