@@ -236,12 +236,12 @@ Record result per step: PASS, FAIL or UNPROVEN, with the pids observed.
 
 Additional native steps to run (**UNPROVEN**, never driven through the GUI):
 
-8. macOS only: press Cmd+Q (or the app menu Quit). The app must exit and the
-   daemon and agent pids must be unchanged (the `prevent_exit` handling is only
-   read from code).
-9. Leave a window connected for more than 60 s with no task. The daemon pid must
-   not change (live subscription keeps it alive). Then quit the app and wait
-   about 60 s: the daemon may exit; a later launch starts a new one.
+- Step 8, macOS only: press Cmd+Q (or the app menu Quit). The app must exit and the
+  daemon and agent pids must be unchanged (the `prevent_exit` handling is only
+  read from code).
+- Step 9: leave a window connected for more than 60 s with no task. The daemon pid must
+  not change (live subscription keeps it alive). Then quit the app and wait
+  about 60 s: the daemon may exit; a later launch starts a new one.
 
 **UNPROVEN:** steps 2, 3, 6, 7 in the native app (no task, no draft typed, no
 daemon kill, no sidecar failure was driven through the GUI); every step on
@@ -290,7 +290,7 @@ with the daemon process tests.
 
   Pass = exit 0, no new warnings, and the verbose output contains
   `clippy-driver` lines with `--crate-name agent_orch_desktop_lib` and with
-  `--crate-name agent_orch_desktop ` (the bin); Mac shows two of each (normal and
+  `--crate-name agent_orch_desktop` followed by a space (the bin); Mac shows two of each (normal and
   test target).
 - **Do not judge a gate through a pipe.** Use the command's own exit code, and one
   unique `CARGO_TARGET_DIR` with at least 2 GiB free.

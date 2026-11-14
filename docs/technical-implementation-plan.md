@@ -4,7 +4,7 @@ Proposed architecture · v1.0
 
 Target: macOS and Windows Stack: Rust · Tauri 2 · React · TypeScript · SQLite Architecture: Native orchestration engine with replaceable coding-agent adapters Initial agents: Codex, Claude Code, Pi
 
-1. Executive summary
+## 1. Executive summary
 
 Build a desktop application that lets one user delegate software engineering work to multiple autonomous coding agents without personally managing individual agent sessions.
 
@@ -70,7 +70,7 @@ Signed native installers
 
 The most important decision: The Rust engine must work independently of the desktop application. Closing the window should not necessarily terminate ongoing agent work.
 
-2. System architecture
+## 2. System architecture
 
 React / TypeScript Desktop UI
 
@@ -137,7 +137,7 @@ The daemon should launch on demand, not require privileged system installation o
 
 For the first working prototype, the engine can run directly in the CLI process. Introduce daemon IPC after the underlying task execution model is proven.
 
-3. Rust workspace layout
+## 3. Rust workspace layout
 
 Use a Cargo workspace with explicit boundaries.
 
@@ -265,7 +265,7 @@ core defines contracts; adapters, storage, Git, and runtime implement them; daem
 
 Avoid allowing the core domain to depend on Tauri, SQLite, Git implementation details, or any particular agent provider.
 
-4. Rust dependencies
+## 4. Rust dependencies
 
 The proposed dependencies favor mature, relatively simple implementations.
 
@@ -364,7 +364,7 @@ CI: GitHub Actions with macOS and Windows runners.
 Dependency auditing: cargo audit, cargo deny, and lockfile-aware JS auditing.
 Pin direct dependencies and commit both Cargo and npm lockfiles. Do not select crate versions based solely on this plan; verify their latest compatible stable releases when initializing the workspace.
 
-5. Domain model and interfaces
+## 5. Domain model and interfaces
 
 5.1 Primary entities
 
@@ -430,8 +430,6 @@ pub struct TaskContract {
 
 }
 
-
-
 pub enum TaskKind {
 
     Implement,
@@ -439,8 +437,6 @@ pub enum TaskKind {
     Investigate,
 
 }
-
-
 
 pub enum DeliveryPolicy {
 
@@ -451,8 +447,6 @@ pub enum DeliveryPolicy {
     PullRequest,
 
 }
-
-
 
 pub enum AutonomyPolicy {
 
@@ -494,7 +488,7 @@ Transitions and their audit events must be committed atomically.
 
 Use a capability-aware adapter interface instead of assuming every provider supports the same features.
 
-#[async_trait]
+\#[async_trait]
 
 pub trait AgentAdapter: Send + Sync {
 
@@ -520,9 +514,7 @@ pub trait AgentAdapter: Send + Sync {
 
 }
 
-
-
-#[async_trait]
+\#[async_trait]
 
 pub trait AgentHandle: Send {
 
@@ -624,21 +616,21 @@ Keep the raw provider events available for debugging. A canonical translation ma
 
 Separate high-frequency output deltas from important durable events. Persist control-plane events reliably and write large raw output streams to bounded logs.
 
-6. Coding-agent integrations
+## 6. Coding-agent integrations
 
 I would implement the adapters in this order.
 
-1. Codex — first adapter
+### 1. Codex — first adapter
 
 Start with codex exec for one-shot execution. Evaluate Codex app-server when persistent sessions, approvals, and richer structured interaction are needed.
 
 OpenAI documents these as distinct integration approaches. OpenAI Developers
 
-2. Pi — second adapter
+### 2. Pi — second adapter
 
 Use Pi’s JSONL RPC interface over stdin/stdout. Its documented protocol supports persistent subprocess communication, correlated responses, and asynchronous events. GitHub +1
 
-3. Claude Code — third adapter
+### 3. Claude Code — third adapter
 
 Integrate its supported headless and structured-output interfaces, verifying the precise launch flags and permission behavior against the installed CLI version.
 
@@ -646,7 +638,7 @@ Each adapter needs a conformance test suite covering launch, output framing, can
 
 Do not automatically enable the most permissive execution flags. Permission behavior must be explicit and provider-specific.
 
-7. Scheduling and concurrency
+## 7. Scheduling and concurrency
 
 Use a dependency-aware bounded scheduler rather than assigning one thread to each agent.
 
@@ -678,7 +670,7 @@ A task’s dependencies should form a directed acyclic graph. Reject dependency 
 
 On retry, create a new execution-attempt record. Never erase the failed attempt.
 
-8. Git worktree manager
+## 8. Git worktree manager
 
 Every implementation task should execute in its own worktree.
 
@@ -689,8 +681,6 @@ my-project/
   .git/
 
   src/
-
-
 
 orchestrator-data/
 
@@ -734,7 +724,7 @@ For parallel tasks targeting the same destination branch, serialized delivery is
 
 Worktrees provide source-code isolation, not a security sandbox. An agent in a worktree may still be able to access files, network resources, and credentials permitted to its operating-system account.
 
-9. Persistence and recovery
+## 9. Persistence and recovery
 
 Use SQLite as the source of truth for durable orchestration state.
 
@@ -828,7 +818,7 @@ For Windows, process-tree management needs explicit treatment. The first impleme
 
 A subprocess should never be considered safely detachable merely because it survived its parent’s exit.
 
-10. Daemon IPC and frontend interfaces
+## 10. Daemon IPC and frontend interfaces
 
 Use a versioned JSON-RPC-style protocol over a local transport.
 
@@ -926,7 +916,7 @@ The event stream should support reconnection using the last observed sequence nu
 
 Tauri supports commands, events, and higher-throughput channels. Use Tauri to manage the local desktop integration, while the daemon protocol remains independent. Tauri
 
-11. Coordinator design
+## 11. Coordinator design
 
 The coordinator is another agent session, but its authority is restricted to proposing and requesting operations through the Rust engine.
 
@@ -1006,7 +996,7 @@ Ordinary process status checks, log streaming, timeouts, and dependency satisfac
 
 This follows FirstMate’s emphasis on event-driven supervision without consuming model tokens merely to poll worker status. Jay Taylor’s notes
 
-12. Verification, approval, and delivery
+## 12. Verification, approval, and delivery
 
 A worker may propose that its task is complete. It cannot certify its own successful delivery.
 
@@ -1038,7 +1028,7 @@ Pull request: Push an authorized branch and create a PR, initially using the Git
 
 For the MVP, support report-only and local-review delivery. Add PR automation after safe local delivery is working.
 
-13. Security architecture
+## 13. Security architecture
 
 Security is a first-class implementation requirement because the application launches coding agents that can execute arbitrary code.
 
@@ -1098,7 +1088,7 @@ For v1, describe agent execution as trusted local execution requiring user autho
 
 Implement stricter sandboxing before offering unattended operation on arbitrary repositories.
 
-14. Desktop UI scope
+## 14. Desktop UI scope
 
 The desktop application should organize information around work and decisions, not around terminal windows.
 
@@ -1142,7 +1132,7 @@ For the first desktop release, implement project selection, task submission, age
 
 Full interactive terminals, embedded code editing, remote hosts, and plugin marketplaces should remain outside the first release.
 
-15. Implementation milestones
+## 15. Implementation milestones
 
 The schedule below is an indicative engineering estimate for one experienced developer, assisted by coding agents. It is not a delivery commitment.
 
@@ -1236,7 +1226,7 @@ Indicative total
 
 Approximately, depending on protocol compatibility, Windows reliability, security work, and the depth of the desktop experience.
 
-16. Testing strategy
+## 16. Testing strategy
 
 Testing should focus on invariants and failure modes rather than only successful agent runs.
 
@@ -1293,7 +1283,8 @@ Recovery without silently losing uncommitted work.
 Correct cancellation and process cleanup on both operating systems.
 Deterministic handling of adapter protocol errors.
 Installation and upgrade on clean macOS and Windows environments.
-17. Major risks and mitigations
+
+## 17. Major risks and mitigations
 
 Risk
 
@@ -1349,7 +1340,7 @@ Cost and latency
 
 Deterministic event-driven supervisor
 
-18. Recommended first implementation slice
+## 18. Recommended first implementation slice
 
 Do not begin with Tauri or the multi-agent coordinator.
 
@@ -1376,19 +1367,19 @@ Then add:
 
 orchestrator tasks
 
-orchestrator inspect <task-id>
+`orchestrator inspect <task-id>`
 
-orchestrator cancel <task-id>
+`orchestrator cancel <task-id>`
 
-orchestrator diff <task-id>
+`orchestrator diff <task-id>`
 
-orchestrator cleanup <task-id>
+`orchestrator cleanup <task-id>`
 
 Initially, these operate on local persisted state with one active CLI-owned runtime. Once the execution and recovery semantics are reliable, move the scheduler into the daemon and make the CLI a client.
 
 This incremental approach prevents building a complicated desktop interface around an orchestration model that has not yet been validated.
 
-19. Explicitly deferred capabilities
+## 19. Explicitly deferred capabilities
 
 Do not implement these in v1:
 
@@ -1403,7 +1394,7 @@ Unrestricted autonomous PR merging.
 Full filesystem sandbox equivalence across operating systems.
 Design stable extension points where appropriate, but avoid implementing abstractions solely for speculative future features.
 
-20. Final recommendation
+## 20. Final recommendation
 
 The implementation should proceed in this order:
 

@@ -32,7 +32,7 @@ product CLI was tested.
 From the Mac agent's Mac primary checkout of `agent-orch` (any path, e.g.
 `~/Code/agent-orch`), or a fresh clone, create one collision-safe run ID and worktree path:
 
-```
+```sh
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 WORKTREE="/tmp/m0-05-macos-$RUN_ID"
 WINDOWS_RUNNER_SHA="c69f0606b6eba3967e73fbe0848b6cf8c9b657b7"
@@ -48,14 +48,14 @@ test ! -e "$WORKTREE" || { echo "worktree path already exists: $WORKTREE" >&2; e
 
 Work from a detached worktree so the task branch itself is never touched:
 
-```
+```sh
 git worktree add --detach "$WORKTREE" "$TASK_BRANCH_SHA"
 cd "$WORKTREE"
 ```
 
 Verify the prompt file matches the canonical version committed on the branch:
 
-```
+```sh
 WINDOWS_PROMPT_BLOB="adbda2a393170131f0e92c069f17b9bde7f36b63"
 PROMPT_BLOB="$(git rev-parse HEAD:tests/feasibility/m0-05/task-prompt.txt)"
 echo "task_prompt_blob=$PROMPT_BLOB"
@@ -67,7 +67,7 @@ test "$PROMPT_BLOB" = "$WINDOWS_PROMPT_BLOB" || {
 
 ## Step 2 — Locate and record the native Codex CLI
 
-```
+```sh
 command -v python3        # required by the runner for bounded launch and verification
 python3 --version         # record exactly
 command -v codex          # inspect whether this is the native desktop binary
@@ -80,7 +80,7 @@ If `command -v codex` is empty or points at an npm wrapper, also try
 mirrors Windows: `.../Codex/bin/<build-id>/codex.exe` becomes `.../Codex/bin/<build-id>/codex`).
 Set the full native path once in `CODEX`; do not use an npm wrapper:
 
-```
+```sh
 CODEX="$(command -v codex)"
 # If that is an npm wrapper, replace CODEX with the executable under:
 # "$HOME/Library/Application Support/Codex/bin/<build-id>/codex"
@@ -92,7 +92,7 @@ CODEX="$(command -v codex)"
 
 Before spending a real Codex run, verify the runner mechanics on the host:
 
-```
+```sh
 SELFTEST_OUT="docs/evidence/m0-05-macos/selftest-$RUN_ID"
 bash tests/feasibility/m0-05/run-m0-05.sh "$PWD/tests/feasibility/m0-05/mock-codex.sh" "$PWD" "$SELFTEST_OUT"
 ```
@@ -105,7 +105,7 @@ runner works on this host.
 
 ## Step 4 — Run the demo
 
-```
+```sh
 OUT="docs/evidence/m0-05-macos/raw/run-$RUN_ID"
 bash tests/feasibility/m0-05/run-m0-05.sh "$CODEX" "$PWD" "$OUT"
 echo "RUNNER_EXIT=$?"
@@ -128,7 +128,7 @@ Notes:
 
 The runner prints and writes `result.md` with exactly these checks (same set as Windows):
 
-```
+```text
 M0-05 MACOS RUN: PASS
 jsonl-all-lines-parse              PASS
 exit-status-0                      PASS  exit=0
@@ -150,7 +150,7 @@ The runner exits 0 only if every check passed. If it exits nonzero, read `result
 From the detached worktree stored in `$WORKTREE`, create the evidence branch once and use
 that same variable for both branch creation and push:
 
-```
+```sh
 EVIDENCE_BRANCH="codex/m0-05-macos-evidence-$RUN_ID"
 git switch -c "$EVIDENCE_BRANCH"
 git add docs/evidence/m0-05-macos

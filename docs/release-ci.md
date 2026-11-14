@@ -26,6 +26,7 @@ process of the run survives it**, **and** the output matches the expected shape:
 sequence, named tests, `Compiling` lines for a build gate (so a cached target cannot pass), the
 Vitest file and test counts, and the artifact. Nothing is retried. A gate whose prerequisite did
 not pass is `SKIPPED`: it was not measured, so it is never a pass. The run's overall verdict is `FAIL` (exit
+
 1) if any gate or harness check failed, else `INCONCLUSIVE` (exit 2) if any gate was `SKIPPED` or none ran, else
 `PASS` (exit 0). `summary.md` and `overall.result.json` carry the verdict, and `summary.md` lists the skipped
 gates under "Not measured, so NOT a pass".
@@ -137,7 +138,7 @@ logs:
 - The by-hand checks' verdict was read as an empty string: the runbook's filter was case-insensitive, so the
   script's two banner lines (`p12-windows-checks: ...`) counted as verdicts. The banners now start with `INFO`,
   the harness has a `p12-windows-checks` gate, and `parse.mjs#checkP12` reads the last
-  `P12-WINDOWS-CHECKS: ` line, case-sensitively, from a real round 3 Windows output kept in
+  `P12-WINDOWS-CHECKS:` line (with its trailing space), case-sensitively, from a real round 3 Windows output kept in
   `scripts/ci/fixtures/`. A runbook that filters by hand must use `-cmatch` and take the last line.
 - The survivor scan no longer counts a process that is not the gate's (see Survivor check).
 - `.orchestrator.lock` is created owner-only (`restrict_to_owner`, no inherited ACE), also when a stale lock is
@@ -268,7 +269,6 @@ Secrets live in the GitHub environment `release`. Configure it before the first 
 - **Tag protection**: add a repository ruleset that restricts who can create or delete `v*` tags;
   a pushed tag is what starts a release.
 - Keep the secrets in the environment only, not at repository or organization level.
-
 
 | Platform | Signing | Notarization |
 | --- | --- | --- |

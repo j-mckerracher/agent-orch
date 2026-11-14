@@ -1,7 +1,7 @@
 # M7-32 browser-proxy results
 
-**Tested source:** `8f66dc9f175a60bf739fcf8e8c8b66e5feeb554e`<br>
-**Method:** headless Chromium against Vite with an isolated, real daemon; results are browser-proxy evidence only, not WKWebView/WebView2 proof.<br>
+**Tested source:** `8f66dc9f175a60bf739fcf8e8c8b66e5feeb554e`  
+**Method:** headless Chromium against Vite with an isolated, real daemon; results are browser-proxy evidence only, not WKWebView/WebView2 proof.  
 **Screenshots/data:** `docs/evidence/m7-32/browser/` and `proxy-observations.json`.
 
 | row id | PASS/FAIL/BLOCKED | evidence file |

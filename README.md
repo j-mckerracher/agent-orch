@@ -27,7 +27,7 @@ worktree. Those are the plan's later milestones.
 
 ## Layout
 
-```
+```text
 Cargo.toml                 Root workspace. Header comment documents the
                            dependency direction rule.
 crates/

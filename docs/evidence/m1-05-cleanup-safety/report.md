@@ -1,11 +1,13 @@
 # M1-05 cleanup-safety verification (base 46497ac)
 
 ## Finding
+
 `cleanup_task` checked only Git state (registered, clean, HEAD reachable from base). The run owner
 finishes without the data lock and closes its cancellation owner last, so cleanup could remove a
 clean, landed worktree while the owner was alive. Genuine; red-tested, then fixed.
 
 ## Contract after the fix (`workflow.rs::cleanup_task`)
+
 - Every open cancellation owner of the task must be observed `Exited` (`observe_owner_process`,
   exact identity). `Alive`, `Unknown`, mismatched or missing identity: refuse, worktree kept, error
   names the owner and points to `cancel` / `inspect` / `recover-owner`.
@@ -24,6 +26,7 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 - Read-only: no owner retired, no process signalled, no new stale-owner deletion path.
 
 ## Red / green
+
 | Test | Base 46497ac | Fixed |
 | --- | --- | --- |
 | `workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable` | FAIL (removed) | ok |
@@ -41,6 +44,7 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
 | `cleanup_safety::cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree` (QA) | ok | ok |
 
 ## Gates (macOS, `--locked`, unique target dir)
+
 - `cargo test -p orchestrator-cli --features fault-injection` at the final commit: lib 19,
   cleanup_safety 4, cli 20, multi_task_review 6, portable_acceptance 2, recovery 7, all pass.
 - `rustfmt --check` on `workflow.rs`: clean.
@@ -49,16 +53,19 @@ clean, landed worktree while the owner was alive. Genuine; red-tested, then fixe
   newer toolchain (clippy 1.95). Not changed by M1-05.
 
 ## Reused evidence (unchanged code/tests)
+
 `docs/evidence/m1-05-macos/` (real Codex run, primary HEAD/status/hashes identical) and native
 Windows M1-04 evidence 5d26c659 on 46497ac (portable_acceptance 2) still prove isolation and
 cancellation; `cleanup_task` changed, so cleanup behaviour needs fresh native proof.
 
 ## Remaining native gap
+
 Windows and macOS runs of `cleanup_safety` (2) + `portable_acceptance` (2) on the final integrated
 candidate. The exited-owner and alive-owner inline unit tests are `cfg(unix)` (PID/start-time
 fixtures); the unprovable-identity inline test and both QA tests are portable.
 
 ## Combined M1-05 + M2-04 candidate 921203bb: fixture correction (no production change)
+
 Three unix inline tests failed at the owner guard with `Some(Unknown)`. Cause: their "exited
 owner" was this test process's own PID with `start_time_micros + 1` and the test's still-live
 process group. M2-04 `observe_owner_process` now maps a same-PID mismatch to Exited only when the

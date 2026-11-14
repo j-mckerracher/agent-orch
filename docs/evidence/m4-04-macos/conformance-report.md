@@ -130,7 +130,6 @@ The original M4-04 baseline and CLI probe evidence remain above. Windows was not
 | Interruption | Pass | Pass | Pass |
 | Approvals | N/A, `approvals=false` | N/A, `approvals=false` | N/A, `approvals=false` |
 
-
 ## Coordinator amendment acceptance
 
 Recorded: 2026-11-08T11:53:16Z.
@@ -148,6 +147,7 @@ Windows remains pending. Run these commands on Windows when available:
 cargo test --locked --workspace
 cargo clippy --locked -p orchestrator-agents --all-targets --no-deps
 ```
+
 ## Amendment command log
 
 | Command | Exit | Result |

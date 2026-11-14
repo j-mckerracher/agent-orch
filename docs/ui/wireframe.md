@@ -353,7 +353,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 
 | OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| OX-B1 | Header "Talking to: <target>" with scope subtitle | Target identity line | Project target: selected project id. Global target: none | existing (project) / missing (Global) | D10 | M7-10 |
+| OX-B1 | Header "Talking to: `<target>`" with scope subtitle | Target identity line | Project target: selected project id. Global target: none | existing (project) / missing (Global) | D10 | M7-10 |
 | OX-B2 | Transcript bubbles (coordinator vs human) | Per-project note log labelled "notes; no reply" | `coordinator.get` | existing (log, no replies) | D10 for Global and replies | M7-10 |
 | OX-B2a | Chips "Escalate to Global", "Show dependency plan", "Request review", "Inspect candidate and delivery facts" | Navigation only: dependency plan from `TaskContract.dependencies`; review chips go to OX-S2 | `tasks.get`; client routing | existing (navigation); "Escalate to Global" missing | D10 | M7-10 |
 | OX-B3 | Composer (textarea, send) with per-target draft | Composer; draft retained per target | `coordinator.send_message` (project targets); drafts in `ui/drafts.ts` | existing (project) / missing (Global reply) | D10 | M7-10 |

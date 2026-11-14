@@ -2,7 +2,7 @@
 
 Run on the native macOS laptop on 2026-11-07.
 
-1. Inspect toolchains and existing Git remotes, then add `motif-mcao` pointing to https://github.com/mc-innersource/motif-mcao without changing `origin`.
+1. Inspect toolchains and existing Git remotes, then add `motif-mcao` pointing to <https://github.com/mc-innersource/motif-mcao> without changing `origin`.
 2. Build and test the engine workspace with locked dependencies.
 3. Install frontend dependencies from its lockfile, build the frontend, and build the standalone Tauri host with locked dependencies.
 4. Launch the desktop app and inspect its window.

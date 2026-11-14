@@ -176,7 +176,9 @@ Each of the 114 assigned source rows appears exactly once below. Supplemental M5
 | `EXTRA-N12-CSP-static` | `docs/evidence/m7-30/native-matrix.md` — Static CSP check | PASS | Static production CSP check plus `policy.test.ts` passed (11 tests); `script-src self`, no `unsafe-eval`/external scripts, local assets. See `csp-static-check.txt`, `csp-policy-test.log`. |
 
 ## Command gates and evidence
+
 All successful commands ran from the task checkout unless a different working directory is stated. Exit codes are captured from the tool invocation except `npm ci`: the log records completion and 105 packages installed, but its zsh wrapper failed while assigning the readonly shell variable `status`, so the command exit was not captured. `npm ci` was run once in this worktree and was not repeated.
+
 - `npm ci` (`apps/desktop`): output says 105 packages added; `npm-ci.log`; wrapper exit not captured as described above.
 - `npm test` (`apps/desktop`): exit 0; 52 files / 1,253 tests passed; `npm-test.log`.
 - `npm run build` (`apps/desktop`): exit 0; TypeScript/Vite succeeded, 152 modules; chunk-size advisory; `npm-build.log`.
@@ -194,6 +196,7 @@ All successful commands ran from the task checkout unless a different working di
 - `git diff --check 92f56c3af9cd34741a09667f499164edcafec696` is run before commit; result recorded with the commit metadata.
 
 ### Count summary
+
 - Assignment checklist: 114 rows = 5 PASS, 0 FAIL, 109 BLOCKED (70 no native window; 39 external prerequisite).
 - Supplemental M5-05 and independent scan rows: 44 = 10 PASS, 2 FAIL, 32 BLOCKED.
 

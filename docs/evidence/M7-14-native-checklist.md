@@ -11,6 +11,7 @@ These checks are deferred to the consolidated native pass. Run against the exact
 ## Numbered checks
 
 1. **macOS / WKWebView / real daemon and agents — AC1–AC4.** From the task worktree root, run:
+
    ```sh
    WT="$(git rev-parse --show-toplevel)"
    test "$(git -C "$WT" branch --show-current)" = "orch/0eca0ef2-m7-14-verify"
@@ -24,11 +25,13 @@ These checks are deferred to the consolidated native pass. Run against the exact
    npm ci
    npm run tauri dev
    ```
+
    In the native WKWebView, verify Connected and live (no PLACEHOLDER DATA), compare every displayed installed/launchable/capability flag against the real `agents.capabilities` response, and confirm unreported usage is Unknown. In particular, verify Pi is installed and `launchable: false` when Pi is reported; do not infer flags for missing agents.
    Check the headline and all five tab labels/lists against the real tasks/sessions (including disconnected as unknown when recovery classification is unavailable). Confirm Available equals the count of reported adapters with both installed and launchable true. Select the running and failed tasks; verify attempt history and the session execution feed. On the disposable running task request Cancel and confirm the daemon acknowledgement does not claim the process stopped. On the disposable failed task Retry and confirm a new queued attempt.
    Verify Configure providers, Amend TaskContract, Request new decomposition, Resume session, Inspect retained checkpoint, Review routing proposal, and Choose manual assignment stay disabled with readable reasons. Record PASS/FAIL/UNVERIFIED per AC. Evidence: `macos-live-agents.png` and `macos-live-agents.md` in `$EVIDENCE`.
 
 2. **Windows / WebView2 / real daemon and agents — AC1–AC4.** In PowerShell from the task worktree root, run:
+
    ```powershell
    $wt = (git rev-parse --show-toplevel).Trim()
    if ((git -C $wt branch --show-current).Trim() -ne 'orch/0eca0ef2-m7-14-verify') { throw 'Wrong worktree branch' }
@@ -44,6 +47,7 @@ These checks are deferred to the consolidated native pass. Run against the exact
    npm.cmd ci
    npm.cmd run tauri dev
    ```
+
    In the native WebView2 window, repeat check 1 with the same isolated real-daemon scenario and assertions. Record PASS/FAIL/UNVERIFIED per AC. Evidence: `windows-live-agents.png` and `windows-live-agents.md` in `$evidence`.
 
 3. **macOS / VoiceOver.** In the native WKWebView from check 1, enable VoiceOver with `Command-F5`, navigate the Agents & Sessions page with Tab and VoiceOver navigation, and activate each tab. Confirm the selected tab and count are announced, every inventory flag is associated with its adapter, and each disabled control's reason is read with its control. Disable VoiceOver with `Command-F5`. Evidence: `macos-voiceover.md` in the check 1 evidence directory.

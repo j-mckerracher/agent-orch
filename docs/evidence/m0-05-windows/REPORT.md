@@ -68,7 +68,7 @@ Acceptance checks (enforced by the runners, not eyeballed):
 The host user config `~\.codex\config.toml` pins `[windows] sandbox = "elevated"`. In
 elevated mode **every** sandboxed helper spawn fails on this machine:
 
-```
+```text
 Failed to create unified exec process: CreateProcessWithLogonW failed: 1385
 ```
 
@@ -108,7 +108,7 @@ No fake or no-op agent was used; every captured run above invoked the real codex
 
 ## Earlier run B results — `raw/run-20261107-144044/`
 
-```
+```text
 exit-status-0                      PASS  exit=0
 jsonl-all-lines-parse              PASS  lines=6
 turn-completed-present             PASS  count=1
@@ -200,7 +200,7 @@ runner always passes `-C <temp repo>`.
 
 ## Reproduce on this Windows host
 
-```
+```powershell
 $RunId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N')
 $OutDir = "docs/evidence/m0-05-windows/raw/run-$RunId"
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-05/run-m0-05.ps1 `

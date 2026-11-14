@@ -23,6 +23,7 @@ This is the automated portion of M7-30 on the current integ2-based worktree. UI 
 ## Local gates on macOS
 
 Source code tested: `9b46c07788335f9bd81b7b582550ecf0444bc7f5` (integ2 before this documentation-only change).
+
 - `npm ci` (`apps/desktop`): exit 0; 105 packages installed.
 - `npm test` (`apps/desktop`): exit 0; 52 files and 1,252 tests passed.
 - `npm run build` (`apps/desktop`): exit 0; `tsc -b` and Vite build passed. Vite emitted a chunk-size advisory above 500 kB.

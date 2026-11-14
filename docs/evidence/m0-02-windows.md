@@ -50,14 +50,14 @@ primitive works here.
 
 ## Commands
 
-```
+```sh
 cargo build --release --manifest-path tests/feasibility/m0-02/Cargo.toml
 tests/feasibility/m0-02/target/release/m0-02-probe.exe
 ```
 
 ## Result (native Windows)
 
-```
+```text
 TEST=launch-stream PASS stdout_len=114 exit=0 child pid=41280
 TEST=stderr-exit PASS exit=7 stderr_len=16484 stdout_len=0
 TEST=fanout PASS pids=[11092, 47868, 55820, 12128]
@@ -88,7 +88,7 @@ No macOS host is reachable from this worker (Windows-only workstation, no
 SSH target). Nothing below has been executed; the commands are the exact
 repro for a native macOS machine.
 
-```
+```sh
 cd tests/feasibility/m0-02
 cargo build --release
 ./target/release/m0-02-probe

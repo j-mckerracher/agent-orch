@@ -28,7 +28,7 @@ All commands run from `C:\Users\jmckerra\Code\agent-orch-m0-03-priority2`.
 
 ### 1. Version and auth
 
-```
+```sh
 "C:/Users/jmckerra/AppData/Local/OpenAI/Codex/bin/14b838c1d074ff01/codex.exe" --version
 # codex-cli 0.167.0-alpha.3.2
 "C:/Users/jmckerra/AppData/Roaming/npm/codex.cmd" --version
@@ -39,13 +39,13 @@ All commands run from `C:\Users\jmckerra\Code\agent-orch-m0-03-priority2`.
 
 ### 2. One-shot, JSONL structured output (the core probe)
 
-```
+```sh
 "$CODEX" exec --json --skip-git-repo-check --sandbox read-only "Reply exactly PONG"
 ```
 
 Exit: `0`. Wall time: 4.77 s. Stdout (one JSON object per line, `raw/one-shot-stdout.jsonl`):
 
-```
+```text
 {"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}
 {"type":"turn.started"}
 {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"PONG"}}
@@ -61,7 +61,7 @@ secrets. No credentials appear in any captured file.
 
 ### 3. Last-message file (structured result extraction)
 
-```
+```sh
 "$CODEX" exec --json --skip-git-repo-check --sandbox read-only \
   --output-last-message tests/feasibility/m0-03/raw/last-message.txt "Reply exactly PONG"
 ```
@@ -71,7 +71,7 @@ result channel alongside the JSONL stream.
 
 ### 4. Exit behavior, failure case (invalid argument)
 
-```
+```sh
 "$CODEX" exec --sandbox bogus "x"
 ```
 
@@ -80,13 +80,13 @@ values listed. Argument validation fails fast before any network call.
 
 ### 5. Old wrapper failure, recorded (no model guessing)
 
-```
+```sh
 "C:/Users/jmckerra/AppData/Roaming/npm/codex.cmd" exec --json --skip-git-repo-check --sandbox read-only "Reply exactly PONG"
 ```
 
 Stdout (0.20.0 JSON shape, `raw/old-wrapper-stdout.jsonl` / `raw/old-wrapper2-stdout.jsonl`):
 
-```
+```text
 {"sandbox":"read-only","provider":"openai","approval":"never","workdir":"...","model":"gpt-6.1-terra"}
 {"prompt":"Reply exactly PONG"}
 {"id":"1","msg":{"type":"task_started"}}
@@ -108,7 +108,7 @@ Note: 0.20.0 uses a *different* JSONL envelope (`{"id","msg":{...}}` with nested
 
 ### 6. Self-contained runner (rerun on any host)
 
-```
+```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/feasibility/m0-03/run-codex-exec.ps1 -CodexPath "<path to codex>"
 ```
 
@@ -117,7 +117,7 @@ Run here with `-CodexPath` = native 0.167.0 exe: exit 0, produced `run-stdout.js
 `run-exit.txt` containing `0`, and `run-last-message.txt` containing `PONG`.
 macOS equivalent:
 
-```
+```sh
 codex exec --json --skip-git-repo-check --sandbox read-only --output-last-message last-message.txt "Reply exactly PONG"; echo "EXIT=$?"
 ```
 
@@ -146,7 +146,7 @@ Per task rules, macOS capability is not claimed. Reproduction on a native macOS 
 Run from a fresh checkout of branch `codex/m0-03-priority2`, or create a separate worktree from
 that remote branch. The branch can be cloned with:
 
-```
+```sh
 git clone --branch codex/m0-03-priority2 \
   https://github.com/j-mckerracher/agent-orch.git agent-orch-m0-03-macos
 cd agent-orch-m0-03-macos
@@ -156,7 +156,7 @@ Use Terminal (zsh or bash). The successful call requires the Codex CLI to be ins
 authenticated. The commands below make a new timestamped evidence directory so they do not
 overwrite the Windows captures or an earlier Mac run:
 
-```
+```sh
 EVIDENCE_DIR="tests/feasibility/m0-03/raw/macos-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$EVIDENCE_DIR"
 codex --version > "$EVIDENCE_DIR/version.txt" 2>&1
