@@ -1,0 +1,17 @@
+# M7-25 native acceptance checklist
+
+**Status:** Deferred to the consolidated native pass. Run every applicable row on macOS and Windows against the same recorded source SHA. These checks are not run as part of this assignment. Do not treat the deterministic fake-agent tests as proof of a live-agent exchange. Preserve full logs and failed attempts.
+
+Create a unique run root and worktree-local `CARGO_TARGET_DIR` as described in `M7-08-native-checklist.md`; record the source SHA, OS build, selected CLI version and signed-in status. Do not add a pin to make an unsupported CLI version pass. Use the real daemon and Workspace view setup from M7-08 checklist row 3 for the manual live checks below. Keep test runs isolated and do not run a paid agent from an automated test.
+
+1. **Deterministic runtime and authority checks (AC1–AC4; macOS and Windows).** Run `cargo build --locked -p orchestrator-daemon --examples --bins`, then `cargo test --locked -p orchestrator-daemon -- --test-threads=1`. The integration test must prove ordered, correlated Global and workstream replies, persistence/replay/idempotency, and unavailable-runtime failure; the API test must prove conversation text and replies create no task, approval or delivery. Expected: all tests pass on each OS. Save stdout/stderr as `m7-25-<os>-rust.log`.
+
+2. **Live Global and workstream replies (AC1; manual on macOS and Windows).** With a signed-in, supported Codex CLI at its pinned version, send a unique nonce-bearing prompt to Global and to an existing non-fixture workstream. Wait for each turn to complete. Capture each `conversations.get` transcript and confirm a real reply containing the nonce, strictly increasing sequence numbers, all entries correlated to that turn ID, and no history shared between targets. Expected: both targets receive a real reply through the installed adapter; neither reply is simulated.
+
+3. **Live reply recovery (AC2; manual on macOS and Windows).** After both live turns complete, record their transcript entries and cursors, stop only the daemon using this run's data directory, then reconnect/relaunch it with the same data directory. Read both transcripts from the prior cursors and from sequence 0. Expected: completed replies retain their original IDs and sequences, replay is ordered, and the cursor at `latest_sequence` returns no entries. The deterministic test in row 1 verifies same-key idempotency across restart.
+
+4. **Runtime unavailable (AC3; macOS and Windows).** In row 1, confirm `without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable` passes. On macOS also run `a_runtime_that_is_present_but_not_executable_fails_closed`. Expected: `runtime_unavailable`, a failed turn recorded in the transcript, and no agent launch.
+
+5. **No authority from conversation content (AC4; macOS and Windows).** In row 1, confirm `conversation_text_and_replies_create_no_task_approval_or_delivery` passes. Before and after the live exchanges in row 2, inspect task, approval and delivery state. Expected: the lists/state do not change as a result of conversation messages or replies.
+
+Store evidence under the unique run root's `evidence/` directory. Record PASS/FAIL for each OS and row; leave this checklist deferred if credentials or a native machine are unavailable.

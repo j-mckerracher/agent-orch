@@ -1,0 +1,22 @@
+{
+  "fixture": "D6",
+  "description": "Journal reset and restart identity (JournalIdentitySource); replaced by M5-02b store identity.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "storeIdentity": null,
+        "cursorRelationship": "unknown"
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "Journal identity is unavailable in this fixture scenario."
+    },
+    "error": {
+      "error": "Fixture journal identity failed (simulated)."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a1b7ec-8fbe-73d2-9e6a-1a719981fa84"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command \"[System.IO.File]::WriteAllBytes((Join-Path (Get-Location) 'TASK.txt'), [System.Text.Encoding]::ASCII.GetBytes(\\\"M0_TASK_AFTER\"'`n\"))'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"\"C:\\\\Program Files (x86)\\\\PowerShell\\\\7\\\\pwsh.exe\" -Command \"[System.IO.File]::WriteAllBytes((Join-Path (Get-Location) 'TASK.txt'), [System.Text.Encoding]::ASCII.GetBytes(\\\"M0_TASK_AFTER\"'`n\"))'","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"TASK_DEMO_OK"}}
+{"type":"turn.completed","usage":{"input_tokens":45534,"cached_input_tokens":36224,"cache_write_input_tokens":0,"output_tokens":119,"reasoning_output_tokens":0}}

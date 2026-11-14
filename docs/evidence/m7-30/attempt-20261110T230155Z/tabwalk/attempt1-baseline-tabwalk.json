@@ -1,0 +1,970 @@
+[
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 34,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_1_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message Global orchestrator",
+    "focusIndicator": false,
+    "covered": false,
+    "coveredBy": null,
+    "inView": true,
+    "rect": [
+     251,
+     500,
+     692,
+     67
+    ],
+    "key": "TEXTAREA#_r_1_-draft.|"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 34,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_1_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message Global orchestrator",
+    "focusIndicator": false,
+    "covered": true,
+    "coveredBy": "div.ui-disclosure-body",
+    "inView": true,
+    "rect": [
+     220,
+     514,
+     705,
+     67
+    ],
+    "key": "TEXTAREA#_r_1_-draft.|"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_1_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message Global orchestrator",
+    "focusIndicator": false,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     31,
+     673,
+     698,
+     67
+    ],
+    "key": "TEXTAREA#_r_1_-draft.|"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Running 2",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-count",
+    "inView": true,
+    "rect": [
+     43,
+     660,
+     682,
+     40
+    ],
+    "key": "SUMMARY#.|Running\n2"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Waiting 1",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     43,
+     649,
+     682,
+     40
+    ],
+    "key": "SUMMARY#.|Waiting\n1"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Unclassified 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-count",
+    "inView": true,
+    "rect": [
+     43,
+     660,
+     682,
+     40
+    ],
+    "key": "SUMMARY#.|Unclassified\n0"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Agent slots 20 / 24",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-count",
+    "inView": true,
+    "rect": [
+     37,
+     660,
+     690,
+     40
+    ],
+    "key": "SUMMARY#.|Agent slots\n20 / 24"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_1_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message Global orchestrator",
+    "focusIndicator": false,
+    "covered": false,
+    "coveredBy": null,
+    "inView": true,
+    "rect": [
+     31,
+     442,
+     328,
+     67
+    ],
+    "key": "TEXTAREA#_r_1_-draft.|"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Workspace activity PLACEHOLDER DATA (D11) — attention count ",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     31,
+     640,
+     328,
+     61
+    ],
+    "key": "SUMMARY#.|Workspace activity P"
+   },
+   {
+    "tag": "button",
+    "id": "_r_a_",
+    "testid": null,
+    "role": null,
+    "name": "Stop Cache dependency downloads (fixture:task-infra-1)",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     301,
+     642,
+     52,
+     32
+    ],
+    "key": "BUTTON#_r_a_.ui-btn ui-btn-danger|Stop"
+   },
+   {
+    "tag": "a",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Review all decisions",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     204,
+     618,
+     99,
+     17
+    ],
+    "key": "A#.activity-review-all|Review all decisions"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 18,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 18,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 10,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 25,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 25,
+  "issues": [
+   {
+    "tag": "div",
+    "id": null,
+    "testid": null,
+    "role": "region",
+    "name": "Adapter inventory table",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     227,
+     383,
+     703,
+     317
+    ],
+    "key": "DIV#.agents-scroll|Configured adapter\tA"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 30,
+  "issues": []
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 30,
+  "issues": [
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Task fixture-task-1 i Awaiting decision Local review merge ·",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     226,
+     612,
+     693,
+     88
+    ],
+    "key": "BUTTON#.rd-row|Task fixture-task-1\n"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 22,
+  "issues": [
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Refresh",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     655,
+     668,
+     68,
+     32
+    ],
+    "key": "BUTTON#.ui-btn ui-btn-quiet|Refresh"
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Request changes",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.rs-title",
+    "inView": true,
+    "rect": [
+     37,
+     659,
+     120,
+     32
+    ],
+    "key": "BUTTON#.|Request changes"
+   }
+  ]
+ },
+ {
+  "mode": "fixture",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 22,
+  "issues": [
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Task fixture-task-1 i Awaiting decision Local review merge ·",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-badge ui-tone-placeholder",
+    "inView": true,
+    "rect": [
+     37,
+     579,
+     316,
+     122
+    ],
+    "key": "BUTTON#.rd-row|Task fixture-task-1\n"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 33,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_5_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message e2e-project coordinator",
+    "focusIndicator": false,
+    "covered": false,
+    "coveredBy": null,
+    "inView": true,
+    "rect": [
+     251,
+     548,
+     692,
+     67
+    ],
+    "key": "TEXTAREA#_r_5_-draft.|"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 33,
+  "issues": [
+   {
+    "tag": "a",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Show dependency plan",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     341,
+     509,
+     152,
+     28
+    ],
+    "key": "A#.ws-chip-link|Show dependency plan"
+   },
+   {
+    "tag": "textarea",
+    "id": "_r_5_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message e2e-project coordinator",
+    "focusIndicator": false,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     220,
+     585,
+     705,
+     67
+    ],
+    "key": "TEXTAREA#_r_5_-draft.|"
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Choose conversation target · e2e-project coordinator ⌄",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     220,
+     661,
+     330,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|Choose conversation "
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Model settings: codex · GPT-6.1-Sol · medium",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     690,
+     661,
+     197,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|codex · GPT-6.1-Sol "
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Waiting 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     232,
+     654,
+     689,
+     40
+    ],
+    "key": "SUMMARY#.|Waiting\n0"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 26,
+  "issues": [
+   {
+    "tag": "a",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Show dependency plan",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     152,
+     643,
+     152,
+     28
+    ],
+    "key": "A#.ws-chip-link|Show dependency plan"
+   },
+   {
+    "tag": "textarea",
+    "id": "_r_5_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message e2e-project coordinator",
+    "focusIndicator": false,
+    "covered": false,
+    "coveredBy": null,
+    "inView": true,
+    "rect": [
+     31,
+     436,
+     698,
+     67
+    ],
+    "key": "TEXTAREA#_r_5_-draft.|"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Workspace activity 0 0 require attention",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     31,
+     626,
+     698,
+     40
+    ],
+    "key": "SUMMARY#.|Workspace activity\n0"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Execution queue 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     37,
+     660,
+     690,
+     40
+    ],
+    "key": "SUMMARY#.|Execution queue\n0"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Attention 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-title",
+    "inView": true,
+    "rect": [
+     37,
+     645,
+     690,
+     40
+    ],
+    "key": "SUMMARY#.|Attention\n0"
+   },
+   {
+    "tag": "a",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Review all decisions",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     43,
+     683,
+     99,
+     17
+    ],
+    "key": "A#.activity-review-all|Review all decisions"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workspace",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 26,
+  "issues": [
+   {
+    "tag": "textarea",
+    "id": "_r_5_-draft",
+    "testid": null,
+    "role": null,
+    "name": "Message e2e-project coordinator",
+    "focusIndicator": false,
+    "covered": false,
+    "coveredBy": null,
+    "inView": true,
+    "rect": [
+     31,
+     573,
+     328,
+     67
+    ],
+    "key": "TEXTAREA#_r_5_-draft.|"
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Choose conversation target · e2e-project coordinator ⌄",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     31,
+     650,
+     177,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|Choose conversation "
+   },
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Model settings: codex · GPT-6.1-Sol · medium",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.",
+    "inView": true,
+    "rect": [
+     216,
+     650,
+     106,
+     28
+    ],
+    "key": "BUTTON#.ws-chip-button|codex · GPT-6.1-Sol "
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Up next 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "section.shell-resources",
+    "inView": true,
+    "rect": [
+     43,
+     608,
+     312,
+     40
+    ],
+    "key": "SUMMARY#.|Up next\n0"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Waiting 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "span.ui-disclosure-count",
+    "inView": true,
+    "rect": [
+     43,
+     649,
+     312,
+     40
+    ],
+    "key": "SUMMARY#.|Waiting\n0"
+   },
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Unclassified 0",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     43,
+     660,
+     312,
+     40
+    ],
+    "key": "SUMMARY#.|Unclassified\n0"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "workstreams",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 24,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 24,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 17,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "agents",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 17,
+  "issues": [
+   {
+    "tag": "summary",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Configured inventory and discovered capabilities 3 adapters",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     18,
+     646,
+     354,
+     54
+    ],
+    "key": "SUMMARY#.|Configured inventory"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 1280,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 960,
+  "height": 700,
+  "stops": 21,
+  "issues": []
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 760,
+  "height": 700,
+  "stops": 14,
+  "issues": [
+   {
+    "tag": "button",
+    "id": null,
+    "testid": null,
+    "role": null,
+    "name": "Refresh",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     655,
+     639,
+     68,
+     32
+    ],
+    "key": "BUTTON#.ui-btn ui-btn-quiet|Refresh"
+   },
+   {
+    "tag": "button",
+    "id": "rd-tab-actionable",
+    "testid": null,
+    "role": "tab",
+    "name": "Actionable",
+    "focusIndicator": true,
+    "covered": true,
+    "coveredBy": "summary.",
+    "inView": true,
+    "rect": [
+     37,
+     666,
+     82,
+     34
+    ],
+    "key": "BUTTON#rd-tab-actionable.rd-tab|Actionable"
+   }
+  ]
+ },
+ {
+  "mode": "live",
+  "route": "review",
+  "theme": "light",
+  "width": 390,
+  "height": 700,
+  "stops": 14,
+  "issues": []
+ }
+]

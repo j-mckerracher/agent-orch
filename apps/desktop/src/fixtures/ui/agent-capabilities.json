@@ -1,0 +1,57 @@
+{
+  "fixture": "D1",
+  "description": "Agent detection and capabilities (AgentCapabilitiesSource); replaced by M5-02b agents.capabilities.",
+  "provenance": "PLACEHOLDER DATA - not read from the daemon",
+  "scenarios": {
+    "success": {
+      "data": {
+        "agents": [
+          {
+            "id": "fixture:codex",
+            "name": "Codex (preview)",
+            "availability": "installed",
+            "features": [
+              "structured events",
+              "cancellation"
+            ],
+            "discoveredAt": "2026-01-01T00:00:00Z"
+          },
+          {
+            "id": "fixture:claude-code",
+            "name": "Claude Code (preview)",
+            "availability": "available",
+            "features": [
+              "structured events"
+            ],
+            "discoveredAt": "2026-01-01T00:00:00Z",
+            "note": "Not detected on this machine in the fixture."
+          },
+          {
+            "id": "fixture:legacy",
+            "name": "Legacy agent (preview)",
+            "availability": "unsupported",
+            "features": [],
+            "discoveredAt": "2026-01-01T00:00:00Z"
+          },
+          {
+            "id": "fixture:unprobed",
+            "name": "Unprobed agent (preview)",
+            "availability": "unknown",
+            "features": [],
+            "discoveredAt": "2026-01-01T00:00:00Z",
+            "note": "Support is never inferred."
+          }
+        ]
+      }
+    },
+    "empty": {
+      "empty": true
+    },
+    "unavailable": {
+      "unavailable": "Agent discovery is not available until M5-02b."
+    },
+    "error": {
+      "error": "Fixture discovery failed (simulated)."
+    }
+  }
+}

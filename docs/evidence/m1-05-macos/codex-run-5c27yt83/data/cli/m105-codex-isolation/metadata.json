@@ -1,0 +1,15 @@
+{
+  "repository": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup/docs/evidence/m1-05-macos/codex-run-5c27yt83/repo",
+  "worktree": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup/docs/evidence/m1-05-macos/codex-run-5c27yt83/data/worktrees/m105-codex-isolation",
+  "branch": "orchestrator/m105-codex-isolation",
+  "base_ref": "main",
+  "base_sha": "6355f092d021e5d46bdbf16716929c15491e5585",
+  "runner_pid": 40650,
+  "agent_pid": 40751,
+  "stdout_log": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup/docs/evidence/m1-05-macos/codex-run-5c27yt83/data/cli/m105-codex-isolation/codex.jsonl",
+  "stderr_log": "/Users/mckerracher.joshua/Code/agent-orch-worktrees/tasks/m1-05-isolation-cleanup/docs/evidence/m1-05-macos/codex-run-5c27yt83/data/cli/m105-codex-isolation/codex.stderr",
+  "exit_code": 0,
+  "agent_outcome": "completed",
+  "candidate_commit": "92953fcebb83b2483d39338e25cffbc31d6a1567",
+  "failure": null
+}

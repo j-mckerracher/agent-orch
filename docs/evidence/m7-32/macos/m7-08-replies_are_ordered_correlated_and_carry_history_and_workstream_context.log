@@ -1,0 +1,29 @@
+   Compiling orchestrator-daemon v0.1.0 (/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/crates/orchestrator-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.75s
+     Running tests/conversation_runtime.rs (target/m7-32-macos-6C93441BC5514685A1B1DB93A0B55F0E/debug/deps/conversation_runtime-a530eb715a2d1d87)
+
+running 1 test
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... FAILED
+
+failures:
+
+---- replies_are_ordered_correlated_and_carry_history_and_workstream_context stdout ----
+
+thread 'replies_are_ordered_correlated_and_carry_history_and_workstream_context' (47346433) panicked at crates/orchestrator-daemon/tests/support/process.rs:152:21:
+daemon exited before it was ready (Authentication)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- per-call timing (client I/O timeout 30s) ---
+--- end per-call timing ---
+--- daemon log tail (/var/folders/0v/gssk9rmx4c1465sfxcz668d00000gr/T/aosMQyY3/daemon.log) ---
+{"component":"daemon","event":"daemon_start","level":"info","pid":"88498","ts":"2026-11-13T06:53:45Z","version":"0.1.0"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-13T06:53:45Z"}
+{"component":"daemon","error":"daemon IPC failed: local IPC operation failed","event":"daemon_failed","level":"error","ts":"2026-11-13T06:53:45Z"}
+--- end daemon log ---
+
+
+failures:
+    replies_are_ordered_correlated_and_carry_history_and_workstream_context
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.50s
+
+error: test failed, to rerun pass `-p orchestrator-daemon --test conversation_runtime`

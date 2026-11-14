@@ -1,0 +1,8 @@
+
+ RUN  v5.1.0 /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/apps/desktop
+
+
+ Test Files  1 passed (1)
+      Tests  11 passed (11)
+   Start at  00:27:57
+   Duration  1.18s (setup 92%, transform 3%, tests 3%, worker 1%, import 1%)

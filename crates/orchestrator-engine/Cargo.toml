@@ -1,0 +1,15 @@
+[package]
+name = "orchestrator-engine"
+description = "Execution logic shared by the CLI and the daemon: the restart reconciliation gate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+orchestrator-core = { path = "../orchestrator-core" }
+orchestrator-diagnostics = { path = "../orchestrator-diagnostics" }
+orchestrator-git = { path = "../orchestrator-git" }
+orchestrator-runtime = { path = "../orchestrator-runtime" }
+orchestrator-store = { path = "../orchestrator-store" }
+serde_json = "=1.0.154"

@@ -1,0 +1,21 @@
+{
+  "fixture": "conversation",
+  "scenarios": {
+    "success": {
+      "ageMs": 2000,
+      "data": {
+        "global": [
+          { "id": "fixture:msg-1", "kind": "message", "role": "user", "text": "Which workstreams need attention today?", "at": "2026-01-01T09:00:00Z" },
+          { "id": "fixture:msg-2", "kind": "message", "role": "coordinator", "text": "Auth hardening has one running task and a pending review. Docs refresh has a failed task.", "at": "2026-01-01T09:00:05Z" }
+        ],
+        "project": [
+          { "id": "fixture:msg-3", "kind": "message", "role": "user", "text": "Please split the docs work into smaller tasks.", "at": "2026-01-01T09:10:00Z" },
+          { "id": "fixture:msg-4", "kind": "proposal", "role": "coordinator", "text": "Proposal: split into install guide and troubleshooting page.", "at": "2026-01-01T09:10:20Z" }
+        ]
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the conversation source is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: conversations are not supported." },
+    "unknown": { "reason": "Fixture scenario: conversation state is unknown." }
+  }
+}

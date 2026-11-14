@@ -1,0 +1,15 @@
+[package]
+name = "orchestrator-private-fs"
+description = "Owner-only directories and files for the data directory: 0700/0600 on Unix, a protected owner-only DACL on Windows."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Deliberately dependency-free on Unix so both the engine workspace and the
+# standalone desktop host can use it without pulling in the store (and SQLite).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"

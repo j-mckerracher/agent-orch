@@ -1,137 +1,144 @@
-# Project Name
+# Agent Orchestrator
 
-Run several AI coding agents in parallel from a single orchestrator: each worker takes a task in its own git worktree, and every pull request comes with a locally generated proof of verification. Built on firstmate, with Claude Code, Codex, and GitHub Copilot CLI as workers.
+Cross-platform (macOS, Windows) desktop application for delegating software
+engineering work to autonomous coding agents. Stack: Rust, Tauri 2, React,
+TypeScript, SQLite. The full design lives in
+[docs/technical-implementation-plan.md](docs/technical-implementation-plan.md);
+`board.json` tracks which parts of it are actually implemented.
 
-**What problem it solves:** a short paragraph on the pain this removes, the manual step it
-automates, or the capability it exposes. Link out to a design doc or ticket if one exists.
+Updated: 2026-11-07T09:46:00-07:00
 
-## Status
+## What exists today (scaffold)
 
-| | |
-|---|---|
-| **Maturity** | Experimental |
-| **Owned by** | `@mc-innersource/mc-innersource-admin` |
-| **Contributions** | Open — see [Contributing](#contributing) |
+- Cargo workspace with eight engine crates. Each crate is a **boundary
+  placeholder**: it compiles, but exposes no public API yet. `orchestrator-core`
+  intentionally has zero dependencies.
+- `orchestrator-cli` binary: prints that task execution is not implemented and
+  exits nonzero. It has no subcommands.
+- `orchestrator-daemon` binary: prints a placeholder message and exits. It has
+  no IPC server.
+- Desktop frontend (`apps/desktop/src`): one React page that builds with Vite.
+  It talks to no engine.
+- Tauri host (`apps/desktop/src-tauri`): one window and a no-op `ping` command
+  exposed to the invoke bridge. The bridge has not been exercised, and the host does not call the engine.
 
-## Getting Started
+Nothing here executes an agent task, persists state, or isolates a Git
+worktree. Those are the plan's later milestones.
 
-### Prerequisites
+## Layout
 
-- Runtime/toolchain and version (e.g. Python 3.11+, Node 20+, Go 1.22+)
-- Access or credentials needed (e.g. a service account, VPN, a specific role)
-- Anything that must exist first (a database, a cloud project, an API key)
-
-### Install
-
-```bash
-git clone https://github.com/mc-innersource/motif-mcao.git
-cd motif-mcao
-# replace with this project's real install command
+```
+Cargo.toml                 Root workspace. Header comment documents the
+                           dependency direction rule.
+crates/
+  orchestrator-core/       Contract root. MUST NOT depend on tokio, Tauri,
+                           SQLite, Git, or any agent provider.
+  orchestrator-agents/     Intended: Codex / Claude Code / Pi protocol adapters.
+  orchestrator-git/        Intended: repo validation, worktree lifecycle,
+                           diff capture, local delivery.
+  orchestrator-store/      Intended: SQLite (WAL) persistence and event journal.
+  orchestrator-runtime/    Intended: process supervision, cancellation, recovery.
+  orchestrator-ipc/        Intended: authenticated local JSON-RPC protocol.
+  orchestrator-daemon/     Intended: long-lived engine process; composes the
+                           other crates; launches on demand.
+  orchestrator-cli/        Intended: standalone CLI client; engine runs
+                           in-process, no Tauri dependency.
+apps/desktop/
+  src/                     React + TypeScript frontend (Vite).
+  src-tauri/               Tauri 2 host. Standalone Cargo package, NOT a
+                           workspace member; see its Cargo.toml header.
+docs/                      Plan and prompts.
+board.json                 Shared work record (coordinator-owned).
 ```
 
-### Configuration
+### Intended boundaries (not implemented)
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `EXAMPLE_API_URL` | yes | — | Base URL of the upstream service |
-| `EXAMPLE_LOG_LEVEL` | no | `info` | Log verbosity |
+Dependency direction (plan section 3): `core` defines contracts;
+`agents`/`git`/`store`/`runtime` implement them; `ipc` and `daemon` add
+process boundaries; `cli` and the desktop app are clients. The desktop host
+is intended to forward to the engine daemon over local IPC, so closing the
+window cannot kill running agent work — that forwarding is not built yet.
 
-If this project reads configuration from a `.env` file, commit a `.env.example` alongside it
-and list the variables above. Never commit real secrets — see [Security](#security).
+`apps/desktop/src-tauri` is deliberately not a workspace member: it is a
+standalone package with its own `Cargo.lock`, so the engine builds and ships
+without desktop toolchain setup and the two build graphs never mix.
 
-## Usage
+## Building
 
-The shortest path from a clean checkout to a working result:
+Requires a Rust toolchain, Node.js, and platform Tauri prerequisites (on
+Windows the Visual Studio C++ workload, plus a WebView2 runtime for the dev
+window). All commands run from the repository root.
 
-```bash
-# replace with a real, copy-pasteable example
+```sh
+# Engine workspace (builds the eight crates in crates/)
+cargo build --workspace
+
+# Desktop frontend (installs into apps/desktop/node_modules)
+npm --prefix apps/desktop install
+npm --prefix apps/desktop run build
+
+# Tauri host (standalone package; writes apps/desktop/src-tauri/Cargo.lock)
+cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+# Dev loop (serves the Vite app and opens the Tauri window)
+npm --prefix apps/desktop run tauri dev
 ```
 
-Then add one or two realistic examples — the calls people actually make, not a
-`hello-world`. Show expected output so readers can tell whether it worked.
+On Windows, use `npm.cmd` instead of `npm` if the shell selects a Unix wrapper.
 
-## Development
+The scaffold was verified on Windows with the three build commands above.
+On 2026-11-07, native macOS arm64 verification passed the engine build,
+frontend build, standalone Tauri build, and debug app bundling. The bundled
+app opened and rendered the Agent Orchestrator heading. The workspace test
+command passed, but there are no tests yet. Native subprocess launch, output
+capture and termination, and a response-only Codex JSON protocol probe also
+passed. See [the laptop verification plan and results](docs/laptop-verification-plan.md)
+for commands, environment, and limitations. The Windows GUI remains unverified.
 
-```bash
-# replace with this project's real commands
-#   test    run the test suite
-#   lint    lint and format checks
-#   build   produce a build artifact
-```
+## CLI task store and reconciliation
 
-Describe anything non-obvious about the local loop: how to run against a fake vs. real
-upstream, how to seed test data, and which tests are slow. Pull requests and pushes to `main` run
-the repository's language-aware lint workflow in `.github/workflows/lint.yml` and the central
-OPA/Rego controls through `.github/workflows/policy.yml`.
+`orchestrator-cli` keeps task, attempt, session and process-identity records in
+`<data-dir>/store.sqlite` (`SqliteStore`). Task JSON records written by the
+earlier `FileStore`-based CLI are not migrated or read, and no migration
+command exists. Such tasks do not appear in `tasks`; keep or retire the old
+data directory by hand.
 
-Default-branch policy runs maintain one **Repository policy findings** issue for warnings or
-failures. They update it as findings change, close it after a complete clean run, and reopen it
-if findings return. PR runs use annotations only. The policy job grants `issues: write` for this
-reporting. To opt out, change `repository-policy-with-issues.yml` to `repository-policy.yml` in
-`.github/workflows/policy.yml` and remove `issues: write`.
+`run`, `cancel`, `recover-owner` and `cleanup` take the `.orchestrator.lock`
+data-directory lock for their short mutation sections only, not for the agent's
+lifetime. `run` records the agent's process identity at launch and, before it
+creates any new task or attempt, reconciles every unfinished record against the
+live OS process state. It refuses to schedule while any record is unresolved or
+ambiguous (for example a running session with no recorded identity) and prints
+the blocking records.
 
-## Project Structure
+The gate also inspects the recorded worktree and any persisted delivery steps
+(read-only; it never applies, removes or repairs anything):
 
-Illustrative — replace with this project's real layout.
+- A session whose process is proven gone is inspected *before* the task is
+  marked Failed. A Foreign or Unknown workspace (not a registered worktree, no
+  recorded workspace, or the repository cannot be inspected) refuses scheduling
+  and leaves the session, attempt and task untouched, so the next run
+  re-inspects them.
+- A Dirty, Missing or BranchMoved worktree of such a task keeps its files, is
+  reported on stderr with the advisory classification, and takes the existing
+  Failed transition. This is a gate policy for unrelated new tasks, not a
+  success inference, a cleanup authorization or a classifier override.
+- For any task, including one whose run owner is still alive, Partial or
+  Ambiguous delivery evidence, or Confirmed delivery on a task that is not
+  Succeeded, refuses scheduling. A live owner is exempt only from the process,
+  attempt and workspace checks. Settled terminal tasks never block because
+  their retained worktree is dirty or gone.
+- A Pending or Running attempt with no unfinished session of its own (so no
+  owner or process identity can be proven gone) refuses scheduling. A task
+  with no attempt yet, and a preserved CandidateReady attempt, do not.
 
-```text
-.
-├── src/            # application code
-├── tests/          # test suite
-├── catalog.yml     # Port.io software catalog entity for this repo
-└── .github/        # CI workflows, CODEOWNERS, Dependabot configuration
-```
+See
+[the M2-06 evidence](docs/evidence/m2-06-macos/m2-06-cli-wiring.md).
 
-## Contributing
+## Dependencies
 
-This is an innersource project — contributions from anywhere in the organization are
-welcome, and you don't need to be on the owning team.
-
-1. Open an issue first for anything non-trivial so we can agree on the approach.
-2. Branch from `main` (`feature/short-description`).
-3. Keep changes focused, and add or update tests alongside them.
-4. Open a pull request describing the *why*, not just the *what*. CI must pass, and a
-   [CODEOWNER](.github/CODEOWNERS) review is required before merge.
-
-Good first contributions are labeled `good first issue`. If you're unsure whether an idea
-fits, ask in the issue tracker before building it.
-
-## Support & Ownership
-
-| | |
-|---|---|
-| **Maintainers** | `@mc-innersource/mc-innersource-admin` |
-| **Questions & bugs** | [Open an issue](https://github.com/mc-innersource/motif-mcao/issues) |
-| **Chat** | *none — open an issue* |
-| **Response expectations** | e.g. best-effort within two business days |
-
-## Remaining setup
-
-Two things the automated setup deliberately does not do, because they need a decision or a
-permission it does not have. Delete this section once both are done.
-
-- [ ] **Configure the application-specific Dependabot context.** Run
-      `/dependabot-app-context` in Claude Code once the app's manifests and CI exist. The reusable
-      workflows are already pinned to the reviewed `mc-ci-reusable-workflows` v2.0.1 commit; the
-      skill preserves those pins while it writes
-      [`.github/ai-app-context.md`](.github/ai-app-context.md).
-- [ ] **Allow Actions to open pull requests**, under **Settings → Actions → General**, so
-      `/apply-fixes` can work. Check too that companion-PR CI runs when its base is
-      `dependabot/**`; a workflow restricted to `branches: [main]` skips it.
-
-## Security
-
-Do not report security issues in public issues or pull requests. Report them through
-[internal security contact / process] instead.
-
-## License
-
-State the license or internal-use terms that apply, and add a matching `LICENSE` file — the
-template ships neither, because the right answer differs per project.
-
----
-
-*Generated from
-[`mc-innersource/mayo-innersource-template`](https://github.com/mc-innersource/mayo-innersource-template).
-`.copier-answers.yml` records which template version — run `copier update` to pull in later
-template improvements. Do not delete that file.*
+All direct dependencies are pinned with `=` and all three lockfiles are
+committed: `Cargo.lock` (engine workspace), `apps/desktop/src-tauri/Cargo.lock`
+(Tauri host), and `apps/desktop/package-lock.json` (frontend). Versions were
+pinned 2026-11-07 against crates.io and npm max stable releases; the plan's
+dependency table is an input, not the source of truth.

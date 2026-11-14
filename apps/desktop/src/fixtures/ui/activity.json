@@ -1,0 +1,28 @@
+{
+  "fixture": "activity",
+  "scenarios": {
+    "success": {
+      "ageMs": 4000,
+      "data": {
+        "running": [
+          { "taskId": "fixture:task-auth-2", "projectId": "fixture:project-alpha", "objective": "Add refresh-token expiry", "agent": "codex", "state": "Running", "waiting": null },
+          { "taskId": "fixture:task-infra-1", "projectId": "fixture:project-beta", "objective": "Cache dependency downloads", "agent": "codex", "state": "Verifying", "waiting": null }
+        ],
+        "queued": [
+          { "taskId": "fixture:task-docs-2", "projectId": "fixture:project-alpha", "objective": "Add a troubleshooting page", "agent": "claude-code", "state": "Queued", "waiting": { "reason": "capacity", "detail": "All agent slots are in use." } },
+          { "taskId": "fixture:task-auth-3", "projectId": "fixture:project-alpha", "objective": "Document the session model", "agent": "claude-code", "state": "Queued", "waiting": { "reason": "dependency", "detail": "Waiting for fixture:task-auth-2." } }
+        ],
+        "attention": [
+          { "approvalId": "fixture:approval-1", "taskId": "fixture:task-auth-1", "projectId": "fixture:project-alpha", "kind": "LocalReviewMerge", "priority": "P1" },
+          { "approvalId": "fixture:approval-2", "taskId": "fixture:task-docs-1", "projectId": "fixture:project-alpha", "kind": "ReportPublish", "priority": "P2" }
+        ],
+        "slots": { "status": "ok", "ageMs": 4000, "value": { "used": 20, "limit": 24 } },
+        "upNext": { "status": "ok", "ageMs": 4000, "value": "fixture:task-docs-2" },
+        "dispatchPaused": { "status": "ok", "ageMs": 4000, "value": false }
+      }
+    },
+    "unavailable": { "reason": "Fixture scenario: the activity source is unavailable." },
+    "unsupported": { "reason": "Fixture scenario: activity is not supported." },
+    "unknown": { "reason": "Fixture scenario: activity state is unknown." }
+  }
+}

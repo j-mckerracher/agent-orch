@@ -1,0 +1,45 @@
+fixture workspace light 1280x700: stops=35 issues=0
+fixture workspace light 960x700: stops=35 issues=1
+fixture workspace light 760x700: stops=27 issues=0
+fixture workspace light 390x700: stops=27 issues=0
+fixture workstreams light 1280x700: stops=19 issues=0
+fixture workstreams light 960x700: stops=19 issues=0
+fixture workstreams light 760x700: stops=11 issues=1
+fixture workstreams light 390x700: stops=11 issues=1
+fixture agents light 1280x700: stops=26 issues=0
+fixture agents light 960x700: stops=26 issues=1
+fixture agents light 760x700: stops=18 issues=1
+fixture agents light 390x700: stops=18 issues=1
+fixture review light 1280x700: stops=31 issues=0
+fixture review light 960x700: stops=31 issues=1
+fixture review light 760x700: stops=23 issues=1
+fixture review light 390x700: stops=23 issues=1
+live workspace light 1280x700: stops=34 issues=0
+live workspace light 960x700: stops=34 issues=5
+live workspace light 760x700: stops=27 issues=0
+live workspace light 390x700: stops=27 issues=0
+live workstreams light 1280x700: stops=22 issues=0
+live workstreams light 960x700: stops=22 issues=0
+live workstreams light 760x700: stops=15 issues=0
+live workstreams light 390x700: stops=15 issues=0
+live agents light 1280x700: stops=25 issues=0
+live agents light 960x700: stops=25 issues=0
+live agents light 760x700: stops=18 issues=1
+live agents light 390x700: stops=18 issues=2
+live review light 1280x700: stops=22 issues=0
+live review light 960x700: stops=22 issues=0
+live review light 760x700: stops=15 issues=0
+live review light 390x700: stops=15 issues=0
+runs: 32, with issues: 12
+fixture workspace light 960 [{"t":"textarea","id":"_r_1_-draft","n":"Message Global orchestrator","fi":true,"cov":"div.ui-disclosure-body","v":true}]
+fixture workstreams light 760 [{"t":"main","id":"shell-main","n":"ORCHESTRATION Workstreams Workstreams, objectives, revisions","fi":true,"cov":"section.shell-resources","v":true}]
+fixture workstreams light 390 [{"t":"main","id":"shell-main","n":"ORCHESTRATION Workstreams Workstreams, objectives, revisions","fi":true,"cov":"section.shell-resources","v":true}]
+fixture agents light 960 [{"t":"div","id":null,"n":"Adapter inventory table","fi":true,"cov":"span.","v":true}]
+fixture agents light 760 [{"t":"main","id":"shell-main","n":"EXECUTION INVENTORY / S5 Agents & Sessions A task persists t","fi":true,"cov":"section.shell-resources","v":true}]
+fixture agents light 390 [{"t":"main","id":"shell-main","n":"EXECUTION INVENTORY / S5 Agents & Sessions A task persists t","fi":true,"cov":"section.shell-resources","v":true}]
+fixture review light 960 [{"t":"button","id":null,"n":"Task fixture-task-1 i Awaiting decision Local review merge ·","fi":true,"cov":"span.","v":true}]
+fixture review light 760 [{"t":"main","id":"shell-main","n":"UNIFIED HUMAN DECISIONS Review & Decisions One queue for cho","fi":true,"cov":"section.shell-resources","v":true}]
+fixture review light 390 [{"t":"main","id":"shell-main","n":"UNIFIED HUMAN DECISIONS Review & Decisions One queue for cho","fi":true,"cov":"section.shell-resources","v":true}]
+live workspace light 960 [{"t":"a","id":null,"n":"Show dependency plan","fi":true,"cov":"summary.","v":true},{"t":"textarea","id":"_r_5_-draft","n":"Message e2e-project coordinator","fi":true,"cov":"summary.","v":true},{"t":"button","id":null,"n":"Choose conversation target · e2e-project coordinator ⌄","fi":true,"cov":"span.ui-disclosure-title","v":true}]
+live agents light 760 [{"t":"main","id":"shell-main","n":"EXECUTION INVENTORY / S5 Agents & Sessions A task persists t","fi":true,"cov":"section.shell-resources","v":true}]
+live agents light 390 [{"t":"main","id":"shell-main","n":"EXECUTION INVENTORY / S5 Agents & Sessions A task persists t","fi":true,"cov":"section.shell-resources","v":true},{"t":"div","id":null,"n":"Adapter inventory table","fi":true,"cov":"summary.","v":true}]

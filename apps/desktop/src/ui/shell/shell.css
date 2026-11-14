@@ -1,0 +1,457 @@
+/*
+ * Global app shell layout. Token names fall back to M7-01 defaults.
+ * At 1150 px the sidebar narrows and activity stays 300 px wide on the right.
+ * At 960 px activity moves above main; the resource slot stays in normal flow.
+ * At 760 px sidebar navigation stays visible in two columns.
+ * Updated: 2026-11-11 20:16:54 UTC.
+ */
+body:has(.shell) {
+  margin: 0;
+  background: var(--paper, #fff);
+  color: var(--ink, #111);
+}
+
+.shell {
+  --shell-line: var(--line, #c8d5e4);
+  --shell-blue: var(--blue, #0057a8);
+  --shell-panel: var(--panel, #fff);
+  --shell-soft: var(--soft, #f2f7fc);
+  --shell-muted: var(--muted, #3a4652);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-width: 0;
+  max-width: 1800px;
+  margin: 0 auto;
+  background: var(--paper, #fff);
+  color: var(--ink, #111);
+}
+
+.shell a:focus-visible,
+.shell button:focus-visible,
+.shell summary:focus-visible,
+.shell input:focus-visible {
+  outline: 3px solid var(--shell-blue);
+  outline-offset: 2px;
+}
+
+.shell-skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border: 2px solid var(--shell-blue);
+  border-radius: 6px;
+  background: var(--shell-panel);
+  color: var(--ink, #111);
+  font-weight: 650;
+  transform: translateY(-200%);
+}
+
+.shell-skip:focus {
+  transform: none;
+}
+
+/* The main region scrolls, so it is a keyboard stop (axe scrollable-region-focusable); it needs a visible ring. */
+.shell-main:focus {
+  outline: none;
+}
+
+.shell-main:focus-visible {
+  outline: 3px solid var(--shell-blue);
+  outline-offset: -3px;
+}
+
+.shell-strip {
+  min-width: 0;
+  overflow: auto;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.shell-strip .strip {
+  position: static;
+}
+
+.shell-body {
+  /* Scroll containers are the containing block of absolutely positioned descendants (visually-hidden text),
+     otherwise those escape the container and make the document itself scroll. */
+  position: relative;
+  display: grid;
+  grid-template-columns: 214px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.shell-sidebar {
+  --shell-blue: var(--sidebar-focus, #0057a8);
+  --shell-muted: var(--sidebar-ink, #111);
+  --blue: var(--sidebar-link, #0057a8);
+  --blue-bg: var(--soft-strong);
+  --control-border: var(--sidebar-control-border, #6b7f94);
+  --focus: var(--sidebar-focus, #0057a8);
+  --ink: var(--sidebar-ink, #111);
+  --muted: var(--sidebar-ink, #111);
+  --panel: var(--sidebar, #f2f7fc);
+  --soft: var(--sidebar, #f2f7fc);
+  --soft-strong: color-mix(in srgb, var(--sidebar, #f2f7fc) 90%, var(--sidebar-link, #0057a8));
+  --subtle: var(--sidebar-ink, #111);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: 24px 16px 14px;
+  overflow-y: auto;
+  background: var(--sidebar, #f2f7fc);
+  border-right: 1px solid var(--shell-line);
+  color: var(--sidebar-ink, #111);
+}
+
+.shell-brand {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 20px;
+  line-height: 1.3;
+}
+
+.shell-brand strong,
+.shell-brand-name {
+  display: block;
+}
+
+.shell-brand strong {
+  font-size: 18px;
+}
+
+.shell-brand-name {
+  font-size: 13px;
+}
+
+.shell-sidebar-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.shell-nav {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.shell-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--sidebar-link, #0057a8);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.shell-nav-link:hover {
+  background: var(--soft-strong);
+}
+
+.shell-nav-link[aria-current="page"],
+.shell-nav-link[aria-current="true"] {
+  background: var(--soft-strong);
+  border-color: var(--sidebar-control-border, #6b7f94);
+  color: var(--sidebar-ink, #111);
+  font-weight: 650;
+}
+
+.shell-nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  color: var(--sidebar-link, #0057a8);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.shell-nav-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-count {
+  font: 11px/1.4 ui-monospace, monospace;
+}
+
+.shell-tree {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 120px;
+  margin-top: 16px;
+}
+
+.shell-tree-heading {
+  margin: 0 0 10px;
+  padding: 0 7px;
+  font: 10px/1.6 ui-monospace, monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.shell-tree-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.shell-tree-heading a[aria-current="page"] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.shell-tree-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.shell-bottom {
+  padding-top: 10px;
+}
+
+.shell-placeholder {
+  margin: 0;
+  padding: 0 7px;
+  color: var(--shell-muted);
+  font-size: 12px;
+}
+
+.shell-content {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "top"
+    "main"
+    "res";
+  min-height: 0;
+  min-width: 0;
+}
+
+.shell-content.has-activity {
+  grid-template-columns: minmax(0, 1fr) 324px;
+  grid-template-areas:
+    "top top"
+    "main activity"
+    "res res";
+}
+
+.shell-topbar {
+  grid-area: top;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--shell-line);
+  font-size: 12px;
+}
+
+.shell-topbar > * {
+  min-width: 0;
+}
+
+.shell-topbar-search {
+  flex: 1 1 260px;
+  max-width: 460px;
+}
+
+.shell-topbar-search input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.shell-topbar-counts {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+.shell-counts {
+  margin: 0;
+}
+
+.shell-main {
+  position: relative;
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 24px 24px;
+  overflow: auto;
+  scroll-margin-top: var(--shell-strip-height, 0px);
+}
+
+.shell-activity {
+  position: relative;
+  grid-area: activity;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 24px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--shell-line);
+  border-radius: 7px;
+  background: var(--shell-panel);
+}
+
+.shell-resources {
+  grid-area: res;
+  min-width: 0;
+  padding: 8px 24px;
+  border-top: 1px solid var(--shell-line);
+  background: var(--shell-soft);
+  font-size: 12px;
+}
+
+@media (max-width: 1150px) {
+  .shell-body {
+    grid-template-columns: 185px minmax(0, 1fr);
+  }
+
+  .shell-sidebar {
+    padding: 20px 12px 12px;
+  }
+
+  .shell-topbar,
+  .shell-resources {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .shell-main {
+    padding: 0 22px 24px;
+  }
+
+  .shell-content.has-activity {
+    grid-template-columns: minmax(0, 1fr) 324px;
+  }
+
+  .shell-activity {
+    margin-right: 24px;
+  }
+}
+
+@media (max-width: 960px) {
+  .shell-content,
+  .shell-content.has-activity {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+      "top"
+      "activity"
+      "main"
+      "res";
+    overflow: auto;
+  }
+
+  .shell-main {
+    overflow: visible;
+    /* Grow main with its content; shell-body becomes the scroller at 760 px. */
+    min-height: auto;
+  }
+
+  .shell-activity {
+    width: min(300px, calc(100vw - 36px));
+    height: max-content;
+    max-height: min(45dvh, 420px);
+    margin: 0 22px 12px auto;
+    overflow: auto;
+    min-height: 0;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .shell-body {
+    display: block;
+    overflow: auto;
+  }
+
+  .shell-sidebar {
+    padding: 14px 18px;
+    box-sizing: border-box;
+    max-height: 42dvh;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-line);
+  }
+
+  .shell-brand {
+    margin-bottom: 0;
+  }
+
+  .shell-sidebar-body {
+    margin-top: 12px;
+  }
+
+  .shell-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .shell-nav-link {
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .shell-tree {
+    flex: none;
+    max-height: 260px;
+  }
+
+  .shell-content,
+  .shell-content.has-activity {
+    overflow: visible;
+  }
+
+  .shell-topbar {
+    padding: 8px 18px;
+    font-size: 11px;
+  }
+
+  .shell-topbar-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .shell-topbar-counts {
+    margin-left: 0;
+  }
+
+  .shell-main {
+    padding: 0 18px 24px;
+  }
+
+  .shell-activity {
+    margin: 0 18px 12px auto;
+  }
+
+  .shell-resources {
+    padding: 7px 12px;
+  }
+}
+
+@media print {
+  .shell {
+    display: block;
+    height: auto;
+  }
+
+  .shell-sidebar,
+  .shell-strip {
+    display: none;
+  }
+}

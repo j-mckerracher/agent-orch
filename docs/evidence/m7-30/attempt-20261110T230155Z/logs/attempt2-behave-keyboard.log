@@ -1,0 +1,13 @@
+PASS  kbd-first-stops-fixture: ["a[Skip to main content]","div[○ Offline Last durable sequence: none Re]","a[▦ Orchestrator Workspace]","a[☷ Agents & Sessions]"]
+PASS  kbd-nav-enter-fixture: {"before":"#/workspace","after":"#/review","focus":"a[✓ Review & Decisions —]"}
+PASS  kbd-tree-arrows-fixture: {"a0":"div[Workstream 1 of 3: Auth hardening, 3 tas]","a1":"span[Rotate signing keys Succeeded codex · no]","a2":"span[Add refresh-token expiry Running codex ·]","up":"span[Rotate signing keys Succeeded codex · no]","home":"div[Workstream 1 of 3: Auth hardening, 3 tas]","end":"div[Workstream 3 of 3: Build infrastructure,]"}
+PASS  kbd-target-picker-fixture: {"trigger":"Choose conversation target\n· G","openedWithEnter":true,"focusInside":"input#_r_h_-search[]","afterEscape":"button[Choose conversation target · Global orch]"}
+PASS  kbd-model-menu-fixture: {"trigger":"Codex (placeholder) · Placehol","openedWithEnter":true,"focusInside":"button[Model settings: Codex (placeholder) · Pl]","afterEscape":"button[Model settings: Codex (placeholder) · Pl]"}
+PASS  kbd-disclosure-fixture: {"start":true,"afterEnter":false,"afterSpace":true}
+PASS  kbd-first-stops-live: ["a[Skip to main content]","div[✓ Connected Last durable sequence: 6 Ref]","button[Refresh / reconnect]","a[▦ Orchestrator Workspace]"]
+PASS  kbd-nav-enter-live: {"before":"#/workspace","after":"#/review","focus":"a[✓ Review & Decisions 0]"}
+LIMITATION kbd-tree-arrows-live: no tree items in this mode (no workstreams to navigate)
+PASS  kbd-target-picker-live: {"trigger":"Choose conversation target\n· e","openedWithEnter":true,"focusInside":"input#_r_d_-search[]","afterEscape":"button[Choose conversation target · e2e-project]"}
+PASS  kbd-model-menu-live: {"trigger":"codex · GPT-6.1-Sol · medium\n⌄","openedWithEnter":true,"focusInside":"button[Model settings: codex · GPT-6.1-Sol · me]","afterEscape":"button[Model settings: codex · GPT-6.1-Sol · me]"}
+PASS  kbd-disclosure-live: {"start":true,"afterEnter":false,"afterSpace":true}
+checks: 12; FAIL: 0

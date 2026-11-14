@@ -1,0 +1,46 @@
+
+> agent-orch-desktop@0.1.0 test:e2e
+> vitest run --config vitest.e2e.config.ts
+
+
+ RUN  v5.1.0 /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-didactic-lamp/.agent-worktrees/0eca0ef2-m7-32-macos/apps/desktop
+
+ ❯ e2e/workstreams-view.e2e.test.tsx (1 test | 1 failed) 502ms
+   ❯ WorkstreamsView over the real daemon (1)
+     × creates, adds an objective, links a task and verifies a gate, all persisted by the daemon 501ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  e2e/workstreams-view.e2e.test.tsx > WorkstreamsView over the real daemon > creates, adds an objective, links a task and verifies a gate, all persisted by the daemon
+AssertionError: expected { description: 'It works', …(3) } to match object { description: 'It works', …(2) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "description": "It works",
+-   "evidence_task_id": "task-d28bead53141ccb376a85e66bd09f363510d3d32ad57135e60050cdf9ff91a07",
+-   "state": "verified",
++   "evidence_task_id": null,
++   "state": "pending",
+  }
+
+ ❯ e2e/workstreams-view.e2e.test.tsx:75:46
+     73|       expect(detail.workstream.title).toBe("Real stream");
+     74|       expect(detail.tasks.map((link) => link.task_id)).toEqual([task.c…
+     75|       expect(detail.objectives[0]!.gates[0]).toMatchObject({ descripti…
+       |                                              ^
+     76|     } finally {
+     77|       cleanup();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 43 passed (44)
+   Start at  00:24:21
+   Duration  39.95s (tests 78%, environment 14%, import 6%, transform 2%)
+
+    Isolate  9 workers spawned · ~767ms startup each (spawn + environment, per file)
+             at least ~6.14s faster with isolate: false — reuses workers across files instead of one per file

@@ -1,0 +1,4 @@
+# M7-20 Native Checklist
+
+1. **macOS — real desktop and daemon:** In the native Tauri webview, connect to a real daemon in a disposable repository. Use configured real agents and harmless bounded tasks to occupy both default worker slots, then queue at least three more tasks, including one dependency-blocked task. Confirm the panel reports the daemon's slot limit and usage, shows capacity and dependency reasons from the queue, does not label live D11 data as PLACEHOLDER, and keeps “Pause new dispatch” disabled. Drop and restore the daemon connection; confirm the panel replaces stale data with the new snapshot. Record OS/app/daemon versions, task IDs, observed values, and screenshot.
+2. **Windows — real desktop and daemon:** Repeat row 1 in the native Windows Tauri webview using a disposable repository and real configured agents. Record OS/app/daemon versions, task IDs, observed values, and screenshot.

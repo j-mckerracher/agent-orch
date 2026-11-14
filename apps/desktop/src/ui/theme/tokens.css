@@ -1,0 +1,212 @@
+/*
+ * Design tokens (M7-01). Other M7 items consume these published names.
+ * Updated: 2026-11-11 13:05:52 MST (-0700).
+ *
+ * Source: supplied wireframe's effective light and dark cascades.
+ * Light is default; explicit data-theme wins, then prefers-color-scheme selects dark.
+ *
+ * Theme selection:
+ *   - `<html data-theme="light|dark">` is an explicit user choice and always wins.
+ *   - Without `data-theme`, `prefers-color-scheme: dark` selects the dark set.
+ * The dark set therefore appears twice (explicit and media query); contrast.test.ts
+ * asserts the two copies are identical and checks every pair in both themes.
+ *
+ * Surfaces      --paper (page)  --panel (cards, menus)  --soft (tinted fill)
+ *               --soft-strong (expanded or selected row)  --control-surface  --sidebar
+ * Text          --ink  --muted  --subtle  --component-muted  --control-ink  --on-accent
+ * Lines         --line (decorative)  --line-soft (row separators)
+ *               --control-border (accessible 3:1 boundary for interactive controls)
+ * Accent        --blue  --blue-bg  --accent (= --blue)  --focus
+ * State         --success/--success-bg mirror the positive wireframe state.
+ *               --green remains semantic green; amber and red remain semantic states.
+ * Meter         --meter-gradient  --meter-stop-1..5  --meter-track
+ *               --meter-marker  --meter-marker-ring  --meter-fill-pattern
+ * Sidebar stays light in dark mode; pair --sidebar with --sidebar-ink, --sidebar-link,
+ * --sidebar-focus, and --sidebar-control-border for accessible contrast.
+ * Reference-only: --wireframe-search-border, --wireframe-composer-border, and
+ * --wireframe-picker-border. Use --control-border on actual controls.
+ * Type          --font-sans  --font-display  --font-mono
+ * Shape/motion  --radius-sm  --radius-md  --radius-lg  --shadow-popover  --focus-width
+ *
+ * Primitive class names (see primitives.css): ui-disclosure, ui-pill, ui-meter,
+ * ui-bubble, ui-btn, ui-badge, ui-panel, ui-empty, ui-theme-toggle.
+ */
+
+:root {
+  /* Surfaces */
+  --paper: #ffffff;
+  --panel: #ffffff;
+  --soft: #edf4fb;
+  --soft-strong: #e4effb;
+  --sidebar: #f2f7fc;
+  --control-surface: #f2f7fc;
+  --sidebar-ink: #111111;
+  --sidebar-link: #0057a8;
+  --sidebar-focus: #0057a8;
+  --sidebar-control-border: #6b7f94;
+
+  /* Text */
+  --ink: #111111;
+  --muted: #111111;
+  --subtle: #34465a;
+  --component-muted: #333333;
+  --control-ink: #183c60;
+  --on-accent: #ffffff;
+
+  /* Lines */
+  --line: #c8d5e4;
+  --line-soft: #dce7f2;
+  --control-border: #6b7f94;
+
+  /* Accent */
+  --blue: #0057a8;
+  --blue-bg: #edf5fd;
+  --accent: #0057a8;
+  --focus: #0057a8;
+
+  /* State */
+  --green: #2f7052;
+  --green-bg: #e8f1e8;
+  --amber: #765000;
+  --amber-bg: #fff5db;
+  --red: #a32d34;
+  --red-bg: #fff0f0;
+  --success: #0057a8;
+  --success-bg: #edf5fd;
+  --wireframe-search-border: #bdcde0;
+  --wireframe-composer-border: #b7cbe0;
+  --wireframe-picker-border: #d4e0ed;
+
+  /* Meter */
+  --meter-stop-1: #35aa65;
+  --meter-stop-2: #89bf4b;
+  --meter-stop-3: #e6b943;
+  --meter-stop-4: #e67d36;
+  --meter-stop-5: #d84040;
+  --meter-gradient: linear-gradient(
+    to right,
+    var(--meter-stop-1) 0%,
+    var(--meter-stop-2) 40%,
+    var(--meter-stop-3) 65%,
+    var(--meter-stop-4) 82%,
+    var(--meter-stop-5) 100%
+  );
+  --meter-track: #d8e1eb;
+  --meter-marker: #111111;
+  --meter-marker-ring: #ffffff;
+  --meter-fill-pattern: #111111;
+
+  /* Type: no bundled font. Avenir Next is macOS-only; Windows falls back to Segoe UI. */
+  --font-sans: "Avenir Next", Avenir, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Iowan Old Style", Palatino, Georgia, serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Consolas, monospace;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --shadow-popover: 0 10px 28px rgba(32, 62, 94, 0.15);
+  --focus-width: 3px;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --paper: #101a25;
+  --panel: #172433;
+  --soft: #20364a;
+  --soft-strong: #304a65;
+  --sidebar: #f2f7fc;
+  --control-surface: #20364a;
+  --sidebar-ink: #111111;
+  --sidebar-link: #0057a8;
+  --sidebar-focus: #0057a8;
+  --sidebar-control-border: #6b7f94;
+
+  --ink: #f2f6fb;
+  --muted: #c2d2e3;
+  --subtle: #c2d2e3;
+  --component-muted: #c2d2e3;
+  --control-ink: #f2f6fb;
+  --on-accent: #101a25;
+
+  --line: #40576c;
+  --line-soft: #2c4155;
+  --control-border: #829ab0;
+
+  --blue: #a0ceff;
+  --blue-bg: #223f5b;
+  --accent: #a0ceff;
+  --focus: #a0ceff;
+
+  --green: #a3d6b3;
+  --green-bg: #264638;
+  --amber: #ffdb95;
+  --amber-bg: #4a3a20;
+  --red: #ffbdc2;
+  --red-bg: #503137;
+  --success: #a0ceff;
+  --success-bg: #223f5b;
+  --wireframe-search-border: #40576c;
+  --wireframe-composer-border: #40576c;
+  --wireframe-picker-border: #40576c;
+
+  --meter-track: #40576c;
+  --meter-marker: #f2f6fb;
+  --meter-marker-ring: #101a25;
+
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.45);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101a25;
+    --panel: #172433;
+    --soft: #20364a;
+    --soft-strong: #304a65;
+    --sidebar: #f2f7fc;
+    --control-surface: #20364a;
+    --sidebar-ink: #111111;
+    --sidebar-link: #0057a8;
+    --sidebar-focus: #0057a8;
+    --sidebar-control-border: #6b7f94;
+
+    --ink: #f2f6fb;
+    --muted: #c2d2e3;
+    --subtle: #c2d2e3;
+    --component-muted: #c2d2e3;
+    --control-ink: #f2f6fb;
+    --on-accent: #101a25;
+
+    --line: #40576c;
+    --line-soft: #2c4155;
+    --control-border: #829ab0;
+
+    --blue: #a0ceff;
+    --blue-bg: #223f5b;
+    --accent: #a0ceff;
+    --focus: #a0ceff;
+
+    --green: #a3d6b3;
+    --green-bg: #264638;
+    --amber: #ffdb95;
+    --amber-bg: #4a3a20;
+    --red: #ffbdc2;
+    --red-bg: #503137;
+    --success: #a0ceff;
+    --success-bg: #223f5b;
+    --wireframe-search-border: #40576c;
+    --wireframe-composer-border: #40576c;
+    --wireframe-picker-border: #40576c;
+
+    --meter-track: #40576c;
+    --meter-marker: #f2f6fb;
+    --meter-marker-ring: #101a25;
+
+    --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.45);
+
+    color-scheme: dark;
+  }
+}

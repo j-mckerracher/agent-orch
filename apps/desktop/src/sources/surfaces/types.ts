@@ -1,0 +1,439 @@
+/**
+ * Frontend boundary interfaces D9-D16 for the operator-experience surfaces
+ * (M7-03; registry rules in `docs/ui/wireframe.md`).
+ * Architecture: `docs/technical-implementation-plan.md` at the repository root.
+ *
+ * These are frontend interfaces, not additional daemon methods.
+ *
+ * Every source has up to three adapters behind one interface:
+ * - fixture (`surfaces/fixtures.ts`): PLACEHOLDER DATA, provenance `fixture`,
+ *   ids prefixed `fixture:`. Never sends a daemon request. Illustrative
+ *   wireframe numbers (20/24 slots, $26.00, CPU 44%) exist only here.
+ * - derived (`surfaces/derived.ts`): reads methods the daemon already has,
+ *   provenance `daemon` with the methods used by the selected source or target,
+ *   including its writes. Missing capabilities are unsupported; unobserved
+ *   values are unknown. It never serves fixture data.
+ * - local (`surfaces/search.ts`): D15 only; indexes what D9 and D16 returned.
+ *
+ * Failure semantics (shared by every read):
+ * - Reads resolve; they do not reject. A fixture "loading" scenario never resolves.
+ * - `ok`: data was obtained; `observedAt`/`ageMs` say when. A known-empty
+ *   collection is `ok` with an empty array.
+ * - `unavailable`: the answer could not be obtained now (disconnected, timeout,
+ *   daemon error). A retry may help. A failed live call is `unavailable` with
+ *   daemon provenance and is never replaced by fixture data.
+ * - `unsupported`: this daemon or platform has no such source (missing method
+ *   or capability, or no daemon concept at all). Retrying will not help.
+ * - `unknown`: no value has been observed, or the answer cannot establish it.
+ * - Unknown is never zero: absent numbers are an `unknown`/`unsupported`
+ *   `Measured`, never `0`. An observed empty collection is `[]`; an unread
+ *   collection is unknown. Nullable identifiers and timestamps explicitly mark
+ *   missing metadata, not a measured count.
+ * - Simulated actions exist on fixture adapters only. Derived adapters reject
+ *   them with `DaemonError("method-unavailable")` so no fixture action is
+ *   silently inert and none can reach a real mutation.
+ * - Every adapter result carries an observation. Non-ok observations date the status
+ *   attempt, not a successful data read; they never imply retained data is fresh.
+ * - The derived mutations are D10 `send` (`coordinator.send_message` or
+ *   `conversations.send`), `cancel` (`conversations.cancel`) and D9 `workstreams.*`
+ *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
+ */
+import type { ApprovalState, TaskState } from "../../daemon/types";
+import type { Provenance, SimulatedReceipt, SourceId } from "../types";
+
+export type { Provenance, SimulatedReceipt, SourceId };
+
+export type SurfaceId = Extract<SourceId, "D9" | "D10" | "D11" | "D12" | "D13" | "D14" | "D15" | "D16">;
+
+export type SurfaceStatus = "ok" | "unavailable" | "unsupported" | "unknown";
+
+/** When data or a non-ok status was observed. `ageMs` is relative to the adapter's clock at read time. */
+export interface Observation {
+  observedAt: string;
+  ageMs: number;
+}
+
+/** Result of one source read; always carries the provenance to label it. */
+export type SurfaceResult<T> =
+  | ({ status: "ok"; data: T; provenance: Provenance } & Observation)
+  | ({ status: Exclude<SurfaceStatus, "ok">; reason: string; provenance: Provenance } & Observation);
+
+/** One value inside a snapshot, with its own state and observation age. */
+export type Measured<T> =
+  | ({ status: "ok"; value: T } & Observation)
+  | { status: Exclude<SurfaceStatus, "ok">; reason: string };
+
+export type SurfaceReceipt = SimulatedReceipt & { id: string };
+
+// D9 -- WorkstreamSource. Derived: workstreams.list / workstreams.get joined with tasks.list (M7-07 methods).
+export interface WorkstreamTask {
+  id: string;
+  /** Owning project of the linked task, as the daemon reports it. */
+  projectId: string;
+  /** The objective this task is linked under; null when linked to the workstream only. */
+  objectiveId: string | null;
+  /** Task contract objective text; empty when `tasks.list` no longer returns the linked task. */
+  objective: string;
+  state: TaskState;
+  agent: string;
+  dependencies: string[];
+}
+export type WorkstreamLifecycle = "active" | "suspended" | "archived";
+export type GateState = "pending" | "verified" | "failed";
+export interface WorkstreamGate {
+  id: string;
+  label: string;
+  state: GateState;
+  /** Task whose result evidences the gate, when the daemon recorded one. */
+  evidenceTaskId: string | null;
+}
+export interface WorkstreamObjective {
+  id: string;
+  title: string;
+  description: string;
+  revision: number;
+  gates: WorkstreamGate[];
+}
+export interface Workstream {
+  /** Derived: the daemon workstream id. Fixture: `fixture:` id. */
+  id: string;
+  title: string;
+  summary: string;
+  /** Advisory: the scheduler does not consult it, so suspending does not stop dispatch. */
+  state: WorkstreamLifecycle;
+  /** Optimistic-concurrency token required by `workstreams.update`. */
+  revision: number;
+  projectIds: string[];
+  /** The daemon's workstream id for `conversations.*`. Absent until the workstream lookup (M7-07) supplies it. */
+  workstreamId?: string;
+  tasks: WorkstreamTask[];
+  /** A zero is a real count only when this result is `ok`; unread counts are unknown. */
+  counts: Measured<Record<TaskState, number>>;
+  /**
+   * Set when the daemon listed this workstream but its detail read failed. Title, summary,
+   * state and revision come from the list; tasks, counts and objectives are unknown, not empty.
+   */
+  unreadReason?: string;
+  /** A workstream holds any number of objectives; a live workstream with none is `ok` with `[]`. */
+  objectives: Measured<WorkstreamObjective[]>;
+}
+/** The daemon's acknowledgement of one workstream mutation. */
+export interface WorkstreamMutation {
+  id: string;
+  /** Revision after the change, when the daemon returned one. */
+  revision: number | null;
+  at: string;
+}
+export interface WorkstreamSource {
+  readonly provenance: Provenance;
+  /** Lists daemon workstreams and linked tasks; unread details keep an explicit unknown reason. */
+  workstreams(): Promise<SurfaceResult<Workstream[]>>;
+  /** Fixture only. Derived adapters reject: use `create`. */
+  simulateCreate(title: string): Promise<SurfaceReceipt>;
+  /*
+   * Real mutations (`workstreams.*`). Fixture adapters reject them and derived adapters refuse
+   * `fixture:` ids before any request. Every mutation carries an idempotency key; writes carry
+   * the revision the caller last read, and a stale one is a `conflict` the caller resolves by re-reading.
+   */
+  create(title: string, summary?: string): Promise<WorkstreamMutation>;
+  update(
+    target: { id: string; revision: number },
+    change: { title?: string; summary?: string; state?: WorkstreamLifecycle },
+  ): Promise<WorkstreamMutation>;
+  addObjective(workstreamId: string, objective: { title: string; description?: string; gates?: string[] }): Promise<WorkstreamMutation>;
+  reviseObjective(
+    target: { id: string; revision: number },
+    change: { title?: string; description?: string; addGates?: string[] },
+  ): Promise<WorkstreamMutation>;
+  setGate(
+    target: { id: string; revision: number },
+    gateId: string,
+    state: GateState,
+    evidenceTaskId?: string,
+  ): Promise<WorkstreamMutation>;
+  linkTask(workstreamId: string, taskId: string, objectiveId?: string): Promise<WorkstreamMutation>;
+  unlinkTask(workstreamId: string, taskId: string): Promise<WorkstreamMutation>;
+}
+
+// D10 -- ConversationSource. Project notes use coordinator.get/send_message; Global and workstream turns use conversations.get/send/cancel.
+export type ConversationTarget =
+  | { kind: "global" }
+  | { kind: "project"; projectId: string }
+  /** M7-24: a daemon workstream (`conversations.*`), distinct from a project coordinator. */
+  | { kind: "workstream"; workstreamId: string };
+export interface ConversationEntry {
+  id: string;
+  /** `status` is a daemon-recorded turn outcome (failed, cancelled, empty) and never a reply. */
+  kind: "message" | "proposal" | "status";
+  role: "user" | "coordinator" | "system";
+  text: string;
+  at: string;
+  /** Live Global and workstream targets only. */
+  turnId?: string;
+  /** Stable machine code of a failed turn, e.g. `runtime_unavailable`. */
+  errorCode?: string;
+  /** True while the daemon has not recorded the end of this reply. */
+  streaming?: boolean;
+}
+/** The latest turn the daemon recorded for a live target. */
+export interface ConversationTurnInfo {
+  id: string;
+  state: "running" | "completed" | "failed" | "cancelled";
+  errorCode: string | null;
+  runtime: { name: string; version: string };
+}
+export interface ConversationTranscript {
+  target: ConversationTarget;
+  entries: ConversationEntry[];
+  /** False for the daemon's coordinator: it records messages and nothing replies. */
+  repliesExpected: boolean;
+  /** True when paging stopped before the end of the log. */
+  truncated: boolean;
+  /** Live Global and workstream targets only; null when nothing was sent yet. */
+  turn?: ConversationTurnInfo | null;
+}
+export interface SendReceipt {
+  /** True for fixture receipts: nothing was recorded anywhere. */
+  simulated: boolean;
+  provenance: Provenance;
+  notice: string;
+  at: string;
+  /** Daemon entry id when recorded; `fixture:` id when simulated. */
+  entryId: string;
+  /** Live Global and workstream targets: the turn this message opened. */
+  turn?: ConversationTurnInfo;
+}
+export interface ConversationSource {
+  readonly provenance: Provenance;
+  /** Reads the target log. Project logs keep the oldest 50 pages and mark truncation. */
+  transcript(target: ConversationTarget): Promise<SurfaceResult<ConversationTranscript>>;
+  /**
+   * Derived: a project target records a note through `coordinator.send_message`;
+   * a global or workstream target sends through `conversations.send` (M7-24).
+   * Rejects for `fixture:` ids. Fixture: simulated.
+   */
+  send(target: ConversationTarget, text: string): Promise<SendReceipt>;
+  /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
+  cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
+}
+
+// D11 -- ActivitySource. queue.snapshot is primary; tasks.list and approvals.list enrich it or provide a limited fallback.
+export type WaitingReason = "dependency" | "capacity" | "approval" | "paused" | "unknown";
+export interface QueueEntry {
+  taskId: string;
+  projectId: string;
+  objective: string;
+  agent: string;
+  state: TaskState;
+  /** Null for entries that are not waiting (running). `unknown` means the daemon reports no reason. */
+  waiting: { reason: WaitingReason; detail: string } | null;
+}
+export type AttentionPriority = "P1" | "P2" | "unknown";
+export interface AttentionItem {
+  approvalId: string;
+  taskId: string;
+  projectId: string | null;
+  kind: string;
+  priority: AttentionPriority;
+}
+export interface SlotUsage {
+  used: number;
+  limit: number;
+}
+export interface ActivitySnapshot {
+  running: QueueEntry[];
+  queued: QueueEntry[];
+  /** Pending approvals only. */
+  attention: AttentionItem[];
+  /**
+   * Queue limits require `queue.snapshot`; task-list fallback reports `unsupported`.
+   * Updated: 2026-11-11 03:46:08 -0700 MST.
+   */
+  slots: Measured<SlotUsage>;
+  upNext: Measured<string>;
+  dispatchPaused: Measured<boolean>;
+  /**
+   * Partial reads remain unknown, not empty. After `queue.snapshot` succeeds, `tasks` marks missing
+   * task details and Verifying rows; `approvals` marks unknown attention. The task-list fallback
+   * requires `tasks.list`, so that failure fails the result. Its `approvals.list` read can degrade
+   * attention. Updated: 2026-11-11 04:34:06 -0700 MST.
+   */
+  degraded?: { tasks?: string; approvals?: string };
+}
+export interface ActivitySource {
+  readonly provenance: Provenance;
+  /** Reads queue and attention; missing queue support limits dispatch metadata, never invents slots. */
+  activity(): Promise<SurfaceResult<ActivitySnapshot>>;
+  /** Fixture only. Real stopping is `tasks.cancel` on the task screen; no global pause exists. */
+  simulatePauseDispatch(): Promise<SurfaceReceipt>;
+  simulateStop(taskId: string): Promise<SurfaceReceipt>;
+}
+
+// D12 -- UsageSource. The live adapter (`surfaces/usageLive.ts`) reads `usage.summary`.
+export interface UsageCoverage {
+  provider: string;
+  /**
+   * How a provider's cost was reported: `partial` means only some of its sessions reported a
+   * cost; `tokens-only` means tokens were reported but no cost. Both are live-adapter values.
+   */
+  reporting: "provider-reported" | "estimated" | "partial" | "tokens-only" | "none";
+}
+/** How many of the window's sessions reported a cost. Anything short of `complete` makes the headline a lower bound. */
+export interface UsageCostCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessions: number;
+  sessionsWithCost: number;
+}
+/** Of the sessions that have tokens but no reported cost, how many the price table could price. Live adapter only. */
+export interface UsageEstimateCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessionsNeedingEstimate: number;
+  sessionsEstimated: number;
+}
+/** Sessions with a reported or an estimated cost; the rest are unknown. Live adapter only. */
+export interface UsageKnownCostCoverage {
+  status: "unknown" | "partial" | "complete";
+  sessions: number;
+  sessionsWithKnownCost: number;
+}
+/** The native price table behind `estimated`; absent when the daemon predates it. */
+export interface UsagePriceTable {
+  version: string;
+  basis: string;
+  source?: string;
+}
+export interface UsageSummary {
+  windowStart: string;
+  timezone: string;
+  currency: string;
+  /** Live adapter only; fixtures omit it. */
+  costCoverage?: UsageCostCoverage;
+  /** Live adapter only, and only from a daemon with the price table. */
+  estimateCoverage?: UsageEstimateCoverage;
+  knownCostCoverage?: UsageKnownCostCoverage;
+  priceTable?: UsagePriceTable;
+  reported: Measured<number>;
+  estimated: Measured<number>;
+  budget: Measured<number>;
+  coverage: UsageCoverage[];
+}
+export interface UsageSource {
+  readonly provenance: Provenance;
+  usage(): Promise<SurfaceResult<UsageSummary>>;
+}
+
+// D13 -- SystemMetricsSource. Live: `host.metrics` (liveMetrics.ts). Fixture: wireframe numbers.
+export interface MeterValue {
+  value: number;
+  unit: string;
+  kind: "utilization" | "capacity";
+  label: string;
+}
+export interface SystemMetrics {
+  cpu: Measured<MeterValue>;
+  memory: Measured<MeterValue>;
+  disk: Measured<MeterValue>;
+  /** No cross-platform source: expect `unsupported`, never zero. */
+  gpu: Measured<MeterValue>;
+}
+export interface SystemMetricsSource {
+  readonly provenance: Provenance;
+  metrics(): Promise<SurfaceResult<SystemMetrics>>;
+  /**
+   * Live adapter only: delivers a fresh result now and then at the source's own sample interval,
+   * and sends no request while the window is hidden. Returns the stop function. Sources without
+   * it (fixtures) are read once through `metrics()`.
+   */
+  watch?(onResult: (result: SurfaceResult<SystemMetrics>) => void): () => void;
+}
+
+// D14 -- ModelCatalogSource. agents.catalog plus agents.capabilities; agents.validate_selection checks choices.
+export interface ModelOption {
+  id: string;
+  label: string;
+  /** M7-24: efforts this model supports (`agents.catalog`); empty when the agent reports adapter-wide efforts. */
+  efforts?: string[];
+  defaultEffort?: string | null;
+}
+export interface ModelProvider {
+  /** Derived: the daemon agent id. */
+  id: string;
+  name: string;
+  installed: boolean;
+  launchable: boolean;
+  modelSelection: "supported" | "unsupported" | "unknown";
+  models: Measured<ModelOption[]>;
+  /** Adapter-wide efforts; per-model efforts are on each `ModelOption`. */
+  efforts: Measured<string[]>;
+}
+export interface ModelCatalog {
+  providers: ModelProvider[];
+}
+/** `agents.validate_selection` outcome: the daemon's own reason, never a guess. */
+export type ModelSelectionCheck = { valid: true } | { valid: false; reason: string; detail: string };
+export interface ModelCatalogSource {
+  readonly provenance: Provenance;
+  catalog(): Promise<SurfaceResult<ModelCatalog>>;
+  /** Derived (M7-24): `agents.validate_selection`. Absent on fixture adapters. */
+  validate?(agent: string, selection: { model?: string; effort?: string }): Promise<SurfaceResult<ModelSelectionCheck>>;
+}
+
+// D15 -- SearchSource. A local index over what D9 and D16 loaded; there is no fixture of its own.
+export interface SearchHit {
+  kind: "workstream" | "task" | "decision";
+  id: string;
+  title: string;
+  detail: string;
+  origin: "real" | "fixture";
+}
+export interface SearchResults {
+  query: string;
+  hits: SearchHit[];
+  truncated: boolean;
+  /** Inputs that could not be indexed; their records are NOT searched, so absence is not evidence. */
+  skipped: Array<{ source: SurfaceId; status: Exclude<SurfaceStatus, "ok">; reason: string }>;
+}
+export interface SearchSource {
+  readonly provenance: Provenance;
+  search(query: string): Promise<SurfaceResult<SearchResults>>;
+}
+
+// D16 -- DecisionQueueSource. Derived: approvals.list (+ tasks.list for the project join).
+export interface DecisionItem {
+  id: string;
+  taskId: string;
+  projectId: string | null;
+  kind: string;
+  candidateCommit: string;
+  state: ApprovalState["state"];
+  priority: AttentionPriority;
+  /** Null when no response time was observed; the derived approval API supplies none. */
+  latestResponseAt: string | null;
+}
+export interface ActionSupport {
+  available: boolean;
+  reason: string;
+}
+export interface DecisionQueue {
+  items: DecisionItem[];
+  /** Approve and reject belong to the review screen; these extra actions have no daemon decision type. */
+  actions: Record<"postpone" | "dismiss" | "escalate", ActionSupport>;
+}
+export interface DecisionQueueSource {
+  readonly provenance: Provenance;
+  queue(): Promise<SurfaceResult<DecisionQueue>>;
+  /** Fixture only; derived adapters reject. */
+  simulatePostpone(id: string): Promise<SurfaceReceipt>;
+  simulateDismiss(id: string): Promise<SurfaceReceipt>;
+}
+
+export interface SurfaceSources {
+  workstreams: WorkstreamSource;
+  conversation: ConversationSource;
+  activity: ActivitySource;
+  usage: UsageSource;
+  metrics: SystemMetricsSource;
+  models: ModelCatalogSource;
+  search: SearchSource;
+  decisions: DecisionQueueSource;
+}

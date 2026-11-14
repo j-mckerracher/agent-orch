@@ -1,0 +1,50 @@
+p12-windows-checks: run root length 43 characters
+p12-windows-checks: platform windows
+acl: started daemon pid 43980
+CHECK acl-files-present: FAIL - missing after 30 s: daemon.log; daemon exited: False
+---- icacls data-dir
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data <user>:(OI)(CI)(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-data-dir: PASS - only the current user, full control, protected, nothing inherited
+---- icacls .orchestrator.lock
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\.orchestrator.lock <user>:(I)(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-.orchestrator.lock: FAIL - an inherited ACE (I) is present; ACE is inherited; the DACL is not protected from inheritance
+---- icacls daemon.token
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\daemon.token <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-daemon.token: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite-shm
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-shm <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite-shm: PASS - only the current user, full control, protected, nothing inherited
+---- icacls store.sqlite-wal
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\acl-data\store.sqlite-wal <user>:(F)
+
+Successfully processed 1 files; Failed processing 0 files
+CHECK acl-store.sqlite-wal: PASS - only the current user, full control, protected, nothing inherited
+---- icacls parent (information only, not asserted)
+C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12 BUILTIN\Users:(I)(CI)(S,WD,AD,X)
+                                            BUILTIN\Administrators:(I)(F)
+                                            BUILTIN\Administrators:(I)(OI)(CI)(IO)(F)
+                                            NT AUTHORITY\SYSTEM:(I)(F)
+                                            NT AUTHORITY\SYSTEM:(I)(OI)(CI)(IO)(F)
+                                            <user>:(I)(F)
+                                            CREATOR OWNER:(I)(OI)(CI)(IO)(F)
+
+Successfully processed 1 files; Failed processing 0 files
+acl: stopped daemon pid 43980
+cmdline: exit code 1 after 1776 ms; first line: agent-orch: the command line for C:\Windows\Temp\p12r3-bfe455a7\51b5f79f\p12\fake-codex.cmd is 9128 characters long, but this system allows at most 8191; argument 5 alone is 9002 of it. Nothing was st
+CHECK cmdline-refused: PASS - refused before any record, with the limit named and no objective echoed
+INFO cmdline-65k-literal: the OS refused to start it, as expected: This command cannot be run due to the error: The filename or extension is too long.
+CHECK launch-failure-window: NOT RUN - needs a person to drive the desktop window; the tauri-tests gate covers the redaction logic
+P12-WINDOWS-CHECKS: FAIL (2 of 8 failed)

@@ -1,0 +1,3 @@
+   Compiling m0-02-probe v0.1.0 (/private/tmp/agent-orch-m0-02-macos-rerun/tests/feasibility/m0-02)
+    Finished `release` profile [optimized] target(s) in 2.35s
+     Running `target/release/m0-02-probe`
