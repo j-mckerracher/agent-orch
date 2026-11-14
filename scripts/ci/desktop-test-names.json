@@ -235,6 +235,7 @@
     "src/native/native.test.tsx :: shipped app wiring native S6 uses the daemon review methods, not the fixture daemon",
     "src/native/native.test.tsx :: shipped app wiring native task detail shows recovery as unavailable, never canned fixture facts",
     "src/native/native.test.tsx :: shipped app wiring native: live daemon data, connected note, and no fixture banner",
+    "src/native/native.test.tsx :: shipped app wiring without a bridge ignores a caller's retry budget and reports unavailable after one attempt",
     "src/native/native.test.tsx :: shipped app wiring without a bridge reports the daemon unavailable and never shows sample data",
     "src/review/ReviewScreen.test.tsx :: Accept / Reject Accept sends approvals.resolve approve with a key and never calls delivery.request",
     "src/review/ReviewScreen.test.tsx :: Accept / Reject Reject sends approvals.resolve reject",
