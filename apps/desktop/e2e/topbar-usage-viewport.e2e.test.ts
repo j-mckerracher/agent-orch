@@ -148,9 +148,10 @@ it("keeps the TopBar usage popover within 760 CSS-pixel width", async () => {
         `http://127.0.0.1:${address.port}/?fixture=1`,
       ]);
       text = /<pre id="topbar-usage-measurement">([\s\S]*?)<\/pre>/.exec(run.stdout)?.[1];
-      lastError = `Chrome exited ${run.code} (${run.signal}): ${run.stderr}`;
+      // The last attempt's stderr and the tail of its DOM dump, so a miss names what Chrome did instead.
+      lastError = `Chrome exited ${run.code} (${run.signal})\n--- stderr\n${run.stderr}\n--- stdout tail\n${run.stdout.slice(-2000)}`;
     }
-    if (!text) throw new Error(`Chrome did not report popover geometry: ${lastError}`);
+    if (!text) throw new Error(`Chrome ${browserVersion} did not report popover geometry: ${lastError}`);
     const raw: unknown = JSON.parse(text);
     if (!isMeasurement(raw)) throw new Error("Chrome returned invalid usage popover measurements");
     console.info(JSON.stringify({ browser: browserVersion, viewport: { width: raw.innerWidth, height: raw.innerHeight }, bounds: raw.rect }));
