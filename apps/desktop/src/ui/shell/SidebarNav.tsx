@@ -15,8 +15,9 @@ interface NavItem {
 const globalItem = (view: GlobalView) => (route: Route) => route.name === "global" && route.view === view;
 
 /**
- * Primary navigation. The legacy project screens (S1-S6) all belong to "Projects", so
- * they stay reachable and keep one selected item while a project route is open.
+ * Primary navigation: the persistent destinations other than Workstreams, which is the heading
+ * link of the sidebar tree (`SidebarWorkstreams`), as in the wireframe. Projects are a scope under
+ * Workstreams, not a destination; `#/projects` is reached from the Workstreams view.
  */
 export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: ReactNode }) {
   const items: NavItem[] = [
@@ -39,12 +40,6 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
       isCurrent: globalItem("review"),
       trailing: reviewCount,
     },
-    {
-      label: "Projects",
-      icon: "▤",
-      to: { name: "projects" },
-      isCurrent: (current) => (current.name !== "global" ? true : false),
-    },
   ];
   return (
     <nav aria-label="Primary views" className="shell-nav">
@@ -61,9 +56,12 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
   );
 }
 
-/** Heading link to the Workstreams view plus the tree slot. */
+/**
+ * Heading link to the Workstreams view plus the tree slot. Legacy project screens (S1-S6) are
+ * scoped under Workstreams, so this stays selected for them too.
+ */
 export function SidebarWorkstreams({ route, count, children }: { route: Route; count: ReactNode; children: ReactNode }) {
-  const current = route.name === "global" && route.view === "workstreams";
+  const current = route.name !== "global" || route.view === "workstreams";
   return (
     <nav aria-label="Workstreams" className="shell-tree">
       <h2 className="shell-tree-heading">

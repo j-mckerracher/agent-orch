@@ -274,6 +274,9 @@ export function WorkstreamsView() {
       <header className="ws-head">
         <p className="ws-eyebrow">Orchestration</p>
         <h1 id={headingId}>Workstreams</h1>
+        <NavLink className="ws-link-button" to={{ name: "projects" }}>
+          Manage projects
+        </NavLink>
         {surfaces.workstreams.provenance.kind !== "fixture" && (
           <Button
             disabled={mutations.busy}
