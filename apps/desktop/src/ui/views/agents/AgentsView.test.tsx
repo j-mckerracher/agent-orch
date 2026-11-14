@@ -459,8 +459,11 @@ describe("Agents & Sessions, live mode", () => {
   it("shows a retryable error when the inventory cannot load", async () => {
     const fake = seeded();
     fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
-    await mountAgents(fake, { live: true });
-    expect(await screen.findAllByRole("button", { name: /Retry/ })).not.toHaveLength(0);
+    const { user } = await mountAgents(fake, { live: true });
+    const inventory = within(screen.getByTestId("agents-inventory"));
+    await user.click(inventory.getByText("Configured inventory and discovered capabilities"));
+    expect(await inventory.findByRole("alert")).toHaveTextContent("Adapter inventory could not be loaded");
+    expect(inventory.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
   it("never counts Available / idle workers, even when the daemon reports no adapters", async () => {
     const fake = seeded();
