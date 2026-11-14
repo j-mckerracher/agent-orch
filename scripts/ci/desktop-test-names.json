@@ -801,6 +801,7 @@
     "src/ui/screens2.test.tsx :: S3 task list lists only this project's tasks with filter counts including Awaiting review",
     "src/ui/screens2.test.tsx :: S3 task list opens a preview task in the fixture-only view and never sends its id to the daemon",
     "src/ui/screens2.test.tsx :: S3 task list opens a real task",
+    "src/ui/screens2.test.tsx :: S3 task list reads filter counts as unknown, not loading, when the task list fails while connected",
     "src/ui/screens2.test.tsx :: S3 task list shows a distinct message when a filter matches nothing and when the project has no tasks",
     "src/ui/screens2.test.tsx :: S3 task list shows cached tasks as stale while offline",
     "src/ui/screens2.test.tsx :: S4 task and session detail disables cancel and says so when the connection is lost",

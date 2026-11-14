@@ -15,7 +15,8 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
   const approvalList = approvals.data ?? [];
   // Unread counts are not zero: "…" while a daemon answer can still arrive, "unknown" once it cannot.
-  const unreadCount = tasks.data === null ? (gate.connected || gate.settling ? "…" : "unknown") : null;
+  const unread = (status: string): string => (status !== "error" && (gate.connected || gate.settling) ? "…" : "unknown");
+  const unreadCount = tasks.data === null ? unread(tasks.status) : null;
 
   return (
     <main className="ps-page">

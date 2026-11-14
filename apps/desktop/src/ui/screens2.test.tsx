@@ -104,6 +104,17 @@ describe("S3 task list", () => {
     expect(screen.queryByRole("table", { name: "Tasks" })).not.toBeInTheDocument();
   });
 
+  it("reads filter counts as unknown, not loading, when the task list fails while connected", async () => {
+    const fake = seeded();
+    fake.failNext("tasks.list", { code: -32603, message: "boom" }, 5);
+    const { services } = await mount(fake, { route: tasksRoute() });
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("error"));
+    const filters = screen.getByRole("group", { name: "Task filters" });
+    expect(within(filters).getByRole("button", { name: "All (unknown)" })).toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: "Awaiting review (unknown)" })).toBeInTheDocument();
+    expect(filters).not.toHaveTextContent("…");
+  });
+
   it("shows cached tasks as stale while offline", async () => {
     const fake = seeded();
     await mount(fake, { route: tasksRoute() });
