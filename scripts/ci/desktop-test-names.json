@@ -1230,6 +1230,7 @@
     "src/ui/views/agents/AgentsView.test.tsx :: Agents & Sessions, live mode never counts Available / idle workers, even when the daemon reports no adapters",
     "src/ui/views/agents/AgentsView.test.tsx :: Agents & Sessions, live mode never shows disconnected sessions as zero, even when no task is active",
     "src/ui/views/agents/AgentsView.test.tsx :: Agents & Sessions, live mode places cancel under Session controls and the reassignment under Task controls",
+    "src/ui/views/agents/AgentsView.test.tsx :: Agents & Sessions, live mode starts with the first running task selected and the configured inventory collapsed",
     "src/ui/views/agents/model.test.ts :: agents model counts failed sessions, not tasks, and keeps failed tasks with no session apart",
     "src/ui/views/agents/model.test.ts :: agents model derives tab lists that agree with the headline",
     "src/ui/views/agents/model.test.ts :: agents model links a failed session to the attempt the daemon names for it",

@@ -329,3 +329,15 @@ test("agents and workstreams split columns follow the wireframe 1150 and 760 bre
   expect(await trackCount(".ws-layout"), "workstreams stack at 760 px").toBe(1);
   expect(await trackCount(".ws-items"), "workstream list is two columns at 760 px").toBe(2);
 });
+
+test("agents split is 1.1 to 1 at desktop width, with the first running task selected", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?fixture=1#/agents");
+  const detail = page.getByRole("complementary", { name: "Selected task / session detail" });
+  await expect(detail).toContainText("fixture:task-running");
+  const work = await page.getByRole("region", { name: "Assigned work and sessions" }).boundingBox();
+  const selected = await detail.boundingBox();
+  expect(work).not.toBeNull();
+  expect(selected).not.toBeNull();
+  expect(selected!.width / work!.width).toBeCloseTo(1 / 1.1, 2);
+});

@@ -18,7 +18,6 @@ export function Inventory({
   const count = inventory.status === "ready" ? `${inventory.data.length} adapters` : undefined;
   return (
     <Disclosure
-      defaultOpen
       summary="Configured inventory and discovered capabilities"
       count={count}
       data-testid="agents-inventory"

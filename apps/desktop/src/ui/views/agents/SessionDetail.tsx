@@ -107,7 +107,7 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
       </section>
 
       <TaskControls key={row.id} row={row} live={live} />
-      <SessionControls key={row.id} row={row} session={session} live={live} />
+      <SessionControls row={row} session={session} live={live} />
 
       <Disclosure summary="Execution feed, side effects and supplied context">
         <p className="agents-sub">

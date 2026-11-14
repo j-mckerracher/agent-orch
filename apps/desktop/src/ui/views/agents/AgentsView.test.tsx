@@ -59,6 +59,14 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByRole("tablist", { name: "Task and session lists" })).toBeInTheDocument();
   });
 
+  it("starts with the first running task selected and the configured inventory collapsed", async () => {
+    await liveView();
+    const detail = screen.getByRole("complementary", { name: "Selected task / session detail" });
+    expect(within(detail).getByText("t-run")).toBeInTheDocument();
+    expect(within(detail).queryByText("No task selected")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agents-inventory")).not.toHaveAttribute("open");
+  });
+
   it("keeps tab counts equal to the lists, counts failed sessions and marks disconnected not available", async () => {
     const { user } = await liveView();
     expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();

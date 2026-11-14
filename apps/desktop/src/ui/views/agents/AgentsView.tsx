@@ -6,7 +6,7 @@ import { LaterScope } from "./LaterScope";
 import { SessionDetail } from "./SessionDetail";
 import { SessionList } from "./SessionList";
 import { DisabledAction, PlaceholderMark } from "./common";
-import { headline, type TabId } from "./model";
+import { headline, isActive, type TabId } from "./model";
 import { useAgentsData } from "./useAgentsData";
 import "./agents.css";
 
@@ -15,7 +15,8 @@ export function AgentsView() {
   const [tab, setTab] = useState<TabId>("active");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const rows = model.work.status === "ready" ? model.work.data : null;
-  const selected = rows?.find((row) => row.id === selectedId) ?? null;
+  // The first running task is selected until the operator picks another, as in the wireframe (T12).
+  const selected = rows?.find((row) => row.id === selectedId) ?? rows?.find(isActive) ?? null;
   const stats = rows ? headline(rows) : null;
 
   return (
