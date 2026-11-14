@@ -77,7 +77,7 @@ jobs:
 
 
       - name: Super-linter
-        uses: super-linter/super-linter/slim@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0
+        uses: super-linter/super-linter/slim@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
         env:
           # Keeping GITHUB_TOKEN out prevents zizmor from enabling online audits that cannot access
           # private cross-repository workflow dependencies. All configured validators run locally.
