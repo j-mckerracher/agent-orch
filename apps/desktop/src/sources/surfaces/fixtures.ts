@@ -16,6 +16,7 @@ import metricsFixture from "../../fixtures/ui/system-metrics.json";
 import usageFixture from "../../fixtures/ui/usage.json";
 import workstreamFixture from "../../fixtures/ui/workstreams.json";
 import { countStates, measured, notOk, observation, okResult } from "./result";
+import { zoneDayStart } from "./localDay";
 import { createSearchSource } from "./search";
 import type {
   ActivitySnapshot,
@@ -204,7 +205,17 @@ function usageSource(ctx: Ctx): UsageSource {
   return {
     provenance: provenance("D12", envelope),
     usage: () =>
-      resolve<UsageSummary, UsageSummary>("D12", envelope, ctx, (data, nowMs) => stamp(data, nowMs), () => null),
+      resolve<UsageSummary, UsageSummary>(
+        "D12",
+        envelope,
+        ctx,
+        (data, nowMs) => ({
+          ...stamp(data, nowMs),
+          // The window is "since local midnight" (operational-design.md section 22), so it follows the clock.
+          windowStart: (zoneDayStart(nowMs, data.timezone) ?? new Date(nowMs)).toISOString(),
+        }),
+        () => null,
+      ),
   };
 }
 

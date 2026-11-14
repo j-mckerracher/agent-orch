@@ -4,7 +4,6 @@
     "success": {
       "ageMs": 60000,
       "data": {
-        "windowStart": "2026-01-01T00:00:00-07:00",
         "timezone": "America/Denver",
         "currency": "USD",
         "reported": { "status": "ok", "ageMs": 60000, "value": 26 },
