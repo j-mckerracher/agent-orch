@@ -12,7 +12,7 @@ import type {
 import type { SurfaceState } from "../../services";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
-import { usePopover } from "./usePopover";
+import { usePopover } from "../../usePopover";
 
 const LIVE_NOTE =
   "Models and efforts come from the daemon's catalog and are checked by the daemon. A choice applies to task submission only: the daemon's conversation call takes no model settings, so it is not sent with messages.";

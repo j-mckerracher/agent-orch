@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { Badge } from "../../theme";
 import { filterTargets, type TargetOption } from "./targets";
-import { usePopover } from "./usePopover";
+import { usePopover } from "../../usePopover";
 
 export interface ConversationTargetPickerProps {
   options: readonly TargetOption[];

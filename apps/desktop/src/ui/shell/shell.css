@@ -1,7 +1,7 @@
 /*
  * Global app shell layout. Token names fall back to M7-01 defaults.
- * At 1150 px the sidebar narrows and activity stays 300 px wide on the right.
- * At 960 px activity moves above main; the resource slot stays in normal flow.
+ * At 1150 px the sidebar narrows. The activity control is a top-right trigger over main, not a column.
+ * At 960 px the activity control moves above main; the resource slot stays in normal flow.
  * At 760 px sidebar navigation stays visible in two columns.
  * Updated: 2026-11-11 20:16:54 UTC.
  */
@@ -242,14 +242,6 @@ body:has(.shell) {
   min-width: 0;
 }
 
-.shell-content.has-activity {
-  grid-template-columns: minmax(0, 1fr) 324px;
-  grid-template-areas:
-    "top top"
-    "main activity"
-    "res res";
-}
-
 .shell-topbar {
   grid-area: top;
   display: flex;
@@ -294,17 +286,20 @@ body:has(.shell) {
   scroll-margin-top: var(--shell-strip-height, 0px);
 }
 
+/* The activity control shares main's grid cell and is pinned to its top-right, so it takes no column.
+   Its popover is anchored to the control and overlays main (ActivityPanel.css). Views whose header
+   row sits under the control reserve `--shell-activity-reserve` on their right (workspace.css). */
+.shell-content.has-activity {
+  --shell-activity-reserve: 220px;
+}
+
 .shell-activity {
-  position: relative;
-  grid-area: activity;
+  grid-area: main;
+  z-index: 2;
+  align-self: start;
+  justify-self: end;
   min-width: 0;
-  min-height: 0;
-  margin: 0 24px 0 0;
-  padding: 12px;
-  overflow: auto;
-  border: 1px solid var(--shell-line);
-  border-radius: 7px;
-  background: var(--shell-panel);
+  margin: 10px 24px 0 0;
 }
 
 .shell-resources {
@@ -336,17 +331,16 @@ body:has(.shell) {
   }
 
   .shell-content.has-activity {
-    grid-template-columns: minmax(0, 1fr) 324px;
+    --shell-activity-reserve: 200px;
   }
 
   .shell-activity {
-    margin-right: 24px;
+    margin-right: 22px;
   }
 }
 
 @media (max-width: 960px) {
-  .shell-content,
-  .shell-content.has-activity {
+  .shell-content {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto auto;
     grid-template-areas:
@@ -363,15 +357,14 @@ body:has(.shell) {
     min-height: auto;
   }
 
-  .shell-activity {
-    width: min(300px, calc(100vw - 36px));
-    height: max-content;
-    max-height: min(45dvh, 420px);
-    margin: 0 22px 12px auto;
-    overflow: auto;
-    min-height: 0;
+  .shell-content.has-activity {
+    --shell-activity-reserve: 0px;
   }
 
+  .shell-activity {
+    grid-area: activity;
+    margin: 8px 22px 0 auto;
+  }
 }
 
 @media (max-width: 760px) {

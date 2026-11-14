@@ -29,7 +29,7 @@ describe("M7 wiring", () => {
     expect(screen.getByRole("region", { name: "Device resources" })).toBeInTheDocument();
     expect(screen.queryByTestId("slot-top-usage")).not.toBeInTheDocument();
     expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Workspace activity" }) !== null).toBe(view === "workspace");
+    expect(screen.queryByRole("button", { name: /^Workspace activity/ }) !== null).toBe(view === "workspace");
   });
 
   it("keeps the ambient background off by default and offers the opt-in control", async () => {

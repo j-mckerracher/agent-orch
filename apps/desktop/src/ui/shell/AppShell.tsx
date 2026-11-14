@@ -21,7 +21,8 @@ export interface AppShellProps {
 
 /**
  * Global shell with persistent connection strip, sidebar, top bar, main, activity, and
- * resource regions. CSS docks activity right above 960 px and before main at narrower widths.
+ * resource regions. The activity slot is a top-right control over main's row above 960 px, not a
+ * column; at narrower widths it sits above main.
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, children }: AppShellProps) {
@@ -90,12 +91,13 @@ export function AppShell({ route, connection, slots, mainLandmark, children }: A
             <div className="shell-topbar-search">{slots.topSearch}</div>
             <div className="shell-topbar-counts">{slots.topCounts}</div>
           </section>
-          {main}
+          {/* A control, not a region: it shares main's grid cell and reserves no column (see shell.css). */}
           {hasActivity && (
-            <aside className="shell-activity" aria-label="Workspace activity">
+            <div className="shell-activity" data-testid="shell-activity">
               {slots.activity}
-            </aside>
+            </div>
           )}
+          {main}
           {hasResources && (
             <section className="shell-resources" aria-label="Device resources">
               {slots.resources}

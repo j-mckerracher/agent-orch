@@ -85,15 +85,17 @@ describe("global routes in the shell", () => {
     expect(current[0]).toHaveTextContent(title);
   });
 
-  it("defaults to the workspace and shows its activity aside only there", async () => {
+  it("defaults to the workspace and shows its activity control only there", async () => {
     await mount(daemon());
     expect(screen.getByRole("heading", { level: 1, name: "Orchestrator Workspace" })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Workspace activity" })).toBeInTheDocument();
+    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
     expect(screen.getByTestId("slot-activity")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   });
 
-  it("omits the activity aside outside the workspace view", async () => {
+  it("omits the activity control outside the workspace view", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
+    expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   });
 
@@ -325,7 +327,7 @@ describe("slots", () => {
     expect(within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
     const top = screen.getByRole("region", { name: "Workspace summary" });
     for (const id of ["s-usage", "s-search", "s-counts"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
-    expect(within(screen.getByRole("complementary", { name: "Workspace activity" })).getByTestId("s-activity")).toBeInTheDocument();
+    expect(within(screen.getByTestId("shell-activity")).getByTestId("s-activity")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Device resources" })).getByTestId("s-resources")).toBeInTheDocument();
   });
 
@@ -344,7 +346,7 @@ describe("slots", () => {
 
   it("removes the activity and resource regions when their slots are null", async () => {
     await mount(daemon(), { shellSlots: { activity: null, resources: null } });
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
   });
 });
@@ -363,7 +365,7 @@ describe("responsive behaviour", () => {
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Workspace summary" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Workspace activity" })).toBeInTheDocument();
+    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Device resources" })).toBeInTheDocument();
     expect(screen.getByTestId("shell-sidebar")).toBeInTheDocument();
   });

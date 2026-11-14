@@ -20,8 +20,11 @@
  *   live connection with the `tasks` capability, refuses `fixture:` ids, and asks for
  *   confirmation. Fixture rows use the source's simulated stop and never reach the daemon.
  *
- * Layout updated 2026-11-11 18:12:43 UTC. The shell docks this `<aside>` on the right at
- * >=961 px and places its capped popover above main at 960 px and below (`shell.css`).
+ * Layout: a compact trigger button ("Workspace activity", attention count) sits in the shell's
+ * activity slot at the top-right of main. Its disclosure is a popover anchored under the trigger
+ * (`aria-expanded`/`aria-controls`), closed on load and not remembered. Escape, a pointer press
+ * outside, or focus leaving it closes it and returns focus to the trigger (`usePopover`). The
+ * sections are direct children of `.activity-sections`; a new section is appended there.
  * This component renders no landmark of its own.
  */
 import { useEffect, useId, useRef, useState } from "react";
@@ -41,6 +44,7 @@ import type {
 import { basename, pendingApprovals } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
+import { usePopover } from "../usePopover";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
 import { NavLink } from "./NavLink";
 import { formatAge } from "./ResourceStrip";
@@ -291,6 +295,8 @@ export function ActivityPanel() {
     appData.approvals.data,
   ]);
   const usage = useRefreshing(() => surfaces.usage.usage(), surfaces.usage.provenance, [surfaces.usage, ...connectionDeps]);
+  const popover = usePopover();
+  const popoverId = useId();
 
   const snapshot: ActivitySnapshot | null = activity.status === "ok" ? activity.data : null;
   const running = snapshot?.running ?? [];
@@ -360,11 +366,6 @@ export function ActivityPanel() {
       : unavailableText(snapshot.slots);
   const budget = formatBudget(usage);
 
-  const summary = (
-    <>
-      Workspace activity {fixture && <Placeholder id="D11" />}
-    </>
-  );
   const count = (
     <span className="activity-badge" data-testid="activity-badge">
       <span aria-hidden="true">{badge}</span>
@@ -379,8 +380,27 @@ export function ActivityPanel() {
   );
 
   return (
-    <div className="activity-panel" data-testid="workspace-activity" data-source={source.provenance.kind}>
-      <Disclosure summary={summary} count={count} defaultOpen className="activity-root">
+    <div
+      className="activity-panel"
+      data-testid="workspace-activity"
+      data-source={source.provenance.kind}
+      ref={popover.rootRef}
+      onKeyDown={popover.onKeyDown}
+      onBlur={popover.onBlur}
+    >
+      <button
+        ref={popover.buttonRef}
+        type="button"
+        className="activity-trigger"
+        aria-expanded={popover.open}
+        aria-controls={popoverId}
+        onClick={() => popover.setOpen((open) => !open)}
+      >
+        <span className="activity-trigger-label">Workspace activity</span>
+        {count}
+      </button>
+      <div id={popoverId} className="activity-popover" data-testid="activity-popover" hidden={!popover.open}>
+        {fixture && <Placeholder id="D11" />}
         <p className="activity-visually-hidden" role="status" data-testid="activity-status">
           {statusLine}
         </p>
@@ -403,102 +423,105 @@ export function ActivityPanel() {
         {error && <ErrorNotice error={error} action="Stopping the task" />}
         {receipts.length > 0 && <SimulatedReceipts label="Simulated activity actions" receipts={receipts} />}
 
-        <Disclosure summary="Execution queue" count={snapshot ? running.length + queued.length : "—"} defaultOpen className="activity-group" data-testid="activity-queue">
-          {fixture && <Placeholder id="D11" />}
-          {snapshot ? (
-            <>
-              {snapshot.degraded?.tasks && (
-                <p className="activity-note" data-testid="activity-tasks-degraded">
-                  Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
-                </p>
-              )}
-              <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} defaultOpen />
-              <TaskGroup
-                title="Up next"
-                entries={upNextEntries}
-                empty="No queued task is known to be next to dispatch."
-                note={snapshot.upNext.status === "ok" ? undefined : `Dispatch order is not available: ${snapshot.upNext.reason}`}
-                stop={stop}
-                nextId={nextId}
-              />
-              <TaskGroup title="Waiting" entries={waitingEntries} empty="No task is waiting on a dependency or approval." stop={stop} />
-              <TaskGroup
-                title="Unclassified"
-                entries={unclassifiedEntries}
-                empty="Every queued task has a reported wait reason."
-                note="The daemon does not say why these queued tasks are not running or when they will dispatch."
-                stop={stop}
-              />
-            </>
-          ) : (
-            <p className="activity-empty">Queue not available.</p>
-          )}
-        </Disclosure>
+        <div className="activity-sections">
+          <Disclosure summary="Execution queue" count={snapshot ? running.length + queued.length : "—"} className="activity-group" data-testid="activity-queue">
+            {fixture && <Placeholder id="D11" />}
+            {snapshot ? (
+              <>
+                {snapshot.degraded?.tasks && (
+                  <p className="activity-note" data-testid="activity-tasks-degraded">
+                    Task details are not available, so objectives and agents are missing and tasks being verified are not listed: {snapshot.degraded.tasks}
+                  </p>
+                )}
+                <TaskGroup title="Running" entries={running} empty="No tasks are running." stop={stop} defaultOpen />
+                <TaskGroup
+                  title="Up next"
+                  entries={upNextEntries}
+                  empty="No queued task is known to be next to dispatch."
+                  note={snapshot.upNext.status === "ok" ? undefined : `Dispatch order is not available: ${snapshot.upNext.reason}`}
+                  stop={stop}
+                  nextId={nextId}
+                />
+                <TaskGroup title="Waiting" entries={waitingEntries} empty="No task is waiting on a dependency or approval." stop={stop} />
+                <TaskGroup
+                  title="Unclassified"
+                  entries={unclassifiedEntries}
+                  empty="Every queued task has a reported wait reason."
+                  note="The daemon does not say why these queued tasks are not running or when they will dispatch."
+                  stop={stop}
+                />
+              </>
+            ) : (
+              <p className="activity-empty">Queue not available.</p>
+            )}
+          </Disclosure>
 
-        <Disclosure summary="Attention" count={badge} defaultOpen className="activity-group" data-testid="activity-attention">
-          {fixture && <Placeholder id="D11" />}
-          {snapshot ? (
-            <>
-              <NavLink to={{ name: "global", view: "review" }} className="activity-review-all">
-                Review all decisions
-              </NavLink>
-              {!attentionKnown ? (
-                <p className="activity-empty" data-testid="activity-attention-degraded">
-                  Attention list not available: {snapshot.degraded?.approvals}
-                </p>
-              ) : attention.length === 0 ? (
-                <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
-              ) : (
-                <ul className="activity-list">
-                  {attention.map((item) => (
-                    <AttentionRow key={item.approvalId} item={item} />
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : (
-            <p className="activity-empty">Attention list not available.</p>
-          )}
-        </Disclosure>
+          <Disclosure summary="Attention" count={badge} className="activity-group" data-testid="activity-attention">
+            {fixture && <Placeholder id="D11" />}
+            {snapshot ? (
+              <>
+                <NavLink to={{ name: "global", view: "review" }} className="activity-review-all">
+                  Review all decisions
+                </NavLink>
+                {!attentionKnown ? (
+                  <p className="activity-empty" data-testid="activity-attention-degraded">
+                    Attention list not available: {snapshot.degraded?.approvals}
+                  </p>
+                ) : attention.length === 0 ? (
+                  <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
+                ) : (
+                  <ul className="activity-list">
+                    {attention.map((item) => (
+                      <AttentionRow key={item.approvalId} item={item} />
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="activity-empty">Attention list not available.</p>
+            )}
+          </Disclosure>
 
-        <Disclosure
-          summary="Agent slots"
-          count={snapshot?.slots.status === "ok" ? `${snapshot.slots.value.used} / ${snapshot.slots.value.limit}` : "not available"}
-          className="activity-group"
-          data-testid="activity-slots"
-        >
-          {fixture && <Placeholder id="D11" />}
-          {snapshot?.slots.status === "ok" ? (
-            <p data-testid="activity-slots-value">
-              {snapshot.slots.value.used} of {snapshot.slots.value.limit} slots in use ·{" "}
-              {Math.max(0, snapshot.slots.value.limit - snapshot.slots.value.used)} available
+          <Disclosure
+            summary="Agent slots"
+            count={snapshot?.slots.status === "ok" ? `${snapshot.slots.value.used} / ${snapshot.slots.value.limit}` : "not available"}
+            className="activity-group"
+            data-testid="activity-slots"
+          >
+            {fixture && <Placeholder id="D11" />}
+            {snapshot?.slots.status === "ok" ? (
+              <p data-testid="activity-slots-value">
+                {snapshot.slots.value.used} of {snapshot.slots.value.limit} slots in use ·{" "}
+                {Math.max(0, snapshot.slots.value.limit - snapshot.slots.value.used)} available
+              </p>
+            ) : (
+              <p data-testid="activity-slots-value">Slots: not available{slotsReason ? ` (${slotsReason})` : ""}</p>
+            )}
+            {snapshot?.dispatchPaused.status === "ok" && (
+              <p>New dispatch: {snapshot.dispatchPaused.value ? "paused" : "running"}</p>
+            )}
+            <p data-testid="activity-budget">
+              {budget.text} {budget.fixture && <Placeholder id="D12" />}
             </p>
-          ) : (
-            <p data-testid="activity-slots-value">Slots: not available{slotsReason ? ` (${slotsReason})` : ""}</p>
-          )}
-          {snapshot?.dispatchPaused.status === "ok" && (
-            <p>New dispatch: {snapshot.dispatchPaused.value ? "paused" : "running"}</p>
-          )}
-          <p data-testid="activity-budget">
-            {budget.text} {budget.fixture && <Placeholder id="D12" />}
-          </p>
-          <div className="activity-controls">
-            <ReasonButton
-              label="Pause new dispatch"
-              reason={pauseReason}
-              onClick={async () => {
-                const receipt = await source.simulatePauseDispatch();
-                setReceipts((all) => [...all, receipt]);
-              }}
-            />
-            <ReasonButton label="Stop menu" reason="stopping everything at once is not supported; stop a single task from the queue." />
-            <ReasonButton
-              label="Queue settings"
-              reason={fixture ? "queue settings are not simulated." : "the daemon does not expose scheduler limits."}
-            />
-          </div>
-        </Disclosure>
-      </Disclosure>
+            <div className="activity-controls">
+              <ReasonButton
+                label="Pause new dispatch"
+                reason={pauseReason}
+                onClick={async () => {
+                  const receipt = await source.simulatePauseDispatch();
+                  setReceipts((all) => [...all, receipt]);
+                }}
+              />
+              <ReasonButton label="Stop menu" reason="stopping everything at once is not supported; stop a single task from the queue." />
+              <ReasonButton
+                label="Queue settings"
+                reason={fixture ? "queue settings are not simulated." : "the daemon does not expose scheduler limits."}
+              />
+            </div>
+          </Disclosure>
+          {/* Add further sections (for example System Usage) as the last child of .activity-sections. */}
+        </div>
+      </div>
     </div>
   );
 }

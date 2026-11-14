@@ -63,7 +63,8 @@ test("expanded resources remain reachable and unclipped at 960 CSS px", async ({
 test("activity controls receive pointer input and activate at 760 CSS px", async ({ page }) => {
   await openFixture(page, 760);
 
-  const activity = page.getByRole("complementary", { name: "Workspace activity" });
+  const activity = page.getByTestId("workspace-activity");
+  await activity.getByRole("button", { name: /^Workspace activity/ }).click();
   const slots = activity.getByTestId("activity-slots");
   await slots.locator("summary").click();
   await expect(slots).toHaveAttribute("open", "");
@@ -123,6 +124,7 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
             ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-activity,.shell-resources,.shell-content")]
             .map(el => ({ slot: el.className || el.tagName, overflow: el.scrollWidth - el.clientWidth })),
           asides: [...document.querySelectorAll("aside")].map(el => el.getAttribute("aria-label")),
+          activityControls: document.querySelectorAll('[data-testid="shell-activity"]').length,
         }));
         console.log(JSON.stringify({ route, fixture, ...geometry }));
         expect(geometry.width).toBe(width);
