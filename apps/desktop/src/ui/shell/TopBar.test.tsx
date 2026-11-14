@@ -179,7 +179,7 @@ describe("usage pill", () => {
     await userEvent.setup().click(button);
     const info = await screen.findByTestId("top-usage-info");
     await waitFor(() => expect(info).toHaveTextContent("reported since"));
-    expect(info).toHaveTextContent(/since Jan 1, 2026/);
+    expect(info).toHaveTextContent(/since [A-Z][a-z]{2} \d{1,2}, \d{4}, 12:00 AM \(America\/Denver\)/);
     expect(info.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
     expect(info.textContent).not.toContain("..");
   });

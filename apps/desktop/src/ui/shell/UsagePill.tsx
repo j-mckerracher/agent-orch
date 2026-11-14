@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Measured, UsageCostCoverage, UsageEstimateCoverage, UsagePriceTable, UsageSummary } from "../../sources/surfaces/types";
 import { useServices, useSurface, type SurfaceRefresh } from "../services";
 import { PlaceholderBadge } from "../widgets";
+import { usageHeading } from "./usageWindow";
 import "./topbar.css";
 
 const REFRESH: SurfaceRefresh = { pollMs: 60_000, onFocus: true, atLocalMidnight: true };
@@ -203,7 +204,7 @@ export function UsagePill() {
       >
         <summary aria-label="More information about usage">i</summary>
         <div className="top-usage-popup" role="note" data-testid="top-usage-info">
-          <strong>Today’s AI usage</strong>
+          <strong>{summary ? usageHeading(summary.windowStart, summary.timezone, Date.now()) : "AI usage"}</strong>
           {summary ? (
             <UsageDetails summary={summary} />
           ) : (
