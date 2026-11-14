@@ -1,7 +1,8 @@
 # Release CI (M6-02)
 
 Native macOS and Windows gates, dependency audits, and signed or unsigned release builds on
-GitHub Actions. Nothing here publishes a release.
+GitHub Actions. Nothing here publishes a release. Versioning and the maintainer steps that cut a
+release tag are in [RELEASE.md](RELEASE.md).
 
 ## Workflows
 

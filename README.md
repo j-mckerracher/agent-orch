@@ -95,6 +95,13 @@ capture and termination, and a response-only Codex JSON protocol probe also
 passed. See [the laptop verification plan and results](docs/laptop-verification-plan.md)
 for commands, environment, and limitations. The Windows GUI remains unverified.
 
+## Releases
+
+Releases are annotated semver tags (`v0.1.0`, `v0.2.0`, ...) cut manually by a
+maintainer. Versioning rules, release steps, verification and rollback are in
+[docs/RELEASE.md](docs/RELEASE.md); the tag-triggered build is described in
+[docs/release-ci.md](docs/release-ci.md).
+
 ## CLI task store and reconciliation
 
 `orchestrator-cli` keeps task, attempt, session and process-identity records in
