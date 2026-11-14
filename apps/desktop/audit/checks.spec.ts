@@ -49,7 +49,7 @@ test.describe("RC-01 honest states: unavailable is never loading, zero, or empty
 
   test("workstreams-20: loading state does not say workstreams are not available", async ({ page }) => {
     await openApp(page, "#/workstreams", "loading", "desktop");
-    await expect(page.getByText(/workstreams: not available/i)).toHaveCount(0);
+    await expect(page.getByLabel(/workstreams: not available/i)).toHaveCount(0);
   });
 
   test("agents-16: empty task list does not read as an unavailable list with stuck counts", async ({ page }) => {
