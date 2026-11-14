@@ -72,7 +72,8 @@ export function useAgentsData(): AgentsData {
     if (!live) return asLoad(preview, rowsFromPreview);
     const { tasks, sessions, approvals } = snapshot;
     if (tasks.data) {
-      const stale = tasks.status === "error" ? "The last refresh failed; these rows may be out of date." : null;
+      const failed = tasks.status === "error" || sessions.status === "error";
+      const stale = failed ? "The last refresh failed; these rows may be out of date." : null;
       return { status: "ready", data: rowsFromDaemon(tasks.data, sessions.data, approvals.data ?? []), stale };
     }
     if (tasks.status === "error") return { status: "error", message: tasks.error?.message ?? "tasks.list failed" };

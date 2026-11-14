@@ -39,7 +39,8 @@ export interface WorkRow {
   agent: string;
   state: TaskState;
   attempts: WorkAttempt[];
-  sessions: WorkSession[];
+  /** Null until the daemon's session list has loaded: session counts and rows are then unknown, never zero. */
+  sessions: WorkSession[] | null;
   blocked: boolean;
   /** D2 preview events; empty for daemon tasks, whose feed comes from `sessions.events`. */
   timeline: Array<{ at: string; kind: string; detail: string }>;
@@ -54,7 +55,8 @@ export interface FailedSession {
 
 export interface Headline {
   runningTasks: number;
-  runningSessions: number;
+  /** Null while any row's session list is unknown. */
+  runningSessions: number | null;
   /** Every Created or Queued task; equals the Queued tab length. */
   queued: number;
   /** The queued tasks whose dependencies are met (`queued - blocked`). */
@@ -89,7 +91,7 @@ export function rowFromTask(task: TaskRecord, entries: readonly SessionEntry[] |
     agent: task.contract.agent,
     state: task.state,
     attempts: task.attempts.map((a) => ({ id: a.id, state: a.state, number: a.attempt_number })),
-    sessions: [...sessions.values()],
+    sessions: entries === null ? null : [...sessions.values()],
     blocked,
     timeline: [],
   };
@@ -126,11 +128,17 @@ export function latestAttempt(row: WorkRow): WorkAttempt | null {
   return best;
 }
 
-/** Sessions that ended unsuccessfully: aborted, or belonging to an attempt that failed. */
+/** True once every row's session list has loaded. Only then can session counts be stated. */
+export const sessionsKnown = (rows: readonly WorkRow[]): boolean => rows.every((row) => row.sessions !== null);
+
+/**
+ * Sessions that ended unsuccessfully: aborted, or belonging to an attempt that failed.
+ * Rows with unknown sessions contribute none, so check `sessionsKnown` before showing a count.
+ */
 export function failedSessions(rows: readonly WorkRow[]): FailedSession[] {
   const found: FailedSession[] = [];
   for (const row of rows) {
-    for (const session of row.sessions) {
+    for (const session of row.sessions ?? []) {
       const attempt = row.attempts.find((a) => a.id === session.attemptId) ?? null;
       if (session.state === "Aborted" || attempt?.state === "Failed") found.push({ row, session, attempt });
     }
@@ -138,17 +146,19 @@ export function failedSessions(rows: readonly WorkRow[]): FailedSession[] {
   return found;
 }
 
-/** Failed tasks with no failed session on record. They are still failures, so the Failed tab lists them apart. */
+/** Failed tasks with no failed session on record. Unknown sessions are never "no session on record". */
 export function failedWithoutSession(rows: readonly WorkRow[]): WorkRow[] {
   const counted = new Set(failedSessions(rows).map((failed) => failed.row.id));
-  return rows.filter((row) => isFailed(row) && !counted.has(row.id));
+  return rows.filter((row) => row.sessions !== null && isFailed(row) && !counted.has(row.id));
 }
 
 export function headline(rows: readonly WorkRow[]): Headline {
   const queued = rows.filter(isQueued);
   return {
     runningTasks: rows.filter(isActive).length,
-    runningSessions: rows.reduce((n, row) => n + row.sessions.filter((s) => isRunningSession(s.state)).length, 0),
+    runningSessions: sessionsKnown(rows)
+      ? rows.reduce((n, row) => n + (row.sessions ?? []).filter((s) => isRunningSession(s.state)).length, 0)
+      : null,
     queued: queued.length,
     readyQueued: queued.filter((row) => !row.blocked).length,
     blocked: queued.filter((row) => row.blocked).length,

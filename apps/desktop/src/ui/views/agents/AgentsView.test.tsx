@@ -420,6 +420,22 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();
   });
 
+  it("shows sessions as unknown, not zero or none, while the session list cannot load", async () => {
+    const fake = seeded();
+    fake.failNext("sessions.list", { code: -32603, message: "sessions failed" }, 2);
+    const { user } = await mountAgents(fake, { live: true });
+    const detail = within(screen.getByRole("complementary", { name: "Selected task / session detail" }));
+    expect(await detail.findByText(/Sessions unknown/)).toBeInTheDocument();
+    expect(detail.queryByText("No session recorded.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /t-run/ })).toHaveTextContent("sessions unknown");
+    expect(screen.getByText("1 running task(s), unknown running session(s)")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (unknown)" }));
+    expect(screen.getByText("Failed sessions are unknown.")).toBeInTheDocument();
+    expect(screen.queryByText(/No session recorded/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Failed sessions (0)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "failed tasks without a session" })).not.toBeInTheDocument();
+  });
+
   it("keeps the Unknown flag pill on one line", async () => {
     await liveView();
     const table = await screen.findByRole("table", { name: /inventory/i });

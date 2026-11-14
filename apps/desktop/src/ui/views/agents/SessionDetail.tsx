@@ -51,7 +51,8 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
 
   const record = real ? snapshot.taskDetails[initial.id]?.data : null;
   const row = record ? rowFromTask(record, snapshot.taskSessions[initial.id]?.data ?? null, initial.blocked) : initial;
-  const session = row.sessions.find((s) => s.id === chosen) ?? row.sessions[row.sessions.length - 1] ?? null;
+  const sessions = row.sessions ?? [];
+  const session = sessions.find((s) => s.id === chosen) ?? sessions[sessions.length - 1] ?? null;
 
   useEffect(() => {
     if (!real || !session) return;
@@ -89,7 +90,9 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
 
       <section aria-label="Sessions">
         <h3>Sessions</h3>
-        {row.sessions.length === 0 ? (
+        {row.sessions === null ? (
+          <p role="status">Sessions unknown: this task's session list has not loaded.</p>
+        ) : row.sessions.length === 0 ? (
           <p>No session recorded.</p>
         ) : (
           <ul className="agents-plain">
@@ -115,7 +118,13 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
         </p>
         {kinds.length > 0 && <TraceFilter kinds={kinds} value={activeKind} onChange={setKind} />}
         {live ? (
-          <Feed timeline={timeline} sessionId={session?.id ?? null} taskId={row.id} kind={activeKind} />
+          <Feed
+            timeline={timeline}
+            sessionsKnown={row.sessions !== null}
+            sessionId={session?.id ?? null}
+            taskId={row.id}
+            kind={activeKind}
+          />
         ) : (
           <PreviewFeed entries={row.timeline} kind={activeKind} />
         )}
@@ -179,16 +188,19 @@ function PreviewFeed({ entries, kind }: { entries: Array<{ at: string; kind: str
 
 function Feed({
   timeline,
+  sessionsKnown,
   sessionId,
   taskId,
   kind,
 }: {
   timeline: Timeline | undefined;
+  sessionsKnown: boolean;
   sessionId: string | null;
   taskId: string;
   kind: string;
 }) {
   const { data } = useServices();
+  if (!sessionsKnown) return <p role="status">Execution feed unknown: this task's session list has not loaded.</p>;
   if (!sessionId) return <p>No session recorded, so there is no execution feed.</p>;
   if (!timeline || timeline.status === "loading") return <p role="status">Loading execution feed…</p>;
   if (timeline.status === "error") {

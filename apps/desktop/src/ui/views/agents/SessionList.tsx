@@ -3,13 +3,14 @@
  * state what they count: tasks for Active and Queued, sessions for Failed. Unavailable data is never a number.
  */
 import { useId, useRef, useState, type KeyboardEvent } from "react";
-import { EmptyState, Pill } from "../../theme";
+import { Button, EmptyState, Pill } from "../../theme";
 import { LoadRegion, PlaceholderMark, StatePill } from "./common";
 import {
   failedSessions,
   failedWithoutSession,
   isRunningSession,
   latestAttempt,
+  sessionsKnown,
   tabRows,
   TABS,
   type FailedSession,
@@ -34,6 +35,12 @@ function attemptText(row: WorkRow): string {
   const latest = latestAttempt(row);
   if (latest === null) return "No attempt recorded";
   return latest.number === null ? "Attempt" : `Attempt ${latest.number}`;
+}
+
+function sessionsText(row: WorkRow): string {
+  if (row.sessions === null) return "sessions unknown";
+  const running = row.sessions.filter((s) => isRunningSession(s.state)).length;
+  return `${row.sessions.length} session(s)${running > 0 ? `, ${running} running` : ""}`;
 }
 
 export function SessionList({
@@ -62,7 +69,7 @@ export function SessionList({
     if (id === "available") return text;
     if (id === "disconnected") return `${text} (not available)`;
     if (work.status !== "ready") return `${text} (…)`;
-    if (id === "failed") return `${text} (${failedSessions(rows).length})`;
+    if (id === "failed") return sessionsKnown(rows) ? `${text} (${failedSessions(rows).length})` : `${text} (unknown)`;
     return `${text} (${tabRows(id, rows).length})`;
   };
 
@@ -136,7 +143,13 @@ export function SessionList({
             >
               {() =>
                 tab === "failed" ? (
-                  <FailedRows rows={rows} query={query} selectedId={selectedId} onSelect={onSelect} />
+                  <FailedRows
+                    rows={rows}
+                    query={query}
+                    selectedId={selectedId}
+                    onSelect={onSelect}
+                    onRetry={onRetry}
+                  />
                 ) : (
                   <TaskRows
                     tab={tab}
@@ -176,18 +189,15 @@ function TaskRows({
     <>
       {list.length !== all.length && <p className="agents-sub">Showing {list.length} of {all.length}.</p>}
       <ul className="agents-list" aria-label={`${tab} tasks`}>
-        {list.map((row) => {
-          const running = row.sessions.filter((s) => isRunningSession(s.state)).length;
-          return (
-            <TaskButton
-              key={row.id}
-              row={row}
-              selected={selectedId === row.id}
-              onSelect={onSelect}
-              detail={`Agent ${row.agent}; ${attemptText(row)}; ${row.sessions.length} session(s)${running > 0 ? `, ${running} running` : ""}; provider and model: not available`}
-            />
-          );
-        })}
+        {list.map((row) => (
+          <TaskButton
+            key={row.id}
+            row={row}
+            selected={selectedId === row.id}
+            onSelect={onSelect}
+            detail={`Agent ${row.agent}; ${attemptText(row)}; ${sessionsText(row)}; provider and model: not available`}
+          />
+        ))}
       </ul>
     </>
   );
@@ -198,12 +208,24 @@ function FailedRows({
   query,
   selectedId,
   onSelect,
+  onRetry,
 }: {
   rows: WorkRow[];
   query: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onRetry: () => void;
 }) {
+  if (!sessionsKnown(rows)) {
+    return (
+      <EmptyState
+        role="status"
+        title="Failed sessions are unknown."
+        description="The daemon's session list has not loaded, so failed sessions cannot be counted or listed."
+        action={<Button onClick={onRetry}>Retry</Button>}
+      />
+    );
+  }
   const sessions = failedSessions(rows);
   const orphans = failedWithoutSession(rows);
   const shownSessions = sessions.filter((failed) => matchesQuery(failed.row, query));

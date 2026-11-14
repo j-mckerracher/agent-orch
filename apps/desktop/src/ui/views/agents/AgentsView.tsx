@@ -38,7 +38,7 @@ export function AgentsView() {
           <ul className="agents-plain agents-status-list">
             <li>
               <Pill tone="info">
-                {stats.runningTasks} running task(s), {stats.runningSessions} running session(s)
+                {stats.runningTasks} running task(s), {stats.runningSessions ?? "unknown"} running session(s)
               </Pill>
             </li>
             <li>

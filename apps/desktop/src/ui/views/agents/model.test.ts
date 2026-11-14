@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkSession, mkTask } from "../../../test/fakeDaemon";
 import { assignmentText, inventoryFromDaemon, inventoryFromPreview } from "./inventoryModel";
-import { failedSessions, failedWithoutSession, headline, latestAttempt, rowsFromDaemon, tabRows } from "./model";
+import { failedSessions, failedWithoutSession, headline, latestAttempt, rowsFromDaemon, sessionsKnown, tabRows } from "./model";
 
 const REPO = "/work/repo";
 
@@ -16,7 +16,17 @@ const tasks = [
 ];
 
 describe("agents model", () => {
-  const rows = rowsFromDaemon(tasks, null, []);
+  const rows = rowsFromDaemon(tasks, [], []);
+
+  it("reports sessions as unknown, not zero or none, until the session list has loaded", () => {
+    const unknown = rowsFromDaemon(tasks, null, []);
+    expect(sessionsKnown(unknown)).toBe(false);
+    expect(sessionsKnown(rows)).toBe(true);
+    expect(headline(unknown).runningSessions).toBeNull();
+    expect(headline(unknown).runningTasks).toBe(2);
+    expect(failedWithoutSession(unknown)).toEqual([]);
+    expect(unknown.find((row) => row.id === "fail")?.sessions).toBeNull();
+  });
 
   it("derives tab lists that agree with the headline", () => {
     const stats = headline(rows);
@@ -44,7 +54,7 @@ describe("agents model", () => {
           sessions: [mkSession("s9", { state: "Exited", attempt_id: "a1" })],
         }),
       ],
-      null,
+      [],
       [],
     );
     expect(failedSessions(linked).map((f) => [f.session.id, f.attempt])).toEqual([
