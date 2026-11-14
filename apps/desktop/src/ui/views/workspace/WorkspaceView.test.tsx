@@ -358,7 +358,8 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const services = track(build({ fake }));
     await mountView(services, false);
     await waitFor(() => expect(services.connection.getSnapshot().failedAttempts).toBeGreaterThan(0));
-    expect(screen.queryByText("Loading conversations…")).not.toBeInTheDocument();
+    // The failure is recorded before the view re-renders, so wait for the rendered state to settle.
+    await waitFor(() => expect(screen.queryByText("Loading conversations…")).not.toBeInTheDocument());
   });
 });
 
