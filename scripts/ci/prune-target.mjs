@@ -31,10 +31,13 @@ function prune(argv) {
     );
     const names = localPackageNames(metadata);
     if (names.length === 0) continue;
-    execFileSync("cargo", ["clean", ...names.flatMap((name) => ["-p", name])], {
-      cwd, env, stdio: ["ignore", "inherit", "inherit"],
-    });
-    console.log(`${dir}: pruned ${names.length} local package(s): ${names.join(", ")}`);
+    // `cargo clean -p` removes the debug and test artifacts only; the release profile needs its own call.
+    for (const profile of [[], ["--release"]]) {
+      execFileSync("cargo", ["clean", ...profile, ...names.flatMap((name) => ["-p", name])], {
+        cwd, env, stdio: ["ignore", "inherit", "inherit"],
+      });
+    }
+    console.log(`${dir}: pruned ${names.length} local package(s) in the debug and release profiles: ${names.join(", ")}`);
   }
 }
 
