@@ -1,6 +1,6 @@
 //! The reader version MCAO supports, and the hashes that prove the installed
-//! files are the vetted build. The same JSON file is read by the Windows smoke
-//! test in `scripts/usage-reader-smoke.test.mjs`, so there is one source.
+//! files are the vetted build. The same JSON file is read by the smoke test in
+//! `scripts/usage-reader-smoke.test.mjs`, so there is one source.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -24,10 +24,25 @@ pub struct Pin {
     pub node_minimum: String,
     /// npm `dist.integrity` of the vetted tarball (sha512, base64).
     pub tarball_integrity: String,
-    /// SHA-256 of each file the daemon relies on, relative to the package root.
-    /// `dist/cli.js` is hashed without its first line when that line is a `#!`
-    /// interpreter line, because package managers rewrite it (Homebrew does).
-    pub files_sha256: BTreeMap<String, String>,
+    /// SHA-256 of each file the daemon relies on, per install layout. `dist/cli.js`
+    /// is hashed without its first line when that line is a `#!` interpreter line,
+    /// because package managers rewrite it (Homebrew does).
+    pub layouts: Layouts,
+}
+
+/// The two ways the reader can be installed. Each maps a file relative to the
+/// package root (`dist/cli.js`, `dist/main.js`, `dist/parse-worker.js`) to its
+/// SHA-256.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Layouts {
+    /// The npm package as `npm install codeburn@<version>` leaves it. Development
+    /// builds only (`AGENT_ORCH_CODEBURN_BIN` or `PATH`).
+    pub npm: BTreeMap<String, String>,
+    /// The bundle a release build ships beside the daemon. `dist/cli.js` is the
+    /// upstream launcher unchanged; `dist/main.js` and `dist/parse-worker.js` are
+    /// the esbuild outputs of `sidecars/codeburn/bundler/bundle.mjs`.
+    pub bundled: BTreeMap<String, String>,
 }
 
 /// The pin, parsed once. A malformed pin file is a build defect, so it panics.
@@ -79,10 +94,27 @@ mod tests {
         assert_eq!(pin.version, "0.9.28");
         assert_eq!(parse_version(&pin.node_minimum), Some((22, 15, 0)));
         assert!(pin.tarball_integrity.starts_with("sha512-"));
-        for file in ["dist/cli.js", "dist/main.js", "dist/parse-worker.js"] {
-            let hash = pin.files_sha256.get(file).expect("pinned file");
-            assert_eq!(hash.len(), 64, "{file} is a SHA-256 hex digest");
+        for files in [&pin.layouts.npm, &pin.layouts.bundled] {
+            for file in ["dist/cli.js", "dist/main.js", "dist/parse-worker.js"] {
+                let hash = files.get(file).expect("pinned file");
+                assert_eq!(hash.len(), 64, "{file} is a SHA-256 hex digest");
+            }
         }
+    }
+
+    #[test]
+    fn the_bundle_ships_the_upstream_launcher_unchanged() {
+        let pin = pin();
+        assert_eq!(
+            pin.layouts.npm.get("dist/cli.js"),
+            pin.layouts.bundled.get("dist/cli.js"),
+            "dist/cli.js is not rebuilt, so both layouts pin the same bytes"
+        );
+        assert_ne!(
+            pin.layouts.npm.get("dist/main.js"),
+            pin.layouts.bundled.get("dist/main.js"),
+            "the bundled main.js is a different file from the npm package's"
+        );
     }
 
     #[test]

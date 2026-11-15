@@ -114,6 +114,11 @@ try {
   if (platform === "macos") {
     const app = join(targetDir, "release", "bundle", "macos", "Agent Orchestrator.app");
     if (!existsSync(app)) throw new Error(`bundle missing: ${app}`);
+    // The daemon finds the pinned usage reader here (crates/orchestrator-local-usage ReaderLocations).
+    for (const file of ["node", join("pkg", "dist", "main.js"), join("pkg", "dist", "parse-worker.js")]) {
+      const path = join(app, "Contents", "Resources", "codeburn", file);
+      if (!existsSync(path)) throw new Error(`usage reader missing from the app bundle: ${path}`);
+    }
     if (decision.sign) {
       run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
       if (decision.notarize) {

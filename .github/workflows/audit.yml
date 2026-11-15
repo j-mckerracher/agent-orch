@@ -15,6 +15,12 @@ on:
       - apps/desktop/src-tauri/Cargo.lock
       - apps/desktop/package.json
       - apps/desktop/package-lock.json
+      # DPES-1105: the pinned codeburn reader, its Node.js runtime pins, its scan record and its SBOM.
+      - apps/desktop/src-tauri/sidecars/codeburn/**
+      - apps/desktop/scripts/prepare-codeburn-sidecar.mjs
+      - crates/orchestrator-local-usage/**
+      - scripts/usage-reader-smoke.test.mjs
+      - docs/third-party/codeburn.md
       - .github/workflows/audit.yml
   push:
     branches: [main]
@@ -72,3 +78,32 @@ jobs:
       - name: npm audit
         working-directory: apps/desktop
         run: npm audit --audit-level=high
+
+      # The codeburn runtime tree (what ships) and its bundler (build time only), checked against the
+      # npm advisory database from their lockfiles. Lockfile-only: nothing is installed.
+      - name: npm audit (codeburn runtime tree)
+        working-directory: apps/desktop/src-tauri/sidecars/codeburn
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
+
+      - name: npm audit (codeburn bundler)
+        working-directory: apps/desktop/src-tauri/sidecars/codeburn/bundler
+        run: npm audit --package-lock-only --audit-level=high
+
+      # Exact totals: a skipped or failing test is never counted as a pass (see require-tap-totals.mjs).
+      - name: codeburn sidecar record (exact totals)
+        run: |
+          node --test --test-reporter=tap apps/desktop/src-tauri/sidecars/codeburn/codeburn-sidecar.test.mjs | tee "$RUNNER_TEMP/codeburn-record.tap"
+          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/codeburn-record.tap" 8
+
+      # Installs the locked codeburn tree, rebuilds the bundle with the locked esbuild and checks it
+      # against the pin on this runner (ubuntu). The harness runs the same test on Windows and macOS,
+      # so one pin is checked on three platforms. Exact totals as above.
+      - name: usage reader smoke (rebuilds the bundle from the lockfile, exact totals)
+        run: |
+          node --test --test-reporter=tap scripts/usage-reader-smoke.test.mjs | tee "$RUNNER_TEMP/usage-smoke.tap"
+          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
+
+      # Warning only, never a failure: a newer Node.js 22.x release than the bundled one (nightly).
+      - name: Node.js 22 update check (warning only)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: node apps/desktop/src-tauri/sidecars/codeburn/check-node-updates.mjs

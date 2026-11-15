@@ -1,0 +1,9 @@
+{
+  "name": "mcao-codeburn-sidecar",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned production tree of the codeburn usage reader that ships beside the daemon (DPES-1105). See docs/third-party/codeburn.md.",
+  "dependencies": {
+    "codeburn": "0.9.28"
+  }
+}

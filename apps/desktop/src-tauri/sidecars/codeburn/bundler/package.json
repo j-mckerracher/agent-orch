@@ -1,0 +1,9 @@
+{
+  "name": "mcao-codeburn-bundler",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Build-time bundler for the pinned codeburn reader (DPES-1105). Not shipped; see docs/third-party/codeburn.md.",
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

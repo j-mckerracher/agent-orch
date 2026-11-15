@@ -1,27 +1,40 @@
-// Smoke test for the pinned local-usage reader (DPES-1105), run by the
-// "Harness self-tests" step on every OS, Windows included.
+// Smoke test for the pinned local-usage reader (DPES-1105), run by the "Harness self-tests" step
+// on every OS, Windows included, and by audit.yml.
 //
-// It installs the exact codeburn version in crates/orchestrator-local-usage/codeburn-pin.json
-// into a temporary folder with scripts disabled, checks the registry's tarball
-// integrity and the installed files against the pin, then runs the real reader
-// against a SYNTHETIC home folder (no real user data is read) and asserts the
-// totals, the estimate labels and the unpriced-model handling.
+// It checks the pin, then installs the LOCKED codeburn tree from
+// apps/desktop/src-tauri/sidecars/codeburn/package-lock.json (npm verifies every sha512 value),
+// builds the release bundle from it with the locked esbuild, and checks two layouts against the one
+// pin table (crates/orchestrator-local-usage/codeburn-pin.json): the npm layout (development builds)
+// and the bundled layout (release builds). Then it runs the reader on a SYNTHETIC home. On hosts with
+// a pinned Node.js archive (darwin-arm64, win-x64) the reader runs under the BUNDLED node, downloaded
+// and checked against sidecars/codeburn/node-runtime.json; other hosts use this test's own node.
 //
-// Every failure names its step: "registry", "install" or "reader". A test that
-// cannot run fails; nothing here is skipped, because a skipped test would
-// still be counted as a pass by the gate's expected totals.
-import { test } from "node:test";
+// Every failure names its step: "registry", "install", "bundle" or "reader". Nothing here is skipped:
+// a test that cannot run fails, because a skipped test would still count as a pass.
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  ensureArchive,
+  extractRuntime,
+  hostPlatform,
+  lockEntry,
+  lockfileProblems,
+  pinnedFileHash,
+  readLockfile,
+  readNodeRuntime,
+  readPin,
+  runReport,
+  sidecarDir,
+} from "../apps/desktop/src-tauri/sidecars/codeburn/lib.mjs";
+import { todayUtc, writeSyntheticHome } from "../apps/desktop/src-tauri/sidecars/codeburn/synthetic-home.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const pinPath = resolve(here, "..", "crates", "orchestrator-local-usage", "codeburn-pin.json");
-const pin = JSON.parse(readFileSync(pinPath, "utf8"));
+const bundlerSource = join(sidecarDir, "bundler", "bundle.mjs");
+const pin = readPin();
 const isWindows = process.platform === "win32";
 
 function parseVersion(text) {
@@ -36,20 +49,6 @@ function atLeast(found, minimum) {
   return true;
 }
 
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-/** SHA-256 of a file, without its first line when that line is a #! interpreter line. */
-function pinnedHash(path, stripShebang) {
-  const bytes = readFileSync(path);
-  if (stripShebang && bytes.subarray(0, 2).toString() === "#!") {
-    const newline = bytes.indexOf(0x0a);
-    return sha256(newline < 0 ? Buffer.alloc(0) : bytes.subarray(newline + 1));
-  }
-  return sha256(bytes);
-}
-
 /** Runs npm with fixed arguments. On Windows npm is a .cmd shim, which needs a shell. */
 function runNpm(args, options) {
   return spawnSync(isWindows ? "npm.cmd" : "npm", args, { ...options, encoding: "utf8", shell: isWindows });
@@ -60,14 +59,24 @@ function tail(text, limit = 400) {
   return clean.length > limit ? `...${clean.slice(-limit)}` : clean;
 }
 
-function todayUtc() {
-  return new Date().toISOString().slice(0, 10);
+function expectedHashes(files, root, layout) {
+  for (const [relative, expected] of Object.entries(files)) {
+    const actual = pinnedFileHash(join(root, relative), relative === "dist/cli.js");
+    if (actual !== expected) {
+      throw new Error(`${step(layout)}: ${relative} does not match the ${layout} layout pin (${actual} vs ${expected})`);
+    }
+  }
+  return Object.keys(files).length;
+}
+
+function step(layout) {
+  return layout === "bundled" ? "bundle" : "install";
 }
 
 let installed;
-/** Installs the pinned reader once for every test in this file. */
+/** Installs the locked tree and builds the bundle once for every test in this file. */
 function install() {
-  installed ??= (() => {
+  installed ??= (async () => {
     const registry = runNpm(["view", `${pin.name}@${pin.version}`, "dist.integrity", "--json"], { timeout: 60_000 });
     if (registry.status !== 0) {
       throw new Error(`registry: npm view failed (status ${registry.status}): ${tail(registry.stderr)}`);
@@ -81,141 +90,84 @@ function install() {
     }
 
     const prefix = mkdtempSync(join(tmpdir(), "mcao-codeburn-pin-"));
-    const result = runNpm(
-      ["install", `${pin.name}@${pin.version}`, "--prefix", prefix, "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"],
-      { timeout: 300_000, maxBuffer: 32 * 1024 * 1024 },
-    );
-    if (result.status !== 0) {
-      throw new Error(`install: npm install failed (status ${result.status}): ${tail(result.stderr || result.stdout)}`);
+    const sidecar = join(prefix, "sidecar");
+    mkdirSync(join(sidecar, "bundler"), { recursive: true });
+    for (const file of ["package.json", "package-lock.json"]) {
+      copyFileSync(join(sidecarDir, file), join(sidecar, file));
+      copyFileSync(join(sidecarDir, "bundler", file), join(sidecar, "bundler", file));
     }
-    const root = join(prefix, "node_modules", pin.name);
+    const lock = readLockfile(join(sidecar, "package-lock.json"));
+    const problems = lockfileProblems(lock);
+    if (problems.length) throw new Error(`install: the lockfile is not fully pinned: ${problems.join("; ")}`);
+    const entry = lockEntry(lock, pin.name);
+    if (entry?.version !== pin.version || entry.integrity !== pin.tarball_integrity) {
+      throw new Error(`install: the lockfile's ${pin.name} is ${entry?.version} ${entry?.integrity}, the pin says ${pin.version} ${pin.tarball_integrity}`);
+    }
+    // Both trees come from their lockfiles. `npm ci` checks each sha512 value as it installs.
+    const ci = (cwd, args, label) => {
+      const result = spawnSync(isWindows ? "npm.cmd" : "npm", ["ci", ...args, "--no-audit", "--no-fund", "--loglevel=error"], {
+        cwd,
+        encoding: "utf8",
+        shell: isWindows,
+        timeout: 300_000,
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      if (result.status !== 0) throw new Error(`install: ${label} npm ci failed (status ${result.status}): ${tail(result.stderr || result.stdout)}`);
+    };
+    ci(sidecar, ["--omit=dev", "--ignore-scripts"], "runtime tree");
+    ci(join(sidecar, "bundler"), ["--ignore-scripts"], "bundler");
+
+    const root = join(sidecar, "node_modules", pin.name);
     const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     if (manifest.name !== pin.name || manifest.version !== pin.version) {
       throw new Error(`install: installed ${manifest.name}@${manifest.version}, expected ${pin.name}@${pin.version}`);
     }
-    for (const [relative, expected] of Object.entries(pin.files_sha256)) {
-      const actual = pinnedHash(join(root, relative), relative === "dist/cli.js");
-      if (actual !== expected) {
-        throw new Error(`install: installed ${relative} does not match the pinned SHA-256 (${actual} vs ${expected})`);
-      }
-    }
-    return { prefix, root, entry: join(root, "dist", "cli.js"), hashesChecked: Object.keys(pin.files_sha256).length };
+    const npmHashes = expectedHashes(pin.layouts.npm, join(root), "npm");
+
+    // The bundler is copied next to the locked esbuild it must use, then run from there.
+    const bundlerCopy = join(sidecar, "bundler", "bundle.mjs");
+    copyFileSync(bundlerSource, bundlerCopy);
+    const { bundleReader } = await import(pathToFileURL(bundlerCopy).href);
+    const pkg = join(prefix, "pkg");
+    await bundleReader({ installRoot: sidecar, outDir: join(pkg, "dist") }).catch((error) => {
+      throw new Error(`bundle: building the bundle failed: ${error.message}`);
+    });
+    copyFileSync(join(root, "package.json"), join(pkg, "package.json"));
+    copyFileSync(join(root, "dist", "cli.js"), join(pkg, "dist", "cli.js"));
+    const bundledHashes = expectedHashes(pin.layouts.bundled, pkg, "bundled");
+    return { prefix, root, pkg, entry: join(pkg, "dist", "cli.js"), hashesChecked: npmHashes + bundledHashes };
   })();
   return installed;
 }
 
-/**
- * Synthetic Claude Code and Codex session files stamped for today (UTC). The reader drops
- * entries stamped after the current time, so the stamp is a second before now, but never
- * before the start of the UTC day.
- */
-function writeSyntheticHome(home) {
-  const startOfDay = Date.parse(`${todayUtc()}T00:00:00.000Z`);
-  const noon = new Date(Math.max(Date.now() - 1000, startOfDay + 1000)).toISOString();
-  const claudeDir = join(home, ".claude", "projects", "-synthetic-demo");
-  mkdirSync(claudeDir, { recursive: true });
-  const claudeLines = [
-    {
-      type: "assistant",
-      timestamp: noon,
-      sessionId: "sess-claude-1",
-      cwd: "/synthetic/demo",
-      requestId: "req_1",
-      uuid: "u1",
-      message: {
-        id: "msg_1",
-        model: "claude-sonnet-4-5-20250929",
-        role: "assistant",
-        content: [{ type: "text", text: "synthetic" }],
-        usage: { input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 5000, cache_creation_input_tokens: 800 },
-      },
-    },
-    {
-      type: "assistant",
-      timestamp: noon,
-      sessionId: "sess-claude-2",
-      cwd: "/synthetic/demo",
-      requestId: "req_2",
-      uuid: "u2",
-      message: {
-        id: "msg_2",
-        model: "synthetic-unpriced-model-9",
-        role: "assistant",
-        content: [{ type: "text", text: "synthetic" }],
-        usage: { input_tokens: 700, output_tokens: 70, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
-      },
-    },
-  ];
-  writeFileSync(join(claudeDir, "sess-claude-1.jsonl"), claudeLines.map((line) => JSON.stringify(line)).join("\n") + "\n");
-
-  const [year, month, day] = todayUtc().split("-");
-  const codexDir = join(home, ".codex", "sessions", year, month, day);
-  mkdirSync(codexDir, { recursive: true });
-  const codexLines = [
-    { timestamp: noon, type: "session_meta", payload: { id: "synth-codex-1", cwd: "/synthetic/demo" } },
-    { timestamp: noon, type: "turn_context", payload: { model: "gpt-5-codex" } },
-    {
-      timestamp: noon,
-      type: "event_msg",
-      payload: {
-        type: "token_count",
-        info: {
-          total_token_usage: { input_tokens: 1000, cached_input_tokens: 400, output_tokens: 50, reasoning_output_tokens: 20, total_tokens: 1050 },
-          last_token_usage: { input_tokens: 1000, cached_input_tokens: 400, output_tokens: 50, reasoning_output_tokens: 20, total_tokens: 1050 },
-        },
-      },
-    },
-  ];
-  writeFileSync(join(codexDir, "rollout-synthetic.jsonl"), codexLines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+let runner;
+/** The reader program: the bundled Node.js for this host when one is pinned, else this test's own node. */
+function readerProgram() {
+  runner ??= (async () => {
+    const platform = hostPlatform();
+    if (!platform) {
+      requireSupportedNode();
+      return { program: process.execPath, label: `node ${process.version} (no pinned archive for ${process.platform}-${process.arch})` };
+    }
+    const runtime = readNodeRuntime();
+    const archive = await ensureArchive(runtime, platform, join(tmpdir(), "mcao-node-archives")).catch((error) => {
+      throw new Error(`reader: could not get the pinned Node.js ${runtime.version} archive: ${error.message}`);
+    });
+    const extractDir = mkdtempSync(join(tmpdir(), "mcao-node-extract-"));
+    extracted.push(extractDir);
+    const { binary, binarySha256 } = extractRuntime(runtime, platform, archive, extractDir);
+    const version = spawnSync(binary, ["--version"], { encoding: "utf8" });
+    if (version.status !== 0 || version.stdout.trim() !== `v${runtime.version}`) {
+      throw new Error(`reader: bundled node reports ${version.stdout.trim() || version.stderr.trim()}, expected v${runtime.version}`);
+    }
+    return { program: binary, label: `bundled node ${runtime.version} ${platform} (sha256 ${binarySha256})` };
+  })();
+  return runner;
 }
 
-/** Runs the reader for one provider on the synthetic home. */
-function readReport(entry, home, cacheDir, provider) {
-  const env = {
-    PATH: process.env.PATH ?? "",
-    HOME: home,
-    USERPROFILE: home,
-    APPDATA: join(home, "AppData", "Roaming"),
-    LOCALAPPDATA: join(home, "AppData", "Local"),
-    SYSTEMROOT: process.env.SYSTEMROOT ?? "",
-    TEMP: process.env.TEMP ?? tmpdir(),
-    TMP: process.env.TMP ?? tmpdir(),
-    TMPDIR: tmpdir(),
-    CODEBURN_PRICING_SNAPSHOT_ONLY: "1",
-    CODEBURN_FX_NO_FETCH: "1",
-    CODEBURN_CACHE_DIR: cacheDir,
-  };
-  const result = spawnSync(process.execPath, [entry, "--timezone", "UTC", "report", "--format", "json", "-p", "today", "--provider", provider], {
-    env,
-    encoding: "utf8",
-    timeout: 120_000,
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  if (result.error) throw new Error(`reader: could not start codeburn for ${provider}: ${result.error.code ?? result.error.message}`);
-  if (result.status !== 0) {
-    throw new Error(`reader: codeburn ${provider} exited with status ${result.status}: ${tail(result.stderr)}`);
-  }
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    throw new Error(`reader: codeburn ${provider} printed output that is not JSON: ${tail(result.stdout, 200)}`);
-  }
-}
-
-test("the pin names the supported reader and a complete set of file hashes", () => {
-  assert.equal(pin.name, "codeburn");
-  assert.match(pin.version, /^\d+\.\d+\.\d+$/);
-  assert.ok(atLeast(parseVersion(pin.node_minimum), [22, 15, 0]), "codeburn needs Node.js 22.15 or newer");
-  assert.match(pin.tarball_integrity, /^sha512-[A-Za-z0-9+/=]+$/);
-  for (const file of ["dist/cli.js", "dist/main.js", "dist/parse-worker.js"]) {
-    assert.match(pin.files_sha256[file] ?? "", /^[0-9a-f]{64}$/, `pinned hash for ${file}`);
-  }
-});
-
-test("the registry serves the pinned tarball and the install matches the pinned files", () => {
-  const { entry, hashesChecked } = install();
-  assert.ok(existsSync(entry), "install: dist/cli.js is present");
-  assert.equal(hashesChecked, 3, "install: every pinned file was hashed");
+const extracted = [];
+after(() => {
+  for (const dir of extracted) rmSync(dir, { recursive: true, force: true });
 });
 
 function requireSupportedNode() {
@@ -225,15 +177,34 @@ function requireSupportedNode() {
   }
 }
 
-test("the pinned reader reports the synthetic claude totals, with unpriced usage counted apart", () => {
-  requireSupportedNode();
-  const { entry } = install();
+test("the pin names the supported reader and a complete set of file hashes for both layouts", () => {
+  assert.equal(pin.name, "codeburn");
+  assert.match(pin.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(atLeast(parseVersion(pin.node_minimum), [22, 15, 0]), "codeburn needs Node.js 22.15 or newer");
+  assert.match(pin.tarball_integrity, /^sha512-[A-Za-z0-9+/=]+$/);
+  for (const layout of ["npm", "bundled"]) {
+    for (const file of ["dist/cli.js", "dist/main.js", "dist/parse-worker.js"]) {
+      assert.match(pin.layouts[layout][file] ?? "", /^[0-9a-f]{64}$/, `pinned ${layout} hash for ${file}`);
+    }
+  }
+  assert.equal(pin.layouts.npm["dist/cli.js"], pin.layouts.bundled["dist/cli.js"], "the launcher is shipped unchanged");
+});
+
+test("the registry serves the pinned tarball, the locked install builds the pinned bundle, and both layouts match", async () => {
+  const { entry, hashesChecked } = await install();
+  assert.ok(existsSync(entry), "install: dist/cli.js is present");
+  assert.equal(hashesChecked, 6, "install and bundle: every pinned file of both layouts was hashed");
+});
+
+test("the pinned reader reports the synthetic claude totals, with unpriced usage counted apart", async () => {
+  const { entry } = await install();
+  const { program, label } = await readerProgram();
   const home = mkdtempSync(join(tmpdir(), "mcao-codeburn-home-"));
   const cache = join(home, "cache");
   mkdirSync(cache, { recursive: true });
   try {
     writeSyntheticHome(home);
-    const claude = readReport(entry, home, cache, "claude");
+    const claude = runReport(program, entry, home, cache, "claude");
     assert.equal(claude.currency, "USD", "reader: the report is in USD");
     assert.match(claude.period, new RegExp(`\\(${todayUtc()}\\)`), "reader: the report covers today");
     assert.equal(claude.overview.calls, 2, "reader: two Claude calls");
@@ -245,27 +216,29 @@ test("the pinned reader reports the synthetic claude totals, with unpriced usage
     assert.ok(Math.abs(claude.overview.cost - 0.0126) < 1e-9, `reader: priced cost is 0.0126 (got ${claude.overview.cost})`);
     assert.equal(claude.unpricedModels.length, 1, "reader: one unpriced model");
     assert.equal(claude.unpricedModels[0].tokens, 770, "reader: its tokens are reported");
+    assert.ok(label.length > 0);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("the pinned reader reports codex as an estimate and copilot with no calls on a synthetic home", () => {
-  requireSupportedNode();
-  const { entry } = install();
+test("the pinned reader reports codex as an estimate and copilot with no calls on a synthetic home", async () => {
+  const { entry } = await install();
+  const { program } = await readerProgram();
   const home = mkdtempSync(join(tmpdir(), "mcao-codeburn-home-"));
   const cache = join(home, "cache");
   mkdirSync(cache, { recursive: true });
   try {
     writeSyntheticHome(home);
-    const codex = readReport(entry, home, cache, "codex");
+    const codex = runReport(program, entry, home, cache, "codex");
     assert.equal(codex.overview.calls, 1, "reader: one Codex call");
     assert.ok(codex.overview.cost > 0, "reader: the priced Codex call has an estimated cost");
     assert.equal(codex.unpricedModels.length, 0, "reader: the Codex model has a price");
-    const copilot = readReport(entry, home, cache, "copilot");
+    const copilot = runReport(program, entry, home, cache, "copilot");
     assert.equal(copilot.overview.calls, 0, "reader: no Copilot calls on a machine without Copilot data");
     assert.equal(copilot.overview.cost, 0, "reader: no calls means no cost figure");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
 });
+

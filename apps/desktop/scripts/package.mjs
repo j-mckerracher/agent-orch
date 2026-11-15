@@ -1,4 +1,4 @@
-// Stages the daemon sidecar, then runs `tauri build` for one bundle type.
+// Stages the daemon sidecar and the codeburn resources, then runs `tauri build` for one bundle type.
 // Usage (from apps/desktop): node scripts/package.mjs <app|nsis>
 //
 // Tauri's `--ci` flag reads the CI environment variable and accepts only
@@ -41,6 +41,8 @@ const run = (command, args) => {
 
 const tauri = createRequire(import.meta.url).resolve("@tauri-apps/cli/tauri.js");
 run(process.execPath, [join(here, "prepare-daemon-sidecar.mjs")]);
+// The pinned codeburn reader and its Node.js runtime, staged as bundle resources (DPES-1105).
+run(process.execPath, [join(here, "prepare-codeburn-sidecar.mjs")]);
 run(process.execPath, [
   tauri,
   "build",
