@@ -17,7 +17,7 @@ const label = process.env.AUDIT_LABEL ? `-${process.env.AUDIT_LABEL}` : "";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["capture.spec.ts", "checks.spec.ts"],
+  testMatch: ["capture.spec.ts", "checks.spec.ts", "local-tools-evidence.spec.ts"],
   outputDir: "out/test-results",
   workers: 4,
   reporter: [["list"], ["json", { outputFile: `out/results${label}.json` }]],

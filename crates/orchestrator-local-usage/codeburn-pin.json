@@ -1,0 +1,11 @@
+{
+  "name": "codeburn",
+  "version": "0.9.28",
+  "node_minimum": "22.15.0",
+  "tarball_integrity": "sha512-fl9u2m2n8n+cY6FheIY/jthw4GeuUtM38NfX3KR3Ljj2X7GFcUCfCGeRrnIaaM+aqmMLOw70Uy2BGnzoQgQlPQ==",
+  "files_sha256": {
+    "dist/cli.js": "e1d426a628ce27e66810ecfe7a5070ad92adf2bae8df3c8d41976f74a570c5a1",
+    "dist/main.js": "be7d96eb5bcad90c2697c065f7beab9137252075a2ca572912e352c0cefd76b7",
+    "dist/parse-worker.js": "b320f53d91ff11d2deab144ea65ce7af131166c6b43b3252d2ede93c0382da9e"
+  }
+}

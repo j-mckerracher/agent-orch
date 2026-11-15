@@ -1,0 +1,26 @@
+[package]
+name = "orchestrator-local-usage"
+description = "Machine-wide AI usage from local coding tools (Claude Code, Codex, GitHub Copilot), read by the pinned codeburn reader in a background collector with a cache. Estimates only; independent of the store and IPC."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+sha2 = "=0.10.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+# The collector runs this test binary as a fake reader (see tests/service.rs),
+# so the file needs its own main.
+[[test]]
+name = "service"
+harness = false

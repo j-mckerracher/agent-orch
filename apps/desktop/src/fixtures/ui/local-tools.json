@@ -1,0 +1,269 @@
+{
+  "fixture": "local-tools",
+  "note": "PLACEHOLDER DATA. Every counter and price here is synthetic, not read from any machine. Each state is a usage.localTools result. observed_age_ms is relative to the clock, and the fixture source turns it into observed_at_unix_ms when served.",
+  "timezone": "America/Denver",
+  "pinned_version": "0.9.28",
+  "providerSets": {
+    "priced": [
+      {
+        "id": "claude-code",
+        "state": "ok",
+        "sessions": 3,
+        "calls": 40,
+        "tokens": { "input": 120000, "output": 15000, "cache_read": 900000, "cache_write": 60000 },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0400" }],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "codex",
+        "state": "ok",
+        "sessions": 2,
+        "calls": 30,
+        "tokens": { "input": 80000, "output": 9000, "cache_read": 300000, "cache_write": null },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0100" }],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "github-copilot",
+        "state": "ok",
+        "sessions": 1,
+        "calls": 6,
+        "tokens": { "input": 20000, "output": 2000, "cache_read": null, "cache_write": null },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0050" }],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      }
+    ],
+    "one_unpriced": [
+      {
+        "id": "claude-code",
+        "state": "ok",
+        "sessions": 3,
+        "calls": 40,
+        "tokens": { "input": 120000, "output": 15000, "cache_read": 900000, "cache_write": 60000 },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0400" }],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "codex",
+        "state": "ok",
+        "sessions": 2,
+        "calls": 30,
+        "tokens": { "input": 80000, "output": 9000, "cache_read": 300000, "cache_write": null },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0100" }],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "github-copilot",
+        "state": "ok",
+        "sessions": 1,
+        "calls": 6,
+        "tokens": { "input": 20000, "output": 2000, "cache_read": null, "cache_write": null },
+        "estimated_costs": [{ "currency": "USD", "amount": "0.0050" }],
+        "unpriced_models": 1,
+        "unpriced_tokens": 4000,
+        "cost_complete": false
+      }
+    ],
+    "no_calls": [
+      {
+        "id": "claude-code",
+        "state": "no_calls",
+        "sessions": 0,
+        "calls": 0,
+        "tokens": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "codex",
+        "state": "no_calls",
+        "sessions": 0,
+        "calls": 0,
+        "tokens": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      },
+      {
+        "id": "github-copilot",
+        "state": "no_calls",
+        "sessions": 0,
+        "calls": 0,
+        "tokens": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": true
+      }
+    ],
+    "not_run": [
+      {
+        "id": "claude-code",
+        "state": "not_run",
+        "sessions": null,
+        "calls": null,
+        "tokens": { "input": null, "output": null, "cache_read": null, "cache_write": null },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": false
+      },
+      {
+        "id": "codex",
+        "state": "not_run",
+        "sessions": null,
+        "calls": null,
+        "tokens": { "input": null, "output": null, "cache_read": null, "cache_write": null },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": false
+      },
+      {
+        "id": "github-copilot",
+        "state": "not_run",
+        "sessions": null,
+        "calls": null,
+        "tokens": { "input": null, "output": null, "cache_read": null, "cache_write": null },
+        "estimated_costs": [],
+        "unpriced_models": 0,
+        "unpriced_tokens": 0,
+        "cost_complete": false
+      }
+    ]
+  },
+  "states": {
+    "off": {
+      "enabled": false,
+      "reader": { "state": "off", "version": null, "node_version": null, "exit_status": null, "source": null, "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "not_started": {
+      "enabled": true,
+      "reader": { "state": "not_started", "version": null, "node_version": null, "exit_status": null, "source": null, "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "ok": {
+      "enabled": true,
+      "reader": { "state": "ok", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": 120000,
+      "providers": "priced"
+    },
+    "ok_unpriced": {
+      "enabled": true,
+      "reader": { "state": "ok", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": 120000,
+      "providers": "one_unpriced"
+    },
+    "no_calls": {
+      "enabled": true,
+      "reader": { "state": "ok", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": 120000,
+      "providers": "no_calls"
+    },
+    "stale": {
+      "enabled": true,
+      "reader": { "state": "ok", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": true,
+      "observed_age_ms": 1380000,
+      "providers": "priced"
+    },
+    "not_installed": {
+      "enabled": true,
+      "reader": { "state": "not_installed", "version": null, "node_version": "22.16.0", "exit_status": null, "source": null, "development_build": true },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "node_missing": {
+      "enabled": true,
+      "reader": { "state": "node_missing", "version": null, "node_version": null, "exit_status": null, "source": null, "development_build": true },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "node_too_old": {
+      "enabled": true,
+      "reader": { "state": "node_too_old", "version": null, "node_version": "20.11.1", "exit_status": null, "source": null, "development_build": true },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "unsupported_version": {
+      "enabled": true,
+      "reader": { "state": "unsupported_version", "version": "0.9.10", "node_version": "22.16.0", "exit_status": null, "source": "path", "development_build": true },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "integrity_mismatch": {
+      "enabled": true,
+      "reader": { "state": "integrity_mismatch", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "timeout": {
+      "enabled": true,
+      "reader": { "state": "timeout", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "failed": {
+      "enabled": true,
+      "reader": { "state": "failed", "version": "0.9.28", "node_version": "22.16.0", "exit_status": 2, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "bad_output": {
+      "enabled": true,
+      "reader": { "state": "bad_output", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "output_too_large": {
+      "enabled": true,
+      "reader": { "state": "output_too_large", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "wrong_day": {
+      "enabled": true,
+      "reader": { "state": "wrong_day", "version": "0.9.28", "node_version": "22.16.0", "exit_status": null, "source": "bundled", "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    },
+    "not_bundled": {
+      "enabled": true,
+      "reader": { "state": "not_bundled", "version": null, "node_version": null, "exit_status": null, "source": null, "development_build": false },
+      "stale": false,
+      "observed_age_ms": null,
+      "providers": "not_run"
+    }
+  }
+}

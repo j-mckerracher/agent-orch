@@ -1,0 +1,130 @@
+{
+  "generated": "2026-11-15T03:25:48.517Z",
+  "currency": "USD",
+  "period": "Today (2026-11-15)",
+  "periodKey": "today",
+  "overview": {
+    "cost": 0.012599999999999998,
+    "proxiedCost": 0,
+    "netCost": 0.012599999999999998,
+    "savings": 0,
+    "estimatedCost": 0,
+    "calls": 2,
+    "sessions": 2,
+    "sessionCountBasis": "identity",
+    "cacheHitPercent": 64.9,
+    "tokens": {
+      "input": 1900,
+      "output": 370,
+      "cacheRead": 5000,
+      "cacheWrite": 800
+    }
+  },
+  "daily": [
+    {
+      "date": "2026-11-15",
+      "cost": 0.012599999999999998,
+      "savings": 0,
+      "calls": 2,
+      "turns": 2,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    }
+  ],
+  "projects": [
+    {
+      "name": "demo",
+      "path": "/synthetic/demo",
+      "cost": 0.012599999999999998,
+      "savings": 0,
+      "avgCostPerSession": 0.006299999999999999,
+      "calls": 2,
+      "sessions": 2,
+      "sessionCountBasis": "identity"
+    }
+  ],
+  "models": [
+    {
+      "name": "Sonnet 4.5",
+      "calls": 1,
+      "inputTokens": 1200,
+      "outputTokens": 300,
+      "cacheReadTokens": 5000,
+      "cacheWriteTokens": 800,
+      "cost": 0.012599999999999998,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null,
+      "retriesPerEdit": null,
+      "costPerEdit": null
+    },
+    {
+      "name": "synthetic-unpriced-model-9",
+      "calls": 1,
+      "inputTokens": 700,
+      "outputTokens": 70,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "cost": 0,
+      "savings": 0,
+      "estimatedCost": 0,
+      "savingsBaselineModel": "",
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null,
+      "retriesPerEdit": null,
+      "costPerEdit": null
+    }
+  ],
+  "unpricedModels": [
+    {
+      "model": "synthetic-unpriced-model-9",
+      "calls": 1,
+      "tokens": 770
+    }
+  ],
+  "activities": [
+    {
+      "category": "Conversation",
+      "rawCategory": "conversation",
+      "cost": 0.012599999999999998,
+      "savings": 0,
+      "turns": 2,
+      "editTurns": 0,
+      "oneShotTurns": 0,
+      "oneShotRate": null
+    }
+  ],
+  "tools": [],
+  "mcpServers": [],
+  "shellCommands": [],
+  "skills": [],
+  "subagents": [],
+  "claudeAgentTypes": [],
+  "topSessions": [
+    {
+      "project": "-synthetic-demo",
+      "sessionId": "sess-claude-1",
+      "provider": "claude",
+      "projectKey": "-synthetic-demo",
+      "date": "2026-11-15",
+      "cost": 0.012599999999999998,
+      "savings": 0,
+      "calls": 1
+    },
+    {
+      "project": "-synthetic-demo",
+      "sessionId": "sess-claude-2",
+      "provider": "claude",
+      "projectKey": "-synthetic-demo",
+      "date": "2026-11-15",
+      "cost": 0,
+      "savings": 0,
+      "calls": 1
+    }
+  ]
+}
