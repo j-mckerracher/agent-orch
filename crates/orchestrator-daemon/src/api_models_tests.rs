@@ -193,6 +193,166 @@ fn signed_out_or_missing_agents_offer_nothing_rather_than_an_empty_list() {
 }
 
 #[test]
+fn copilot_is_listed_unavailable_and_its_check_records_nothing_when_the_cli_is_missing() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let missing = fixture.marker("no-such-copilot");
+    let api = fixture.api_with(&agents.codex, |config| {
+        config.claude_program = Some(agents.claude.clone());
+        config.copilot_program = Some(missing);
+    });
+
+    let catalog = api.dispatch("agents.catalog", Value::Null).unwrap();
+    let copilot = entry(&catalog, "github-copilot");
+    assert_eq!(copilot["provider"], "github");
+    assert_eq!(copilot["state"], "unavailable");
+    // A missing CLI makes every facet unavailable, as it does for the others.
+    assert_eq!(copilot["models"]["state"], "unavailable");
+    assert_eq!(copilot["models"]["items"], json!([]));
+    assert_eq!(copilot["efforts"]["state"], "unavailable");
+
+    let check = api
+        .dispatch("agents.check_copilot_sign_in", json!({"force": true}))
+        .unwrap();
+    assert_eq!(check["state"], "not_checked");
+    assert_eq!(check["checked_at_ms"], Value::Null);
+    assert!(check["reason"].as_str().unwrap().contains("not found"));
+    assert_eq!(
+        api.dispatch("agents.check_copilot_sign_in", json!({"surprise": 1})),
+        Err(RpcError::InvalidParams)
+    );
+
+    let capabilities = api.dispatch("agents.capabilities", Value::Null).unwrap();
+    let copilot = entry(&capabilities, "github-copilot");
+    assert_eq!(copilot["installed"], false);
+    assert_eq!(copilot["launchable"], false);
+    assert_eq!(copilot["sign_in"]["state"], "not_checked");
+    assert!(copilot["sandbox"]["ready"].is_boolean());
+}
+
+/// DPES-1105: the explicit check answers at once and runs on its own thread. The
+/// fake CLI takes three seconds, so a request that waited for it would be slow.
+/// Unix only: the fake is a shell script, and the sandbox gate passes on macOS.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_copilot_check_returns_at_once_and_settles_in_the_background() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let slow = fixture.script("fake-copilot-slow", "sleep 3\n");
+    let api = fixture.api_with(&agents.codex, |config| {
+        config.claude_program = Some(agents.claude.clone());
+        config.copilot_program = Some(slow);
+    });
+
+    let started = std::time::Instant::now();
+    let check = api
+        .dispatch("agents.check_copilot_sign_in", json!({"force": false}))
+        .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "the request must not wait for the background run"
+    );
+    assert_eq!(check["state"], "checking");
+
+    // A second explicit check while the first runs starts no second paid run.
+    let again = api
+        .dispatch("agents.check_copilot_sign_in", json!({"force": true}))
+        .unwrap();
+    assert_eq!(again["state"], "checking");
+
+    // The zero-cost status read follows the run to a settled state. A silent
+    // exit is never a sign-in fact, so the state must not become ready.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let capabilities = api.dispatch("agents.capabilities", Value::Null).unwrap();
+        let state = entry(&capabilities, "github-copilot")["sign_in"]["state"].clone();
+        if state != "checking" {
+            assert_ne!(state, "ready", "a silent exit must not count as signed in");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the background check never settled"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// The check RPC returns at once while a fake run is in flight, a second call
+/// starts nothing, and the answer reaches `agents.capabilities` when the run ends.
+#[test]
+fn the_copilot_check_returns_at_once_and_its_answer_reaches_capabilities() {
+    if matches!(
+        orchestrator_agents::copilot_sandbox_host(),
+        orchestrator_agents::SandboxHostStatus::Unavailable(_)
+    ) {
+        // The daemon takes the host from the real probe, so this host cannot
+        // reach the run. The refusal path is covered above.
+        eprintln!("skipped: this host cannot run Copilot's sandbox");
+        return;
+    }
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let runs = fixture.marker("copilot-runs.txt");
+    let stream = fixture.marker("copilot-stream.jsonl");
+    fs::write(
+        &stream,
+        "{\"type\":\"assistant.message\",\"data\":{\"content\":\"OK\",\"toolRequests\":[]}}\n\
+         {\"type\":\"result\",\"exitCode\":0}\n",
+    )
+    .unwrap();
+    let copilot = fixture.script(
+        "fake-copilot",
+        &format!(
+            "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n\
+             echo run >> '{runs}'\nsleep 2\ncat '{stream}'\nexit 0\n",
+            runs = runs.display(),
+            stream = stream.display(),
+        ),
+    );
+    let api = fixture.api_with(&agents.codex, |config| {
+        config.claude_program = Some(agents.claude.clone());
+        config.copilot_program = Some(copilot.clone());
+    });
+
+    let started = std::time::Instant::now();
+    let first = api
+        .dispatch("agents.check_copilot_sign_in", json!({}))
+        .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the check RPC waited for the run: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(first["state"], "checking");
+    let second = api
+        .dispatch("agents.check_copilot_sign_in", json!({"force": true}))
+        .unwrap();
+    assert_eq!(second["state"], "checking");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let settled = loop {
+        let capabilities = api.dispatch("agents.capabilities", Value::Null).unwrap();
+        let sign_in = entry(&capabilities, "github-copilot")["sign_in"].clone();
+        if sign_in["state"] != "checking" {
+            break sign_in;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the check never settled"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(settled["state"], "ready", "{settled}");
+    assert!(settled["checked_at_ms"].is_u64(), "{settled}");
+    assert_eq!(
+        fs::read_to_string(&runs).unwrap().lines().count(),
+        1,
+        "exactly one run, however many starts"
+    );
+}
+
+#[test]
 fn validate_selection_gives_a_precise_reason_for_every_refusal() {
     let fixture = Fixture::new();
     let agents = agents(&fixture);

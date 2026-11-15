@@ -77,6 +77,9 @@ impl Fixture {
             codex_program: Some(program.to_owned()),
             claude_program: None,
             pi_program: None,
+            // Never probe a real copilot from a test: a missing path is a fact.
+            copilot_program: Some(self.root.path().join("no-such-copilot")),
+            copilot_sign_in: Default::default(),
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(25),
             wait_for_exit_before_identity: false,

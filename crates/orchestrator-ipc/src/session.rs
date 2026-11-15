@@ -403,6 +403,7 @@ fn method_capability(method: &str) -> Option<Capability> {
         "agents.capabilities"
         | "agents.catalog"
         | "agents.validate_selection"
+        | "agents.check_copilot_sign_in"
         | "usage.summary"
         | "usage.localTools"
         | "usage.localTools.setEnabled"

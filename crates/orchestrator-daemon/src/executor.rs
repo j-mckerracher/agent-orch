@@ -34,8 +34,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use orchestrator_agents::{
-    pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
-    ClaudeCodeAdapter, CodexAdapter,
+    copilot_sandbox_host, pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit,
+    AgentHandle, AgentLaunchRequest, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun,
+    CopilotSignIn, COPILOT_AGENT,
 };
 use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::records::Workspace;
@@ -54,6 +55,8 @@ const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
 const BLOCKED_RETRY: Duration = Duration::from_secs(5);
 const LOG: &str = "executor";
+/// Under the data directory, one private directory per Copilot run.
+pub(crate) const COPILOT_RUNS_DIR: &str = "copilot-runs";
 
 /// Launch settings. `*_program` overrides the executable resolved from PATH.
 #[derive(Clone)]
@@ -64,6 +67,10 @@ pub(crate) struct ExecutorConfig {
     pub(crate) codex_program: Option<PathBuf>,
     pub(crate) claude_program: Option<PathBuf>,
     pub(crate) pi_program: Option<PathBuf>,
+    pub(crate) copilot_program: Option<PathBuf>,
+    /// Copilot sign-in state for this daemon session. Shared by the catalog,
+    /// the explicit check, and every Copilot run.
+    pub(crate) copilot_sign_in: Arc<CopilotSignIn>,
     pub(crate) limits: SchedulerLimits,
     pub(crate) poll: Duration,
     #[cfg(test)]
@@ -118,6 +125,19 @@ impl ExecutorConfig {
                 adapter.catalog(working_dir, limit).await
             }
             "pi" => pi_catalog(),
+            COPILOT_AGENT => {
+                let mut adapter = CopilotAdapter::new();
+                if let Some(program) = &self.copilot_program {
+                    adapter = adapter.with_program(program);
+                }
+                adapter
+                    .catalog(
+                        limit,
+                        &self.copilot_sign_in.snapshot(),
+                        &copilot_sandbox_host(),
+                    )
+                    .await
+            }
             other => AgentCatalog::unsupported_agent(
                 other,
                 "the daemon has no launcher for this agent, so selection is unsupported",
@@ -134,6 +154,8 @@ impl ExecutorConfig {
             codex_program: std::env::var_os("AGENT_ORCH_CODEX_PROGRAM").map(PathBuf::from),
             claude_program: std::env::var_os("AGENT_ORCH_CLAUDE_PROGRAM").map(PathBuf::from),
             pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
+            copilot_program: std::env::var_os("AGENT_ORCH_COPILOT_PROGRAM").map(PathBuf::from),
+            copilot_sign_in: Arc::default(),
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(500),
             #[cfg(test)]
@@ -685,11 +707,60 @@ pub(crate) fn agent_command(
                 .unwrap_or_else(|| PathBuf::from("claude")),
             ClaudeCodeAdapter::args_for_prompt_with_selection(objective, model, effort),
         )),
+        // Submit-time length check only. The launch builds the real vector in
+        // `spawn_copilot`, where the run directory and worktree are known; these
+        // placeholders are the same length class.
+        COPILOT_AGENT => Some((
+            config
+                .copilot_program
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("copilot")),
+            CopilotAdapter::task_args(
+                objective,
+                Path::new("<copilot-usage-file>"),
+                Path::new("<task-worktree>"),
+            ),
+        )),
         _ => None,
     }
 }
 
+/// Launches a Copilot task. The run directory lives in the handle, so it is
+/// removed when the run ends. A model selection is refused, because Copilot
+/// offers none.
+async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+    if job.model_selection.is_some() {
+        return Err(
+            "model selection refused: GitHub Copilot offers no model or effort selection".into(),
+        );
+    }
+    let mut adapter = CopilotAdapter::new();
+    if let Some(program) = &inner.config.copilot_program {
+        adapter = adapter.with_program(program);
+    }
+    adapter.detect().await.map_err(|error| error.to_string())?;
+    let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
+        .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
+    let args = CopilotAdapter::task_args(&job.objective, &run.usage_file(), &job.worktree);
+    let request = AgentLaunchRequest {
+        program: inner
+            .config
+            .copilot_program
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("copilot")),
+        args,
+        working_dir: job.worktree.clone(),
+    };
+    adapter
+        .spawn_with_host(&copilot_sandbox_host(), request, Some(run))
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+    if job.agent == COPILOT_AGENT {
+        return spawn_copilot(inner, job).await;
+    }
     let selection = job.model_selection.as_ref();
     let Some((program, args)) = agent_command(&inner.config, &job.agent, &job.objective, selection)
     else {
@@ -815,6 +886,9 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     }
 
     let monitored = monitor_agent(handle, store, &owner, job).await;
+    if let (COPILOT_AGENT, Ok(outcome)) = (job.agent.as_str(), &monitored) {
+        inner.config.copilot_sign_in.record_run(&outcome.exit);
+    }
     let current = store
         .get(&job.task_id)
         .map_err(|error| format!("cannot reload task after agent exit: {error}"))?;

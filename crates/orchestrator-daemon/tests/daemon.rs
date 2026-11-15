@@ -585,6 +585,10 @@ impl RunningAgentFixture {
             // on what is installed on the machine or on CPU load.
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &self.agent)
             .env("AGENT_ORCH_PI_PROGRAM", self.root.path().join("no-such-pi"))
+            .env(
+                "AGENT_ORCH_COPILOT_PROGRAM",
+                self.root.path().join("no-such-copilot"),
+            )
             .stdout(Stdio::null())
             .stderr(stderr);
         if let Some(list) = passthrough {
@@ -861,7 +865,7 @@ fn daemon_serves_the_agent_catalog_and_selection_check_over_ipc() {
         .iter()
         .map(|entry| entry["agent"].as_str().unwrap())
         .collect();
-    assert_eq!(agents, ["codex", "claude-code", "pi"]);
+    assert_eq!(agents, ["codex", "claude-code", "pi", "github-copilot"]);
     let pi = &catalog[2];
     assert_eq!(pi["state"], "unsupported");
     assert_eq!(pi["models"]["items"], serde_json::json!([]));
