@@ -36,9 +36,9 @@ use std::time::{Duration, Instant};
 
 use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::{
-    copilot_sandbox_host, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit,
-    AgentHandle, AgentLaunchRequest, CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter,
-    CopilotRun, CopilotSignIn, SandboxHostStatus, SelectionReason, COPILOT_PINNED_VERSION,
+    AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
+    CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
+    SelectionReason, COPILOT_PINNED_VERSION,
 };
 use orchestrator_core::workstream::Workstream;
 use orchestrator_ipc::RpcError;
@@ -504,14 +504,9 @@ impl AgentRuntime {
                     .await
             }
         });
-        // Copilot runs only inside its sandbox, so a host that cannot sandbox
-        // it has no launchable Copilot.
-        let sandboxed =
-            agent != GITHUB_COPILOT || copilot_sandbox_host() == SandboxHostStatus::Ready;
-        sandboxed
-            && capabilities
-                .map(|caps| caps.streaming && caps.structured_output && caps.cancellation)
-                .unwrap_or(false)
+        capabilities
+            .map(|caps| caps.streaming && caps.structured_output && caps.cancellation)
+            .unwrap_or(false)
     }
 }
 
@@ -831,8 +826,8 @@ struct Turn {
     sign_in: Arc<CopilotSignIn>,
 }
 
-/// Starts one Copilot turn through the sandbox gate. The run directory moves
-/// into the handle, so it is removed when the turn ends.
+/// Starts one Copilot turn. The run directory moves into the handle, so it is
+/// removed when the turn ends.
 async fn spawn_copilot(
     launch: AgentLaunchRequest,
     run: Option<CopilotRun>,
@@ -842,9 +837,7 @@ async fn spawn_copilot(
             "the Copilot turn has no run directory".to_owned(),
         ));
     };
-    CopilotAdapter::new()
-        .spawn_with_host(&copilot_sandbox_host(), launch, Some(run))
-        .await
+    CopilotAdapter::new().spawn_run(launch, Some(run)).await
 }
 
 /// Drives one agent process to the end of the turn and reports through `sink`.

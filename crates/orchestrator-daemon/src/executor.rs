@@ -34,9 +34,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use orchestrator_agents::{
-    copilot_sandbox_host, pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit,
-    AgentHandle, AgentLaunchRequest, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun,
-    CopilotSignIn, COPILOT_AGENT,
+    pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
+    ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
 };
 use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::records::Workspace;
@@ -131,11 +130,7 @@ impl ExecutorConfig {
                     adapter = adapter.with_program(program);
                 }
                 adapter
-                    .catalog(
-                        limit,
-                        &self.copilot_sign_in.snapshot(),
-                        &copilot_sandbox_host(),
-                    )
+                    .catalog(limit, &self.copilot_sign_in.snapshot())
                     .await
             }
             other => AgentCatalog::unsupported_agent(
@@ -752,7 +747,7 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
         working_dir: job.worktree.clone(),
     };
     adapter
-        .spawn_with_host(&copilot_sandbox_host(), request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .map_err(|error| error.to_string())
 }

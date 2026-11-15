@@ -31,7 +31,7 @@ use tokio::process::Command;
 use crate::claude_code_adapter::ClaudeCodeAdapter;
 use crate::codex_adapter::CodexAdapter;
 use crate::copilot_adapter::{
-    probe_version as probe_copilot_version, CopilotAdapter, SandboxHostStatus, COPILOT_AGENT,
+    probe_version as probe_copilot_version, CopilotAdapter, COPILOT_AGENT,
     PINNED_VERSION as COPILOT_PINNED_VERSION,
 };
 use crate::copilot_sign_in::{
@@ -948,31 +948,24 @@ impl ClaudeCodeAdapter {
     }
 }
 
-/// The Copilot catalog from facts the daemon already holds: the sandbox host
-/// and the session's sign-in record. Its CLI version was probed by the caller.
-fn copilot_catalog(sign_in: &SignInRecord, host: &SandboxHostStatus) -> AgentCatalog {
-    let (state, detail) = match (host, sign_in.state) {
-        (SandboxHostStatus::Unavailable(reason), _) => (CatalogState::Unavailable, reason.clone()),
-        (SandboxHostStatus::Ready, SignInState::NotChecked) => {
-            (CatalogState::Available, NOT_CHECKED_DETAIL.to_owned())
-        }
-        (SandboxHostStatus::Ready, SignInState::Ready) => {
-            (CatalogState::Available, "ready".to_owned())
-        }
-        (SandboxHostStatus::Ready, SignInState::NotSignedIn) => (
+/// The Copilot catalog from the session's sign-in record. Its CLI version was
+/// probed by the caller.
+fn copilot_catalog(sign_in: &SignInRecord) -> AgentCatalog {
+    let (state, detail) = match sign_in.state {
+        SignInState::NotChecked => (CatalogState::Available, NOT_CHECKED_DETAIL.to_owned()),
+        SignInState::Ready => (CatalogState::Available, "ready".to_owned()),
+        SignInState::NotSignedIn => (
             CatalogState::AuthenticationFailed,
             NOT_SIGNED_IN_DETAIL.to_owned(),
         ),
         // Unavailable rather than authentication_failed: no sign-in would fix it.
-        (SandboxHostStatus::Ready, SignInState::NoSeat) => {
-            (CatalogState::Unavailable, NO_SEAT_DETAIL.to_owned())
-        }
+        SignInState::NoSeat => (CatalogState::Unavailable, NO_SEAT_DETAIL.to_owned()),
         // A check is running: the answer is not known yet, so it is not offered as ready.
-        (SandboxHostStatus::Ready, SignInState::Checking) => (
+        SignInState::Checking => (
             CatalogState::Unknown,
             "Checking GitHub Copilot sign-in now. Retry shortly.".to_owned(),
         ),
-        (SandboxHostStatus::Ready, SignInState::Error) => (
+        SignInState::Error => (
             CatalogState::Unknown,
             sign_in
                 .reason
@@ -992,13 +985,8 @@ fn copilot_catalog(sign_in: &SignInRecord, host: &SandboxHostStatus) -> AgentCat
 
 impl CopilotAdapter {
     /// Read this adapter's catalog. Only `copilot --version` runs, which is not
-    /// a billable call. Sign-in comes from `sign_in` and sandboxing from `host`.
-    pub async fn catalog(
-        &self,
-        limit: Duration,
-        sign_in: &SignInRecord,
-        host: &SandboxHostStatus,
-    ) -> AgentCatalog {
+    /// a billable call. Sign-in comes from `sign_in`.
+    pub async fn catalog(&self, limit: Duration, sign_in: &SignInRecord) -> AgentCatalog {
         let Some(program) = self.locate() else {
             return AgentCatalog::uniform(
                 COPILOT_AGENT,
@@ -1008,7 +996,7 @@ impl CopilotAdapter {
             );
         };
         match probe_copilot_version(&program, limit).await {
-            Ok(version) if version == COPILOT_PINNED_VERSION => copilot_catalog(sign_in, host),
+            Ok(version) if version == COPILOT_PINNED_VERSION => copilot_catalog(sign_in),
             Ok(version) => AgentCatalog::uniform(
                 COPILOT_AGENT,
                 Some(COPILOT_PROVIDER),

@@ -1,4 +1,4 @@
-//! GitHub Copilot adapter (DPES-1105): sandbox gate, argv, detection, environment,
+//! GitHub Copilot adapter (DPES-1105): argv, detection, environment,
 //! sign-in, and replay of redacted Copilot CLI 1.0.109 streams through the real
 //! supervisor path. Every process here is a fake shell script, never the real
 //! `copilot` binary, so no test spends a premium request.
@@ -8,16 +8,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use orchestrator_agents::copilot_adapter::{
-    parse_bwrap_version, parse_copilot_version, sandbox_host_status, SandboxProbe,
-};
+use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::copilot_parser::CopilotParser;
 use orchestrator_agents::copilot_sign_in::{classify_failure, CopilotSignIn};
 use orchestrator_agents::copilot_usage::parse_usage;
 use orchestrator_agents::{
     provider_of, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentLaunchRequest,
-    CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SandboxHostStatus, SignInRecord,
-    SignInState, TurnOutcome,
+    CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SignInRecord, SignInState,
+    TurnOutcome,
 };
 
 const FORBIDDEN: [&str; 15] = [
@@ -100,145 +98,6 @@ fn replay_body(stream: &Path, exit_code: i32) -> String {
     format!("cat '{}'\nexit {exit_code}\n", stream.display())
 }
 
-#[derive(Clone)]
-struct FakeHost {
-    os: &'static str,
-    sandbox_exec: bool,
-    tools: Vec<&'static str>,
-    bwrap: Option<&'static str>,
-    tun: bool,
-}
-
-const LINUX_HELPERS: [&str; 7] = [
-    "slirp4netns",
-    "unshare",
-    "nsenter",
-    "iptables",
-    "ip6tables",
-    "iptables-restore",
-    "ip6tables-restore",
-];
-
-impl FakeHost {
-    fn macos(sandbox_exec: bool) -> Self {
-        Self {
-            os: "macos",
-            sandbox_exec,
-            tools: Vec::new(),
-            bwrap: None,
-            tun: false,
-        }
-    }
-
-    fn linux_all_present() -> Self {
-        Self {
-            os: "linux",
-            sandbox_exec: false,
-            tools: LINUX_HELPERS.to_vec(),
-            bwrap: Some("bubblewrap 0.8.0"),
-            tun: true,
-        }
-    }
-}
-
-impl SandboxProbe for FakeHost {
-    fn os(&self) -> &str {
-        self.os
-    }
-
-    fn executable_exists(&self, path: &Path) -> bool {
-        self.sandbox_exec && path == Path::new("/usr/bin/sandbox-exec")
-    }
-
-    fn on_path(&self, name: &str) -> bool {
-        self.tools.contains(&name)
-    }
-
-    fn bwrap_version_output(&self) -> Option<String> {
-        self.bwrap.map(str::to_owned)
-    }
-
-    fn tun_device_usable(&self) -> bool {
-        self.tun
-    }
-}
-
-fn unavailable_reason(status: SandboxHostStatus) -> String {
-    match status {
-        SandboxHostStatus::Unavailable(reason) => reason,
-        SandboxHostStatus::Ready => panic!("expected the host to be unavailable"),
-    }
-}
-
-// --- sandbox gate ---------------------------------------------------------
-
-#[test]
-fn macos_is_ready_only_when_sandbox_exec_exists() {
-    assert_eq!(
-        sandbox_host_status(&FakeHost::macos(true)),
-        SandboxHostStatus::Ready
-    );
-    let reason = unavailable_reason(sandbox_host_status(&FakeHost::macos(false)));
-    assert!(reason.contains("/usr/bin/sandbox-exec"), "{reason}");
-}
-
-#[test]
-fn linux_names_each_missing_helper_and_refuses() {
-    let mut host = FakeHost::linux_all_present();
-    host.tools.retain(|name| *name != "nsenter");
-    let reason = unavailable_reason(sandbox_host_status(&host));
-    assert!(reason.contains("nsenter"), "{reason}");
-    assert!(!reason.contains("slirp4netns"), "{reason}");
-}
-
-#[test]
-fn linux_with_every_prerequisite_is_ready() {
-    assert_eq!(
-        sandbox_host_status(&FakeHost::linux_all_present()),
-        SandboxHostStatus::Ready
-    );
-}
-
-#[test]
-fn linux_refuses_an_older_bwrap_and_a_missing_tun_device() {
-    let mut old = FakeHost::linux_all_present();
-    old.bwrap = Some("bubblewrap 0.4.1");
-    assert!(unavailable_reason(sandbox_host_status(&old)).contains("older"));
-    let mut no_tun = FakeHost::linux_all_present();
-    no_tun.tun = false;
-    assert!(unavailable_reason(sandbox_host_status(&no_tun)).contains("/dev/net/tun"));
-    assert_eq!(parse_bwrap_version("bubblewrap 0.8.0"), Some((0, 8, 0)));
-}
-
-#[test]
-fn windows_is_unavailable_with_the_fixed_reason() {
-    let host = FakeHost {
-        os: "windows",
-        sandbox_exec: false,
-        tools: Vec::new(),
-        bwrap: None,
-        tun: false,
-    };
-    assert_eq!(
-        unavailable_reason(sandbox_host_status(&host)),
-        "GitHub Copilot is unavailable on Windows: its command sandbox has not been verified on Windows in this build. It becomes available when the Copilot sandbox is verified on Windows."
-    );
-}
-
-#[test]
-fn an_unknown_system_is_unavailable() {
-    let host = FakeHost {
-        os: "freebsd",
-        sandbox_exec: false,
-        tools: Vec::new(),
-        bwrap: None,
-        tun: false,
-    };
-    assert!(unavailable_reason(sandbox_host_status(&host)).contains("freebsd"));
-}
-
-// --- argv -----------------------------------------------------------------
-
 #[test]
 fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
     for args in [
@@ -258,7 +117,7 @@ fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
             .windows(2)
             .any(|pair| pair[0] == "--allow-tool" && pair[1] == "shell"));
         assert!(!args.iter().any(|arg| arg == "--reasoning-effort"));
-        assert!(args.iter().any(|arg| arg == "--sandbox"));
+        assert!(!args.iter().any(|arg| arg == "--sandbox"));
         assert!(args.iter().any(|arg| arg == "--disallow-temp-dir"));
     }
 }
@@ -385,19 +244,33 @@ async fn a_missing_copilot_catalog_is_unavailable_not_empty() {
     let dir = tempfile::tempdir().unwrap();
     let catalog: AgentCatalog = CopilotAdapter::new()
         .with_program(dir.path().join("absent"))
-        .catalog(
-            Duration::from_secs(1),
-            &SignInRecord::default(),
-            &SandboxHostStatus::Ready,
-        )
+        .catalog(Duration::from_secs(1), &SignInRecord::default())
         .await;
     assert_eq!(catalog.state, CatalogState::Unavailable);
     assert!(catalog.models.items.is_empty());
 }
 
+/// DPES-1105: Windows is not refused. With no CLI installed, the sign-in check
+/// says the executable is missing, the same as on every other host.
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_is_not_refused_and_a_missing_cli_is_reported_as_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let record = CopilotAdapter::new()
+        .with_program(dir.path().join("absent.exe"))
+        .sign_in_check(dir.path(), Duration::from_secs(5))
+        .await;
+    assert_eq!(record.state, SignInState::NotChecked);
+    assert!(record
+        .reason
+        .as_deref()
+        .unwrap_or_default()
+        .contains("not found"));
+}
+
 #[cfg(unix)]
 #[tokio::test]
-async fn the_catalog_states_follow_the_sandbox_and_the_sign_in_record() {
+async fn the_catalog_states_follow_the_sign_in_record() {
     let dir = tempfile::tempdir().unwrap();
     let program = fake_copilot(dir.path(), "copilot", "1.0.109", "exit 0\n");
     let adapter = CopilotAdapter::new().with_program(&program);
@@ -407,11 +280,8 @@ async fn the_catalog_states_follow_the_sandbox_and_the_sign_in_record() {
         reason: Some("reason text".to_owned()),
         ..SignInRecord::default()
     };
-    let ready = SandboxHostStatus::Ready;
 
-    let not_checked = adapter
-        .catalog(limit, &SignInRecord::default(), &ready)
-        .await;
+    let not_checked = adapter.catalog(limit, &SignInRecord::default()).await;
     assert_eq!(not_checked.state, CatalogState::Available);
     assert!(not_checked.detail.starts_with("Not confirmed yet"));
     assert_eq!(not_checked.provider.as_deref(), Some("github"));
@@ -419,32 +289,21 @@ async fn the_catalog_states_follow_the_sandbox_and_the_sign_in_record() {
     assert_eq!(not_checked.efforts.state, CatalogState::Unsupported);
 
     let signed_out = adapter
-        .catalog(limit, &record(SignInState::NotSignedIn), &ready)
+        .catalog(limit, &record(SignInState::NotSignedIn))
         .await;
     assert_eq!(signed_out.state, CatalogState::AuthenticationFailed);
     assert!(signed_out.detail.contains("copilot login"));
 
-    let no_seat = adapter
-        .catalog(limit, &record(SignInState::NoSeat), &ready)
-        .await;
+    let no_seat = adapter.catalog(limit, &record(SignInState::NoSeat)).await;
     assert_eq!(no_seat.state, CatalogState::Unavailable);
     assert_eq!(
         no_seat.detail,
         "This GitHub account has no GitHub Copilot subscription."
     );
 
-    let errored = adapter
-        .catalog(limit, &record(SignInState::Error), &ready)
-        .await;
+    let errored = adapter.catalog(limit, &record(SignInState::Error)).await;
     assert_eq!(errored.state, CatalogState::Unknown);
     assert_eq!(errored.detail, "reason text");
-
-    let blocked = SandboxHostStatus::Unavailable("sandbox missing".to_owned());
-    let no_sandbox = adapter
-        .catalog(limit, &SignInRecord::default(), &blocked)
-        .await;
-    assert_eq!(no_sandbox.state, CatalogState::Unavailable);
-    assert_eq!(no_sandbox.detail, "sandbox missing");
 }
 
 #[cfg(unix)]
@@ -454,44 +313,10 @@ async fn a_catalog_for_an_unpinned_version_is_unavailable() {
     let program = fake_copilot(dir.path(), "copilot", "1.0.108", "exit 0\n");
     let catalog = CopilotAdapter::new()
         .with_program(&program)
-        .catalog(
-            Duration::from_secs(5),
-            &SignInRecord::default(),
-            &SandboxHostStatus::Ready,
-        )
+        .catalog(Duration::from_secs(5), &SignInRecord::default())
         .await;
     assert_eq!(catalog.state, CatalogState::Unavailable);
     assert!(catalog.detail.contains("1.0.108"), "{}", catalog.detail);
-}
-
-// --- sandbox gate on launch: a refused launch starts nothing ---------------
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_refused_launch_spawns_no_process_and_keeps_no_run_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    let marker = dir.path().join("spawned");
-    let program = script(
-        dir.path(),
-        "copilot",
-        &format!("touch '{}'\n", marker.display()),
-    );
-    let run = CopilotRun::create(dir.path()).unwrap();
-    let root = run.cwd().parent().unwrap().to_path_buf();
-    let request = AgentLaunchRequest {
-        program,
-        args: CopilotAdapter::conversation_args("hi", &run.usage_file(), &run.cwd()),
-        working_dir: run.cwd(),
-    };
-    let host = SandboxHostStatus::Unavailable("the sandbox is missing".to_owned());
-    let error = CopilotAdapter::new()
-        .spawn_with_host(&host, request, Some(run))
-        .await
-        .err()
-        .expect("a refused launch returns an error");
-    assert!(matches!(error, AgentError::Unavailable(_)), "{error}");
-    assert!(!marker.exists(), "the refused launch started a process");
-    assert!(!root.exists(), "the refused launch kept its run directory");
 }
 
 // --- environment and argument transport through the real supervisor ---------
@@ -512,7 +337,7 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
-        .spawn_with_host(&SandboxHostStatus::Ready, request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .unwrap();
     handle.wait().await.unwrap();
@@ -555,7 +380,7 @@ async fn a_leading_dash_prompt_reaches_the_child_as_one_argument() {
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
-        .spawn_with_host(&SandboxHostStatus::Ready, request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .unwrap();
     handle.wait().await.unwrap();
@@ -625,7 +450,7 @@ async fn a_replayed_completed_run_exits_completed_and_marks_sign_in_ready() {
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
-        .spawn_with_host(&SandboxHostStatus::Ready, request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .unwrap();
     assert_eq!(
@@ -770,11 +595,7 @@ async fn a_check_that_cannot_run_records_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let record = CopilotAdapter::new()
         .with_program(dir.path().join("absent"))
-        .sign_in_check(
-            &SandboxHostStatus::Ready,
-            dir.path(),
-            Duration::from_secs(5),
-        )
+        .sign_in_check(dir.path(), Duration::from_secs(5))
         .await;
     assert_eq!(record.state, SignInState::NotChecked);
     assert!(record.reason.is_some());
@@ -793,11 +614,7 @@ async fn a_check_that_meets_the_bogus_model_reports_a_model_error() {
     );
     let record = CopilotAdapter::new()
         .with_program(&program)
-        .sign_in_check(
-            &SandboxHostStatus::Ready,
-            dir.path(),
-            Duration::from_secs(10),
-        )
+        .sign_in_check(dir.path(), Duration::from_secs(10))
         .await;
     assert_eq!(record.state, SignInState::Error);
     assert!(record.reason.unwrap().starts_with("model unavailable"));
@@ -825,11 +642,7 @@ fn a_check_that_is_not_signed_in_says_so_and_is_cached() {
     let counted = Arc::clone(&runs);
     let started = cache.start(false, move || {
         counted.fetch_add(1, Ordering::SeqCst);
-        futures_block(adapter.sign_in_check(
-            &SandboxHostStatus::Ready,
-            &parent,
-            Duration::from_secs(10),
-        ))
+        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(10)))
     });
     assert_eq!(
         started.state,
@@ -876,11 +689,7 @@ fn a_check_whose_turn_completes_records_ready() {
     .unwrap();
     let program = fake_copilot(dir.path(), "copilot", "1.0.109", &replay_body(&text, 0));
     let adapter = CopilotAdapter::new().with_program(&program);
-    let record = futures_block(adapter.sign_in_check(
-        &SandboxHostStatus::Ready,
-        dir.path(),
-        Duration::from_secs(10),
-    ));
+    let record = futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10)));
     assert_eq!(
         record.state,
         SignInState::Ready,
@@ -911,11 +720,7 @@ fn sign_in_over(stream: &str, exit_code: i32) -> SignInRecord {
         &replay_body(&text, exit_code),
     );
     let adapter = CopilotAdapter::new().with_program(&program);
-    futures_block(adapter.sign_in_check(
-        &SandboxHostStatus::Ready,
-        dir.path(),
-        Duration::from_secs(10),
-    ))
+    futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10)))
 }
 
 /// The captured run: the agentStop hook failed in the sandbox, the turn still
@@ -977,11 +782,7 @@ async fn a_check_that_runs_too_long_is_cancelled_and_reported() {
     let started = Instant::now();
     let record = CopilotAdapter::new()
         .with_program(&program)
-        .sign_in_check(
-            &SandboxHostStatus::Ready,
-            dir.path(),
-            Duration::from_millis(400),
-        )
+        .sign_in_check(dir.path(), Duration::from_millis(400))
         .await;
     assert!(started.elapsed() < Duration::from_secs(20));
     assert_eq!(record.state, SignInState::Error);
@@ -1026,7 +827,7 @@ async fn a_replayed_bogus_model_run_exits_failed_with_the_message() {
         working_dir: cwd,
     };
     let mut handle = CopilotAdapter::new()
-        .spawn_with_host(&SandboxHostStatus::Ready, request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .unwrap();
     match handle.wait().await.unwrap() {
@@ -1055,7 +856,7 @@ async fn cancelling_a_running_turn_reports_cancelled_not_completed() {
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
-        .spawn_with_host(&SandboxHostStatus::Ready, request, Some(run))
+        .spawn_run(request, Some(run))
         .await
         .unwrap();
     assert!(matches!(

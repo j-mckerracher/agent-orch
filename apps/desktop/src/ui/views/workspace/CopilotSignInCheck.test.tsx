@@ -61,10 +61,10 @@ describe("CopilotSignInCheck (DPES-1105)", () => {
   });
 
   it("shows a refused check's reason as text when the daemon cannot run Copilot here", async () => {
-    const check = vi.fn(async () => refused("Copilot runs are refused on this host: the command sandbox is not available."));
+    const check = vi.fn(async () => refused("the copilot executable was not found"));
     render(<CopilotSignInCheck check={check} />);
     await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("the command sandbox is not available."));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("the copilot executable was not found"));
   });
 
   it("polls the free status read while the daemon's background check runs, then shows the settled state", async () => {

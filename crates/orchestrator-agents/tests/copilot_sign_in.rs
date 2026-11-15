@@ -9,9 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use orchestrator_agents::{
-    CopilotAdapter, CopilotSignIn, SandboxHostStatus, SignInRecord, SignInState,
-};
+use orchestrator_agents::{CopilotAdapter, CopilotSignIn, SignInRecord, SignInState};
 
 /// A completed turn in the verified event layout.
 const COMPLETED: &str = concat!(
@@ -52,18 +50,12 @@ fn futures_block<F: std::future::Future>(future: F) -> F::Output {
         .block_on(future)
 }
 
-/// Starts a background check of `program` on `host`, as the daemon does.
-fn start(
-    cache: &Arc<CopilotSignIn>,
-    program: &Path,
-    dir: &Path,
-    host: SandboxHostStatus,
-    force: bool,
-) -> SignInRecord {
+/// Starts a background check of `program`, as the daemon does.
+fn start(cache: &Arc<CopilotSignIn>, program: &Path, dir: &Path, force: bool) -> SignInRecord {
     let adapter = CopilotAdapter::new().with_program(program);
     let parent = dir.to_path_buf();
     cache.start(force, move || {
-        futures_block(adapter.sign_in_check(&host, &parent, Duration::from_secs(30)))
+        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(30)))
     })
 }
 
@@ -101,13 +93,7 @@ fn a_slow_check_returns_at_once_and_reads_checking_until_it_ends() {
     let cache = Arc::new(CopilotSignIn::default());
 
     let started_at = Instant::now();
-    let first = start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    let first = start(&cache, &program, dir.path(), false);
     assert!(
         started_at.elapsed() < Duration::from_secs(1),
         "start waited for the two-second run"
@@ -139,21 +125,9 @@ fn a_second_start_while_checking_spawns_no_second_run_even_when_forced() {
     );
     let cache = Arc::new(CopilotSignIn::default());
 
-    let first = start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
-    let second = start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
-    let forced = start(&cache, &program, dir.path(), SandboxHostStatus::Ready, true);
+    let first = start(&cache, &program, dir.path(), false);
+    let second = start(&cache, &program, dir.path(), false);
+    let forced = start(&cache, &program, dir.path(), true);
     assert_eq!(first.state, SignInState::Checking);
     assert_eq!(second.state, SignInState::Checking);
     assert_eq!(forced.state, SignInState::Checking);
@@ -176,13 +150,7 @@ fn a_check_finishes_after_its_caller_lets_go_of_it() {
         ),
     );
     let cache = Arc::new(CopilotSignIn::default());
-    let record = start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    let record = start(&cache, &program, dir.path(), false);
     assert_eq!(record.state, SignInState::Checking);
     // The caller (the RPC that started the check) drops everything it holds.
     drop(record);
@@ -213,29 +181,17 @@ fn a_settled_answer_is_served_from_memory_and_only_force_runs_again() {
     );
     let cache = Arc::new(CopilotSignIn::default());
 
-    start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    start(&cache, &program, dir.path(), false);
     let settled = settle(&cache);
     assert_eq!(settled.state, SignInState::NotSignedIn);
     assert_eq!(settled.reason.as_deref(), Some(NOT_SIGNED_IN_REASON));
     assert!(settled.checked_at_ms.is_some());
 
-    let served = start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    let served = start(&cache, &program, dir.path(), false);
     assert_eq!(served.state, SignInState::NotSignedIn);
     assert_eq!(runs_started(&count), 1, "a settled answer costs no run");
 
-    let forced = start(&cache, &program, dir.path(), SandboxHostStatus::Ready, true);
+    let forced = start(&cache, &program, dir.path(), true);
     assert_eq!(forced.state, SignInState::Checking);
     assert_eq!(settle(&cache).state, SignInState::NotSignedIn);
     assert_eq!(runs_started(&count), 2);
@@ -260,13 +216,7 @@ fn the_stored_record_keeps_the_usage_the_check_reported() {
         ),
     );
     let cache = Arc::new(CopilotSignIn::default());
-    start(
-        &cache,
-        &program,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    start(&cache, &program, dir.path(), false);
 
     let settled = settle(&cache);
     assert_eq!(settled.state, SignInState::Ready);
@@ -275,37 +225,12 @@ fn the_stored_record_keeps_the_usage_the_check_reported() {
 }
 
 #[test]
-fn a_refused_check_spawns_nothing_and_settles_with_its_reason() {
-    let dir = tempfile::tempdir().unwrap();
-    let count = dir.path().join("runs.txt");
-    let program = fake_copilot(
-        dir.path(),
-        &format!("echo run >> '{}'\nexit 0", count.display()),
-    );
-    let cache = Arc::new(CopilotSignIn::default());
-    let host = SandboxHostStatus::Unavailable("sandbox missing".to_owned());
-
-    let first = start(&cache, &program, dir.path(), host, false);
-    assert_eq!(first.state, SignInState::Checking);
-    let settled = settle(&cache);
-    assert_eq!(settled.state, SignInState::Error);
-    assert_eq!(settled.reason.as_deref(), Some("sandbox missing"));
-    assert_eq!(runs_started(&count), 0, "a refused check starts no run");
-}
-
-#[test]
 fn a_check_for_a_missing_program_settles_with_its_reason_and_runs_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-copilot");
     let cache = Arc::new(CopilotSignIn::default());
 
-    start(
-        &cache,
-        &missing,
-        dir.path(),
-        SandboxHostStatus::Ready,
-        false,
-    );
+    start(&cache, &missing, dir.path(), false);
     let settled = settle(&cache);
     assert_eq!(settled.state, SignInState::Error);
     assert!(
