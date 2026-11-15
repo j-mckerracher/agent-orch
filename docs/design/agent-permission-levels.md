@@ -8,13 +8,13 @@ Basis: `motif-mcao/main` at `cc2b17d36`. PR #75 (removes the Copilot sandbox gat
 
 ## Decisions
 
-**Decided by the user, applied in this revision**
+### Decided by the user, applied in this revision
 
 - **D1.** Auto is the default for chats and tasks, for all three agents. A task can still pick Restricted, Extended or Full at submit.
 - **D2.** Copilot runs with no `--sandbox` at any level. No sandbox gate and no per-level host check. Restoring the sandbox later is a new design, not a flag switch.
 - **D3.** The Auto default ships now. No live check gates it. The live check is a follow-up for you to run (see "Follow-up: live check").
 
-**Open. Each has a working default that applies until you decide**
+### Open. Each has a working default that applies until you decide
 
 - **O1. Codex Full.** Working default: no `--dangerously-bypass-approvals-and-sandbox`. Full adds no sandbox or approval flag, so `~/.codex/config.toml` decides. Cost: what Full can do depends on a config MCAO does not read.
 - **O2. `--max-ai-credits` for Copilot runs.** Working default: 30, the minimum the CLI accepts, on every Copilot task and chat. Cost: a long run can stop partway. The cap is soft, so one response can exceed it (help). The value is yours.
@@ -25,7 +25,7 @@ Basis: `motif-mcao/main` at `cc2b17d36`. PR #75 (removes the Copilot sandbox gat
 - **O7. Claude spend cap on tasks (new).** `--max-budget-usd` works only with `--print` (help), which MCAO uses. Working default: pass it with a value you set. Until you set one, a Claude task has no cap. Codex `exec` help lists no spend flag, so MCAO sets no Codex cap.
 - **O8. Delivery by the agent (new).** Working default: task runs deny `git push` and `gh`, where the CLI can match a rule. Otherwise a task agent could publish a branch outside MCAO's delivery path. Copilot: `--deny-tool 'shell(git push)'` (rule form from help). Claude: `--disallowedTools "Bash(git push *)" "Bash(gh *)"` (pattern syntax unverified). Codex: no per-command deny exists, and network under `workspace-write` is unverified.
 
-**Settled in this design. Reviewable, no user input needed**
+### Settled in this design. Reviewable, no user input needed
 
 - Claude keeps `--restricted` at Auto. Settings and git writes then need a person, and file tools stay in the working directories.
 - `--ignore-user-config` on Codex at Restricted, Auto and tasks. Never `--ignore-rules`, `--autopilot`, `--experimental` or `--allow-all-mcp-server-instructions`.
@@ -139,7 +139,7 @@ The safe outcome is always denial. A turn never retries at another level and nev
   - Copilot: "The review is a probabilistic LLM judge. Copilot's documentation says it is not a security boundary and may approve dangerous or unintended actions. Copilot runs without an OS sandbox."
   - Claude: "Claude's auto mode uses a classifier with rule lists. Shell commands are not confined to the worktree."
   - Codex: "Codex's automatic review decides approval requests. Commands run in a workspace-write sandbox."
-- **Full.** Confirmation each time Full is chosen, for chats and for each task submit. Focus starts on Cancel. Text: Codex: "Codex runs with your own ~/.codex settings. MCAO adds no sandbox or approval flags, so the settings in that config decide what runs." Claude: "Claude Code skips its permission checks and uses your own Claude settings and hooks. It can run any tool your account allows." Copilot: "Copilot can run any shell command, edit any file your account can, reach any URL, and use your own Copilot settings and hooks. No OS sandbox is applied. Copilot cannot ask you anything during the run." Tasks add: "This task runs unattended after you submit. Objective: <text>. Worktree: <path>."
+- **Full.** Confirmation each time Full is chosen, for chats and for each task submit. Focus starts on Cancel. Text: Codex: "Codex runs with your own ~/.codex settings. MCAO adds no sandbox or approval flags, so the settings in that config decide what runs." Claude: "Claude Code skips its permission checks and uses your own Claude settings and hooks. It can run any tool your account allows." Copilot: "Copilot can run any shell command, edit any file your account can, reach any URL, and use your own Copilot settings and hooks. No OS sandbox is applied. Copilot cannot ask you anything during the run." Tasks add: "This task runs unattended after you submit. Objective: `<text>`. Worktree: `<path>`."
 - **Displayed level.** Each turn and task shows the level the daemon reports it ran with, not the level chosen. A mismatch shows an error.
 
 ## Wire contract and older daemon
