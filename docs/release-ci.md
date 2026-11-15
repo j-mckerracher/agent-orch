@@ -12,10 +12,10 @@ release tag are in [RELEASE.md](RELEASE.md).
 | `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --audit-level=high`. |
 | `.github/workflows/release.yml` | `macos-15`, `windows-2025` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads artifacts only. |
 
-Every third-party action is pinned to a commit SHA. Workflows have `contents: read` and no
-other permission. Secrets are mapped only into the `Package` step of `release.yml`. `ci.yml` and
-`audit.yml` cancel a superseded run only for a pull request; a scheduled, `main` or release run
-always completes.
+Every third-party action is pinned to a commit SHA. Workflows set top-level `permissions: {}`, and
+each job grants only `contents: read`. Secrets are mapped only into the `Package` step of
+`release.yml`. `ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a
+scheduled, `main` or release run always completes.
 
 ## Gates
 
