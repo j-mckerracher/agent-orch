@@ -1113,5 +1113,9 @@
   "service::tests::a_complete_bundle_wins_over_everything_else",
   "locate::tests::the_reader_entry_must_be_an_npm_dist_cli",
   "service::tests::a_shebang_rewrite_does_not_change_the_pinned_hash",
-  "service::tests::an_installed_reader_must_match_the_pin_exactly"
+  "service::tests::an_installed_reader_must_match_the_pin_exactly",
+  "pin::tests::the_bundle_ships_the_upstream_launcher_unchanged",
+  "service::tests::a_bundle_resolves_to_its_node_and_its_launcher_and_checks_its_own_layout",
+  "service::tests::an_npm_install_is_checked_against_the_npm_layout_only",
+  "service::tests::the_macos_resources_bundle_is_found_when_the_executable_folder_has_none"
 ]
