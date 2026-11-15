@@ -92,22 +92,24 @@ export function createLiveModels(
                 : entry.capabilities.model_selection
                   ? ("supported" as const)
                   : ("unsupported" as const);
+          const models = row
+            ? facetValue(row, row.models, obs, (items) =>
+                items.map<ModelOption>((item) => ({
+                  id: item.id,
+                  label: item.display_name || item.id,
+                  efforts: item.efforts,
+                  defaultEffort: item.default_effort,
+                })),
+              )
+            : withoutRow<ModelOption[]>("models");
           return {
             id: entry.agent,
             name: entry.agent,
             installed: entry.installed,
             launchable: entry.launchable,
             modelSelection: supported,
-            models: row
-              ? facetValue(row, row.models, obs, (items) =>
-                  items.map<ModelOption>((item) => ({
-                    id: item.id,
-                    label: item.display_name || item.id,
-                    efforts: item.efforts,
-                    defaultEffort: item.default_effort,
-                  })),
-                )
-              : withoutRow<ModelOption[]>("models"),
+            models,
+            modelsNote: row && models.status === "ok" && row.models.detail ? row.models.detail : undefined,
             efforts: row
               ? facetValue(row, row.efforts, obs, (items) => items)
               : withoutRow<string[]>("effort settings"),

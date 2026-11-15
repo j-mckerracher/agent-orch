@@ -67,7 +67,16 @@ describe("live model catalog", () => {
       ],
     });
     expect(codex!.efforts.status).toBe("unsupported");
-    expect(claude!.models).toMatchObject({ status: "ok", value: [{ id: "sonnet", efforts: [] }] });
+    expect(claude!.models).toMatchObject({
+      status: "ok",
+      value: [
+        { id: "opus", label: "Opus (alias)", efforts: [] },
+        { id: "sonnet", label: "Sonnet (alias)", efforts: [] },
+        { id: "haiku", label: "Haiku (alias)", efforts: [] },
+      ],
+    });
+    expect(claude!.modelsNote).toContain("availability depends on your account");
+    expect(codex!.modelsNote).toBeUndefined();
     expect(claude!.efforts).toMatchObject({ status: "ok", value: ["low", "medium", "high"] });
     expect(pi!.models.status).toBe("unsupported");
     expect(pi!.efforts.status).toBe("unsupported");

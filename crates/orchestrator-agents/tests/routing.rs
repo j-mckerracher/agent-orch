@@ -230,12 +230,16 @@ fn codex_unavailable_capabilities_are_rejected() {
 }
 
 #[test]
-fn codex_routes_model_selection_and_claude_code_does_not() {
+fn codex_and_claude_code_route_model_selection() {
     let required = BTreeSet::from([Capability::ModelSelection]);
     let codex = CodexAdapter::new();
     let selected = select_adapter(&[&codex as &dyn RoutableAdapter], &required)
         .expect("codex validates models against its catalog");
     assert_eq!(selected.kind(), AgentKind::Codex);
+    let claude = ClaudeCodeAdapter::new();
+    let selected = select_adapter(&[&claude as &dyn RoutableAdapter], &required)
+        .expect("claude code takes a catalog-validated alias as --model");
+    assert_eq!(selected.kind(), AgentKind::ClaudeCode);
 }
 
 #[test]
@@ -247,7 +251,6 @@ fn claude_code_unavailable_capabilities_are_rejected() {
             Capability::InteractiveInput,
             Capability::SessionResumption,
             Capability::Approvals,
-            Capability::ModelSelection,
         ],
     );
 }

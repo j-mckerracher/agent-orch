@@ -132,8 +132,13 @@ export const CLAUDE_CATALOG: AgentCatalogEntry = {
   detail: "",
   models: {
     state: "available",
-    detail: "",
-    items: [{ id: "sonnet", display_name: "Sonnet", efforts: [], default_effort: null }],
+    detail:
+      "Aliases documented by Claude Code. The CLI cannot list the models your account can use, so availability depends on your account.",
+    items: [
+      { id: "opus", display_name: "Opus (alias)", efforts: [], default_effort: null },
+      { id: "sonnet", display_name: "Sonnet (alias)", efforts: [], default_effort: null },
+      { id: "haiku", display_name: "Haiku (alias)", efforts: [], default_effort: null },
+    ],
   },
   efforts: { state: "available", detail: "", items: ["low", "medium", "high"] },
 };

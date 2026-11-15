@@ -7,7 +7,7 @@ import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
-import { CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
+import { CLAUDE_CATALOG, CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { workspaceRegistration } from "./register";
@@ -206,11 +206,18 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     const model = await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => expect(model).toBeEnabled());
-    expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["GPT A", "GPT B"]);
-    const effort = screen.getByRole("combobox", { name: "Effort" });
-    expect(within(effort).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default effort", "low", "high"]);
+    expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default model", "GPT A", "GPT B"]);
+    expect(screen.getByRole("button", { name: /^Model settings: codex · default model · default effort/ })).toBeInTheDocument();
+    // With no model chosen, Codex's per-model levels are not known yet: the effort control says why.
+    expect(screen.getByRole("combobox", { name: "Effort" })).toBeDisabled();
+    expect(screen.getByText("Effort levels are listed per model. Choose a model to see its levels.")).toBeInTheDocument();
     expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
-    expect(await screen.findByText("The daemon supports this choice.")).toBeInTheDocument();
+    await user.selectOptions(model, "gpt-a");
+    const effort = screen.getByRole("combobox", { name: "Effort" });
+    await waitFor(() =>
+      expect(within(effort).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default effort", "low", "high"]),
+    );
+    expect(await screen.findByText("The daemon accepts this choice.")).toBeInTheDocument();
     await user.selectOptions(model, "gpt-b");
     await waitFor(() =>
       expect(within(screen.getByRole("combobox", { name: "Effort" })).getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -226,7 +233,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     fake.failNext("agents.validate_selection", { code: -32603, message: "validation unavailable" });
     await user.selectOptions(model, "gpt-a");
     expect(await screen.findByText(/This choice could not be checked/)).toHaveTextContent(/observed \d+ s ago/);
-    expect(screen.getByText(/task submission only/)).toBeInTheDocument();
+    expect(screen.getByText(/not sent with messages or task submissions yet/)).toBeInTheDocument();
   });
 
   it("disables a non-launchable provider and never defaults to it", async () => {
@@ -252,7 +259,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(pi).toBeDisabled();
     expect(within(provider).getByRole("option", { name: "codex" })).toBeEnabled();
     await waitFor(() => expect(provider).toHaveValue("codex"));
-    expect(screen.getByRole("button", { name: /^Model settings: codex · GPT A/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: codex · default model/ })).toBeInTheDocument();
     await user.selectOptions(provider, "pi");
     expect(provider).toHaveValue("codex");
   });
@@ -291,10 +298,69 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     expect((await screen.findAllByText(/retry shortly/)).length).toBeGreaterThan(0);
     const model = screen.getByRole("combobox", { name: "Model" });
-    await waitFor(() => expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["GPT A", "GPT B"]), {
-      timeout: 5000,
-    });
+    await waitFor(
+      () => expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default model", "GPT A", "GPT B"]),
+      { timeout: 5000 },
+    );
     expect(fake.callsTo("agents.catalog").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("offers Claude Code's documented aliases, labels them as documented, and checks the chosen one", async () => {
+    const fake = liveDaemon();
+    fake.stub("agents.capabilities", [
+      { agent: "claude-code", installed: true, launchable: true, capabilities: { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true } },
+    ]);
+    fake.stub("agents.catalog", [CLAUDE_CATALOG]);
+    stubValidate(fake, [CLAUDE_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(model).toBeEnabled());
+    expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Default model",
+      "Opus (alias)",
+      "Sonnet (alias)",
+      "Haiku (alias)",
+    ]);
+    expect(screen.getByText(/Aliases documented by Claude Code/)).toBeInTheDocument();
+    expect(model).toHaveAccessibleDescription(/availability depends on your account/);
+    expect(screen.getByRole("button", { name: /^Model settings: claude-code · default model · default effort/ })).toBeInTheDocument();
+    await user.selectOptions(model, "sonnet");
+    await waitFor(() => {
+      const last = fake.callsTo("agents.validate_selection").at(-1)!.params as Record<string, unknown>;
+      expect(last).toEqual({ agent: "claude-code", model: "sonnet" });
+    });
+    expect(await screen.findByText("The daemon accepts this choice.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: claude-code · Sonnet \(alias\) · default effort/ })).toBeInTheDocument();
+  });
+
+  it("shows a provider with no model list as a disabled Default model, with its reason under the control", async () => {
+    const fake = liveDaemon();
+    fake.stub("agents.capabilities", [
+      { agent: "claude-code", installed: true, launchable: true, capabilities: { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true } },
+    ]);
+    fake.stub("agents.catalog", [
+      {
+        ...CLAUDE_CATALOG,
+        models: { state: "unsupported", detail: "the CLI cannot enumerate the models available to the account", items: [] },
+      },
+    ]);
+    stubValidate(fake, [CLAUDE_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    expect(model).toBeDisabled();
+    expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default model"]);
+    const reason = screen.getByText("The CLI cannot enumerate the models available to the account.");
+    expect(reason.tagName).toBe("P");
+    expect(model).toHaveAccessibleDescription(/cannot enumerate the models available to the account/);
+    expect(screen.getByRole("button", { name: /^Model settings: claude-code · default model · default effort/ })).toBeInTheDocument();
   });
 
   it("keeps the model menu honest when the daemon has no catalog method", async () => {

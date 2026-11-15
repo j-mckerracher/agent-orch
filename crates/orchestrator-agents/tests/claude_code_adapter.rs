@@ -269,7 +269,7 @@ fn detection_reports_verified_capabilities() {
             cancellation: true,
             session_resumption: false,
             approvals: false,
-            model_selection: false,
+            model_selection: true,
         }
     );
     assert_eq!(

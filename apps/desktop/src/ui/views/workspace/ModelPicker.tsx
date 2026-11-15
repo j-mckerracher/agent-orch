@@ -1,6 +1,5 @@
 import { useEffect, useId, useState } from "react";
 import type {
-  Measured,
   ModelCatalog,
   ModelCatalogSource,
   ModelOption,
@@ -15,14 +14,13 @@ import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
 
 const LIVE_NOTE =
-  "Models and efforts come from the daemon's catalog and are checked by the daemon. A choice applies to task submission only: the daemon's conversation call takes no model settings, so it is not sent with messages.";
+  "Models and efforts come from the daemon's catalog, and the daemon checks each choice. The choice is not sent with messages or task submissions yet.";
 const FIXTURE_NOTE = "Placeholder options. A choice stays in this window and is never sent anywhere.";
+const DEFAULT_MODEL = "Default model";
+const DEFAULT_EFFORT = "Default effort";
 const RETRY_MS = 2000;
 const MAX_AUTO_RETRIES = 5;
 const COLD_REASONS = new Set(["agent_state_unknown", "models_unknown", "effort_unknown"]);
-
-const unavailableText = <T,>(value: Measured<T>, fallback: string): string =>
-  value.status === "ok" ? fallback : value.reason;
 
 type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checking" };
 
@@ -30,6 +28,49 @@ type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checki
 function effortsFor(provider: ModelProvider | undefined, model: ModelOption | undefined): string[] {
   if (model?.efforts && model.efforts.length > 0) return model.efforts;
   return provider?.efforts.status === "ok" ? provider.efforts.value : [];
+}
+
+/** A catalog reason shown as helper text: one sentence with a capital letter. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === "") return trimmed;
+  const first = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(first) ? first : `${first}.`;
+}
+
+/** The model part of the chip: the chosen model, the default model, or an honest "not confirmed". */
+function modelChip(provider: ModelProvider, model: ModelOption | undefined): string {
+  if (model) return model.label;
+  switch (provider.models.status) {
+    case "ok":
+    case "unsupported":
+      return "default model";
+    case "unavailable":
+      return "models unavailable";
+    default:
+      return "models not confirmed";
+  }
+}
+
+/** Helper text under the Model select, or null when there is nothing to say. */
+function modelHelp(provider: ModelProvider | undefined): string | null {
+  if (provider === undefined) return null;
+  if (provider.models.status === "ok") return provider.modelsNote ?? null;
+  return sentence(provider.models.reason);
+}
+
+/** Helper text under the Effort select when it offers no levels. */
+function effortHelp(
+  provider: ModelProvider | undefined,
+  model: ModelOption | undefined,
+  efforts: string[],
+  live: boolean,
+): string | null {
+  if (provider === undefined || efforts.length > 0) return null;
+  const perModel = provider.models.status === "ok" && provider.models.value.some((item) => (item.efforts?.length ?? 0) > 0);
+  if (live && model === undefined && perModel) return "Effort levels are listed per model. Choose a model to see its levels.";
+  if (provider.efforts.status !== "ok") return sentence(provider.efforts.reason);
+  return null;
 }
 
 /**
@@ -64,7 +105,8 @@ export function ModelPicker({
     providers.find((item) => item.launchable && item.id === providerId) ??
     providers.find((item) => item.launchable);
   const models = provider?.models.status === "ok" ? provider.models.value : [];
-  const model = models.find((item) => item.id === modelId) ?? models[0];
+  // No model chosen is the default model: no `--model` is given, so the agent's own choice applies.
+  const model = models.find((item) => item.id === modelId);
   const efforts = live ? effortsFor(provider, model) : provider?.efforts.status === "ok" ? provider.efforts.value : [];
   let chosenEffort: string | null;
   if (live) {
@@ -77,11 +119,16 @@ export function ModelPicker({
   const summary =
     provider === undefined
       ? "Model settings unavailable"
-      : `${provider.name} · ${model?.label ?? "model not available"} · ${chosenEffort ?? (live ? "default effort" : "effort not available")}`;
+      : `${provider.name} · ${modelChip(provider, model)} · ${chosenEffort ?? (live ? "default effort" : "effort not available")}`;
 
   const lock = provider === undefined;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
   const noteId = `${ids}-note`;
+  const modelHelpId = `${ids}-model-help`;
+  const effortHelpId = `${ids}-effort-help`;
+  const modelHelpText = modelHelp(provider);
+  const effortHelpText = effortHelp(provider, model, efforts, live);
+  const describedBy = (...parts: (string | null)[]) => parts.filter(Boolean).join(" ");
   const triggerBadge = "PLACEHOLDER (D14)";
   const panelBadge = "PLACEHOLDER DATA (D14)";
 
@@ -146,7 +193,7 @@ export function ModelPicker({
     else if (verdict.status !== "ok") {
       verdictText = `This choice could not be checked: ${verdict.reason} (observed ${formatAge(verdict.observedAt, verdict.ageMs, Date.now())})`;
     }
-    else if (verdict.data.valid) verdictText = "The daemon supports this choice.";
+    else if (verdict.data.valid) verdictText = "The daemon accepts this choice.";
     else if (COLD_REASONS.has(verdict.data.reason)) {
       verdictText = `Not confirmed yet: the catalog is still being read; retry shortly. (${verdict.data.reason})`;
     } else verdictText = `Not supported: ${verdict.data.detail} (${verdict.data.reason})`;
@@ -227,15 +274,13 @@ export function ModelPicker({
           <select
             value={model?.id ?? ""}
             disabled={lock || models.length === 0}
-            aria-describedby={noteId}
+            aria-describedby={describedBy(modelHelpText ? modelHelpId : null, noteId)}
             onChange={(event) => {
-              setModelId(event.target.value);
+              setModelId(event.target.value === "" ? null : event.target.value);
               setEffort(null);
             }}
           >
-            {models.length === 0 && (
-              <option value="">{provider ? unavailableText(provider.models, "No models reported") : "Not available"}</option>
-            )}
+            {provider === undefined ? <option value="">Not available</option> : <option value="">{DEFAULT_MODEL}</option>}
             {models.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
@@ -243,18 +288,21 @@ export function ModelPicker({
             ))}
           </select>
         </label>
+        {modelHelpText && (
+          <p id={modelHelpId} className="ws-small">
+            {modelHelpText}
+          </p>
+        )}
         <label className="ws-field">
           Effort
           <select
             value={chosenEffort ?? ""}
             disabled={lock || efforts.length === 0}
-            aria-describedby={noteId}
+            aria-describedby={describedBy(effortHelpText ? effortHelpId : null, noteId)}
             onChange={(event) => setEffort(event.target.value === "" ? null : event.target.value)}
           >
-            {efforts.length === 0 && (
-              <option value="">{provider ? unavailableText(provider.efforts, "No effort levels reported") : "Not available"}</option>
-            )}
-            {live && efforts.length > 0 && <option value="">Default effort</option>}
+            {efforts.length === 0 && <option value="">{live && provider !== undefined ? DEFAULT_EFFORT : "Not available"}</option>}
+            {live && efforts.length > 0 && <option value="">{DEFAULT_EFFORT}</option>}
             {efforts.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -262,6 +310,11 @@ export function ModelPicker({
             ))}
           </select>
         </label>
+        {effortHelpText && (
+          <p id={effortHelpId} className="ws-small">
+            {effortHelpText}
+          </p>
+        )}
         {verdictText && (
           <p role="status" className="ws-small">
             {verdictText}
