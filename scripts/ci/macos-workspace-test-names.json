@@ -1117,5 +1117,20 @@
   "pin::tests::the_bundle_ships_the_upstream_launcher_unchanged",
   "service::tests::a_bundle_resolves_to_its_node_and_its_launcher_and_checks_its_own_layout",
   "service::tests::an_npm_install_is_checked_against_the_npm_layout_only",
-  "service::tests::the_macos_resources_bundle_is_found_when_the_executable_folder_has_none"
+  "service::tests::the_macos_resources_bundle_is_found_when_the_executable_folder_has_none",
+  "api::conversations::tests::a_chosen_agent_that_cannot_launch_fails_the_turn_as_unavailable",
+  "api::conversations::tests::a_chosen_copilot_is_refused_as_a_failed_turn_without_launching_anything",
+  "api::conversations::tests::a_malformed_choice_is_a_bad_request_and_records_nothing",
+  "api::conversations::tests::a_send_without_a_choice_serializes_as_it_did_before_selection_existed",
+  "api::conversations::tests::every_refused_choice_has_its_own_stable_code",
+  "api::conversations::tests::the_daemon_advertises_the_selection_capability_the_desktop_waits_for",
+  "a_chosen_agent_that_is_not_installed_fails_the_turn_without_another_agent",
+  "a_chosen_model_the_catalog_does_not_offer_fails_the_turn_with_its_reason",
+  "a_malformed_choice_is_a_bad_request_and_records_no_turn",
+  "a_chosen_model_and_effort_reach_the_agent_for_that_message",
+  "a_chosen_default_model_replaces_the_configured_one_for_that_message",
+  "a_message_without_a_choice_keeps_the_configured_default",
+  "an_effort_the_model_does_not_offer_fails_the_turn_with_its_reason",
+  "github_copilot_is_not_offered_to_a_message",
+  "history_tests::the_selection_capability_is_named_and_round_trips"
 ]

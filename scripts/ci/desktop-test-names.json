@@ -67,6 +67,7 @@
     "src/ui/views/workspace/CopilotSignInCheck.test.tsx",
     "src/ui/views/workspace/CopilotSignInWarning.test.tsx",
     "src/ui/views/workspace/ConversationTargetPicker.test.tsx",
+    "src/ui/views/workspace/ModelPicker.test.tsx",
     "src/ui/views/workspace/WorkspaceView.test.tsx",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
@@ -471,6 +472,7 @@
     "src/sources/surfaces/conversationLive.test.ts :: live conversation adapter reports an unknown workstream honestly as unavailable with the lookup reason",
     "src/sources/surfaces/conversationLive.test.ts :: live conversation adapter cancels a running turn through conversations.cancel with a key",
     "src/sources/surfaces/conversationLive.test.ts :: live conversation adapter leaves the project coordinator path untouched",
+    "src/sources/surfaces/conversationLive.test.ts :: live conversation adapter sends the chosen selection with the message, and a retry with another choice is a new message",
     "src/sources/surfaces/derived.test.ts :: derived D9 workstreams maps daemon workstreams, objectives, gates and links, joined with task records",
     "src/sources/surfaces/derived.test.ts :: derived D9 workstreams keeps the daemon's task state and marks a linked task that tasks.list no longer returns",
     "src/sources/surfaces/derived.test.ts :: derived D9 workstreams reports a failed read as unavailable with daemon provenance, never as fixture data",
@@ -493,6 +495,7 @@
     "src/sources/surfaces/derived.test.ts :: a failed live call never falls back to fixtures says unavailable when disconnected",
     "src/sources/surfaces/derived.test.ts :: a failed live call never falls back to fixtures recovers to real data after a failure, still without fixtures",
     "src/sources/surfaces/derived.test.ts :: a failed live call never falls back to fixtures maps a missing method to unsupported, not to fixtures or empty",
+    "src/sources/surfaces/derived.test.ts :: derived D10 conversation refuses a model choice for a coordinator note instead of sending the note without it",
     "src/sources/surfaces/fixtures.test.ts :: fixture surfaces (D9-D16) labels every source fixture and keeps wireframe sample numbers in fixture mode only",
     "src/sources/surfaces/fixtures.test.ts :: fixture surfaces (D9-D16) stamps observedAt from the injected clock minus the fixture age",
     "src/sources/surfaces/fixtures.test.ts :: fixture surfaces (D9-D16) mints only fixture: ids for records and receipts",
@@ -1506,6 +1509,8 @@
     "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Space on a radio selects that target and closes the panel",
     "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Space on the already selected radio closes the panel without selecting it again",
     "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Escape closes the panel, returns focus to the trigger and selects nothing",
+    "src/ui/views/workspace/ModelPicker.test.tsx :: ModelPicker in a live chat lists the agents chat cannot run as unavailable for chat, and never defaults to them",
+    "src/ui/views/workspace/ModelPicker.test.tsx :: ModelPicker in a live chat reports nothing until the user changes a part of the choice, then the displayed choice",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode defaults to the first project coordinator and shows the recorded transcript, with no placeholder badge",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode sends through coordinator.send_message with an idempotency key, then reloads the recorded note",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode keeps the draft after a failed send and reuses the idempotency key when an indeterminate send is retried",
@@ -1646,6 +1651,9 @@
     "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) polls the free status read while the daemon's background check runs, then shows the settled state",
     "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows ready, the hook as a visible warning, and the hooks sentence in the provider details",
     "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows no warning line when the run had no hook error",
-    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it"
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode sends the picked agent, model and effort with the next message, and nothing while the picker is untouched",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode blocks a chosen model on a daemon without conversation_selection, and sends nothing without the choice",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode does not send a chosen model to a coordinator note, where it would be dropped"
   ]
 }
