@@ -756,5 +756,24 @@ test.describe("RC-26 connection strip collapses without hiding problems", () => 
     await page.locator("h1").first().waitFor({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Expand connection details" })).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByTestId("fixture-banner")).toBeVisible();
+
+// RC-27 Other AI tools' usage is opt-in, estimated, and never shown as zero (DPES-1105)
+// ---------------------------------------------------------------------------
+test.describe("RC-27 usage shows estimated figures separately and never zero", () => {
+  const OPT_IN = "Include usage from other AI tools on this machine";
+
+  test("usage-local-1: the usage popover offers an opt-in control, unchecked by default", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    await page.locator('summary[aria-label="More information about usage"]').click();
+    await expect(page.getByRole("checkbox", { name: OPT_IN })).not.toBeChecked();
+  });
+
+  test("usage-local-2: opted-in figures are labelled Estimated and never show a zero amount", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    await page.locator('summary[aria-label="More information about usage"]').click();
+    await page.getByRole("checkbox", { name: OPT_IN }).check();
+    const local = page.getByRole("region", { name: "Other AI tools on this machine" });
+    await expect(local).toContainText("Estimated");
+    expect(await local.textContent(), "no zero amount for unavailable or unpriced data").not.toMatch(/\$0(?:\.0+)?(?![\d.])/);
   });
 });

@@ -113,3 +113,28 @@ its meaning, reported only.
 * Claude cost is a client-side list price and may differ from the bill.
 * Estimated cost is a standard-tier list price; Codex runs without a model
   selection have no model and stay unknown.
+
+## AI usage from local tools (DPES-1105)
+
+`usage.summary` covers only runs MCAO started. `usage.localTools` (with
+`usage.localTools.setEnabled` and `usage.localTools.refresh`) reports the
+usage that Claude Code, Codex and GitHub Copilot recorded on this machine in
+their own session files. It is a separate source and is never added to the
+figures above.
+
+* Opt-in and default off. Turning it on is consent to read the session files;
+  installing the reader is a separate matter. Turning it off stops every read,
+  kills a running reader and drops the cache.
+* Estimates only. Costs are list-price estimates from the reader's price table
+  (`basis` is not provider billing). A model without a price is counted as
+  unpriced and makes the total a lower bound; it is never zero.
+* Reader: codeburn, pinned to one version in `crates/orchestrator-local-usage/codeburn-pin.json`
+  with the SHA-256 of the files it runs. Locations, in order: the bundle beside
+  the daemon executable (`codeburn/node[.exe]`, `codeburn/pkg/dist/cli.js`);
+  then, in debug builds only, `AGENT_ORCH_CODEBURN_BIN` and `PATH`. Release
+  builds never use `PATH`.
+* Only usage counters leave the reader's output. Model names, project names,
+  paths and session ids are dropped by the parser and never stored or logged.
+* Offline: the reader is started with `CODEBURN_PRICING_SNAPSHOT_ONLY=1`,
+  `CODEBURN_FX_NO_FETCH=1`, a cache directory inside the daemon data directory,
+  and an allowlisted environment with no proxy variables.

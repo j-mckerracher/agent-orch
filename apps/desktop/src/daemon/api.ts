@@ -50,7 +50,7 @@ import type {
   CoordinatorClearResult,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
-import type { UsageSummaryRequest } from "./usageWire";
+import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
 
 export const FIXTURE_ID_PREFIX = "fixture:";
 
@@ -208,6 +208,21 @@ export class DaemonApi {
   /** The result is untyped wire JSON; the usage adapter validates it. */
   usageSummary(request: UsageSummaryRequest): Promise<unknown> {
     return this.session.request("usage.summary", request);
+  }
+
+  /** Cached figures from other AI tools' local session files; the daemon never runs a reader on the call. */
+  usageLocalTools(request: LocalToolsWindowRequest): Promise<unknown> {
+    return this.session.request("usage.localTools", request);
+  }
+
+  /** Opts this machine in or out of reading those files. Off clears the daemon's cached figures. */
+  usageLocalToolsSetEnabled(request: LocalToolsSetEnabledRequest): Promise<unknown> {
+    return this.session.request("usage.localTools.setEnabled", request);
+  }
+
+  /** Asks the background collector to refresh now (rate limited); the snapshot comes back at once. */
+  usageLocalToolsRefresh(request: LocalToolsWindowRequest): Promise<unknown> {
+    return this.session.request("usage.localTools.refresh", request);
   }
 
   /** Records a user message; the daemon never acts on it. */

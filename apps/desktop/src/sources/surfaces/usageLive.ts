@@ -238,7 +238,7 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
   };
 }
 
-function failure<T>(provenance: Provenance, error: unknown, now: () => number) {
+export function failure<T>(provenance: Provenance, error: unknown, now: () => number) {
   const failed = asDaemonError(error);
   const reason = `${presentError(failed).reason} (${failed.kind}: ${failed.message})`;
   return notOk<T>(provenance, isMissingFeature(failed) ? "unsupported" : "unavailable", reason, observation(now()));

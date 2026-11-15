@@ -2,7 +2,7 @@
  * Daemon-derived D9-D16 adapters. D9 uses workstreams.list/get and tasks.list;
  * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
  * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
- * approvals.list. D12 uses usage.summary; D13 uses host.metrics; D14 uses
+ * approvals.list. D12 uses usage.summary and the usage.localTools methods; D13 uses host.metrics; D14 uses
  * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list.
  * D15 indexes D9 and D16 locally. No daemon method is added here.
  *
@@ -28,6 +28,7 @@ import { createLiveMetrics } from "./liveMetrics";
 import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
+import { createLiveLocalToolsSource } from "./localToolsLive";
 import { createLiveUsageSource } from "./usageLive";
 import { createLiveWorkstreams } from "./workstreamsLive";
 import type {
@@ -43,6 +44,7 @@ import type {
   SurfaceResult,
   SurfaceSources,
   SystemMetricsSource,
+  LocalToolsSource,
   UsageSource,
   WorkstreamSource,
 } from "./types";
@@ -227,6 +229,8 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
 
   const usage: UsageSource = createLiveUsageSource(connection, now);
 
+  const localTools: LocalToolsSource = createLiveLocalToolsSource(connection, now);
+
   const metrics: SystemMetricsSource = createLiveMetrics(connection, { now });
 
   const modelsProvenance = prov("D14", MODELS_METHODS);
@@ -268,6 +272,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     conversation,
     activity,
     usage,
+    localTools,
     metrics,
     models,
     search: createSearchSource(workstreams, decisions, now),

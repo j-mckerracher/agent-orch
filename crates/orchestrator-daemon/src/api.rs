@@ -53,6 +53,8 @@ pub(crate) struct DaemonApi {
     approval_actor: Actor,
     approval_allowlist: ApproverAllowlist,
     host: host::HostService,
+    /// AI usage from local coding tools (DPES-1105); opt-in, read in the background.
+    local_usage: orchestrator_local_usage::LocalUsageService,
     /// M7-08 conversation service (global and per-workstream).
     conversations: conversation_runtime::ConversationService,
     /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
@@ -201,6 +203,7 @@ impl DaemonApi {
             approval_actor,
             approval_allowlist,
             host: host::HostService::new(data_dir),
+            local_usage: usage_local::start_local_usage(data_dir),
             conversations,
             catalog_cache,
         })
@@ -304,6 +307,9 @@ impl RpcHandler for DaemonApi {
             "host.metrics" => self.host_metrics(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
+            "usage.localTools" => self.local_usage_read(params),
+            "usage.localTools.setEnabled" => self.local_usage_set_enabled(params),
+            "usage.localTools.refresh" => self.local_usage_refresh(params),
             "workstreams.create" => self.workstreams_create(params),
             "workstreams.list" => self.workstreams_list(params),
             "workstreams.get" => self.workstreams_get(params),
@@ -1325,6 +1331,8 @@ mod review;
 use review::map_review_error;
 #[path = "api_usage.rs"]
 mod usage;
+#[path = "api_usage_local.rs"]
+mod usage_local;
 
 #[cfg(test)]
 #[path = "api_usage_tests.rs"]
