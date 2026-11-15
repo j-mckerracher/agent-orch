@@ -24,7 +24,7 @@ interface Outcome {
   reloaded: boolean;
 }
 
-/** Serialises mutations: one in flight at a time, with the outcome shown until the next one. */
+/** Serializes mutations: one in flight at a time, with the outcome shown until the next one. */
 export function useMutationRunner(): { run: Run; busy: boolean; outcome: Outcome | null; clear: () => void } {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);

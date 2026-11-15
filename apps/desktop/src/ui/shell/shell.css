@@ -117,7 +117,7 @@ body:has(.shell) {
   padding: 24px 16px 14px;
   overflow-y: auto;
   /* Translucent tint of the theme surface (wireframe `.sidebar`): the ambient background shows through,
-     and the theme tokens below supply the colours in both themes. */
+     and the theme tokens below supply the colors in both themes. */
   background: color-mix(in srgb, var(--soft) 45%, transparent);
   border-right: 1px solid var(--shell-line);
   color: var(--ink);
@@ -147,7 +147,7 @@ body:has(.shell) {
   font-size: 13px;
 }
 
-/* Dark brand uses the accent blue (wireframe `.sidebar .brand`); light keeps the ink colour. */
+/* Dark brand uses the accent blue (wireframe `.sidebar .brand`); light keeps the ink color. */
 :root[data-theme="dark"] .shell-brand {
   color: var(--blue);
 }

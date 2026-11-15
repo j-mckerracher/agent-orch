@@ -12,7 +12,7 @@ export function EvidencePanel({
 }: {
   evidence: ReviewEvidenceResult | null;
   loading: boolean;
-  /** False for a daemon-backed source, so a pending load is not labelled placeholder data. */
+  /** False for a daemon-backed source, so a pending load is not labeled placeholder data. */
   fixtureSource?: boolean;
 }) {
   const fixture = evidence ? (evidence.state === "available" ? evidence.evidence.provenance : evidence.provenance) === "fixture" : false;

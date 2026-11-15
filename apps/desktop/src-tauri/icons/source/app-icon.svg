@@ -2,9 +2,9 @@
   <title>Agent Orchestrator (MCAO) app icon</title>
   <!--
     Concept: three parallel agent streams converge into one orchestrated flow that ends in a hub.
-    Colours come from the desktop dark theme tokens (apps/desktop/src/ui/theme/tokens.css):
+    Colors come from the desktop dark theme tokens (apps/desktop/src/ui/theme/tokens.css):
     plate from --panel / --paper, streams from --blue (dark), hub from --ink (dark).
-    Plate follows Apple's macOS template: 824 x 824 rounded square centred in 1024 x 1024,
+    Plate follows Apple's macOS template: 824 x 824 rounded square centered in 1024 x 1024,
     with a soft drop shadow. macOS does not mask third-party icons, so the plate is part of the art.
   -->
   <defs>

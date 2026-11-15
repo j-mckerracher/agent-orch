@@ -1,4 +1,4 @@
-/** Small shared pieces of the Agents & Sessions view. Tokens only; no colour is the sole cue. */
+/** Small shared pieces of the Agents & Sessions view. Tokens only; no color is the sole cue. */
 import { useId, type ReactNode } from "react";
 import type { SourceId } from "../../../sources/types";
 import { Badge, Button, EmptyState, Pill, type Tone } from "../../theme";
@@ -81,7 +81,7 @@ export function Control({
   );
 }
 
-/** A control the daemon cannot honour: disabled, with the reason always visible and linked. */
+/** A control the daemon cannot honor: disabled, with the reason always visible and linked. */
 export function DisabledAction({ label, reason }: { label: string; reason: string }) {
   const id = useId();
   return (

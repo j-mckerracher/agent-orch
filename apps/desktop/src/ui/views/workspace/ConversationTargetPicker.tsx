@@ -21,7 +21,7 @@ const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
  *
  * Keyboard: Enter/Space on the button toggles; opening moves focus to the search box;
  * ArrowDown from the search box enters the radio list; arrow keys move and select inside the
- * list (native radio behaviour) and keep the panel open; Enter or Space on a radio, or a pointer
+ * list (native radio behavior) and keep the panel open; Enter or Space on a radio, or a pointer
  * choice, selects it and closes the panel; Escape closes without changing the choice. Every close
  * returns focus to the button. The result count and the empty result are announced through one
  * always-mounted status region, because a live region that appears together with its text is not

@@ -894,7 +894,7 @@ fn restart_never_signals_an_agent_whose_owner_daemon_is_still_alive() {
 
     assert!(
         agent.try_wait().unwrap().is_none(),
-        "an agent with a live owner must not be signalled"
+        "an agent with a live owner must not be signaled"
     );
     agent.kill().unwrap();
     agent.wait().unwrap();
@@ -925,7 +925,7 @@ fn restart_never_signals_a_process_whose_identity_differs_from_the_recorded_one(
 
     assert!(
         reused.try_wait().unwrap().is_none(),
-        "a process that does not match the recorded identity must not be signalled"
+        "a process that does not match the recorded identity must not be signaled"
     );
     reused.kill().unwrap();
     reused.wait().unwrap();

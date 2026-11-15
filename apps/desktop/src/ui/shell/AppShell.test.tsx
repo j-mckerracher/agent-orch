@@ -383,7 +383,7 @@ describe("slots", () => {
   });
 });
 
-describe("responsive behaviour", () => {
+describe("responsive behavior", () => {
   it.each([
     [1280, "full"],
     [1150, "medium"],

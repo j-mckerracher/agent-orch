@@ -23,7 +23,7 @@ export function calendarDay(instant: Date, timeZone: string): string | null {
 }
 
 /** Wall-clock reading of `instant` in `timeZone`, expressed as milliseconds as if that reading were UTC. */
-function wallClockMs(instant: number, timeZone: string): number {
+export function wallClockMs(instant: number, timeZone: string): number {
   const fields = new Intl.DateTimeFormat("en-US", { ...PARTS, timeZone }).formatToParts(new Date(instant));
   const value = (type: string) => Number(fields.find((part) => part.type === type)?.value);
   return Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));

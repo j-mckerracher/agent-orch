@@ -2,7 +2,7 @@ import { calendarDay } from "../../sources/surfaces/localDay";
 
 /**
  * Heading for the usage popover, derived from the reporting window. "Today's" is claimed only when the
- * window starts on today's calendar day in the window's own timezone; any other window is labelled
+ * window starts on today's calendar day in the window's own timezone; any other window is labeled
  * plainly, and the popover body states its start.
  */
 export function usageHeading(windowStart: string, timezone: string, nowMs: number): string {

@@ -600,7 +600,7 @@ impl RunningAgentFixture {
                 "contract": {
                     "project_id": self.repo.display().to_string(),
                     "parent_id": null,
-                    "objective": "run until cancelled",
+                    "objective": "run until canceled",
                     "kind": "Implement",
                     "agent": "codex",
                     "dependencies": [],

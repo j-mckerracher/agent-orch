@@ -2,28 +2,15 @@ import { useEffect, useRef } from "react";
 import type { Measured, UsageCostCoverage, UsageEstimateCoverage, UsagePriceTable, UsageSummary } from "../../sources/surfaces/types";
 import { useServices, useSurface, type SurfaceRefresh } from "../services";
 import { PlaceholderBadge } from "../widgets";
+import { LocalToolsChip, LocalToolsSection } from "./LocalToolsUsage";
+import { chipText } from "./localToolsCopy";
+import { useLocalTools } from "./useLocalTools";
+import { money } from "./usageMoney";
 import { usageHeading } from "./usageWindow";
 import "./topbar.css";
 
 const REFRESH: SurfaceRefresh = { pollMs: 60_000, onFocus: true, atLocalMidnight: true };
 const MAX_LABEL = 40;
-
-/**
- * An amount below the smallest displayable unit reads "<$0.01", so a real but tiny spend is
- * never drawn as the true zero "$0.00".
- */
-function money(value: number, currency: string): string {
-  let formatter: Intl.NumberFormat | null = null;
-  try {
-    formatter = new Intl.NumberFormat("en-US", { style: "currency", currency });
-  } catch {
-    formatter = null;
-  }
-  const digits = formatter?.resolvedOptions().maximumFractionDigits ?? 2;
-  const show = (amount: number) => (formatter ? formatter.format(amount) : `${amount.toFixed(digits)} ${currency}`);
-  const smallest = 1 / 10 ** digits;
-  return value > 0 && value < smallest ? `<${show(smallest)}` : show(value);
-}
 
 /** Provider and timezone names come from the daemon and host; keep them from blowing out the popover. */
 function clip(label: string): { text: string; title?: string } {
@@ -131,17 +118,21 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
 
 /**
  * Daily usage pill (D12) with an info popover. The headline is the reported amount. With nothing
- * reported it may be a price-table estimate, drawn "≈ $x" and labelled "estimated" with the table
+ * reported it may be a price-table estimate, drawn "≈ $x" and labeled "estimated" with the table
  * version; an estimate is never added to a reported figure. Anything else reads "not available"
  * (unknown) and is never drawn as $0. Fixture amounts carry the PLACEHOLDER badge. The popover keeps
  * the reporting window, timezone, currency, price table and per-provider coverage next to the figure.
+ * Other AI tools' estimates (opt-in) get their own chip and popover section and never change the headline.
  */
 export function UsagePill() {
   const { surfaces } = useServices();
   const source = surfaces.usage;
   const result = useSurface(() => source.usage(), "top-usage", source.provenance, source.provenance.kind === "daemon" ? REFRESH : undefined);
+  const tools = useLocalTools(surfaces.localTools);
   const details = useRef<HTMLDetailsElement>(null);
   const summary = result.status === "ok" ? result.data : null;
+  const toolsSnapshot = tools.result?.status === "ok" ? tools.result.data : null;
+  const toolsChip = chipText(toolsSnapshot, tools.pending ?? toolsSnapshot?.enabled ?? false);
   const reported = summary?.reported.status === "ok" ? summary.reported.value : null;
   // With nothing reported, a price-table estimate may stand in, marked "estimated" and never as reported.
   const estimate = summary && reported === null && summary.estimated.status === "ok" ? summary.estimated.value : null;
@@ -158,6 +149,9 @@ export function UsagePill() {
 
   const close = () => {
     if (details.current) details.current.open = false;
+  };
+  const open = () => {
+    if (details.current) details.current.open = true;
   };
 
   // WebKit does not focus a clicked <summary>, so blur alone cannot close the popover.
@@ -187,6 +181,7 @@ export function UsagePill() {
           {summary.priceTable ? ` · table ${summary.priceTable.version}` : ""}
         </span>
       )}
+      {toolsChip !== null && <LocalToolsChip text={toolsChip} onOpen={open} />}
       {source.provenance.kind === "fixture" && result.status !== "loading" && <PlaceholderBadge provenance={source.provenance} />}
       <details
         ref={details}
@@ -210,6 +205,7 @@ export function UsagePill() {
           ) : (
             <p>{reason ?? "Loading usage."} A missing figure is not zero spend.</p>
           )}
+          <LocalToolsSection source={surfaces.localTools} tools={tools} />
           {source.provenance.kind === "fixture" && <p>Figures are placeholder data.</p>}
         </div>
       </details>

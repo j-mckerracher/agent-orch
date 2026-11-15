@@ -21,13 +21,13 @@
 //! What a pass proves, over the real authenticated local transport (Unix socket
 //! or Windows named pipe), with a fake `codex` agent that this binary re-executes:
 //! 1. install: the packaged daemon starts, authenticates a client and registers a project;
-//! 2. cancellation: a running agent is cancelled, the task reaches `Cancelled` and the
+//! 2. cancellation: a running agent is canceled, the task reaches `Cancelled` and the
 //!    agent process exits (phase A, then again on the upgraded daemon);
 //! 3. recovery: a daemon killed hard while an agent runs leaves an orphan on Unix (on Windows
 //!    the kill-on-close job object ends the agent with the daemon); the next daemon (the
 //!    upgraded one) terminates any orphan, marks the task `Failed` without relaunching, and
 //!    `tasks.retry` starts a new attempt;
-//! 4. upgrade: records written by the old daemon (project, coordinator message, cancelled
+//! 4. upgrade: records written by the old daemon (project, coordinator message, canceled
 //!    task) are read back unchanged by the new one;
 //! 5. approvals: a requested approval survives a hard daemon kill and restart; approve
 //!    delivers a review ref at exactly the candidate commit; reject delivers nothing and
@@ -38,7 +38,7 @@
 //! scripts check those), Gatekeeper or SmartScreen, the installer or the GUI, a pending
 //! approval written by the OLD daemon (public RPC cannot create a reviewable task, so the
 //! seed is written with this checkout's store code after the upgrade), or Windows
-//! behaviour on a machine this has not run on.
+//! behavior on a machine this has not run on.
 //!
 //! Every phase prints a `SMOKE` line; the last line is `release_smoke: PASS`.
 
@@ -350,7 +350,7 @@ struct Env {
 
 impl Env {
     /// Waits for the fake agent's own pid file and returns the pid, then removes the file so
-    /// the next launch is recognisable.
+    /// the next launch is recognizable.
     fn agent_pid(&self) -> u32 {
         let pid = until("agent wrote its pid", || {
             fs::read_to_string(&self.pid_file).ok()?.trim().parse().ok()
@@ -378,7 +378,7 @@ fn submit(data: &Path, project_id: &str, key: &str) -> String {
                 "contract": {
                     "project_id": project_id,
                     "parent_id": null,
-                    "objective": "run until cancelled",
+                    "objective": "run until canceled",
                     "kind": "Implement",
                     "agent": "codex",
                     "dependencies": [],
@@ -559,7 +559,7 @@ fn scenario(options: &Options) -> Value {
     assert_eq!(
         task(&env.data, &cancelled),
         cancelled_record,
-        "the cancelled task is unchanged"
+        "the canceled task is unchanged"
     );
 
     step(

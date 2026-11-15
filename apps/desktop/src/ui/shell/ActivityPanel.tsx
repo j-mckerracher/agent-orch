@@ -10,7 +10,7 @@
  *   `tasks`/`approvals` after a live event, and keeps the last answer on screen meanwhile.
  * - The badge is the `AppData` pending-approval count, the exact value `ReviewCount` and the top
  *   bar show, so the three agree. Without a loaded list (including fixture mode) it shows
- *   "—", never 0 and never a sample number; the sample attention rows stay PLACEHOLDER-labelled.
+ *   "—", never 0 and never a sample number; the sample attention rows stay PLACEHOLDER-labeled.
  * - Queued tasks are grouped honestly: "Up next" only for capacity-waiting or source-named next
  *   tasks, "Waiting" for known blockers, "Unclassified" when the daemon reports no reason.
  * - Slots, dispatch order, pause, stop-all and queue settings have no daemon data yet
@@ -43,7 +43,7 @@ import type {
   UsageSummary,
   WaitingReason,
 } from "../../sources/surfaces/types";
-import { basename, pendingApprovals } from "../format";
+import { basename, pendingApprovals, stateLabel } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { usePopover } from "../usePopover";
@@ -144,7 +144,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
     <li className="activity-row" data-testid={`activity-task-${entry.taskId}`}>
       <details className="activity-item">
         <summary>
-          <Pill tone={entry.state === "Running" || entry.state === "Verifying" ? "info" : "neutral"}>{entry.state}</Pill>
+          <Pill tone={entry.state === "Running" || entry.state === "Verifying" ? "info" : "neutral"}>{stateLabel(entry.state)}</Pill>
           <span className="activity-item-title">{entry.objective}</span>
         </summary>
         <div className="activity-item-body">
@@ -207,7 +207,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
 }
 
 /**
- * A labelled, always-visible group of queue rows. Groups are not disclosures: only the rows are
+ * A labeled, always-visible group of queue rows. Groups are not disclosures: only the rows are
  * expandable, and every row starts collapsed (spec §20-21), so Running is never expanded by default.
  */
 function TaskGroup({
@@ -356,7 +356,7 @@ export function ActivityPanel() {
         return false;
       }
       announce(
-        `Stop request acknowledged; the daemon now records ${taskId} as ${result.value.state}. This is not proof that any process has stopped.`,
+        `Stop request acknowledged; the daemon now records ${taskId} as ${stateLabel(result.value.state)}. This is not proof that any process has stopped.`,
       );
       return true;
     },

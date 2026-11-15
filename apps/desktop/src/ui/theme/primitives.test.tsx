@@ -36,7 +36,7 @@ describe("Disclosure", () => {
 });
 
 describe("Pill and Badge", () => {
-  it("carries a text glyph so state is not colour-only", () => {
+  it("carries a text glyph so state is not color-only", () => {
     render(
       <>
         <Pill tone="ok">Connected</Pill>

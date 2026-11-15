@@ -71,11 +71,11 @@ describe("mapEntries", () => {
     }
   });
 
-  it("marks a completed turn without a reply and a cancelled turn as statuses", () => {
+  it("marks a completed turn without a reply and a canceled turn as statuses", () => {
     const entries = mapEntries([wire(1, "t1", "turn_completed"), wire(2, "t2", "turn_cancelled")]);
     expect(entries.map((e) => e.kind)).toEqual(["status", "status"]);
     expect(entries[0]!.text).toMatch(/without a reply/);
-    expect(entries[1]!.text).toMatch(/cancelled/);
+    expect(entries[1]!.text).toMatch(/canceled/);
   });
 
   it("keeps a partial reply and adds the failure status when a turn fails mid-reply", () => {

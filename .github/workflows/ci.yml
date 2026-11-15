@@ -10,6 +10,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Nightly on the default branch: every Windows job runs, including the installer, whatever changed.
+  schedule:
+    - cron: "23 4 * * *"
   workflow_dispatch:
   workflow_call:
 
@@ -31,6 +34,7 @@ jobs:
       tauri: ${{ steps.select.outputs.tauri }}
       desktop: ${{ steps.select.outputs.desktop }}
       package: ${{ steps.select.outputs.package }}
+      smoke: ${{ steps.select.outputs.smoke }}
     steps:
       # On a pull request, HEAD is GitHub's merge commit and HEAD^1 is the base branch: two commits are enough.
       - name: Check out
@@ -47,6 +51,8 @@ jobs:
 
   harness:
     name: "windows: harness"
+    needs: changes
+    if: always()
     runs-on: windows-2025
     timeout-minutes: 30
     permissions:
@@ -78,6 +84,11 @@ jobs:
       - name: Harness self-tests
         run: node --test "scripts/**/*.test.mjs"
 
+      - name: Usage reader smoke test
+        if: needs.changes.outputs.smoke == 'true'
+        run: |
+          node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
+          node scripts/smoke/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -153,9 +164,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -178,7 +194,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -244,9 +260,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -269,7 +290,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -335,9 +356,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -360,7 +386,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -426,9 +452,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -451,7 +482,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -517,9 +548,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -542,7 +578,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -656,9 +692,14 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
-            cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-
+            cargo-v2-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -681,7 +722,7 @@ jobs:
             ${{ runner.temp }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          key: cargo-v2-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
 
       - name: Upload evidence
         if: always()
@@ -715,6 +756,8 @@ jobs:
 
   macos:
     name: gates (macos)
+    needs: changes
+    if: always()
     runs-on: macos-15
     timeout-minutes: 180
     permissions:
@@ -758,6 +801,11 @@ jobs:
       - name: Harness self-tests
         run: node --test "scripts/**/*.test.mjs"
 
+      - name: Usage reader smoke test
+        if: needs.changes.outputs.smoke == 'true'
+        run: |
+          node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
+          node scripts/smoke/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
       # One step runs every gate once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates

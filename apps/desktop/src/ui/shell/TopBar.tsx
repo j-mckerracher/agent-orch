@@ -99,7 +99,7 @@ function LiveCounts() {
   );
 }
 
-/** Fixture demo mode: the store is empty, so every count comes from the labelled D9/D11 fixtures. */
+/** Fixture demo mode: the store is empty, so every count comes from the labeled D9/D11 fixtures. */
 function FixtureCounts() {
   const { surfaces } = useServices();
   const workstreams = useSurface(() => surfaces.workstreams.workstreams(), "top-counts", surfaces.workstreams.provenance);
@@ -122,7 +122,7 @@ function FixtureCounts() {
 /**
  * Portfolio counts (workstreams, tasks, running, require attention). With a daemon they
  * come from the same loaded lists the rest of the shell reads and update with its events;
- * in fixture mode they come from the PLACEHOLDER-labelled D9/D11 fixtures. Unloaded values
+ * in fixture mode they come from the PLACEHOLDER-labeled D9/D11 fixtures. Unloaded values
  * read "—", never 0.
  */
 export function TopBarCounts() {

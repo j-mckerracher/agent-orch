@@ -162,7 +162,7 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNul
           return wait("unknown", "The daemon reports no further reason.");
       }
     default:
-      return wait("unknown", `The daemon reported a wait reason this app does not recognise: ${entry.waiting_reason}.`);
+      return wait("unknown", `The daemon reported a wait reason this app does not recognize: ${entry.waiting_reason}.`);
   }
 }
 

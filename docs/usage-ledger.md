@@ -13,7 +13,7 @@ Plan: /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mcl
 
 Before M7-06 every adapter discarded this data.
 
-## Normalisation
+## Normalization
 
 `UsageReport` (crate `orchestrator-agents`, `usage.rs`) is taken from an
 adapter with `AgentHandle::take_usage()`. `input_tokens` is fresh input only
@@ -39,7 +39,7 @@ adds a table, so existing data directories upgrade in place.
 
 The daemon executor records receipts while it supervises the agent: after every
 event, at session exit, when the event stream ends or fails, and after a
-cancellation, so a cancelled run keeps whatever it had already reported (for
+cancellation, so a canceled run keeps whatever it had already reported (for
 Claude Code, the cost on its `result` event only appears if the run got that
 far; otherwise the cost stays unknown, never zero). Model text is stored cut to
 128 bytes.
@@ -80,7 +80,7 @@ the tokens are not repeated there, because they are already in `reported`.
   `version` (currently `2026-11-11.1`) changes with any price edit; `basis` is
   `list_price_standard_tier`; `source` names where the prices were taken.
   Prices are list prices, not a bill. Batch, flex, priority and long-context
-  tiers are not modelled, and Anthropic cache writes use the 5-minute rate.
+  tiers are not modeled, and Anthropic cache writes use the 5-minute rate.
   An estimate may therefore understate. Prices are not refreshed at runtime
   (no network); a new table means a new version.
 * Unknown stays unknown: a model that is absent or not in the table, or a
@@ -113,3 +113,28 @@ its meaning, reported only.
 * Claude cost is a client-side list price and may differ from the bill.
 * Estimated cost is a standard-tier list price; Codex runs without a model
   selection have no model and stay unknown.
+
+## AI usage from local tools (DPES-1105)
+
+`usage.summary` covers only runs MCAO started. `usage.localTools` (with
+`usage.localTools.setEnabled` and `usage.localTools.refresh`) reports the
+usage that Claude Code, Codex and GitHub Copilot recorded on this machine in
+their own session files. It is a separate source and is never added to the
+figures above.
+
+* Opt-in and default off. Turning it on is consent to read the session files;
+  installing the reader is a separate matter. Turning it off stops every read,
+  kills a running reader and drops the cache.
+* Estimates only. Costs are list-price estimates from the reader's price table
+  (`basis` is not provider billing). A model without a price is counted as
+  unpriced and makes the total a lower bound; it is never zero.
+* Reader: codeburn, pinned to one version in `crates/orchestrator-local-usage/codeburn-pin.json`
+  with the SHA-256 of the files it runs. Locations, in order: the bundle beside
+  the daemon executable (`codeburn/node[.exe]`, `codeburn/pkg/dist/cli.js`);
+  then, in debug builds only, `AGENT_ORCH_CODEBURN_BIN` and `PATH`. Release
+  builds never use `PATH`.
+* Only usage counters leave the reader's output. Model names, project names,
+  paths and session ids are dropped by the parser and never stored or logged.
+* Offline: the reader is started with `CODEBURN_PRICING_SNAPSHOT_ONLY=1`,
+  `CODEBURN_FX_NO_FETCH=1`, a cache directory inside the daemon data directory,
+  and an allowlisted environment with no proxy variables.

@@ -28,7 +28,7 @@ test("the verdict is case-sensitive, taken from a line start, and must be unique
   assert.match(checkP12(`${checks}  P12-WINDOWS-CHECKS: PASS\n`)[0], /no 'P12-WINDOWS-CHECKS:'/);
   assert.match(checkP12("")[0], /no 'P12-WINDOWS-CHECKS:'/);
   assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: PASS\nP12-WINDOWS-CHECKS: PASS\n`)[0], /appears 2 times/);
-  assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: MAYBE\n`)[0], /unrecognised verdict 'MAYBE'/);
+  assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: MAYBE\n`)[0], /unrecognized verdict 'MAYBE'/);
   assert.match(checkP12(`${checks}P12-WINDOWS-CHECKS: INCOMPLETE (1 check(s) could not run)\n`)[0], /INCOMPLETE \(1 check/);
 });
 

@@ -1,4 +1,4 @@
-//! Redaction behaviour, including Windows-shaped text and linear-time checks.
+//! Redaction behavior, including Windows-shaped text and linear-time checks.
 
 use orchestrator_diagnostics::{redact, MASK};
 

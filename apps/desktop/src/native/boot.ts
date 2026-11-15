@@ -4,7 +4,7 @@
  * sample data.
  *
  * - inside the Tauri webview: the live daemon through the host bridge;
- * - outside it with an explicit `?fixture=1`: labelled fixture demo mode;
+ * - outside it with an explicit `?fixture=1`: labeled fixture demo mode;
  * - outside it otherwise: the live path with no bridge, which reports the
  *   daemon as unavailable rather than showing sample data.
  */

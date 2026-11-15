@@ -75,24 +75,35 @@ name that branch protection watches.
 | Changed files on a pull request | Jobs that run |
 | --- | --- |
 | only `docs/**` or a Markdown file at the repository root | harness |
-| `apps/desktop/**` other than `src-tauri` | harness, desktop, desktop package |
+| only `apps/desktop/src/**` (frontend source) | harness, desktop |
+| other `apps/desktop/**` (vite config, `index.html`, `e2e/`, package scripts, `package.json`) | harness, desktop, desktop package |
 | `apps/desktop/src-tauri/**` | harness, tauri build, tauri tests, desktop package |
 | `crates/**` | harness, engine build, engine tests (a) and (b), tauri build, tauri tests, desktop package |
 | anything under `scripts/` or `.github/`, any `Cargo.toml` or `Cargo.lock`, any `package.json` or `package-lock.json`, `rust-toolchain*`, `.cargo/`, `deny.toml`, or a path the table does not know | every job |
 
 A changed file selects every job of its group. A selected job must succeed, and an unselected job must be skipped
 (or succeed). The aggregator therefore fails on a failed selected job and on a failed job it did not select, while a
-skipped group counts as a pass. A push to `main`, a manual run and a call from `release.yml` run every Windows job.
-The macOS job, `gates (macos)`, runs every gate on every event.
+skipped group counts as a pass. A push to `main`, a manual run, the nightly `schedule` (04:23 UTC) and a call from
+`release.yml` run every Windows job. The macOS job, `gates (macos)`, runs every gate on every event.
 
 To force every Windows job on a pull request, start a manual run of `ci` on its branch:
-`gh workflow run ci.yml --ref <branch>`. That run is a full run.
+`gh workflow run ci.yml --ref <branch>`. That run is a full run. There is no label trigger: a `labeled` event would
+cancel the run in progress for the same ref, and its skipped checks would replace earlier results.
+
+**What a pull request does not run, and where it is caught.** A frontend-only change skips the installer
+(`desktop package`): the installer packages what `desktop-build` already builds, and the Tauri host is not
+rebuilt. What it could miss is a problem only the installer or the release host build shows: a frontend asset the
+Tauri bundler rejects, or a bundle step that fails for a new file. Those run on every push to `main`, in the
+nightly schedule, and in the release call. A failure there shows on `main` after the merge, at the latest at the
+nightly run, so the window is one merge plus at most a day. A Rust, Tauri or packaging-input change always runs the
+installer on the PR itself.
 
 ### Cargo cache (Windows)
 
 Each Rust Windows job restores `$RUNNER_TEMP/target` (dependency artifacts only), `~/.cargo/registry` and
-`~/.cargo/git`. The key is the job, the toolchain and both lockfiles, and a miss falls back to the newest entry with
-the same prefix. A pull request only restores. An entry is saved only by a push to `main` whose job passed, and only
+`~/.cargo/git`. The key is `cargo-v2-windows-<job>-<toolchain>-<both lockfiles>`, and a miss falls back to the newest entry with the
+same prefix. The `v2` prefix retires the entries written before the release-profile prune fix: the first version
+cleaned only the debug profile, so a restore from it would have carried the release build of the local packages. A pull request only restores. An entry is saved only by a push to `main` whose job passed, and only
 when its exact key is missing. A tag build (`release.yml`) neither restores nor saves, so a release never uses a
 cache. Before a save, `scripts/ci/prune-target.mjs` runs `cargo clean -p` for every local package (workspace members
 and path dependencies). The build and lint gates assert `Compiling` and `Checking` lines for their crates, and a
@@ -102,6 +113,26 @@ The Windows Rust jobs also set `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0
 no incremental state, and no debug info, whose PDBs dominate MSVC link time. No gate reads debug info: they assert
 counts, test names and build lines. `run-gates.mjs --target-from-cache` allows the restored target to be non-empty
 for that reason only.
+
+### Usage smoke step (extension point)
+
+The usage smoke step (AI usage, DPES-1105) is written into the harness job and the `gates (macos)` job, after
+`Harness self-tests`. It runs `node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs"` and then
+`node scripts/smoke/require-tap-totals.mjs <tap> 4`, which requires exact TAP totals (pass 4, fail 0, cancelled 0,
+skipped 0). Both jobs run with `if: always()`, so a skipped step leaves its job green, and the aggregator still judges
+the Windows verdict through the harness job.
+
+The step runs when `scripts/ci/windows-jobs.mjs` reports `smoke=true`. On a pull request that is only when
+`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/**`, or the daemon's or
+the store's usage code changes. Every other event (a push to `main`, the nightly schedule, a manual run, a release
+call) runs it.
+
+**Extension point.** The switch is `USAGE_SMOKE.enabled` in `scripts/ci/windows-jobs.mjs`. It is `false` on the commit
+that introduced this step, because `scripts/smoke/` does not exist there yet. The PR that adds the smoke files
+enables it by setting `enabled: true`, which is the one line of change. Until then the step is never selected, so
+the docs-only and frontend-only floors do not include it.
+
+**Cost when it runs:** SMOKE_COST_PLACEHOLDER
 
 ### Survivor check and bounded runs
 
@@ -218,7 +249,7 @@ derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
   tolerate an alias was not cheap or safe (it would need `preserveSymlinks` or a path mapping in every
   project), so the harness refuses instead.
 - D4, the node self-tests' exit code was in no evidence: they are now the first gate (`node-self-tests`), with
-  the summary (`# pass N`, or `ℹ pass N`) checked for 112 tests and no fail, cancelled, skipped or todo, and the exit
+  the summary (`# pass N`, or `ℹ pass N`) checked for 112 tests and no fail, canceled, skipped or todo, and the exit
   code in `node-self-tests.result.json`. `ci.yml` keeps its own "Harness self-tests" step.
 - D5, uncounted tests: `store-tests`, `lock-takeover-test` and `diagnostics-tests` are gates, so the M6-01 (lock
   owner-only) and M6-03 (diagnostics) counts are measured by the harness. 27 Windows gates and 26 on macOS.
@@ -243,7 +274,7 @@ is a check of separators only, so the Windows count of 112 stays **DERIVED** unt
 - **Worktree path: 215 characters.** `git worktree add` runs its checkout with `GIT_DIR=<worktree>\.git`, and
   Git dies with ``'$GIT_DIR' too big`` when that exceeds `PATH_MAX - 40` = 220 characters, whatever `core.longpaths`
   says (observed with Git 2.46.2 at a worktree path over 260 characters; the 215 boundary is derived from
-  Git's source and its macOS analogue, 969 accepted and 981 refused, not yet measured on Windows).
+  Git's source and its macOS analog, 969 accepted and 981 refused, not yet measured on Windows).
   `orchestrator-git` therefore refuses a longer path with `WorktreePathTooLong`, before any branch or
   directory exists. The daemon's worktree is `<data-dir>\worktrees\task-<64 hex>` (69 characters of
   task name), so the data directory must be at most about 130 characters; the CLI's
@@ -294,7 +325,7 @@ a message.
 | No signing secret is set | Warning `No <platform> signing secrets are set ...; building UNSIGNED`; the build succeeds. |
 | Some, but not all, required secrets are set | Error naming the missing variables. A half-configured release never ships unsigned. |
 | `REQUIRE_SIGNING=true` and no secret is set | Error. Set it with the `require_signing` input of the manual run or the repository variable `REQUIRE_SIGNING`. |
-| Tag build (`v*`) and no secret is set | Error, like `REQUIRE_SIGNING=true` (on macOS this also requires the notarization secrets). To build an unsigned release on purpose, set the repository variable `ALLOW_UNSIGNED_RELEASE` to `true`; the artifact is then still labelled `unsigned`. |
+| Tag build (`v*`) and no secret is set | Error, like `REQUIRE_SIGNING=true` (on macOS this also requires the notarization secrets). To build an unsigned release on purpose, set the repository variable `ALLOW_UNSIGNED_RELEASE` to `true`; the artifact is then still labeled `unsigned`. |
 | All signing secrets set | Signed build; verified afterwards. |
 
 Secrets live in the GitHub environment `release`. Configure it before the first release:
@@ -407,14 +438,14 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 - that the runner images `macos-15` and `windows-2025` have the expected Xcode, MSVC, Windows SDK,
   WebView2 and rustup, or that `setup-node` can install Node 26.13.0 and 22.20.0;
 - the Windows survivor scan (`Get-CimInstance Win32_Process` through PowerShell) and the Windows
-  `runBounded` pipe and timeout behaviour, which only the self-tests exercise, on macOS;
+  `runBounded` pipe and timeout behavior, which only the self-tests exercise, on macOS;
 - Windows gate counts and the Windows clippy baseline at these toolchain versions (they are the
   runbook's derived values until a Windows host measures them);
 - the NSIS download, the Windows installer build and the sidecar being bundled;
 - that `cargo install --locked` builds the pinned `cargo-deny` and `cargo-audit` within the job's
   time limit and that the advisory database is reachable from the runner;
 - the Apple and Windows signing, notarization and timestamp paths with real certificates;
-- artifact upload, `environment: release` behaviour, and wall-clock time against the 180-minute
+- artifact upload, `environment: release` behavior, and wall-clock time against the 180-minute
   and 120-minute limits;
 - that reusable-workflow `workflow_call` composition in `release.yml` resolves on the default
   branch.
@@ -431,7 +462,7 @@ signatures (`--require-signed` when the build was signed, otherwise `--allow-uns
 of the two flags is mandatory); and runs the `release_smoke` example of
 `orchestrator-daemon` against the **installed** sidecar through install, cancellation, hard-kill recovery,
 approvals and orderly shutdown. The smoke binary's exit code is not trusted: its structured `--out` result must
-exist and validate (12 ordered steps, versions, packaged sidecar paths). A same-version run is labelled
+exist and validate (12 ordered steps, versions, packaged sidecar paths). A same-version run is labeled
 `SAME-VERSION rerun; NOT an upgrade`, recorded as `upgrade.kind` in `install-smoke.json`, and the N-1 to N upgrade
 is reported UNPROVEN. A failure keeps the artifact from being uploaded; `install-smoke.json` is
 uploaded as `install-smoke-<platform>` either way. The Windows flow also upgrades over an existing install,

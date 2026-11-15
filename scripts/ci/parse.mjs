@@ -187,7 +187,7 @@ export const checkP12 = (stdout) => {
   const failing = checks.filter((c) => c.status === "FAIL").map((c) => c.name);
   if (lines === 0) problems.push("no 'P12-WINDOWS-CHECKS:' verdict line");
   else if (lines > 1) problems.push(`'P12-WINDOWS-CHECKS:' verdict appears ${lines} times, expected 1`);
-  if (lines > 0 && verdict === "") problems.push(`unrecognised verdict '${detail}'`);
+  if (lines > 0 && verdict === "") problems.push(`unrecognized verdict '${detail}'`);
   if (verdict === "FAIL") problems.push(`P12-WINDOWS-CHECKS: FAIL ${detail}${failing.length ? `; failing: ${failing.join(", ")}` : ""}`);
   if (verdict === "INCOMPLETE") problems.push(`P12-WINDOWS-CHECKS: INCOMPLETE ${detail}`);
   if (verdict === "PASS") {

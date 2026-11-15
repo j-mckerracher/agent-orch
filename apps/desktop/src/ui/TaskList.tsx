@@ -1,6 +1,6 @@
 /** S3: task list with local filters and the separate D2 execution preview. */
 import { Crumbs } from "./ConnectionStrip";
-import { FILTER_LABELS, basename, latestSession, matchesFilter } from "./format";
+import { FILTER_LABELS, basename, latestSession, matchesFilter, stateLabel } from "./format";
 import type { TaskFilter } from "./router";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
@@ -95,7 +95,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
                           <StateText state={task.state} />
                         </td>
                         <td>{task.contract.agent}</td>
-                        <td>{session ? `${session.id} (${session.state})` : "none recorded"}</td>
+                        <td>{session ? `${session.id} (${stateLabel(session.state)})` : "none recorded"}</td>
                         <td>
                           <Button
                             onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}

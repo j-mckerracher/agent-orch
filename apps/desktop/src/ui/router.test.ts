@@ -78,7 +78,7 @@ describe("legacy routes are unchanged", () => {
   });
 });
 
-describe("hash synchronisation", () => {
+describe("hash synchronization", () => {
   it("follows back/forward (hashchange) and writes the hash on navigation", () => {
     const target = new EventTarget() as unknown as Window;
     (target as { location: { hash: string } }).location = { hash: "#/agents" };

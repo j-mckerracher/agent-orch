@@ -159,7 +159,7 @@ export function requiredEvidence(
     case "Failed":
       return "Retry or investigation decision";
     case "Cancelled":
-      return "None: task cancelled";
+      return "None: task canceled";
   }
 }
 
@@ -324,7 +324,7 @@ export function useWorkstreamModel(): WsModel {
   const membership = tasks.data?.map((task) => task.contract.id).join("\n") ?? "-";
   const state = useSurface(() => source.workstreams(), `ws-model:${reloads}:${membership}`, provenance);
 
-  // The last good live answer stays on screen, labelled stale, while the connection is down.
+  // The last good live answer stays on screen, labeled stale, while the connection is down.
   const [kept, setKept] = useState<Workstream[] | null>(null);
   useEffect(() => {
     if (!fixture && state.status === "ok") setKept(state.data);

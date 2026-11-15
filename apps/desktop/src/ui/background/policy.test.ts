@@ -115,7 +115,7 @@ describe("layer placement and policy", () => {
     expect(source).not.toMatch(/createObjectURL/);
   });
 
-  it("ships licence and attribution files", () => {
+  it("ships license and attribution files", () => {
     expect(read("./vendor/LICENSE.agent-native")).toContain("Builder.io");
     expect(read("./vendor/LICENSE.vgpu")).toContain("Vercel");
     expect(read("./THIRD-PARTY-NOTICES.md")).toContain("41fae733f80038c9258d797279ef87620c6f12a7");

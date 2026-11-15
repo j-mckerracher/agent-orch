@@ -144,7 +144,7 @@ pub fn reconcile_before_scheduling_with(
         {
             other_records.push(ReconciliationResolution::Ambiguous);
             blockers.push(format!(
-                "task {} is terminal Cancelled without run-owner confirmation; needs review",
+                "task {} is terminal Canceled without run-owner confirmation; needs review",
                 task.contract.id
             ));
         }
@@ -330,8 +330,8 @@ pub fn reconcile_before_scheduling_with(
                     (TaskState::Running, AttemptState::Cancelled) => {
                         other_records.push(ReconciliationResolution::Ambiguous);
                         blockers.push(format!(
-                            "task {task_id} has a cancelled attempt without run-owner \
-                             confirmation; refusing to promote it to Cancelled"
+                            "task {task_id} has a canceled attempt without run-owner \
+                             confirmation; refusing to promote it to Canceled"
                         ));
                     }
                     (TaskState::Cancelled, AttemptState::Cancelled) => {
@@ -347,7 +347,7 @@ pub fn reconcile_before_scheduling_with(
                         if !confirmed {
                             other_records.push(ReconciliationResolution::Ambiguous);
                             blockers.push(format!(
-                                "task {task_id} was marked Cancelled without run-owner \
+                                "task {task_id} was marked Canceled without run-owner \
                                  confirmation; needs review"
                             ));
                         }

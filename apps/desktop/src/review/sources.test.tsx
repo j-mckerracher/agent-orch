@@ -67,7 +67,7 @@ describe("S6 mounted in the app shell", () => {
     expect(screen.queryByText(/fixture-approval-1/)).toBeNull();
   });
 
-  it("uses the labelled fixture daemon only when explicitly requested", async () => {
+  it("uses the labeled fixture daemon only when explicitly requested", async () => {
     mountReview("fixture=1");
     expect(await screen.findByText(/FIXTURE DAEMON — PLACEHOLDER DATA/)).toBeTruthy();
     expect(await screen.findByLabelText("Pending decision")).toBeTruthy();

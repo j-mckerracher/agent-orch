@@ -403,7 +403,10 @@ fn method_capability(method: &str) -> Option<Capability> {
         "agents.capabilities"
         | "agents.catalog"
         | "agents.validate_selection"
-        | "usage.summary" => Some(Capability::Agents),
+        | "usage.summary"
+        | "usage.localTools"
+        | "usage.localTools.setEnabled"
+        | "usage.localTools.refresh" => Some(Capability::Agents),
         "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),

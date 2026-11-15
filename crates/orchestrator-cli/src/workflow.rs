@@ -569,7 +569,7 @@ pub async fn run_task(
         .map_err(|error| format!("cannot reload task {task_id} after agent exit: {error}"))?;
     if current.state == TaskState::Cancelled {
         return Err(format!(
-            "task {task_id} was marked Cancelled before this run owner confirmed cancellation; \
+            "task {task_id} was marked Canceled before this run owner confirmed cancellation; \
              preserving worktree {} for inspection",
             metadata.worktree.display()
         ));
@@ -636,7 +636,7 @@ pub async fn run_task(
                     )
                 })?;
             Err(format!(
-                "{reason}; task {task_id} was not marked Cancelled; worktree {} is preserved",
+                "{reason}; task {task_id} was not marked Canceled; worktree {} is preserved",
                 metadata.worktree.display()
             ))
         }
@@ -758,7 +758,7 @@ pub async fn run_task(
                 metadata.stderr_log.display()
             ))
             }
-            AgentExit::Cancelled { .. } => unreachable!("cancelled exit handled above"),
+            AgentExit::Cancelled { .. } => unreachable!("canceled exit handled above"),
         }
     }
 }
@@ -1226,7 +1226,7 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         )),
         CancellationStatus::Failed => Err(format!(
             "task {task_id} cancellation was not confirmed: the run owner could not cancel \
-             and reap the agent; task was not marked Cancelled and worktree is preserved"
+             and reap the agent; task was not marked Canceled and worktree is preserved"
         )),
     }
 }
@@ -1469,7 +1469,7 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
         .map_err(|error| format!("cannot clean up task {task_id}: {error}"))?;
     // The run owner finishes without the data lock and closes its cancellation
     // owner last, so an open owner that is not provably exited may still use
-    // the worktree. Read-only: no owner is retired and no process is signalled.
+    // the worktree. Read-only: no owner is retired and no process is signaled.
     let owners: Vec<_> = store
         .open_cancellation_owners()
         .map_err(|error| format!("cannot list cancellation owners for cleanup: {error}"))?

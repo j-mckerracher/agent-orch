@@ -150,7 +150,7 @@ describe("requiredEvidence", () => {
     expect(evidence("Succeeded")).toMatch(/None: task succeeded/);
     expect(evidence("VerificationFailed")).toMatch(/Repair or retry/);
     expect(evidence("Failed")).toMatch(/Retry or investigation/);
-    expect(evidence("Cancelled")).toMatch(/cancelled/);
+    expect(evidence("Cancelled")).toMatch(/canceled/);
   });
 
   it("lets a pending approval take precedence and says when approvals are not loaded", () => {

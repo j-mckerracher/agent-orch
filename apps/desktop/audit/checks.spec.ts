@@ -115,7 +115,7 @@ test.describe("RC-02 workspace activity is a top-right popover, not a docked pan
 // ---------------------------------------------------------------------------
 test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () => {
   // At rest: no scrolling and no clicks. Rows 2 and 3 must sit inside the tree's own visible box, and
-  // nothing else may be topmost at their centres. Scrolling before measuring would hide the defect.
+  // nothing else may be topmost at their centers. Scrolling before measuring would hide the defect.
   test("workstreams-01: sidebar workstream rows 2 and 3 are inside the tree box and uncovered at rest (desktop, tablet)", async ({ page }) => {
     for (const bp of ["desktop", "tablet"] as const) {
       await openApp(page, "#/workstreams", "populated", bp);
@@ -130,13 +130,13 @@ test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () =
           return {
             inside: !!tree && r.top >= tree.top - 1 && r.bottom <= tree.bottom + 1,
             hit: !!top && (el === top || el.contains(top)),
-            cover: !top ? "nothing (centre is off screen)" : el.contains(top) ? "none" : `${top.tagName.toLowerCase()}.${String(top.className).split(" ")[0]}`,
+            cover: !top ? "nothing (center is off screen)" : el.contains(top) ? "none" : `${top.tagName.toLowerCase()}.${String(top.className).split(" ")[0]}`,
             row: `${Math.round(r.top)}-${Math.round(r.bottom)}`,
             tree: tree ? `${Math.round(tree.top)}-${Math.round(tree.bottom)}` : "no scroll container",
           };
         });
         expect.soft(at.inside, `${bp}: workstream ${n} of 3 is outside the tree box at rest (row ${at.row}, tree ${at.tree})`).toBe(true);
-        expect.soft(at.hit, `${bp}: workstream ${n} of 3 is covered at its centre by ${at.cover}`).toBe(true);
+        expect.soft(at.hit, `${bp}: workstream ${n} of 3 is covered at its center by ${at.cover}`).toBe(true);
       }
     }
   });
@@ -386,7 +386,7 @@ test.describe("RC-13 agents assigned-work list and counts", () => {
     await expect(page.getByRole("button", { name: RUNNING_TASK })).toContainText(/attempt \d+/i);
   });
 
-  test("agents-14: Available tab is labelled Available / idle", async ({ page }) => {
+  test("agents-14: Available tab is labeled Available / idle", async ({ page }) => {
     await openApp(page, "#/agents", "populated", "desktop");
     await expect(page.getByRole("tab", { name: /^Available \/ idle/ })).toBeVisible();
   });
@@ -760,6 +760,28 @@ test.describe("RC-26 connection strip collapses without hiding problems", () => 
 });
 
 // ---------------------------------------------------------------------------
+// RC-27 Other AI tools' usage is opt-in, estimated, and never shown as zero (DPES-1105)
+// ---------------------------------------------------------------------------
+test.describe("RC-27 usage shows estimated figures separately and never zero", () => {
+  const OPT_IN = "Include usage from other AI tools on this machine";
+
+  test("usage-local-1: the usage popover offers an opt-in control, unchecked by default", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    await page.locator('summary[aria-label="More information about usage"]').click();
+    await expect(page.getByRole("checkbox", { name: OPT_IN })).not.toBeChecked();
+  });
+
+  test("usage-local-2: opted-in figures are labeled Estimated and never show a zero amount", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    await page.locator('summary[aria-label="More information about usage"]').click();
+    await page.getByRole("checkbox", { name: OPT_IN }).check();
+    const local = page.getByRole("region", { name: "Other AI tools on this machine" });
+    await expect(local).toContainText("Estimated");
+    expect(await local.textContent(), "no zero amount for unavailable or unpriced data").not.toMatch(/\$0(?:\.0+)?(?![\d.])/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // RC-28 Conversation-target picker closes after a selection, so it stops covering the chip row (DPES-1105)
 // ---------------------------------------------------------------------------
 test.describe("RC-28 target picker closes after selection", () => {
@@ -779,6 +801,6 @@ test.describe("RC-28 target picker closes after selection", () => {
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       return hit === null ? "nothing" : el.contains(hit) ? "link" : `${hit.tagName.toLowerCase()}.${String(hit.className).split(" ")[0]}`;
     });
-    expect(top, "the element at the centre of 'Request review'").toBe("link");
+    expect(top, "the element at the center of 'Request review'").toBe("link");
   });
 });

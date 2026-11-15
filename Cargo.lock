@@ -893,6 +893,7 @@ dependencies = [
  "orchestrator-git",
  "orchestrator-host-metrics",
  "orchestrator-ipc",
+ "orchestrator-local-usage",
  "orchestrator-runtime",
  "orchestrator-store",
  "serde",
@@ -951,6 +952,18 @@ dependencies = [
  "subtle",
  "tempfile",
  "thiserror",
+ "windows-sys",
+]
+
+[[package]]
+name = "orchestrator-local-usage"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
  "windows-sys",
 ]
 

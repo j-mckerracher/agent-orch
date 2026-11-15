@@ -3,7 +3,7 @@
  *
  * Accessibility contract: every interactive primitive is a native element (`button`,
  * `details/summary`), so keyboard operation and focus order come from the platform, and the
- * shared `:focus-visible` rule draws the ring. State is never colour-only: Pill carries a
+ * shared `:focus-visible` rule draws the ring. State is never color-only: Pill carries a
  * glyph and text, Meter carries a numeric label.
  */
 import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode } from "react";
@@ -42,7 +42,7 @@ const TONE_MARK: Record<Tone, string> = { neutral: "–", info: "i", ok: "✓", 
 
 export interface PillProps extends HTMLAttributes<HTMLSpanElement> {
   tone?: Tone;
-  /** Hide the redundant non-colour glyph only when the text already states the state. */
+  /** Hide the redundant non-color glyph only when the text already states the state. */
   hideMark?: boolean;
 }
 

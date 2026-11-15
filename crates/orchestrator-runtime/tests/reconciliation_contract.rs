@@ -7,7 +7,7 @@
 //! blocks it, and (Unix process groups, including macOS) a group whose leader
 //! died but whose descendant lives is never reported as safely exited.
 //!
-//! Windows Job Object cleanup is supervisor behaviour, covered by the
+//! Windows Job Object cleanup is supervisor behavior, covered by the
 //! agents/CLI cancel tests; the Windows-capable tests here use only
 //! cross-platform identity APIs.
 
@@ -670,7 +670,7 @@ mod git_state {
     //
     // Independent oracle of the approved precedence, evaluated over real Git
     // workspace and delivery evidence. `Completed` is a read-only advisory:
-    // it never authorises cleanup, merging, or state advancement.
+    // it never authorizes cleanup, merging, or state advancement.
 
     fn expected_recovery(
         task: TaskState,

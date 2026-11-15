@@ -17,13 +17,13 @@ function block(source: string, selector: string): string {
 describe("sidebar surface follows the theme", () => {
   const sidebar = block(shell, ".shell-sidebar");
 
-  it("is a translucent tint of the theme surface, not a fixed colour", () => {
+  it("is a translucent tint of the theme surface, not a fixed color", () => {
     expect(sidebar).toMatch(/background:\s*color-mix\(in srgb,\s*var\(--soft\)\s*45%,\s*transparent\)/);
     expect(sidebar).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
     expect(sidebar).not.toMatch(/var\(--sidebar/);
   });
 
-  it("takes its text colour from the theme, not a sidebar-only palette", () => {
+  it("takes its text color from the theme, not a sidebar-only palette", () => {
     expect(sidebar).toMatch(/color:\s*var\(--ink\)/);
   });
 

@@ -41,7 +41,7 @@ function channel(value: number): number {
 
 function channels(hex: string): Rgb {
   const match = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!match) throw new Error(`expected a 6-digit hex colour, got ${hex}`);
+  if (!match) throw new Error(`expected a 6-digit hex color, got ${hex}`);
   const n = parseInt(match[1], 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
@@ -71,7 +71,7 @@ const TINTS: Record<string, string> = {
   success: "success-bg",
 };
 
-/** [foreground, background, minimum ratio, why] for every colour pairing the primitives use. */
+/** [foreground, background, minimum ratio, why] for every color pairing the primitives use. */
 function pairs(): Array<[string, string, number, string]> {
   const out: Array<[string, string, number, string]> = [];
   for (const surface of SURFACES) {

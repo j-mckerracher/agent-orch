@@ -46,7 +46,7 @@ pub struct AgentCapabilities {
     pub interactive_input: bool,
     /// The agent emits machine-readable structured output.
     pub structured_output: bool,
-    /// The running process can be cancelled with process-tree cleanup.
+    /// The running process can be canceled with process-tree cleanup.
     pub cancellation: bool,
     /// A session can be resumed after a crash or restart.
     pub session_resumption: bool,
