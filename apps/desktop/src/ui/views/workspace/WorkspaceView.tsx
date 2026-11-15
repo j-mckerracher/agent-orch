@@ -2,7 +2,13 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEven
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import type { ProjectRow } from "../../../daemon/types";
-import type { ConversationEntry, ConversationTranscript, ModelChoice, Workstream } from "../../../sources/surfaces/types";
+import type {
+  ConversationEntry,
+  ConversationTranscript,
+  ModelChoice,
+  PermissionLevel,
+  Workstream,
+} from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -11,6 +17,8 @@ import { ErrorNotice } from "../../widgets";
 import { AddCoordinatorDialog, ConversationActions, historyActionReason } from "./ConversationActions";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { ModelPicker } from "./ModelPicker";
+import { PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
+import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
 import { useRetained } from "./useRetained";
 import "./workspace.css";
@@ -295,6 +303,10 @@ function Conversation({
   const [busy, setBusy] = useState(false);
   // The model choice each message is sent with; null means the daemon default (DPES-1105).
   const [choice, setChoice] = useState<ModelChoice | null>(null);
+  // The level each message runs at (DPES-1105). Only a saved Restricted survives a reload.
+  const [permission, setPermission] = useState<PermissionLevel>(() => readSavedLevel());
+  // The level each turn was sent at, by turn id, so a reply can be checked against what the daemon reports.
+  const sentLevels = useRef(new Map<string, PermissionLevel>());
   const [feedback, setFeedback] = useState<{
     key: string;
     notice: string | null;
@@ -328,6 +340,16 @@ function Conversation({
     return () => clearTimeout(timer);
   }, [running, nonce]);
 
+  // An older daemon has no permission levels and runs chats read-only, so the level reads Restricted (DPES-1105).
+  const olderDaemon = live && gate.connected && !gate.can("permission_levels");
+  const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
+  // A coordinator note runs no agent, so it carries no level (the daemon refuses one there).
+  const permissionOnWire = live && target.kind !== "project" ? permissionForSend(permission, !olderDaemon) : undefined;
+  const choosePermission = (next: PermissionLevel) => {
+    saveLevel(next);
+    setPermission(next);
+  };
+
   let blocked: string | null = null;
   if (live) {
     const id = targetId(target);
@@ -350,12 +372,13 @@ function Conversation({
     setBusy(true);
     setFeedback(null);
     try {
-      const receipt = await surfaces.conversation.send(target, sent, choice ?? undefined);
+      const receipt = await surfaces.conversation.send(target, sent, choice ?? undefined, permissionOnWire);
       if (receipt.simulated) {
         onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
       } else {
         setFeedback({ key, notice: receipt.notice, error: null });
+        if (receipt.turn && permissionOnWire) sentLevels.current.set(receipt.turn.id, permissionOnWire);
         setNonce((value) => value + 1);
       }
       // Keep anything typed while the send was in flight.
@@ -518,6 +541,14 @@ function Conversation({
             onSelect={onSelect}
             addCoordinator={addCoordinator}
           />
+          {target.kind !== "project" && (
+            <PermissionLevelPicker
+              level={shownLevel}
+              daemonAdvertises={!olderDaemon}
+              agent={choice?.agent}
+              onChange={choosePermission}
+            />
+          )}
           <ModelPicker
             catalog={modelCatalog}
             provenance={surfaces.models.provenance}
@@ -537,6 +568,19 @@ function Conversation({
             {busy ? "…" : "↑"}
           </Button>
         </div>
+        {target.kind !== "project" && (
+          <PermissionLevelNotes
+            level={shownLevel}
+            olderDaemon={olderDaemon}
+            agent={choice?.agent}
+            lastTurn={
+              live && turn
+                ? { daemonLevel: turn.permissionLevel ?? null, sentLevel: sentLevels.current.get(turn.id) ?? null }
+                : null
+            }
+            onChange={choosePermission}
+          />
+        )}
         {blocked && (
           <p id={sendId} className="ws-small ws-blocked">
             Sending is disabled. {blocked}

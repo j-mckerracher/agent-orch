@@ -32,6 +32,7 @@ import type {
   ConversationTarget,
   ConversationTurnInfo,
   ModelChoice,
+  PermissionLevel,
   Provenance,
   SendReceipt,
 } from "./types";
@@ -103,6 +104,8 @@ const FAILURE_TEXT: Record<string, string> = {
   selection_effort_requires_model: "That effort needs a model. Choose a model, or the default effort. No reply was produced.",
   selection_effort_unsupported: "The chosen agent does not offer that effort for this model. Choose another effort. No reply was produced.",
   selection_effort_unknown: "The chosen agent's effort levels could not be read. Try again shortly. No reply was produced.",
+  // The daemon refuses a level its chat cannot run (DPES-1105). Extended is refused for chat on every agent for now.
+  permission_level_unsupported: "This permission level is not available for chat with this agent yet. Choose another level. No reply was produced.",
 };
 
 export function failureText(code: string | null): string {
@@ -115,7 +118,13 @@ export function toWireTarget(target: LiveTarget): ConversationWireTarget {
 }
 
 export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
-  return { id: turn.id, state: turn.state, errorCode: turn.error_code, runtime: turn.runtime };
+  return {
+    id: turn.id,
+    state: turn.state,
+    errorCode: turn.error_code,
+    runtime: turn.runtime,
+    permissionLevel: turn.permission_level ?? null,
+  };
 }
 
 /**
@@ -200,7 +209,7 @@ export function createLiveConversation(
   now: () => number,
 ): Required<Pick<ConversationSource, "cancel" | "clear">> & {
   transcript: (target: LiveTarget) => ReturnType<ConversationSource["transcript"]>;
-  send: (target: LiveTarget, text: string, selection?: ModelChoice) => Promise<SendReceipt>;
+  send: (target: LiveTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
 } {
   const scopeOf = (target: LiveTarget) => (target.kind === "global" ? "global" : `workstream:${target.workstreamId}`);
 
@@ -254,13 +263,15 @@ export function createLiveConversation(
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));
     },
 
-    async send(target, text, selection) {
+    async send(target, text, selection, permission) {
       refuseFixture(target);
       const scope = `send:${scopeOf(target)}`;
-      // A retry with another choice is another message: it must not reuse the key of the first.
-      const key = keys.keyFor(scope, JSON.stringify([text, selection ?? null]));
+      // A retry with another choice is another message: it must not reuse the key of the first. A request
+      // without a permission keeps the key it always had.
+      const fingerprint = permission === undefined ? [text, selection ?? null] : [text, selection ?? null, permission];
+      const key = keys.keyFor(scope, JSON.stringify(fingerprint));
       try {
-        const result = await connection.api().conversationsSend(toWireTarget(target), text, key, selection);
+        const result = await connection.api().conversationsSend(toWireTarget(target), text, key, selection, permission);
         keys.settle(scope, null);
         const { entry } = result;
         // A replay of a message that a clear deleted has no entry body and no turn (DPES-1105).

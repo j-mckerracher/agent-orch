@@ -11,6 +11,7 @@ import { M5_03_CAPABILITIES } from "../src/daemon/types";
 import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
 import { WorkspaceView } from "../src/ui/views/workspace/WorkspaceView";
+import { RESTRICTED_PREFERENCE_KEY } from "../src/ui/views/workspace/permissionLevel";
 import { NodeConnector, fakeAgentEnv, noAgentsEnv, startDaemon } from "./harness";
 
 afterEach(cleanup);
@@ -280,6 +281,43 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(launched).toContain('"-m", "fake-model"');
       expect(launched).toContain('model_reasoning_effort=\\"high\\"');
     } finally {
+      await t.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 90000);
+
+  it("sends the chat's permission level to the agent: Auto by default, Restricted after the switch", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mc-permission-level-"));
+    const log = join(dir, "agent.log");
+    const t = await prepare({ ...fakeAgentEnv(), FAKE_AGENT_LOG: log, AGENT_ORCH_ENV_PASSTHROUGH: "FAKE_AGENT_LOG" });
+    try {
+      // A cold agent catalog makes the first send a retryable conflict; warm it first.
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      const level = screen.getByRole("combobox", { name: "Permission level" });
+      expect(level).toHaveValue("auto");
+      const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+
+      await userEvent.type(box, "at auto");
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+      expect(await screen.findByText("fake reply to: at auto", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(readFileSync(log, "utf8")).toContain('"--sandbox", "workspace-write", "--approve-for-me"');
+
+      await userEvent.selectOptions(level, "Restricted");
+      await userEvent.type(box, "at restricted");
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+      expect(await screen.findByText("fake reply to: at restricted", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(readFileSync(log, "utf8")).toContain('"--sandbox", "read-only"');
+    } finally {
+      window.localStorage.removeItem(RESTRICTED_PREFERENCE_KEY);
       await t.stop();
       rmSync(dir, { recursive: true, force: true });
     }
