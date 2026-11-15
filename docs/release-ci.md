@@ -8,7 +8,7 @@ release tag are in [RELEASE.md](RELEASE.md).
 
 | File | Runs on | Triggers | What it does |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. |
+| `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
 | `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --audit-level=high`. |
 | `.github/workflows/release.yml` | `macos-15`, `windows-2025` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads artifacts only. |
 
@@ -37,7 +37,7 @@ The Windows list is the published runbook
 
 | Gate | Command | Where |
 | --- | --- | --- |
-| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (97 tests on both; the exit code is in `node-self-tests.result.json`) | both |
+| `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (112 tests on both; the exit code is in `node-self-tests.result.json`) | both |
 | `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (55 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
@@ -64,6 +64,44 @@ The Windows list is the published runbook
 
 Windows and macOS counts differ because tests are gated by `cfg`. Expected counts are never edited
 to fit a run; a change needs a reason in the commit that edits it.
+
+### Windows jobs and what a pull request runs
+
+The Windows gates run as seven parallel jobs beside a harness job: engine build, engine tests (a) and (b), tauri
+build, tauri tests, desktop, and desktop package. `scripts/ci/windows-jobs.mjs` holds the job table, the rules that
+pick the jobs for a change, and the verdict. `gates (windows)` is the one check over all of them, and it keeps the
+name that branch protection watches.
+
+| Changed files on a pull request | Jobs that run |
+| --- | --- |
+| only `docs/**` or a Markdown file at the repository root | harness |
+| `apps/desktop/**` other than `src-tauri` | harness, desktop, desktop package |
+| `apps/desktop/src-tauri/**` | harness, tauri build, tauri tests, desktop package |
+| `crates/**` | harness, engine build, engine tests (a) and (b), tauri build, tauri tests, desktop package |
+| anything under `scripts/` or `.github/`, any `Cargo.toml` or `Cargo.lock`, any `package.json` or `package-lock.json`, `rust-toolchain*`, `.cargo/`, `deny.toml`, or a path the table does not know | every job |
+
+A changed file selects every job of its group. A selected job must succeed, and an unselected job must be skipped
+(or succeed). The aggregator therefore fails on a failed selected job and on a failed job it did not select, while a
+skipped group counts as a pass. A push to `main`, a manual run and a call from `release.yml` run every Windows job.
+The macOS job, `gates (macos)`, runs every gate on every event.
+
+To force every Windows job on a pull request, start a manual run of `ci` on its branch:
+`gh workflow run ci.yml --ref <branch>`. That run is a full run.
+
+### Cargo cache (Windows)
+
+Each Rust Windows job restores `$RUNNER_TEMP/target` (dependency artifacts only), `~/.cargo/registry` and
+`~/.cargo/git`. The key is the job, the toolchain and both lockfiles, and a miss falls back to the newest entry with
+the same prefix. A pull request only restores. An entry is saved only by a push to `main` whose job passed, and only
+when its exact key is missing. A tag build (`release.yml`) neither restores nor saves, so a release never uses a
+cache. Before a save, `scripts/ci/prune-target.mjs` runs `cargo clean -p` for every local package (workspace members
+and path dependencies). The build and lint gates assert `Compiling` and `Checking` lines for their crates, and a
+checkout makes Cargo rebuild local packages anyway.
+
+The Windows Rust jobs also set `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0`:
+no incremental state, and no debug info, whose PDBs dominate MSVC link time. No gate reads debug info: they assert
+counts, test names and build lines. `run-gates.mjs --target-from-cache` allows the restored target to be non-empty
+for that reason only.
 
 ### Survivor check and bounded runs
 
@@ -180,7 +218,7 @@ derived: the daemon and `src-tauri` cannot be built for Windows from macOS.
   tolerate an alias was not cheap or safe (it would need `preserveSymlinks` or a path mapping in every
   project), so the harness refuses instead.
 - D4, the node self-tests' exit code was in no evidence: they are now the first gate (`node-self-tests`), with
-  the summary (`# pass N`, or `ℹ pass N`) checked for 97 tests and no fail, cancelled, skipped or todo, and the exit
+  the summary (`# pass N`, or `ℹ pass N`) checked for 112 tests and no fail, cancelled, skipped or todo, and the exit
   code in `node-self-tests.result.json`. `ci.yml` keeps its own "Harness self-tests" step.
 - D5, uncounted tests: `store-tests`, `lock-takeover-test` and `diagnostics-tests` are gates, so the M6-01 (lock
   owner-only) and M6-03 (diagnostics) counts are measured by the harness. 27 Windows gates and 26 on macOS.
@@ -192,12 +230,13 @@ Counts: macOS (measured) `store-tests` `[35,9,2,13,8,11,3,4,3,11,5,1,0]` = 104 p
 three gates select tests it already counts). Windows (derived from `cfg`, not measured) `store-tests`
 `[33,9,2,13,8,11,3,3,3,11,4,1,0]` = 100 passed + 1 ignored (the four `cfg(unix)` tests are absent: file mode of the
 database files, the private lock directory, the symlink at the lock path, and the real SQLite process exit);
-`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 97 (71 plus the 26 of M6-04's
-`install-lib.test.mjs`: 24 from M6-04 and 2 added by M6-04r), measured on macOS (no test is platform-gated).
+`diagnostics-tests` 28; `lock-takeover-test` 1. Node self-tests: 112 (71 plus the 26 of M6-04's
+`install-lib.test.mjs`: 24 from M6-04 and 2 added by M6-04r, which made 97; plus the 15 of DPES-1106's
+`windows-jobs.test.mjs` (13) and `prune-target.test.mjs` (2)), measured on macOS (no test is platform-gated).
 M6-04's native Windows run measured 94 of 95 passing: test 71 hard-coded POSIX `/w/...` paths while the macOS flow
 builds them with `node:path`, which gives backslashes on Windows. M6-04r builds every expected path with
 `path.join` and checks the file under a Windows-separator simulation (see "Windows path simulation" below); that
-is a check of separators only, so the Windows count of 97 stays **DERIVED** until a Windows run measures it.
+is a check of separators only, so the Windows count of 112 stays **DERIVED** until a Windows run measures it.
 
 ### Maximum path lengths on Windows
 
