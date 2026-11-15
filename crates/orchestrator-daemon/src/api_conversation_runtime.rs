@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use orchestrator_agents::SelectionReason;
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnOutcome,
@@ -34,6 +35,15 @@ pub(crate) struct RuntimeIdentity {
     pub version: String,
 }
 
+/// A model and effort chosen in the picker for one message (DPES-1105). The
+/// service passes `None` when the message carries no choice.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct Choice {
+    pub agent: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
 /// One earlier, completed exchange of the same conversation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HistoryTurn {
@@ -48,6 +58,8 @@ pub(crate) struct TurnRequest {
     /// The identity the service pinned and recorded for this turn. A runtime
     /// launches only this one.
     pub identity: RuntimeIdentity,
+    /// The choice the message was sent with, or `None` for the configured default.
+    pub choice: Option<Choice>,
     /// Recent completed exchanges, oldest first, bounded in count and size.
     /// Failed and canceled turns are not included.
     pub history: Vec<HistoryTurn>,
@@ -66,6 +78,8 @@ pub(crate) enum RuntimeFailure {
     Failed,
     Timeout,
     Busy,
+    /// The catalog refused the message's choice; the reason sets the code.
+    Refused(SelectionReason),
 }
 
 impl RuntimeFailure {
@@ -78,7 +92,25 @@ impl RuntimeFailure {
             Self::Failed => "runtime_failed",
             Self::Timeout => "runtime_timeout",
             Self::Busy => "runtime_busy",
+            Self::Refused(reason) => refusal_code(reason),
         }
+    }
+}
+
+/// The stable code of a choice the catalog refused: one per reason, so the
+/// desktop can explain it without reading text.
+fn refusal_code(reason: SelectionReason) -> &'static str {
+    match reason {
+        SelectionReason::AgentUnavailable => "selection_agent_unavailable",
+        SelectionReason::AuthenticationFailed => "selection_authentication_failed",
+        SelectionReason::AgentStateUnknown => "selection_agent_state_unknown",
+        SelectionReason::AgentUnsupported => "selection_agent_unsupported",
+        SelectionReason::ModelsUnsupported => "selection_models_unsupported",
+        SelectionReason::ModelsUnknown => "selection_models_unknown",
+        SelectionReason::UnknownModel => "selection_unknown_model",
+        SelectionReason::EffortRequiresModel => "selection_effort_requires_model",
+        SelectionReason::EffortUnsupported => "selection_effort_unsupported",
+        SelectionReason::EffortUnknown => "selection_effort_unknown",
     }
 }
 
@@ -92,18 +124,19 @@ pub(crate) trait TurnControl: Send {
 /// asynchronously through `sink`; it runs while the daemon serializes mutating
 /// requests.
 pub(crate) trait ConversationRuntime: Send + Sync {
-    fn identity(&self) -> RuntimeIdentity;
+    /// The identity that would answer a message sent with `choice`.
+    fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity;
 
     /// False only for a runtime that never produces output, so it needs no
     /// version pin.
-    fn requires_pin(&self) -> bool {
+    fn requires_pin(&self, _choice: Option<&Choice>) -> bool {
         true
     }
 
     /// Settle which agent answers before the request gate is taken, so a slow
     /// probe never blocks other requests. `Conflict` means the state could not
     /// be established in time and nothing was recorded.
-    fn prepare(&self) -> Result<(), RpcError> {
+    fn prepare(&self, _choice: Option<&Choice>) -> Result<(), RpcError> {
         Ok(())
     }
 
@@ -274,8 +307,8 @@ impl ConversationService {
     }
 
     /// See [`ConversationRuntime::prepare`].
-    pub(crate) fn prepare(&self) -> Result<(), RpcError> {
-        self.runtime.prepare()
+    pub(crate) fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
+        self.runtime.prepare(choice)
     }
 
     pub(crate) fn require_target(&self, target: &ConversationTarget) -> Result<(), RpcError> {
@@ -298,8 +331,9 @@ impl ConversationService {
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
+        choice: Option<&Choice>,
     ) -> Result<BegunTurn, ConversationError> {
-        let identity = self.runtime.identity();
+        let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let begun = store.begin_conversation_turn(
             target,
@@ -311,7 +345,7 @@ impl ConversationService {
         if !begun.created {
             return Ok(begun);
         }
-        let failure = self.launch(&identity, target, turn_id, text);
+        let failure = self.launch(&identity, choice, target, turn_id, text);
         if let Some(code) = failure {
             store.finish_conversation_turn(turn_id, &TurnOutcome::Failed(code))?;
         }
@@ -327,17 +361,19 @@ impl ConversationService {
     fn launch(
         &self,
         identity: &RuntimeIdentity,
+        choice: Option<&Choice>,
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
     ) -> Option<String> {
-        if let Some(code) = self.pin_failure(identity) {
+        if let Some(code) = self.pin_failure(identity, choice) {
             return Some(code.to_owned());
         }
         let request = TurnRequest {
             target: target.clone(),
             text: text.to_owned(),
             identity: identity.clone(),
+            choice: choice.cloned(),
             history: self.history(target, turn_id),
             context: match target {
                 ConversationTarget::Workstream(id) => self.workstreams.describe(id),
@@ -357,8 +393,12 @@ impl ConversationService {
         }
     }
 
-    fn pin_failure(&self, identity: &RuntimeIdentity) -> Option<&'static str> {
-        if !self.runtime.requires_pin() {
+    fn pin_failure(
+        &self,
+        identity: &RuntimeIdentity,
+        choice: Option<&Choice>,
+    ) -> Option<&'static str> {
+        if !self.runtime.requires_pin(choice) {
             return None;
         }
         if self.pins.is_empty() {

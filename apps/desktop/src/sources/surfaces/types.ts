@@ -210,9 +210,9 @@ export interface ConversationSource {
   /**
    * Derived: a project target records a note through `coordinator.send_message`;
    * a global or workstream target sends through `conversations.send` (M7-24).
-   * Rejects for `fixture:` ids. Fixture: simulated.
+   * Rejects for `fixture:` ids. Fixture: simulated. `selection` is the model choice for this message (DPES-1105).
    */
-  send(target: ConversationTarget, text: string): Promise<SendReceipt>;
+  send(target: ConversationTarget, text: string, selection?: ModelChoice): Promise<SendReceipt>;
   /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
   /**
@@ -472,6 +472,12 @@ export interface ModelProvider {
 }
 export interface ModelCatalog {
   providers: ModelProvider[];
+}
+/** The model choice a message is sent with (DPES-1105). An absent model or effort means the agent's default. */
+export interface ModelChoice {
+  agent: string;
+  model?: string;
+  effort?: string;
 }
 /** `agents.validate_selection` outcome: the daemon's own reason, never a guess. */
 export type ModelSelectionCheck = { valid: true } | { valid: false; reason: string; detail: string };

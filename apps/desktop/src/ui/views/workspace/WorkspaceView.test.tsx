@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../../daemon/errors";
+import { ALL_CAPABILITIES } from "../../../daemon/types";
 import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
@@ -241,7 +242,81 @@ describe("workspace view, live (daemon-derived) mode", () => {
     fake.failNext("agents.validate_selection", { code: -32603, message: "validation unavailable" });
     await user.selectOptions(model, "gpt-a");
     expect(await screen.findByText(/This choice could not be checked/)).toHaveTextContent(/observed \d+ s ago/);
-    expect(screen.getByText(/not sent with messages or task submissions yet/)).toBeInTheDocument();
+    expect(screen.getByText(/A changed choice is sent with each message/)).toBeInTheDocument();
+  });
+
+  it("sends the picked agent, model and effort with the next message, and nothing while the picker is untouched", async () => {
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    await user.type(box, "first");
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "gpt-a");
+    const effort = screen.getByRole("combobox", { name: "Effort" });
+    await waitFor(() => expect(effort).toBeEnabled());
+    await user.selectOptions(effort, "high");
+    await user.type(box, "second");
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(2));
+    expect(fake.callsTo("conversations.send")[1]!.params).toMatchObject({
+      text: "second",
+      selection: { agent: "codex", model: "gpt-a", effort: "high" },
+    });
+  });
+
+  it("blocks a chosen model on a daemon without conversation_selection, and sends nothing without the choice", async () => {
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    // An untouched picker sends exactly the request an older desktop always sent.
+    await user.type(box, "first");
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "gpt-a");
+    await user.type(box, "second");
+    expect(send).toBeDisabled();
+    expect(screen.getByText(/This daemon cannot use a chosen model or effort/)).toBeInTheDocument();
+    expect(fake.callsTo("conversations.send")).toHaveLength(1);
+  });
+
+  it("does not send a chosen model to a coordinator note, where it would be dropped", async () => {
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "gpt-a");
+    const box = screen.getByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(box, "a note");
+    expect(screen.getByRole("button", { name: "Send message to alpha coordinator" })).toBeDisabled();
+    expect(screen.getByText(/Coordinator notes take no model or effort/)).toBeInTheDocument();
+    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
   });
 
   it("disables a non-launchable provider and never defaults to it", async () => {

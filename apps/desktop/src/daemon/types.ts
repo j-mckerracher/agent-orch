@@ -22,7 +22,8 @@ export type Capability =
   | "coordinator"
   | "review"
   | "workstreams"
-  | "conversation_history";
+  | "conversation_history"
+  | "conversation_selection";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -40,6 +41,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "review",
   "workstreams",
   "conversation_history",
+  "conversation_selection",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -50,7 +52,13 @@ export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
  * `ConnectionManager` repeats it once without them when the daemon refuses; the matching feature then
  * degrades to `unsupported`. Older daemons reject any capability name they do not know.
  */
-export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue", "host", "workstreams", "conversation_history"];
+export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
+  "queue",
+  "host",
+  "workstreams",
+  "conversation_history",
+  "conversation_selection",
+];
 
 export interface Welcome {
   version: number;
@@ -557,6 +565,16 @@ export interface ClearedEntryReference {
   sequence: number;
   created_at: string | null;
   cleared: true;
+}
+
+/**
+ * The agent, model and effort the picker chose for one message (DPES-1105). Sent only when the daemon
+ * negotiated `conversation_selection`. The daemon refuses a choice its catalog does not offer, as a failed turn.
+ */
+export interface ConversationSelectionWire {
+  agent: string;
+  model?: string;
+  effort?: string;
 }
 
 /** `conversations.send` result: the daemon recorded the message; the turn may still fail. */

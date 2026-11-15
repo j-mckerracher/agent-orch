@@ -140,8 +140,12 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         }),
       );
     },
-    async send(target, text) {
-      if (isLiveTarget(target)) return liveConversation.send(target, text);
+    async send(target, text, selection) {
+      if (isLiveTarget(target)) return liveConversation.send(target, text, selection);
+      // A coordinator note has no selection on the wire; refuse rather than send the message without the choice.
+      if (selection !== undefined) {
+        throw new DaemonError("invalid-params", "Only a Global or workstream message takes a model choice.");
+      }
       if (isFixtureLikeId(target.projectId)) {
         throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
       }

@@ -20,14 +20,17 @@
 //! store. A push stream is not provided; the global event journal requires a
 //! task id and is not extended here.
 
+use orchestrator_core::contract::ModelSelection;
 use orchestrator_store::{
     ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
     MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
+use super::conversation_runtime::Choice;
 use super::*;
 
 const CONVERSATION_PAGE_SIZE: usize = 100;
+const MAX_CHOICE_AGENT_BYTES: usize = 64;
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -47,12 +50,50 @@ impl TargetParam {
     }
 }
 
+/// The agent, model and effort the picker chose for one message (DPES-1105).
+/// Omitted, so an older desktop's send is byte-identical to today's request
+/// and its idempotency fingerprint does not change.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SelectionParam {
+    agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
+}
+
+impl SelectionParam {
+    /// A malformed choice is a bad request. A choice the catalog refuses is not:
+    /// it is recorded as a failed turn (see `start_turn`).
+    fn to_choice(&self) -> Result<Choice, RpcError> {
+        if self.agent.is_empty() || self.agent.len() > MAX_CHOICE_AGENT_BYTES {
+            return Err(RpcError::InvalidParams);
+        }
+        if self.model.is_some() || self.effort.is_some() {
+            ModelSelection {
+                model: self.model.clone(),
+                effort: self.effort.clone(),
+            }
+            .validate()
+            .map_err(|_| RpcError::InvalidParams)?;
+        }
+        Ok(Choice {
+            agent: self.agent.clone(),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+        })
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ConversationSendParams {
     target: TargetParam,
     text: String,
     idempotency_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selection: Option<SelectionParam>,
 }
 
 #[derive(Deserialize)]
@@ -84,8 +125,13 @@ impl DaemonApi {
         if request.text.trim().is_empty() || request.text.len() > MAX_CONVERSATION_MESSAGE_BYTES {
             return Err(RpcError::InvalidParams);
         }
+        let choice = request
+            .selection
+            .as_ref()
+            .map(SelectionParam::to_choice)
+            .transpose()?;
         let key = request.idempotency_key.clone();
-        self.conversations.prepare()?;
+        self.conversations.prepare(choice.as_ref())?;
         // The idempotency record keeps references only, never the message text
         // (DPES-1105). Every reply, the first one included, is read back from the store.
         let reference = idempotency::run(
@@ -100,7 +146,7 @@ impl DaemonApi {
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
                 let begun = self
                     .conversations
-                    .start(&target, &turn_id, &request.text)
+                    .start(&target, &turn_id, &request.text, choice.as_ref())
                     .map_err(map_conversation_error)?;
                 Ok(json!({
                     "entry_id": begun.user_entry.id,

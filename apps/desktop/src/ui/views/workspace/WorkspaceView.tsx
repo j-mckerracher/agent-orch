@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEven
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import type { ProjectRow } from "../../../daemon/types";
-import type { ConversationEntry, ConversationTranscript, Workstream } from "../../../sources/surfaces/types";
+import type { ConversationEntry, ConversationTranscript, ModelChoice, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -293,6 +293,8 @@ function Conversation({
   const [nonce, setNonce] = useState(0);
   const [modelNonce, setModelNonce] = useState(0);
   const [busy, setBusy] = useState(false);
+  // The model choice each message is sent with; null means the daemon default (DPES-1105).
+  const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [feedback, setFeedback] = useState<{
     key: string;
     notice: string | null;
@@ -331,6 +333,11 @@ function Conversation({
     const id = targetId(target);
     if (id !== null && isFixtureId(id)) blocked = "This is a placeholder target; it has nothing to send to.";
     else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports conversations.";
+    // A coordinator note takes no choice, and an older daemon would drop it: either way the message is not sent (DPES-1105).
+    else if (choice !== null && target.kind === "project")
+      blocked = "Coordinator notes take no model or effort. Choose the default in model settings to send one.";
+    else if (choice !== null && !gate.can("conversation_selection"))
+      blocked = "This daemon cannot use a chosen model or effort. Choose the default in model settings, or update the daemon.";
     else if (running) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
@@ -343,7 +350,7 @@ function Conversation({
     setBusy(true);
     setFeedback(null);
     try {
-      const receipt = await surfaces.conversation.send(target, sent);
+      const receipt = await surfaces.conversation.send(target, sent, choice ?? undefined);
       if (receipt.simulated) {
         onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
@@ -517,6 +524,7 @@ function Conversation({
             validate={surfaces.models.validate}
             copilotSignIn={surfaces.models}
             onRetry={retryModels}
+            onChoiceChange={setChoice}
           />
           <Button
             type="submit"

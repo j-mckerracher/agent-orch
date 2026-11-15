@@ -155,6 +155,17 @@ describe("derived D10 conversation", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
+  it("refuses a model choice for a coordinator note instead of sending the note without it", async () => {
+    const fake = populate(new FakeDaemon());
+    stubConversation(fake);
+    const s = await live(fake);
+    const choice = { agent: "codex", model: "gpt-a" };
+    await expect(s.conversation.send({ kind: "project", projectId: ALPHA }, "note", choice)).rejects.toMatchObject({
+      kind: "invalid-params",
+    });
+    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+  });
+
   it("sends a global message through conversations.send, not coordinator.send_message", async () => {
     const fake = populate(new FakeDaemon());
     stubConversation(fake);

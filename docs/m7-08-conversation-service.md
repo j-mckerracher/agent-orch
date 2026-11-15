@@ -38,10 +38,13 @@ M7-25 (see "M7-25: the agent runtime" below).
 Names are proposals so concurrent daemon work does not collide; no new
 `Capability` variant was added.
 
-- `conversations.send {target, text, idempotency_key}` — records the message and
-  starts a turn. The call succeeds even when the runtime then fails; the failure
-  is a `turn_failed` entry plus `turn.error_code`. A second send while a turn is
-  `running` is `Conflict`.
+- `conversations.send {target, text, idempotency_key, selection?}` — records the
+  message and starts a turn. The call succeeds even when the runtime then fails;
+  the failure is a `turn_failed` entry plus `turn.error_code`. A second send
+  while a turn is `running` is `Conflict`. `selection` is the model choice for
+  this message (see "Per-message choice" under M7-25); it is omitted when the
+  picker has not changed, and a send without it is the request older clients
+  have always sent.
 - `conversations.get {target, after_sequence?, epoch?}` — page of 100 entries,
   `more`, `next_after_sequence`, `latest_sequence`, latest `turn`, store `epoch`.
   `after_sequence` beyond the latest is `ReplayGap`; a wrong `epoch` is
@@ -55,7 +58,13 @@ Names are proposals so concurrent daemon work does not collide; no new
 
 Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 `permission_denied`, `version_mismatch`, `runtime_unpinned`, `runtime_failed`,
-`runtime_timeout`, `runtime_busy`, `reply_too_large`, `interrupted_by_restart`.
+`runtime_timeout`, `runtime_busy`, `reply_too_large`, `interrupted_by_restart`,
+and, for a choice the catalog refuses (DPES-1105), one code per refusal reason:
+`selection_agent_unavailable`, `selection_authentication_failed`,
+`selection_agent_state_unknown`, `selection_agent_unsupported`,
+`selection_models_unsupported`, `selection_models_unknown`,
+`selection_unknown_model`, `selection_effort_requires_model`,
+`selection_effort_unsupported`, `selection_effort_unknown`.
 
 ## Ordering, idempotency, replay
 
@@ -157,6 +166,36 @@ no flag.
   read-only sandbox and the empty working directory limit what it changes, not
   what it can read.
 
+**Per-message choice (DPES-1105).** `conversations.send` takes an optional
+`selection: {agent, model?, effort?}`, the agent, model and effort the picker
+chose for that message. The rules:
+
+- **Per message, not sticky.** The choice applies to the message it is sent
+  with. The desktop remembers the last choice in its window only; the daemon
+  stores nothing beyond the turn's identity.
+- **Replaces the configured default.** A message with a choice ignores
+  `AGENT_ORCH_CONVERSATION_*` for that message. A chosen "Default model" means
+  the agent's own default, which is what the picker shows.
+- **Validated by the catalog.** The chosen agent must be `codex` or
+  `claude-code`. Any other agent, including `github-copilot` (a paid run, opt-in
+  through `AGENT_ORCH_CONVERSATION_AGENT` only) and `pi` (no chat adapter), is
+  refused with `selection_agent_unsupported`. The model and effort go through
+  the catalog's `validate` with its reason, as in the M7-09 catalog. A refusal is
+  a failed turn with that reason's code. The message stays in the transcript,
+  and no agent is launched and no other agent answers.
+- **Malformed is a bad request.** An empty agent, a model or effort that fails
+  the contract's id and effort rules, or an unknown field is `InvalidParams`
+  and records no turn. The picker never sends one.
+- **Omitted means today's behavior.** Without `selection`, the configured
+  default path runs unchanged, and the request serializes exactly as before, so
+  its idempotency fingerprint is unchanged.
+- **Capability.** The desktop sends `selection` only when the daemon advertises
+  `conversation_selection`, which an older daemon does not. Against one, the
+  composer blocks a non-default choice with a message rather than dropping it.
+- **Launch and pin.** A chosen agent is launched with the same adapter
+  arguments as a configured one, and its identity is pinned and recorded for
+  that turn like any other.
+
 Tests: in-process (`api_conversations_tests.rs`, `api_conversation_agent.rs`),
 process level with `examples/fake_agent.rs` (`tests/conversation_runtime.rs`),
 desktop e2e (`apps/desktop/e2e/workspace-conversation.e2e.test.tsx`), and one
@@ -242,6 +281,11 @@ the log. Sends, proposals and reads refuse a removed coordinator with `not_found
 asks for it against an older daemon degrades: the handshake retries without it,
 and the actions are disabled with a reason. Each method is idempotent by key and
 by state, and reports what it changed.
+
+**Selection capability.** `conversations.send` with `selection` needs
+`conversation_selection` (DPES-1105). An older daemon does not advertise it, and
+the desktop then blocks a non-default choice instead of sending the message
+without it. A send with no choice needs no capability.
 
 **Not covered.** Workstream conversations can be cleared through the API, but
 the desktop does not offer it. Single messages cannot be deleted. No retention

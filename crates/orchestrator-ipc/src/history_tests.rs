@@ -89,6 +89,21 @@ fn the_history_capability_is_named_and_round_trips() {
 }
 
 #[test]
+fn the_selection_capability_is_named_and_round_trips() {
+    assert!(Capability::ALL.contains(&Capability::ConversationSelection));
+    assert_eq!(
+        Capability::ConversationSelection.as_str(),
+        "conversation_selection"
+    );
+    assert_eq!(
+        Capability::from_name("conversation_selection"),
+        Some(Capability::ConversationSelection)
+    );
+    let encoded = serde_json::to_value(Capability::ConversationSelection).unwrap();
+    assert_eq!(encoded, json!("conversation_selection"));
+}
+
+#[test]
 fn every_history_method_is_gated_by_the_negotiated_capability() {
     let dir = TempDir::new().unwrap();
     let (handler, daemon) = serve(

@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type {
   ModelCatalog,
   ModelCatalogSource,
+  ModelChoice,
   ModelOption,
   ModelProvider,
   ModelSelectionCheck,
@@ -15,15 +16,27 @@ import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
 
 const LIVE_NOTE =
-  "Models and efforts come from the daemon's catalog, and the daemon checks each choice. The choice is not sent with messages or task submissions yet.";
+  "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message. Task submissions do not use it yet.";
 const FIXTURE_NOTE = "Placeholder options. A choice stays in this window and is never sent anywhere.";
 const DEFAULT_MODEL = "Default model";
 const DEFAULT_EFFORT = "Default effort";
 const RETRY_MS = 2000;
 const MAX_AUTO_RETRIES = 5;
 const COLD_REASONS = new Set(["agent_state_unknown", "models_unknown", "effort_unknown"]);
+// The agents a chat message can run (the daemon's `chat_agent`). Copilot is listed but cannot answer a message.
+const CHAT_AGENTS = new Set(["codex", "claude-code"]);
 
 type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checking" };
+
+/**
+ * Why a provider cannot be chosen, or null. It stays listed with the reason, so the user is not offered a
+ * choice that always fails. Live mode also excludes the agents chat cannot run.
+ */
+function unchoosableReason(item: ModelProvider, live: boolean): string | null {
+  if (!item.launchable) return " (not launchable)";
+  if (live && !CHAT_AGENTS.has(item.id)) return " (not available for chat)";
+  return null;
+}
 
 /** Per-model efforts win; an agent that reports none per model uses its adapter-wide list. */
 function effortsFor(provider: ModelProvider | undefined, model: ModelOption | undefined): string[] {
@@ -86,12 +99,15 @@ export function ModelPicker({
   validate,
   copilotSignIn,
   onRetry,
+  onChoiceChange,
 }: {
   catalog: SurfaceState<ModelCatalog>;
   provenance: Provenance;
   validate?: ModelCatalogSource["validate"];
   copilotSignIn?: Pick<ModelCatalogSource, "checkCopilotSignIn" | "copilotSignInStatus">;
   onRetry?: () => void;
+  /** Live only: the choice each message is sent with, or null until the user changes a part of it (DPES-1105). */
+  onChoiceChange?: (choice: ModelChoice | null) => void;
 }) {
   const popover = usePopover();
   const ids = useId();
@@ -99,14 +115,15 @@ export function ModelPicker({
   const [providerId, setProviderId] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
   const [check, setCheck] = useState<Check | null>(null);
   const [retries, setRetries] = useState(0);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
-  // A provider the daemon cannot launch is listed but never chosen, and never the default.
+  const choosable = (item: ModelProvider) => item.launchable && (!live || CHAT_AGENTS.has(item.id));
+  // A provider that cannot be chosen is listed but never chosen, and never the default.
   const provider: ModelProvider | undefined =
-    providers.find((item) => item.launchable && item.id === providerId) ??
-    providers.find((item) => item.launchable);
+    providers.find((item) => choosable(item) && item.id === providerId) ?? providers.find(choosable);
   const models = provider?.models.status === "ok" ? provider.models.value : [];
   // No model chosen is the default model: no `--model` is given, so the agent's own choice applies.
   const model = models.find((item) => item.id === modelId);
@@ -149,6 +166,25 @@ export function ModelPicker({
     }, RETRY_MS);
     return () => clearTimeout(timer);
   }, [cold, retries, onRetry]);
+
+  let noProviderLabel = "No launchable providers";
+  if (providers.length === 0) noProviderLabel = "Not available";
+  else if (providers.some((item) => item.launchable)) noProviderLabel = "No provider available for chat";
+
+  // The choice a message carries is what the picker displays, once the user has changed one part of it.
+  const choice: ModelChoice | null =
+    live && touched && provider !== undefined
+      ? {
+          agent: provider.id,
+          ...(model ? { model: model.id } : {}),
+          ...(chosenEffort ? { effort: chosenEffort } : {}),
+        }
+      : null;
+  const choiceKey = choice === null ? "" : JSON.stringify(choice);
+  useEffect(() => {
+    onChoiceChange?.(choice);
+    // Keyed by value, so a new object for the same choice is not reported again.
+  }, [choiceKey]);
 
   const selectionKey = `${provider?.id}|${model?.id}|${chosenEffort}|${catalog.status}`;
   useEffect(() => {
@@ -256,18 +292,17 @@ export function ModelPicker({
             disabled={lock}
             aria-describedby={noteId}
             onChange={(event) => {
+              setTouched(true);
               setProviderId(event.target.value);
               setModelId(null);
               setEffort(null);
             }}
           >
-            {provider === undefined && (
-              <option value="">{providers.length === 0 ? "Not available" : "No launchable providers"}</option>
-            )}
+            {provider === undefined && <option value="">{noProviderLabel}</option>}
             {providers.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.launchable}>
+              <option key={item.id} value={item.id} disabled={unchoosableReason(item, live) !== null}>
                 {item.name}
-                {item.launchable ? "" : " (not launchable)"}
+                {unchoosableReason(item, live) ?? ""}
               </option>
             ))}
           </select>
@@ -279,6 +314,7 @@ export function ModelPicker({
             disabled={lock || models.length === 0}
             aria-describedby={describedBy(modelHelpText ? modelHelpId : null, noteId)}
             onChange={(event) => {
+              setTouched(true);
               setModelId(event.target.value === "" ? null : event.target.value);
               setEffort(null);
             }}
@@ -302,7 +338,10 @@ export function ModelPicker({
             value={chosenEffort ?? ""}
             disabled={lock || efforts.length === 0}
             aria-describedby={describedBy(effortHelpText ? effortHelpId : null, noteId)}
-            onChange={(event) => setEffort(event.target.value === "" ? null : event.target.value)}
+            onChange={(event) => {
+              setTouched(true);
+              setEffort(event.target.value === "" ? null : event.target.value);
+            }}
           >
             {efforts.length === 0 && <option value="">{live && provider !== undefined ? DEFAULT_EFFORT : "Not available"}</option>}
             {live && efforts.length > 0 && <option value="">{DEFAULT_EFFORT}</option>}
