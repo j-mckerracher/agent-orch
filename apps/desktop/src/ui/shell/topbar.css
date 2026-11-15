@@ -78,6 +78,9 @@
 
 .top-usage-popup {
   overflow-wrap: anywhere;
+  /* The popover can hold long per-tool notes: scroll inside it rather than run past a short window. */
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
   position: absolute;
   z-index: 30;
   top: calc(100% + 6px);
@@ -104,6 +107,62 @@
 
 .top-usage-popup ul {
   padding-left: 18px;
+}
+
+/* Other AI tools (opt-in estimates): a dashed chip beside the headline, and a section in the popover. */
+.top-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px dashed var(--control-border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: 11px/1.4 var(--font-sans);
+  cursor: pointer;
+}
+
+.top-usage-tools {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.top-usage-tools-opt-in {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The global `label input` rule gives inputs a 20rem minimum width, which would squeeze this label's text. */
+.top-usage-tools-opt-in input {
+  flex: none;
+  width: 14px;
+  min-width: 0;
+  height: 14px;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.top-usage-tools-opt-in span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.top-usage-tools ul {
+  padding-left: 0;
+  list-style: none;
+}
+
+.top-usage-tools li + li {
+  margin-top: 8px;
+}
+
+.top-usage-tools-refresh {
+  margin-top: 8px;
 }
 
 /* Search ---------------------------------------------------------------------------- */

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 import type { Page } from "@playwright/test";
+import type { LocalToolsFixtureState } from "../src/sources/surfaces/fixtures";
 
 export const APP = `http://127.0.0.1:${process.env.AUDIT_PORT}`;
 export const WIREFRAME =
@@ -32,20 +33,29 @@ export type Scenario = "populated" | "empty" | "loading" | "offline";
 /**
  * Opens the app. `populated|empty|loading` use fixture mode; empty/loading rewrite the
  * served createServices module so fixture sources/surfaces run that scenario (test-only).
+ * `localTools` starts the other-AI-tools fixture in that state (default: opted out).
  */
-export async function openApp(page: Page, hash: string, scenario: Scenario = "populated", bp: Bp = "desktop") {
+export async function openApp(
+  page: Page,
+  hash: string,
+  scenario: Scenario = "populated",
+  bp: Bp = "desktop",
+  localTools?: LocalToolsFixtureState,
+) {
   await page.setViewportSize(BREAKPOINTS[bp]);
   await page.addInitScript(() => {
     try {
       localStorage.setItem("agent-orch.theme", "dark");
     } catch {}
   });
-  if (scenario === "empty" || scenario === "loading") {
+  if (scenario !== "populated" || localTools) {
+    const scenarioArg = scenario === "populated" ? "" : `scenario: "${scenario}"`;
+    const surfaceArgs = [scenarioArg, localTools ? `localTools: "${localTools}"` : ""].filter(Boolean).join(", ");
     await page.route(/\/src\/ui\/createServices\.ts/, async (route) => {
       const res = await route.fetch();
-      const body = (await res.text())
-        .replace(/createFixtureSources\(\)/g, `createFixtureSources({ scenario: "${scenario}" })`)
-        .replace(/createFixtureSurfaces\(\)/g, `createFixtureSurfaces({ scenario: "${scenario}" })`);
+      let body = await res.text();
+      if (scenario !== "populated") body = body.replace(/createFixtureSources\(\)/g, `createFixtureSources({ ${scenarioArg} })`);
+      body = body.replace(/createFixtureSurfaces\(\)/g, `createFixtureSurfaces({ ${surfaceArgs} })`);
       await route.fulfill({ response: res, body });
     });
   }
