@@ -2,7 +2,9 @@ name: ci
 
 # Native gates on macOS and Windows. The gate list, expected counts and verdict rules live in
 # scripts/ci/gates.mjs (Windows mirrors docs/evidence/priority-11r3-windows-acceptance-efa5e8a-runbook.md).
-# See docs/release-ci.md.
+# The Windows gates run as parallel jobs. A pull request runs only the jobs its changed files need
+# (scripts/ci/windows-jobs.mjs); every other event runs all of them. `gates (windows)` is the one verdict
+# over all of them. See docs/release-ci.md.
 
 on:
   pull_request:
@@ -18,25 +20,42 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  gates:
-    name: gates (${{ matrix.name }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
+  changes:
+    name: windows change selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Toolchains are the versions the gate counts were measured with.
-          - { name: macos, runner: macos-15, rust: "1.95.0", node: "26.13.0" }
-          - { name: windows, runner: windows-2025, rust: "1.96.0", node: "22.20.0" }
+    outputs:
+      engine: ${{ steps.select.outputs.engine }}
+      tauri: ${{ steps.select.outputs.tauri }}
+      desktop: ${{ steps.select.outputs.desktop }}
+      package: ${{ steps.select.outputs.package }}
+    steps:
+      # On a pull request, HEAD is GitHub's merge commit and HEAD^1 is the base branch: two commits are enough.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Select the Windows gate groups
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/ci/windows-jobs.mjs select --event "$EVENT_NAME" >> "$GITHUB_OUTPUT"
+
+  harness:
+    name: "windows: harness"
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
     env:
       CI: "true"
-      RUST_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       # Before checkout, so the working tree is written with LF and long paths work on Windows.
       - name: Configure git
@@ -53,7 +72,676 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Harness self-tests
+        run: node --test "scripts/**/*.test.mjs"
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates harness)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-harness
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  engine-build:
+    name: "windows: engine build"
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      # Build time on Windows: no incremental state, and no debug info (its PDBs dominate MSVC link time).
+      # No gate reads debug info: they assert counts, test names and build lines.
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      # Not restored for a tag (release builds stay hermetic). Saved only from a push to main, see below.
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates engine-build)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir .
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-engine-build
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  engine-tests-a:
+    name: "windows: engine tests (a)"
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates engine-tests-a)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir .
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-engine-tests-a
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  engine-tests-b:
+    name: "windows: engine tests (b)"
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates engine-tests-b)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir .
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-engine-tests-b
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  tauri-build:
+    name: "windows: tauri build"
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates tauri-build)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir apps/desktop/src-tauri
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-tauri-build
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  tauri-tests:
+    name: "windows: tauri tests"
+    needs: changes
+    if: needs.changes.outputs.tauri == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates tauri-tests)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir apps/desktop/src-tauri
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-tauri-tests
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  desktop:
+    name: "windows: desktop"
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates desktop)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-desktop
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  desktop-package:
+    name: "windows: desktop package"
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.96.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc -Vv
+          cargo -V
+          cargo clippy -V
+          node --version
+          npm --version
+          git --version
+
+      - name: Restore the Cargo cache
+        id: cache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Native gates
+        run: |
+          node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs gates desktop-package)" \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --target-dir "$RUNNER_TEMP/target" \
+            --test-tmp "$RUNNER_TEMP/tt" \
+            --target-from-cache
+
+      - name: Prune the local packages from the target
+        if: success()
+        run: node scripts/ci/prune-target.mjs --target-dir "$RUNNER_TEMP/target" --dir . --dir apps/desktop/src-tauri
+
+      - name: Save the Cargo cache
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate-evidence-windows-desktop-package
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  # The one Windows verdict, and the check name branch protection watches. Each job must succeed when its group
+  # was selected and must be skipped (or succeed) when it was not. The harness always runs.
+  gates-windows:
+    name: gates (windows)
+    needs: [changes, harness, engine-build, engine-tests-a, engine-tests-b, tauri-build, tauri-tests, desktop, desktop-package]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verdict over the Windows jobs
+        run: node scripts/ci/windows-jobs.mjs verdict
+
+  macos:
+    name: gates (macos)
+    runs-on: macos-15
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      RUST_TOOLCHAIN: "1.95.0"
+    steps:
+      # Before checkout, so the working tree is written with LF and long paths work on Windows.
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global --list | grep -E '^core\.(autocrlf|longpaths)='
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
           package-manager-cache: false
 
       - name: Install Rust
@@ -83,7 +771,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-evidence-${{ matrix.name }}
+          name: gate-evidence-macos
           path: ${{ runner.temp }}/evidence
           if-no-files-found: warn
           retention-days: 30

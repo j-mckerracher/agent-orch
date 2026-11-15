@@ -376,7 +376,8 @@ body:has(.shell) {
 @media (max-width: 960px) {
   .shell-content {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
+    /* Main is the only flexible row, so height freed by the connection strip goes to the content below. */
+    grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas:
       "top"
       "activity"
