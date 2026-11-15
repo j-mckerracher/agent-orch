@@ -112,7 +112,7 @@ try {
   run("npm", ["run", platform === "macos" ? "package:mac" : "package:win"], { cwd: desktop, env: childEnv });
 
   if (platform === "macos") {
-    const app = join(targetDir, "release", "bundle", "macos", "Agent Orchestrator.app");
+    const app = join(targetDir, "release", "bundle", "macos", "MCAO.app");
     if (!existsSync(app)) throw new Error(`bundle missing: ${app}`);
     if (decision.sign) {
       run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
@@ -121,17 +121,17 @@ try {
         run("spctl", ["--assess", "--type", "execute", "--verbose=2", app]);
       }
     }
-    const zip = join(out, `Agent-Orchestrator-${version}-macos-${process.arch}-${label}.zip`);
+    const zip = join(out, `MCAO-${version}-macos-${process.arch}-${label}.zip`);
     run("ditto", ["-c", "-k", "--keepParent", app, zip]);
     artifacts.push(zip);
   } else {
-    const installer = join(targetDir, "release", "bundle", "nsis", `Agent Orchestrator_${version}_x64-setup.exe`);
+    const installer = join(targetDir, "release", "bundle", "nsis", `MCAO_${version}_x64-setup.exe`);
     if (!existsSync(installer)) throw new Error(`installer missing: ${installer}`);
     if (decision.sign) {
       const status = powershell("(Get-AuthenticodeSignature -LiteralPath $env:ARTIFACT).Status", { ARTIFACT: installer });
       if (status !== "Valid") throw new Error(`installer Authenticode status is ${status}, expected Valid`);
     }
-    const copy = join(out, `Agent-Orchestrator-${version}-windows-x64-${label}-setup.exe`);
+    const copy = join(out, `MCAO-${version}-windows-x64-${label}-setup.exe`);
     copyFileSync(installer, copy);
     artifacts.push(copy);
   }
