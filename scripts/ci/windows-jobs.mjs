@@ -71,8 +71,10 @@ const NONE = { engine: false, tauri: false, desktop: false, package: false };
 
 // The groups a change set needs. Conservative: an input this table does not know runs every gate.
 // `crates/` feeds the engine, the Tauri host (it path-depends on three crates) and the installer (it bundles
-// the daemon). `apps/desktop/src-tauri/` feeds the host and the installer. Other `apps/desktop/` files feed the
-// desktop gates and the installer.
+// the daemon). `apps/desktop/src-tauri/` feeds the host and the installer. Frontend source under
+// `apps/desktop/src/` feeds only the desktop gates: tsc, vitest and the vite build cover it, and the installer
+// packages whatever those produce. Any other `apps/desktop/` file (vite config, index.html, public assets,
+// package scripts) can change the installer, so it feeds the desktop gates and the installer.
 export function selectGroups({ eventName, changedFiles }) {
   if (eventName !== "pull_request") return { ...ALL, reason: `${eventName || "this event"} runs every Windows gate` };
   if (!Array.isArray(changedFiles)) return { ...ALL, reason: "the change set is unknown, so every Windows gate runs" };
@@ -82,6 +84,7 @@ export function selectGroups({ eventName, changedFiles }) {
     if (RUNS_EVERYTHING.some((re) => re.test(file))) return { ...ALL, reason: `${file} runs every Windows gate` };
     if (file.startsWith("crates/")) Object.assign(selected, { engine: true, tauri: true, package: true });
     else if (file.startsWith("apps/desktop/src-tauri/")) Object.assign(selected, { tauri: true, package: true });
+    else if (file.startsWith("apps/desktop/src/")) selected.desktop = true;
     else if (file.startsWith("apps/desktop/")) Object.assign(selected, { desktop: true, package: true });
     else return { ...ALL, reason: `${file} is not a known input, so every Windows gate runs` };
   }

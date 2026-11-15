@@ -24,8 +24,13 @@ test("a pull request that changes only documentation runs no group", () => {
 
 test("each area runs the groups that consume it", () => {
   const table = [
-    [["apps/desktop/src/ui/shell/Panel.tsx"], only("desktop", "package")],
-    [["apps/desktop/src/ui/shell/Panel.tsx", "apps/desktop/e2e/x.ts"], only("desktop", "package")],
+    // Frontend source alone is covered by the desktop gates; the installer is not rebuilt for it.
+    [["apps/desktop/src/ui/shell/Panel.tsx"], only("desktop")],
+    [["apps/desktop/src/ui/shell/Panel.tsx", "docs/a.md"], only("desktop")],
+    // Anything else under apps/desktop can change the installer (build config, index.html, e2e, scripts).
+    [["apps/desktop/src/ui/shell/Panel.tsx", "apps/desktop/vite.config.ts"], only("desktop", "package")],
+    [["apps/desktop/index.html"], only("desktop", "package")],
+    [["apps/desktop/e2e/x.ts"], only("desktop", "package")],
     [["apps/desktop/src-tauri/src/main.rs"], only("tauri", "package")],
     [["crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],
     [["docs/a.md", "crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],

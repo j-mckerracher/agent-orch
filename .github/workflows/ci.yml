@@ -10,6 +10,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Nightly on the default branch: every Windows job runs, including the installer, whatever changed.
+  schedule:
+    - cron: "23 4 * * *"
   workflow_dispatch:
   workflow_call:
 

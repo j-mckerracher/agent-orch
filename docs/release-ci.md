@@ -75,18 +75,28 @@ name that branch protection watches.
 | Changed files on a pull request | Jobs that run |
 | --- | --- |
 | only `docs/**` or a Markdown file at the repository root | harness |
-| `apps/desktop/**` other than `src-tauri` | harness, desktop, desktop package |
+| only `apps/desktop/src/**` (frontend source) | harness, desktop |
+| other `apps/desktop/**` (vite config, `index.html`, `e2e/`, package scripts, `package.json`) | harness, desktop, desktop package |
 | `apps/desktop/src-tauri/**` | harness, tauri build, tauri tests, desktop package |
 | `crates/**` | harness, engine build, engine tests (a) and (b), tauri build, tauri tests, desktop package |
 | anything under `scripts/` or `.github/`, any `Cargo.toml` or `Cargo.lock`, any `package.json` or `package-lock.json`, `rust-toolchain*`, `.cargo/`, `deny.toml`, or a path the table does not know | every job |
 
 A changed file selects every job of its group. A selected job must succeed, and an unselected job must be skipped
 (or succeed). The aggregator therefore fails on a failed selected job and on a failed job it did not select, while a
-skipped group counts as a pass. A push to `main`, a manual run and a call from `release.yml` run every Windows job.
-The macOS job, `gates (macos)`, runs every gate on every event.
+skipped group counts as a pass. A push to `main`, a manual run, the nightly `schedule` (04:23 UTC) and a call from
+`release.yml` run every Windows job. The macOS job, `gates (macos)`, runs every gate on every event.
 
 To force every Windows job on a pull request, start a manual run of `ci` on its branch:
-`gh workflow run ci.yml --ref <branch>`. That run is a full run.
+`gh workflow run ci.yml --ref <branch>`. That run is a full run. There is no label trigger: a `labeled` event would
+cancel the run in progress for the same ref, and its skipped checks would replace earlier results.
+
+**What a pull request does not run, and where it is caught.** A frontend-only change skips the installer
+(`desktop package`): the installer packages what `desktop-build` already builds, and the Tauri host is not
+rebuilt. What it could miss is a problem only the installer or the release host build shows: a frontend asset the
+Tauri bundler rejects, or a bundle step that fails for a new file. Those run on every push to `main`, in the
+nightly schedule, and in the release call. A failure there shows on `main` after the merge, at the latest at the
+nightly run, so the window is one merge plus at most a day. A Rust, Tauri or packaging-input change always runs the
+installer on the PR itself.
 
 ### Cargo cache (Windows)
 
