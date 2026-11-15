@@ -75,7 +75,9 @@ export const MACOS = {
   // DPES-1106 adds 2 store tests (the publish regression and the racing-acquires stress): 1021 becomes 1023.
   // Measured on the rebased DPES-1105 branch (`cargo test --locked --workspace --no-fail-fast`, every binary's `test
   // result` summed): 1115 passed, 2 ignored. That base already holds the AI usage tests from PR #43 (1050).
-  workspace: { passed: 1115, ignored: 2 },
+  // The bundled usage reader (PR #62) adds 4 tests in orchestrator-local-usage (pin and service): 1119. Measured on a real
+  // macOS run of the DPES-1105 fixture-identifier PR.
+  workspace: { passed: 1119, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
