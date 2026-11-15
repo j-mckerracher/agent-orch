@@ -347,7 +347,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(provider).toHaveValue("codex");
   });
 
-  it("lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it", async () => {
+  it("lists GitHub Copilot by its display name, disables it when its CLI is not installed, and never defaults to it", async () => {
     const fake = liveDaemon();
     fake.stub("agents.capabilities", [
       {

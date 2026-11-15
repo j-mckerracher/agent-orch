@@ -227,13 +227,12 @@ fn copilot_is_listed_unavailable_and_its_check_records_nothing_when_the_cli_is_m
     assert_eq!(copilot["installed"], false);
     assert_eq!(copilot["launchable"], false);
     assert_eq!(copilot["sign_in"]["state"], "not_checked");
-    assert!(copilot["sandbox"]["ready"].is_boolean());
 }
 
 /// DPES-1105: the explicit check answers at once and runs on its own thread. The
 /// fake CLI takes three seconds, so a request that waited for it would be slow.
-/// Unix only: the fake is a shell script, and the sandbox gate passes on macOS.
-#[cfg(target_os = "macos")]
+/// Unix only: the fake is a shell script.
+#[cfg(unix)]
 #[test]
 fn a_copilot_check_returns_at_once_and_settles_in_the_background() {
     let fixture = Fixture::new();
@@ -280,17 +279,9 @@ fn a_copilot_check_returns_at_once_and_settles_in_the_background() {
 
 /// The check RPC returns at once while a fake run is in flight, a second call
 /// starts nothing, and the answer reaches `agents.capabilities` when the run ends.
+#[cfg(unix)]
 #[test]
 fn the_copilot_check_returns_at_once_and_its_answer_reaches_capabilities() {
-    if matches!(
-        orchestrator_agents::copilot_sandbox_host(),
-        orchestrator_agents::SandboxHostStatus::Unavailable(_)
-    ) {
-        // The daemon takes the host from the real probe, so this host cannot
-        // reach the run. The refusal path is covered above.
-        eprintln!("skipped: this host cannot run Copilot's sandbox");
-        return;
-    }
     let fixture = Fixture::new();
     let agents = agents(&fixture);
     let runs = fixture.marker("copilot-runs.txt");

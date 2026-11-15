@@ -4,8 +4,8 @@
 //! Verified against Copilot CLI [`PINNED_VERSION`]. Every run:
 //! - passes its prompt as one argument (`--prompt=<text>`) and never through a
 //!   shell;
-//! - runs with `--sandbox`, and is refused, with no process started, unless
-//!   [`copilot_sandbox_host`] reports the host can run that sandbox;
+//! - leaves the CLI's command sandbox off (no `--sandbox`), as the CLI does by
+//!   default. The adapter neither probes for that sandbox nor gates on it;
 //! - starts from the shared environment baseline, with no provider variable,
 //!   so no GitHub token reaches the child;
 //! - never passes a flag that widens permissions, and never passes a model or
@@ -21,7 +21,6 @@
 //! [`crate::copilot_sign_in`].
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -45,164 +44,6 @@ pub const PINNED_VERSION: &str = "1.0.109";
 pub const SIGN_IN_MODEL: &str = "claude-haiku-4.5";
 const SIGN_IN_PROMPT: &str = "Reply with the single word OK.";
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The reason a Windows user sees. It says what is missing and what would
-/// change it, so the decision can be revisited when Windows is verified.
-const WINDOWS_REASON: &str = "GitHub Copilot is unavailable on Windows: its command sandbox has not been verified on Windows in this build. It becomes available when the Copilot sandbox is verified on Windows.";
-const MACOS_SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
-const BWRAP_MINIMUM: (u64, u64, u64) = (0, 5, 0);
-/// Helpers the Copilot CLI's Linux sandbox needs, per its sandbox help.
-const LINUX_TOOLS: [&str; 7] = [
-    "slirp4netns",
-    "unshare",
-    "nsenter",
-    "iptables",
-    "ip6tables",
-    "iptables-restore",
-    "ip6tables-restore",
-];
-
-/// Whether this host can run Copilot's command sandbox.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SandboxHostStatus {
-    Ready,
-    /// Copilot cannot run here. The reason names what is missing.
-    Unavailable(String),
-}
-
-/// Host facts the sandbox gate reads. Tests supply a fake host.
-pub trait SandboxProbe {
-    /// The operating system name, as `std::env::consts::OS` spells it.
-    fn os(&self) -> &str;
-    /// Whether `path` is an executable regular file.
-    fn executable_exists(&self, path: &Path) -> bool;
-    /// Whether `name` resolves on `PATH`.
-    fn on_path(&self, name: &str) -> bool;
-    /// The output of `bwrap --version`, if it ran and succeeded.
-    fn bwrap_version_output(&self) -> Option<String>;
-    /// Whether `/dev/net/tun` can be opened for reading and writing.
-    fn tun_device_usable(&self) -> bool;
-}
-
-struct SystemHost;
-
-impl SandboxProbe for SystemHost {
-    fn os(&self) -> &str {
-        std::env::consts::OS
-    }
-
-    fn executable_exists(&self, path: &Path) -> bool {
-        is_executable_file(path)
-    }
-
-    fn on_path(&self, name: &str) -> bool {
-        crate::locate::locate_program(Path::new(name)).is_some()
-    }
-
-    fn bwrap_version_output(&self) -> Option<String> {
-        let output = std::process::Command::new("bwrap")
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .ok()?;
-        output
-            .status
-            .success()
-            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
-    }
-
-    fn tun_device_usable(&self) -> bool {
-        std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/net/tun")
-            .is_ok()
-    }
-}
-
-fn is_executable_file(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        false
-    }
-}
-
-/// The sandbox status of this machine.
-pub fn copilot_sandbox_host() -> SandboxHostStatus {
-    sandbox_host_status(&SystemHost)
-}
-
-/// The sandbox gate, computed from `probe`. macOS needs `sandbox-exec`. Linux
-/// needs `bwrap` 0.5.0 or newer, the helpers in [`LINUX_TOOLS`], and
-/// `/dev/net/tun`. Windows is refused until it is verified. Other systems are
-/// refused.
-pub fn sandbox_host_status(probe: &dyn SandboxProbe) -> SandboxHostStatus {
-    match probe.os() {
-        "macos" if probe.executable_exists(Path::new(MACOS_SANDBOX_EXEC)) => {
-            SandboxHostStatus::Ready
-        }
-        "macos" => SandboxHostStatus::Unavailable(format!(
-            "Copilot sandboxing on macOS needs {MACOS_SANDBOX_EXEC}, which was not found."
-        )),
-        "linux" => linux_sandbox_status(probe),
-        "windows" => SandboxHostStatus::Unavailable(WINDOWS_REASON.to_owned()),
-        other => SandboxHostStatus::Unavailable(format!(
-            "Copilot sandboxing is not available on {other}."
-        )),
-    }
-}
-
-fn linux_sandbox_status(probe: &dyn SandboxProbe) -> SandboxHostStatus {
-    let mut missing: Vec<String> = Vec::new();
-    match probe
-        .bwrap_version_output()
-        .as_deref()
-        .and_then(parse_bwrap_version)
-    {
-        Some(version) if version >= BWRAP_MINIMUM => {}
-        Some(_) => missing.push("bwrap 0.5.0 or newer (the installed bwrap is older)".to_owned()),
-        None => missing.push("bwrap 0.5.0 or newer".to_owned()),
-    }
-    missing.extend(
-        LINUX_TOOLS
-            .iter()
-            .filter(|name| !probe.on_path(name))
-            .map(|name| (*name).to_owned()),
-    );
-    if !probe.tun_device_usable() {
-        missing.push("read and write access to /dev/net/tun".to_owned());
-    }
-    if missing.is_empty() {
-        SandboxHostStatus::Ready
-    } else {
-        SandboxHostStatus::Unavailable(format!(
-            "Copilot sandboxing on Linux needs these, and they are missing: {}.",
-            missing.join(", ")
-        ))
-    }
-}
-
-/// The version in `bwrap --version` output (`bubblewrap 0.8.0`).
-pub fn parse_bwrap_version(output: &str) -> Option<(u64, u64, u64)> {
-    let token = output
-        .split_whitespace()
-        .find(|token| token.starts_with(|c: char| c.is_ascii_digit()))?;
-    let mut parts = token.split('.').map(|part| part.parse::<u64>().ok());
-    Some((
-        parts.next()??,
-        parts.next().flatten().unwrap_or(0),
-        parts.next().flatten().unwrap_or(0),
-    ))
-}
 
 /// The version on the first line of `copilot --version`
 /// (`GitHub Copilot CLI 1.0.109.`), without the trailing period.
@@ -364,36 +205,26 @@ impl CopilotAdapter {
         args
     }
 
-    /// Launches `request` through the supervisor, but only when `host` can run
-    /// the Copilot sandbox. A refused launch starts no process, and `run` is
-    /// removed as it is dropped. `run` (when given) lives as long as the handle.
-    pub async fn spawn_with_host(
+    /// Launches `request` through the supervisor. `run` (when given) lives as
+    /// long as the handle.
+    pub async fn spawn_run(
         &self,
-        host: &SandboxHostStatus,
         request: AgentLaunchRequest,
         run: Option<CopilotRun>,
     ) -> Result<Box<dyn AgentHandle>> {
-        Ok(Box::new(spawn_copilot_handle(host, request, run)?))
+        Ok(Box::new(spawn_copilot_handle(request, run)?))
     }
 
     /// Runs the one explicit sign-in check: one call on [`SIGN_IN_MODEL`] in a
     /// fresh run directory under `parent`, bounded by `limit`. The result says
     /// what the call established, plus the usage it reported. A check that
     /// cannot run returns an unrecorded [`SignInRecord::refused`].
-    pub async fn sign_in_check(
-        &self,
-        host: &SandboxHostStatus,
-        parent: &Path,
-        limit: Duration,
-    ) -> SignInRecord {
+    pub async fn sign_in_check(&self, parent: &Path, limit: Duration) -> SignInRecord {
         let Some(program) = self.locate() else {
             return SignInRecord::refused(format!("the {COPILOT_AGENT} executable was not found"));
         };
         if let Err(error) = self.detect().await {
             return SignInRecord::refused(error.to_string());
-        }
-        if let SandboxHostStatus::Unavailable(reason) = host {
-            return SignInRecord::refused(reason.clone());
         }
         let run = match CopilotRun::create(parent) {
             Ok(run) => run,
@@ -410,7 +241,7 @@ impl CopilotAdapter {
             args: Self::sign_in_check_args(&usage_file, &working_dir),
             working_dir,
         };
-        let mut handle = match spawn_copilot_handle(host, request, Some(run)) {
+        let mut handle = match spawn_copilot_handle(request, Some(run)) {
             Ok(handle) => handle,
             Err(error) => return SignInRecord::refused(error.to_string()),
         };
@@ -432,17 +263,12 @@ impl CopilotAdapter {
     }
 }
 
-/// Launches `request` through the supervisor, but only when `host` can run the
-/// Copilot sandbox. A refused launch starts no process, and `run` is removed as
-/// it is dropped. `run` (when given) lives as long as the handle.
+/// Launches `request` through the supervisor. `run` (when given) lives as long
+/// as the handle.
 fn spawn_copilot_handle(
-    host: &SandboxHostStatus,
     request: AgentLaunchRequest,
     run: Option<CopilotRun>,
 ) -> Result<CopilotHandle> {
-    if let SandboxHostStatus::Unavailable(reason) = host {
-        return Err(AgentError::Unavailable(reason.clone()));
-    }
     let sup = ChildSupervisor::launch(&LaunchRequest {
         program: request.program,
         args: request.args,
@@ -491,7 +317,6 @@ fn base_args(prompt: &str, usage_file: &Path, cwd: &Path) -> Vec<String> {
             "--no-custom-instructions",
             "--disable-builtin-mcps",
             "--disallow-temp-dir",
-            "--sandbox",
             "--usage-output-file",
         ]
         .into_iter()
@@ -637,8 +462,7 @@ impl AgentAdapter for CopilotAdapter {
     }
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {
-        self.spawn_with_host(&copilot_sandbox_host(), request, None)
-            .await
+        self.spawn_run(request, None).await
     }
 }
 
@@ -672,13 +496,5 @@ mod tests {
         );
         assert_eq!(parse_copilot_version("no digits here"), None);
         assert_eq!(parse_copilot_version("GitHub Copilot CLI 1.0.1x9."), None);
-    }
-
-    #[test]
-    fn bwrap_versions_compare_as_triples() {
-        assert_eq!(parse_bwrap_version("bubblewrap 0.8.0"), Some((0, 8, 0)));
-        assert_eq!(parse_bwrap_version("bubblewrap 0.4"), Some((0, 4, 0)));
-        assert!(parse_bwrap_version("bubblewrap 0.4.9").unwrap() < BWRAP_MINIMUM);
-        assert_eq!(parse_bwrap_version("bwrap: not a version"), None);
     }
 }

@@ -41,11 +41,11 @@
           },
           {
             "id": "fixture:provider-github-copilot-unavailable",
-            "name": "GitHub Copilot (placeholder, sandbox unavailable)",
+            "name": "GitHub Copilot (placeholder, not launchable)",
             "installed": true,
             "launchable": false,
             "modelSelection": "unknown",
-            "models": { "status": "unknown", "reason": "Copilot runs are refused on this host: the command sandbox is not available. Install or enable the sandbox to use Copilot." },
+            "models": { "status": "unknown", "reason": "GitHub Copilot is not ready on this host, so its models are not listed." },
             "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
           }
         ]

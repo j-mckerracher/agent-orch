@@ -33,8 +33,7 @@ pub use contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 pub use copilot_adapter::{
-    copilot_sandbox_host, sandbox_host_status, CopilotAdapter, CopilotRun, SandboxHostStatus,
-    SandboxProbe, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
+    CopilotAdapter, CopilotRun, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
 };
 pub use copilot_sign_in::{CopilotSignIn, SignInRecord, SignInState};
 pub use pi_rpc_adapter::PiRpcAdapter;

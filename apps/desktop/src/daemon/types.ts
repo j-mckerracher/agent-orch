@@ -246,8 +246,7 @@ export interface AgentCapabilityEntry {
     approvals: boolean;
     model_selection: boolean;
   } | null;
-  /** DPES-1105: GitHub Copilot only. Its sandbox host gate and its session sign-in record. */
-  sandbox?: { ready: boolean; reason: string | null } | null;
+  /** DPES-1105: GitHub Copilot only. Its session sign-in record. */
   sign_in?: CopilotSignInRecord | null;
 }
 

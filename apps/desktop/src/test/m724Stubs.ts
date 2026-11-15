@@ -166,15 +166,15 @@ export const COPILOT_CATALOG: AgentCatalogEntry = {
   efforts: { state: "unsupported", detail: "This provider exposes no effort setting.", items: [] },
 };
 
-/** GitHub Copilot on a host whose command sandbox is unavailable: launch is refused (DPES-1105). */
+/** GitHub Copilot when its CLI is not installed: launch is unavailable (DPES-1105). */
 export const COPILOT_UNAVAILABLE_CATALOG: AgentCatalogEntry = {
   agent: "github-copilot",
   provider: "github",
   state: "unavailable",
-  detail: "Copilot runs are refused on this host: the command sandbox is not available.",
+  detail: "the copilot executable was not found",
   models: {
     state: "unavailable",
-    detail: "Copilot runs are refused on this host: the command sandbox is not available.",
+    detail: "the copilot executable was not found",
     items: [],
   },
   efforts: { state: "unsupported", detail: "This provider exposes no effort setting.", items: [] },

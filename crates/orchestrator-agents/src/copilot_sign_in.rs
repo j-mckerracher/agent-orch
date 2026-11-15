@@ -74,8 +74,8 @@ pub struct SignInRecord {
 }
 
 impl SignInRecord {
-    /// A check that did not run, for example because the sandbox host cannot
-    /// run Copilot. Leaves the state unknown and does not count as a check.
+    /// A check that did not run, for example because the executable is missing.
+    /// Leaves the state unknown and does not count as a check.
     pub fn refused(reason: String) -> Self {
         Self {
             reason: Some(reason),
@@ -400,13 +400,13 @@ mod tests {
     fn a_run_that_never_establishes_a_time_is_stored_as_an_error() {
         let cache = Arc::new(CopilotSignIn::default());
         cache.start(false, || {
-            SignInRecord::refused("Copilot sandboxing is unavailable".into())
+            SignInRecord::refused("the copilot executable was not found".into())
         });
         let record = settled(&cache);
         assert_eq!(record.state, SignInState::Error);
         assert_eq!(
             record.reason.as_deref(),
-            Some("Copilot sandboxing is unavailable")
+            Some("the copilot executable was not found")
         );
         assert!(
             record.checked_at_ms.is_some(),

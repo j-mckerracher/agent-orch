@@ -1014,21 +1014,3 @@ fn windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent() {
     assert!(lines.contains("Shorten the task objective"), "{lines}");
 }
 
-/// DPES-1105: on Windows, GitHub Copilot is refused, and the refusal carries the
-/// reason a Windows user sees. The Copilot sandbox is not verified on Windows,
-/// so this is the fail-closed state. Compiled and run only by the Windows gate.
-#[cfg(windows)]
-#[test]
-fn copilot_is_refused_on_windows_with_the_reason_the_user_sees() {
-    let reason = match orchestrator_agents::copilot_sandbox_host() {
-        orchestrator_agents::SandboxHostStatus::Unavailable(reason) => reason,
-        orchestrator_agents::SandboxHostStatus::Ready => {
-            panic!("GitHub Copilot must be refused on Windows until its sandbox is verified")
-        }
-    };
-    assert!(
-        reason.starts_with("GitHub Copilot is unavailable on Windows"),
-        "{reason}"
-    );
-    assert!(reason.contains("verified on Windows"), "{reason}");
-}
