@@ -1,0 +1,27 @@
+{
+  "version": "22.23.5",
+  "lts": "Jod",
+  "releaseNotes": "https://nodejs.org/en/blog/release/v22.23.5",
+  "distBase": "https://nodejs.org/dist/v22.23.5/",
+  "shasums": "SHASUMS256.txt",
+  "shasumsSignature": "SHASUMS256.txt.sig",
+  "shasumsSigner": "Antoine du Hamel, key 5BE8A3F6C8A5C01D106C0AD820B1A390B168D356 (listed in nodejs/release-keys)",
+  "platforms": {
+    "darwin-arm64": {
+      "archive": "node-v22.23.5-darwin-arm64.tar.gz",
+      "archiveSha256": "e7131995759b61a0170b646010d2ad35a5d37b4cb0d471f3e8317eac6f742f3d",
+      "member": "node-v22.23.5-darwin-arm64/bin/node",
+      "licenseMember": "node-v22.23.5-darwin-arm64/LICENSE",
+      "binarySha256": "ff9365ccf73e95b7ac69867418124973addde63043650c0db96bd6a722c53cd8",
+      "signerSubject": "Developer ID Application: Node.js Foundation (HX7739G8FX)"
+    },
+    "win-x64": {
+      "archive": "node-v22.23.5-win-x64.zip",
+      "archiveSha256": "4a191082e9706866830379d577d2cc8a50c776fcd9436a8d061b063ed0d9a0e3",
+      "member": "node-v22.23.5-win-x64/node.exe",
+      "licenseMember": "node-v22.23.5-win-x64/LICENSE",
+      "binarySha256": "247e9693d316da9857e44990e5e11709f596f18112251b8026ec6eed80bdf38a",
+      "signerSubject": "OpenJS Foundation"
+    }
+  }
+}

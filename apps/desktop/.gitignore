@@ -3,3 +3,4 @@ test-results/
 node_modules/
 gen/
 src-tauri/binaries/
+src-tauri/resources/codeburn/

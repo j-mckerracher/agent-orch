@@ -135,8 +135,12 @@ const BUNDLE_PACKAGE: &str = "pkg";
 /// consult `PATH`: `path_dirs` and `override_command` are left empty there.
 #[derive(Debug, Clone)]
 pub struct ReaderLocations {
-    /// Folder that holds the bundled reader.
+    /// Folder that holds the bundled reader, beside the daemon executable.
     pub bundle_dir: Option<PathBuf>,
+    /// Second folder for the bundle, checked when `bundle_dir` is not complete.
+    /// macOS app bundles keep resources in `Contents/Resources`, not beside the
+    /// executable in `Contents/MacOS`, so the packaged reader lives there.
+    pub bundle_fallback_dir: Option<PathBuf>,
     /// True in debug builds (`tauri dev`).
     pub development: bool,
     /// Development only: the codeburn command named by `AGENT_ORCH_CODEBURN_BIN`.
@@ -150,9 +154,20 @@ impl ReaderLocations {
     /// (`launch.rs`): the bundle beside the executable, then the development options.
     pub fn for_daemon() -> Self {
         let development = cfg!(debug_assertions);
-        let bundle_dir = std::env::current_exe()
+        let exe_dir = std::env::current_exe()
             .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(BUNDLE_DIR)));
+            .and_then(|exe| exe.parent().map(Path::to_path_buf));
+        let bundle_dir = exe_dir.as_ref().map(|dir| dir.join(BUNDLE_DIR));
+        // On macOS the executable is `Contents/MacOS/...` and the resources are in
+        // `Contents/Resources/...`. Windows and Linux keep them beside the executable.
+        let bundle_fallback_dir = if cfg!(target_os = "macos") {
+            exe_dir
+                .as_ref()
+                .and_then(|dir| dir.parent())
+                .map(|contents| contents.join("Resources").join(BUNDLE_DIR))
+        } else {
+            None
+        };
         let override_command = if development {
             std::env::var_os("AGENT_ORCH_CODEBURN_BIN")
                 .filter(|value| !value.is_empty())
@@ -167,6 +182,7 @@ impl ReaderLocations {
         };
         Self {
             bundle_dir,
+            bundle_fallback_dir,
             development,
             override_command,
             path_dirs,
@@ -174,10 +190,13 @@ impl ReaderLocations {
     }
 
     fn plan(&self) -> Plan {
-        if let Some(dir) = &self.bundle_dir {
-            if bundle_complete(dir) {
-                return Plan::Bundle(dir.clone());
-            }
+        let bundles = [self.bundle_dir.as_ref(), self.bundle_fallback_dir.as_ref()];
+        if let Some(dir) = bundles
+            .into_iter()
+            .flatten()
+            .find(|dir| bundle_complete(dir))
+        {
+            return Plan::Bundle(dir.clone());
         }
         if !self.development {
             return Plan::Missing(ReaderState::NotBundled);
@@ -335,7 +354,13 @@ fn verify_installed(root: &Path, pin: &Pin, origin: ReaderOrigin) -> Result<Stri
     if manifest.version != pin.version {
         return Err(installed(ReaderState::UnsupportedVersion));
     }
-    for (relative, expected) in &pin.files_sha256 {
+    // The release bundle is checked against the bundled hashes; every development
+    // location (an npm install found on PATH or by override) against the npm ones.
+    let files = match origin {
+        Some(ReaderOrigin::Bundled) => &pin.layouts.bundled,
+        _ => &pin.layouts.npm,
+    };
+    for (relative, expected) in files {
         let strip = relative == SHEBANG_STRIPPED;
         let actual = hash_file(&root.join(relative), strip).ok();
         if actual.as_deref() != Some(expected.as_str()) {
@@ -862,6 +887,7 @@ fn persist_opt_in(path: &Path, enabled: bool) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pin::Layouts;
 
     #[test]
     fn civil_dates_match_known_days() {
@@ -897,6 +923,7 @@ mod tests {
     fn locations(dir: &Path, development: bool) -> ReaderLocations {
         ReaderLocations {
             bundle_dir: Some(dir.join("bundle")),
+            bundle_fallback_dir: None,
             development,
             override_command: None,
             path_dirs: vec![dir.join("bin")],
@@ -1002,7 +1029,10 @@ mod tests {
             version: version.into(),
             node_minimum: "22.15.0".into(),
             tarball_integrity: "sha512-test".into(),
-            files_sha256: files,
+            layouts: Layouts {
+                npm: files.clone(),
+                bundled: files,
+            },
         }
     }
 
@@ -1027,6 +1057,79 @@ mod tests {
         let fault = verify_installed(&root, &pin, ReaderOrigin::Bundled).unwrap_err();
         assert_eq!(fault.state, ReaderState::IntegrityMismatch);
         assert_eq!(fault.origin, Some(ReaderOrigin::Bundled));
+    }
+
+    #[test]
+    fn the_macos_resources_bundle_is_found_when_the_executable_folder_has_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let resources = dir
+            .path()
+            .join("Contents")
+            .join("Resources")
+            .join(BUNDLE_DIR);
+        std::fs::create_dir_all(resources.join(BUNDLE_PACKAGE)).unwrap();
+        std::fs::write(resources.join(BUNDLE_PACKAGE).join("package.json"), b"{}").unwrap();
+        std::fs::write(resources.join(locate::node_names()[0]), b"x").unwrap();
+        let locations = ReaderLocations {
+            bundle_dir: Some(dir.path().join("Contents").join("MacOS").join(BUNDLE_DIR)),
+            bundle_fallback_dir: Some(resources.clone()),
+            development: false,
+            override_command: None,
+            path_dirs: Vec::new(),
+        };
+        assert_eq!(locations.plan(), Plan::Bundle(resources));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_bundle_resolves_to_its_node_and_its_launcher_and_checks_its_own_layout() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join(BUNDLE_DIR);
+        let root = bundle.join(BUNDLE_PACKAGE);
+        let mut pin = fake_package(&root, "0.9.28");
+        let node = bundle.join("node");
+        std::fs::write(&node, b"#!/bin/sh\necho v22.23.5\n").unwrap();
+        std::fs::set_permissions(&node, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let entry = root.join("dist").join("cli.js");
+
+        let resolved = resolve_installed(
+            &root,
+            entry.clone(),
+            node.clone(),
+            ReaderOrigin::Bundled,
+            &pin,
+        )
+        .expect("a complete bundle with a supported node resolves");
+        assert_eq!(resolved.program, node);
+        assert_eq!(resolved.prefix, vec![entry.clone().into_os_string()]);
+        assert_eq!(resolved.node_version, "22.23.5");
+        assert_eq!(resolved.origin, ReaderOrigin::Bundled);
+
+        // A bundle whose main.js differs from the bundled hash is refused, even when the npm
+        // hash for the same file would match.
+        pin.layouts
+            .bundled
+            .insert("dist/main.js".into(), "0".repeat(64));
+        let fault = resolve_installed(&root, entry, node, ReaderOrigin::Bundled, &pin).unwrap_err();
+        assert_eq!(fault.state, ReaderState::IntegrityMismatch);
+    }
+
+    #[test]
+    fn an_npm_install_is_checked_against_the_npm_layout_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("pkg");
+        let mut pin = fake_package(&root, "0.9.28");
+        pin.layouts
+            .bundled
+            .insert("dist/main.js".into(), "0".repeat(64));
+        assert_eq!(
+            verify_installed(&root, &pin, ReaderOrigin::Path).unwrap(),
+            "0.9.28",
+            "an npm install matches the npm layout"
+        );
+        let fault = verify_installed(&root, &pin, ReaderOrigin::Bundled).unwrap_err();
+        assert_eq!(fault.state, ReaderState::IntegrityMismatch);
     }
 
     #[test]
