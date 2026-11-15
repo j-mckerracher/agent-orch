@@ -298,7 +298,14 @@
     "a_malformed_choice_is_a_bad_request_and_records_no_turn",
     "a_message_without_a_choice_keeps_the_configured_default",
     "an_effort_the_model_does_not_offer_fails_the_turn_with_its_reason",
-    "github_copilot_is_not_offered_to_a_message"
+    "github_copilot_is_not_offered_to_a_message",
+   "api::conversations::tests::a_chosen_permission_is_part_of_the_encoding_the_idempotency_fingerprint_hashes",
+   "api::conversations::tests::an_unknown_permission_is_a_bad_request_and_records_nothing",
+   "api::conversations::tests::the_daemon_advertises_the_permission_levels_capability",
+   "claude_code_launches_with_its_exact_flags_per_level",
+   "extended_is_refused_for_codex_as_a_failed_turn_that_launches_nothing",
+   "each_codex_turn_runs_in_its_own_directory_that_is_removed_after_it",
+   "each_codex_level_launches_with_its_exact_flags_and_records_it"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -584,7 +591,10 @@
    "a_coordinator_clear_keeps_the_project_and_is_refused_once_removed",
    "history_rows_are_only_deleted_by_a_clear_and_audit_rows_never",
    "a_database_from_before_the_clear_migrations_is_migrated_and_its_replies_scrubbed",
-   "a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows"
+   "a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows",
+   "sqlite_conversations::tests::a_turn_from_before_permission_levels_reads_null_and_a_launched_turn_records_its_level",
+   "sqlite_conversations::tests::recording_a_level_for_an_unknown_turn_is_refused",
+   "sqlite_conversations::tests::the_database_refuses_a_level_outside_the_four_and_a_blank_profile"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
