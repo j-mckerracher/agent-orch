@@ -9,7 +9,9 @@
 //!
 //! - `conversation_entries.sequence` is the replay cursor. Entries are
 //!   append-only (enforced by triggers), so a cursor read after a restart sees
-//!   the same history in the same order.
+//!   the same history in the same order. The one exception is a history clear
+//!   (DPES-1105, see [`SqliteStore::clear_conversation_history`]), which deletes
+//!   a conversation's rows and advances its `clear_generation`.
 //! - A conversation has at most one `running` turn. A message that arrives while
 //!   a turn runs is refused ([`ConversationError::TurnRunning`]); that keeps a
 //!   reply correlated with exactly one message.
@@ -35,6 +37,9 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use sqlx::SqlitePool;
 
+use crate::sqlite_history::{
+    record_audit, set_clear_gate, tombstone_conversation_sends, ClearOutcome,
+};
 use crate::{SqliteStore, StoreError};
 
 /// Largest accepted user message, in bytes.
@@ -174,6 +179,8 @@ pub struct ConversationPage {
     /// Newest sequence in this conversation; 0 when it is empty.
     pub latest_sequence: i64,
     pub latest_turn: Option<ConversationTurn>,
+    /// Incremented by every history clear of this conversation; 0 before the first.
+    pub clear_generation: i64,
 }
 
 /// A conversation mutation failed.
@@ -459,19 +466,20 @@ impl SqliteStore {
         let conversation_id = target.id();
         conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin().await?;
-            let exists: Option<String> =
-                sqlx::query_scalar("SELECT id FROM conversations WHERE id = ?")
+            let generation: Option<i64> =
+                sqlx::query_scalar("SELECT clear_generation FROM conversations WHERE id = ?")
                     .bind(&conversation_id)
                     .fetch_optional(&mut *transaction)
                     .await?;
-            if exists.is_none() {
+            let Some(clear_generation) = generation else {
                 return Ok(ConversationPage {
                     conversation_id: None,
                     entries: Vec::new(),
                     latest_sequence: 0,
                     latest_turn: None,
+                    clear_generation: 0,
                 });
-            }
+            };
             let rows = sqlx::query(concat!(
                 "SELECT ",
                 entry_columns!(),
@@ -509,7 +517,112 @@ impl SqliteStore {
                 entries,
                 latest_sequence,
                 latest_turn,
+                clear_generation,
             })
+        })
+    }
+}
+
+impl SqliteStore {
+    /// Permanently delete one conversation's messages, replies and turns (DPES-1105).
+    ///
+    /// A running turn refuses the clear with [`ConversationError::TurnRunning`], and
+    /// nothing is deleted. The check and the delete share one `BEGIN IMMEDIATE`
+    /// transaction, so a turn cannot start between them. Other conversations are
+    /// untouched. A conversation with nothing in it is left as it is.
+    pub fn clear_conversation_history(
+        &self,
+        target: &ConversationTarget,
+    ) -> Result<ClearOutcome, ConversationError> {
+        target.validate()?;
+        let conversation_id = target.id();
+        let (kind, workstream_id) = target.parts();
+        let (kind, workstream_id) = (kind, workstream_id.map(str::to_owned));
+        let outcome = conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let running: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM conversation_turns WHERE conversation_id = ? AND state = 'running'",
+            )
+            .bind(&conversation_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if let Some(turn_id) = running {
+                return Err(ConversationError::TurnRunning { turn_id });
+            }
+            let entries: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?")
+                    .bind(&conversation_id)
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            let turns: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM conversation_turns WHERE conversation_id = ?")
+                    .bind(&conversation_id)
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            if entries == 0 && turns == 0 {
+                let clear_generation: Option<i64> =
+                    sqlx::query_scalar("SELECT clear_generation FROM conversations WHERE id = ?")
+                        .bind(&conversation_id)
+                        .fetch_optional(&mut *transaction)
+                        .await?;
+                transaction.commit().await?;
+                return Ok(ClearOutcome {
+                    cleared: false,
+                    entries_deleted: 0,
+                    turns_deleted: 0,
+                    clear_generation: clear_generation.unwrap_or(0),
+                });
+            }
+            let entries = u64::try_from(entries).unwrap_or(0);
+            let turns = u64::try_from(turns).unwrap_or(0);
+            set_clear_gate(&mut transaction, true).await?;
+            tombstone_conversation_sends(&mut transaction, &conversation_id).await?;
+            sqlx::query("DELETE FROM conversation_entries WHERE conversation_id = ?")
+                .bind(&conversation_id)
+                .execute(&mut *transaction)
+                .await?;
+            sqlx::query("DELETE FROM conversation_turns WHERE conversation_id = ?")
+                .bind(&conversation_id)
+                .execute(&mut *transaction)
+                .await?;
+            set_clear_gate(&mut transaction, false).await?;
+            let clear_generation: i64 = sqlx::query_scalar(
+                "INSERT INTO conversations (id, target_kind, workstream_id) VALUES (?, ?, ?) \
+                 ON CONFLICT(id) DO UPDATE SET clear_generation = clear_generation + 1 \
+                 RETURNING clear_generation",
+            )
+            .bind(&conversation_id)
+            .bind(kind)
+            .bind(&workstream_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            record_audit(&mut transaction, "clear", &conversation_id, entries, turns).await?;
+            transaction.commit().await?;
+            Ok(ClearOutcome {
+                cleared: true,
+                entries_deleted: entries,
+                turns_deleted: turns,
+                clear_generation,
+            })
+        })?;
+        self.checkpoint_wal()?;
+        Ok(outcome)
+    }
+
+    /// One entry by id, or `None` once a history clear has deleted it.
+    pub fn conversation_entry(&self, id: &str) -> Result<Option<ConversationEntry>, StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            sqlx::query(concat!(
+                "SELECT ",
+                entry_columns!(),
+                " FROM conversation_entries WHERE id = ?"
+            ))
+            .bind(id)
+            .fetch_optional(&pool)
+            .await?
+            .map(decode_entry)
+            .transpose()
         })
     }
 }

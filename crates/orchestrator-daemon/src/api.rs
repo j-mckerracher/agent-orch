@@ -265,6 +265,7 @@ impl RpcHandler for DaemonApi {
             Capability::Host,
             Capability::Queue,
             Capability::Workstreams,
+            Capability::ConversationHistory,
         ]
     }
 
@@ -290,9 +291,13 @@ impl RpcHandler for DaemonApi {
             "coordinator.send_message" => self.coordinator_send_message(params),
             "coordinator.propose" => self.coordinator_propose(params),
             "coordinator.get" => self.coordinator_get(params),
+            "coordinator.clear" => self.coordinator_clear(params),
+            "coordinator.remove" => self.coordinator_remove(params),
+            "coordinator.restore" => self.coordinator_restore(params),
             "conversations.send" => self.conversations_send(params),
             "conversations.get" => self.conversations_get(params),
             "conversations.cancel" => self.conversations_cancel(params),
+            "conversations.clear" => self.conversations_clear(params),
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
@@ -367,10 +372,19 @@ impl DaemonApi {
     fn projects_list(&self, params: Value) -> Result<Value, RpcError> {
         require_empty_params(&params)?;
         let projects = self.store.list_projects().map_err(map_store_error)?;
+        // `coordinator_active` is false while a project's coordinator is removed
+        // (DPES-1105). The project itself is listed either way.
+        let removed = self
+            .store
+            .removed_coordinator_projects()
+            .map_err(map_store_error)?;
         Ok(Value::Array(
             projects
                 .into_iter()
-                .map(|project| json!({"id": project.id}))
+                .map(|project| {
+                    let coordinator_active = !removed.contains(&project.id);
+                    json!({"id": project.id, "coordinator_active": coordinator_active})
+                })
                 .collect(),
         ))
     }

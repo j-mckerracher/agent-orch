@@ -146,7 +146,11 @@ impl SqliteStore {
             .await?;
             let stored_method: String = row.try_get("method")?;
             let stored_fingerprint: String = row.try_get("fingerprint")?;
-            if stored_method != method || stored_fingerprint != fingerprint {
+            // A send whose message was cleared keeps its key spent with a tombstone
+            // fingerprint. The text it would be compared with is gone, so the stored
+            // result is returned, and that result is references only (DPES-1105).
+            let cleared = stored_fingerprint == crate::sqlite_history::CLEARED_FINGERPRINT;
+            if stored_method != method || (stored_fingerprint != fingerprint && !cleared) {
                 return Err(StoreError::IdempotencyConflict);
             }
             let result: Option<String> = row.try_get("result")?;

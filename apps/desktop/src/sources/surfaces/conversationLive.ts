@@ -26,6 +26,7 @@ import type {
 import { liveRead } from "./liveSupport";
 import { notOk, observation } from "./result";
 import type {
+  ClearReceipt,
   ConversationEntry,
   ConversationSource,
   ConversationTarget,
@@ -35,6 +36,29 @@ import type {
 } from "./types";
 
 export const MAX_LIVE_CONVERSATION_PAGES = 50;
+
+/** Restarts of one transcript read after a clear lands mid-read. */
+const MAX_HISTORY_RESTARTS = 3;
+
+/** A clear landed between two pages of one read, so the pages read so far are stale (DPES-1105). */
+export class HistoryChanged extends Error {}
+
+/**
+ * Runs one read again when a clear invalidated it: a page reported a new `clear_generation`, or the
+ * cursor ran past the end of a log that was cleared (`replay-gap`). The reload starts from the
+ * beginning, so a cleared log reads as empty rather than as an error.
+ */
+export async function restartOnHistoryChange<T>(read: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await read();
+    } catch (error) {
+      const restart =
+        error instanceof HistoryChanged || (error instanceof DaemonError && error.kind === "replay-gap");
+      if (!restart || attempt >= MAX_HISTORY_RESTARTS) throw error;
+    }
+  }
+}
 /** The daemon returns at most 100 entries per page, so this span fits in `MAX_LIVE_CONVERSATION_PAGES` pages. */
 export const MAX_LIVE_SEQUENCE_SPAN = MAX_LIVE_CONVERSATION_PAGES * 100;
 
@@ -48,7 +72,12 @@ export type LiveTarget = Exclude<ConversationTarget, { kind: "project" }>;
 
 export const isLiveTarget = (target: ConversationTarget): target is LiveTarget => target.kind !== "project";
 
-export const LIVE_METHODS = ["conversations.get", "conversations.send", "conversations.cancel"] as const;
+export const LIVE_METHODS = [
+  "conversations.get",
+  "conversations.send",
+  "conversations.cancel",
+  "conversations.clear",
+] as const;
 
 const FAILURE_TEXT: Record<string, string> = {
   runtime_unavailable:
@@ -157,7 +186,7 @@ export function createLiveConversation(
   provenance: Provenance,
   keys: IdempotencyTracker,
   now: () => number,
-): Required<Pick<ConversationSource, "cancel">> & {
+): Required<Pick<ConversationSource, "cancel" | "clear">> & {
   transcript: (target: LiveTarget) => ReturnType<ConversationSource["transcript"]>;
   send: (target: LiveTarget, text: string) => Promise<SendReceipt>;
 } {
@@ -168,15 +197,13 @@ export function createLiveConversation(
       if (target.kind === "workstream" && isFixtureLikeId(target.workstreamId)) {
         return notOk(provenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
-      return liveRead(
-        provenance,
-        now,
-        async () => {
+      const readOnce = async () => {
           const api = connection.api();
           const wire = toWireTarget(target);
           let entries: ConversationWireEntry[] = [];
           let after: number | undefined;
           let epoch: string | undefined;
+          let generation: number | undefined;
           let more = false;
           let turn: ConversationWireTurn | null = null;
           let jumpedTo: number | null = null;
@@ -187,6 +214,9 @@ export function createLiveConversation(
           for (let page = 0; page <= MAX_LIVE_CONVERSATION_PAGES; page++) {
             const result = await api.conversationsGet(wire, after, epoch);
             epoch ??= result.epoch;
+            // A clear between pages changes the generation: this read mixes two logs, so it starts over.
+            generation ??= result.clear_generation;
+            if (result.clear_generation !== generation) throw new HistoryChanged();
             entries.push(...result.entries);
             turn = result.turn;
             more = result.more;
@@ -208,9 +238,8 @@ export function createLiveConversation(
             truncated,
             turn: turn === null ? null : turnInfo(turn),
           };
-        },
-        describeNotFound(target),
-      );
+      };
+      return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));
     },
 
     async send(target, text) {
@@ -220,14 +249,49 @@ export function createLiveConversation(
       try {
         const result = await connection.api().conversationsSend(toWireTarget(target), text, key);
         keys.settle(scope, null);
+        const { entry } = result;
+        // A replay of a message that a clear deleted has no entry body and no turn (DPES-1105).
+        if (result.turn === null || "cleared" in entry) {
+          return {
+            simulated: false,
+            provenance,
+            notice: "That message was cleared before its reply was recorded.",
+            at: entry.created_at ?? new Date(now()).toISOString(),
+            entryId: entry.id,
+          };
+        }
         const turn = turnInfo(result.turn);
         return {
           simulated: false,
           provenance,
           notice: sendNotice(turn),
-          at: result.entry.created_at,
-          entryId: result.entry.id,
+          at: entry.created_at,
+          entryId: entry.id,
           turn,
+        };
+      } catch (error) {
+        keys.settle(scope, asDaemonError(error));
+        throw error;
+      }
+    },
+
+    async clear(target): Promise<ClearReceipt> {
+      if (!isLiveTarget(target)) {
+        throw new DaemonError("method-unavailable", "Only Global and workstream history is cleared through conversations.clear.");
+      }
+      refuseFixture(target);
+      const scope = `clear:${scopeOf(target)}`;
+      const key = keys.keyFor(scope, scopeOf(target));
+      try {
+        const result = await connection.api().conversationsClear(toWireTarget(target), key);
+        keys.settle(scope, null);
+        return {
+          simulated: false,
+          provenance,
+          cleared: result.cleared,
+          notice: result.cleared
+            ? "History cleared. The deleted messages and replies cannot be recovered."
+            : "There was no history to clear.",
         };
       } catch (error) {
         keys.settle(scope, asDaemonError(error));

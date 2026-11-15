@@ -79,6 +79,42 @@ describe("Workspace conversation and model selector over the real daemon", () =>
     }
   }, 60000);
 
+  it("clears the Global history on the real daemon: the confirmation names it, the transcript empties and the daemon keeps nothing", async () => {
+    const t = await prepare();
+    try {
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+      await userEvent.type(box, "to be cleared");
+      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+      expect(await screen.findByText("to be cleared", undefined, { timeout: 15000 })).toBeTruthy();
+      await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+
+      await userEvent.click(screen.getByRole("button", { name: "Conversation actions for Global orchestrator" }));
+      await userEvent.click(screen.getByRole("menuitem", { name: "Clear history…" }));
+      expect(screen.getByRole("dialog", { name: "Clear history for Global orchestrator?" })).toBeTruthy();
+      await userEvent.click(screen.getByRole("button", { name: "Clear history permanently" }));
+
+      expect(
+        await screen.findByText("History cleared. The deleted messages and replies cannot be recovered.", undefined, { timeout: 15000 }),
+      ).toBeTruthy();
+      await waitFor(() => expect(screen.queryByText("to be cleared")).toBeNull(), { timeout: 15000 });
+      const page = await t.direct((api) => api.conversationsGet({ kind: "global" }));
+      expect(page.entries).toEqual([]);
+      expect(page.clear_generation).toBe(1);
+      expect(page.latest_sequence).toBe(0);
+      expect(page.turn).toBeNull();
+    } finally {
+      await t.stop();
+    }
+  }, 60000);
+
   it("keeps the recorded transcript across a daemon restart and sends only real ids", async () => {
     const t = await prepare();
     try {

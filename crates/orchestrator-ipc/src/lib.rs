@@ -98,6 +98,9 @@ mod queue_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "workstreams_tests.rs"]
 mod workstreams_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "history_tests.rs"]
+mod history_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -130,6 +133,8 @@ pub enum RpcError {
     ResultTooLarge,
     ReplayGap,
     EpochMismatch,
+    /// A history clear was refused because a reply to this conversation is running.
+    ConversationBusy,
     Internal,
 }
 
@@ -146,6 +151,7 @@ impl RpcError {
             Self::ResultTooLarge => -32016,
             Self::ReplayGap => -32017,
             Self::EpochMismatch => -32018,
+            Self::ConversationBusy => -32019,
             Self::Internal => -32603,
         }
     }
@@ -162,6 +168,7 @@ impl RpcError {
             Self::ResultTooLarge => "result exceeds size limit",
             Self::ReplayGap => "event cursor is ahead of the durable journal",
             Self::EpochMismatch => "event cursor belongs to a different durable journal",
+            Self::ConversationBusy => "conversation has a reply in progress",
             Self::Internal => "internal operation failed",
         }
     }

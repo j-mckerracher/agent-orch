@@ -24,6 +24,7 @@ export type DaemonErrorKind =
   | "result-too-large"
   | "replay-gap"
   | "epoch-mismatch"
+  | "conversation-busy"
   | "internal"
   | "timeout"
   | "disconnected"
@@ -47,6 +48,7 @@ const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
   [-32016]: "result-too-large",
   [-32017]: "replay-gap",
   [-32018]: "epoch-mismatch",
+  [-32019]: "conversation-busy",
   [-32603]: "internal",
 };
 
@@ -179,6 +181,10 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   "epoch-mismatch": {
     reason: "The saved event position belongs to a different daemon store.",
     nextStep: "History is incomplete; the client starts a fresh baseline.",
+  },
+  "conversation-busy": {
+    reason: "A reply to this conversation is still running.",
+    nextStep: "Wait for the reply to finish or cancel it, then try again.",
   },
   internal: {
     reason: "The daemon reported an internal error.",

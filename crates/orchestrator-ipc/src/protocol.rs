@@ -44,10 +44,12 @@ pub enum Capability {
     Host,
     Queue,
     Workstreams,
+    /// Clearing conversation history and removing or restoring project coordinators (DPES-1105).
+    ConversationHistory,
 }
 
 impl Capability {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -62,6 +64,7 @@ impl Capability {
         Self::Host,
         Self::Queue,
         Self::Workstreams,
+        Self::ConversationHistory,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -80,6 +83,7 @@ impl Capability {
             Self::Host => "host",
             Self::Queue => "queue",
             Self::Workstreams => "workstreams",
+            Self::ConversationHistory => "conversation_history",
         }
     }
 

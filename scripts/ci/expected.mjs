@@ -13,12 +13,14 @@ export const WINDOWS = {
   // large-write test makes 56. The daemon library measured 118; conversation_runtime ran 12
   // tests (10 passed, 1 failed, 1 ignored) and the run stopped there, so the daemon total is
   // still derived: 118 + 11 + 2 + 4 + 0 + 1 + 2 = 138 once M7-08 passes.
-  ipc: { passed: 56, sequence: [56, 0] },
+  // DPES-1105 adds 2 portable ipc tests (history capability), so 56 becomes 58.
+  ipc: { passed: 58, sequence: [58, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
   // tests/daemon.rs is cfg(unix), so it runs 0 tests.
-  daemon: { passed: 138, ignored: 1, sequence: [118, 12, 2, 4, 0, 1, 2] },
+  // DPES-1105 adds 8 portable daemon unit tests (conversation clear, removal and the capability), 118 becomes 126.
+  daemon: { passed: 146, ignored: 1, sequence: [126, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 42 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
@@ -41,7 +43,8 @@ export const WINDOWS = {
   // is the M6-01 takeover ACL check and is also its own gate.
   // Derived, not measured on Windows: the macOS list minus the same 4 cfg(unix) tests (2 lib tests, 1 in
   // lock_identity_contract, 1 in sqlite_reconcile); the sequence is the macOS one with those 4 removed.
-  store: { passed: 154, ignored: 1, sequence: [63, 9, 2, 13, 1, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // DPES-1105 adds 1 lib test and the 10-test conversation_history binary (portable): lib 63 becomes 64.
+  store: { passed: 165, ignored: 1, sequence: [64, 9, 2, 13, 1, 10, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 62 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
@@ -51,18 +54,21 @@ export const WINDOWS = {
 // source). Not Windows evidence. daemon is unit, coordinator_review, daemon.rs, diagnostics_log.
 export const MACOS = {
   // Measured on the M7 final integration merge (macOS, this branch).
-  ipc: { passed: 55, sequence: [55, 0] },
+  // Measured on the DPES-1105 branch: 55 plus the two history capability tests.
+  ipc: { passed: 57, sequence: [57, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
-  daemon: { passed: 209, ignored: 1, sequence: [176, 14, 2, 4, 11, 1, 2] },
+  // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184).
+  daemon: { passed: 217, ignored: 1, sequence: [184, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  workspace: { passed: 998, ignored: 2 },
+  // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests.
+  workspace: { passed: 1019, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
-  store: { passed: 158, ignored: 1, sequence: [65, 9, 2, 13, 1, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  store: { passed: 169, ignored: 1, sequence: [66, 9, 2, 13, 1, 10, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 9,
@@ -73,8 +79,8 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
-export const VITEST = { files: 59, tests: 1351 };
-export const E2E_TESTS = 44;
+export const VITEST = { files: 61, tests: 1389 };
+export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;

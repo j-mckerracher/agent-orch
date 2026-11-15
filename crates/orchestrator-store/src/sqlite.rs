@@ -178,6 +178,9 @@ fn run_worker(
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
         .foreign_keys(true)
+        // Deleted rows are overwritten with zeros, not left in free pages. A history
+        // clear (DPES-1105) deletes message text, so the text must not survive there.
+        .pragma("secure_delete", "ON")
         // Every transaction that writes starts with `BEGIN IMMEDIATE`. A deferred
         // transaction that reads and then writes fails at once with
         // SQLITE_BUSY_SNAPSHOT when another process commits in between, and
@@ -201,6 +204,13 @@ fn run_worker(
     drop(open_lock);
     if let Err(error) = migrated {
         let _ = ready_sender.send(Err(StoreError::Migration(error)));
+        runtime.block_on(pool.close());
+        return;
+    }
+    // Migration 0034 rewrites idempotency results that held message text. The old
+    // page images still sit in the write-ahead log until it is checkpointed.
+    if let Err(error) = runtime.block_on(crate::sqlite_history::checkpoint_wal(&pool)) {
+        let _ = ready_sender.send(Err(StoreError::Database(error)));
         runtime.block_on(pool.close());
         return;
     }

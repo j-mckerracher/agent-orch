@@ -22,7 +22,7 @@ M7-25 (see "M7-25: the agent runtime" below).
 - `conversation_turns`: one per user message. States `running`, `completed`,
   `failed`, `cancelled`. At most one `running` turn per conversation (partial
   unique index). Records the runtime name and version used.
-- `conversation_entries`: append-only (update/delete triggers abort). Kinds
+- `conversation_entries`: append-only. Updates abort. Deletes abort unless a history clear is running (DPES-1105, see "Clear history and remove coordinator" below). Kinds
   `user_message`, `reply_chunk`, `turn_completed`, `turn_failed`,
   `turn_cancelled`. `sequence` is a per-database monotonic cursor; entry ids are
   deterministic (`<turn>:user`, `<turn>:chunk:N`, `<turn>:end`), so every reply
@@ -60,7 +60,8 @@ Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 ## Ordering, idempotency, replay
 
 - Turn id = stable hash of the idempotency key; a retried send returns the
-  stored result and calls the runtime once. Same key with different text is
+  stored result and calls the runtime once. The stored result holds references
+  only (DPES-1105): the reply is read back from the store. Same key with different text is
   `IdempotencyConflict`. The shared idempotency layer caches failures too: a
   rejected attempt (for example `Conflict`) stays rejected for that key, so a
   retry after the turn ends needs a new key.
@@ -161,6 +162,90 @@ process level with `examples/fake_agent.rs` (`tests/conversation_runtime.rs`),
 desktop e2e (`apps/desktop/e2e/workspace-conversation.e2e.test.tsx`), and one
 opt-in live test (`AGENT_ORCH_LIVE_CONVERSATION=1 cargo test -p
 orchestrator-daemon --test conversation_runtime -- --ignored`).
+
+## Clear history and remove coordinator (DPES-1105)
+
+**Decision (user, binding).** A user can clear one conversation's history
+permanently, from the Global orchestrator or a project coordinator. A project
+coordinator can be removed and later restored. The project and its tasks are
+never touched. There is no "clear all".
+
+**The amended append-only rule.** Migration `0032_conversation_clear.sql`
+replaces the delete triggers on `conversation_entries` with a gate. A delete from
+`conversation_entries`, `conversation_turns` or `coordinator_entries` aborts
+unless the single row of `conversation_clear_gate` is open. Only the store's
+clear transaction opens it, inside `BEGIN IMMEDIATE`, and closes it before
+commit. A rollback closes it too, because the gate is an ordinary row. Updates
+still abort. The triggers protect the daemon's own code paths; anyone who can
+write the database file can still edit it directly. A clear is the only deletion
+of conversation content.
+
+**Permanence.** The connection runs with `secure_delete=ON`, so deleted rows are
+overwritten with zeros. Each clear ends with `PRAGMA wal_checkpoint(TRUNCATE)`,
+and so does every open after migrations. A test scans every file in the data
+directory after a clear and finds no message or reply text. A busy checkpoint is
+not an error, and then old WAL frames stay until the next checkpoint.
+
+**Audit.** Migration `0033_conversation_audit.sql` adds `conversation_audit`,
+which is append-only: `UPDATE` and `DELETE` both abort. Each clear, remove and
+restore writes one row with its action, its scope (`conversation:global`,
+`conversation:workstream:<id>` or `coordinator:<project_id>`), its actor, the
+number of entries and turns deleted, and a timestamp. The row never holds content.
+The actor is always NULL, because the daemon has no caller identity today. The
+clear is not written to `durable_events`, which requires a task id.
+
+**Idempotency and text.** Migration `0034_idempotency_scrub.sql` rewrites every
+cached `conversations.send`, `coordinator.send_message` and `coordinator.propose`
+result to references: `entry_id`, `entry_sequence`, `entry_created_at`, and for
+conversations `turn_id` and `epoch`. Message bodies leave
+`idempotency_records.result`. Every send response, including the first, is
+rebuilt from the store.
+
+*Fingerprint policy.* A fingerprint stays while its message exists. A replay
+uses it to detect a reused key, and it reveals nothing the entry does not already
+expose. A clear replaces the fingerprints of the sends it deletes with
+`CLEARED_FINGERPRINT` (64 zeros), because a hash of a short message can be
+checked against a guess. A retry with such a key returns the cleared reference
+whatever its text, so the key stays spent. The runtime never runs again for it.
+
+*Replay of a cleared message* returns `{id, sequence, created_at, cleared: true}`
+as its entry, with no body, and `"turn": null`.
+
+*Known residual.* A send that crashed after claiming its key and before saving
+its result has no result to link to an entry, so a clear cannot tombstone its
+fingerprint. The fingerprint is a hash, not text.
+
+**Concurrency.** `conversations.clear` is refused with `conversation_busy`
+(`RpcError::ConversationBusy`, code -32019) while a turn is running. The check
+and the delete share one transaction, so a turn cannot start between them.
+Refusals are cached for their key, as every failed mutation is, so a retry needs
+a new key. Coordinators have no turns, so they are never busy.
+
+**Cursors.** Each scope has a `clear_generation`. `conversations.get` and
+`coordinator.get` return it, and it rises with every clear and every removal. A
+reader that sees a new value discards what it holds and reads again from the
+start. For a conversation, a cursor ahead of the newest entry is `ReplayGap`;
+the desktop treats that as a reset as well, not as an error.
+
+**Coordinators.** Migration `0032` adds `coordinator_scopes` with a `removed`
+flag and a `clear_generation`. No row means active and never cleared.
+`coordinator.remove` deletes the log and sets `removed`. `coordinator.restore`
+clears the flag, and the coordinator starts empty. `coordinator.clear` empties
+the log. Sends, proposals and reads refuse a removed coordinator with `not_found`.
+`projects.list` returns `coordinator_active` for each project.
+
+**Methods and capability.** The methods are `conversations.clear
+{target, idempotency_key}`, `coordinator.clear {project_id, idempotency_key}`,
+`coordinator.remove {project_id, idempotency_key}` and
+`coordinator.restore {project_id, idempotency_key}`. They need the capability
+`conversation_history`, which older daemons do not advertise. A desktop that
+asks for it against an older daemon degrades: the handshake retries without it,
+and the actions are disabled with a reason. Each method is idempotent by key and
+by state, and reports what it changed.
+
+**Not covered.** Workstream conversations can be cleared through the API, but
+the desktop does not offer it. Single messages cannot be deleted. No retention
+policy is applied; history is kept until someone clears it.
 
 ## Not covered here
 

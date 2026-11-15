@@ -88,7 +88,7 @@ describe("real M5-02 daemon: projects, tasks and errors", () => {
     expect(first.id).toBe(projectId);
     const again = await api.projectsRegister(daemon.repo);
     expect(again.id).toBe(projectId);
-    expect(await api.projectsList()).toEqual([{ id: projectId }]);
+    expect(await api.projectsList()).toEqual([{ id: projectId, coordinator_active: true }]);
     session.close();
   });
 
@@ -192,7 +192,7 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     manager.start();
     await until(() => manager.getSnapshot().status === "connected", "connected");
     await until(() => data.getSnapshot().tasks.status === "ready", "tasks loaded");
-    expect(data.getSnapshot().projects.data).toEqual([{ id: projectId }]);
+    expect(data.getSnapshot().projects.data).toEqual([{ id: projectId, coordinator_active: true }]);
 
     // An unsupported agent cannot succeed, so its dependent remains cancellable.
     const blockerSession = new DaemonSession(await new NodeConnector(daemon.dataDir).open(M5_03_CAPABILITIES));
