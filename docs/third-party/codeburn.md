@@ -79,11 +79,13 @@ measurement, below.
 | Node.js binary, gzip -9 | 36,882,656 bytes | 33,080,266 bytes |
 | Reader files and notices, on disk (9 files in total with Node) | 10,395,538 bytes (about 10.4 MB) | 10,395,538 bytes |
 | Reader files, tar+gzip -9 | 1,933,161 bytes | 1,933,161 bytes |
-| **Total installed, on disk** | **123,419,698 bytes (about 123 MB)** | **97,473,242 bytes (about 97 MB)** |
-| **Compressed increase, estimate (gzip -9)** | **about 38.8 MB** | **about 35.0 MB** |
+| **Total installed, on disk** | **123,419,698 bytes (about 123 MB)** | **97,473,242 bytes (about 97 MB)** (97,475,974 in the CI staging run; the 2,732-byte difference is the Node LICENSE, which the Windows archive stores with CRLF line endings) |
+| **Compressed increase, measured: macOS app zip** (`ditto -c -k` on the shipped folder) | **38,974,335 bytes (about 39.0 MB)** | not applicable |
+| **Compressed increase, estimate: Windows installer** (LZMA, `xz --format=lzma -9`, the algorithm NSIS uses) | not applicable | **about 23.4 MB** (node.exe alone about 22.2 MB; the reader adds about 1.2 MB) |
+| Compressed increase, gzip -9 (for comparison) | about 38.8 MB | about 35.0 MB |
 
-The Windows compressed figure is an estimate with gzip. The NSIS installer uses LZMA and
-the real difference comes from CI; see "Measured installer sizes" below.
+The Windows figure is an estimate. The NSIS installer itself was not built in CI: see
+"Measured installer sizes" below.
 
 The upstream tree, which was rejected, measured 10,075 files, 46,335,907 bytes apparent,
 and 10,628,057 bytes gzipped. It would have added about 10.6 MB compressed instead of 1.9 MB.
@@ -300,8 +302,18 @@ Verified in this record:
 
 ## Measured installer sizes
 
-Measured on CI, from the release workflow's artifacts, with and without the bundle. See the
-pull request for the run links. (Filled in after the workflow runs.)
+Not measured from CI. The release workflow's build jobs depend on the verify jobs, and the
+verify jobs fail on main as well, so no installer was produced by the release workflow (runs
+43682658590 with the bundle and 43681975293 on main, both linked from the pull request). The
+failures are count drift in `scripts/ci/expected.mjs` for the daemon's unit tests and the
+workspace tests on macOS and Windows, which the gates owner maintains. The installed-size and
+compressed figures above are local measurements of the same staged files. The NSIS number
+remains an estimate until a run is possible.
+
+The Windows desktop package job (`npm run package:win`) ran inside CI on this branch's verify
+jobs (run 43682658590). The bundled node.exe passed the Authenticode check (signer OpenJS Foundation,
+status Valid), its binary hash matched the pin, and the staged reader ran against the
+synthetic home.
 
 ## Reproducibility
 
