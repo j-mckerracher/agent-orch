@@ -511,22 +511,28 @@ async fn capture(
         let mut err = Vec::new();
         let mut out_reader = stdout.take(MAX_STDOUT_BYTES + 1);
         let mut err_reader = stderr.take(MAX_STDERR_BYTES);
-        let reads = async {
-            let (read_out, read_err) = tokio::join!(
-                out_reader.read_to_end(&mut out),
-                err_reader.read_to_end(&mut err),
-            );
-            // The child may be blocked writing to a pipe nobody reads now.
+        // Stdout over the cap fails at once. Waiting for stderr to reach end of file first would
+        // keep a runaway child, blocked on its full stdout pipe, alive until `limit`.
+        let read_stdout = async {
+            let read = out_reader.read_to_end(&mut out).await;
             if out.len() as u64 > MAX_STDOUT_BYTES {
                 group.kill();
                 return Err(CaptureFailure::TooLarge);
             }
-            if read_out.is_err() || read_err.is_err() {
+            if read.is_err() {
                 group.kill();
                 return Err(CaptureFailure::Launch);
             }
             Ok(())
         };
+        let read_stderr = async {
+            if err_reader.read_to_end(&mut err).await.is_err() {
+                group.kill();
+                return Err(CaptureFailure::Launch);
+            }
+            Ok(())
+        };
+        let reads = async { tokio::try_join!(read_stdout, read_stderr).map(|_| ()) };
         let exit = async {
             let status = child.wait().await;
             group.kill();
@@ -1498,11 +1504,18 @@ mod tests {
         async fn oversized_output_is_unknown_not_truncated() {
             let dir = tempfile::tempdir().unwrap();
             let program = script(&dir, "case \"$1\" in login) exit 0;; debug) head -c 9000000 /dev/zero | tr '\\0' 'a'; exit 0;; esac\n");
+            let started = std::time::Instant::now();
             let result = CodexAdapter::new()
                 .with_program(&program)
                 .catalog(dir.path(), Duration::from_secs(20))
                 .await;
             assert_eq!(result.models.state, CatalogState::Unknown);
+            // Over the cap is a fast failure, not a wait for the probe limit.
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "an oversized probe waited {:?}",
+                started.elapsed()
+            );
         }
     }
 }
