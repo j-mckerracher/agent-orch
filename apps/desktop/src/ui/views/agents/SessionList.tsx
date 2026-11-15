@@ -5,8 +5,9 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { Button, EmptyState, Pill } from "../../theme";
 import { LoadRegion, PlaceholderMark, StatePill } from "./common";
+import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import {
-  failedSessions,
+failedSessions,
   failedWithoutSession,
   isRunningSession,
   latestAttempt,
@@ -197,7 +198,7 @@ function TaskRows({
             row={row}
             selected={selectedId === row.id}
             onSelect={onSelect}
-            detail={`Agent ${row.agent}; ${attemptText(row)}; ${sessionsText(row)}; provider and model: not available`}
+            detail={`Agent ${agentDisplayName(row.agent)}; ${attemptText(row)}; ${sessionsText(row)}; provider and model: not available`}
           />
         ))}
       </ul>
@@ -268,7 +269,7 @@ function FailedRows({
                 row={row}
                 selected={selectedId === row.id}
                 onSelect={onSelect}
-                detail={`Agent ${row.agent}; ${attemptText(row)}; no session recorded`}
+                detail={`Agent ${agentDisplayName(row.agent)}; ${attemptText(row)}; no session recorded`}
               />
             ))}
           </ul>

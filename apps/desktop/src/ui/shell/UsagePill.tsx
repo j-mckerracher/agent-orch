@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Measured, UsageCostCoverage, UsageEstimateCoverage, UsagePriceTable, UsageSummary } from "../../sources/surfaces/types";
 import { useServices, useSurface, type SurfaceRefresh } from "../services";
+import { agentDisplayName } from "../../daemon/agentDisplayNames";
 import { PlaceholderBadge } from "../widgets";
 import { LocalToolsChip, LocalToolsSection } from "./LocalToolsUsage";
 import { chipText } from "./localToolsCopy";
@@ -104,7 +105,7 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
       <p>{figure("Budget", budget, currency)}</p>
       <ul aria-label="Reporting coverage">
         {coverage.map((entry, index) => {
-          const name = clip(entry.provider);
+          const name = clip(agentDisplayName(entry.provider));
           return (
             <li key={`${index}:${entry.provider}`} title={name.title}>
               {name.text}: {entry.reporting === "none" ? "no usage reported" : entry.reporting}

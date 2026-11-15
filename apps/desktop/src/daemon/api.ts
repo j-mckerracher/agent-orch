@@ -48,6 +48,7 @@ import type {
   ConversationClearResult,
   CoordinatorChangeResult,
   CoordinatorClearResult,
+  CopilotSignInRecord,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -442,6 +443,14 @@ export class DaemonApi {
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */
   agentsCatalog(): Promise<AgentCatalogEntry[]> {
     return this.session.request("agents.catalog");
+  }
+
+  /**
+   * DPES-1105. The one billable Copilot sign-in check: the daemon runs a single cheapest-model call
+   * only when asked, caches the result for the session, and returns it as text. `force` runs it again.
+   */
+  agentsCopilotSignInCheck(force = false): Promise<CopilotSignInRecord> {
+    return this.session.request("agents.check_copilot_sign_in", { force });
   }
 
   /** At least one of model and effort is required by the daemon. */

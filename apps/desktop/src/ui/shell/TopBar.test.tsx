@@ -169,7 +169,7 @@ describe("usage pill", () => {
     expect(details.open).toBe(true);
     await waitFor(() => expect(screen.getByTestId("top-usage-info")).toHaveTextContent("estimated"));
     expect(screen.getByTestId("top-usage-info")).toHaveTextContent("America/Denver");
-    expect(screen.getByTestId("top-usage-info")).toHaveTextContent("codex");
+    expect(screen.getByTestId("top-usage-info")).toHaveTextContent("Codex");
     await user.keyboard("{Escape}");
     expect(details.open).toBe(false);
     expect(button).toHaveFocus();

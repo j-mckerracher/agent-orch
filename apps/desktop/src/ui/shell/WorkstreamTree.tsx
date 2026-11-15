@@ -9,6 +9,7 @@ import {
   type WsGroup,
   type WsTask,
 } from "../views/workstreams/model";
+import { agentDisplayName } from "../../daemon/agentDisplayNames";
 import { Badge } from "../theme";
 import { PlaceholderBadge } from "../widgets";
 import "../views/workstreams/workstreams.css";
@@ -47,7 +48,7 @@ function WorkerRows({ task }: { task: WsTask }) {
   if (task.workers.length === 0) {
     return (
       <span className="ws-tree-worker">
-        {task.agent} · no session
+        {agentDisplayName(task.agent)} · no session
       </span>
     );
   }

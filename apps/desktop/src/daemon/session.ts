@@ -82,6 +82,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "workstreams.unlink_task": "workstreams",
   "agents.catalog": "agents",
   "agents.validate_selection": "agents",
+  "agents.check_copilot_sign_in": "agents",
   "conversations.send": "coordinator",
   "conversations.get": "coordinator",
   "conversations.cancel": "coordinator",

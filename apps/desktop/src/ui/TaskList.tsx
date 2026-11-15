@@ -2,6 +2,7 @@
 import { Crumbs } from "./ConnectionStrip";
 import { FILTER_LABELS, basename, latestSession, matchesFilter, stateLabel } from "./format";
 import type { TaskFilter } from "./router";
+import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { LoadableRegion, SourceSection, StateText, TableWrap } from "./widgets";
@@ -94,7 +95,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
                         <td>
                           <StateText state={task.state} />
                         </td>
-                        <td>{task.contract.agent}</td>
+                        <td>{agentDisplayName(task.contract.agent)}</td>
                         <td>{session ? `${session.id} (${stateLabel(session.state)})` : "none recorded"}</td>
                         <td>
                           <Button

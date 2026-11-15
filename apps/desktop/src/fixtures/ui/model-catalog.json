@@ -29,6 +29,24 @@
             "modelSelection": "unknown",
             "models": { "status": "unknown", "reason": "The adapter cannot enumerate the models available to the account." },
             "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+          },
+          {
+            "id": "fixture:provider-github-copilot",
+            "name": "GitHub Copilot (placeholder)",
+            "installed": true,
+            "launchable": true,
+            "modelSelection": "unknown",
+            "models": { "status": "unknown", "reason": "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings." },
+            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+          },
+          {
+            "id": "fixture:provider-github-copilot-unavailable",
+            "name": "GitHub Copilot (placeholder, sandbox unavailable)",
+            "installed": true,
+            "launchable": false,
+            "modelSelection": "unknown",
+            "models": { "status": "unknown", "reason": "Copilot runs are refused on this host: the command sandbox is not available. Install or enable the sandbox to use Copilot." },
+            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
           }
         ]
       }

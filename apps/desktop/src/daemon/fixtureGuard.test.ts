@@ -104,6 +104,7 @@ const NO_ID_METHODS = new Set<string>([
   "workstreamsList",
   "workstreamsCreate",
   "agentsCatalog",
+  "agentsCopilotSignInCheck",
 ]);
 
 async function api(fake: FakeDaemon) {

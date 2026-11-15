@@ -1,5 +1,6 @@
 /** Later-scope preview panels (scheduling/routing and usage provenance). Live mode shows only what D11/D12 report. */
 import type { Measured } from "../../../sources/surfaces/types";
+import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import { useServices, useSurface } from "../../services";
 import { Disclosure } from "../../theme";
 import { DisabledAction, PlaceholderMark } from "./common";
@@ -97,7 +98,7 @@ export function LaterScope() {
                 ))}
                 {usage.data.coverage.map((c, index) => (
                   <tr key={`${index}:${c.provider}`}>
-                    <th scope="row">Coverage: {c.provider}</th>
+                    <th scope="row">Coverage: {agentDisplayName(c.provider)}</th>
                     <td>{c.reporting}</td>
                   </tr>
                 ))}

@@ -414,8 +414,8 @@ describe("usage pill with the live adapter", () => {
     expect(info).toHaveTextContent("America/Denver");
     expect(info).toHaveTextContent("Estimated, not reported: unknown");
     expect(info).toHaveTextContent("Budget: unsupported");
-    expect(info).toHaveTextContent("claude-code: provider-reported");
-    expect(info).toHaveTextContent("codex: tokens-only");
+    expect(info).toHaveTextContent("Claude Code: provider-reported");
+    expect(info).toHaveTextContent("Codex: tokens-only");
     expect(info).not.toHaveTextContent("placeholder");
   });
 
@@ -440,7 +440,7 @@ describe("usage pill with the live adapter", () => {
     const info = screen.getByTestId("top-usage-info");
     expect(info).toHaveTextContent("Reported usage since");
     expect(info).toHaveTextContent("is unknown");
-    expect(info).toHaveTextContent("codex: no usage reported");
+    expect(info).toHaveTextContent("Codex: no usage reported");
     expect(info.textContent).not.toMatch(/\$/);
   });
 

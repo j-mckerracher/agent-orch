@@ -18,7 +18,7 @@ function seeded() {
 describe("daemon-backed D1-D6 screens", () => {
   it("shows project detection without placeholder or simulated wording", async () => {
     await mount(seeded(), { route: { name: "project", projectId: REPO }, daemonSources: true });
-    expect(await screen.findByText(/codex: installed/)).toBeInTheDocument();
+    expect(await screen.findByText(/Codex: installed/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Agent detection" })).toBeInTheDocument();
     const screens = within(screen.getByRole("main"));
     expect(screens.queryByText(/placeholder/i)).not.toBeInTheDocument();

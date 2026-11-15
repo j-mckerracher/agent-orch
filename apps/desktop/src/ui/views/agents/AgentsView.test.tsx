@@ -151,10 +151,10 @@ describe("Agents & Sessions, live mode", () => {
   it("reports the daemon's exact installed and launchable flags and unknown usage", async () => {
     await liveView();
     const table = await screen.findByRole("table", { name: /inventory/i });
-    const codex = within(table).getByRole("row", { name: /codex/ });
+    const codex = within(table).getByRole("row", { name: /Codex/ });
     expect(within(codex).getByText("Installed and launchable")).toBeInTheDocument();
     expect(within(codex).getByText("installed: yes; launchable: yes")).toBeInTheDocument();
-    const capabilities = within(codex).getByRole("list", { name: "codex capabilities" });
+    const capabilities = within(codex).getByRole("list", { name: "Codex capabilities" });
     for (const flag of [
       "Streaming: Yes",
       "Interactive input: No",
@@ -166,7 +166,7 @@ describe("Agents & Sessions, live mode", () => {
     ]) {
       expect(within(capabilities).getByText(flag)).toBeInTheDocument();
     }
-    const pi = within(table).getByRole("row", { name: /pi/ });
+    const pi = within(table).getByRole("row", { name: /Pi/ });
     expect(within(pi).getByText("Installed, not launchable")).toBeInTheDocument();
     expect(within(pi).getByText("installed: yes; launchable: no")).toBeInTheDocument();
     expect(within(pi).getAllByText("Unknown")).toHaveLength(2);

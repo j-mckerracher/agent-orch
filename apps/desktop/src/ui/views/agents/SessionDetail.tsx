@@ -1,6 +1,7 @@
 /** Selected task and session detail: attempt history, sessions, controls and the execution feed. */
 import { useEffect, useId, useState } from "react";
 import { timelineKey, type Timeline } from "../../../daemon/appData";
+import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import { useServices, useStore } from "../../services";
 import { Button, Disclosure, EmptyState } from "../../theme";
 import { DisabledAction, PlaceholderMark, StatePill } from "./common";
@@ -70,7 +71,7 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
         <code>{row.id}</code> <StatePill state={row.state} />
       </p>
       <p>{row.objective}</p>
-      <p className="agents-sub">Agent {row.agent}</p>
+      <p className="agents-sub">Agent {agentDisplayName(row.agent)}</p>
 
       <section aria-label="Attempt history">
         <h3>Attempt history</h3>
