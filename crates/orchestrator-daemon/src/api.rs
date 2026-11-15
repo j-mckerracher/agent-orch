@@ -6,8 +6,12 @@
 
 use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use orchestrator_agents::{AgentAdapter, ClaudeCodeAdapter, CodexAdapter, PiRpcAdapter};
+use orchestrator_agents::{
+    copilot_sandbox_host, AgentAdapter, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter,
+    PiRpcAdapter, SandboxHostStatus, SignInRecord, COPILOT_AGENT,
+};
 use orchestrator_core::approval::{
     Actor, Approval, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
 };
@@ -35,13 +39,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::executor::{agent_command, Executor, ExecutorConfig};
+use crate::executor::{agent_command, Executor, ExecutorConfig, COPILOT_RUNS_DIR};
 use orchestrator_diagnostics::Level;
 use crate::idempotency;
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
 const EVENT_PAGE_SIZE: usize = 256;
 const LOCAL_USER: &str = "local-user";
+/// Bound for the explicit Copilot sign-in check, which is one real model call.
+const COPILOT_SIGN_IN_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CopilotSignInParams {
+    #[serde(default)]
+    force: bool,
+}
 
 pub(crate) struct DaemonApi {
     store: Arc<SqliteStore>,
@@ -284,6 +297,7 @@ impl RpcHandler for DaemonApi {
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
             "agents.validate_selection" => self.agents_validate_selection(params),
+            "agents.check_copilot_sign_in" => self.check_copilot_sign_in(params),
             "sessions.list" => self.list_sessions(params),
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
@@ -550,20 +564,83 @@ impl DaemonApi {
         if let Some(program) = &self.config.pi_program {
             pi = pi.with_program(program);
         }
+        let mut copilot = CopilotAdapter::new();
+        if let Some(program) = &self.config.copilot_program {
+            copilot = copilot.with_program(program);
+        }
         let limit = self.config.probe_timeout;
-        let (codex, claude, pi) = runtime.block_on(async {
+        let (codex, claude, pi, copilot) = runtime.block_on(async {
             tokio::join!(
                 probe(limit, codex.detect()),
                 probe(limit, claude.detect()),
-                probe(limit, pi.detect())
+                probe(limit, pi.detect()),
+                probe(limit, copilot.detect())
             )
         });
+        let host = copilot_sandbox_host();
+        let sign_in = self.config.copilot_sign_in.snapshot();
         Ok(json!([
             agent_entry("codex", true, codex),
             agent_entry("claude-code", true, claude),
             // The daemon has no stdin RPC launcher for Pi yet.
             agent_entry("pi", false, pi),
+            copilot_entry(copilot, &host, &sign_in),
         ]))
+    }
+
+    /// Runs the one explicit Copilot sign-in check. The check spends one call on
+    /// `claude-haiku-4.5`, and its answer is kept for the session unless `force`
+    /// asks for a new call. A check the sandbox gate refuses spends nothing.
+    fn check_copilot_sign_in(&self, params: Value) -> Result<Value, RpcError> {
+        let force = match params {
+            Value::Null => false,
+            params => {
+                serde_json::from_value::<CopilotSignInParams>(params)
+                    .map_err(|_| RpcError::InvalidParams)?
+                    .force
+            }
+        };
+        // Starts the check on a background thread and returns at once. The
+        // thread is not tied to this request, so a client that disconnects or
+        // times out cancels nothing. The answer is read with `agents.capabilities`.
+        let mut probe = CopilotAdapter::new();
+        if let Some(program) = &self.config.copilot_program {
+            probe = probe.with_program(program);
+        }
+        let record = match copilot_sandbox_host() {
+            SandboxHostStatus::Unavailable(reason) => SignInRecord::refused(reason),
+            // A missing executable is known now, so nothing is started for it.
+            SandboxHostStatus::Ready if probe.locate().is_none() => {
+                SignInRecord::refused("the copilot executable was not found".to_owned())
+            }
+            SandboxHostStatus::Ready => {
+                let program = self.config.copilot_program.clone();
+                let runs = self.config.data_dir.join(COPILOT_RUNS_DIR);
+                self.config.copilot_sign_in.start(force, move || {
+                    let runtime = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(runtime) => runtime,
+                        Err(error) => {
+                            return SignInRecord::failed(format!(
+                                "could not start a runtime for the check: {error}"
+                            ))
+                        }
+                    };
+                    let mut copilot = CopilotAdapter::new();
+                    if let Some(program) = program {
+                        copilot = copilot.with_program(program);
+                    }
+                    runtime.block_on(copilot.sign_in_check(
+                        &SandboxHostStatus::Ready,
+                        &runs,
+                        COPILOT_SIGN_IN_TIMEOUT,
+                    ))
+                })
+            }
+        };
+        serde_json::to_value(record).map_err(|_| RpcError::Internal)
     }
 
     /// Refuses an objective the operating system could not pass to the agent
@@ -1195,6 +1272,28 @@ async fn probe<T>(
             "capability probe timed out".into(),
         )),
     }
+}
+
+/// Copilot's `agents.capabilities` entry. It is launchable only when the CLI is
+/// installed and pinned and this host can run its sandbox. It also reports
+/// both gates, so a client can say why.
+fn copilot_entry(
+    detected: orchestrator_agents::Result<orchestrator_agents::AgentCapabilities>,
+    host: &SandboxHostStatus,
+    sign_in: &SignInRecord,
+) -> Value {
+    let sandbox_ready = *host == SandboxHostStatus::Ready;
+    let mut entry = agent_entry(COPILOT_AGENT, detected.is_ok() && sandbox_ready, detected);
+    entry["sandbox"] = json!({
+        "ready": sandbox_ready,
+        "reason": match host {
+            SandboxHostStatus::Ready => Value::Null,
+            SandboxHostStatus::Unavailable(reason) => json!(reason),
+        },
+    });
+    // The whole record: state, reason, time, and the counts a check reported.
+    entry["sign_in"] = serde_json::to_value(sign_in).unwrap_or(Value::Null);
+    entry
 }
 
 fn agent_entry(

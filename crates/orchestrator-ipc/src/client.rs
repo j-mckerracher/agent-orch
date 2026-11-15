@@ -256,6 +256,15 @@ impl Client {
         self.call_feature(Capability::Agents, "agents.catalog", Value::Null)
     }
 
+    /// Explicit GitHub Copilot sign-in check; see `agents.check_copilot_sign_in`.
+    pub fn agents_check_copilot_sign_in(&mut self, force: bool) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Agents,
+            "agents.check_copilot_sign_in",
+            json!({"force": force}),
+        )
+    }
+
     pub fn agents_validate_selection(
         &mut self,
         agent: &str,

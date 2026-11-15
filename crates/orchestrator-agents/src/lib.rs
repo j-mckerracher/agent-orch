@@ -1,5 +1,5 @@
-//! Capability-aware adapters for Codex, Claude Code, and Pi subprocess
-//! protocols. This crate defines the adapter contract in `contract` and
+//! Capability-aware adapters for Codex, Claude Code, Pi, and GitHub Copilot
+//! subprocess protocols. This crate defines the adapter contract in `contract` and
 //! implements it on top of orchestrator-runtime's process supervisor.
 //!
 //! The adapter owns provider-specific protocol translation; the runtime
@@ -12,6 +12,10 @@ pub mod claude_code_adapter;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
+pub mod copilot_adapter;
+pub mod copilot_parser;
+pub mod copilot_sign_in;
+pub mod copilot_usage;
 mod locate;
 pub mod pi_rpc_adapter;
 pub mod routing;
@@ -28,6 +32,11 @@ pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
     AgentLaunchRequest, Result, TurnOutcome,
 };
+pub use copilot_adapter::{
+    copilot_sandbox_host, sandbox_host_status, CopilotAdapter, CopilotRun, SandboxHostStatus,
+    SandboxProbe, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
+};
+pub use copilot_sign_in::{CopilotSignIn, SignInRecord, SignInState};
 pub use pi_rpc_adapter::PiRpcAdapter;
 pub use routing::{
     select_adapter, AdapterCapabilityGap, Capability, RoutableAdapter, RoutingError,

@@ -152,6 +152,34 @@ export const PI_CATALOG: AgentCatalogEntry = {
   efforts: { state: "unsupported", detail: "pi lists no efforts", items: [] },
 };
 
+/** GitHub Copilot before any sign-in check: installed and pinned, sign-in not yet confirmed (DPES-1105). */
+export const COPILOT_CATALOG: AgentCatalogEntry = {
+  agent: "github-copilot",
+  provider: "github",
+  state: "unknown",
+  detail: "Not confirmed yet: sign-in is checked on your first Copilot use. If you have not signed in, run `copilot login`.",
+  models: {
+    state: "unsupported",
+    detail: "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings.",
+    items: [],
+  },
+  efforts: { state: "unsupported", detail: "This provider exposes no effort setting.", items: [] },
+};
+
+/** GitHub Copilot on a host whose command sandbox is unavailable: launch is refused (DPES-1105). */
+export const COPILOT_UNAVAILABLE_CATALOG: AgentCatalogEntry = {
+  agent: "github-copilot",
+  provider: "github",
+  state: "unavailable",
+  detail: "Copilot runs are refused on this host: the command sandbox is not available.",
+  models: {
+    state: "unavailable",
+    detail: "Copilot runs are refused on this host: the command sandbox is not available.",
+    items: [],
+  },
+  efforts: { state: "unsupported", detail: "This provider exposes no effort setting.", items: [] },
+};
+
 export const COLD_CATALOG = (agent: string): AgentCatalogEntry => ({
   agent,
   provider: null,

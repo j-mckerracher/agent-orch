@@ -5,6 +5,7 @@
 //!
 //! [`AgentRuntime`] answers one conversation turn by launching an installed
 //! agent CLI (Codex, then Claude Code) through the same adapters tasks use.
+//! GitHub Copilot answers only when `AGENT_ORCH_CONVERSATION_AGENT` names it.
 //! The agent is picked from the M7-09 catalog: it must be installed, signed in
 //! and launchable, and an optional configured model and effort must be offered
 //! by its catalog. A runtime that is missing or not launchable never receives
@@ -32,9 +33,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::{
-    AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentLaunchRequest, CatalogState,
-    ClaudeCodeAdapter, CodexAdapter,
+    copilot_sandbox_host, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit,
+    AgentHandle, AgentLaunchRequest, CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter,
+    CopilotRun, CopilotSignIn, SandboxHostStatus, COPILOT_PINNED_VERSION,
 };
 use orchestrator_core::workstream::Workstream;
 use orchestrator_ipc::RpcError;
@@ -46,15 +49,21 @@ use super::conversation_runtime::{
     TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
 };
 use super::models::CatalogCache;
-use crate::executor::{log_safe, ExecutorConfig};
+use crate::executor::{log_safe, ExecutorConfig, COPILOT_RUNS_DIR};
 
 pub(crate) const CODEX: &str = "codex";
 pub(crate) const CLAUDE: &str = "claude-code";
+pub(crate) const GITHUB_COPILOT: &str = "github-copilot";
 
 /// Versions of the agent CLIs this runtime has been proven against. A CLI at
 /// any other version is refused (`version_mismatch`) until an operator adds it
 /// to `AGENT_ORCH_CONVERSATION_PINS`.
-const KNOWN_PINS: [(&str, &str); 3] = [(CODEX, "0.167.0"), (CODEX, "0.167.2"), (CLAUDE, "2.1.311")];
+const KNOWN_PINS: [(&str, &str); 4] = [
+    (CODEX, "0.167.0"),
+    (CODEX, "0.167.2"),
+    (CLAUDE, "2.1.311"),
+    (GITHUB_COPILOT, COPILOT_PINNED_VERSION),
+];
 
 const AGENT_ENV: &str = "AGENT_ORCH_CONVERSATION_AGENT";
 const MODEL_ENV: &str = "AGENT_ORCH_CONVERSATION_MODEL";
@@ -136,7 +145,7 @@ fn parse_pins(text: &str) -> Vec<RuntimeIdentity> {
     text.split(',')
         .filter_map(|entry| {
             let (name, version) = entry.trim().split_once('@')?;
-            let known = name == CODEX || name == CLAUDE;
+            let known = name == CODEX || name == CLAUDE || name == GITHUB_COPILOT;
             (known && valid_version(version)).then(|| RuntimeIdentity {
                 name: name.to_owned(),
                 version: version.to_owned(),
@@ -246,14 +255,19 @@ impl AgentRuntime {
     fn program_of(&self, agent: &str) -> PathBuf {
         let configured = match agent {
             CODEX => self.exec.codex_program.clone(),
+            GITHUB_COPILOT => self.exec.copilot_program.clone(),
             _ => self.exec.claude_program.clone(),
         };
-        let bare = PathBuf::from(if agent == CODEX { "codex" } else { "claude" });
+        let bare = PathBuf::from(match agent {
+            CODEX => "codex",
+            GITHUB_COPILOT => "copilot",
+            _ => "claude",
+        });
         let explicit = configured.clone().unwrap_or_else(|| bare.clone());
-        let located = if agent == CODEX {
-            CodexAdapter::new().with_program(&explicit).locate()
-        } else {
-            ClaudeCodeAdapter::new().with_program(&explicit).locate()
+        let located = match agent {
+            CODEX => CodexAdapter::new().with_program(&explicit).locate(),
+            GITHUB_COPILOT => CopilotAdapter::new().with_program(&explicit).locate(),
+            _ => ClaudeCodeAdapter::new().with_program(&explicit).locate(),
         };
         located.unwrap_or(explicit)
     }
@@ -301,6 +315,8 @@ impl AgentRuntime {
             None => vec![CODEX, CLAUDE],
             Some(CODEX) => vec![CODEX],
             Some(CLAUDE) => vec![CLAUDE],
+            // Copilot is opt-in only: the default order above never reaches it.
+            Some(GITHUB_COPILOT) => vec![GITHUB_COPILOT],
             Some(other) => {
                 eprintln!(
                     "orchestrator-daemon: conversation agent {} is not supported",
@@ -317,7 +333,7 @@ impl AgentRuntime {
                     return None;
                 }
                 let program = self.program_of(agent);
-                match read_version(&program) {
+                match read_version(&program, agent) {
                     Probe::Version(version) => Some((agent, program, version)),
                     Probe::Rejected => {
                         eprintln!(
@@ -418,6 +434,8 @@ impl AgentRuntime {
         let capabilities = runtime.block_on(async {
             if agent == CODEX {
                 CodexAdapter::new().with_program(program).detect().await
+            } else if agent == GITHUB_COPILOT {
+                CopilotAdapter::new().with_program(program).detect().await
             } else {
                 ClaudeCodeAdapter::new()
                     .with_program(program)
@@ -425,9 +443,14 @@ impl AgentRuntime {
                     .await
             }
         });
-        capabilities
-            .map(|caps| caps.streaming && caps.structured_output && caps.cancellation)
-            .unwrap_or(false)
+        // Copilot runs only inside its sandbox, so a host that cannot sandbox
+        // it has no launchable Copilot.
+        let sandboxed =
+            agent != GITHUB_COPILOT || copilot_sandbox_host() == SandboxHostStatus::Ready;
+        sandboxed
+            && capabilities
+                .map(|caps| caps.streaming && caps.structured_output && caps.cancellation)
+                .unwrap_or(false)
     }
 }
 
@@ -477,10 +500,24 @@ impl ConversationRuntime for AgentRuntime {
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
         let prompt = build_prompt(&request);
-        let launch = AgentLaunchRequest {
-            program: selected.program.clone(),
-            args: conversation_args(&selected, &prompt),
-            working_dir: self.config.scratch.clone(),
+        let (launch, run) = if selected.agent == GITHUB_COPILOT {
+            // A private directory per turn: the CLI's working directory is
+            // empty and its usage file sits beside it, never in a repository.
+            let run = CopilotRun::create(&self.exec.data_dir.join(COPILOT_RUNS_DIR))
+                .map_err(|_| RuntimeFailure::Failed)?;
+            let launch = AgentLaunchRequest {
+                program: selected.program.clone(),
+                args: CopilotAdapter::conversation_args(&prompt, &run.usage_file(), &run.cwd()),
+                working_dir: run.cwd(),
+            };
+            (launch, Some(run))
+        } else {
+            let launch = AgentLaunchRequest {
+                program: selected.program.clone(),
+                args: conversation_args(&selected, &prompt),
+                working_dir: self.config.scratch.clone(),
+            };
+            (launch, None)
         };
         let cancelled = Arc::new(AtomicBool::new(false));
         let turn = Turn {
@@ -489,6 +526,8 @@ impl ConversationRuntime for AgentRuntime {
             timeout: self.config.turn_timeout,
             cancelled: cancelled.clone(),
             agents: self.config.agents.clone(),
+            run,
+            sign_in: self.exec.copilot_sign_in.clone(),
         };
         let thread_sink = sink.clone();
         std::thread::Builder::new()
@@ -560,7 +599,7 @@ enum Probe {
 
 /// `--version` of the agent, read with a hard time bound. The child leads its
 /// own process group on Unix so a wrapper script cannot outlive the bound.
-fn read_version(program: &Path) -> Probe {
+fn read_version(program: &Path, agent: &str) -> Probe {
     let mut command = Command::new(program);
     command
         .arg("--version")
@@ -620,7 +659,13 @@ fn read_version(program: &Path) -> Probe {
     if read.is_err() || output.len() > MAX_VERSION_OUTPUT {
         return Probe::Rejected;
     }
-    let parsed = parse_version(&String::from_utf8_lossy(&output));
+    let text = String::from_utf8_lossy(&output);
+    // Copilot prints a second line (an update notice) that must not be read.
+    let parsed = if agent == GITHUB_COPILOT {
+        text.lines().next().and_then(parse_copilot_version)
+    } else {
+        parse_version(&text)
+    };
     if parsed.is_none() {
         eprintln!(
             "orchestrator-daemon: `--version` probe via {} printed no version: {}",
@@ -705,6 +750,25 @@ struct Turn {
     cancelled: Arc<AtomicBool>,
     /// Registry of running agents; see `api_conversation_orphans`.
     agents: PathBuf,
+    /// The Copilot run directory, held until the turn's handle drops.
+    run: Option<CopilotRun>,
+    sign_in: Arc<CopilotSignIn>,
+}
+
+/// Starts one Copilot turn through the sandbox gate. The run directory moves
+/// into the handle, so it is removed when the turn ends.
+async fn spawn_copilot(
+    launch: AgentLaunchRequest,
+    run: Option<CopilotRun>,
+) -> Result<Box<dyn AgentHandle>, AgentError> {
+    let Some(run) = run else {
+        return Err(AgentError::Unavailable(
+            "the Copilot turn has no run directory".to_owned(),
+        ));
+    };
+    CopilotAdapter::new()
+        .spawn_with_host(&copilot_sandbox_host(), launch, Some(run))
+        .await
 }
 
 /// Drives one agent process to the end of the turn and reports through `sink`.
@@ -723,6 +787,8 @@ fn run_turn(turn: Turn, sink: &ReplySink) {
 async fn drive(turn: Turn, sink: &ReplySink) {
     let spawned = if turn.agent == CODEX {
         CodexAdapter::new().spawn(turn.launch).await
+    } else if turn.agent == GITHUB_COPILOT {
+        spawn_copilot(turn.launch, turn.run).await
     } else {
         ClaudeCodeAdapter::new().spawn(turn.launch).await
     };
@@ -772,8 +838,9 @@ async fn drive(turn: Turn, sink: &ReplySink) {
         match event {
             AgentEvent::MessageDelta { text } => {
                 let mut piece = sanitize(&text);
-                // Codex reports whole messages; Claude Code reports fragments.
-                if turn.agent == CODEX && messages > 0 && !piece.is_empty() {
+                // Codex and Copilot report whole messages; Claude Code reports fragments.
+                if matches!(turn.agent, CODEX | GITHUB_COPILOT) && messages > 0 && !piece.is_empty()
+                {
                     piece.insert_str(0, "\n\n");
                 }
                 if !piece.is_empty() {
@@ -793,7 +860,13 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             _ => {}
         }
     }
-    match handle.wait().await {
+    let exit = handle.wait().await;
+    if turn.agent == GITHUB_COPILOT {
+        if let Ok(exit) = &exit {
+            turn.sign_in.record_run(exit);
+        }
+    }
+    match exit {
         Ok(AgentExit::Completed { .. }) => sink.complete(),
         Ok(AgentExit::Cancelled { .. }) => {}
         _ => sink.fail(RuntimeFailure::Failed),
@@ -949,12 +1022,12 @@ mod tests {
         /// The probe of a program that answers; a loaded machine can outlast
         /// the probe once.
         fn answered(path: &Path) -> Probe {
-            let mut probe = read_version(path);
+            let mut probe = read_version(path, CODEX);
             for _ in 0..20 {
                 if probe != Probe::TimedOut {
                     break;
                 }
-                probe = read_version(path);
+                probe = read_version(path, CODEX);
             }
             probe
         }
@@ -997,13 +1070,13 @@ mod tests {
             for (name, body) in [("hang", "exec sleep 30"), ("flood", "yes codex-cli")] {
                 let path = program(dir.path(), name, body, 0o755);
                 // A script written while another test forks can be "busy".
-                let mut probe = read_version(&path);
+                let mut probe = read_version(&path, CODEX);
                 for _ in 0..40 {
                     if probe == Probe::TimedOut {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(50));
-                    probe = read_version(&path);
+                    probe = read_version(&path, CODEX);
                 }
                 assert_eq!(probe, Probe::TimedOut, "{name}");
             }

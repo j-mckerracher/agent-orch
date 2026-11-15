@@ -12,6 +12,7 @@ import type { SurfaceState } from "../../services";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
+import { CopilotSignInCheck } from "./CopilotSignInCheck";
 
 const LIVE_NOTE =
   "Models and efforts come from the daemon's catalog, and the daemon checks each choice. The choice is not sent with messages or task submissions yet.";
@@ -83,11 +84,13 @@ export function ModelPicker({
   catalog,
   provenance,
   validate,
+  copilotSignIn,
   onRetry,
 }: {
   catalog: SurfaceState<ModelCatalog>;
   provenance: Provenance;
   validate?: ModelCatalogSource["validate"];
+  copilotSignIn?: Pick<ModelCatalogSource, "checkCopilotSignIn" | "copilotSignInStatus">;
   onRetry?: () => void;
 }) {
   const popover = usePopover();
@@ -319,6 +322,9 @@ export function ModelPicker({
           <p role="status" className="ws-small">
             {verdictText}
           </p>
+        )}
+        {provider?.id === "github-copilot" && copilotSignIn?.checkCopilotSignIn && copilotSignIn.copilotSignInStatus && (
+          <CopilotSignInCheck check={copilotSignIn.checkCopilotSignIn} status={copilotSignIn.copilotSignInStatus} />
         )}
         <p id={noteId} className="ws-small">
           {note}

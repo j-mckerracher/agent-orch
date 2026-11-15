@@ -364,6 +364,15 @@ function modelSource(ctx: Ctx): ModelCatalogSource {
         (data, nowMs) => stamp(data, nowMs),
         () => ({ providers: [] }),
       ),
+    // DPES-1105: fixture mode never runs the billable Copilot check. Say so instead of inventing a state.
+    checkCopilotSignIn: () =>
+      Promise.resolve(
+        notOk(provenance("D14", envelope), "unavailable", "Fixture mode runs no Copilot sign-in check, so no call is spent.", observation(Date.now())),
+      ),
+    copilotSignInStatus: () =>
+      Promise.resolve(
+        notOk(provenance("D14", envelope), "unavailable", "Fixture mode has no Copilot sign-in record.", observation(Date.now())),
+      ),
   };
 }
 

@@ -199,17 +199,35 @@ export function fakeAgentBinary(): string {
   return process.env.ORCH_FAKE_AGENT_BIN ?? join(dirname(daemonBinary()), "examples", "fake_agent");
 }
 
+/**
+ * A program path that does not exist. Every catalogued agent is pinned to it, because the daemon probes
+ * all of them on each catalog and capabilities read, and it serves a connection's requests one at a time:
+ * an installed CLI on the developer's machine (a local `pi` or `copilot`) would make those probes slow and
+ * hold up the next request, which is how the composer check timed out locally and not on CI.
+ */
+function absentAgent(): string {
+  return join(workRoot(), "no-such-agent");
+}
+
 /** Environment under which the daemon finds no installed agent, wherever the tests run. */
 export function noAgentsEnv(): Record<string, string> {
-  const missing = join(workRoot(), "no-such-agent");
-  return { AGENT_ORCH_CODEX_PROGRAM: missing, AGENT_ORCH_CLAUDE_PROGRAM: missing };
+  const missing = absentAgent();
+  return {
+    AGENT_ORCH_CODEX_PROGRAM: missing,
+    AGENT_ORCH_CLAUDE_PROGRAM: missing,
+    AGENT_ORCH_PI_PROGRAM: missing,
+    AGENT_ORCH_COPILOT_PROGRAM: missing,
+  };
 }
 
 /** Environment that makes the deterministic fake the only installed agent, pinned at its version. */
 export function fakeAgentEnv(): Record<string, string> {
+  const missing = absentAgent();
   return {
     AGENT_ORCH_CODEX_PROGRAM: fakeAgentBinary(),
-    AGENT_ORCH_CLAUDE_PROGRAM: join(workRoot(), "no-such-agent"),
+    AGENT_ORCH_CLAUDE_PROGRAM: missing,
+    AGENT_ORCH_PI_PROGRAM: missing,
+    AGENT_ORCH_COPILOT_PROGRAM: missing,
     AGENT_ORCH_CONVERSATION_PINS: "codex@0.0.0-fake",
   };
 }
@@ -277,7 +295,9 @@ export async function startDaemon(env: Record<string, string> = {}): Promise<Run
     },
     async stop() {
       await terminate(running.child);
-      rmSync(workDir, { recursive: true, force: true });
+      // The daemon's own children can still be writing (a worktree being created) when it exits; Node retries
+      // ENOTEMPTY for this, so a late write does not fail the test during teardown.
+      rmSync(workDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     },
   };
   return daemon;

@@ -30,12 +30,24 @@ use tokio::process::Command;
 
 use crate::claude_code_adapter::ClaudeCodeAdapter;
 use crate::codex_adapter::CodexAdapter;
+use crate::copilot_adapter::{
+    probe_version as probe_copilot_version, CopilotAdapter, SandboxHostStatus, COPILOT_AGENT,
+    PINNED_VERSION as COPILOT_PINNED_VERSION,
+};
+use crate::copilot_sign_in::{
+    SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
+};
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
 const PI_AGENT: &str = "pi";
 const CODEX_PROVIDER: &str = "openai";
 const CLAUDE_PROVIDER: &str = "anthropic";
+const COPILOT_PROVIDER: &str = "github";
+/// Copilot's CLI cannot list models without a billable call, so no list is
+/// offered; a run uses the default model from the user's Copilot settings.
+const COPILOT_MODELS_DETAIL: &str = "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings.";
+const COPILOT_EFFORTS_DETAIL: &str = "Reasoning effort is not offered for GitHub Copilot; the CLI reports its levels only per model.";
 /// Claude Code's stable model aliases, as its model documentation lists them
 /// (`--model <alias>`). `fable` is left out: on some plans it bills to usage
 /// credits, which a headless run cannot confirm with the user. The account's
@@ -53,6 +65,7 @@ pub fn provider_of(agent: &str) -> Option<&'static str> {
     match agent {
         CODEX_AGENT => Some(CODEX_PROVIDER),
         CLAUDE_AGENT => Some(CLAUDE_PROVIDER),
+        COPILOT_AGENT => Some(COPILOT_PROVIDER),
         _ => None,
     }
 }
@@ -926,6 +939,86 @@ impl ClaudeCodeAdapter {
             args.push(effort.into());
         }
         args
+    }
+}
+
+/// The Copilot catalog from facts the daemon already holds: the sandbox host
+/// and the session's sign-in record. Its CLI version was probed by the caller.
+fn copilot_catalog(sign_in: &SignInRecord, host: &SandboxHostStatus) -> AgentCatalog {
+    let (state, detail) = match (host, sign_in.state) {
+        (SandboxHostStatus::Unavailable(reason), _) => (CatalogState::Unavailable, reason.clone()),
+        (SandboxHostStatus::Ready, SignInState::NotChecked) => {
+            (CatalogState::Available, NOT_CHECKED_DETAIL.to_owned())
+        }
+        (SandboxHostStatus::Ready, SignInState::Ready) => {
+            (CatalogState::Available, "ready".to_owned())
+        }
+        (SandboxHostStatus::Ready, SignInState::NotSignedIn) => (
+            CatalogState::AuthenticationFailed,
+            NOT_SIGNED_IN_DETAIL.to_owned(),
+        ),
+        // Unavailable rather than authentication_failed: no sign-in would fix it.
+        (SandboxHostStatus::Ready, SignInState::NoSeat) => {
+            (CatalogState::Unavailable, NO_SEAT_DETAIL.to_owned())
+        }
+        // A check is running: the answer is not known yet, so it is not offered as ready.
+        (SandboxHostStatus::Ready, SignInState::Checking) => (
+            CatalogState::Unknown,
+            "Checking GitHub Copilot sign-in now. Retry shortly.".to_owned(),
+        ),
+        (SandboxHostStatus::Ready, SignInState::Error) => (
+            CatalogState::Unknown,
+            sign_in
+                .reason
+                .clone()
+                .unwrap_or_else(|| "the Copilot sign-in state could not be read".to_owned()),
+        ),
+    };
+    AgentCatalog {
+        agent: COPILOT_AGENT.to_owned(),
+        provider: Some(COPILOT_PROVIDER.to_owned()),
+        state,
+        detail,
+        models: Facet::without_items(CatalogState::Unsupported, COPILOT_MODELS_DETAIL),
+        efforts: Facet::without_items(CatalogState::Unsupported, COPILOT_EFFORTS_DETAIL),
+    }
+}
+
+impl CopilotAdapter {
+    /// Read this adapter's catalog. Only `copilot --version` runs, which is not
+    /// a billable call. Sign-in comes from `sign_in` and sandboxing from `host`.
+    pub async fn catalog(
+        &self,
+        limit: Duration,
+        sign_in: &SignInRecord,
+        host: &SandboxHostStatus,
+    ) -> AgentCatalog {
+        let Some(program) = self.locate() else {
+            return AgentCatalog::uniform(
+                COPILOT_AGENT,
+                Some(COPILOT_PROVIDER),
+                CatalogState::Unavailable,
+                "the copilot executable was not found",
+            );
+        };
+        match probe_copilot_version(&program, limit).await {
+            Ok(version) if version == COPILOT_PINNED_VERSION => copilot_catalog(sign_in, host),
+            Ok(version) => AgentCatalog::uniform(
+                COPILOT_AGENT,
+                Some(COPILOT_PROVIDER),
+                CatalogState::Unavailable,
+                &format!("GitHub Copilot CLI {version} is not the verified version {COPILOT_PINNED_VERSION}"),
+            ),
+            Err(error) => {
+                eprintln!("orchestrator-agents: {COPILOT_AGENT} catalog version probe: {error}");
+                AgentCatalog::uniform(
+                    COPILOT_AGENT,
+                    Some(COPILOT_PROVIDER),
+                    CatalogState::Unknown,
+                    "the copilot version could not be read",
+                )
+            }
+        }
     }
 }
 

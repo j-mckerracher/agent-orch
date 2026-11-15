@@ -1,4 +1,5 @@
 /** Adapter inventory derivations for the Agents & Sessions view (M7-14). */
+import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { AgentCapabilityEntry } from "../../../daemon/types";
 import type { AgentCapability } from "../../../sources/types";
 
@@ -47,7 +48,7 @@ export function inventoryFromDaemon(entries: readonly AgentCapabilityEntry[]): I
     const reported = entry.capabilities;
     return {
       id: entry.agent,
-      name: entry.agent,
+      name: agentDisplayName(entry.agent),
       assignment: assignmentText(entry.installed, entry.launchable),
       installed: flag(entry.installed),
       launchable: flag(entry.launchable),

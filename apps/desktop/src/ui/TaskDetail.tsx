@@ -5,6 +5,7 @@ import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { TERMINAL_STATES, basename, pendingApprovals, stateLabel } from "./format";
+import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
@@ -221,7 +222,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 <dt>Version</dt>
                 <dd>{record.version}</dd>
                 <dt>Kind / agent</dt>
-                <dd>{record.contract.kind} / {record.contract.agent}</dd>
+                <dd>{record.contract.kind} / {agentDisplayName(record.contract.agent)}</dd>
                 <dt>Delivery / autonomy</dt>
                 <dd>{record.contract.delivery} / {record.contract.autonomy}</dd>
                 <dt>Limits</dt>
@@ -394,7 +395,7 @@ export function FixtureTaskDetail({ projectId, id }: { projectId: string; id: st
         {(task) => (
           <div>
             <p>
-              <strong>{task.objective}</strong> — {stateLabel(task.state)}, agent {task.agent}
+              <strong>{task.objective}</strong> — {stateLabel(task.state)}, agent {agentDisplayName(task.agent)}
             </p>
             <ul aria-label="Preview attempts" className="ps-steps">
               {task.attempts.map((a) => (

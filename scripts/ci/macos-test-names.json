@@ -278,6 +278,9 @@
    "a_failed_launch_is_explained_in_the_log_without_the_credential",
    "host_metrics_serves_every_resource_through_the_real_daemon",
    "host_metrics_needs_the_host_capability",
+   "executor::tests::model_selection::a_copilot_check_returns_at_once_and_settles_in_the_background",
+   "executor::tests::model_selection::copilot_is_listed_unavailable_and_its_check_records_nothing_when_the_cli_is_missing",
+   "executor::tests::model_selection::the_copilot_check_returns_at_once_and_its_answer_reaches_capabilities",
    "api::usage_local::tests::the_read_method_reports_off_by_default_without_reading",
    "api::usage_local::tests::the_opt_in_is_persisted_and_turning_it_off_clears_the_snapshot",
    "api::usage_local::tests::window_params_are_validated_before_anything_runs"

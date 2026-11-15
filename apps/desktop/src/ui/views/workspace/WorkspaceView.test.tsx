@@ -7,7 +7,15 @@ import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
-import { CLAUDE_CATALOG, CODEX_CATALOG, COLD_CATALOG, PI_CATALOG, stubConversation, stubValidate } from "../../../test/m724Stubs";
+import {
+  CLAUDE_CATALOG,
+  CODEX_CATALOG,
+  COLD_CATALOG,
+  COPILOT_UNAVAILABLE_CATALOG,
+  PI_CATALOG,
+  stubConversation,
+  stubValidate,
+} from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { workspaceRegistration } from "./register";
@@ -207,7 +215,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const model = await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => expect(model).toBeEnabled());
     expect(within(model).getAllByRole("option").map((o) => o.textContent)).toEqual(["Default model", "GPT A", "GPT B"]);
-    expect(screen.getByRole("button", { name: /^Model settings: codex · default model · default effort/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · default model · default effort/ })).toBeInTheDocument();
     // With no model chosen, Codex's per-model levels are not known yet: the effort control says why.
     expect(screen.getByRole("combobox", { name: "Effort" })).toBeDisabled();
     expect(screen.getByText("Effort levels are listed per model. Choose a model to see its levels.")).toBeInTheDocument();
@@ -255,13 +263,38 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await screen.findByRole("heading", { name: /alpha coordinator/ });
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     const provider = await screen.findByRole("combobox", { name: "Provider" });
-    const pi = within(provider).getByRole("option", { name: /pi \(not launchable\)/ });
+    const pi = within(provider).getByRole("option", { name: /Pi \(not launchable\)/ });
     expect(pi).toBeDisabled();
-    expect(within(provider).getByRole("option", { name: "codex" })).toBeEnabled();
+    expect(within(provider).getByRole("option", { name: "Codex" })).toBeEnabled();
     await waitFor(() => expect(provider).toHaveValue("codex"));
-    expect(screen.getByRole("button", { name: /^Model settings: codex · default model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · default model/ })).toBeInTheDocument();
     await user.selectOptions(provider, "pi");
     expect(provider).toHaveValue("codex");
+  });
+
+  it("lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it", async () => {
+    const fake = liveDaemon();
+    fake.stub("agents.capabilities", [
+      {
+        agent: "codex",
+        installed: true,
+        launchable: true,
+        capabilities: { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true },
+      },
+      { agent: "github-copilot", installed: true, launchable: false, capabilities: null },
+    ]);
+    fake.stub("agents.catalog", [CODEX_CATALOG, COPILOT_UNAVAILABLE_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const provider = await screen.findByRole("combobox", { name: "Provider" });
+    const copilot = within(provider).getByRole("option", { name: /GitHub Copilot \(not launchable\)/ });
+    expect(copilot).toBeDisabled();
+    await waitFor(() => expect(provider).toHaveValue("codex"));
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · default model/ })).toBeInTheDocument();
   });
 
   it("does not offer model settings when no provider is launchable", async () => {
@@ -327,14 +360,14 @@ describe("workspace view, live (daemon-derived) mode", () => {
     ]);
     expect(screen.getByText(/Aliases documented by Claude Code/)).toBeInTheDocument();
     expect(model).toHaveAccessibleDescription(/availability depends on your account/);
-    expect(screen.getByRole("button", { name: /^Model settings: claude-code · default model · default effort/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: Claude Code · default model · default effort/ })).toBeInTheDocument();
     await user.selectOptions(model, "sonnet");
     await waitFor(() => {
       const last = fake.callsTo("agents.validate_selection").at(-1)!.params as Record<string, unknown>;
       expect(last).toEqual({ agent: "claude-code", model: "sonnet" });
     });
     expect(await screen.findByText("The daemon accepts this choice.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Model settings: claude-code · Sonnet \(alias\) · default effort/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: Claude Code · Sonnet \(alias\) · default effort/ })).toBeInTheDocument();
   });
 
   it("shows a provider with no model list as a disabled Default model, with its reason under the control", async () => {
@@ -360,7 +393,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const reason = screen.getByText("The CLI cannot enumerate the models available to the account.");
     expect(reason.tagName).toBe("P");
     expect(model).toHaveAccessibleDescription(/cannot enumerate the models available to the account/);
-    expect(screen.getByRole("button", { name: /^Model settings: claude-code · default model · default effort/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Model settings: Claude Code · default model · default effort/ })).toBeInTheDocument();
   });
 
   it("keeps the model menu honest when the daemon has no catalog method", async () => {

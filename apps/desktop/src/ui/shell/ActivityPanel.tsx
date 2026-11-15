@@ -49,6 +49,7 @@ import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme
 import { usePopover } from "../usePopover";
 import { ErrorNotice, SimulatedReceipts } from "../widgets";
 import { NavLink } from "./NavLink";
+import { agentDisplayName } from "../../daemon/agentDisplayNames";
 import { ResourcesSlot } from "./ResourcesSlot";
 import { formatAge } from "./ResourceStrip";
 import "./ActivityPanel.css";
@@ -149,7 +150,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
         </summary>
         <div className="activity-item-body">
           <span className="activity-row-meta">
-            {basename(entry.projectId)} · {entry.agent} · {entry.taskId}
+            {basename(entry.projectId)} · {agentDisplayName(entry.agent)} · {entry.taskId}
           </span>
           {(isNext || waiting) && (
             <span className="activity-row-pills">

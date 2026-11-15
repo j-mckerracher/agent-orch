@@ -515,6 +515,7 @@ function Conversation({
             catalog={modelCatalog}
             provenance={surfaces.models.provenance}
             validate={surfaces.models.validate}
+            copilotSignIn={surfaces.models}
             onRetry={retryModels}
           />
           <Button

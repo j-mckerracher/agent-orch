@@ -22,7 +22,10 @@ async function until<T>(read: () => T | undefined | false | Promise<T | undefine
   }
 }
 
-async function prepare(env: Record<string, string> = noAgentsEnv()) {
+/** The test client's reconnect policy. A restart can outlast a short schedule, after which the client stops trying. */
+type Reconnect = { backoffMs: number[]; maxAutoAttempts?: number };
+
+async function prepare(env: Record<string, string> = noAgentsEnv(), reconnect: Reconnect = { backoffMs: [50] }) {
   const daemon = await startDaemon(env);
   const connector = new NodeConnector(daemon.dataDir);
   const direct = async <T,>(fn: (api: DaemonApi) => Promise<T>): Promise<T> => {
@@ -33,7 +36,7 @@ async function prepare(env: Record<string, string> = noAgentsEnv()) {
       s.close();
     }
   };
-  const services = createServices({ connector, connection: { backoffMs: [50], requestTimeoutMs: 8000 } });
+  const services = createServices({ connector, connection: { ...reconnect, requestTimeoutMs: 8000 } });
   services.connection.start();
   await until(() => services.connection.getSnapshot().status === "connected", "connected");
   const stop = async () => {
@@ -116,7 +119,8 @@ describe("Workspace conversation and model selector over the real daemon", () =>
   }, 60000);
 
   it("keeps the recorded transcript across a daemon restart and sends only real ids", async () => {
-    const t = await prepare();
+    // A restart may take a few seconds on a loaded machine: keep retrying, with the same ids, until it is back.
+    const t = await prepare(noAgentsEnv(), { backoffMs: [100, 200, 400, 800, 1600], maxAutoAttempts: 20 });
     try {
       const { surfaces } = t.services;
       const receipt = await surfaces.conversation.send({ kind: "global" }, "persist me");
@@ -245,7 +249,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
   }, 90000);
 
   it("keeps ordered replies across a daemon restart and answers a workstream conversation", async () => {
-    const t = await prepare(fakeAgentEnv());
+    const t = await prepare(fakeAgentEnv(), { backoffMs: [100, 200, 400, 800, 1600], maxAutoAttempts: 20 });
     try {
       const { conversation } = t.services.surfaces;
       const global = { kind: "global" } as const;

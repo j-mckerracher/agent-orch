@@ -95,7 +95,13 @@ describe("fixture surfaces (D9-D16)", () => {
     const ws = await s.workstreams.workstreams();
     expect(ws.status === "ok" && ws.data.find((w) => w.id === "fixture:ws-infra")?.objectives.status).toBe("unknown");
     const models = await s.models.catalog();
-    expect(models.status === "ok" && models.data.providers.map((p) => p.modelSelection)).toEqual(["supported", "unknown"]);
+    // Codex supports selection; Claude Code, GitHub Copilot (two placeholders) report no model list.
+    expect(models.status === "ok" && models.data.providers.map((p) => p.modelSelection)).toEqual([
+      "supported",
+      "unknown",
+      "unknown",
+      "unknown",
+    ]);
   });
 
   it.each(["unavailable", "unsupported", "unknown"] as SurfaceFixtureScenario[])(

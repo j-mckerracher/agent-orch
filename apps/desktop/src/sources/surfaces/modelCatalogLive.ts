@@ -13,6 +13,7 @@
  */
 import type { ConnectionManager } from "../../daemon/connection";
 import { asDaemonError, presentError } from "../../daemon/errors";
+import { agentDisplayName } from "../../daemon/agentDisplayNames";
 import type { AgentCatalogEntry, CatalogFacet, CatalogStateWire } from "../../daemon/types";
 import { liveRead } from "./liveSupport";
 import { measured, notOk, observation, unsupportedValue } from "./result";
@@ -104,7 +105,7 @@ export function createLiveModels(
             : withoutRow<ModelOption[]>("models");
           return {
             id: entry.agent,
-            name: entry.agent,
+            name: agentDisplayName(entry.agent),
             installed: entry.installed,
             launchable: entry.launchable,
             modelSelection: supported,
@@ -127,5 +128,24 @@ export function createLiveModels(
         return check.valid ? { valid: true as const } : { valid: false as const, reason: check.reason, detail: check.detail };
       });
     },
+
+    // DPES-1105: one billable call only when the user asks for it; the daemon caches the answer.
+    checkCopilotSignIn: (force) => liveRead(provenance, now, () => connection.api().agentsCopilotSignInCheck(force)),
+
+    // Zero-cost: the sign-in record rides on `agents.capabilities`. A daemon without the row says so.
+    copilotSignInStatus: () =>
+      liveRead(provenance, now, async () => {
+        const row = (await connection.api().agentsCapabilities()).find((entry) => entry.agent === "github-copilot");
+        return (
+          row?.sign_in ?? {
+            state: "not_checked" as const,
+            reason: "The daemon reports no GitHub Copilot sign-in state.",
+            checked_at_ms: null,
+            premium_requests: null,
+            ai_credits: null,
+            warning: null,
+          }
+        );
+      }),
   };
 }

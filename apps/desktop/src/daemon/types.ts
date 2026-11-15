@@ -238,6 +238,9 @@ export interface AgentCapabilityEntry {
     approvals: boolean;
     model_selection: boolean;
   } | null;
+  /** DPES-1105: GitHub Copilot only. Its sandbox host gate and its session sign-in record. */
+  sandbox?: { ready: boolean; reason: string | null } | null;
+  sign_in?: CopilotSignInRecord | null;
 }
 
 export interface ProposalTaskSummary {
@@ -499,6 +502,20 @@ export type SelectionReasonWire =
 
 /** `agents.validate_selection` result. */
 export type SelectionCheck = { valid: true } | { valid: false; reason: SelectionReasonWire; detail: string };
+
+/** GitHub Copilot sign-in as the daemon last established it (DPES-1105). Counts are null when not reported. */
+export type CopilotSignInState = "not_checked" | "checking" | "ready" | "not_signed_in" | "no_seat" | "error";
+
+/** `agents.check_copilot_sign_in` result. Premium requests and AI credits are Copilot's units, never USD. */
+export interface CopilotSignInRecord {
+  state: CopilotSignInState;
+  reason: string | null;
+  checked_at_ms: number | null;
+  premium_requests: number | null;
+  ai_credits: number | null;
+  /** A sanitized error a user hook reported during a completed run. Shown as a warning, never a blocker. */
+  warning: string | null;
+}
 
 /** Conversation target on the wire (M7-08). The kind is `workstream`, not `project`. */
 export type ConversationWireTarget = { kind: "global" } | { kind: "workstream"; workstream_id: string };

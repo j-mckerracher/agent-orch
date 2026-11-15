@@ -25,7 +25,7 @@ use super::*;
 use crate::executor::log_safe;
 
 /// Agents listed by `agents.catalog`, in display order.
-const CATALOG_AGENTS: [&str; 3] = ["codex", "claude-code", "pi"];
+const CATALOG_AGENTS: [&str; 4] = ["codex", "claude-code", "pi", "github-copilot"];
 /// How long a definitive catalog read is reused. Launch always reads afresh.
 const CATALOG_TTL: Duration = Duration::from_secs(30);
 const READ_PENDING: &str = "the catalog is still being read; retry shortly";

@@ -38,7 +38,7 @@
  *   `conversations.send`), `cancel` (`conversations.cancel`) and D9 `workstreams.*`
  *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
-import type { ApprovalState, TaskState } from "../../daemon/types";
+import type { ApprovalState, CopilotSignInRecord, TaskState } from "../../daemon/types";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
 
 export type { Provenance, SimulatedReceipt, SourceId };
@@ -480,6 +480,13 @@ export interface ModelCatalogSource {
   catalog(): Promise<SurfaceResult<ModelCatalog>>;
   /** Derived (M7-24): `agents.validate_selection`. Absent on fixture adapters. */
   validate?(agent: string, selection: { model?: string; effort?: string }): Promise<SurfaceResult<ModelSelectionCheck>>;
+  /**
+   * DPES-1105. The explicit, billable GitHub Copilot sign-in check. Only ever called from a user action,
+   * with its cost shown first. Absent on fixture adapters, which never spend a call.
+   */
+  checkCopilotSignIn?(force: boolean): Promise<SurfaceResult<CopilotSignInRecord>>;
+  /** DPES-1105. Zero-cost read of the sign-in record (from `agents.capabilities`); used while a check runs. */
+  copilotSignInStatus?(): Promise<SurfaceResult<CopilotSignInRecord>>;
 }
 
 // D15 -- SearchSource. A local index over what D9 and D16 loaded; there is no fixture of its own.

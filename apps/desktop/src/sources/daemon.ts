@@ -6,6 +6,7 @@
  * un-negotiated capabilities are unavailable, never empty. Nothing in this
  * file mints a `fixture:` id or fabricates data.
  */
+import { agentDisplayName } from "../daemon/agentDisplayNames";
 import type { ConnectionManager } from "../daemon/connection";
 import { DaemonError, asDaemonError, presentError } from "../daemon/errors";
 import { IdempotencyTracker } from "../daemon/idempotency";
@@ -81,7 +82,7 @@ export function toAgentCapability(entry: AgentCapabilityEntry, discoveredAt: str
   if (!entry.launchable) {
     return {
       id: entry.agent,
-      name: entry.agent,
+      name: agentDisplayName(entry.agent),
       availability: "unsupported",
       features,
       discoveredAt,
@@ -92,7 +93,7 @@ export function toAgentCapability(entry: AgentCapabilityEntry, discoveredAt: str
   }
   return {
     id: entry.agent,
-    name: entry.agent,
+    name: agentDisplayName(entry.agent),
     availability: entry.installed ? "installed" : "available",
     features,
     discoveredAt,
