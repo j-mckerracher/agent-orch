@@ -20,6 +20,7 @@ const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
  * Searchable conversation-target dropdown that lives inside the composer.
  *
  * Keyboard: Enter/Space on the button toggles; opening moves focus to the search box;
+ * Enter in the search box does nothing (it must not submit the composer form);
  * ArrowDown from the search box enters the radio list; arrow keys move and select inside the
  * list (native radio behavior) and keep the panel open; Enter or Space on a radio, or a pointer
  * choice, selects it and closes the panel; Escape closes without changing the choice. Every close
@@ -46,7 +47,13 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
     if (option.key !== selectedKey) onSelect(option);
   };
 
-  const enterList = (event: KeyboardEvent<HTMLInputElement>) => {
+  const searchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // This input sits inside the composer form, so Enter left alone would submit the form and send the draft.
+    // Enter that confirms an IME composition is left to the IME.
+    if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== "ArrowDown") return;
     const radios = listRef.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
     if (!radios || radios.length === 0) return;
@@ -88,7 +95,7 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
           value={query}
           aria-describedby={statusId}
           onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={enterList}
+          onKeyDown={searchKeyDown}
         />
         <div
           ref={listRef}

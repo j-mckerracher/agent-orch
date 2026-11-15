@@ -99,8 +99,9 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 112 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
-// Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests.
-export const VITEST = { files: 72, tests: 1571 };
+// Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
+// (DPES-1105, PR #73): 1573, as the Windows desktop gate measured it in CI run 43726827533.
+export const VITEST = { files: 72, tests: 1573 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44.
 export const E2E_TESTS = 44;
