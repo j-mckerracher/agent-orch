@@ -1,5 +1,6 @@
-// Smoke test for the pinned local-usage reader (DPES-1105), run by the "Harness self-tests" step
-// on every OS, Windows included, and by audit.yml.
+// Smoke test for the pinned local-usage reader (DPES-1105), run by the "Usage reader smoke test" step
+// in ci.yml (Windows and macOS, when the reader's inputs change) and by audit.yml (Linux). It lives
+// outside scripts/**/*.test.mjs so the Harness self-tests glob does not install the reader.
 //
 // It checks the pin, then installs the LOCKED codeburn tree from
 // apps/desktop/src-tauri/sidecars/codeburn/package-lock.json (npm verifies every sha512 value),
@@ -30,8 +31,8 @@ import {
   readPin,
   runReport,
   sidecarDir,
-} from "../apps/desktop/src-tauri/sidecars/codeburn/lib.mjs";
-import { todayUtc, writeSyntheticHome } from "../apps/desktop/src-tauri/sidecars/codeburn/synthetic-home.mjs";
+} from "../../apps/desktop/src-tauri/sidecars/codeburn/lib.mjs";
+import { todayUtc, writeSyntheticHome } from "../../apps/desktop/src-tauri/sidecars/codeburn/synthetic-home.mjs";
 
 const bundlerSource = join(sidecarDir, "bundler", "bundle.mjs");
 const pin = readPin();

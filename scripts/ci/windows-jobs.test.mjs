@@ -40,6 +40,7 @@ test("each area runs the groups that consume it", () => {
     [["crates/orchestrator-local-usage/src/lib.rs"], only("engine", "tauri", "package", "smoke")],
     [["scripts/smoke/usage-reader.smoke.mjs"], ALL],
     [["apps/desktop/src-tauri/sidecars/codeburn/bin.js"], only("tauri", "package", "smoke")],
+    [["apps/desktop/scripts/prepare-codeburn-sidecar.mjs"], only("desktop", "package", "smoke")],
     [["crates/orchestrator-daemon/src/api_usage.rs"], only("engine", "tauri", "package", "smoke")],
     [["crates/orchestrator-store/src/sqlite_usage.rs"], only("engine", "tauri", "package", "smoke")],
     [["crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],
@@ -115,13 +116,13 @@ test("the workflow has a job for each table entry and an aggregator that waits f
   assert.ok(waits, "ci.yml has no gates-windows aggregator with a needs list");
   const needed = waits[1].split(",").map((s) => s.trim());
   for (const job of [...JOBS.map((j) => j.id), "changes"]) assert.ok(needed.includes(job), `aggregator skips ${job}`);
-  const step = /      - name: Usage reader smoke test\n        if: needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node scripts\/smoke\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
+  const step = /      - name: Usage reader smoke test\n        if: needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node apps\/desktop\/src-tauri\/sidecars\/codeburn\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
   assert.equal([...yml.matchAll(step)].length, 2, "the smoke step must be in exactly the harness and macOS jobs");
   for (const job of ["harness", "macos"]) {
     assert.match(yml, new RegExp(`^  ${job}:\\n(?:    .*\\n)*?    needs: changes\\n    if: always\\(\\)\\n`, "m"), `${job} must run even if changes failed`);
   }
   assert.match(yml, /smoke: \$\{\{ steps\.select\.outputs\.smoke \}\}/);
-  // The switch's value is not pinned here: enabling the step (PR 43) must change the one line in windows-jobs.mjs and nothing else.
+  // The switch's value is not pinned here: turning the step on or off must change the one line in windows-jobs.mjs and nothing else.
   assert.equal(typeof USAGE_SMOKE.enabled, "boolean");
   assert.equal(groupOutputs(selectGroups({ eventName: "push" })).smoke, USAGE_SMOKE.enabled, "smoke follows the switch");
   assert.equal(groupOutputs(selectGroups({ eventName: "push" }), false).smoke, false, "smoke is off while disabled");

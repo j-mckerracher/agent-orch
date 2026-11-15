@@ -48,7 +48,7 @@
 //! 4. Re-run `codeburn report --format json -p today --provider <p>` on a
 //!    synthetic home. If the JSON fields in `parse.rs` changed, update the
 //!    parser and the recorded fixture in `tests/fixtures`.
-//! 5. Run the Windows smoke test (`scripts/usage-reader-smoke.test.mjs`) and
+//! 5. Run the Windows smoke test (`scripts/smoke/usage-reader.smoke.mjs`) and
 //!    the crate tests. The popover copy derives the version from the pin.
 
 mod capture;

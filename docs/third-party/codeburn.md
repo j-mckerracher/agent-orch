@@ -320,8 +320,8 @@ synthetic home.
 * Two builds of the bundle from the same lockfile produce identical bytes, from the same
   checkout and from a copy in a different folder (absolute paths do not reach the output;
   esbuild's working directory is the install root).
-* The pin check runs on Windows and macOS (`scripts/usage-reader-smoke.test.mjs` in the
-  harness) and on Linux (`audit.yml`). The same `main.js` and `parse-worker.js` hashes are
+* The pin check runs on Windows and macOS (`scripts/smoke/usage-reader.smoke.mjs`, in the
+  "Usage reader smoke test" step of `ci.yml`, when the reader's inputs change) and on Linux (`audit.yml`). The same `main.js` and `parse-worker.js` hashes are
   required on every platform; a mismatch fails the test on that platform.
 
 ## Upgrade procedure (one change)
@@ -345,7 +345,7 @@ synthetic home.
    (lockfile and SBOM hashes, Trivy results and DB date). Update `SHASUMS256.txt` only from a
    new Node.js release, with its signature verified.
 8. Run `node --test --test-reporter=tap apps/desktop/src-tauri/sidecars/codeburn/codeburn-sidecar.test.mjs`
-   and `node --test scripts/usage-reader-smoke.test.mjs`, and `cargo test -p orchestrator-local-usage`.
+   and `node --test scripts/smoke/usage-reader.smoke.mjs`, and `cargo test -p orchestrator-local-usage`.
 
 ## Newer Node.js 22 releases
 

@@ -52,13 +52,14 @@ export const JOBS = [
 export const GROUPS = ["engine", "tauri", "desktop", "package", "smoke"];
 
 // The usage smoke step (AI usage, DPES-1105) runs only when what it exercises changes: the pinned reader crate, the
-// smoke scripts, the bundled reader sidecar, and the daemon's and store's usage code. `smoke` is selected by these
-// paths on a pull request and by every other event. The step itself is wired in ci.yml but stays off until
-// USAGE_SMOKE.enabled is true (see the extension point in docs/release-ci.md).
+// smoke scripts, the bundled reader sidecar and the script that stages it, and the daemon's and store's usage code.
+// `smoke` is selected by these paths on a pull request and by every other event. The step itself is wired in ci.yml
+// and runs only when USAGE_SMOKE.enabled is true (see docs/release-ci.md).
 const SMOKE_INPUTS = [
   /^crates\/orchestrator-local-usage\//,
   /^scripts\/smoke\//,
   /^apps\/desktop\/src-tauri\/sidecars\//,
+  /^apps\/desktop\/scripts\/prepare-codeburn-sidecar\.mjs$/,
   /^crates\/orchestrator-daemon\/.*usage/i,
   /^crates\/orchestrator-agents\/.*usage/i,
   /^crates\/orchestrator-store\/.*usage/i,
@@ -79,9 +80,8 @@ const RUNS_EVERYTHING = [
   /(^|\/)package(-lock)?\.json$/,
 ];
 
-// The usage smoke step is written into the harness and macOS jobs, and is off until its file exists on the commit.
-// PR #43 enables it by setting `enabled` to true, which is the one line of change.
-export const USAGE_SMOKE = { enabled: false };
+// The usage smoke step runs in the harness and macOS jobs when `smoke` is selected. Setting this to false turns it off.
+export const USAGE_SMOKE = { enabled: true };
 
 const ALL = { engine: true, tauri: true, desktop: true, package: true, smoke: true };
 const NONE = { engine: false, tauri: false, desktop: false, package: false, smoke: false };

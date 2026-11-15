@@ -118,19 +118,21 @@ for that reason only.
 
 The usage smoke step (AI usage, DPES-1105) is written into the harness job and the `gates (macos)` job, after
 `Harness self-tests`. It runs `node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs"` and then
-`node scripts/smoke/require-tap-totals.mjs <tap> 4`, which requires exact TAP totals (pass 4, fail 0, cancelled 0,
-skipped 0). Both jobs run with `if: always()`, so a skipped step leaves its job green, and the aggregator still judges
-the Windows verdict through the harness job.
+`node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs <tap> 4`, which requires exact TAP totals (pass 4,
+fail 0, cancelled 0, skipped 0). Both jobs run with `if: always()`, so a skipped step leaves its job green, and the
+aggregator still judges the Windows verdict through the harness job.
+
+The smoke test is not under `scripts/**/*.test.mjs`, so `Harness self-tests` does not install the pinned reader. The
+audit job runs the same file on Linux (`audit.yml`).
 
 The step runs when `scripts/ci/windows-jobs.mjs` reports `smoke=true`. On a pull request that is only when
-`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/**`, or the daemon's or
-the store's usage code changes. Every other event (a push to `main`, the nightly schedule, a manual run, a release
-call) runs it.
+`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/**`,
+`apps/desktop/scripts/prepare-codeburn-sidecar.mjs`, or the daemon's or the store's usage code changes. Every other event
+(a push to `main`, the nightly schedule, a manual run, a release call) runs it. Docs-only and frontend-only changes do
+not select it.
 
-**Extension point.** The switch is `USAGE_SMOKE.enabled` in `scripts/ci/windows-jobs.mjs`. It is `false` on the commit
-that introduced this step, because `scripts/smoke/` does not exist there yet. The PR that adds the smoke files
-enables it by setting `enabled: true`, which is the one line of change. Until then the step is never selected, so
-the docs-only and frontend-only floors do not include it.
+**Switch.** `USAGE_SMOKE.enabled` in `scripts/ci/windows-jobs.mjs` is `true`. Setting it to `false` turns the step off;
+no other line changes.
 
 **Cost when it runs:** SMOKE_COST_PLACEHOLDER
 

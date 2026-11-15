@@ -1,6 +1,6 @@
 // Shared, dependency-free helpers for the pinned codeburn reader sidecar (DPES-1105).
 // Used by the packaging script (apps/desktop/scripts/prepare-codeburn-sidecar.mjs), the smoke
-// test (scripts/usage-reader-smoke.test.mjs) and the record test (codeburn-sidecar.test.mjs).
+// test (scripts/smoke/usage-reader.smoke.mjs) and the record test (codeburn-sidecar.test.mjs).
 // Pure apart from reading files; nothing here installs or downloads anything.
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";

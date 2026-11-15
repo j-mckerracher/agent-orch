@@ -1,6 +1,6 @@
 //! The reader version MCAO supports, and the hashes that prove the installed
 //! files are the vetted build. The same JSON file is read by the smoke test in
-//! `scripts/usage-reader-smoke.test.mjs`, so there is one source.
+//! `scripts/smoke/usage-reader.smoke.mjs`, so there is one source.
 
 use std::collections::BTreeMap;
 use std::io;
