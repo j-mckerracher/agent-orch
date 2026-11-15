@@ -143,7 +143,7 @@ procedure.
   "trivy": {
     "version": "0.76.2",
     "vulnerability_db_updated_at": "2026-11-14T19:00:12Z",
-    "scanned_at": "2026-11-15T05:22:21Z",
+    "scanned_at": "2026-11-15T05:39:46Z",
     "official_command_exit": 0,
     "results": {
       "HIGH": 0,
