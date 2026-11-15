@@ -277,7 +277,10 @@
    "daemon_cancel_reaches_cancelled_through_real_run_owner",
    "a_failed_launch_is_explained_in_the_log_without_the_credential",
    "host_metrics_serves_every_resource_through_the_real_daemon",
-   "host_metrics_needs_the_host_capability"
+   "host_metrics_needs_the_host_capability",
+   "api::usage_local::tests::the_read_method_reports_off_by_default_without_reading",
+   "api::usage_local::tests::the_opt_in_is_persisted_and_turning_it_off_clears_the_snapshot",
+   "api::usage_local::tests::window_params_are_validated_before_anything_runs"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",

@@ -20,7 +20,8 @@ export const WINDOWS = {
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
   // tests/daemon.rs is cfg(unix), so it runs 0 tests.
   // DPES-1105 adds 8 portable daemon unit tests (conversation clear, removal and the capability), 118 becomes 126.
-  daemon: { passed: 146, ignored: 1, sequence: [126, 12, 2, 4, 0, 1, 2] },
+  // The AI usage module (api::usage_local, three portable tests) landed on main in PR #43 without this manifest, 146 becomes 149.
+  daemon: { passed: 149, ignored: 1, sequence: [129, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 58 on Windows (56 plus the 2 portable history tests), so 58 - 14 = 44 are filtered out.
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 44 },
@@ -63,12 +64,14 @@ export const MACOS = {
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). These executor tests are unix-only, so Windows is unchanged.
-  daemon: { passed: 218, ignored: 1, sequence: [185, 14, 2, 4, 11, 1, 2] },
+  // The AI usage module (api::usage_local, three tests) landed on main in PR #43 without this manifest: 218 becomes 221.
+  daemon: { passed: 221, ignored: 1, sequence: [188, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
   // DPES-1106 adds 2 store tests (the publish regression and the racing-acquires stress): 1021 becomes 1023.
-  workspace: { passed: 1023, ignored: 2 },
+  // The AI usage module (api::usage_local, and the usage crate) landed on main in PR #43 without this manifest: 1023 becomes 1050.
+  workspace: { passed: 1050, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
