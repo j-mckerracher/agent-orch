@@ -701,6 +701,22 @@ describe("conversation target dropdown", () => {
     await user.click(document.body);
     expect(button).toHaveAttribute("aria-expanded", "false");
   });
+
+  it("Enter in the search box neither sends the draft nor closes the panel", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    await screen.findByRole("heading", { name: /Global orchestrator/ });
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "plan it");
+    const button = screen.getByRole("button", { name: /Choose conversation target/ });
+    await user.click(button);
+    const search = screen.getByRole("searchbox", { name: "Search conversations" });
+    await user.type(search, "auth{Enter}");
+    expect(search).toHaveFocus();
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(box).toHaveValue("plan it");
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
+  });
 });
 
 describe("accessibility structure", () => {
@@ -802,6 +818,21 @@ describe("composer keys", () => {
     const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
     expect(params).toMatchObject({ project_id: ALPHA, text: "ship it" });
     await waitFor(() => expect(box).toHaveValue(""));
+  });
+
+  it("Enter on a model setting neither sends the draft nor changes the composer", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    await screen.findByRole("heading", { name: /Global orchestrator/ });
+    const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(box, "plan it");
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const provider = await screen.findByRole("combobox", { name: "Provider" });
+    provider.focus();
+    await user.keyboard("{Enter}");
+    expect(provider).toHaveFocus();
+    expect(box).toHaveValue("plan it");
+    expect(screen.queryByText(/SIMULATED/)).toBeNull();
   });
 });
 
