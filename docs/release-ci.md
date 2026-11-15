@@ -101,8 +101,9 @@ installer on the PR itself.
 ### Cargo cache (Windows)
 
 Each Rust Windows job restores `$RUNNER_TEMP/target` (dependency artifacts only), `~/.cargo/registry` and
-`~/.cargo/git`. The key is the job, the toolchain and both lockfiles, and a miss falls back to the newest entry with
-the same prefix. A pull request only restores. An entry is saved only by a push to `main` whose job passed, and only
+`~/.cargo/git`. The key is `cargo-v2-windows-<job>-<toolchain>-<both lockfiles>`, and a miss falls back to the newest entry with the
+same prefix. The `v2` prefix retires the entries written before the release-profile prune fix: the first version
+cleaned only the debug profile, so a restore from it would have carried the release build of the local packages. A pull request only restores. An entry is saved only by a push to `main` whose job passed, and only
 when its exact key is missing. A tag build (`release.yml`) neither restores nor saves, so a release never uses a
 cache. Before a save, `scripts/ci/prune-target.mjs` runs `cargo clean -p` for every local package (workspace members
 and path dependencies). The build and lint gates assert `Compiling` and `Checking` lines for their crates, and a
@@ -112,6 +113,26 @@ The Windows Rust jobs also set `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0
 no incremental state, and no debug info, whose PDBs dominate MSVC link time. No gate reads debug info: they assert
 counts, test names and build lines. `run-gates.mjs --target-from-cache` allows the restored target to be non-empty
 for that reason only.
+
+### Usage smoke step (extension point)
+
+The usage smoke step (AI usage, DPES-1105) is written into the harness job and the `gates (macos)` job, after
+`Harness self-tests`. It runs `node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs"` and then
+`node scripts/smoke/require-tap-totals.mjs <tap> 4`, which requires exact TAP totals (pass 4, fail 0, cancelled 0,
+skipped 0). Both jobs run with `if: always()`, so a skipped step leaves its job green, and the aggregator still judges
+the Windows verdict through the harness job.
+
+The step runs when `scripts/ci/windows-jobs.mjs` reports `smoke=true`. On a pull request that is only when
+`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/**`, or the daemon's or
+the store's usage code changes. Every other event (a push to `main`, the nightly schedule, a manual run, a release
+call) runs it.
+
+**Extension point.** The switch is `USAGE_SMOKE.enabled` in `scripts/ci/windows-jobs.mjs`. It is `false` on the commit
+that introduced this step, because `scripts/smoke/` does not exist there yet. The PR that adds the smoke files
+enables it by setting `enabled: true`, which is the one line of change. Until then the step is never selected, so
+the docs-only and frontend-only floors do not include it.
+
+**Cost when it runs:** SMOKE_COST_PLACEHOLDER
 
 ### Survivor check and bounded runs
 

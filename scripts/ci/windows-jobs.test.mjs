@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { gatesFor } from "./gates.mjs";
-import { GROUPS, JOBS, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
+import { GROUPS, JOBS, USAGE_SMOKE, groupOutputs, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
 
-const ALL = { engine: true, tauri: true, desktop: true, package: true };
-const NONE = { engine: false, tauri: false, desktop: false, package: false };
+const ALL = { engine: true, tauri: true, desktop: true, package: true, smoke: true };
+const NONE = { engine: false, tauri: false, desktop: false, package: false, smoke: false };
 const only = (...groups) => Object.fromEntries(Object.keys(NONE).map((g) => [g, groups.includes(g)]));
-const pick = (result) => ({ engine: result.engine, tauri: result.tauri, desktop: result.desktop, package: result.package });
+const pick = (result) => Object.fromEntries(GROUPS.map((g) => [g, result[g]]));
 const select = (changedFiles) => pick(selectGroups({ eventName: "pull_request", changedFiles }));
 
 test("an event other than a pull request runs every Windows gate", () => {
@@ -35,6 +35,15 @@ test("each area runs the groups that consume it", () => {
     [["crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],
     [["docs/a.md", "crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],
     [["apps/desktop/src/x.ts", "apps/desktop/src-tauri/src/y.rs"], only("desktop", "tauri", "package")],
+    // The usage smoke group: the pinned reader, the smoke scripts, the bundled sidecar, the daemon's and store's usage
+    // code. Every other row above leaves `smoke` false, which is what the docs-only and frontend-only floors rely on.
+    [["crates/orchestrator-local-usage/src/lib.rs"], only("engine", "tauri", "package", "smoke")],
+    [["scripts/smoke/usage-reader.smoke.mjs"], ALL],
+    [["apps/desktop/src-tauri/sidecars/codeburn/bin.js"], only("tauri", "package", "smoke")],
+    [["crates/orchestrator-daemon/src/api_usage.rs"], only("engine", "tauri", "package", "smoke")],
+    [["crates/orchestrator-store/src/sqlite_usage.rs"], only("engine", "tauri", "package", "smoke")],
+    [["crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],
+    [["crates/orchestrator-daemon/src/api_queue.rs"], only("engine", "tauri", "package")],
   ];
   for (const [files, expected] of table) assert.deepEqual(select(files), expected, files.join(","));
 });
@@ -106,6 +115,15 @@ test("the workflow has a job for each table entry and an aggregator that waits f
   assert.ok(waits, "ci.yml has no gates-windows aggregator with a needs list");
   const needed = waits[1].split(",").map((s) => s.trim());
   for (const job of [...JOBS.map((j) => j.id), "changes"]) assert.ok(needed.includes(job), `aggregator skips ${job}`);
+  const step = /      - name: Usage reader smoke test\n        if: needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node scripts\/smoke\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
+  assert.equal([...yml.matchAll(step)].length, 2, "the smoke step must be in exactly the harness and macOS jobs");
+  for (const job of ["harness", "macos"]) {
+    assert.match(yml, new RegExp(`^  ${job}:\\n(?:    .*\\n)*?    needs: changes\\n    if: always\\(\\)\\n`, "m"), `${job} must run even if changes failed`);
+  }
+  assert.match(yml, /smoke: \$\{\{ steps\.select\.outputs\.smoke \}\}/);
+  assert.equal(USAGE_SMOKE.enabled, false, "the usage smoke step ships off; PR #43 enables it");
+  assert.deepEqual(groupOutputs(selectGroups({ eventName: "push" })).smoke, false, "smoke must stay off while disabled");
+  assert.equal(groupOutputs(selectGroups({ eventName: "push" }), true).smoke, true, "smoke follows the switch once enabled");
 });
 
 const needsFor = ({ selected = {}, results = {}, changes = "success" }) => {

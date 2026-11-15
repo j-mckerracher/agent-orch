@@ -49,7 +49,20 @@ export const JOBS = [
   { id: "desktop-package", group: "package", gates: ["desktop-npm-ci", "desktop-package-win"] },
 ];
 
-export const GROUPS = ["engine", "tauri", "desktop", "package"];
+export const GROUPS = ["engine", "tauri", "desktop", "package", "smoke"];
+
+// The usage smoke step (AI usage, DPES-1105) runs only when what it exercises changes: the pinned reader crate, the
+// smoke scripts, the bundled reader sidecar, and the daemon's and store's usage code. `smoke` is selected by these
+// paths on a pull request and by every other event. The step itself is wired in ci.yml but stays off until
+// USAGE_SMOKE.enabled is true (see the extension point in docs/release-ci.md).
+const SMOKE_INPUTS = [
+  /^crates\/orchestrator-local-usage\//,
+  /^scripts\/smoke\//,
+  /^apps\/desktop\/src-tauri\/sidecars\//,
+  /^crates\/orchestrator-daemon\/.*usage/i,
+  /^crates\/orchestrator-agents\/.*usage/i,
+  /^crates\/orchestrator-store\/.*usage/i,
+];
 
 // A file that no Windows gate reads: anything under docs/, and a Markdown file at the repository root.
 const isDocumentation = (file) => file.startsWith("docs/") || (!file.includes("/") && file.endsWith(".md"));
@@ -66,8 +79,12 @@ const RUNS_EVERYTHING = [
   /(^|\/)package(-lock)?\.json$/,
 ];
 
-const ALL = { engine: true, tauri: true, desktop: true, package: true };
-const NONE = { engine: false, tauri: false, desktop: false, package: false };
+// The usage smoke step is written into the harness and macOS jobs, and is off until its file exists on the commit.
+// PR #43 enables it by setting `enabled` to true, which is the one line of change.
+export const USAGE_SMOKE = { enabled: false };
+
+const ALL = { engine: true, tauri: true, desktop: true, package: true, smoke: true };
+const NONE = { engine: false, tauri: false, desktop: false, package: false, smoke: false };
 
 // The groups a change set needs. Conservative: an input this table does not know runs every gate.
 // `crates/` feeds the engine, the Tauri host (it path-depends on three crates) and the installer (it bundles
@@ -82,6 +99,7 @@ export function selectGroups({ eventName, changedFiles }) {
   for (const file of changedFiles) {
     if (isDocumentation(file)) continue;
     if (RUNS_EVERYTHING.some((re) => re.test(file))) return { ...ALL, reason: `${file} runs every Windows gate` };
+    if (SMOKE_INPUTS.some((re) => re.test(file))) selected.smoke = true;
     if (file.startsWith("crates/")) Object.assign(selected, { engine: true, tauri: true, package: true });
     else if (file.startsWith("apps/desktop/src-tauri/")) Object.assign(selected, { tauri: true, package: true });
     else if (file.startsWith("apps/desktop/src/")) selected.desktop = true;
@@ -89,6 +107,11 @@ export function selectGroups({ eventName, changedFiles }) {
     else return { ...ALL, reason: `${file} is not a known input, so every Windows gate runs` };
   }
   return { ...selected, reason: "only the groups the changed files need" };
+}
+
+// The outputs the `changes` job reports: a group is true only when it is selected and something will run for it.
+export function groupOutputs(picked, smokeEnabled = USAGE_SMOKE.enabled) {
+  return Object.fromEntries(GROUPS.map((group) => [group, group === "smoke" ? picked.smoke && smokeEnabled : picked[group]]));
 }
 
 // The verdict over the needs context of the `gates (windows)` aggregator.
@@ -147,7 +170,8 @@ function cli(argv) {
       changedFiles: eventName === "pull_request" ? changedFilesFromGit() : null,
     });
     process.stderr.write(`${picked.reason}\n`);
-    for (const group of GROUPS) process.stdout.write(`${group}=${picked[group]}\n`);
+    const outputs = groupOutputs(picked);
+    for (const group of GROUPS) process.stdout.write(`${group}=${outputs[group]}\n`);
     return 0;
   }
   if (command === "gates") {
