@@ -19,10 +19,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use orchestrator_agents::SelectionReason;
+use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTED};
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnOutcome,
-    TurnState, MAX_REPLY_CHUNK_BYTES,
+    TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
 };
 
 /// Name reported while no agent is selected.
@@ -60,6 +61,8 @@ pub(crate) struct TurnRequest {
     pub identity: RuntimeIdentity,
     /// The choice the message was sent with, or `None` for the configured default.
     pub choice: Option<Choice>,
+    /// The permission level the message was sent with (DPES-1105).
+    pub level: PermissionLevel,
     /// Recent completed exchanges, oldest first, bounded in count and size.
     /// Failed and canceled turns are not included.
     pub history: Vec<HistoryTurn>,
@@ -80,6 +83,8 @@ pub(crate) enum RuntimeFailure {
     Busy,
     /// The catalog refused the message's choice; the reason sets the code.
     Refused(SelectionReason),
+    /// The agent has no mapping for the message's permission level.
+    LevelUnsupported,
 }
 
 impl RuntimeFailure {
@@ -93,6 +98,7 @@ impl RuntimeFailure {
             Self::Timeout => "runtime_timeout",
             Self::Busy => "runtime_busy",
             Self::Refused(reason) => refusal_code(reason),
+            Self::LevelUnsupported => PERMISSION_LEVEL_UNSUPPORTED,
         }
     }
 }
@@ -126,6 +132,17 @@ pub(crate) trait TurnControl: Send {
 pub(crate) trait ConversationRuntime: Send + Sync {
     /// The identity that would answer a message sent with `choice`.
     fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity;
+
+    /// The permission a turn at `level` runs with, recorded on the turn before it
+    /// launches. `Err` refuses the level: the turn fails with that code and no
+    /// agent runs. The default records nothing.
+    fn permission(
+        &self,
+        _choice: Option<&Choice>,
+        _level: PermissionLevel,
+    ) -> Result<Option<TurnPermission>, RuntimeFailure> {
+        Ok(None)
+    }
 
     /// False only for a runtime that never produces output, so it needs no
     /// version pin.
@@ -326,15 +343,20 @@ impl ConversationService {
 
     /// Persist a message and hand it to the runtime. A runtime that cannot
     /// answer fails the turn, not the call: the message stays in the transcript.
+    /// A level the agent refuses fails the turn with its code and no agent runs.
+    /// The level is recorded on the turn only once the agent has started, so a
+    /// turn that never launched records none.
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
         choice: Option<&Choice>,
+        level: PermissionLevel,
     ) -> Result<BegunTurn, ConversationError> {
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
+        let permission = self.runtime.permission(choice, level);
         let begun = store.begin_conversation_turn(
             target,
             turn_id,
@@ -345,7 +367,14 @@ impl ConversationService {
         if !begun.created {
             return Ok(begun);
         }
-        let failure = self.launch(&identity, choice, target, turn_id, text);
+        let failure = match permission {
+            Err(failure) => Some(failure.code().to_owned()),
+            Ok(permission) => self
+                .launch(&identity, choice, level, target, turn_id, text)
+                .or_else(|| {
+                    permission.and_then(|permission| self.record_launched(turn_id, permission))
+                }),
+        };
         if let Some(code) = failure {
             store.finish_conversation_turn(turn_id, &TurnOutcome::Failed(code))?;
         }
@@ -362,6 +391,7 @@ impl ConversationService {
         &self,
         identity: &RuntimeIdentity,
         choice: Option<&Choice>,
+        level: PermissionLevel,
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
@@ -374,6 +404,7 @@ impl ConversationService {
             text: text.to_owned(),
             identity: identity.clone(),
             choice: choice.cloned(),
+            level,
             history: self.history(target, turn_id),
             context: match target {
                 ConversationTarget::Workstream(id) => self.workstreams.describe(id),
@@ -455,6 +486,28 @@ impl ConversationService {
         }
         kept.reverse();
         kept
+    }
+
+    /// Record the level of a turn whose agent has just started. A store error
+    /// stops the agent and fails the turn, so nothing runs unrecorded. Returns
+    /// the failure code, or `None` when the level was recorded.
+    fn record_launched(&self, turn_id: &str, permission: TurnPermission) -> Option<String> {
+        if self
+            .shared
+            .store
+            .record_conversation_turn_permission(turn_id, permission)
+            .is_ok()
+        {
+            return None;
+        }
+        let code = RuntimeFailure::Failed.code();
+        if let Some(control) = self
+            .shared
+            .finish(turn_id, &TurnOutcome::Failed(code.to_owned()))
+        {
+            control.cancel();
+        }
+        Some(code.to_owned())
     }
 
     /// Keep the control only while the turn is still running; a runtime that

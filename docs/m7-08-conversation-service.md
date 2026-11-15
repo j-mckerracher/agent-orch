@@ -38,13 +38,15 @@ M7-25 (see "M7-25: the agent runtime" below).
 Names are proposals so concurrent daemon work does not collide; no new
 `Capability` variant was added.
 
-- `conversations.send {target, text, idempotency_key, selection?}` — records the
-  message and starts a turn. The call succeeds even when the runtime then fails;
-  the failure is a `turn_failed` entry plus `turn.error_code`. A second send
-  while a turn is `running` is `Conflict`. `selection` is the model choice for
-  this message (see "Per-message choice" under M7-25); it is omitted when the
-  picker has not changed, and a send without it is the request older clients
-  have always sent.
+- `conversations.send {target, text, idempotency_key, selection?, permission?}`
+  — records the message and starts a turn. The call succeeds even when the
+  runtime then fails; the failure is a `turn_failed` entry plus
+  `turn.error_code`. A second send while a turn is `running` is `Conflict`.
+  `selection` is the model choice for this message (see "Per-message choice"
+  under M7-25); it is omitted when the picker has not changed, and a send
+  without it is the request older clients have always sent. `permission` is the
+  level the message runs at (see "Permission levels" under M7-25); a send
+  without it runs at `restricted`.
 - `conversations.get {target, after_sequence?, epoch?}` — page of 100 entries,
   `more`, `next_after_sequence`, `latest_sequence`, latest `turn`, store `epoch`.
   `after_sequence` beyond the latest is `ReplayGap`; a wrong `epoch` is
@@ -65,6 +67,11 @@ and, for a choice the catalog refuses (DPES-1105), one code per refusal reason:
 `selection_models_unsupported`, `selection_models_unknown`,
 `selection_unknown_model`, `selection_effort_requires_model`,
 `selection_effort_unsupported`, `selection_effort_unknown`.
+
+Permission codes (DPES-1105). `permission_level_unsupported` is emitted: the
+agent has no mapping for the level. In PR A that is Extended, on every agent.
+`permission_review_denied` and `permission_review_unavailable` are defined but
+**not emitted until the live check** (see "Permission levels" under M7-25).
 
 ## Ordering, idempotency, replay
 
@@ -132,9 +139,11 @@ no flag.
   workstream context, up to 6 earlier completed turns (4 KiB per reply, 12 KiB
   in total, which keeps the Windows command line short) and the current message
   last. The message is passed as one argument after `--`, never through a shell.
-- **Process.** Read-only agent arguments (`args_for_conversation`), working
-  directory `<data-dir>/conversation-scratch` (empty, daemon-owned). The
-  adapter's `ChildSupervisor` provides a Unix process group (killed as a
+- **Process.** Agent arguments for the message's permission level
+  (`args_for_conversation`, see "Permission levels" below). Each Codex and
+  Claude Code turn runs in its own empty directory under
+  `<data-dir>/conversation-scratch`, removed when the turn ends. The adapter's
+  `ChildSupervisor` provides a Unix process group (killed as a
   group), a Windows Job Object, and a 64 KiB line cap. Turn deadline 180 s
   (`AGENT_ORCH_CONVERSATION_TIMEOUT_MS`, clamped 100 ms to 600 s) gives
   `runtime_timeout`; at most 4 turns run at once, otherwise `runtime_busy`.
@@ -162,9 +171,9 @@ no flag.
   died first is left alone, as are agents spawned within milliseconds before
   the kill. Windows relies on the Job Object (`KILL_ON_JOB_CLOSE`).
 - **Known limit.** A launched agent can read the user's files and runs the
-  user's own agent settings and hooks, as any run of that CLI does. The
-  read-only sandbox and the empty working directory limit what it changes, not
-  what it can read.
+  user's own agent settings and hooks, as any run of that CLI does. What a run
+  may change depends on its permission level (see "Permission levels"). No
+  level limits what it can read.
 
 **Per-message choice (DPES-1105).** `conversations.send` takes an optional
 `selection: {agent, model?, effort?}`, the agent, model and effort the picker
@@ -286,6 +295,44 @@ by state, and reports what it changed.
 `conversation_selection` (DPES-1105). An older daemon does not advertise it, and
 the desktop then blocks a non-default choice instead of sending the message
 without it. A send with no choice needs no capability.
+
+**Permission levels (DPES-1105).** `conversations.send` takes an optional
+`permission`: `restricted`, `extended`, `auto` or `full`, the level the message
+runs at. Rules:
+
+- **Default and wire.** Absent means `restricted`, as a request from before the
+  field existed. The desktop chooses `auto` by sending it. An older daemon
+  rejects an unknown field with `InvalidParams` and runs nothing, so a client
+  must not send `permission` to one. Capability `permission_levels` (daemon
+  wide, like `conversation_selection`) says this daemon accepts the field.
+- **Mapping.** Each agent's argument builder maps the level to its flags. The
+  full per-agent table is in `docs/design/agent-permission-levels.md`, under
+  "Cross-agent argv by level". PR A maps chats for Codex, Claude Code and
+  Copilot. Extended has no chat mapping yet on any agent, so it is refused.
+- **Refused levels run nothing.** A turn whose level has no mapping is recorded
+  as failed with `permission_level_unsupported`, with no level recorded and no
+  agent launched. No run falls back to a looser level.
+- **Recorded.** A launched turn records `permission_level` and
+  `permission_profile` (for example `codex:auto:v1`), and both appear on the
+  turn in `conversations.send` and `conversations.get`. The level is written
+  once the agent has started, so a turn that never launched records none.
+  Migration `0035_conversation_permission.sql` adds both columns as nullable,
+  and a NULL row is a turn from before permission levels.
+- **Codex.** `--skip-git-repo-check` and `--ephemeral` stay at every level,
+  Full included. Neither loosens anything, and the per-turn directory is not a
+  repository.
+- **Copilot.** Every run carries `--max-ai-credits 30`. The cap is soft and 30
+  is the minimum the CLI accepts. This is a working default the user has not
+  chosen.
+- **Denials.** A denied action does not run, and the turn still completes with
+  its reply. No flag makes an agent continue past a denial. The denial codes
+  `permission_review_denied` and `permission_review_unavailable` are defined,
+  but **no code emits them yet**. How the CLIs report a denial or a failed
+  review is unverified, and a parser written before that is known would test
+  only itself. The live check in the design file decides this.
+- **Not passed.** Codex `--ignore-user-config` is not passed. It would drop the
+  user's model and provider settings from `~/.codex/config.toml`, and that is
+  unverified. It is a follow-up.
 
 **Not covered.** Workstream conversations can be cleared through the API, but
 the desktop does not offer it. Single messages cannot be deleted. No retention

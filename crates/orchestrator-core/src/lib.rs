@@ -19,6 +19,7 @@ pub mod approval;
 pub mod contract;
 pub mod decomposition;
 pub mod identity;
+pub mod permission;
 pub mod records;
 pub mod retry;
 pub mod scheduler;

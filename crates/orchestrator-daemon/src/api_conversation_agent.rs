@@ -35,14 +35,17 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use orchestrator_agents::copilot_adapter::parse_copilot_version;
+use orchestrator_agents::permission::chat_profile;
 use orchestrator_agents::{
     AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
     SelectionReason, COPILOT_PINNED_VERSION,
 };
+use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::workstream::Workstream;
 use orchestrator_ipc::RpcError;
-use orchestrator_store::{ConversationTarget, SqliteStore, WorkstreamStoreError};
+use orchestrator_store::{ConversationTarget, SqliteStore, TurnPermission, WorkstreamStoreError};
+use uuid::Uuid;
 
 use super::conversation_orphans as orphans;
 use super::conversation_runtime::{
@@ -526,6 +529,23 @@ impl ConversationRuntime for AgentRuntime {
         matches!(self.current(choice), Some(Selection::Ready(_)))
     }
 
+    /// The profile the selected agent runs `level` with. A level with no
+    /// mapping for that agent is refused before anything launches.
+    fn permission(
+        &self,
+        choice: Option<&Choice>,
+        level: PermissionLevel,
+    ) -> Result<Option<TurnPermission>, RuntimeFailure> {
+        let Some(Selection::Ready(selected)) = self.current(choice) else {
+            // No selected agent: the turn fails with the selection's own code.
+            return Ok(None);
+        };
+        match chat_profile(selected.agent, level) {
+            Some(profile) => Ok(Some(TurnPermission { level, profile })),
+            None => Err(RuntimeFailure::LevelUnsupported),
+        }
+    }
+
     fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
         if self.fresh(choice) {
             return Ok(());
@@ -560,24 +580,37 @@ impl ConversationRuntime for AgentRuntime {
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
         let prompt = build_prompt(&request);
-        let (launch, run) = if selected.agent == GITHUB_COPILOT {
+        let (launch, run, turn_dir) = if selected.agent == GITHUB_COPILOT {
             // A private directory per turn: the CLI's working directory is
             // empty and its usage file sits beside it, never in a repository.
             let run = CopilotRun::create(&self.exec.data_dir.join(COPILOT_RUNS_DIR))
                 .map_err(|_| RuntimeFailure::Failed)?;
+            let args = CopilotAdapter::conversation_args(
+                request.level,
+                &prompt,
+                &run.usage_file(),
+                &run.cwd(),
+            )
+            .ok_or(RuntimeFailure::LevelUnsupported)?;
             let launch = AgentLaunchRequest {
                 program: selected.program.clone(),
-                args: CopilotAdapter::conversation_args(&prompt, &run.usage_file(), &run.cwd()),
+                args,
                 working_dir: run.cwd(),
             };
-            (launch, Some(run))
+            (launch, Some(run), None)
         } else {
+            // A directory per turn, so a write one turn makes cannot be read by
+            // the next. It is removed when the turn ends.
+            let turn_dir =
+                TurnDir::create(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
+            let args = conversation_args(&selected, request.level, &prompt)
+                .ok_or(RuntimeFailure::LevelUnsupported)?;
             let launch = AgentLaunchRequest {
                 program: selected.program.clone(),
-                args: conversation_args(&selected, &prompt),
-                working_dir: self.config.scratch.clone(),
+                args,
+                working_dir: turn_dir.path().to_path_buf(),
             };
-            (launch, None)
+            (launch, None, Some(turn_dir))
         };
         let cancelled = Arc::new(AtomicBool::new(false));
         let turn = Turn {
@@ -587,6 +620,7 @@ impl ConversationRuntime for AgentRuntime {
             cancelled: cancelled.clone(),
             agents: self.config.agents.clone(),
             run,
+            _turn_dir: turn_dir,
             sign_in: self.exec.copilot_sign_in.clone(),
         };
         let thread_sink = sink.clone();
@@ -646,12 +680,16 @@ fn chat_agent(name: &str) -> Option<&'static str> {
     }
 }
 
-fn conversation_args(selected: &Selected, prompt: &str) -> Vec<String> {
+fn conversation_args(
+    selected: &Selected,
+    level: PermissionLevel,
+    prompt: &str,
+) -> Option<Vec<String>> {
     let (model, effort) = (selected.model.as_deref(), selected.effort.as_deref());
     if selected.agent == CODEX {
-        CodexAdapter::args_for_conversation(prompt, model, effort)
+        CodexAdapter::args_for_conversation(level, prompt, model, effort)
     } else {
-        ClaudeCodeAdapter::args_for_conversation(prompt, model, effort)
+        ClaudeCodeAdapter::args_for_conversation(level, prompt, model, effort)
     }
 }
 
@@ -823,7 +861,32 @@ struct Turn {
     agents: PathBuf,
     /// The Copilot run directory, held until the turn's handle drops.
     run: Option<CopilotRun>,
+    /// The Codex or Claude Code turn directory, held until the turn's handle drops.
+    _turn_dir: Option<TurnDir>,
     sign_in: Arc<CopilotSignIn>,
+}
+
+/// An empty directory for one Codex or Claude Code turn, under the scratch
+/// directory. It is removed when the turn ends, so one turn's writes never reach
+/// the next (DPES-1105).
+struct TurnDir(PathBuf);
+
+impl TurnDir {
+    fn create(scratch: &Path) -> std::io::Result<Self> {
+        let path = scratch.join(format!("turn-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir(&path)?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TurnDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Starts one Copilot turn. The run directory moves into the handle, so it is
@@ -984,6 +1047,7 @@ mod tests {
                 version: "0.0.0".into(),
             },
             choice: None,
+            level: PermissionLevel::Restricted,
             history,
             context: None,
         }

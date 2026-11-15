@@ -63,7 +63,7 @@ mod sqlite_verification;
 mod sqlite_workstreams;
 pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
-    ConversationTurn, TurnOutcome, TurnState, INTERRUPTED_BY_RESTART,
+    ConversationTurn, TurnOutcome, TurnPermission, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
 };

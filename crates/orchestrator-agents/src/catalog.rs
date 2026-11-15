@@ -19,6 +19,7 @@
 //! time and bounded output. Only booleans and catalog fields are read from
 //! the output; account identifiers in it are never retained.
 
+use orchestrator_core::permission::PermissionLevel;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
@@ -844,27 +845,36 @@ impl CodexAdapter {
         args
     }
 
-    /// Arguments for a text-only conversation turn: a read-only sandbox, no
-    /// session file and no repository requirement. The prompt is one
+    /// Arguments for a text-only conversation turn at `level`, or `None` when
+    /// this agent has no mapping for it (Extended, in PR A). The prompt is one
     /// argument after `--`; no shell is involved.
+    ///
+    /// Restricted is a read-only sandbox. Auto runs in the workspace-write
+    /// sandbox and sends approval requests to automatic review. Full adds no
+    /// sandbox or approval flag, so `~/.codex/config.toml` decides. Every level
+    /// keeps `--skip-git-repo-check --ephemeral`: the turn directory is not a
+    /// repository, and neither flag loosens anything.
     pub fn args_for_conversation(
+        level: PermissionLevel,
         prompt: &str,
         model: Option<&str>,
         effort: Option<&str>,
-    ) -> Vec<String> {
-        [
-            "exec",
-            "--json",
-            "--sandbox",
-            "read-only",
-            "--skip-git-repo-check",
-            "--ephemeral",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .chain(Self::selection_args(model, effort))
-        .chain(["--".to_owned(), prompt.to_owned()])
-        .collect()
+    ) -> Option<Vec<String>> {
+        let sandbox: &[&str] = match level {
+            PermissionLevel::Restricted => &["--sandbox", "read-only"],
+            PermissionLevel::Auto => &["--sandbox", "workspace-write", "--approve-for-me"],
+            PermissionLevel::Full => &[],
+            PermissionLevel::Extended => return None,
+        };
+        let mut args: Vec<String> = ["exec", "--json"]
+            .into_iter()
+            .chain(sandbox.iter().copied())
+            .chain(["--skip-git-repo-check", "--ephemeral"])
+            .map(str::to_owned)
+            .collect();
+        args.extend(Self::selection_args(model, effort));
+        args.extend(["--".to_owned(), prompt.to_owned()]);
+        Some(args)
     }
 }
 
@@ -908,34 +918,82 @@ impl ClaudeCodeAdapter {
         args
     }
 
-    /// Arguments for a text-only conversation turn: every tool is disabled
-    /// (`--tools ""`), nothing is persisted, and permission prompts are
-    /// refused. The prompt stays one argument; no shell is involved.
+    /// Arguments for a text-only conversation turn at `level`, or `None` when
+    /// this agent has no mapping for it (Extended, in PR A). The prompt stays
+    /// one argument; no shell is involved, and nothing is persisted.
+    ///
+    /// Restricted disables every tool (`--tools ""`) and refuses permission
+    /// prompts. Auto keeps the restricted flags, enables Bash and lets the
+    /// classifier judge each call. Full drops the restrictions and skips
+    /// permission checks, which the user chose per turn in the picker.
     pub fn args_for_conversation(
+        level: PermissionLevel,
         prompt: &str,
         model: Option<&str>,
         effort: Option<&str>,
-    ) -> Vec<String> {
-        let mut args: Vec<String> = [
-            "-p",
-            prompt,
-            "--verbose",
-            "--output-format",
-            "stream-json",
-            "--include-partial-messages",
-            "--permission-mode",
-            "dontAsk",
-            "--permission-prompts",
-            "none",
-            "--restricted",
-            "--strict-mcp-config",
-            "--no-session-persistence",
-            "--tools",
-            "",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
+    ) -> Option<Vec<String>> {
+        let mut args: Vec<String> = match level {
+            PermissionLevel::Restricted => [
+                "-p",
+                prompt,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "dontAsk",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--tools",
+                "",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            PermissionLevel::Auto => [
+                "-p",
+                prompt,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "auto",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--tools",
+                "Read,Edit,Write,Bash",
+                "--allowedTools",
+                "Read,Edit,Write",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            PermissionLevel::Full => [
+                "-p",
+                prompt,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "bypassPermissions",
+                "--permission-prompts",
+                "none",
+                "--allow-dangerously-skip-permissions",
+                "--no-session-persistence",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            PermissionLevel::Extended => return None,
+        };
         if let Some(model) = model {
             args.push("--model".into());
             args.push(model.into());
@@ -944,7 +1002,7 @@ impl ClaudeCodeAdapter {
             args.push("--effort".into());
             args.push(effort.into());
         }
-        args
+        Some(args)
     }
 }
 
@@ -1317,7 +1375,13 @@ mod tests {
     #[test]
     fn conversation_args_are_read_only_and_keep_the_prompt_whole() {
         let prompt = "line one\n--dangerously; $(rm -rf /)";
-        let codex = CodexAdapter::args_for_conversation(prompt, Some("m"), Some("low"));
+        let codex = CodexAdapter::args_for_conversation(
+            PermissionLevel::Restricted,
+            prompt,
+            Some("m"),
+            Some("low"),
+        )
+        .unwrap();
         assert_eq!(codex.last().map(String::as_str), Some(prompt));
         assert_eq!(codex[codex.len() - 2], "--");
         for flag in ["--json", "--ephemeral", "--skip-git-repo-check"] {
@@ -1327,13 +1391,132 @@ mod tests {
         assert_eq!(codex[sandbox + 1], "read-only");
         assert!(codex.iter().any(|arg| arg == "-m"));
 
-        let claude = ClaudeCodeAdapter::args_for_conversation(prompt, None, Some("max"));
+        let claude = ClaudeCodeAdapter::args_for_conversation(
+            PermissionLevel::Restricted,
+            prompt,
+            None,
+            Some("max"),
+        )
+        .unwrap();
         assert_eq!(&claude[..2], ["-p", prompt]);
         let tools = claude.iter().position(|arg| arg == "--tools").unwrap();
         assert_eq!(claude[tools + 1], "");
         assert!(claude.iter().any(|arg| arg == "--no-session-persistence"));
         assert!(!claude.iter().any(|arg| arg == "--allowedTools"));
         assert_eq!(&claude[claude.len() - 2..], ["--effort", "max"]);
+    }
+
+    /// The Codex argv for each level, exactly. Every level keeps
+    /// `--skip-git-repo-check` and `--ephemeral`, which loosen nothing.
+    #[test]
+    fn codex_argv_per_level_is_exact() {
+        let argv = |level| {
+            CodexAdapter::args_for_conversation(level, "hi", None, None)
+                .unwrap()
+                .into_iter()
+                .take_while(|arg| arg != "hi")
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            argv(PermissionLevel::Restricted),
+            [
+                "exec",
+                "--json",
+                "--sandbox",
+                "read-only",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--"
+            ]
+        );
+        assert_eq!(
+            argv(PermissionLevel::Auto),
+            [
+                "exec",
+                "--json",
+                "--sandbox",
+                "workspace-write",
+                "--approve-for-me",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--"
+            ]
+        );
+        assert_eq!(
+            argv(PermissionLevel::Full),
+            [
+                "exec",
+                "--json",
+                "--skip-git-repo-check",
+                "--ephemeral",
+                "--"
+            ]
+        );
+        assert_eq!(
+            CodexAdapter::args_for_conversation(PermissionLevel::Extended, "hi", None, None),
+            None
+        );
+    }
+
+    /// The Claude argv for each level. Restricted is unchanged from before
+    /// permission levels. Full drops every restriction flag.
+    #[test]
+    fn claude_argv_per_level_is_exact() {
+        let argv =
+            |level| ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None).unwrap();
+        let auto = argv(PermissionLevel::Auto);
+        assert_eq!(
+            auto[..],
+            [
+                "-p",
+                "hi",
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "auto",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--tools",
+                "Read,Edit,Write,Bash",
+                "--allowedTools",
+                "Read,Edit,Write",
+            ]
+        );
+        let full = argv(PermissionLevel::Full);
+        assert_eq!(
+            full[..],
+            [
+                "-p",
+                "hi",
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "bypassPermissions",
+                "--permission-prompts",
+                "none",
+                "--allow-dangerously-skip-permissions",
+                "--no-session-persistence",
+            ]
+        );
+        for flag in [
+            "--restricted",
+            "--strict-mcp-config",
+            "--tools",
+            "--allowedTools",
+        ] {
+            assert!(!full.iter().any(|arg| arg == flag), "{flag}");
+        }
+        assert_eq!(
+            ClaudeCodeAdapter::args_for_conversation(PermissionLevel::Extended, "hi", None, None),
+            None
+        );
     }
 
     #[test]

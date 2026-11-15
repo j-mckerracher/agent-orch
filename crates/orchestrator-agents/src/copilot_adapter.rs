@@ -8,9 +8,10 @@
 //!   default. The adapter neither probes for that sandbox nor gates on it;
 //! - starts from the shared environment baseline, with no provider variable,
 //!   so no GitHub token reaches the child;
-//! - never passes a flag that widens permissions, and never passes a model or
-//!   effort on a normal run (see [`CopilotAdapter::sign_in_check_args`] for the
-//!   one exception).
+//! - passes `--max-ai-credits` (a soft cap, see [`AI_CREDIT_CAP`]);
+//! - passes a widening flag only at the Full level, which the user chose, and
+//!   never passes a model or effort on a normal run (see
+//!   [`CopilotAdapter::sign_in_check_args`] for the one exception).
 //!
 //! The worktree is source isolation, not a sandbox. Built-in file edits are not
 //! OS-sandboxed (Copilot's own sandbox help says so), so the write rule is
@@ -24,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use orchestrator_core::permission::PermissionLevel;
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
 use uuid::Uuid;
 
@@ -44,6 +46,10 @@ pub const PINNED_VERSION: &str = "1.0.109";
 pub const SIGN_IN_MODEL: &str = "claude-haiku-4.5";
 const SIGN_IN_PROMPT: &str = "Reply with the single word OK.";
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+/// Every run's `--max-ai-credits`, in credits. 30 is the minimum the CLI accepts.
+/// The cap is soft: one response can exceed it. This is a working default, not a
+/// value the user chose (DPES-1105 O2).
+pub const AI_CREDIT_CAP: &str = "30";
 
 /// The version on the first line of `copilot --version`
 /// (`GitHub Copilot CLI 1.0.109.`), without the trailing period.
@@ -165,25 +171,35 @@ impl CopilotAdapter {
         crate::locate::locate_program(&self.program())
     }
 
-    /// Arguments for a text-only conversation turn. The run reads only its
-    /// empty working directory, and it can neither write, run a command, fetch
-    /// a URL nor use memory.
-    pub fn conversation_args(prompt: &str, usage_file: &Path, scratch: &Path) -> Vec<String> {
-        let mut args = base_args(prompt, usage_file, scratch);
-        args.extend(pairs(&[
-            ("--allow-tool", "read"),
-            ("--deny-tool", "write"),
-            ("--deny-tool", "shell"),
-            ("--deny-tool", "url"),
-            ("--deny-tool", "memory"),
-        ]));
-        args
+    /// Arguments for a text-only conversation turn at `level`, or `None` when
+    /// this adapter has no mapping for it (Extended, in PR A). The run reads
+    /// only its own empty directory, `scratch`.
+    ///
+    /// Restricted can neither write, run a command, fetch a URL nor use memory.
+    /// Auto can write under `scratch`, and a shell request goes to the judge
+    /// (`--assisted-approval`). Git push is denied by rule. Full passes
+    /// `--allow-all`, the user's per-turn choice.
+    pub fn conversation_args(
+        level: PermissionLevel,
+        prompt: &str,
+        usage_file: &Path,
+        scratch: &Path,
+    ) -> Option<Vec<String>> {
+        let flags = match level {
+            PermissionLevel::Restricted => restricted_flags(),
+            PermissionLevel::Auto => auto_flags(scratch),
+            PermissionLevel::Full => vec!["--allow-all".to_owned()],
+            PermissionLevel::Extended => return None,
+        };
+        let mut args = base_args(prompt, usage_file, scratch, level);
+        args.extend(flags);
+        Some(args)
     }
 
     /// Arguments for a task run in `worktree`. It reads what the CLI allows and
     /// writes only under the worktree. It has no shell, URL or memory tool.
     pub fn task_args(objective: &str, usage_file: &Path, worktree: &Path) -> Vec<String> {
-        let mut args = base_args(objective, usage_file, worktree);
+        let mut args = base_args(objective, usage_file, worktree, PermissionLevel::Restricted);
         let write_rule = format!("write({}/**)", path_text(worktree));
         args.extend(pairs(&[
             ("--allow-tool", "read"),
@@ -197,10 +213,16 @@ impl CopilotAdapter {
         args
     }
 
-    /// The conversation arguments plus the one model this adapter ever names:
-    /// the explicit sign-in check. Normal runs pass no `--model`.
+    /// The Restricted conversation arguments plus the one model this adapter
+    /// ever names: the explicit sign-in check. Normal runs pass no `--model`.
     pub fn sign_in_check_args(usage_file: &Path, scratch: &Path) -> Vec<String> {
-        let mut args = Self::conversation_args(SIGN_IN_PROMPT, usage_file, scratch);
+        let mut args = base_args(
+            SIGN_IN_PROMPT,
+            usage_file,
+            scratch,
+            PermissionLevel::Restricted,
+        );
+        args.extend(restricted_flags());
         args.extend(["--model".to_owned(), SIGN_IN_MODEL.to_owned()]);
         args
     }
@@ -294,9 +316,41 @@ fn pairs(items: &[(&str, &str)]) -> Vec<String> {
         .collect()
 }
 
+/// The Restricted flags for a conversation turn: read only, no write, shell,
+/// URL or memory tool.
+fn restricted_flags() -> Vec<String> {
+    pairs(&[
+        ("--allow-tool", "read"),
+        ("--deny-tool", "write"),
+        ("--deny-tool", "shell"),
+        ("--deny-tool", "url"),
+        ("--deny-tool", "memory"),
+    ])
+}
+
+/// The Auto flags for a conversation turn. Reads, and writes only under
+/// `scratch`. A shell request with no allow rule goes to the judge. A
+/// `git push` shell command is denied by rule.
+fn auto_flags(scratch: &Path) -> Vec<String> {
+    let write_rule = format!("write({}/**)", path_text(scratch));
+    let mut args = vec!["--assisted-approval".to_owned()];
+    args.extend(pairs(&[
+        ("--allow-tool", "read"),
+        ("--allow-tool", write_rule.as_str()),
+        ("--deny-tool", "url"),
+        ("--deny-tool", "memory"),
+        ("--deny-tool", "shell(git push)"),
+    ]));
+    args
+}
+
 /// The arguments every run shares. The prompt is one argument. Each
 /// variadic `--allow-tool` and `--deny-tool` value list is followed by a flag,
 /// so no tool name can be read as a positional argument.
+///
+/// Full drops `--no-custom-instructions` and `--disallow-temp-dir`, because
+/// its user chose to load the user's own instructions and temp dir. Every other
+/// level keeps both.
 ///
 /// User hooks: the CLI also runs the user's own Copilot hooks from
 /// `~/.copilot` during every run, as it does when the user runs Copilot by
@@ -304,26 +358,22 @@ fn pairs(items: &[(&str, &str)]) -> Vec<String> {
 /// does not disable them, because the CLI has no flag for that and moving
 /// `COPILOT_HOME` would break the stored login. A hook error shows as a warning
 /// (see `copilot_parser`). Decision recorded in the PR.
-fn base_args(prompt: &str, usage_file: &Path, cwd: &Path) -> Vec<String> {
+fn base_args(prompt: &str, usage_file: &Path, cwd: &Path, level: PermissionLevel) -> Vec<String> {
+    let keeps_restrictions = level != PermissionLevel::Full;
     let mut args = vec![format!("--prompt={prompt}")];
-    args.extend(
-        [
-            "--output-format",
-            "json",
-            "--log-level",
-            "none",
-            "--no-auto-update",
-            "--no-ask-user",
-            "--no-custom-instructions",
-            "--disable-builtin-mcps",
-            "--disallow-temp-dir",
-            "--usage-output-file",
-        ]
-        .into_iter()
-        .map(str::to_owned),
-    );
+    args.extend(["--output-format", "json", "--log-level", "none"].map(str::to_owned));
+    args.extend(["--no-auto-update", "--no-ask-user"].map(str::to_owned));
+    if keeps_restrictions {
+        args.push("--no-custom-instructions".to_owned());
+    }
+    args.push("--disable-builtin-mcps".to_owned());
+    if keeps_restrictions {
+        args.push("--disallow-temp-dir".to_owned());
+    }
+    args.push("--usage-output-file".to_owned());
     args.push(path_text(usage_file));
     args.extend(["-C".to_owned(), path_text(cwd)]);
+    args.extend(["--max-ai-credits".to_owned(), AI_CREDIT_CAP.to_owned()]);
     args
 }
 

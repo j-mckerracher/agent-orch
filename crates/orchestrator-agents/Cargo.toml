@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+orchestrator-core = { path = "../orchestrator-core" }
 orchestrator-runtime = { path = "../orchestrator-runtime" }
 # Pinned per the workspace root rule (direct dependencies pinned with `=`).
 tokio = { version = "=1.54.1", features = ["rt", "process", "time", "io-util"] }

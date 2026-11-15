@@ -21,6 +21,7 @@
 //! task id and is not extended here.
 
 use orchestrator_core::contract::ModelSelection;
+use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
     ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
     MAX_CONVERSATION_MESSAGE_BYTES,
@@ -94,6 +95,11 @@ struct ConversationSendParams {
     idempotency_key: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selection: Option<SelectionParam>,
+    /// The permission level for this message (DPES-1105). Omitted means
+    /// Restricted, and the request serializes as it did before, so its
+    /// idempotency fingerprint is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    permission: Option<PermissionLevel>,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +136,7 @@ impl DaemonApi {
             .as_ref()
             .map(SelectionParam::to_choice)
             .transpose()?;
+        let level = request.permission.unwrap_or_default();
         let key = request.idempotency_key.clone();
         self.conversations.prepare(choice.as_ref())?;
         // The idempotency record keeps references only, never the message text
@@ -146,7 +153,7 @@ impl DaemonApi {
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
                 let begun = self
                     .conversations
-                    .start(&target, &turn_id, &request.text, choice.as_ref())
+                    .start(&target, &turn_id, &request.text, choice.as_ref(), level)
                     .map_err(map_conversation_error)?;
                 Ok(json!({
                     "entry_id": begun.user_entry.id,
@@ -344,6 +351,10 @@ fn turn_json(turn: &ConversationTurn) -> Value {
         "error_code": turn.error_code,
         "runtime": {"name": turn.runtime_name, "version": turn.runtime_version},
         "reply_bytes": turn.reply_bytes,
+        // The level the turn ran with. Null for a turn from before permission
+        // levels, and for a turn the agent refused before it ran.
+        "permission_level": turn.permission_level.map(PermissionLevel::as_str),
+        "permission_profile": turn.permission_profile,
         "created_at": turn.created_at,
         "updated_at": turn.updated_at
     })
