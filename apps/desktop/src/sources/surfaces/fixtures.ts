@@ -14,9 +14,12 @@ import decisionFixture from "../../fixtures/ui/decision-queue.json";
 import modelFixture from "../../fixtures/ui/model-catalog.json";
 import metricsFixture from "../../fixtures/ui/system-metrics.json";
 import usageFixture from "../../fixtures/ui/usage.json";
+import localToolsFixture from "../../fixtures/ui/local-tools.json";
 import workstreamFixture from "../../fixtures/ui/workstreams.json";
+import type { LocalToolsProviderWire, LocalToolsSnapshotWire } from "../../daemon/usageWire";
 import { countStates, measured, notOk, observation, okResult } from "./result";
-import { zoneDayStart } from "./localDay";
+import { wallClockMs, zoneDayStart } from "./localDay";
+import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
 import type {
   ActivitySnapshot,
@@ -28,6 +31,8 @@ import type {
   ConversationTarget,
   DecisionQueue,
   DecisionQueueSource,
+  LocalToolsSnapshot,
+  LocalToolsSource,
   ModelCatalog,
   ModelCatalogSource,
   Provenance,
@@ -47,10 +52,53 @@ import type {
 
 export type SurfaceFixtureScenario = "success" | "empty" | "loading" | "unavailable" | "unsupported" | "unknown";
 
+/** Every state of the other-AI-tools fixture. `ok_unpriced` is what opting in shows in fixture mode. */
+export const LOCAL_TOOLS_FIXTURE_STATES = [
+  "off",
+  "not_started",
+  "ok",
+  "ok_unpriced",
+  "no_calls",
+  "stale",
+  "not_installed",
+  "node_missing",
+  "node_too_old",
+  "unsupported_version",
+  "integrity_mismatch",
+  "timeout",
+  "failed",
+  "bad_output",
+  "output_too_large",
+  "wrong_day",
+  "not_bundled",
+] as const;
+export type LocalToolsFixtureState = (typeof LOCAL_TOOLS_FIXTURE_STATES)[number];
+
 export interface SurfaceFixtureOptions {
   scenario?: SurfaceFixtureScenario;
   /** Clock in epoch milliseconds; fixture observation ages are subtracted from it. */
   now?: () => number;
+  /** Other AI tools' state at start. Defaults to opted out. The opt-in control changes it in memory. */
+  localTools?: LocalToolsFixtureState;
+}
+
+type ProviderSet = "priced" | "one_unpriced" | "no_calls" | "not_run";
+
+interface LocalToolsFixtureFile {
+  timezone: string;
+  pinned_version: string;
+  providerSets: Record<ProviderSet, LocalToolsProviderWire[]>;
+  states: Record<
+    LocalToolsFixtureState,
+    {
+      enabled: boolean;
+      reader: Omit<LocalToolsSnapshotWire["reader"], "pinned_version">;
+      stale: boolean;
+      /** Age of the figures; null when there are none. */
+      observed_age_ms: number | null;
+      providers: ProviderSet;
+    }
+  >;
 }
 
 interface Envelope<D> {
@@ -239,6 +287,62 @@ function usageSource(ctx: Ctx): UsageSource {
   };
 }
 
+/** The local day (or its stand-in) the fixture figures cover, so the window follows the clock like the usage fixture. */
+function localDayBounds(nowMs: number, timeZone: string): { start: number; end: number } {
+  const start = (zoneDayStart(nowMs, timeZone) ?? new Date(nowMs)).getTime();
+  // 36 hours after local midnight is inside the next local day, so that day's midnight is this day's end.
+  const end = (zoneDayStart(start + 36 * 3_600_000, timeZone) ?? new Date(start + 86_400_000)).getTime();
+  return { start, end };
+}
+
+/** One `usage.localTools` result for a fixture state, in the daemon's wire shape. */
+function localToolsWire(name: LocalToolsFixtureState, nowMs: number): LocalToolsSnapshotWire {
+  const file = localToolsFixture as unknown as LocalToolsFixtureFile;
+  const state = file.states[name];
+  const { start, end } = localDayBounds(nowMs, file.timezone);
+  const utcOffsetSeconds = (wallClockMs(start, file.timezone) - start) / 1000;
+  const observed = state.observed_age_ms === null ? null : nowMs - state.observed_age_ms;
+  return {
+    schema_version: 1,
+    enabled: state.enabled,
+    window: { start_unix_ms: start, end_unix_ms: end, timezone: file.timezone, utc_offset_seconds: utcOffsetSeconds },
+    data_window: observed === null ? null : { start_unix_ms: start, end_unix_ms: end, timezone: file.timezone },
+    reader: { ...state.reader, pinned_version: file.pinned_version },
+    refreshing: false,
+    observed_at_unix_ms: observed,
+    stale: state.stale,
+    providers: file.providerSets[state.providers],
+  };
+}
+
+/**
+ * Other AI tools' usage. The opt-in choice lives in memory, as the daemon keeps it: opting in shows
+ * `ok_unpriced` and opting out hides every figure. Fixture mode never sends a request.
+ */
+function localToolsSource(ctx: Ctx, initial: LocalToolsFixtureState): LocalToolsSource {
+  const provenance: Provenance = { kind: "fixture", id: "D12", fixture: "local-tools" };
+  let current = initial;
+  const read = (): Promise<SurfaceResult<LocalToolsSnapshot>> => {
+    if (ctx.scenario === "loading") return new Promise(() => undefined);
+    if (ctx.scenario === "unavailable" || ctx.scenario === "unsupported" || ctx.scenario === "unknown") {
+      return Promise.resolve(notOk(provenance, ctx.scenario, `Fixture scenario: other AI tools are ${ctx.scenario}.`, observation(ctx.now())));
+    }
+    const nowMs = ctx.now();
+    const snapshot = mapLocalTools(parseLocalTools(localToolsWire(current, nowMs)));
+    return Promise.resolve(okResult(provenance, snapshot, observation(nowMs)));
+  };
+  return {
+    provenance,
+    local: read,
+    setEnabled: (enabled) => {
+      if (!enabled) current = "off";
+      else if (current === "off") current = "ok_unpriced";
+      return read();
+    },
+    refresh: read,
+  };
+}
+
 function metricsSource(ctx: Ctx): SystemMetricsSource {
   const envelope = metricsFixture as unknown as Envelope<SystemMetrics>;
   return {
@@ -290,6 +394,7 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     conversation: conversationSource(ctx),
     activity: activitySource(ctx),
     usage: usageSource(ctx),
+    localTools: localToolsSource(ctx, options.localTools ?? "off"),
     metrics: metricsSource(ctx),
     models: modelSource(ctx),
     search: createSearchSource(workstreams, decisions, ctx.now),

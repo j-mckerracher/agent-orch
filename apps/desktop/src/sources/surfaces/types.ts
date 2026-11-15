@@ -351,6 +351,79 @@ export interface UsageSource {
   usage(): Promise<SurfaceResult<UsageSummary>>;
 }
 
+// D12 -- LocalToolsSource. Other AI tools' usage, read from their local session files and opt-in.
+// Live: `usage.localTools*` (localToolsLive.ts). Fixture: PLACEHOLDER figures. These are estimates from
+// list prices; they are never added to UsageSummary.
+export type LocalToolsReaderState =
+  | "off"
+  | "not_started"
+  | "ok"
+  | "not_installed"
+  | "node_missing"
+  | "node_too_old"
+  | "unsupported_version"
+  | "integrity_mismatch"
+  | "timeout"
+  | "failed"
+  | "bad_output"
+  | "output_too_large"
+  | "wrong_day"
+  | "not_bundled";
+export type LocalToolsProviderId = "claude-code" | "codex" | "github-copilot";
+export interface LocalToolsProvider {
+  id: LocalToolsProviderId;
+  label: string;
+  state: "ok" | "no_calls" | "not_run";
+  sessions: number | null;
+  calls: number | null;
+  tokens: { input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null };
+  /** List-price estimate in USD. Null means no call had a price: unknown, never zero. */
+  estimatedUsd: number | null;
+  /** Models with tokens but no price. Their tokens are not in `estimatedUsd`. */
+  unpricedModels: number;
+  unpricedTokens: number;
+  /** True only when every call had a price. */
+  costComplete: boolean;
+}
+export interface LocalToolsWindow {
+  startMs: number;
+  endMs: number;
+  timezone: string;
+}
+export interface LocalToolsReader {
+  state: LocalToolsReaderState;
+  version: string | null;
+  pinnedVersion: string;
+  nodeVersion: string | null;
+  exitStatus: number | null;
+  /** Where the reader came from: the app's bundle, an override variable, or PATH. Null when none was used. */
+  source: "bundled" | "override" | "path" | null;
+}
+export interface LocalToolsSnapshot {
+  enabled: boolean;
+  /** The local day the request asked for. */
+  window: LocalToolsWindow;
+  /** The window the provider figures cover; null when there are none. */
+  figures: LocalToolsWindow | null;
+  reader: LocalToolsReader;
+  refreshing: boolean;
+  /** When the figures were last read; null when there are none. */
+  observedAtMs: number | null;
+  /** Figures older than the daemon's limit, or covering another window. Reader problems also make them stale in the view. */
+  stale: boolean;
+  /** Always three, in the order Claude Code, Codex, GitHub Copilot. */
+  providers: LocalToolsProvider[];
+}
+export interface LocalToolsSource {
+  readonly provenance: Provenance;
+  /** The cached snapshot. The daemon never runs a reader on this read. */
+  local(): Promise<SurfaceResult<LocalToolsSnapshot>>;
+  /** Opt in or out. Turning it off hides every figure at once. */
+  setEnabled(enabled: boolean): Promise<SurfaceResult<LocalToolsSnapshot>>;
+  /** Asks the collector to refresh now; rate limited by the daemon. */
+  refresh(): Promise<SurfaceResult<LocalToolsSnapshot>>;
+}
+
 // D13 -- SystemMetricsSource. Live: `host.metrics` (liveMetrics.ts). Fixture: wireframe numbers.
 export interface MeterValue {
   value: number;
@@ -463,6 +536,7 @@ export interface SurfaceSources {
   conversation: ConversationSource;
   activity: ActivitySource;
   usage: UsageSource;
+  localTools: LocalToolsSource;
   metrics: SystemMetricsSource;
   models: ModelCatalogSource;
   search: SearchSource;

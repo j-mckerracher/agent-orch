@@ -76,3 +76,91 @@ export interface UsageSummaryWire {
   providers: UsageProviderWire[];
   price_table?: UsagePriceTableWire;
 }
+
+/** Window params shared by `usage.localTools`, `.setEnabled` and `.refresh`; all four are required. */
+export interface LocalToolsWindowRequest {
+  /** IANA name or label (1..=64 bytes). */
+  timezone: string;
+  utc_offset_seconds: number;
+  /** End is after start and the span is at most 26 hours. */
+  window_start_unix_ms: number;
+  window_end_unix_ms: number;
+}
+
+export interface LocalToolsSetEnabledRequest extends LocalToolsWindowRequest {
+  enabled: boolean;
+}
+
+export type LocalToolsReaderStateWire =
+  | "off"
+  | "not_started"
+  | "ok"
+  | "not_installed"
+  | "node_missing"
+  | "node_too_old"
+  | "unsupported_version"
+  | "integrity_mismatch"
+  | "timeout"
+  | "failed"
+  | "bad_output"
+  | "output_too_large"
+  | "wrong_day"
+  | "not_bundled";
+
+export type LocalToolsProviderIdWire = "claude-code" | "codex" | "github-copilot";
+
+export interface LocalToolsCostWire {
+  currency: string;
+  /** A list-price estimate as a decimal string. */
+  amount: string;
+}
+
+export interface LocalToolsProviderWire {
+  id: LocalToolsProviderIdWire;
+  state: "ok" | "no_calls" | "not_run";
+  sessions: number | null;
+  calls: number | null;
+  tokens: {
+    input: number | null;
+    output: number | null;
+    cache_read: number | null;
+    cache_write: number | null;
+  };
+  /** Empty means unknown. Models without a price are not in here; see `unpriced_models`. */
+  estimated_costs: LocalToolsCostWire[];
+  unpriced_models: number;
+  unpriced_tokens: number;
+  cost_complete: boolean;
+}
+
+/** `usage.localTools` result, schema_version 1. Figures are estimates read from local session files. */
+export interface LocalToolsSnapshotWire {
+  schema_version: 1;
+  enabled: boolean;
+  window: {
+    start_unix_ms: number;
+    end_unix_ms: number;
+    timezone: string;
+    utc_offset_seconds: number;
+  };
+  /** The window the provider figures cover; null when there are no figures. */
+  data_window: { start_unix_ms: number; end_unix_ms: number; timezone: string } | null;
+  reader: {
+    state: LocalToolsReaderStateWire;
+    version: string | null;
+    pinned_version: string;
+    node_version: string | null;
+    /** Only for `failed`. */
+    exit_status: number | null;
+    /** Where the reader came from. Null when none was used. */
+    source: "bundled" | "override" | "path" | null;
+    /** True in development builds, the only builds with an override or a PATH lookup. */
+    development_build: boolean;
+  };
+  refreshing: boolean;
+  /** When the provider figures were last read successfully; null when there are none. */
+  observed_at_unix_ms: number | null;
+  stale: boolean;
+  /** Always the three providers, in the order claude-code, codex, github-copilot. */
+  providers: LocalToolsProviderWire[];
+}
