@@ -14,7 +14,8 @@ export const WINDOWS = {
   // tests (10 passed, 1 failed, 1 ignored) and the run stopped there, so the daemon total is
   // still derived: 118 + 11 + 2 + 4 + 0 + 1 + 2 = 138 once M7-08 passes.
   // DPES-1105 adds 2 portable ipc tests (history capability), so 56 becomes 58.
-  ipc: { passed: 58, sequence: [58, 0] },
+  // The chat model choice (DPES-1105) adds 1 portable ipc test (selection capability): 58 becomes 59 (CI run 43734333632).
+  ipc: { passed: 59, sequence: [59, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
@@ -23,10 +24,12 @@ export const WINDOWS = {
   // The AI usage module (api::usage_local, three portable tests) landed on main in PR #43 without this manifest, 146 becomes 149.
   // The cfg(windows) Copilot refusal test (api_tests.rs) adds one more: 149 becomes 150 and the unit binary 130.
   // The Copilot executor tests are unix-only (under executor::tests), so they do not count here.
-  daemon: { passed: 150, ignored: 1, sequence: [130, 12, 2, 4, 0, 1, 2] },
+  // The chat model choice (DPES-1105) adds 6 portable unit tests and 8 process tests in conversation_runtime (fake agent),
+  // so 150 becomes 164: the unit binary 130 becomes 136 and conversation_runtime 12 becomes 20 (CI run 43734333632).
+  daemon: { passed: 164, ignored: 1, sequence: [136, 20, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  // The ipc lib is 58 on Windows (56 plus the 2 portable history tests), so 58 - 14 = 44 are filtered out.
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 44 },
+  // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
@@ -62,13 +65,16 @@ export const WINDOWS = {
 export const MACOS = {
   // Measured on the M7 final integration merge (macOS, this branch).
   // Measured on the DPES-1105 branch: 55 plus the two history capability tests.
-  ipc: { passed: 57, sequence: [57, 0] },
+  // The chat model choice (DPES-1105) adds the selection capability test: 57 becomes 58 (CI run 43734333632).
+  ipc: { passed: 58, sequence: [58, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
   // main in PR #43: 218 becomes 221 and the unit binary 188. The three Copilot executor tests then make the unit binary
   // 191 and the total 224. These executor tests are unix-only, so Windows is unchanged by them.
-  daemon: { passed: 224, ignored: 1, sequence: [191, 14, 2, 4, 11, 1, 2] },
+  // The chat model choice (DPES-1105) adds 6 unit tests and 8 process tests in conversation_runtime (fake agent): 224
+  // becomes 238, the unit binary 191 becomes 197 and conversation_runtime 14 becomes 22 (CI run 43734333632).
+  daemon: { passed: 238, ignored: 1, sequence: [197, 22, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -77,7 +83,8 @@ export const MACOS = {
   // result` summed): 1115 passed, 2 ignored. That base already holds the AI usage tests from PR #43 (1050).
   // The bundled usage reader (PR #62) adds 4 tests in orchestrator-local-usage (pin and service): 1119. Measured on a real
   // macOS run of the DPES-1105 fixture-identifier PR.
-  workspace: { passed: 1119, ignored: 2 },
+  // The chat model choice (DPES-1105) adds 15 tests (14 daemon, 1 ipc): 1119 becomes 1134 (CI run 43734333632).
+  workspace: { passed: 1134, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -101,10 +108,13 @@ export const NODE_SELF_TESTS = { passed: 112 };
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
 // (DPES-1105, PR #73): 1573, as the Windows desktop gate measured it in CI run 43726827533.
-export const VITEST = { files: 72, tests: 1573 };
+// The chat model choice (DPES-1105) adds 1 file (ModelPicker.test.tsx) and 7 tests: 73 files and 1580 tests, as the
+// desktop gate measured them in CI run 43734333632.
+export const VITEST = { files: 73, tests: 1580 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
-// Main had 45 e2e tests; moving that one out leaves 44.
-export const E2E_TESTS = 44;
+// Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
+// (CI run 43734333632).
+export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;
