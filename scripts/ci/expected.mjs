@@ -94,9 +94,9 @@ export const MACOS = {
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
 // tests of install-lib.test.mjs build paths with node:path (checked under scripts/release/win32-path-sim).
-// 116 = 97 + the 13 tests of windows-jobs.test.mjs and the 2 of prune-target.test.mjs (DPES-1106) + the 4 tests of
-// usage-reader-smoke.test.mjs (DPES-1105).
-export const NODE_SELF_TESTS = { passed: 116 };
+// 112 = 97 + the 13 tests of windows-jobs.test.mjs and the 2 of prune-target.test.mjs (DPES-1106). The 4 tests of the
+// usage reader smoke test live in scripts/smoke/ (outside this glob) and run only when the smoke group is selected.
+export const NODE_SELF_TESTS = { passed: 112 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests.

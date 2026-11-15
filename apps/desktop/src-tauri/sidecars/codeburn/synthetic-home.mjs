@@ -9,7 +9,7 @@ export function todayUtc(now = new Date()) {
 
 /**
  * Writes one Claude Code session (two calls, one of them an unpriced model) and one Codex session
- * (one priced call) into `home`. Totals are asserted by scripts/usage-reader-smoke.test.mjs.
+ * (one priced call) into `home`. Totals are asserted by scripts/smoke/usage-reader.smoke.mjs.
  */
 export function writeSyntheticHome(home, now = new Date()) {
   const today = todayUtc(now);

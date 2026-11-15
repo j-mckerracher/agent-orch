@@ -88,7 +88,7 @@ jobs:
         if: needs.changes.outputs.smoke == 'true'
         run: |
           node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
-          node scripts/smoke/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
+          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -805,7 +805,7 @@ jobs:
         if: needs.changes.outputs.smoke == 'true'
         run: |
           node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
-          node scripts/smoke/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
+          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
       # One step runs every gate once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates

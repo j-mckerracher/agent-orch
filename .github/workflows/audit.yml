@@ -19,7 +19,7 @@ on:
       - apps/desktop/src-tauri/sidecars/codeburn/**
       - apps/desktop/scripts/prepare-codeburn-sidecar.mjs
       - crates/orchestrator-local-usage/**
-      - scripts/usage-reader-smoke.test.mjs
+      - scripts/smoke/usage-reader.smoke.mjs
       - docs/third-party/codeburn.md
       - .github/workflows/audit.yml
   push:
@@ -100,7 +100,7 @@ jobs:
       # so one pin is checked on three platforms. Exact totals as above.
       - name: usage reader smoke (rebuilds the bundle from the lockfile, exact totals)
         run: |
-          node --test --test-reporter=tap scripts/usage-reader-smoke.test.mjs | tee "$RUNNER_TEMP/usage-smoke.tap"
+          node --test --test-reporter=tap scripts/smoke/usage-reader.smoke.mjs | tee "$RUNNER_TEMP/usage-smoke.tap"
           node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
 
       # Warning only, never a failure: a newer Node.js 22.x release than the bundled one (nightly).
