@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="plate" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3452"/>
+      <stop offset="1" stop-color="#0a121c"/>
+    </linearGradient>
+    <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)" filter="url(#drop)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#a0ceff" stroke-opacity="0.22" stroke-width="8"/>
+  <!-- Confluence: three streams merge into one bright flow that ends in a hub -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M262 348 C 402 348 424 512 572 512" stroke="#5d9bd6" stroke-width="72"/>
+    <path d="M262 676 C 402 676 424 512 572 512" stroke="#5d9bd6" stroke-width="72"/>
+    <path d="M262 512 H 572" stroke="#a0ceff" stroke-width="72"/>
+    <path d="M572 512 H 748" stroke="#f2f6fb" stroke-width="88"/>
+  </g>
+  <circle cx="800" cy="512" r="82" fill="#f2f6fb"/>
+</svg>

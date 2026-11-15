@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="plate" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3452"/>
+      <stop offset="1" stop-color="#0a121c"/>
+    </linearGradient>
+    <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)" filter="url(#drop)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#a0ceff" stroke-opacity="0.22" stroke-width="8"/>
+  <!-- Baton: a conductor's baton, tip glowing, particle wake trailing into the plate -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M300 720 L 664 356" stroke="#f2f6fb" stroke-width="70"/>
+  </g>
+  <circle cx="700" cy="320" r="98" fill="#a0ceff"/>
+  <circle cx="236" cy="786" r="36" fill="#5d9bd6"/>
+  <circle cx="196" cy="830" r="22" fill="#5d9bd6" fill-opacity="0.7"/>
+  <circle cx="166" cy="866" r="12" fill="#5d9bd6" fill-opacity="0.45"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="plate" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3452"/>
+      <stop offset="1" stop-color="#0a121c"/>
+    </linearGradient>
+    <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)" filter="url(#drop)"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#a0ceff" stroke-opacity="0.22" stroke-width="8"/>
+  <!-- Constellation: one orchestrator hub linked to three agent nodes -->
+  <g stroke="#5d9bd6" stroke-width="44" stroke-linecap="round">
+    <line x1="512" y1="512" x2="512" y2="226"/>
+    <line x1="512" y1="512" x2="258" y2="672"/>
+    <line x1="512" y1="512" x2="766" y2="672"/>
+  </g>
+  <circle cx="512" cy="512" r="150" fill="#a0ceff"/>
+  <circle cx="512" cy="226" r="84" fill="#f2f6fb"/>
+  <circle cx="258" cy="672" r="84" fill="#f2f6fb"/>
+  <circle cx="766" cy="672" r="84" fill="#f2f6fb"/>
+</svg>
