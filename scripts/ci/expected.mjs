@@ -85,7 +85,8 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 112 };
 
 // Platform independent. DPES-1105 adds 2 files and 29 tests (26 in those files, 3 in layoutSettings.test.ts): 1391 becomes 1420.
-export const VITEST = { files: 63, tests: 1420 };
+// DPES-1105 (target picker closes after a selection) adds 1 file and 7 tests: 1420 becomes 1427.
+export const VITEST = { files: 64, tests: 1427 };
 export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.

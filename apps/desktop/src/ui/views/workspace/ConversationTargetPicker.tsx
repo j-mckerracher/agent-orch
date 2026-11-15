@@ -14,19 +14,26 @@ export interface ConversationTargetPickerProps {
   addCoordinator?: { onAdd: () => void; reason: string | null };
 }
 
+const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
+
 /**
  * Searchable conversation-target dropdown that lives inside the composer.
  *
  * Keyboard: Enter/Space on the button toggles; opening moves focus to the search box;
  * ArrowDown from the search box enters the radio list; arrow keys move and select inside the
- * list (native radio behaviour); Escape closes and returns focus to the button. The result
- * count and the empty result are announced through one always-mounted status region, because a
- * live region that appears together with its text is not reliably announced.
+ * list (native radio behaviour) and keep the panel open; Enter or Space on a radio, or a pointer
+ * choice, selects it and closes the panel; Escape closes without changing the choice. Every close
+ * returns focus to the button. The result count and the empty result are announced through one
+ * always-mounted status region, because a live region that appears together with its text is not
+ * reliably announced.
  */
 export function ConversationTargetPicker({ options, selectedKey, onSelect, addCoordinator }: ConversationTargetPickerProps) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // True from an arrow key press until its release. The radio the arrow moves to is then selected
+  // by the browser, and the panel stays open; a pointer press or any other key clears it.
+  const arrowing = useRef(false);
   const popover = usePopover(() => searchRef.current?.focus());
   const ids = useId();
   const panelId = `${ids}-panel`;
@@ -34,6 +41,10 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
   const statusId = `${ids}-status`;
   const shown = filterTargets(options, query);
   const current = options.find((option) => option.key === selectedKey);
+
+  const select = (option: TargetOption) => {
+    if (option.key !== selectedKey) onSelect(option);
+  };
 
   const enterList = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "ArrowDown") return;
@@ -79,14 +90,39 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={enterList}
         />
-        <div ref={listRef} role="radiogroup" aria-label="Conversation targets" className="ws-target-options">
+        <div
+          ref={listRef}
+          role="radiogroup"
+          aria-label="Conversation targets"
+          className="ws-target-options"
+          onPointerDown={() => {
+            arrowing.current = false;
+          }}
+          onKeyDown={(event) => {
+            arrowing.current = ARROW_KEYS.has(event.key);
+          }}
+          onKeyUp={() => {
+            arrowing.current = false;
+          }}
+        >
           {shown.map((option) => (
             <label key={option.key} className="ws-target-option">
               <input
                 type="radio"
                 name={`${ids}-target`}
                 checked={option.key === selectedKey}
-                onChange={() => onSelect(option)}
+                onChange={() => {
+                  select(option);
+                  if (!arrowing.current) popover.close();
+                }}
+                onKeyDown={(event) => {
+                  // Handled here rather than by the browser: Enter would otherwise submit the composer form,
+                  // and Space on a radio that is already checked fires no change to close the panel.
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  select(option);
+                  popover.close();
+                }}
               />
               <span>
                 {option.label}

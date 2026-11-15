@@ -58,6 +58,7 @@
     "src/ui/views/agents/model.test.ts",
     "src/ui/views/review/ReviewDecisionsView.test.tsx",
     "src/ui/views/workspace/ConversationActions.test.tsx",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx",
     "src/ui/views/workspace/WorkspaceView.test.tsx",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
@@ -1484,6 +1485,13 @@
     "src/ui/views/workspace/ConversationActions.test.tsx :: add coordinator dialog lists the removed coordinators and adds the chosen one",
     "src/ui/views/workspace/ConversationActions.test.tsx :: add coordinator dialog says so when every project has a coordinator, and shows progress while one is added",
     "src/ui/views/workspace/ConversationActions.test.tsx :: target picker add entry opens the add dialog through the entry when it is available",
-    "src/ui/views/workspace/ConversationActions.test.tsx :: target picker add entry shows the entry disabled with its reason and does nothing when unavailable"
+    "src/ui/views/workspace/ConversationActions.test.tsx :: target picker add entry shows the entry disabled with its reason and does nothing when unavailable",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection a pointer press on a radio selects the target, closes the panel and returns focus to the trigger",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection a pointer press on the option label closes the panel too",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection arrow keys move and select through the radios but keep the panel open",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Enter on a radio selects that target and closes the panel",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Space on a radio selects that target and closes the panel",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Space on the already selected radio closes the panel without selecting it again",
+    "src/ui/views/workspace/ConversationTargetPicker.test.tsx :: conversation target picker closes after a selection Escape closes the panel, returns focus to the trigger and selects nothing"
   ]
 }
