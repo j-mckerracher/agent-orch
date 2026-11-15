@@ -172,6 +172,11 @@ export function gatesFor(platform) {
       files: MACOS.e2eFiles, tests: E2E_TESTS, needs: ["desktop-npm-ci", "daemon-build"],
       env: { ORCH_DAEMON_BIN: { target: "debug/orchestrator-daemon" } },
     });
+    // Browser geometry (apps/desktop/e2e/geometry.spec.ts) in the installed Chrome; macOS only, like the e2e above.
+    gates.push({
+      name: "desktop-geometry", mode: "exit", cwd: UI, exe: "npx", args: ["playwright", "test"], timeout: 1200,
+      needs: ["desktop-npm-ci"],
+    });
   }
 
   gates.push(

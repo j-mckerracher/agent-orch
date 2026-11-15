@@ -95,7 +95,8 @@ test("the Windows-only p12 gate needs both binaries and takes its paths from the
   for (const placeholder of ["{target}", "{testTmp}", "{evidence}"]) assert.ok(p12.args.includes(placeholder) || p12.args.some((a) => a.includes(placeholder)), placeholder);
   assert.ok(win.findIndex((g) => g.name === "cli-build") < win.indexOf(p12));
   assert.equal(win.length, 27);
-  assert.equal(gatesFor("darwin").length, 26);
+  // 26 before DPES-1105 + desktop-geometry (macOS only: the Windows gate list is unchanged at 27).
+  assert.equal(gatesFor("darwin").length, 27);
   assert.ok(!gatesFor("darwin").some((g) => g.name === "p12-windows-checks" || g.name === "cli-build"));
 });
 
