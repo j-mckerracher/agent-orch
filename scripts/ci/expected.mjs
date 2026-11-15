@@ -45,9 +45,11 @@ export const WINDOWS = {
   // Derived, not measured on Windows: the macOS list minus the same 4 cfg(unix) tests (2 lib tests, 1 in
   // lock_identity_contract, 1 in sqlite_reconcile); the sequence is the macOS one with those 4 removed.
   // DPES-1105 adds 1 lib test and the 10-test conversation_history binary (portable): lib 63 becomes 64.
-  store: { passed: 165, ignored: 1, sequence: [64, 9, 2, 13, 1, 10, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
-  // Windows lib: 64 tests compile (the 2 cfg(unix) tests are excluded), so 64 - 1 = 63 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 63 },
+  // DPES-1106 adds 1 lib test (the publish regression) and 1 data_lock.rs test (the racing-acquires stress): lib 64 becomes 65,
+  // data_lock 8 becomes 9. Both are portable.
+  store: { passed: 167, ignored: 1, sequence: [65, 9, 2, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // Windows lib: 65 tests compile (the 2 cfg(unix) tests are excluded), so 65 - 1 = 64 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -65,16 +67,18 @@ export const MACOS = {
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
-  workspace: { passed: 1021, ignored: 2 },
+  // DPES-1106 adds 2 store tests (the publish regression and the racing-acquires stress): 1021 becomes 1023.
+  workspace: { passed: 1023, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
-  store: { passed: 169, ignored: 1, sequence: [66, 9, 2, 13, 1, 10, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
-  // Measured on the DPES-1105 branch: the store lib has 66 tests, so 65 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 65 },
+  // Measured on the DPES-1106 branch (macOS `cargo test -p orchestrator-store`): the lib has 67 tests and data_lock.rs 9 (8 passed, 1 ignored).
+  store: { passed: 171, ignored: 1, sequence: [67, 9, 2, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  // Measured on the DPES-1106 branch: the store lib has 67 tests, so 66 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 66 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 9,
 };
