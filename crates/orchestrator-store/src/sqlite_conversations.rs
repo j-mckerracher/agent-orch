@@ -33,6 +33,7 @@
 use std::fmt;
 use std::future::Future;
 
+use orchestrator_core::permission::PermissionLevel;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use sqlx::SqlitePool;
@@ -147,6 +148,14 @@ pub struct ConversationEntry {
     pub created_at: String,
 }
 
+/// The permission level a turn was started with and the argument profile it
+/// ran with (DPES-1105). A turn from before permission levels has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnPermission {
+    pub level: PermissionLevel,
+    pub profile: &'static str,
+}
+
 /// One user message and the reply it produces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationTurn {
@@ -157,6 +166,10 @@ pub struct ConversationTurn {
     pub runtime_name: String,
     pub runtime_version: String,
     pub reply_bytes: u64,
+    /// The level the turn ran with. `None` for a turn from before permission levels.
+    pub permission_level: Option<PermissionLevel>,
+    /// The argument profile the turn ran with, such as `codex:auto:v1`.
+    pub permission_profile: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -242,7 +255,7 @@ macro_rules! entry_columns {
 macro_rules! turn_columns {
     () => {
         "id, conversation_id, state, error_code, runtime_name, runtime_version, reply_bytes, \
-         created_at, updated_at"
+         permission_level, permission_profile, created_at, updated_at"
     };
 }
 
@@ -393,6 +406,37 @@ impl SqliteStore {
             .await?;
             transaction.commit().await?;
             Ok(entry)
+        })
+    }
+
+    /// Record the permission level and profile a turn launched with. Called once,
+    /// after the agent started, so a turn that never launched records none.
+    /// Recording does not depend on the turn's state: the agent may finish
+    /// before this call returns.
+    pub fn record_conversation_turn_permission(
+        &self,
+        turn_id: &str,
+        permission: TurnPermission,
+    ) -> Result<(), ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let result = sqlx::query(
+                "UPDATE conversation_turns \
+                 SET permission_level = ?, permission_profile = ? \
+                 WHERE id = ? AND permission_level IS NULL",
+            )
+            .bind(permission.level.as_str())
+            .bind(permission.profile)
+            .bind(&turn_id)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            if result.rows_affected() == 1 {
+                Ok(())
+            } else {
+                Err(ConversationError::TurnNotFound)
+            }
         })
     }
 
@@ -772,6 +816,13 @@ fn decode_entry(row: SqliteRow) -> Result<ConversationEntry, StoreError> {
 fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
     let state: String = row.try_get("state")?;
     let reply_bytes: i64 = row.try_get("reply_bytes")?;
+    let permission_level: Option<String> = row.try_get("permission_level")?;
+    let permission_level = permission_level
+        .map(|name| {
+            PermissionLevel::parse(&name)
+                .ok_or_else(|| corrupt(format!("unknown permission level {name}")))
+        })
+        .transpose()?;
     Ok(ConversationTurn {
         id: row.try_get("id")?,
         conversation_id: row.try_get("conversation_id")?,
@@ -780,7 +831,117 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
         runtime_name: row.try_get("runtime_name")?,
         runtime_version: row.try_get("runtime_version")?,
         reply_bytes: u64::try_from(reply_bytes).unwrap_or(0),
+        permission_level,
+        permission_profile: row.try_get("permission_profile")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open() -> (tempfile::TempDir, SqliteStore) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+        (directory, store)
+    }
+
+    /// Runs `sql` against the store's own database and returns the database's
+    /// own answer, so a CHECK violation shows as `Err`.
+    fn execute(store: &SqliteStore, sql: &'static str) -> Result<(), sqlx::Error> {
+        store
+            .call(move |pool| async move { Ok(sqlx::query(sql).execute(&pool).await.map(|_| ())) })
+            .unwrap()
+    }
+
+    #[test]
+    fn a_turn_from_before_permission_levels_reads_null_and_a_launched_turn_records_its_level() {
+        let (_directory, store) = open();
+        let target = ConversationTarget::Global;
+        store
+            .begin_conversation_turn(&target, "turn-old", "hi", "codex", "0.167.2")
+            .unwrap();
+        let old = store.conversation_turn("turn-old").unwrap().unwrap();
+        assert_eq!(old.permission_level, None);
+        assert_eq!(old.permission_profile, None);
+        store
+            .finish_conversation_turn("turn-old", &TurnOutcome::Completed)
+            .unwrap();
+
+        store
+            .begin_conversation_turn(&target, "turn-new", "hi", "codex", "0.167.2")
+            .unwrap();
+        store
+            .record_conversation_turn_permission(
+                "turn-new",
+                TurnPermission {
+                    level: PermissionLevel::Auto,
+                    profile: "codex:auto:v1",
+                },
+            )
+            .unwrap();
+        let recorded = store.conversation_turn("turn-new").unwrap().unwrap();
+        assert_eq!(recorded.permission_level, Some(PermissionLevel::Auto));
+        assert_eq!(
+            recorded.permission_profile.as_deref(),
+            Some("codex:auto:v1")
+        );
+
+        // The first recorded level stands: a second record changes nothing.
+        let second = store.record_conversation_turn_permission(
+            "turn-new",
+            TurnPermission {
+                level: PermissionLevel::Full,
+                profile: "codex:full:v1",
+            },
+        );
+        assert!(matches!(second, Err(ConversationError::TurnNotFound)));
+        let kept = store.conversation_turn("turn-new").unwrap().unwrap();
+        assert_eq!(kept.permission_level, Some(PermissionLevel::Auto));
+    }
+
+    #[test]
+    fn recording_a_level_for_an_unknown_turn_is_refused() {
+        let (_directory, store) = open();
+        let result = store.record_conversation_turn_permission(
+            "no-such-turn",
+            TurnPermission {
+                level: PermissionLevel::Restricted,
+                profile: "codex:restricted:v1",
+            },
+        );
+        assert!(matches!(result, Err(ConversationError::TurnNotFound)));
+    }
+
+    #[test]
+    fn the_database_refuses_a_level_outside_the_four_and_a_blank_profile() {
+        let (_directory, store) = open();
+        store
+            .begin_conversation_turn(
+                &ConversationTarget::Global,
+                "turn-1",
+                "hi",
+                "codex",
+                "0.1.0",
+            )
+            .unwrap();
+        assert!(execute(
+            &store,
+            "UPDATE conversation_turns SET permission_level = 'sandboxed' WHERE id = 'turn-1'",
+        )
+        .is_err());
+        assert!(execute(
+            &store,
+            "UPDATE conversation_turns SET permission_profile = '' WHERE id = 'turn-1'",
+        )
+        .is_err());
+        assert!(execute(
+            &store,
+            "UPDATE conversation_turns SET permission_level = 'extended', \
+             permission_profile = 'codex:extended:v1' WHERE id = 'turn-1'",
+        )
+        .is_ok());
+    }
 }

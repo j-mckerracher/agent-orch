@@ -480,17 +480,57 @@ fn the_daemon_advertises_the_selection_capability_the_desktop_waits_for() {
 }
 
 #[test]
+fn the_daemon_advertises_the_permission_levels_capability() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    assert!(api
+        .capabilities()
+        .contains(&orchestrator_ipc::Capability::PermissionLevels));
+}
+
+#[test]
+fn an_unknown_permission_is_a_bad_request_and_records_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    for permission in ["sandboxed", "Auto", "", "read_only"] {
+        let result = api.dispatch(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "k", "permission": permission}),
+        );
+        assert!(matches!(result, Err(RpcError::InvalidParams)), "{result:?}");
+    }
+    assert_eq!(kinds(&get(&api, global(), 0)), Vec::<String>::new());
+}
+
+#[test]
 fn a_send_without_a_choice_serializes_as_it_did_before_selection_existed() {
     let request = ConversationSendParams {
         target: TargetParam::Global {},
         text: "hi".to_owned(),
         idempotency_key: "k".to_owned(),
         selection: None,
+        permission: None,
     };
-    // The idempotency fingerprint hashes this encoding, so an absent choice must add no key.
+    // The idempotency fingerprint hashes this encoding, so an absent choice or level must add no key.
     assert_eq!(
         serde_json::to_value(&request).unwrap(),
         json!({"target": {"kind": "global"}, "text": "hi", "idempotency_key": "k"})
+    );
+}
+
+#[test]
+fn a_chosen_permission_is_part_of_the_encoding_the_idempotency_fingerprint_hashes() {
+    let request = ConversationSendParams {
+        target: TargetParam::Global {},
+        text: "hi".to_owned(),
+        idempotency_key: "k".to_owned(),
+        selection: None,
+        permission: Some(PermissionLevel::Auto),
+    };
+    // The same key with another level is a different request, so it conflicts.
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({"target": {"kind": "global"}, "text": "hi", "idempotency_key": "k", "permission": "auto"})
     );
 }
 

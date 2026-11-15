@@ -48,10 +48,13 @@ pub enum Capability {
     ConversationHistory,
     /// A model and effort chosen for one `conversations.send` (DPES-1105).
     ConversationSelection,
+    /// A permission level chosen for one `conversations.send` (DPES-1105). Not
+    /// advertised by an older daemon, which runs every message read-only.
+    PermissionLevels,
 }
 
 impl Capability {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -68,6 +71,7 @@ impl Capability {
         Self::Workstreams,
         Self::ConversationHistory,
         Self::ConversationSelection,
+        Self::PermissionLevels,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -88,6 +92,7 @@ impl Capability {
             Self::Workstreams => "workstreams",
             Self::ConversationHistory => "conversation_history",
             Self::ConversationSelection => "conversation_selection",
+            Self::PermissionLevels => "permission_levels",
         }
     }
 

@@ -17,6 +17,7 @@ use orchestrator_agents::{
     CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SignInRecord, SignInState,
     TurnOutcome,
 };
+use orchestrator_core::permission::PermissionLevel;
 
 const FORBIDDEN: [&str; 15] = [
     "--allow-all",
@@ -49,7 +50,12 @@ fn worktree_path() -> PathBuf {
 }
 
 fn conversation(prompt: &str) -> Vec<String> {
-    CopilotAdapter::conversation_args(prompt, &usage_path(), &cwd_path())
+    conversation_at(PermissionLevel::Restricted, prompt)
+}
+
+fn conversation_at(level: PermissionLevel, prompt: &str) -> Vec<String> {
+    CopilotAdapter::conversation_args(level, prompt, &usage_path(), &cwd_path())
+        .expect("every level but Extended has a mapping")
 }
 
 fn task(objective: &str) -> Vec<String> {
@@ -119,6 +125,137 @@ fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
         assert!(!args.iter().any(|arg| arg == "--reasoning-effort"));
         assert!(!args.iter().any(|arg| arg == "--sandbox"));
         assert!(args.iter().any(|arg| arg == "--disallow-temp-dir"));
+    }
+}
+
+/// The exact argv of each conversation level. Paths are spelled as the
+/// platform spells them, so the expected vectors build them the same way.
+#[test]
+fn copilot_conversation_argv_per_level_is_exact() {
+    let usage = usage_path().to_string_lossy().into_owned();
+    let cwd = cwd_path().to_string_lossy().into_owned();
+    let write_rule = format!("write({cwd}/**)");
+    fn as_strs(args: &[String]) -> Vec<&str> {
+        args.iter().map(String::as_str).collect()
+    }
+    let argv =
+        |level| CopilotAdapter::conversation_args(level, "hi", &usage_path(), &cwd_path()).unwrap();
+
+    assert_eq!(
+        as_strs(&argv(PermissionLevel::Restricted)),
+        [
+            "--prompt=hi",
+            "--output-format",
+            "json",
+            "--log-level",
+            "none",
+            "--no-auto-update",
+            "--no-ask-user",
+            "--no-custom-instructions",
+            "--disable-builtin-mcps",
+            "--disallow-temp-dir",
+            "--usage-output-file",
+            usage.as_str(),
+            "-C",
+            cwd.as_str(),
+            "--max-ai-credits",
+            "30",
+            "--allow-tool",
+            "read",
+            "--deny-tool",
+            "write",
+            "--deny-tool",
+            "shell",
+            "--deny-tool",
+            "url",
+            "--deny-tool",
+            "memory",
+        ]
+    );
+    assert_eq!(
+        as_strs(&argv(PermissionLevel::Auto)),
+        [
+            "--prompt=hi",
+            "--output-format",
+            "json",
+            "--log-level",
+            "none",
+            "--no-auto-update",
+            "--no-ask-user",
+            "--no-custom-instructions",
+            "--disable-builtin-mcps",
+            "--disallow-temp-dir",
+            "--usage-output-file",
+            usage.as_str(),
+            "-C",
+            cwd.as_str(),
+            "--max-ai-credits",
+            "30",
+            "--assisted-approval",
+            "--allow-tool",
+            "read",
+            "--allow-tool",
+            write_rule.as_str(),
+            "--deny-tool",
+            "url",
+            "--deny-tool",
+            "memory",
+            "--deny-tool",
+            "shell(git push)",
+        ]
+    );
+    assert_eq!(
+        as_strs(&argv(PermissionLevel::Full)),
+        [
+            "--prompt=hi",
+            "--output-format",
+            "json",
+            "--log-level",
+            "none",
+            "--no-auto-update",
+            "--no-ask-user",
+            "--disable-builtin-mcps",
+            "--usage-output-file",
+            usage.as_str(),
+            "-C",
+            cwd.as_str(),
+            "--max-ai-credits",
+            "30",
+            "--allow-all",
+        ]
+    );
+    assert!(CopilotAdapter::conversation_args(
+        PermissionLevel::Extended,
+        "hi",
+        &usage_path(),
+        &cwd_path()
+    )
+    .is_none());
+}
+
+/// Only Full may widen. Every level, Full included, keeps the hard limits: no
+/// autopilot, experimental mode, sandbox, YOLO or MCP instruction widening.
+#[test]
+fn copilot_only_full_widens_and_no_level_takes_a_hard_limit_flag() {
+    for level in [
+        PermissionLevel::Restricted,
+        PermissionLevel::Auto,
+        PermissionLevel::Full,
+    ] {
+        let args = conversation_at(level, "hi");
+        for flag in [
+            "--autopilot",
+            "--experimental",
+            "--allow-all-mcp-server-instructions",
+            "--sandbox",
+            "--yolo",
+            "--available-tools",
+            "--add-dir",
+        ] {
+            assert!(!args.iter().any(|arg| arg == flag), "{level:?}: {flag}");
+        }
+        let widens = args.iter().any(|arg| arg.starts_with("--allow-all"));
+        assert_eq!(widens, level == PermissionLevel::Full, "{level:?}");
     }
 }
 
@@ -324,7 +461,14 @@ async fn a_catalog_for_an_unpinned_version_is_unavailable() {
 #[cfg(unix)]
 #[tokio::test]
 async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
-    for name in ["GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN"] {
+    // COPILOT_ALLOW_ALL=true would trust the working directory's hooks and MCP
+    // servers (copilot help environment), so no run may ever receive it.
+    for name in [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
+        "COPILOT_ALLOW_ALL",
+    ] {
         std::env::set_var(name, "must-not-reach-the-child");
     }
     let dir = tempfile::tempdir().unwrap();
@@ -333,7 +477,13 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
     let cwd = run.cwd();
     let request = AgentLaunchRequest {
         program,
-        args: CopilotAdapter::conversation_args("hi", &run.usage_file(), &run.cwd()),
+        args: CopilotAdapter::conversation_args(
+            PermissionLevel::Restricted,
+            "hi",
+            &run.usage_file(),
+            &run.cwd(),
+        )
+        .unwrap(),
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
@@ -342,7 +492,12 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
         .unwrap();
     handle.wait().await.unwrap();
     let env = std::fs::read_to_string(cwd.join("env.txt")).unwrap();
-    for name in ["GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN"] {
+    for name in [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
+        "COPILOT_ALLOW_ALL",
+    ] {
         assert!(
             !env.lines()
                 .any(|line| line.starts_with(&format!("{name}="))),
@@ -357,7 +512,12 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
         env.lines().any(|line| line.starts_with("HOME=")),
         "HOME missing"
     );
-    for name in ["GH_TOKEN", "GITHUB_TOKEN", "COPILOT_GITHUB_TOKEN"] {
+    for name in [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "COPILOT_GITHUB_TOKEN",
+        "COPILOT_ALLOW_ALL",
+    ] {
         std::env::remove_var(name);
     }
 }
@@ -373,7 +533,13 @@ async fn a_leading_dash_prompt_reaches_the_child_as_one_argument() {
     );
     let run = CopilotRun::create(dir.path()).unwrap();
     let cwd = run.cwd();
-    let args = CopilotAdapter::conversation_args("--leading-dash", &run.usage_file(), &run.cwd());
+    let args = CopilotAdapter::conversation_args(
+        PermissionLevel::Restricted,
+        "--leading-dash",
+        &run.usage_file(),
+        &run.cwd(),
+    )
+    .unwrap();
     let request = AgentLaunchRequest {
         program,
         args: args.clone(),
@@ -446,7 +612,13 @@ async fn a_replayed_completed_run_exits_completed_and_marks_sign_in_ready() {
     let run = CopilotRun::create(dir.path()).unwrap();
     let request = AgentLaunchRequest {
         program,
-        args: CopilotAdapter::conversation_args("hi", &run.usage_file(), &run.cwd()),
+        args: CopilotAdapter::conversation_args(
+            PermissionLevel::Restricted,
+            "hi",
+            &run.usage_file(),
+            &run.cwd(),
+        )
+        .unwrap(),
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()
@@ -823,7 +995,13 @@ async fn a_replayed_bogus_model_run_exits_failed_with_the_message() {
     let cwd = run.cwd();
     let request = AgentLaunchRequest {
         program,
-        args: CopilotAdapter::conversation_args("hi", &run.usage_file(), &run.cwd()),
+        args: CopilotAdapter::conversation_args(
+            PermissionLevel::Restricted,
+            "hi",
+            &run.usage_file(),
+            &run.cwd(),
+        )
+        .unwrap(),
         working_dir: cwd,
     };
     let mut handle = CopilotAdapter::new()
@@ -852,7 +1030,13 @@ async fn cancelling_a_running_turn_reports_cancelled_not_completed() {
     let run = CopilotRun::create(dir.path()).unwrap();
     let request = AgentLaunchRequest {
         program,
-        args: CopilotAdapter::conversation_args("hi", &run.usage_file(), &run.cwd()),
+        args: CopilotAdapter::conversation_args(
+            PermissionLevel::Restricted,
+            "hi",
+            &run.usage_file(),
+            &run.cwd(),
+        )
+        .unwrap(),
         working_dir: run.cwd(),
     };
     let mut handle = CopilotAdapter::new()

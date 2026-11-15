@@ -819,3 +819,216 @@ fn live_codex_answers_a_global_message() {
     chat.assert_no_authority();
     stop(&layout, daemon, chat);
 }
+
+/// One line per launch, as the fake writes it: the working directory and the
+/// arguments. A launch that never happened leaves no line.
+fn launch_lines(log: &Path) -> Vec<String> {
+    std::fs::read_to_string(log)
+        .map(|text| text.lines().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// The working directory a launch line names: the text between `cwd=` and ` args=`.
+fn launch_cwd(line: &str) -> &str {
+    line.split("cwd=")
+        .nth(1)
+        .and_then(|rest| rest.split(" args=").next())
+        .unwrap_or_default()
+}
+
+#[test]
+fn each_codex_level_launches_with_its_exact_flags_and_records_it() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+
+    // No permission field: Restricted, as before the field existed.
+    chat.send(&global(), "first", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["permission_level"], "restricted", "{page}");
+    assert_eq!(
+        page["turn"]["permission_profile"], "codex:restricted:v1",
+        "{page}"
+    );
+
+    for (level, key) in [("auto", "m-2"), ("full", "m-3")] {
+        let sent = chat.send_params(json!({
+            "target": global(),
+            "text": "next",
+            "idempotency_key": key,
+            "permission": level,
+        }));
+        assert_eq!(sent["turn"]["permission_level"], level, "{sent}");
+        let page = chat.settled(&global());
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+        assert_eq!(page["turn"]["permission_level"], level, "{page}");
+    }
+
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert!(
+        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--""#),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains(r#""exec", "--json", "--sandbox", "workspace-write", "--approve-for-me", "--skip-git-repo-check", "--ephemeral", "--""#),
+        "{}",
+        lines[1]
+    );
+    // Full adds no sandbox or approval flag, and keeps the two flags that loosen nothing.
+    assert!(
+        lines[2].contains(r#""exec", "--json", "--skip-git-repo-check", "--ephemeral", "--""#),
+        "{}",
+        lines[2]
+    );
+    for line in &lines {
+        for flag in [
+            "--dangerously",
+            "--ignore-rules",
+            "--ignore-user-config",
+            "--add-dir",
+            "--autopilot",
+        ] {
+            assert!(!line.contains(flag), "{flag} in {line}");
+        }
+    }
+    assert!(!lines[2].contains("--sandbox") && !lines[2].contains("--approve-for-me"));
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn extended_is_refused_for_codex_as_a_failed_turn_that_launches_nothing() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "hi",
+        "idempotency_key": "m-1",
+        "permission": "extended",
+    }));
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(
+        sent["turn"]["error_code"], "permission_level_unsupported",
+        "{sent}"
+    );
+    assert_eq!(sent["turn"]["permission_level"], Value::Null, "{sent}");
+    assert!(launch_lines(&log).is_empty(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn claude_code_launches_with_its_exact_flags_per_level() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let fake = text(&fake_agent());
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_CLAUDE_PROGRAM", fake.as_str()),
+            (
+                "AGENT_ORCH_CONVERSATION_PINS",
+                "codex@0.0.0-fake,claude-code@0.0.0-fake",
+            ),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    for (level, key) in [(None, "c-1"), (Some("auto"), "c-2"), (Some("full"), "c-3")] {
+        let mut params = json!({
+            "target": global(),
+            "text": "hi",
+            "idempotency_key": key,
+            "selection": {"agent": "claude-code"},
+        });
+        if let Some(level) = level {
+            params["permission"] = json!(level);
+        }
+        chat.send_params(params);
+        let page = chat.settled(&global());
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+        assert_eq!(page["turn"]["runtime"]["name"], "claude-code", "{page}");
+    }
+
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    // Restricted: every tool off, as before permission levels.
+    assert!(lines[0].contains(r#""--tools", """#), "{}", lines[0]);
+    // Auto: the restricted flags, with Bash enabled and judged per call.
+    assert!(
+        lines[1].contains(
+            r#""--permission-mode", "auto", "--permission-prompts", "none", "--restricted""#
+        ),
+        "{}",
+        lines[1]
+    );
+    assert!(
+        lines[1]
+            .contains(r#""--tools", "Read,Edit,Write,Bash", "--allowedTools", "Read,Edit,Write""#),
+        "{}",
+        lines[1]
+    );
+    // Full: permission checks skipped, and the restriction flags dropped.
+    assert!(
+        lines[2].contains(r#""--permission-mode", "bypassPermissions", "--permission-prompts", "none", "--allow-dangerously-skip-permissions""#),
+        "{}",
+        lines[2]
+    );
+    for flag in [
+        "--restricted",
+        "--strict-mcp-config",
+        "--tools",
+        "--allowedTools",
+    ] {
+        assert!(!lines[2].contains(flag), "{flag} in {}", lines[2]);
+    }
+    for line in &lines {
+        assert!(!line.contains("--dangerously-skip-permissions"), "{line}");
+    }
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn each_codex_turn_runs_in_its_own_directory_that_is_removed_after_it() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "one", "m-1");
+    chat.settled(&global());
+    chat.send(&global(), "two", "m-2");
+    chat.settled(&global());
+
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    for line in &lines {
+        assert!(line.contains("turn-"), "{line}");
+    }
+    assert_ne!(launch_cwd(&lines[0]), launch_cwd(&lines[1]));
+
+    // Removed once the agent has exited, so nothing a turn wrote reaches the next.
+    let scratch = layout.data.join("conversation-scratch");
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let left = std::fs::read_dir(&scratch)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with("turn-"))
+                    .count()
+            })
+            .unwrap_or(0);
+        if left == 0 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{left} turn directories were left"
+        );
+        thread::sleep(Duration::from_millis(50));
+    }
+    stop(&layout, daemon, chat);
+}

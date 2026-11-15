@@ -28,7 +28,9 @@ export const WINDOWS = {
   // so 150 becomes 164: the unit binary 130 becomes 136 and conversation_runtime 12 becomes 20 (CI run 43734333632).
   // The Copilot sandbox gate removal (PR #75) deletes the cfg(windows) refusal test (api_tests.rs), so 164 becomes 163 and the
   // unit binary 136 becomes 135 (CI run 43757529505).
-  daemon: { passed: 163, ignored: 1, sequence: [135, 20, 2, 4, 0, 1, 2] },
+  // DPES-1105 permission levels (PR #80, CI run 43767887059): the unit binary 135 becomes 138 (3 portable tests) and
+  // conversation_runtime 20 becomes 24 (4 process tests), so 163 becomes 170 passed plus 1 ignored, sequence [138, 24, 2, 4, 0, 1, 2].
+  daemon: { passed: 170, ignored: 1, sequence: [138, 24, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -55,9 +57,11 @@ export const WINDOWS = {
   // DPES-1105 adds 1 lib test and the 10-test conversation_history binary (portable): lib 63 becomes 64.
   // DPES-1106 adds 1 lib test (the publish regression) and 1 data_lock.rs test (the racing-acquires stress): lib 64 becomes 65,
   // data_lock 8 becomes 9. Both are portable.
-  store: { passed: 167, ignored: 1, sequence: [65, 9, 2, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
-  // Windows lib: 65 tests compile (the 2 cfg(unix) tests are excluded), so 65 - 1 = 64 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
+  // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on Windows): the store lib is 68 (up from 65) and
+  // the store totals 170 passed plus 1 ignored. The lib gains 3 portable tests (permission level and migration checks).
+  store: { passed: 170, ignored: 1, sequence: [68, 9, 2, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 67 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -76,7 +80,9 @@ export const MACOS = {
   // 191 and the total 224. These executor tests are unix-only, so Windows is unchanged by them.
   // The chat model choice (DPES-1105) adds 6 unit tests and 8 process tests in conversation_runtime (fake agent): 224
   // becomes 238, the unit binary 191 becomes 197 and conversation_runtime 14 becomes 22 (CI run 43734333632).
-  daemon: { passed: 238, ignored: 1, sequence: [197, 22, 2, 4, 11, 1, 2] },
+  // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS): the unit binary 197 becomes 200 (3 in-process
+  // daemon tests) and conversation_runtime 22 becomes 26 (4 process tests), so 238 becomes 245 passed plus 1 ignored.
+  daemon: { passed: 245, ignored: 1, sequence: [200, 26, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -88,7 +94,9 @@ export const MACOS = {
   // The chat model choice (DPES-1105) adds 15 tests (14 daemon, 1 ipc): 1119 becomes 1134 (CI run 43734333632).
   // The Copilot sandbox gate removal (PR #75) deletes 10 tests (the sandbox probes and the sandbox-gated catalog and launch
   // tests) and adds 1 sign-in test: 1134 becomes 1125 (CI run 43757529505).
-  workspace: { passed: 1125, ignored: 2 },
+  // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS, `cargo test --locked --workspace`): 18 new
+  // tests across orchestrator-agents, orchestrator-core, orchestrator-daemon and orchestrator-store, so 1125 becomes 1143.
+  workspace: { passed: 1143, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -96,9 +104,11 @@ export const MACOS = {
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
   // Measured on the DPES-1106 branch (macOS `cargo test -p orchestrator-store`): the lib has 67 tests and data_lock.rs 9 (8 passed, 1 ignored).
-  store: { passed: 171, ignored: 1, sequence: [67, 9, 2, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
-  // Measured on the DPES-1106 branch: the store lib has 67 tests, so 66 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 66 },
+  // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS): the lib is 70 (3 new tests), and the store
+  // totals 174 passed plus 1 ignored.
+  store: { passed: 174, ignored: 1, sequence: [70, 9, 2, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 69 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 8,
 };
