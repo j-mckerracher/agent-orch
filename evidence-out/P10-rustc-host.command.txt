@@ -1,0 +1,2 @@
+cwd=<USER_PROFILE>\AppData\Local\Temp\m732\M7-32-20261114T1640Z
+command=rustc -vV

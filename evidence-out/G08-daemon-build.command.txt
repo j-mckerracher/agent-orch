@@ -1,0 +1,2 @@
+cwd=repo root
+command=cargo build --locked -p orchestrator-daemon --examples --bins

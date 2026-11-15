@@ -1,0 +1,3 @@
+capture=BLOCKED-no-native-window
+reason=Windows Snipping Tool capture could not be saved: Computer Use drag returned 'failed to activate captured window' and ScreenClippingHost did not expose a targetable window.
+app_window_was_visually inspectable through Computer Use; runbook-required PNG was not saved, so native checks stopped per v3 rule.

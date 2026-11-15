@@ -1,0 +1,3 @@
+original_node=22.20.0
+supported=false; lockfile accepts 22.22.2+ or 24.15.0+
+remedy=official Node 24.15.0 win-x64 zip under isolated run root; no machine PATH change

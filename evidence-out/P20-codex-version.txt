@@ -1,0 +1,4 @@
+exit=0
+version=codex-cli 0.20.0
+approved_version=0.167.0
+live_agent_checks=BLOCKED-EXTERNAL; sign-in state was not queried

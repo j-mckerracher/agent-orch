@@ -1,0 +1,2 @@
+cwd=run root
+command=codex --version

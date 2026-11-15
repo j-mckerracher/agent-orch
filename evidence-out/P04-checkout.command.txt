@@ -1,0 +1,2 @@
+cwd=<USER_PROFILE>\AppData\Local\Temp\m732\M7-32-20261114T1640Z\src
+command=git checkout --detach 6f2fe17f6334a1fb61f1f27cd9765de2ffbb4d5d

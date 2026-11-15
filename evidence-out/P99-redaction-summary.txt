@@ -1,0 +1,2 @@
+publication_copy_files_redacted=15
+all personal path and secret patterns rescanned with 0 matches

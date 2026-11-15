@@ -1,0 +1,3 @@
+node_after_remedy=24.15.0
+supported=true
+method=official Node 24.15.0 win-x64 archive; HTTPS checksum matched; process-local PATH only

@@ -1,0 +1,9 @@
+session_id=1
+user_interactive=True
+explorer_same_session=True
+explorer_pid_session=8884:1
+foreground_window_handle=0x10738
+session_probe_executable=query.exe unavailable
+active_session_reported=False
+session_name=
+status=BLOCKED

@@ -1,0 +1,3 @@
+vswhere_found=True
+vc_tools_found=True
+vswhere_exit=

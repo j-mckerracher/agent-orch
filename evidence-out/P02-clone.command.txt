@@ -1,0 +1,2 @@
+cwd=<USER_PROFILE>\AppData\Local\Temp\m732\M7-32-20261114T1640Z
+command=git clone --no-checkout https://github.com/j-mckerracher/agent-orch.git <USER_PROFILE>\AppData\Local\Temp\m732\M7-32-20261114T1640Z\src

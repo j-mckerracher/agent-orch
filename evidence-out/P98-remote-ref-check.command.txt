@@ -1,0 +1,2 @@
+cwd=isolated source clone
+command=git ls-remote --heads origin refs/heads/evidence/m7-32-win3-6f2fe17f-20261115T061605Z

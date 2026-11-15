@@ -1,0 +1,10 @@
+Prior v3 evidence ref=evidence/m7-32-win3-6f2fe17f-20261113T162455Z
+Prior v3 evidence commit=4ed4093e4a8d1d05867d490026235fe8ac53e7fc; source pin=6f2fe17f6334a1fb61f1f27cd9765de2ffbb4d5d
+Prior PR36-fix supplement ref=evidence/m7-32-win3-fix-9312e34-20261113T171923Z
+Prior fix supplement commit=5cc8bec3f4ae4123c036f4be47c62e8dbe1225e3; source pin=9312e34d520bf4df1e535caf90617aa95da5fac8
+Remote refs were verified with git ls-remote before this report was written.
+Carry forward unchanged completed browser-proxy rows WIN-BP-N02, N03, N04 and N06 from the prior v3 report.
+Carry forward WIN-BP-N07 BLOCKED from the prior v3 report: no real task ID was available; no task or agent was created.
+Carry forward WIN-BP-N08 and WIN-BP-N11 PASS from the PR36-fix supplement; these rows were corrected at 9312e34.
+Carry forward the prior Windows browser suite PASS (11 tests) from the v3 report.
+No browser-proxy row was repeated in this supplemental run.

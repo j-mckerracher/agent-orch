@@ -1,0 +1,3 @@
+git_rev_parse_HEAD=6f2fe17f6334a1fb61f1f27cd9765de2ffbb4d5d
+git_rev_parse_HEAD_tree=62524d7c14d68bcca58c5b6d7cad762885eaf4f9
+git_status_porcelain=
