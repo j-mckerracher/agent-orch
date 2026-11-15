@@ -1,5 +1,6 @@
 {
   "files": [
+    "src/daemon/agentDisplayNames.test.ts",
     "src/daemon/appData.test.ts",
     "src/daemon/client.test.ts",
     "src/daemon/fixtureGuard.test.ts",
@@ -24,6 +25,7 @@
     "src/sources/surfaces/localDay.test.ts",
     "src/sources/surfaces/localToolsFixtures.test.ts",
     "src/sources/surfaces/localToolsLive.test.ts",
+    "src/sources/surfaces/modelCatalogCopilotSignIn.test.ts",
     "src/sources/surfaces/modelCatalogLive.test.ts",
     "src/sources/surfaces/mutationSafety.test.ts",
     "src/sources/surfaces/search.test.ts",
@@ -62,6 +64,8 @@
     "src/ui/views/agents/model.test.ts",
     "src/ui/views/review/ReviewDecisionsView.test.tsx",
     "src/ui/views/workspace/ConversationActions.test.tsx",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx",
+    "src/ui/views/workspace/CopilotSignInWarning.test.tsx",
     "src/ui/views/workspace/WorkspaceView.test.tsx",
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
@@ -1617,6 +1621,21 @@
     "src/ui/views/workstreams/model.test.ts :: layoutGraph draws nothing when no dependency is known and ignores dependencies outside the workstream",
     "src/ui/views/workstreams/model.test.ts :: layoutGraph survives a cycle",
     "src/ui/views/workstreams/model.test.ts :: layoutGraph caps the drawing and reports what it left out",
-    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers"
+    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers",
+    "src/daemon/agentDisplayNames.test.ts :: agentDisplayName (DPES-1105) labels each daemon agent id with its product name",
+    "src/daemon/agentDisplayNames.test.ts :: agentDisplayName (DPES-1105) shows an unknown id as-is rather than inventing a label",
+    "src/daemon/agentDisplayNames.test.ts :: agentDisplayName (DPES-1105) does not resolve inherited object keys to a label",
+    "src/sources/surfaces/modelCatalogCopilotSignIn.test.ts :: GitHub Copilot sign-in check, live (DPES-1105) makes one daemon call per request and returns the daemon's record as ok data",
+    "src/sources/surfaces/modelCatalogCopilotSignIn.test.ts :: GitHub Copilot sign-in check, live (DPES-1105) passes force through only when asked to check again",
+    "src/sources/surfaces/modelCatalogLive.test.ts :: live model catalog labels GitHub Copilot with its display name, offers no model list, and shows the reason as text",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) shows the cost before any call, makes one call on the button, and shows the state as text",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) shows a not-signed-in result with the daemon's fix as text",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) shows a no-seat result as text, without implying a retry will help",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) reports usage as not reported rather than zero when Copilot gave no figures",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) shows a refused check's reason as text when the daemon cannot run Copilot here",
+    "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) polls the free status read while the daemon's background check runs, then shows the settled state",
+    "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows ready, the hook as a visible warning, and the hooks sentence in the provider details",
+    "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows no warning line when the run had no hook error",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it"
   ]
 }
