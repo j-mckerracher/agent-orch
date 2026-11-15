@@ -227,7 +227,7 @@ Stated plainly, because the evidence is not complete:
 * **Trivy does not scan the Node.js binary's internals.** It reads package manifests and
   lockfiles, not the contents of an executable. For the runtime the evidence is:
   1. The Node.js 22.23.5 release notes, which list every advisory fixed in this version
-     (https://nodejs.org/en/blog/release/v22.23.5). The pin is that exact version.
+     (<https://nodejs.org/en/blog/release/v22.23.5>). The pin is that exact version.
   2. The SHA-256 of the archive and of the extracted binary, both pinned here, and the
      signature check on the release's checksum file (above).
   3. `osv-scanner` is not installed on the machine used for this record (`which osv-scanner`
