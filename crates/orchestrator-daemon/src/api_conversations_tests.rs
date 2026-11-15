@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use orchestrator_store::Store;
 
 use super::super::conversation_runtime::{
-    ConversationRuntime, ConversationService, NoWorkstreams, ReplySink, RuntimeFailure,
+    Choice, ConversationRuntime, ConversationService, NoWorkstreams, ReplySink, RuntimeFailure,
     RuntimeIdentity, TurnControl, TurnRequest, WorkstreamDirectory,
 };
 use super::*;
@@ -64,7 +64,7 @@ impl TurnControl for Control {
 }
 
 impl ConversationRuntime for TestRuntime {
-    fn identity(&self) -> RuntimeIdentity {
+    fn identity(&self, _choice: Option<&Choice>) -> RuntimeIdentity {
         self.identity.clone()
     }
 
@@ -427,6 +427,122 @@ fn runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message() {
         assert_eq!(page["entries"][1]["error_code"], code);
         send(&api, global(), "retry", "k2").unwrap();
     }
+}
+
+#[test]
+fn every_refused_choice_has_its_own_stable_code() {
+    use orchestrator_agents::SelectionReason;
+    for (reason, code) in [
+        (
+            SelectionReason::AgentUnavailable,
+            "selection_agent_unavailable",
+        ),
+        (
+            SelectionReason::AuthenticationFailed,
+            "selection_authentication_failed",
+        ),
+        (
+            SelectionReason::AgentStateUnknown,
+            "selection_agent_state_unknown",
+        ),
+        (
+            SelectionReason::AgentUnsupported,
+            "selection_agent_unsupported",
+        ),
+        (
+            SelectionReason::ModelsUnsupported,
+            "selection_models_unsupported",
+        ),
+        (SelectionReason::ModelsUnknown, "selection_models_unknown"),
+        (SelectionReason::UnknownModel, "selection_unknown_model"),
+        (
+            SelectionReason::EffortRequiresModel,
+            "selection_effort_requires_model",
+        ),
+        (
+            SelectionReason::EffortUnsupported,
+            "selection_effort_unsupported",
+        ),
+        (SelectionReason::EffortUnknown, "selection_effort_unknown"),
+    ] {
+        assert_eq!(RuntimeFailure::Refused(reason).code(), code);
+        assert!(code.len() <= 64, "{code} is longer than the store allows");
+    }
+}
+
+#[test]
+fn the_daemon_advertises_the_selection_capability_the_desktop_waits_for() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    assert!(api
+        .capabilities()
+        .contains(&orchestrator_ipc::Capability::ConversationSelection));
+}
+
+#[test]
+fn a_send_without_a_choice_serializes_as_it_did_before_selection_existed() {
+    let request = ConversationSendParams {
+        target: TargetParam::Global {},
+        text: "hi".to_owned(),
+        idempotency_key: "k".to_owned(),
+        selection: None,
+    };
+    // The idempotency fingerprint hashes this encoding, so an absent choice must add no key.
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({"target": {"kind": "global"}, "text": "hi", "idempotency_key": "k"})
+    );
+}
+
+#[test]
+fn a_malformed_choice_is_a_bad_request_and_records_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    for selection in [
+        json!({"agent": ""}),
+        json!({"agent": "codex", "model": ""}),
+        json!({"agent": "codex", "effort": "High"}),
+        json!({"agent": "codex", "unexpected": true}),
+    ] {
+        let result = api.dispatch(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "k", "selection": selection}),
+        );
+        assert!(matches!(result, Err(RpcError::InvalidParams)), "{result:?}");
+    }
+    assert_eq!(kinds(&get(&api, global(), 0)), Vec::<String>::new());
+}
+
+#[test]
+fn a_chosen_copilot_is_refused_as_a_failed_turn_without_launching_anything() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    let sent = api
+        .dispatch(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "k", "selection": {"agent": "github-copilot"}}),
+        )
+        .unwrap();
+    assert_eq!(sent["turn"]["state"], "failed");
+    assert_eq!(sent["turn"]["error_code"], "selection_agent_unsupported");
+    // The message stays in the transcript, as for every failed turn.
+    assert_eq!(
+        kinds(&get(&api, global(), 0)),
+        ["user_message", "turn_failed"]
+    );
+}
+
+#[test]
+fn a_chosen_agent_that_cannot_launch_fails_the_turn_as_unavailable() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    let sent = api
+        .dispatch(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "k", "selection": {"agent": "codex", "model": "gpt-x"}}),
+        )
+        .unwrap();
+    assert_eq!(sent["turn"]["error_code"], "runtime_unavailable");
 }
 
 /// The shipped runtime on a machine with no agent installed, wherever the

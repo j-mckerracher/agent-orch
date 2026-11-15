@@ -46,10 +46,12 @@ pub enum Capability {
     Workstreams,
     /// Clearing conversation history and removing or restoring project coordinators (DPES-1105).
     ConversationHistory,
+    /// A model and effort chosen for one `conversations.send` (DPES-1105).
+    ConversationSelection,
 }
 
 impl Capability {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -65,6 +67,7 @@ impl Capability {
         Self::Queue,
         Self::Workstreams,
         Self::ConversationHistory,
+        Self::ConversationSelection,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -84,6 +87,7 @@ impl Capability {
             Self::Queue => "queue",
             Self::Workstreams => "workstreams",
             Self::ConversationHistory => "conversation_history",
+            Self::ConversationSelection => "conversation_selection",
         }
     }
 

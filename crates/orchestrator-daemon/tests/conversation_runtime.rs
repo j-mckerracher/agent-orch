@@ -128,11 +128,22 @@ impl Chat {
     /// was still being selected (the first catalog read can outlast one call),
     /// so the same idempotency key is retried; nothing was recorded.
     fn send(&mut self, target: &Value, message: &str, key: &str) -> Value {
+        self.send_params(json!({"target": target, "text": message, "idempotency_key": key}))
+    }
+
+    /// Sends a message with the model choice the picker made for it (DPES-1105).
+    fn send_choice(&mut self, target: &Value, message: &str, key: &str, selection: Value) -> Value {
+        self.send_params(json!({
+            "target": target,
+            "text": message,
+            "idempotency_key": key,
+            "selection": selection,
+        }))
+    }
+
+    fn send_params(&mut self, params: Value) -> Value {
         for _ in 0..50 {
-            let response = self.call(
-                "conversations.send",
-                json!({"target": target, "text": message, "idempotency_key": key}),
-            );
+            let response = self.call("conversations.send", params.clone());
             if response["error"]["code"] == CONFLICT {
                 thread::sleep(Duration::from_millis(100));
                 continue;
@@ -631,6 +642,150 @@ fn a_configured_model_the_catalog_does_not_offer_fails_closed() {
     assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
     let launched = std::fs::read_to_string(&log).unwrap();
     assert!(launched.contains("fake-model"), "{launched}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_chosen_model_and_effort_reach_the_agent_for_that_message() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let choice = json!({"agent": "codex", "model": "fake-model", "effort": "high"});
+    chat.send_choice(&global(), "hi", "m-1", choice);
+    let settled = chat.settled(&global());
+    assert_eq!(settled["turn"]["state"], "completed", "{settled}");
+    assert_eq!(settled["turn"]["runtime"]["name"], "codex", "{settled}");
+    let launched = std::fs::read_to_string(&log).unwrap();
+    assert!(launched.contains("\"-m\", \"fake-model\""), "{launched}");
+    assert!(
+        launched.contains("model_reasoning_effort=\\\"high\\\""),
+        "{launched}"
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_chosen_model_the_catalog_does_not_offer_fails_the_turn_with_its_reason() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let choice = json!({"agent": "codex", "model": "no-such-model"});
+    let sent = chat.send_choice(&global(), "hi", "m-1", choice);
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(
+        sent["turn"]["error_code"], "selection_unknown_model",
+        "{sent}"
+    );
+    assert!(!log.exists(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_effort_the_model_does_not_offer_fails_the_turn_with_its_reason() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let choice = json!({"agent": "codex", "model": "fake-model", "effort": "max"});
+    let sent = chat.send_choice(&global(), "hi", "m-1", choice);
+    assert_eq!(
+        sent["turn"]["error_code"], "selection_effort_unsupported",
+        "{sent}"
+    );
+    assert!(!log.exists(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_message_without_a_choice_keeps_the_configured_default() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_CONVERSATION_MODEL", "fake-model"),
+            ("AGENT_ORCH_CONVERSATION_EFFORT", "high"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    let launched = std::fs::read_to_string(&log).unwrap();
+    assert!(launched.contains("\"-m\", \"fake-model\""), "{launched}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_chosen_default_model_replaces_the_configured_one_for_that_message() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_CONVERSATION_MODEL", "fake-model"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    chat.send_choice(&global(), "hi", "m-1", json!({"agent": "codex"}));
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    let launched = std::fs::read_to_string(&log).unwrap();
+    assert!(!launched.contains("\"-m\""), "{launched}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_chosen_agent_that_is_not_installed_fails_the_turn_without_another_agent() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    // The fake is installed as Codex only; the choice names Claude Code, which is absent.
+    let sent = chat.send_choice(&global(), "hi", "m-1", json!({"agent": "claude-code"}));
+    assert_eq!(sent["turn"]["error_code"], "runtime_unavailable", "{sent}");
+    assert!(!log.exists(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn github_copilot_is_not_offered_to_a_message() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send_choice(&global(), "hi", "m-1", json!({"agent": "github-copilot"}));
+    assert_eq!(
+        sent["turn"]["error_code"], "selection_agent_unsupported",
+        "{sent}"
+    );
+    assert!(!log.exists(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_malformed_choice_is_a_bad_request_and_records_no_turn() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    for selection in [
+        json!({"agent": "codex", "model": ""}),
+        json!({"agent": "codex", "effort": "High"}),
+        json!({"agent": "codex", "unexpected": true}),
+    ] {
+        let response = chat.call(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "m-bad", "selection": selection}),
+        );
+        assert!(response.get("error").is_some(), "{response}");
+        assert!(response.get("result").is_none(), "{response}");
+    }
+    let page = chat.get(&global(), 0);
+    assert_eq!(page["entries"], json!([]), "{page}");
+    assert!(!log.exists(), "the agent was launched");
     stop(&layout, daemon, chat);
 }
 

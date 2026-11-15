@@ -282,6 +282,7 @@ impl RpcHandler for DaemonApi {
             Capability::Queue,
             Capability::Workstreams,
             Capability::ConversationHistory,
+            Capability::ConversationSelection,
         ]
     }
 

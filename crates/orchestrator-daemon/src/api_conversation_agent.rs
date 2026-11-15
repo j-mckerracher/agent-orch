@@ -27,6 +27,7 @@
 //! daemon takes its request gate, because reading a catalog can take a second.
 //! [`ConversationRuntime::identity`] only reads the result.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -37,7 +38,7 @@ use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::{
     copilot_sandbox_host, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit,
     AgentHandle, AgentLaunchRequest, CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter,
-    CopilotRun, CopilotSignIn, SandboxHostStatus, COPILOT_PINNED_VERSION,
+    CopilotRun, CopilotSignIn, SandboxHostStatus, SelectionReason, COPILOT_PINNED_VERSION,
 };
 use orchestrator_core::workstream::Workstream;
 use orchestrator_ipc::RpcError;
@@ -45,8 +46,8 @@ use orchestrator_store::{ConversationTarget, SqliteStore, WorkstreamStoreError};
 
 use super::conversation_orphans as orphans;
 use super::conversation_runtime::{
-    ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity, TurnControl,
-    TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
+    Choice, ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity,
+    TurnControl, TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
 };
 use super::models::CatalogCache;
 use crate::executor::{log_safe, ExecutorConfig, COPILOT_RUNS_DIR};
@@ -201,7 +202,8 @@ pub(crate) struct AgentRuntime {
     exec: ExecutorConfig,
     cache: Arc<CatalogCache>,
     config: ConversationConfig,
-    selection: Mutex<Option<(Instant, Selection)>>,
+    /// One resolved selection per choice; `None` is the configured default.
+    selections: Mutex<HashMap<Option<Choice>, (Instant, Selection)>>,
     /// When a selection first could not be established; cleared by any
     /// definitive outcome. Bounds the `Conflict` retries.
     pending_since: Mutex<Option<Instant>>,
@@ -218,7 +220,7 @@ impl AgentRuntime {
             exec,
             cache,
             config,
-            selection: Mutex::new(None),
+            selections: Mutex::new(HashMap::new()),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
         }
@@ -236,19 +238,19 @@ impl AgentRuntime {
             .collect()
     }
 
-    fn current(&self) -> Option<Selection> {
-        self.selection
+    fn current(&self, choice: Option<&Choice>) -> Option<Selection> {
+        self.selections
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .as_ref()
+            .get(&choice.cloned())
             .map(|(_, selection)| selection.clone())
     }
 
-    fn fresh(&self) -> bool {
-        self.selection
+    fn fresh(&self, choice: Option<&Choice>) -> bool {
+        self.selections
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .as_ref()
+            .get(&choice.cloned())
             .is_some_and(|(at, _)| at.elapsed() < SELECTION_TTL)
     }
 
@@ -284,8 +286,8 @@ impl AgentRuntime {
     /// retries with the same idempotency key and nothing is recorded, but only
     /// for [`ConversationConfig::retry_window`]; after that the selection
     /// fails closed like any other unavailable runtime.
-    fn resolve(&self) -> Result<Selection, RpcError> {
-        let outcome = self.select();
+    fn resolve(&self, choice: Option<&Choice>) -> Result<Selection, RpcError> {
+        let outcome = self.select(choice);
         let mut pending = self
             .pending_since
             .lock()
@@ -310,7 +312,66 @@ impl AgentRuntime {
         }
     }
 
-    fn select(&self) -> Outcome {
+    fn select(&self, choice: Option<&Choice>) -> Outcome {
+        match choice {
+            None => self.select_configured(),
+            Some(choice) => self.select_chosen(choice),
+        }
+    }
+
+    /// The agent a message chose in the picker (DPES-1105). Only an agent a
+    /// conversation can run is offered, and the catalog decides whether the
+    /// model and effort exist. A refusal is decided with its reason: the
+    /// message is never answered by another agent or model.
+    fn select_chosen(&self, choice: &Choice) -> Outcome {
+        let Some(agent) = chat_agent(&choice.agent) else {
+            return Outcome::Decided(Selection::Missing(RuntimeFailure::Refused(
+                SelectionReason::AgentUnsupported,
+            )));
+        };
+        if !self.launchable(agent) {
+            return Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable));
+        }
+        let program = self.program_of(agent);
+        let version = match read_version(&program, agent) {
+            Probe::Version(version) => version,
+            Probe::Rejected => {
+                eprintln!(
+                    "orchestrator-daemon: conversation agent {agent} is not launchable: \
+                     `--version` did not give a version"
+                );
+                return Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable));
+            }
+            Probe::TimedOut => return Outcome::Pending,
+        };
+        let Some(catalog) = self.cache.read(&self.exec, &[agent]).into_iter().next() else {
+            return Outcome::Pending;
+        };
+        if !catalog.is_definitive() {
+            return Outcome::Pending;
+        }
+        match catalog.validate(choice.model.as_deref(), choice.effort.as_deref()) {
+            Ok(()) => Outcome::Decided(Selection::Ready(Selected {
+                agent,
+                program,
+                identity: RuntimeIdentity {
+                    name: agent.to_owned(),
+                    version,
+                },
+                model: choice.model.clone(),
+                effort: choice.effort.clone(),
+            })),
+            Err(error) => {
+                eprintln!(
+                    "orchestrator-daemon: conversation selection refused: {}",
+                    log_safe(&error.to_string())
+                );
+                Outcome::Decided(Selection::Missing(RuntimeFailure::Refused(error.reason)))
+            }
+        }
+    }
+
+    fn select_configured(&self) -> Outcome {
         let agents: Vec<&'static str> = match self.config.agent.as_deref() {
             None => vec![CODEX, CLAUDE],
             Some(CODEX) => vec![CODEX],
@@ -455,8 +516,8 @@ impl AgentRuntime {
 }
 
 impl ConversationRuntime for AgentRuntime {
-    fn identity(&self) -> RuntimeIdentity {
-        match self.current() {
+    fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity {
+        match self.current(choice) {
             Some(Selection::Ready(selected)) => selected.identity,
             _ => RuntimeIdentity {
                 name: UNAVAILABLE_RUNTIME_NAME.to_owned(),
@@ -466,19 +527,23 @@ impl ConversationRuntime for AgentRuntime {
     }
 
     /// Only a selected agent produces output and so needs a pin.
-    fn requires_pin(&self) -> bool {
-        matches!(self.current(), Some(Selection::Ready(_)))
+    fn requires_pin(&self, choice: Option<&Choice>) -> bool {
+        matches!(self.current(choice), Some(Selection::Ready(_)))
     }
 
-    fn prepare(&self) -> Result<(), RpcError> {
-        if self.fresh() {
+    fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
+        if self.fresh(choice) {
             return Ok(());
         }
-        let selection = self.resolve()?;
-        *self
-            .selection
+        let selection = self.resolve(choice)?;
+        let mut selections = self
+            .selections
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some((Instant::now(), selection));
+            .unwrap_or_else(|error| error.into_inner());
+        // Choices are chosen by the user, but the agent name arrives on the wire;
+        // expired entries go, so the map holds only what is still reused.
+        selections.retain(|_, (at, _)| at.elapsed() < SELECTION_TTL);
+        selections.insert(choice.cloned(), (Instant::now(), selection));
         Ok(())
     }
 
@@ -487,7 +552,7 @@ impl ConversationRuntime for AgentRuntime {
         request: TurnRequest,
         sink: ReplySink,
     ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
-        let selected = match self.current() {
+        let selected = match self.current(request.choice.as_ref()) {
             Some(Selection::Ready(selected)) => selected,
             Some(Selection::Missing(failure)) => return Err(failure),
             None => return Err(RuntimeFailure::Unavailable),
@@ -572,6 +637,17 @@ impl TurnControl for Control {
     /// The turn thread sees the flag within [`POLL`] and kills the process.
     fn cancel(&self) {
         self.0.store(true, Ordering::Release);
+    }
+}
+
+/// The agents a message may choose. GitHub Copilot answers only when it is the
+/// configured agent, so no message starts a paid Copilot run (DPES-1105). Any
+/// other name, including one the picker lists but chat cannot run, is refused.
+fn chat_agent(name: &str) -> Option<&'static str> {
+    match name {
+        CODEX => Some(CODEX),
+        CLAUDE => Some(CLAUDE),
+        _ => None,
     }
 }
 
@@ -914,6 +990,7 @@ mod tests {
                 name: CODEX.into(),
                 version: "0.0.0".into(),
             },
+            choice: None,
             history,
             context: None,
         }
@@ -1094,12 +1171,12 @@ mod tests {
                 let runtime = runtime(dir.path(), &path, Duration::from_secs(60));
                 // A loaded machine can outlast the probe once; that is a
                 // conflict, never a selection.
-                let mut outcome = runtime.resolve();
+                let mut outcome = runtime.resolve(None);
                 for _ in 0..20 {
                     if !matches!(outcome, Err(RpcError::Conflict)) {
                         break;
                     }
-                    outcome = runtime.resolve();
+                    outcome = runtime.resolve(None);
                 }
                 assert!(
                     matches!(outcome, Ok(Selection::Missing(RuntimeFailure::Unavailable))),
@@ -1118,11 +1195,11 @@ mod tests {
                 "case \"$1\" in --version) echo codex-cli 1.2.3 ;; *) exec sleep 5 ;; esac",
             );
             let runtime = runtime(dir.path(), &path, Duration::from_millis(600));
-            assert!(matches!(runtime.resolve(), Err(RpcError::Conflict)));
+            assert!(matches!(runtime.resolve(None), Err(RpcError::Conflict)));
             std::thread::sleep(Duration::from_millis(700));
             assert!(
                 matches!(
-                    runtime.resolve(),
+                    runtime.resolve(None),
                     Ok(Selection::Missing(RuntimeFailure::Unavailable))
                 ),
                 "still a conflict after the window"
@@ -1134,19 +1211,19 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = program(dir.path(), "hang", "exec sleep 30", 0o755);
             let runtime = runtime(dir.path(), &path, Duration::from_millis(600));
-            let mut outcome = runtime.resolve();
+            let mut outcome = runtime.resolve(None);
             // A script written while another test forks can be "busy".
             for _ in 0..40 {
                 if matches!(outcome, Err(RpcError::Conflict)) {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
-                outcome = runtime.resolve();
+                outcome = runtime.resolve(None);
             }
             assert!(matches!(outcome, Err(RpcError::Conflict)));
             std::thread::sleep(Duration::from_millis(700));
             assert!(matches!(
-                runtime.resolve(),
+                runtime.resolve(None),
                 Ok(Selection::Missing(RuntimeFailure::Unavailable))
             ));
         }
