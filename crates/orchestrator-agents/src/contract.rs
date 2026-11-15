@@ -21,6 +21,7 @@ pub enum AgentKind {
     Codex,
     ClaudeCode,
     Pi,
+    GithubCopilot,
 }
 
 /// A launch request. The caller owns the argument array; the adapter
@@ -128,6 +129,10 @@ pub enum AgentError {
     Launch(#[from] SupervisorError),
     #[error("protocol error: {0}")]
     Protocol(String),
+    /// The agent is installed but cannot run here: a host gate or a version
+    /// pin refused it. No process was started.
+    #[error("agent unavailable: {0}")]
+    Unavailable(String),
 }
 
 #[async_trait]
