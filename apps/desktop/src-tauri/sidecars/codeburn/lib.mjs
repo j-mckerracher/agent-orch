@@ -128,13 +128,24 @@ export async function ensureArchive(runtime, platform, cacheDir) {
 }
 
 /**
+ * The tar that reads both the .tar.gz (macOS) and the .zip (Windows) archives. On Windows a bare
+ * `tar` can be Git's GNU tar, which reads `C:` as a remote host and cannot read zip. The system
+ * bsdtar is in System32 on Windows 10 and later.
+ */
+export function tarProgram(platform = process.platform) {
+  if (platform !== "win32") return "tar";
+  const bsdtar = join(process.env.SYSTEMROOT ?? "C:\\Windows", "System32", "tar.exe");
+  return existsSync(bsdtar) ? bsdtar : "tar";
+}
+
+/**
  * Extracts only the pinned `node` binary and its LICENSE from the archive into `outDir`, then checks
- * the binary's SHA-256 against the pin. `tar` (bsdtar on macOS and Windows) reads both formats.
+ * the binary's SHA-256 against the pin.
  */
 export function extractRuntime(runtime, platform, archivePath, outDir) {
   const entry = runtimeEntry(runtime, platform);
   mkdirSync(outDir, { recursive: true });
-  const result = spawnSync("tar", ["-xf", archivePath, "-C", outDir, entry.member, entry.licenseMember], { encoding: "utf8" });
+  const result = spawnSync(tarProgram(), ["-xf", archivePath, "-C", outDir, entry.member, entry.licenseMember], { encoding: "utf8" });
   if (result.error || result.status !== 0) {
     throw new Error(`tar could not extract ${entry.member}: ${result.error ?? result.stderr}`);
   }
