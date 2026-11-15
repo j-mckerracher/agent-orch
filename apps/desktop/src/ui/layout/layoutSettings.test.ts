@@ -26,6 +26,7 @@ describe("layout settings", () => {
     expect(createLayoutSettings(memoryStorage()).getSnapshot()).toEqual({
       sidebarWidth: null,
       sidebarCollapsed: false,
+      connectionStripExpanded: true,
       persisted: true,
     });
   });
@@ -34,7 +35,11 @@ describe("layout settings", () => {
     const storage = memoryStorage();
     const settings = createLayoutSettings(storage);
     settings.setSidebarWidth(300);
-    expect(JSON.parse(storage.data[LAYOUT_STORAGE_KEY]!)).toEqual({ sidebarWidth: 300, sidebarCollapsed: false });
+    expect(JSON.parse(storage.data[LAYOUT_STORAGE_KEY]!)).toEqual({
+      sidebarWidth: 300,
+      sidebarCollapsed: false,
+      connectionStripExpanded: true,
+    });
     settings.setSidebarCollapsed(true);
     expect(createLayoutSettings(storage).getSnapshot()).toMatchObject({ sidebarWidth: 300, sidebarCollapsed: true });
   });
@@ -80,7 +85,42 @@ describe("layout settings", () => {
     const settings = createLayoutSettings(throwingStorage);
     expect(settings.getSnapshot()).toMatchObject({ sidebarWidth: null, persisted: true });
     settings.setSidebarWidth(320);
-    expect(settings.getSnapshot()).toEqual({ sidebarWidth: 320, sidebarCollapsed: false, persisted: false });
+    expect(settings.getSnapshot()).toEqual({
+      sidebarWidth: 320,
+      sidebarCollapsed: false,
+      connectionStripExpanded: true,
+      persisted: false,
+    });
+  });
+
+  it("keeps the connection strip choice expanded by default and across sidebar changes", () => {
+    const storage = memoryStorage();
+    const settings = createLayoutSettings(storage);
+    expect(settings.getSnapshot().connectionStripExpanded).toBe(true);
+    settings.setConnectionStripExpanded(false);
+    settings.setSidebarWidth(260);
+    settings.setSidebarCollapsed(true);
+    settings.setSidebarCollapsed(false);
+    expect(createLayoutSettings(storage).getSnapshot()).toMatchObject({
+      sidebarWidth: 260,
+      connectionStripExpanded: false,
+    });
+    settings.reset();
+    expect(settings.getSnapshot()).toMatchObject({ sidebarWidth: null, connectionStripExpanded: false });
+  });
+
+  it("reads a store written before the connection strip choice existed as expanded", () => {
+    const raw = JSON.stringify({ sidebarWidth: 300, sidebarCollapsed: false });
+    expect(createLayoutSettings(memoryStorage({ [LAYOUT_STORAGE_KEY]: raw })).getSnapshot()).toMatchObject({
+      sidebarWidth: 300,
+      connectionStripExpanded: true,
+    });
+  });
+
+  it("applies a collapsed connection strip for this page only when storage throws", () => {
+    const settings = createLayoutSettings(throwingStorage);
+    settings.setConnectionStripExpanded(false);
+    expect(settings.getSnapshot()).toMatchObject({ connectionStripExpanded: false, persisted: false });
   });
 
   it("works without any storage", () => {

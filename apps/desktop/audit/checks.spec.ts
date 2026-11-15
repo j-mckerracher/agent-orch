@@ -677,3 +677,84 @@ test.describe("RC-25 model picker never shows a reason as an option", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// RC-26 Connection strip collapses without hiding problems (DPES-1105)
+// ---------------------------------------------------------------------------
+test.describe("RC-26 connection strip collapses without hiding problems", () => {
+  const toggleName = /^(Collapse|Expand) connection details$/;
+
+  for (const bp of ["desktop", "mobile"] as const) {
+    test(`connection-strip-1 (${bp}): collapsing keeps the summary, folds the notes and moves the content up`, async ({ page }) => {
+      await openApp(page, "#/workspace", "populated", bp);
+      const toggle = page.getByRole("button", { name: toggleName });
+      await expect(toggle).toHaveAccessibleName("Collapse connection details");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const strip = page.getByTestId("shell-connection");
+      const content = page.locator("#shell-main");
+      const expanded = { strip: (await box(strip)).height, content: (await box(content)).y };
+
+      await toggle.click();
+      await expect(toggle).toHaveAccessibleName("Expand connection details");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      // The summary stays visible: status, last durable sequence, reconnect control and the fixture label.
+      await expect(page.getByTestId("connection-status")).toBeVisible();
+      await expect(page.getByTestId("last-sequence")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Refresh / reconnect" })).toBeVisible();
+      await expect(page.getByTestId("fixture-banner")).toBeVisible();
+      // The explanatory notes fold away.
+      await expect(page.getByTestId("recovery-unknown")).toBeHidden();
+      await expect(page.getByTestId("journal-continuity")).toBeHidden();
+
+      const collapsed = { strip: (await box(strip)).height, content: (await box(content)).y };
+      expect(collapsed.strip, "collapsed strip is shorter than expanded").toBeLessThan(expanded.strip);
+      const gained = expanded.content - collapsed.content;
+      expect(Math.abs(gained - (expanded.strip - collapsed.strip)), "content moves up by the height the strip gave back").toBeLessThan(1);
+
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("recovery-unknown")).toBeVisible();
+    });
+
+    test(`connection-strip-2 (${bp}): the no-bridge offline strip stays expanded and its toggle is disabled with a visible reason`, async ({ page }) => {
+      await openApp(page, "#/workspace", "offline", bp);
+      const toggle = page.getByRole("button", { name: toggleName });
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(toggle).toBeDisabled();
+      await expect(page.getByTestId("offline-note")).toBeVisible();
+      await expect(page.getByTestId("recovery-unknown")).toBeVisible();
+      // The reason the toggle is locked is visible text, linked to the disabled control.
+      const reasonId = ((await toggle.getAttribute("aria-describedby")) ?? "").trim();
+      expect(reasonId, "disabled toggle names its reason").not.toBe("");
+      await expect(page.locator(`[id="${reasonId}"]`)).toBeVisible();
+      await expect(page.locator(`[id="${reasonId}"]`)).not.toBeEmpty();
+    });
+  }
+
+  test("connection-strip-3: the toggle works from the keyboard and shows a visible focus ring", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    const toggle = page.getByRole("button", { name: toggleName });
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("Space");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const ring = await toggle.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+    });
+    expect(ring.style, "focused toggle draws an outline").not.toBe("none");
+    expect(ring.width).toBeGreaterThan(0);
+  });
+
+  test("connection-strip-4: a collapsed choice survives a reload and the fixture label stays visible", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    await page.getByRole("button", { name: toggleName }).click();
+    await page.reload();
+    await page.locator("h1").first().waitFor({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: "Expand connection details" })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("fixture-banner")).toBeVisible();
+  });
+});
