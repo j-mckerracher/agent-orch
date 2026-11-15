@@ -93,7 +93,8 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 116 };
 
 // Platform independent. Measured by a vitest JSON run on the DPES-1105 AI usage branch, rebased on main 3cc22759b.
-export const VITEST = { files: 67, tests: 1549 };
+// The target-picker selection fix adds 1 file and 7 tests: 1549 becomes 1556.
+export const VITEST = { files: 68, tests: 1556 };
 export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
