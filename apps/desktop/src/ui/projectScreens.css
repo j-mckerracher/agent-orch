@@ -504,8 +504,75 @@
   margin-left: auto;
 }
 
-/* Rows: border style, glyph and text differ per kind, so none depends on color. */
-.strip.conn-strip > p {
+/* Fold control: a native button with a chevron. The shell draws its focus ring (.shell button:focus-visible). */
+.conn-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.conn-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.conn-chevron {
+  display: block;
+  transition: transform 140ms ease;
+}
+
+.conn-toggle[aria-expanded="false"] .conn-chevron {
+  transform: rotate(-90deg);
+}
+
+.conn-lock {
+  color: var(--subtle);
+}
+
+/* The folding region is a flex row, so the healthy notes keep their side-by-side layout. */
+.conn-details {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  min-width: 0;
+}
+
+.conn-details[hidden] {
+  display: none;
+}
+
+.conn-details:not([hidden]) {
+  animation: conn-reveal 160ms ease-out;
+}
+
+@keyframes conn-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conn-chevron {
+    transition: none;
+  }
+
+  .conn-details:not([hidden]) {
+    animation: none;
+  }
+}
+
+/* Rows: border style, glyph and text differ per kind, so none depends on color. Rows sit in the folding region too. */
+.strip.conn-strip p {
   flex: 1 1 100%;
   display: flex;
   gap: 8px;
@@ -518,82 +585,82 @@
   line-height: 1.45;
 }
 
-.strip.conn-strip > p::before {
+.strip.conn-strip p::before {
   flex: none;
   min-width: 1.2em;
   font-weight: 700;
   text-align: center;
 }
 
-.strip.conn-strip > p[data-testid="recovery-unknown"],
-.strip.conn-strip > p[data-testid="journal-continuity"] {
+.strip.conn-strip p[data-testid="recovery-unknown"],
+.strip.conn-strip p[data-testid="journal-continuity"] {
   flex: 1 1 22rem;
   color: var(--subtle);
 }
 
-.strip.conn-strip > p[data-testid="fixture-banner"] {
+.strip.conn-strip p[data-testid="fixture-banner"] {
   border-left-style: dashed;
   border-left-color: var(--amber);
   background: var(--amber-bg);
 }
 
-.strip.conn-strip > p[data-testid="fixture-banner"]::before {
+.strip.conn-strip p[data-testid="fixture-banner"]::before {
   content: "◇";
   content: "◇" / "";
   color: var(--amber);
 }
 
-.strip.conn-strip > p[data-testid="connected-note"]::before {
+.strip.conn-strip p[data-testid="connected-note"]::before {
   content: "✓";
   content: "✓" / "";
   color: var(--green);
 }
 
-.strip.conn-strip > p[data-testid="connected-note"] {
+.strip.conn-strip p[data-testid="connected-note"] {
   border-left-color: var(--green);
 }
 
-.strip.conn-strip > p[data-testid="offline-note"] {
+.strip.conn-strip p[data-testid="offline-note"] {
   border-left-style: double;
   border-left-width: 6px;
   border-left-color: var(--amber);
   background: var(--amber-bg);
 }
 
-.strip.conn-strip > p[data-testid="offline-note"]::before {
+.strip.conn-strip p[data-testid="offline-note"]::before {
   content: "⏸";
   content: "⏸" / "";
   color: var(--amber);
 }
 
-.strip.conn-strip > p[role="alert"] {
+.strip.conn-strip p[role="alert"] {
   border-left-color: var(--red);
   background: var(--red-bg);
 }
 
-.strip.conn-strip > p[role="alert"]::before {
+.strip.conn-strip p[role="alert"]::before {
   content: "✕";
   content: "✕" / "";
   color: var(--red);
 }
 
-.strip.conn-strip > p[data-testid="history-incomplete"] {
+.strip.conn-strip p[data-testid="history-incomplete"] {
   border: 2px dotted var(--red);
   border-left: 6px solid var(--red);
 }
 
-.strip.conn-strip > p[data-testid="history-incomplete"]::before {
+.strip.conn-strip p[data-testid="history-incomplete"]::before {
   content: "⚠";
   content: "⚠" / "";
 }
 
-.strip.conn-strip > p[data-testid="recovery-unknown"]::before {
+.strip.conn-strip p[data-testid="recovery-unknown"]::before {
   content: "?";
   content: "?" / "";
   color: var(--blue);
 }
 
-.strip.conn-strip > p[data-testid="journal-continuity"]::before {
+.strip.conn-strip p[data-testid="journal-continuity"]::before {
   content: "≈";
   content: "≈" / "";
   color: var(--blue);
@@ -609,7 +676,7 @@
   .ps-card,
   .ps-section,
   .ps-notice,
-  .strip.conn-strip > p {
+  .strip.conn-strip p {
     border: 1px solid CanvasText;
   }
 }

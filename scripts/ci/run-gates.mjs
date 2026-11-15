@@ -1,6 +1,6 @@
 // Runs the native gates of one platform, once each, and records evidence.
 //
-//   node scripts/ci/run-gates.mjs --evidence-dir D --target-dir T --test-tmp P [--only a,b] [--list]
+//   node scripts/ci/run-gates.mjs --evidence-dir D --target-dir T --test-tmp P [--only a,b] [--list] [--target-from-cache]
 //   node scripts/ci/run-gates.mjs --preflight [--evidence-dir D --target-dir T --test-tmp P]
 //
 // Evidence per gate: <name>.stdout.txt, <name>.stderr.txt (raw bytes), <name>.result.json. A gate
@@ -11,7 +11,10 @@
 // FAIL (exit 1) if anything failed, else INCONCLUSIVE (exit 2) if anything was skipped, else PASS
 // (exit 0). On Windows the paths are checked first (preflight.mjs) and the run stops with exit 3,
 // before anything is created, if a root is an alias (SUBST, mapped drive, junction) or too long.
-// The evidence directory must not already exist.
+// The evidence directory must not already exist. The target directory must be empty, unless
+// --target-from-cache says it was restored from the CI cache. Such a cache holds third-party artifacts
+// only (every local package is pruned before it is saved), so the build and lint gates still have to
+// compile their own crates; their `Compiling` and `Checking` lines are asserted.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -35,11 +38,12 @@ const win = process.platform === "win32";
 const PREFLIGHT_EXIT = 3;
 
 const parseArgs = (argv) => {
-  const out = { only: null, list: false, preflight: false };
+  const out = { only: null, list: false, preflight: false, targetFromCache: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--list") out.list = true;
     else if (a === "--preflight") out.preflight = true;
+    else if (a === "--target-from-cache") out.targetFromCache = true;
     else if (["--evidence-dir", "--target-dir", "--test-tmp", "--only", "--source"].includes(a)) {
       const v = argv[++i];
       if (!v) throw new Error(`${a} needs a value`);
@@ -86,7 +90,9 @@ if (args.preflight) {
   process.exit(0);
 }
 if (existsSync(evidence)) throw new Error(`evidence directory exists, refusing to reuse it: ${evidence}`);
-if (existsSync(target) && readdirSync(target).length > 0) throw new Error(`target directory is not empty: ${target}`);
+if (!args.targetFromCache && existsSync(target) && readdirSync(target).length > 0) {
+  throw new Error(`target directory is not empty: ${target}`);
+}
 mkdirSync(evidence, { recursive: true });
 mkdirSync(target, { recursive: true });
 mkdirSync(testTmp, { recursive: true });

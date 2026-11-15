@@ -429,3 +429,40 @@ for (const [width, height] of [
     }
   });
 }
+
+test.describe("connection strip collapse (DPES-1105)", () => {
+  for (const width of [1440, 960, 760]) {
+    test(`collapsing the strip shortens it and moves the content up at ${width} CSS px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/?fixture=1#/workspace");
+      await expect(page.getByTestId("fixture-banner")).toBeVisible();
+      const strip = page.getByTestId("shell-connection");
+      const content = page.locator("#shell-main");
+      const measure = async () => ({
+        strip: (await strip.boundingBox())!.height,
+        content: (await content.boundingBox())!.y,
+      });
+
+      const expanded = await measure();
+      await page.getByRole("button", { name: "Collapse connection details" }).click();
+      await expect(page.getByRole("button", { name: "Expand connection details" })).toHaveAttribute("aria-expanded", "false");
+      const collapsed = await measure();
+
+      expect(collapsed.strip, "collapsed strip height").toBeLessThan(expanded.strip);
+      expect(collapsed.content, "content top after collapse").toBeLessThan(expanded.content);
+      expect(
+        Math.abs(expanded.content - collapsed.content - (expanded.strip - collapsed.strip)),
+        "content moves up by the height the strip gave back",
+      ).toBeLessThan(1);
+    });
+  }
+
+  test("the sidebar still spans the full window height with the strip collapsed at 1440 CSS px", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/?fixture=1#/workspace");
+    await page.getByRole("button", { name: "Collapse connection details" }).click();
+    const sidebar = (await page.getByTestId("shell-sidebar").boundingBox())!;
+    expect(sidebar.y, "sidebar top").toBeCloseTo(0, 0);
+    expect(sidebar.y + sidebar.height, "sidebar bottom").toBeCloseTo(900, 0);
+  });
+});

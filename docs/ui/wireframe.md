@@ -54,6 +54,8 @@ M7 note (D-3): these project routes are unchanged and are hosted beneath the glo
 
 Connection sequence: connect/authenticate/negotiate -> subscribe and hydrate records without losing intervening events -> connected. On disconnect disable mutations, retain drafts, reconnect/authenticate, replay from the last applied sequence, deduplicate and refresh affected snapshots. On replay gap/slow-consumer, mark history incomplete and resubscribe/refetch without showing invented continuity. Because M5-02 accepts some stale cursors after store replacement (known D3), start a fresh baseline after reopening or suspected restart/reset until D6 has a real source; do not persist a cursor as proof of cross-process continuity. Do not automatically replay unresolved approval/delivery mutations with a new key. Reconcile state first; if the same logical request is retried, retain its idempotency key.
 
+**Folding (DPES-1105).** The status row (state chip, last durable sequence, Refresh / reconnect), the fixture demo banner, and every alert or live region stay visible. Only the healthy-state explanatory notes (connected note, recovery, journal continuity) fold behind a disclosure toggle. The strip is held open, and its toggle disabled with a visible reason, while the connection is not live and complete: not connected, a daemon error, history incomplete, or a journal reset. The choice is per user, persists in the shared layout settings, and applies again once the connection is healthy. Unknown recovery or journal continuity is never shown as OK, folded or not.
+
 ## S1 — Project list (M5-03)
 
 ```text

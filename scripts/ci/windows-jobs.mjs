@@ -1,0 +1,173 @@
+// The Windows native gates, split into parallel jobs, and the rules that decide which of those jobs a
+// change needs. The functions are pure and tested in windows-jobs.test.mjs. The CLI is what
+// .github/workflows/ci.yml calls:
+//
+//   node scripts/ci/windows-jobs.mjs select --event <github.event_name>
+//       key=value lines for $GITHUB_OUTPUT; the reason goes to stderr
+//   node scripts/ci/windows-jobs.mjs gates <job-id>
+//       the gate names one job runs, for run-gates --only
+//   node scripts/ci/windows-jobs.mjs verdict
+//       reads the needs context from NEEDS (JSON) and fails unless every job agrees with the selection
+//
+// Only a pull request is selected by its changed files. Every other event (a push to main, a manual run,
+// a release call) runs every Windows gate. The harness job always runs. A job that is not selected is
+// skipped, and the aggregator accepts a skipped job only when its group was not selected; a selected job
+// must succeed.
+import { execFileSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+// Each job runs its gates in gates.mjs order. A gate that needs another gate must share its job, or
+// run-gates would run it without the prerequisite; windows-jobs.test.mjs checks that.
+export const JOBS = [
+  { id: "harness", group: "harness", gates: ["node-self-tests"] },
+  {
+    id: "engine-build",
+    group: "engine",
+    gates: ["daemon-build", "windows-transport-tests", "cli-build", "p12-windows-checks", "clippy-scoped"],
+  },
+  {
+    id: "engine-tests-a",
+    group: "engine",
+    gates: [
+      "ipc-tests", "daemon-tests", "daemon-lifecycle", "coordinator-review-tests",
+      "cli-cleanup-safety-tests", "runtime-command-line-tests", "cli-command-line-tests",
+    ],
+  },
+  {
+    id: "engine-tests-b",
+    group: "engine",
+    gates: ["git-lib-tests", "private-fs-tests", "store-tests", "lock-takeover-test", "diagnostics-tests"],
+  },
+  {
+    id: "tauri-build",
+    group: "tauri",
+    gates: ["desktop-npm-ci", "desktop-build", "tauri-build", "tauri-clippy-clean", "tauri-clippy"],
+  },
+  { id: "tauri-tests", group: "tauri", gates: ["desktop-npm-ci", "desktop-build", "tauri-tests"] },
+  { id: "desktop", group: "desktop", gates: ["desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest"] },
+  { id: "desktop-package", group: "package", gates: ["desktop-npm-ci", "desktop-package-win"] },
+];
+
+export const GROUPS = ["engine", "tauri", "desktop", "package"];
+
+// A file that no Windows gate reads: anything under docs/, and a Markdown file at the repository root.
+const isDocumentation = (file) => file.startsWith("docs/") || (!file.includes("/") && file.endsWith(".md"));
+
+// Changes to the gate harness, the toolchain, a manifest or a lockfile, or the Node tooling run every gate:
+// they can change what is built or how it is judged.
+const RUNS_EVERYTHING = [
+  /^scripts\//,
+  /^\.github\//,
+  /^\.cargo\//,
+  /^deny\.toml$/,
+  /(^|\/)Cargo\.(toml|lock)$/,
+  /(^|\/)rust-toolchain(\.toml)?$/,
+  /(^|\/)package(-lock)?\.json$/,
+];
+
+const ALL = { engine: true, tauri: true, desktop: true, package: true };
+const NONE = { engine: false, tauri: false, desktop: false, package: false };
+
+// The groups a change set needs. Conservative: an input this table does not know runs every gate.
+// `crates/` feeds the engine, the Tauri host (it path-depends on three crates) and the installer (it bundles
+// the daemon). `apps/desktop/src-tauri/` feeds the host and the installer. Other `apps/desktop/` files feed the
+// desktop gates and the installer.
+export function selectGroups({ eventName, changedFiles }) {
+  if (eventName !== "pull_request") return { ...ALL, reason: `${eventName || "this event"} runs every Windows gate` };
+  if (!Array.isArray(changedFiles)) return { ...ALL, reason: "the change set is unknown, so every Windows gate runs" };
+  const selected = { ...NONE };
+  for (const file of changedFiles) {
+    if (isDocumentation(file)) continue;
+    if (RUNS_EVERYTHING.some((re) => re.test(file))) return { ...ALL, reason: `${file} runs every Windows gate` };
+    if (file.startsWith("crates/")) Object.assign(selected, { engine: true, tauri: true, package: true });
+    else if (file.startsWith("apps/desktop/src-tauri/")) Object.assign(selected, { tauri: true, package: true });
+    else if (file.startsWith("apps/desktop/")) Object.assign(selected, { desktop: true, package: true });
+    else return { ...ALL, reason: `${file} is not a known input, so every Windows gate runs` };
+  }
+  return { ...selected, reason: "only the groups the changed files need" };
+}
+
+// The verdict over the needs context of the `gates (windows)` aggregator.
+export function windowsVerdict(needs) {
+  const outputs = needs.changes?.outputs ?? {};
+  const changesResult = needs.changes?.result ?? "missing";
+  const rows = [{ job: "changes", group: "-", selected: true, result: changesResult, pass: changesResult === "success" }];
+  for (const job of JOBS) {
+    const selected = job.group === "harness" || outputs[job.group] === "true";
+    const result = needs[job.id]?.result ?? "missing";
+    const pass = selected ? result === "success" : result === "skipped" || result === "success";
+    rows.push({ job: job.id, group: job.group, selected, result, pass });
+  }
+  return { ok: rows.every((row) => row.pass), rows };
+}
+
+// The files a pull request changes against its base. GitHub's merge commit has the base as its first
+// parent. Null when the change set cannot be read: not a merge commit, or git fails.
+export function changedFilesFromGit(cwd = process.cwd()) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD^2"], { cwd, stdio: "ignore" });
+  } catch {
+    return null;
+  }
+  try {
+    const out = execFileSync("git", ["diff", "-z", "--name-only", "--no-renames", "HEAD^1", "HEAD"], {
+      cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    });
+    return out.split("\0").filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+const summaryTable = (verdict) => [
+  `## Windows gates: ${verdict.ok ? "PASS" : "FAIL"}`,
+  "",
+  "| Job | Group | Selected | Result | Verdict |",
+  "|---|---|---|---|---|",
+  ...verdict.rows.map((r) => `| ${r.job} | ${r.group} | ${r.selected} | ${r.result} | ${r.pass ? "ok" : "FAIL"} |`),
+  "",
+].join("\n");
+
+const optionValue = (argv, name) => {
+  const i = argv.indexOf(name);
+  if (i === -1 || !argv[i + 1]) throw new Error(`${name} needs a value`);
+  return argv[i + 1];
+};
+
+function cli(argv) {
+  const [command, ...rest] = argv;
+  if (command === "select") {
+    const eventName = optionValue(rest, "--event");
+    const picked = selectGroups({
+      eventName,
+      changedFiles: eventName === "pull_request" ? changedFilesFromGit() : null,
+    });
+    process.stderr.write(`${picked.reason}\n`);
+    for (const group of GROUPS) process.stdout.write(`${group}=${picked[group]}\n`);
+    return 0;
+  }
+  if (command === "gates") {
+    const job = JOBS.find((j) => j.id === rest[0]);
+    if (!job) throw new Error(`unknown Windows job '${rest[0]}'`);
+    process.stdout.write(`${job.gates.join(",")}\n`);
+    return 0;
+  }
+  if (command === "verdict") {
+    const verdict = windowsVerdict(JSON.parse(process.env.NEEDS ?? "{}"));
+    const table = summaryTable(verdict);
+    process.stdout.write(table);
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
+    return verdict.ok ? 0 : 1;
+  }
+  throw new Error("usage: windows-jobs.mjs select --event <name> | gates <job-id> | verdict");
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  try {
+    process.exitCode = cli(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 2;
+  }
+}

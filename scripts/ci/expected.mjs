@@ -81,10 +81,11 @@ export const MACOS = {
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
 // tests of install-lib.test.mjs build paths with node:path (checked under scripts/release/win32-path-sim).
-export const NODE_SELF_TESTS = { passed: 97 };
+// 112 = 97 + the 13 tests of windows-jobs.test.mjs and the 2 of prune-target.test.mjs (DPES-1106).
+export const NODE_SELF_TESTS = { passed: 112 };
 
-// Platform independent.
-export const VITEST = { files: 61, tests: 1391 };
+// Platform independent. DPES-1105 adds 2 files and 29 tests (26 in those files, 3 in layoutSettings.test.ts): 1391 becomes 1420.
+export const VITEST = { files: 63, tests: 1420 };
 export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
