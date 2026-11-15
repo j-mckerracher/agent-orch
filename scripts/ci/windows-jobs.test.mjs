@@ -121,9 +121,11 @@ test("the workflow has a job for each table entry and an aggregator that waits f
     assert.match(yml, new RegExp(`^  ${job}:\\n(?:    .*\\n)*?    needs: changes\\n    if: always\\(\\)\\n`, "m"), `${job} must run even if changes failed`);
   }
   assert.match(yml, /smoke: \$\{\{ steps\.select\.outputs\.smoke \}\}/);
-  assert.equal(USAGE_SMOKE.enabled, false, "the usage smoke step ships off; PR #43 enables it");
-  assert.deepEqual(groupOutputs(selectGroups({ eventName: "push" })).smoke, false, "smoke must stay off while disabled");
-  assert.equal(groupOutputs(selectGroups({ eventName: "push" }), true).smoke, true, "smoke follows the switch once enabled");
+  // The switch's value is not pinned here: enabling the step (PR 43) must change the one line in windows-jobs.mjs and nothing else.
+  assert.equal(typeof USAGE_SMOKE.enabled, "boolean");
+  assert.equal(groupOutputs(selectGroups({ eventName: "push" })).smoke, USAGE_SMOKE.enabled, "smoke follows the switch");
+  assert.equal(groupOutputs(selectGroups({ eventName: "push" }), false).smoke, false, "smoke is off while disabled");
+  assert.equal(groupOutputs(selectGroups({ eventName: "push" }), true).smoke, true, "smoke is on once enabled");
 });
 
 const needsFor = ({ selected = {}, results = {}, changes = "success" }) => {
