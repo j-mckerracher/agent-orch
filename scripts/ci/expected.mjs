@@ -22,7 +22,8 @@ export const WINDOWS = {
   // DPES-1105 adds 8 portable daemon unit tests (conversation clear, removal and the capability), 118 becomes 126.
   daemon: { passed: 146, ignored: 1, sequence: [126, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 42 },
+  // The ipc lib is 58 on Windows (56 plus the 2 portable history tests), so 58 - 14 = 44 are filtered out.
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 44 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
@@ -45,7 +46,8 @@ export const WINDOWS = {
   // lock_identity_contract, 1 in sqlite_reconcile); the sequence is the macOS one with those 4 removed.
   // DPES-1105 adds 1 lib test and the 10-test conversation_history binary (portable): lib 63 becomes 64.
   store: { passed: 165, ignored: 1, sequence: [64, 9, 2, 13, 1, 10, 11, 8, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 62 },
+  // Windows lib: 64 tests compile (the 2 cfg(unix) tests are excluded), so 64 - 1 = 63 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 63 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -69,7 +71,8 @@ export const MACOS = {
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
   store: { passed: 169, ignored: 1, sequence: [66, 9, 2, 13, 1, 10, 11, 8, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 64 },
+  // Measured on the DPES-1105 branch: the store lib has 66 tests, so 65 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 65 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   e2eFiles: 9,
 };
