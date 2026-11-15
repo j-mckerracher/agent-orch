@@ -1,6 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/orchestrator-daemon"]
+    "externalBin": [
+      "binaries/orchestrator-daemon"
+    ],
+    "resources": {
+      "resources/codeburn/": "codeburn/"
+    }
   }
 }

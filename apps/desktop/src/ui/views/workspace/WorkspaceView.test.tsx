@@ -79,7 +79,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const log = await screen.findByRole("log", { name: "Conversation with alpha coordinator" });
     expect(await within(log).findByText("hello")).toBeInTheDocument();
     expect(within(heading.parentElement as HTMLElement).queryByText(/PLACEHOLDER DATA/)).toBeNull();
-    expect(screen.getByText(/does not create tasks or approvals/)).toBeInTheDocument();
+    expect(screen.queryByText(/does not create tasks or approvals/)).toBeNull();
   });
 
   it("sends through coordinator.send_message with an idempotency key, then reloads the recorded note", async () => {
@@ -408,26 +408,27 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
   });
 
-  it("labels project targets 'notes, no reply' in the header, the picker and the note copy", async () => {
+  it("labels project targets 'notes, no reply' in the header and the picker, with no note above the composer", async () => {
     const services = track(build({ fake: liveDaemon() }));
     const { user } = await mountView(services, false);
     await waitLive(services);
     const heading = await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
     expect(within(heading.parentElement as HTMLElement).getByText("Notes, no reply")).toBeInTheDocument();
-    expect(screen.getByText(/Notes only, no reply/)).toBeInTheDocument();
+    expect(screen.queryByText(/Notes only, no reply/)).toBeNull();
     await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
     expect(screen.getAllByText(/notes, no reply/).length).toBeGreaterThan(0);
   });
 
-  it("shows the target as a visible composer label and a fixed placeholder; the send hint stays in persistent text", async () => {
+  it("names the composer for screen readers with a fixed placeholder and shows no visible label or key hint", async () => {
     const fake = liveDaemon();
     const services = track(build({ fake }));
     const { user: _user } = await mountView(services, false);
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     expect(box.getAttribute("placeholder")).toBe("Ask a question, redirect work, or discuss the plan…");
-    expect(screen.getByText("Message alpha coordinator", { selector: "label" })).not.toHaveClass("ws-visually-hidden");
-    expect(screen.getByText("Press Enter to send, Shift+Enter for a new line.")).toBeInTheDocument();
+    expect(box).toHaveAttribute("rows", "2");
+    expect(screen.queryByText("Message alpha coordinator", { selector: "label" })).toBeNull();
+    expect(screen.queryByText(/Press Enter to send, Shift\+Enter for a new line\./)).toBeNull();
   });
 
   it("shows an unavailable transcript with Retry", async () => {

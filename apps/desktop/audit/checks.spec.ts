@@ -780,3 +780,27 @@ test.describe("RC-27 usage shows estimated figures separately and never zero", (
     expect(await local.textContent(), "no zero amount for unavailable or unpriced data").not.toMatch(/\$0(?:\.0+)?(?![\d.])/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RC-28 Conversation-target picker closes after a selection, so it stops covering the chip row (DPES-1105)
+// ---------------------------------------------------------------------------
+test.describe("RC-28 target picker closes after selection", () => {
+  test("workspace-28: choosing a coordinator closes the picker and leaves 'Request review' hit-testable", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    const trigger = page.getByRole("button", { name: /Choose conversation target/ });
+    await trigger.click();
+    await page.getByRole("radio", { name: /Auth hardening coordinator/ }).click();
+    const panelId = ((await trigger.getAttribute("aria-controls")) ?? "").trim();
+    expect(panelId, "trigger names its panel").not.toBe("");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(`[id="${panelId}"]`)).toBeHidden();
+    const review = page.getByRole("link", { name: "Request review" });
+    await expect(review).toBeVisible();
+    const top = await review.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return hit === null ? "nothing" : el.contains(hit) ? "link" : `${hit.tagName.toLowerCase()}.${String(hit.className).split(" ")[0]}`;
+    });
+    expect(top, "the element at the center of 'Request review'").toBe("link");
+  });
+});

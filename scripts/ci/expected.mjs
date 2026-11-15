@@ -19,10 +19,11 @@ export const WINDOWS = {
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
   // tests/daemon.rs is cfg(unix), so it runs 0 tests.
-  // DPES-1105 adds 8 portable daemon unit tests (conversation clear, removal and the capability), 118 becomes 126,
-  // and the cfg(windows) Copilot refusal test (api_tests.rs) makes the unit binary 127. The Copilot executor tests
-  // are unix-only (under executor::tests), so they do not count here. Derived from cfg gates; the Windows gate confirms.
-  daemon: { passed: 147, ignored: 1, sequence: [127, 12, 2, 4, 0, 1, 2] },
+  // DPES-1105 adds 8 portable daemon unit tests (conversation clear, removal and the capability), 118 becomes 126.
+  // The AI usage module (api::usage_local, three portable tests) landed on main in PR #43 without this manifest, 146 becomes 149.
+  // The cfg(windows) Copilot refusal test (api_tests.rs) adds one more: 149 becomes 150 and the unit binary 130.
+  // The Copilot executor tests are unix-only (under executor::tests), so they do not count here.
+  daemon: { passed: 150, ignored: 1, sequence: [130, 12, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 58 on Windows (56 plus the 2 portable history tests), so 58 - 14 = 44 are filtered out.
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 44 },
@@ -64,17 +65,16 @@ export const MACOS = {
   ipc: { passed: 57, sequence: [57, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
-  // Claude Code model alias argv test (184 becomes 185), then the three Copilot executor tests (185 becomes 188 on
-  // the DPES-1105 branch as first based). Measured on the rebased branch with `cargo test --no-fail-fast -p
-  // orchestrator-daemon`: the unit binary is 191 (main's 188 plus the 3 Copilot executor tests). These executor tests are
-  // unix-only, so Windows is unchanged by them.
+  // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
+  // main in PR #43: 218 becomes 221 and the unit binary 188. The three Copilot executor tests then make the unit binary
+  // 191 and the total 224. These executor tests are unix-only, so Windows is unchanged by them.
   daemon: { passed: 224, ignored: 1, sequence: [191, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
   // DPES-1106 adds 2 store tests (the publish regression and the racing-acquires stress): 1021 becomes 1023.
   // Measured on the rebased DPES-1105 branch (`cargo test --locked --workspace --no-fail-fast`, every binary's `test
-  // result` summed): 1115 passed, 2 ignored.
+  // result` summed): 1115 passed, 2 ignored. That base already holds the AI usage tests from PR #43 (1050).
   workspace: { passed: 1115, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
@@ -87,7 +87,7 @@ export const MACOS = {
   // Measured on the DPES-1106 branch: the store lib has 67 tests, so 66 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 66 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
-  e2eFiles: 9,
+  e2eFiles: 8,
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
@@ -96,10 +96,12 @@ export const MACOS = {
 // usage-reader-smoke.test.mjs (DPES-1105).
 export const NODE_SELF_TESTS = { passed: 116 };
 
-// Platform independent. Measured by a vitest JSON run on the DPES-1105 Copilot branch, rebased on main 12b09fec8: the
-// four new desktop test files and 15 new tests of the Copilot provider raise 67 files and 1549 tests to 71 and 1564.
-export const VITEST = { files: 71, tests: 1564 };
-export const E2E_TESTS = 45;
+// Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
+// Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests.
+export const VITEST = { files: 72, tests: 1571 };
+// DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
+// Main had 45 e2e tests; moving that one out leaves 44.
+export const E2E_TESTS = 44;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;

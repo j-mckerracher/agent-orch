@@ -161,9 +161,9 @@
   min-width: 0;
 }
 
+/* Two lines at rest (rows={2}); a longer draft scrolls inside the box. */
 .ws-composer textarea {
   width: 100%;
-  min-height: 56px;
   resize: none;
   border: 0;
   background: transparent;
