@@ -226,3 +226,52 @@ fn separate_process_cannot_acquire_a_live_lock() {
     }
     let _lock = DataDirectoryLock::acquire(directory.path()).expect("acquire after child exits");
 }
+
+#[test]
+fn racing_acquires_have_one_holder_and_named_conflicts_over_many_rounds() {
+    // Half the rounds race a fresh publish into an empty directory and half race a
+    // takeover of a stale record. The winner keeps the lock until every contender has
+    // returned, so each round must end with exactly one holder and only named conflicts.
+    const ROUNDS: usize = 60;
+    const CONTENDERS: usize = 8;
+    let own_pid = std::process::id();
+    for round in 0..ROUNDS {
+        let directory = tempfile::tempdir().expect("temporary data directory");
+        if round % 2 == 1 {
+            fs::write(
+                directory.path().join(".orchestrator.lock"),
+                lock_record(i32::MAX as u32, "dead-start", "stale-token"),
+            )
+            .expect("write stale lock");
+        }
+        let barrier = Arc::new(Barrier::new(CONTENDERS));
+        let contenders: Vec<_> = (0..CONTENDERS)
+            .map(|_| {
+                let directory = directory.path().to_path_buf();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    DataDirectoryLock::acquire(directory)
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = contenders
+            .into_iter()
+            .map(|contender| contender.join().expect("contender thread"))
+            .collect();
+        let mut holders = 0;
+        for outcome in &outcomes {
+            match outcome {
+                Ok(_) => holders += 1,
+                Err(DataDirectoryLockError::AlreadyHeld { holder_pid }) => {
+                    assert_eq!(*holder_pid, own_pid, "round {round}: named holder");
+                }
+                Err(error) => panic!("round {round}: expected a named conflict, got {error:?}"),
+            }
+        }
+        assert_eq!(
+            holders, 1,
+            "round {round}: exactly one contender holds the lock"
+        );
+    }
+}

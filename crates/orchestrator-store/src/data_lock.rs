@@ -1,9 +1,11 @@
 //! Exclusive process lock for one task-store data directory.
 //!
-//! `create_new` provides exclusion. Records include PID, process start
-//! identity, and token. Takeovers serialize on the observed file, rename stale
-//! locks into unique temporary directories, and remove only token-verified
-//! files. Dead legacy `owner=` records remain readable; live ones fail closed.
+//! A hard link to a fully written record provides exclusion: the lock name
+//! appears only with its complete record, and the link fails if the name exists.
+//! Records include PID, process start identity, and token. Takeovers serialize
+//! on the observed file, rename stale locks into unique temporary directories,
+//! and remove only token-verified files. Dead legacy `owner=` records remain
+//! readable; live ones fail closed.
 //! Updated: 2026-11-08T11:24:15+00:00.
 
 use std::fs::{self, File, OpenOptions};
@@ -26,9 +28,8 @@ static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(0);
 /// `owner=` records remain readable; live legacy owners fail closed.
 pub struct DataDirectoryLock {
     path: PathBuf,
-    file: Option<File>,
     owner_contents: String,
-    identity: Option<FileIdentity>,
+    identity: FileIdentity,
 }
 
 impl DataDirectoryLock {
@@ -66,27 +67,30 @@ impl DataDirectoryLock {
     }
 }
 
+/// Publishes `contents` as the lock at `path`. The record is written, synced and
+/// owner-restricted under a private staging name first, then hard-linked to
+/// `path`. The link fails with `AlreadyExists` when the lock name is held, so
+/// the publish is exactly as exclusive as `create_new` was, but the lock name
+/// never refers to a file whose record is still being written. A contender
+/// that reads the name therefore sees a complete record or no record at all.
 fn create_lock(
     path: &Path,
     contents: &str,
     identity_of: FileIdentityFn,
 ) -> io::Result<DataDirectoryLock> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options.open(path)?;
+    let (staging, mut file) = create_staging_file(path)?;
     // On Windows the new file starts with an inherited, unprotected DACL. Make
-    // it owner-only before anything is written; a lock that cannot be
-    // protected is removed rather than left behind with a wider ACL.
-    if let Err(error) = orchestrator_private_fs::restrict_to_owner(path) {
+    // it owner-only before anything is written; a file that cannot be protected
+    // is removed rather than published with a wider ACL.
+    if let Err(error) = orchestrator_private_fs::restrict_to_owner(&staging) {
         drop(file);
-        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(&staging);
         return Err(error);
     }
-    // The new file is unverified if its identity cannot be read or the
-    // platform has none: fail with the real cause and leave the file in place
-    // for inspection. A guard is only ever returned with a verified identity.
+    // The staged file is unverified if its identity cannot be read or the
+    // platform has none: fail with the real cause and keep the staged file for
+    // inspection. The lock name is never taken, and a guard is only ever
+    // returned with a verified identity.
     let identity = file
         .metadata()
         .and_then(|metadata| identity_of(&file, &metadata))
@@ -103,20 +107,42 @@ fn create_lock(
         .and_then(|()| file.sync_all())
     {
         drop(file);
-        remove_if_same_file(path, Some(&identity));
+        let _ = fs::remove_file(&staging);
         return Err(error);
     }
+    // Close the staged handle, then publish by hard link. The link and the
+    // removal of the staging name both refer to the same file, so the lock
+    // name carries the synced record and the identity verified above.
+    drop(file);
+    let published = fs::hard_link(&staging, path);
+    let _ = fs::remove_file(&staging);
+    published?;
     Ok(DataDirectoryLock {
         path: path.to_path_buf(),
-        file: Some(file),
         owner_contents: contents.to_owned(),
-        identity: Some(identity),
+        identity,
     })
+}
+
+/// Creates a new, uniquely named, owner-only file beside `path` to stage a
+/// record. It shares the lock's directory, so the later hard link stays on one
+/// filesystem.
+fn create_staging_file(path: &Path) -> io::Result<(PathBuf, File)> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let staging = parent.join(format!(
+        "{LOCK_FILE_NAME}.staging-{}",
+        next_owner_id(std::process::id())
+    ));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let file = options.open(&staging)?;
+    Ok((staging, file))
 }
 
 impl Drop for DataDirectoryLock {
     fn drop(&mut self) {
-        drop(self.file.take());
         let Ok(metadata) = fs::symlink_metadata(&self.path) else {
             return;
         };
@@ -136,10 +162,7 @@ impl DataDirectoryLock {
     fn owns_file(&self, metadata: &fs::Metadata) -> bool {
         // Ownership is proven by file identity only; an unreadable identity
         // leaves the file in place rather than guessing from its contents.
-        matches!(
-            (&self.identity, FileIdentity::from_path(&self.path, metadata)),
-            (Some(expected), Some(actual)) if *expected == actual
-        )
+        FileIdentity::from_path(&self.path, metadata) == Some(self.identity)
     }
 }
 
@@ -490,16 +513,6 @@ impl FileIdentity {
     }
 }
 
-fn remove_if_same_file(path: &Path, identity: Option<&FileIdentity>) {
-    let (Some(identity), Ok(metadata)) = (identity, fs::symlink_metadata(path)) else {
-        return;
-    };
-    if metadata.file_type().is_file() && FileIdentity::from_path(path, &metadata) == Some(*identity)
-    {
-        let _ = fs::remove_file(path);
-    }
-}
-
 #[cfg(unix)]
 fn try_lock_file(file: &File) -> io::Result<bool> {
     use std::os::fd::AsRawFd;
@@ -763,6 +776,7 @@ fn process_start_identity(_pid: u32) -> io::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{mpsc, Mutex};
 
     #[test]
     fn the_lock_file_is_owner_only_when_created_and_when_taken_over() {
@@ -847,7 +861,27 @@ mod tests {
             "{:?}",
             result.err()
         );
-        assert!(path.exists(), "unverified artifact must be preserved");
+        assert!(!path.exists(), "unverified record must not be published");
+        assert_eq!(
+            staging_artifacts(directory.path()),
+            1,
+            "unverified staging file must be preserved"
+        );
+    }
+
+    /// Staged records left in `directory` by a publish that did not complete.
+    fn staging_artifacts(directory: &Path) -> usize {
+        fs::read_dir(directory)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".orchestrator.lock.staging-")
+            })
+            .count()
     }
 
     #[test]
@@ -859,7 +893,72 @@ mod tests {
         let path = directory.path().join(LOCK_FILE_NAME);
         let error = create_lock(&path, "pid=1\n", none).err().unwrap();
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-        assert!(path.exists());
+        assert!(!path.exists(), "unverified record must not be published");
+        assert_eq!(staging_artifacts(directory.path()), 1);
+    }
+
+    /// One-shot test seam: the next publish that reaches `pause_before_record`
+    /// parks between creating its file and writing the record, until released.
+    static PAUSE_NEXT_PUBLISH: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> =
+        Mutex::new(None);
+
+    fn pause_before_record(
+        file: &File,
+        metadata: &fs::Metadata,
+    ) -> io::Result<Option<FileIdentity>> {
+        let pause = PAUSE_NEXT_PUBLISH.lock().unwrap().take();
+        if let Some((reached, release)) = pause {
+            reached.send(()).unwrap();
+            release.recv().unwrap();
+        }
+        FileIdentity::from_file(file, metadata)
+    }
+
+    #[test]
+    fn a_contender_during_a_publish_never_reads_an_empty_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(LOCK_FILE_NAME);
+        let (reached_tx, reached_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        *PAUSE_NEXT_PUBLISH.lock().unwrap() = Some((reached_tx, release_rx));
+        let publish_path = path.clone();
+        let publisher = thread::spawn(move || {
+            create_lock(
+                &publish_path,
+                "pid=1\nstart=s\ntoken=t\n",
+                pause_before_record,
+            )
+        });
+        reached_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("publish reached the pause");
+
+        // While the publish is parked the lock name must be absent or complete.
+        // An empty lock file is what a contender reads as HolderUnknown.
+        let seen_while_parked = fs::read_to_string(&path).ok();
+        let contender = DataDirectoryLock::acquire(directory.path());
+        release_tx.send(()).unwrap();
+        let publish_error = publisher.join().unwrap().err().map(|error| error.kind());
+
+        assert_ne!(
+            seen_while_parked.as_deref(),
+            Some(""),
+            "lock name was empty during a publish"
+        );
+        let contender = contender.expect("contender while a publish is parked");
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .starts_with(&format!("pid={}\n", std::process::id())),
+            "the contender must hold the lock"
+        );
+        assert_eq!(publish_error, Some(io::ErrorKind::AlreadyExists));
+        drop(contender);
+        assert_eq!(
+            fs::read_dir(directory.path()).unwrap().count(),
+            0,
+            "the publish and the contender must leave no files behind"
+        );
     }
 
     #[test]
