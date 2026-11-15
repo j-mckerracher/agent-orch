@@ -8,14 +8,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-export const APP_NAME = "Agent Orchestrator";
+export const APP_NAME = "MCAO";
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const artifactNamePattern = (platform, version) => {
   const v = escapeRegExp(version);
   return platform === "macos"
-    ? new RegExp(`^Agent-Orchestrator-${v}-macos-(arm64|x64)-(signed|unsigned)\\.zip$`)
-    : new RegExp(`^Agent-Orchestrator-${v}-windows-x64-(signed|unsigned)-setup\\.exe$`);
+    ? new RegExp(`^MCAO-${v}-macos-(arm64|x64)-(signed|unsigned)\\.zip$`)
+    : new RegExp(`^MCAO-${v}-windows-x64-(signed|unsigned)-setup\\.exe$`);
 };
 
 export const parseSums = (text) => {
@@ -274,7 +274,7 @@ export const runMacos = (ctx) => {
     const { app, info } = entry;
     const plist = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", join(app, "Contents", "Info.plist")]);
     steps.check(`${label}: bundle version`, plist.out.trim() === info.version ? [] : [`CFBundleShortVersionString is '${plist.out.trim()}', release-info says ${info.version}`], info.version);
-    const missing = ["agent-orch-desktop", "orchestrator-daemon"].filter((f) => !ctx.exists(join(app, "Contents", "MacOS", f)));
+    const missing = ["MCAO", "orchestrator-daemon"].filter((f) => !ctx.exists(join(app, "Contents", "MacOS", f)));
     steps.check(`${label}: the app executable and the daemon sidecar are in Contents/MacOS`, missing.map((f) => `${f} is missing`));
 
     const verify = run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
@@ -337,12 +337,12 @@ export const runWindows = (ctx) => {
   const install = (label) => {
     const result = run(prepared[label].installer, ["/S", `/D=${installDir}`]);
     steps.check(`${label}: silent per-user install with no elevation prompt`, result.code === 0 ? [] : [`installer exited ${result.code}`], installDir);
-    const missing = ["agent-orch-desktop", "orchestrator-daemon", "uninstall"].filter((f) => !ctx.exists(exe(f)));
+    const missing = ["MCAO", "orchestrator-daemon", "uninstall"].filter((f) => !ctx.exists(exe(f)));
     steps.check(`${label}: the app, the daemon sidecar and the uninstaller are installed`, missing.map((f) => `${f}.exe is missing`));
-    const version = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Item -LiteralPath '${exe("agent-orch-desktop")}').VersionInfo.ProductVersion`]).out.trim();
+    const version = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Item -LiteralPath '${exe("MCAO")}').VersionInfo.ProductVersion`]).out.trim();
     steps.check(`${label}: installed product version`, version.startsWith(prepared[label].info.version) ? [] : [`ProductVersion is '${version}', expected ${prepared[label].info.version}`], version);
     if (prepared[label].info.signed) {
-      for (const name of ["agent-orch-desktop", "orchestrator-daemon"]) {
+      for (const name of ["MCAO", "orchestrator-daemon"]) {
         steps.check(`${label}: ${name}.exe Authenticode signature`, checkAuthenticode(authenticode(exe(name))));
       }
     }
@@ -386,7 +386,7 @@ export const runWindows = (ctx) => {
     // NSIS copies its uninstaller aside and returns at once unless `_?=` pins it to the install directory.
     const uninstall = run(exe("uninstall"), ["/S", `_?=${installDir}`]);
     steps.check("silent uninstall", uninstall.code === 0 ? [] : [`uninstaller exited ${uninstall.code}`]);
-    steps.check("uninstall removed the app", ctx.exists(exe("agent-orch-desktop")) ? ["agent-orch-desktop.exe is still installed"] : []);
+    steps.check("uninstall removed the app", ctx.exists(exe("MCAO")) ? ["MCAO.exe is still installed"] : []);
     sentinelSurvived("the uninstall");
     if (seeded) data.remove(sentinel.name);
   }

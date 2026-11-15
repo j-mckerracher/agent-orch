@@ -183,7 +183,7 @@ export function gatesFor(platform) {
     {
       name: "tauri-build", mode: "build", cwd: TAURI, exe: "cargo", args: ["build", "--locked"], timeout: 3600,
       crates: ["agent-orch-desktop"], needs: ["desktop-build"],
-      artifacts: [{ target: `debug/agent-orch-desktop${exe}`, record: "tauri-binary.txt" }],
+      artifacts: [{ target: `debug/MCAO${exe}`, record: "tauri-binary.txt" }],
     },
     {
       name: "tauri-tests", mode: "test", cwd: TAURI, exe: "cargo", isolated: true, timeout: 3600,
@@ -195,7 +195,7 @@ export function gatesFor(platform) {
     {
       name: "tauri-clippy", mode: "lint", cwd: TAURI, exe: "cargo", timeout: 3600, needs: ["desktop-build"],
       args: ["clippy", "--locked", "--all-targets", "--verbose"],
-      crateNames: ["agent_orch_desktop_lib", "agent_orch_desktop"],
+      crateNames: ["agent_orch_desktop_lib", "MCAO"],
     },
   );
 
@@ -204,14 +204,14 @@ export function gatesFor(platform) {
       ? {
           name: "desktop-package-win", mode: "exit", cwd: UI, exe: "npm", args: ["run", "package:win"], timeout: 3600,
           needs: ["desktop-npm-ci"],
-          artifacts: [{ target: "release/bundle/nsis/Agent Orchestrator_0.1.0_x64-setup.exe", record: "installer.txt" }],
+          artifacts: [{ target: "release/bundle/nsis/MCAO_0.1.0_x64-setup.exe", record: "installer.txt" }],
         }
       : {
           name: "desktop-package-mac", mode: "exit", cwd: UI, exe: "npm", args: ["run", "package:mac"], timeout: 3600,
           needs: ["desktop-npm-ci"],
           artifacts: [
-            { target: "release/bundle/macos/Agent Orchestrator.app/Contents/MacOS/agent-orch-desktop", record: "app-binary.txt" },
-            { target: "release/bundle/macos/Agent Orchestrator.app/Contents/MacOS/orchestrator-daemon", record: "app-sidecar.txt" },
+            { target: "release/bundle/macos/MCAO.app/Contents/MacOS/MCAO", record: "app-binary.txt" },
+            { target: "release/bundle/macos/MCAO.app/Contents/MacOS/orchestrator-daemon", record: "app-sidecar.txt" },
           ],
         },
   );

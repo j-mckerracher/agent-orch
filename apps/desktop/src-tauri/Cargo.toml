@@ -37,3 +37,9 @@ tempfile = "=3.27.0"
 [lib]
 name = "agent_orch_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# The executable is the app name. An unbundled `tauri dev` process takes its Dock label from the
+# executable file name (measured on macOS), so only the binary target is renamed; the package keeps its name.
+[[bin]]
+name = "MCAO"
+path = "src/main.rs"

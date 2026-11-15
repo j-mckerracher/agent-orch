@@ -8,7 +8,7 @@ import {
 
 const SHA = "a".repeat(64);
 const dirInputs = (over = {}) => {
-  const file = "Agent-Orchestrator-0.1.0-macos-arm64-unsigned.zip";
+  const file = "MCAO-0.1.0-macos-arm64-unsigned.zip";
   return {
     platform: "macos", version: "0.1.0", requireSigned: false,
     info: { version: "0.1.0", platform: "macos", signed: false, notarized: false, artifacts: [{ file, sha256: SHA }] },
@@ -35,15 +35,15 @@ test("artifact directory problems are named", () => {
 });
 
 test("artifact names are platform specific and anchored", () => {
-  assert.ok(artifactNamePattern("windows", "0.1.0").test("Agent-Orchestrator-0.1.0-windows-x64-signed-setup.exe"));
-  assert.ok(!artifactNamePattern("windows", "0.1.0").test("Agent-Orchestrator-0x1x0-windows-x64-signed-setup.exe"));
-  assert.ok(!artifactNamePattern("macos", "0.1.0").test("evil-Agent-Orchestrator-0.1.0-macos-arm64-signed.zip"));
+  assert.ok(artifactNamePattern("windows", "0.1.0").test("MCAO-0.1.0-windows-x64-signed-setup.exe"));
+  assert.ok(!artifactNamePattern("windows", "0.1.0").test("MCAO-0x1x0-windows-x64-signed-setup.exe"));
+  assert.ok(!artifactNamePattern("macos", "0.1.0").test("evil-MCAO-0.1.0-macos-arm64-signed.zip"));
   assert.equal(parseSums(`${SHA}  a b.zip\n`).sums.get("a b.zip"), SHA);
   assert.equal(parseSums(`${SHA}  a.zip\r\n${SHA}  b.zip\r\n`).sums.size, 2, "SHA256SUMS written with CRLF line endings parses");
 });
 
 const DEVID = [
-  "Executable=/x/agent-orch-desktop", "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
+  "Executable=/x/MCAO", "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
   "Authority=Developer ID Application: Example (ABCDE12345)", "Authority=Developer ID Certification Authority",
   "TeamIdentifier=ABCDE12345",
 ].join("\n");
@@ -108,7 +108,7 @@ const machine = (answers = {}, present = () => true) => {
   return { commands, run, exists: present, options: {} };
 };
 const infoFor = (platform, signed, version = "0.1.0") => ({
-  info: { version, platform, signed, notarized: false, artifacts: [{ file: platform === "macos" ? `Agent-Orchestrator-${version}-macos-arm64-${signed ? "signed" : "unsigned"}.zip` : `Agent-Orchestrator-${version}-windows-x64-${signed ? "signed" : "unsigned"}-setup.exe`, sha256: SHA }] },
+  info: { version, platform, signed, notarized: false, artifacts: [{ file: platform === "macos" ? `MCAO-${version}-macos-arm64-${signed ? "signed" : "unsigned"}.zip` : `MCAO-${version}-windows-x64-${signed ? "signed" : "unsigned"}-setup.exe`, sha256: SHA }] },
 });
 // The directory "/old" holds the previous release, at `oldVersion`.
 const readDirFor = (platform, signed, oldVersion = "0.1.0") => (dir) => {
@@ -188,7 +188,7 @@ test("macOS signed with a genuinely older build: team ids compared, smoke gets b
   const steps = quiet(() => runMacos(macCtx(machine)));
   assert.deepEqual(failures(steps), []);
   const smoke = machine.commands.find((c) => c.startsWith("/smoke "));
-  const sidecarIn = (folder) => join("/w", folder, "Agent Orchestrator.app", "Contents", "MacOS", "orchestrator-daemon");
+  const sidecarIn = (folder) => join("/w", folder, "MCAO.app", "Contents", "MacOS", "orchestrator-daemon");
   assert.ok(smoke.includes(`--old-daemon ${sidecarIn("Applications-old")} --expect-old-version 0.0.9`), smoke);
   assert.ok(smoke.includes(`--new-daemon ${sidecarIn("Applications-new")} `), smoke);
   assert.ok(smoke.endsWith("--expect-new-version 0.1.0 --out /w/result.json"), smoke);
@@ -307,7 +307,7 @@ const windowsMachine = ({ uninstallHook = () => {}, installHook = () => {}, copy
     return { code: 0, out: "", err: "" };
   };
   // The old-sidecar copy only exists when Copy-Item succeeded; the app is gone once uninstalled.
-  const exists = (path) => !(path.endsWith("agent-orch-desktop.exe") && uninstalled) && !(path.endsWith("old-orchestrator-daemon.exe") && copyCode);
+  const exists = (path) => !(path.endsWith("MCAO.exe") && uninstalled) && !(path.endsWith("old-orchestrator-daemon.exe") && copyCode);
   return { commands, run, exists, userData };
 };
 const windowsCtx = (machine, over = {}) => ctxFor("windows", machine, {
