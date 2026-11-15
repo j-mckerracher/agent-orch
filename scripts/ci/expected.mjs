@@ -59,11 +59,13 @@ export const MACOS = {
   // Measured on the DPES-1105 branch: 55 plus the two history capability tests.
   ipc: { passed: 57, sequence: [57, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
-  // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184).
-  daemon: { passed: 217, ignored: 1, sequence: [184, 14, 2, 4, 11, 1, 2] },
+  // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
+  // Claude Code model alias argv test (184 becomes 185). These executor tests are unix-only, so Windows is unchanged.
+  daemon: { passed: 218, ignored: 1, sequence: [185, 14, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
-  // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests.
-  workspace: { passed: 1019, ignored: 2 },
+  // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
+  // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
+  workspace: { passed: 1021, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -82,7 +84,7 @@ export const MACOS = {
 export const NODE_SELF_TESTS = { passed: 97 };
 
 // Platform independent.
-export const VITEST = { files: 61, tests: 1389 };
+export const VITEST = { files: 61, tests: 1391 };
 export const E2E_TESTS = 45;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.

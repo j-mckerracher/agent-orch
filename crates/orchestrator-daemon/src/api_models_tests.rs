@@ -145,8 +145,18 @@ fn catalog_lists_only_what_the_installed_clis_report() {
 
     let claude = entry(&catalog, "claude-code");
     assert_eq!(claude["provider"], "anthropic");
-    assert_eq!(claude["models"]["state"], "unsupported");
-    assert_eq!(claude["models"]["items"], json!([]));
+    assert_eq!(claude["models"]["state"], "available");
+    let aliases: Vec<_> = claude["models"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|model| model["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(aliases, ["opus", "sonnet", "haiku"]);
+    assert!(claude["models"]["detail"]
+        .as_str()
+        .unwrap()
+        .contains("documented"));
     assert_eq!(claude["efforts"]["state"], "available");
     assert_eq!(claude["efforts"]["items"], json!(["low", "medium", "high"]));
 
@@ -223,8 +233,12 @@ fn validate_selection_gives_a_precise_reason_for_every_refusal() {
         "effort_requires_model"
     );
     assert_eq!(
-        refused("claude-code", json!("opus"), Value::Null),
-        "models_unsupported"
+        validate(&api, "claude-code", json!("opus"), Value::Null),
+        json!({"valid": true})
+    );
+    assert_eq!(
+        refused("claude-code", json!("fable"), Value::Null),
+        "unknown_model"
     );
     assert_eq!(
         refused("claude-code", Value::Null, json!("ultra")),
@@ -281,7 +295,7 @@ fn submit_refuses_a_selection_the_adapter_does_not_offer_and_creates_no_task() {
         &api,
         "k3",
         "claude-code",
-        json!({"model": "opus"}),
+        json!({"model": "fable"}),
     );
     let malformed = submit_with(&fixture, &api, "k4", "codex", json!({"model": "--evil"}));
     let empty = submit_with(&fixture, &api, "k5", "codex", json!({}));
@@ -455,6 +469,33 @@ fn claude_effort_selection_reaches_the_agent() {
     let args: Vec<_> = argv.lines().collect();
     assert_eq!(args[args.len() - 2..], ["--effort", "high"]);
     assert!(!args.contains(&"--model"));
+}
+
+#[test]
+fn claude_model_alias_reaches_the_launched_claude_argv() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let api = api_for(&fixture, &agents);
+
+    submit_with(
+        &fixture,
+        &api,
+        "claude-alias",
+        "claude-code",
+        json!({"model": "sonnet", "effort": "high"}),
+    )
+    .unwrap();
+
+    wait_until("claude to record its arguments", || {
+        agents.claude_argv.exists()
+    });
+    let argv = fs::read_to_string(&agents.claude_argv).unwrap();
+    let args: Vec<_> = argv.lines().collect();
+    // The alias and the effort are the last two pairs, after the fixed restricted invocation.
+    assert_eq!(
+        args[args.len() - 4..],
+        ["--model", "sonnet", "--effort", "high"]
+    );
 }
 
 #[test]

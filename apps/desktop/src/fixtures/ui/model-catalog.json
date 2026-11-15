@@ -27,7 +27,7 @@
             "installed": true,
             "launchable": true,
             "modelSelection": "unknown",
-            "models": { "status": "unknown", "reason": "The adapter did not report its models." },
+            "models": { "status": "unknown", "reason": "The adapter cannot enumerate the models available to the account." },
             "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
           }
         ]

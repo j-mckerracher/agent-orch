@@ -1336,6 +1336,8 @@
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode renders an empty transcript as empty, not as an error",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode does not show loading conversations once the daemon is unreachable",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode retries a cold catalog shortly and then lists the models",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode offers Claude Code's documented aliases, labels them as documented, and checks the chosen one",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode shows a provider with no model list as a disabled Default model, with its reason under the control",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode sends through coordinator.send_message with an idempotency key, then reloads the recorded note",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode sends to the Global target through the daemon and shows the runtime-unavailable state, never a reply",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode shows a real reply only when the daemon records one",

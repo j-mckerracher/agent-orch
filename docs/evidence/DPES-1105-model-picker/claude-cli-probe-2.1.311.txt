@@ -1,0 +1,49 @@
+DPES-1105: Claude Code model selection, probed against the installed CLI
+=======================================================================
+
+Binary: /opt/homebrew/Caskroom/claude-code/2.1.311/claude (2.1.311 (Claude Code))
+Reached through /opt/homebrew/bin/claude. The interactive PATH resolves `claude`
+first to a cmux shim, which forwards to the same binary; the probes used the
+Homebrew path directly. Auth state: loggedIn=true, authMethod=api_key,
+apiProvider=firstParty. No account identifiers are recorded here.
+
+Probe argv (the adapter's print-mode invocation, args_for_prompt_with_selection):
+  -p "Reply with exactly the word PONG." --verbose --output-format stream-json
+  --include-partial-messages --permission-mode dontAsk --permission-prompts none
+  --restricted --strict-mcp-config --tools Read,Edit,Write
+  --allowedTools Read,Edit,Write --model <value>
+  stdin: /dev/null, cwd: a scratch directory outside any repository.
+
+Results (system/init "model" and the assistant/result model fields):
+  --model sonnet                 exit 0, PONG    resolved to claude-sonnet-5-5
+  --model opus                   exit 0, PONG    resolved to claude-opus-5-5
+  --model haiku                  exit 0, PONG    resolved to claude-haiku-5-5
+  --model fable                  exit 0, PONG    resolved to claude-fable-5-1
+  --model default                exit 0, PONG    resolved to claude-opus-5-5 (the account default)
+  --model not-a-real-model-xyz   exit 1
+      stdout result event: subtype "success", is_error true, terminal_reason "api_error",
+      result "There's an issue with the selected model (not-a-real-model-xyz). It may not
+      exist or you may not have access to it. Run --model to pick a different model."
+      stderr: [claude-code:unrecognized_model] {"model":"not-a-real-model-xyz",...}
+
+`claude --help` (2.1.311):
+  --model <model>   "Model for the current session. Provide an alias for the latest
+                     model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name."
+  --effort <level>  "(low, medium, high, xhigh, max)"
+  --restricted      removes code-running tools and confines file tools to the working
+                     directories; "Auth, model selection, built-in tools and plugins, and
+                     permissions work normally."
+  The CLI has no model-list subcommand or flag.
+
+Claude Code model documentation (docs.claude.com/en/docs/claude-code/model-config,
+read on 2026-11-14): aliases are default, best, sonnet, opus, opusplan, fable, and the
+opus/sonnet/haiku aliases resolve to the newest version on the Anthropic API. The
+`default` alias "clears any model override and reverts to the runtime default for your
+account". Fable "can bill to usage credits instead of drawing on your plan's included
+limits" and then shows "Requires usage credits" in the /model picker.
+
+Decision recorded in the catalog (catalog.rs CLAUDE_ALIASES): opus, sonnet and haiku are
+offered as documented aliases, not verified for the account. "Default model" means no
+--model flag. fable is not offered (usage-credit billing; a headless run cannot answer
+the consent prompt). The probe above ran `fable` once with a trivial prompt; it succeeded
+on this account.

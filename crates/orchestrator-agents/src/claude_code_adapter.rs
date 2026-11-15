@@ -107,7 +107,7 @@ impl RoutableAdapter for ClaudeCodeAdapter {
             cancellation: true, // ClaudeCodeHandle::cancel calls ChildSupervisor::cancel (claude_code_adapter.rs:183-187).
             session_resumption: false, // Resume flags are unused by this adapter (docs/evidence/m4-02-claude-code-cli-verification.md:85).
             approvals: false, // Prompts are disabled and approval handling was not verified (docs/evidence/m4-02-claude-code-cli-verification.md:43-45).
-            model_selection: false, // The CLI cannot enumerate models, so a model cannot be validated (catalog.rs); only `--effort` is offered.
+            model_selection: true, // `args_for_prompt_with_selection` passes a catalog-validated alias as `--model` (catalog.rs documents the aliases).
         }
     }
 }
@@ -485,6 +485,39 @@ mod tests {
                 assert!(reason.contains("last message: done"), "reason: {reason}");
             }
             other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_model_the_cli_rejects_surfaces_its_own_message_as_the_failure() {
+        // The result event the CLI wrote for `--model not-a-real-model-xyz` (probed on 2.1.311):
+        // `subtype` is "success", yet `is_error` is true, so the turn fails with the CLI's text.
+        let line = r#"{"type":"result","subtype":"success","is_error":true,"result":"There's an issue with the selected model (not-a-real-model-xyz). It may not exist or you may not have access to it. Run --model to pick a different model."}"#;
+        let mut parser = StreamParser::new();
+        let event = parser.feed(line).expect("event").expect("no violation");
+        assert!(matches!(
+            event,
+            AgentEvent::TurnFinished {
+                outcome: TurnOutcome::Failure
+            }
+        ));
+        let exit = terminal_outcome(
+            false,
+            Some(1),
+            None,
+            parser.turn_finished(),
+            parser.turn_failure().map(str::to_owned),
+            parser.last_message().map(str::to_owned),
+        );
+        match exit {
+            AgentExit::Failed {
+                reason: Some(reason),
+                ..
+            } => assert!(
+                reason.contains("issue with the selected model (not-a-real-model-xyz)"),
+                "reason: {reason}"
+            ),
+            other => panic!("expected a failed exit naming the model, got {other:?}"),
         }
     }
 

@@ -647,3 +647,33 @@ test.describe("RC-24 workspace inspector has its own column", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// RC-25 Model picker never shows a reason as a model option (DPES-1105)
+// ---------------------------------------------------------------------------
+test.describe("RC-25 model picker never shows a reason as an option", () => {
+  test("model-picker-1: a provider with no model list shows its reason under the Model select, not inside it", async ({ page }) => {
+    await openApp(page, "#/workspace", "populated", "desktop");
+    const trigger = page.getByRole("button", { name: /^Model settings/ });
+    await trigger.click();
+    await page.getByRole("combobox", { name: "Provider" }).selectOption({ label: "Claude Code (placeholder)" });
+    await expect(trigger).not.toContainText("model not available");
+
+    const model = page.getByRole("combobox", { name: "Model" });
+    for (const text of await model.locator("option").allTextContents()) {
+      expect(text.length, `Model option "${text}" is longer than 40 characters`).toBeLessThanOrEqual(40);
+      expect(text, `Model option "${text}" reads as a reason`).not.toMatch(/cannot/i);
+    }
+
+    // The reason is helper text: a node the Model select describes, drawn below the control.
+    const helperIds = ((await model.getAttribute("aria-describedby")) ?? "").split(/\s+/).filter(Boolean);
+    const helper = page.locator("p", { hasText: /cannot enumerate/ });
+    expect(helperIds.length, "Model select has a description").toBeGreaterThan(0);
+    await expect(helper).toHaveCount(1);
+    const helperId = await helper.getAttribute("id");
+    expect(helperIds, "Model select describes the helper text").toContain(helperId);
+    expect((await box(helper)).y, "helper text sits under the Model select").toBeGreaterThanOrEqual(
+      (await box(model)).y + (await box(model)).height,
+    );
+  });
+});

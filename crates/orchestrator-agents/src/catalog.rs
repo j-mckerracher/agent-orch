@@ -5,12 +5,15 @@
 //! running its own read-only commands: Codex lists models and per-model
 //! reasoning levels (`codex debug models`) and reports login state
 //! (`codex login status`); Claude Code documents its `--effort` levels in
-//! `--help` and reports login state (`claude auth status`) but cannot
-//! enumerate models. Nothing here is a hard-coded model list. A fact the CLI
-//! does not expose is reported as `unsupported`, and a fact that could not be
-//! read (timeout, unparseable output) is `unknown`; neither is ever treated as
-//! "none" or "all". The provider is the adapter family's fixed vendor, not a
-//! selectable value: choosing a provider means choosing the agent.
+//! `--help` and reports login state (`claude auth status`). Claude Code cannot
+//! enumerate the models an account can use, so its models are the stable
+//! aliases its documentation lists (`CLAUDE_ALIASES`). They are labelled as
+//! documented, not verified for the account, and the CLI resolves them when a
+//! task runs. A fact the CLI does not expose is reported as `unsupported`, and
+//! a fact that could not be read (timeout, unparseable output) is `unknown`;
+//! neither is ever treated as "none" or "all". The provider is the adapter
+//! family's fixed vendor, not a selectable value: choosing a provider means
+//! choosing the agent.
 //!
 //! Probes run the user's own installed binary with a null stdin, bounded
 //! time and bounded output. Only booleans and catalog fields are read from
@@ -33,6 +36,16 @@ const CLAUDE_AGENT: &str = "claude-code";
 const PI_AGENT: &str = "pi";
 const CODEX_PROVIDER: &str = "openai";
 const CLAUDE_PROVIDER: &str = "anthropic";
+/// Claude Code's stable model aliases, as its model documentation lists them
+/// (`--model <alias>`). `fable` is left out: on some plans it bills to usage
+/// credits, which a headless run cannot confirm with the user. The account's
+/// own default is what no `--model` flag gives, so it is not an alias here.
+const CLAUDE_ALIASES: [(&str, &str); 3] = [
+    ("opus", "Opus (alias)"),
+    ("sonnet", "Sonnet (alias)"),
+    ("haiku", "Haiku (alias)"),
+];
+const CLAUDE_MODELS_DETAIL: &str = "Aliases documented by Claude Code. The CLI cannot list the models your account can use, so availability depends on your account.";
 
 /// The vendor behind an adapter family, or `None` when the family is not
 /// tied to one. A static fact of the adapter, not something read from a CLI.
@@ -74,6 +87,8 @@ pub enum CatalogState {
 pub struct ModelOption {
     pub id: String,
     pub display_name: String,
+    /// The levels this model supports. Empty means the adapter-wide levels
+    /// (`AgentCatalog::efforts`) apply.
     pub efforts: Vec<String>,
     /// The model's own default level when the CLI reports one; `None` means
     /// unknown.
@@ -262,14 +277,24 @@ impl AgentCatalog {
             return Ok(());
         };
         if let Some(option) = chosen {
-            return if option.efforts.iter().any(|level| level == effort) {
+            // A model without levels of its own uses the adapter-wide list,
+            // when the adapter reports one.
+            let levels: &[String] = if option.efforts.is_empty() {
+                match self.efforts.state {
+                    CatalogState::Available => &self.efforts.items,
+                    _ => &[],
+                }
+            } else {
+                &option.efforts
+            };
+            return if levels.iter().any(|level| level == effort) {
                 Ok(())
             } else {
                 Err(refuse(
                     SelectionReason::EffortUnsupported,
                     format!(
-                        "model {:?} of agent {agent} does not support effort {effort:?}; it supports {:?}",
-                        option.id, option.efforts
+                        "model {:?} of agent {agent} does not support effort {effort:?}; it supports {levels:?}",
+                        option.id
                     ),
                 ))
             };
@@ -692,7 +717,7 @@ fn codex_catalog(
     let models = match parsed {
         Some(items) if !items.is_empty() => Facet {
             state: CatalogState::Available,
-            detail: "listed by `codex debug models`".to_owned(),
+            detail: "Listed by `codex debug models`.".to_owned(),
             items,
         },
         Some(_) => Facet::without_items(
@@ -746,10 +771,19 @@ fn claude_catalog(
         provider: Some(CLAUDE_PROVIDER.to_owned()),
         state: CatalogState::Available,
         detail: "installed and signed in".to_owned(),
-        models: Facet::without_items(
-            CatalogState::Unsupported,
-            "the CLI cannot enumerate the models available to the account",
-        ),
+        models: Facet {
+            state: CatalogState::Available,
+            detail: CLAUDE_MODELS_DETAIL.to_owned(),
+            items: CLAUDE_ALIASES
+                .iter()
+                .map(|(id, display_name)| ModelOption {
+                    id: (*id).to_owned(),
+                    display_name: (*display_name).to_owned(),
+                    efforts: Vec::new(),
+                    default_effort: None,
+                })
+                .collect(),
+        },
         efforts,
     }
 }
@@ -1021,7 +1055,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_reports_efforts_but_cannot_enumerate_models() {
+    fn claude_offers_documented_aliases_with_their_provenance_and_efforts() {
         let catalog = claude();
         assert_eq!(catalog.state, CatalogState::Available);
         assert_eq!(catalog.provider.as_deref(), Some("anthropic"));
@@ -1029,8 +1063,15 @@ mod tests {
             catalog.efforts.items,
             ["low", "medium", "high", "xhigh", "max"]
         );
-        assert_eq!(catalog.models.state, CatalogState::Unsupported);
-        assert!(catalog.models.items.is_empty());
+        assert_eq!(catalog.models.state, CatalogState::Available);
+        let ids: Vec<_> = catalog.models.items.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["opus", "sonnet", "haiku"]);
+        assert!(catalog.models.items.iter().all(|m| m.efforts.is_empty()));
+        assert!(catalog.models.detail.contains("documented"));
+        assert!(catalog
+            .models
+            .detail
+            .contains("availability depends on your account"));
     }
 
     #[test]
@@ -1109,18 +1150,23 @@ mod tests {
     fn validation_matrix_for_claude() {
         let catalog = claude();
         assert_eq!(catalog.validate(None, Some("max")), Ok(()));
+        // An alias has no levels of its own, so the adapter-wide levels apply.
+        assert_eq!(catalog.validate(Some("opus"), None), Ok(()));
+        assert_eq!(catalog.validate(Some("sonnet"), Some("max")), Ok(()));
         let reason = |model, effort| catalog.validate(model, effort).unwrap_err().reason;
         assert_eq!(
             reason(None, Some("ultra")),
             SelectionReason::EffortUnsupported
         );
         assert_eq!(
-            reason(Some("opus"), None),
-            SelectionReason::ModelsUnsupported
+            reason(Some("opus"), Some("ultra")),
+            SelectionReason::EffortUnsupported
         );
+        // Aliases outside the documented list (for example `fable`) are refused.
+        assert_eq!(reason(Some("fable"), None), SelectionReason::UnknownModel);
         assert_eq!(
-            reason(Some("opus"), Some("low")),
-            SelectionReason::ModelsUnsupported
+            reason(Some("opus[1m]"), None),
+            SelectionReason::UnknownModel
         );
     }
 
