@@ -80,7 +80,7 @@ export const MACOS = {
   // Measured on the DPES-1106 branch: the store lib has 67 tests, so 66 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 66 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
-  e2eFiles: 9,
+  e2eFiles: 8,
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
@@ -91,7 +91,8 @@ export const NODE_SELF_TESTS = { passed: 116 };
 
 // Platform independent. Measured by a vitest JSON run on the DPES-1105 AI usage branch, rebased on main 3cc22759b.
 export const VITEST = { files: 67, tests: 1549 };
-export const E2E_TESTS = 45;
+// DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
+export const E2E_TESTS = 44;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;
