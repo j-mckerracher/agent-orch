@@ -1,7 +1,9 @@
-/* The level dropdown sits in the one-row composer, so it keeps its natural width and never wraps the send button. */
+/* The level dropdown sits in the one-row composer. It shrinks before the send button or the target picker do,
+   the same way the model chip does. */
 .ws-perm-select {
-  flex: 0 0 auto;
-  max-width: 170px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 128px;
   min-height: 28px;
   padding: 3px 8px;
   border: 1px solid var(--control-border);

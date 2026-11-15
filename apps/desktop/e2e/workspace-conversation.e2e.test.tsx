@@ -300,7 +300,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
       const level = screen.getByRole("combobox", { name: "Permission level" });
-      expect(level).toHaveValue("auto");
+      expect((level as HTMLSelectElement).value).toBe("auto");
       const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
 
