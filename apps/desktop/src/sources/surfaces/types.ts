@@ -163,7 +163,7 @@ export type ConversationTarget =
   | { kind: "workstream"; workstreamId: string };
 export interface ConversationEntry {
   id: string;
-  /** `status` is a daemon-recorded turn outcome (failed, cancelled, empty) and never a reply. */
+  /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. */
   kind: "message" | "proposal" | "status";
   role: "user" | "coordinator" | "system";
   text: string;

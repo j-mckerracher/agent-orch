@@ -176,7 +176,7 @@
   outline: none;
 }
 
-/* Placeholder text uses the readable secondary token (Chrome's default grey fails 4.5:1 on the dark panel). */
+/* Placeholder text uses the readable secondary token (Chrome's default gray fails 4.5:1 on the dark panel). */
 .ws-composer textarea::placeholder,
 .ws-popover input[type="search"]::placeholder {
   color: var(--subtle);

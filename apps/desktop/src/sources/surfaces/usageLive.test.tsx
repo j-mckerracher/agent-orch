@@ -396,7 +396,7 @@ describe("usage pill with the live adapter", () => {
     return { user, unmount: view.unmount };
   }
 
-  it("shows a reported amount and the labelled window, estimate and provider coverage", async () => {
+  it("shows a reported amount and the labeled window, estimate and provider coverage", async () => {
     const fake = new FakeDaemon();
     fake.stub(
       "usage.summary",

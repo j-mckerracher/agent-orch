@@ -3,7 +3,7 @@ import { useState } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import type { DaemonError } from "../../../daemon/errors";
 import type { SimulatedReceipt } from "../../../sources/types";
-import { TERMINAL_STATES } from "../../format";
+import { TERMINAL_STATES, stateLabel } from "../../format";
 import { useGate, useServices } from "../../services";
 import { ErrorNotice, SimulatedReceipts } from "../../widgets";
 import { Control, DisabledAction, NOT_LINKED_REASON } from "./common";
@@ -23,7 +23,7 @@ export function SessionControls({ row, session, live }: { row: WorkRow; session:
 
   const terminal = TERMINAL_STATES.has(row.state);
   const noLink = live && !gate.can("tasks") ? NOT_LINKED_REASON : null;
-  const blockedReason = terminal ? `The task is ${row.state}; it can no longer be cancelled.` : noLink;
+  const blockedReason = terminal ? `The task is ${stateLabel(row.state)}; it can no longer be canceled.` : noLink;
   // `tasks.cancel` takes only a task id, so the daemon cannot stop one attempt or session.
   const cancelScope = "Cancels the whole task, not only this attempt or session: the daemon has no attempt-level cancel.";
 
@@ -40,10 +40,10 @@ export function SessionControls({ row, session, live }: { row: WorkRow; session:
     setBusy(false);
     if (result.ok) {
       setNote(
-        `Cancel request acknowledged; the daemon now records the task as ${result.value.state}. The cancel applied to the whole task, not only this attempt or session. This is not proof that any process has stopped.`,
+        `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. The cancel applied to the whole task, not only this attempt or session. This is not proof that any process has stopped.`,
       );
     } else {
-      setFailure({ error: result.error, action: "Cancelling the task" });
+      setFailure({ error: result.error, action: "Canceling the task" });
     }
   };
 

@@ -5,8 +5,8 @@
 //!
 //! The agent is the std-only `tests/support/m2_agent.rs` (compiled with `rustc`):
 //! it writes one uncommitted file, publishes its PID, and holds on a barrier
-//! file. Synchronisation is by probes (`wait_until`) and barrier files, never by
-//! fixed sleeps. Processes are signalled only after re-observing the exact
+//! file. Synchronization is by probes (`wait_until`) and barrier files, never by
+//! fixed sleeps. Processes are signaled only after re-observing the exact
 //! identity (PID plus start time) captured when the test first saw them, and the
 //! test never signals a process group.
 //!
@@ -204,7 +204,7 @@ fn kill_if_same(pid: u32, identity: ExactProcessIdentity) {
     let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
 }
 
-/// Failure-path cleanup for processes this test started. A process is signalled
+/// Failure-path cleanup for processes this test started. A process is signaled
 /// only while the OS still reports the exact identity captured when first seen;
 /// a dead, replaced or unreadable process, and any untracked process, never is.
 #[derive(Default)]

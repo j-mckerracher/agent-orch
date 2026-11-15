@@ -1,7 +1,7 @@
 /*
- * Workstreams view and sidebar tree (M7-11). `ws-` prefixed, token colours only, so light and
+ * Workstreams view and sidebar tree (M7-11). `ws-` prefixed, token colors only, so light and
  * dark both follow the theme. Contrast pairs: --ink/--muted/--subtle on --paper/--panel/--soft,
- * --blue and the tone colours on their own -bg tokens.
+ * --blue and the tone colors on their own -bg tokens.
  */
 .ws-view {
   display: grid;

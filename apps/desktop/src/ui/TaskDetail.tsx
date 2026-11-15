@@ -4,7 +4,7 @@ import { timelineKey } from "../daemon/appData";
 import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
-import { TERMINAL_STATES, basename, pendingApprovals } from "./format";
+import { TERMINAL_STATES, basename, pendingApprovals, stateLabel } from "./format";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
@@ -90,7 +90,7 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
         {(info) => (
           <div>
             <p>
-              State: {info.state}. Launch: {info.launchOutcome}.
+              State: {stateLabel(info.state)}. Launch: {info.launchOutcome}.
               {info.cancelOutcome ? ` Cancel: ${info.cancelOutcome}.` : ""}
             </p>
             {previewId && (
@@ -168,7 +168,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
     setCancelling(false);
     if (result.ok) {
       setCancelNote(
-        `Cancel request acknowledged; the daemon now records the task as ${result.value.state}. This is not proof that any process has stopped.`,
+        `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. This is not proof that any process has stopped.`,
       );
       void data.watchTask(taskId);
     } else {
@@ -256,7 +256,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 <ul className="ps-steps">
                   {record.attempts.map((attempt) => (
                     <li key={attempt.id}>
-                      #{attempt.attempt_number} <code>{attempt.id}</code>: {attempt.state}
+                      #{attempt.attempt_number} <code>{attempt.id}</code>: {stateLabel(attempt.state)}
                     </li>
                   ))}
                 </ul>
@@ -285,14 +285,14 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                     <select value={sessionId ?? ""} onChange={(event) => setChosen(event.target.value)}>
                       {sessions.map((session) => (
                         <option key={session.id} value={session.id}>
-                          {session.id} ({session.state})
+                          {session.id} ({stateLabel(session.state)})
                         </option>
                       ))}
                     </select>
                   </label>
                   {sessionDetail && (
                     <p data-testid="session-detail">
-                      Adapter {sessionDetail.session.adapter}, state {sessionDetail.session.state}, attempt{" "}
+                      Adapter {sessionDetail.session.adapter}, state {stateLabel(sessionDetail.session.state)}, attempt{" "}
                       <code>{sessionDetail.session.attempt_id}</code>
                     </p>
                   )}
@@ -357,7 +357,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
               </Button>
               {!gate.connected && <span className="muted"> Unavailable while offline.</span>}
               {cancelNote && <p role="status">{cancelNote}</p>}
-              {cancelError && <ErrorNotice error={cancelError} action="Cancelling the task" />}
+              {cancelError && <ErrorNotice error={cancelError} action="Canceling the task" />}
               {cancelError?.indeterminate && (
                 <p role="status">The outcome is unknown. Requesting again reuses the same request key.</p>
               )}
@@ -394,19 +394,19 @@ export function FixtureTaskDetail({ projectId, id }: { projectId: string; id: st
         {(task) => (
           <div>
             <p>
-              <strong>{task.objective}</strong> — {task.state}, agent {task.agent}
+              <strong>{task.objective}</strong> — {stateLabel(task.state)}, agent {task.agent}
             </p>
             <ul aria-label="Preview attempts" className="ps-steps">
               {task.attempts.map((a) => (
                 <li key={a.id}>
-                  <code>{a.id}</code>: {a.state}
+                  <code>{a.id}</code>: {stateLabel(a.state)}
                 </li>
               ))}
             </ul>
             <ul aria-label="Preview sessions" className="ps-steps">
               {task.sessions.map((s) => (
                 <li key={s.id}>
-                  <code>{s.id}</code>: {s.state}
+                  <code>{s.id}</code>: {stateLabel(s.state)}
                 </li>
               ))}
             </ul>

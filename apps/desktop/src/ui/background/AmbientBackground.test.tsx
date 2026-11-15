@@ -114,11 +114,11 @@ describe("layer and control", () => {
     expect(document.documentElement).not.toHaveAttribute("data-ambient-background");
   });
 
-  it("states that the animation is decorative and includes both licence texts", () => {
+  it("states that the animation is decorative and includes both license texts", () => {
     render(<AmbientBackgroundControl settings={createAmbientSettings(null)} />);
     expect(screen.getByText(/decorative only/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("Agent-Native licence")).toHaveTextContent("Copyright (c) 2026 Builder.io, Inc.");
-    expect(screen.getByLabelText("vgpu licence")).toHaveTextContent("Copyright (c) 2025 Vercel, Inc.");
+    expect(screen.getByLabelText("Agent-Native license")).toHaveTextContent("Copyright (c) 2026 Builder.io, Inc.");
+    expect(screen.getByLabelText("vgpu license")).toHaveTextContent("Copyright (c) 2025 Vercel, Inc.");
   });
 
   it("says so when the choice could not be saved", async () => {

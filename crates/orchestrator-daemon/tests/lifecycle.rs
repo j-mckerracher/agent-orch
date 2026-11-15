@@ -378,7 +378,7 @@ fn scenario(base: &Path) {
                 "contract": {
                     "project_id": project_id,
                     "parent_id": null,
-                    "objective": "run until cancelled",
+                    "objective": "run until canceled",
                     "kind": "Implement",
                     "agent": "codex",
                     "dependencies": [],

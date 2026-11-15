@@ -114,7 +114,7 @@ fn main() {
         }
         "hang-spawn" => {
             // Spawn a long-lived descendant, announce its PID on stderr,
-            // then block. Cancelling this process must kill the
+            // then block. Canceling this process must kill the
             // descendant too.
             let exe = std::env::current_exe().unwrap();
             let child = Command::new(exe).arg("sleep").spawn().unwrap();
@@ -440,7 +440,7 @@ fn cancel_reports_cancelled_exit() {
 #[test]
 fn supervisor_cancel_kills_descendants() {
     // The child spawns a long-lived descendant (its PID on stderr), then
-    // blocks. Cancelling must kill the whole tree, not just the child.
+    // blocks. Canceling must kill the whole tree, not just the child.
     with_runtime(async {
         let mut sup = ChildSupervisor::launch(&LaunchRequest {
             program: fake_exe(),

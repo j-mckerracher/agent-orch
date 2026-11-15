@@ -42,7 +42,7 @@ pub(super) enum Scenario {
     /// A provider-reported failed turn is surfaced as `TurnOutcome::Failure`
     /// and must not be reported as a completed run.
     ErrorResult,
-    /// Cancelling (twice) after a natural exit must not relabel the outcome.
+    /// Canceling (twice) after a natural exit must not relabel the outcome.
     CancelAfterExit,
     /// Cancellation must also remove the child's descendant process.
     CancellationTree,
@@ -388,7 +388,7 @@ async fn cancellation(adapter: Adapter, child: &FakeChild) {
     handle.cancel().await.expect("cancel child");
     assert!(
         matches!(
-            handle.wait().await.expect("reap cancelled child"),
+            handle.wait().await.expect("reap canceled child"),
             AgentExit::Cancelled { .. }
         ),
         "cancel must remain the terminal outcome"
@@ -645,7 +645,7 @@ async fn cancellation_tree(adapter: Adapter, child: &FakeChild) {
     assert!(is_process_running(descendant), "descendant must be running");
     handle.cancel().await.expect("cancel child");
     assert!(matches!(
-        handle.wait().await.expect("reap cancelled child"),
+        handle.wait().await.expect("reap canceled child"),
         AgentExit::Cancelled { .. }
     ));
     assert!(!is_process_running(pid), "child remains alive after reap");

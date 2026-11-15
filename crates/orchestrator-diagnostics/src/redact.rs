@@ -6,7 +6,7 @@
 //! deliberate: an unanchored pattern rescanned from each position went
 //! quadratic on word runs in earlier evidence redaction.
 //!
-//! Redaction is best effort by shape, not a guarantee. It recognises:
+//! Redaction is best effort by shape, not a guarantee. It recognizes:
 //! - credentials in URL userinfo (`https://user:pass@host`, `https://TOKEN@host`),
 //! - values of sensitive keys (`token=...`, `"password": "..."`,
 //!   `Authorization: Bearer ...`, `--api-key ...`),
@@ -71,7 +71,7 @@ pub fn redact(input: &str) -> String {
 }
 
 /// Keeps at most `max` characters, marking the cut. Call after [`redact`] so a
-/// cut cannot split a credential into an unrecognisable prefix.
+/// cut cannot split a credential into an unrecognizable prefix.
 pub fn truncate(input: &str, max: usize) -> String {
     match input.char_indices().nth(max) {
         None => input.to_owned(),

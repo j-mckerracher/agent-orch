@@ -49,7 +49,7 @@ pub enum TaskState {
     /// Execution failed and the retry allowance is exhausted.
     /// Quiescent: accepts only [`TaskEvent::RetryRequested`].
     Failed,
-    /// Cancelled by an authorized request. Irreversible.
+    /// Canceled by an authorized request. Irreversible.
     Cancelled,
 }
 
@@ -90,7 +90,7 @@ pub enum TaskEvent {
     /// `Created` or `Queued`; a request for a running task is not cancellation
     /// confirmation and must not use this event.
     CancelRequested,
-    /// Origin: the process owner, after its agent handle has cancelled and
+    /// Origin: the process owner, after its agent handle has canceled and
     /// waited for the managed child to exit. A separate cancellation request
     /// remains pending until this event is committed.
     CancellationConfirmed,
@@ -254,7 +254,7 @@ pub enum AttemptState {
     Failed,
     /// Attempt terminated after a verified candidate.
     Succeeded,
-    /// Attempt cancelled.
+    /// Attempt canceled.
     Cancelled,
 }
 

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * Slots the shell exposes to the other M7 items. Each slot is a plain `ReactNode`; the
- * shell supplies the surrounding landmark, spacing and responsive behaviour, so slot
+ * shell supplies the surrounding landmark, spacing and responsive behavior, so slot
  * content must not add its own `<main>`, `<aside>` or `<nav>` for the same purpose.
  * Missing slots fall back to `defaultShellSlots`, which are honest placeholders (never
  * invented numbers). Replace a slot by passing it to `<App shellSlots={...}>`.

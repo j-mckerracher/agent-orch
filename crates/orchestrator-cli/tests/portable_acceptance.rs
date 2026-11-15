@@ -445,10 +445,10 @@ fn listed_states(inspect: &str, header: &str) -> Vec<String> {
         .collect()
 }
 
-/// Failure-path cleanup for processes this test started. A process is signalled
+/// Failure-path cleanup for processes this test started. A process is signaled
 /// only if the OS still reports the exact identity (PID plus start time, plus the
 /// Windows creation time) captured when it was first seen. A dead, replaced, or
-/// unreadable process is never signalled, and untracked processes never are.
+/// unreadable process is never signaled, and untracked processes never are.
 #[derive(Default)]
 struct OwnedProcesses(Vec<(u32, ExactProcessIdentity)>);
 

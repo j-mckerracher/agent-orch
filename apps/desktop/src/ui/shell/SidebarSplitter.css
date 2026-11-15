@@ -1,6 +1,6 @@
 /*
  * Sidebar splitter and collapse toggle (DPES-1102). Both sit over the sidebar's right edge inside `.shell-body`,
- * so the grid columns and breakpoints in shell.css are unchanged. Colours come from the shell tokens only,
+ * so the grid columns and breakpoints in shell.css are unchanged. Colors come from the shell tokens only,
  * which already carry light and dark values.
  */
 .shell-splitter {
@@ -59,7 +59,7 @@
   color: var(--shell-blue);
 }
 
-/* A zero-width column leaves no room to centre the button on the edge. */
+/* A zero-width column leaves no room to center the button on the edge. */
 .shell-body[data-sidebar-collapsed] .shell-splitter-toggle {
   left: 4px;
 }

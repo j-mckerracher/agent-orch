@@ -107,7 +107,7 @@ describe("pre-app theme bootstrap", () => {
 });
 
 describe("theme resolution and application", () => {
-  it("honours the system setting until an explicit choice exists", () => {
+  it("honors the system setting until an explicit choice exists", () => {
     expect(resolveTheme(null, true)).toBe("dark");
     expect(resolveTheme(null, false)).toBe("light");
     expect(resolveTheme("light", true)).toBe("light");

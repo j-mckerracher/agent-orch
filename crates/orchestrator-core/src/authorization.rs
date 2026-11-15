@@ -150,7 +150,7 @@ pub enum ApprovalState {
     /// The bound action or candidate changed after granting; the approval is
     /// void and must be re-granted. Terminal.
     Voided,
-    /// The task was cancelled before the approval was consumed. Terminal.
+    /// The task was canceled before the approval was consumed. Terminal.
     Expired,
 }
 

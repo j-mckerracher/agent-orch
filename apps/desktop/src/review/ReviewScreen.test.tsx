@@ -609,7 +609,7 @@ describe("request integrity", () => {
 });
 
 describe("fixture daemon demo mode", () => {
-  it("is labelled PLACEHOLDER DATA on receipts, and its fixture evidence cannot authorize anything", async () => {
+  it("is labeled PLACEHOLDER DATA on receipts, and its fixture evidence cannot authorize anything", async () => {
     const client = createFixtureDaemonClient();
     render(
       <ReviewScreen

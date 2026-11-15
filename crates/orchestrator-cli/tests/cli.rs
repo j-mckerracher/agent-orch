@@ -694,7 +694,7 @@ fn cancel_refuses_missing_run_owner_without_signalling_or_changing_state() {
     assert!(stderr.contains("no active cancellation owner"), "{stderr}");
     assert!(
         remained_alive,
-        "cancel signalled a process without its run owner"
+        "cancel signaled a process without its run owner"
     );
     let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
     let task = store.get("mismatch-cancel").unwrap();
@@ -743,7 +743,7 @@ fn reconciliation_does_not_promote_legacy_cancelled_attempt_without_owner_ack() 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("cancelled attempt without run-owner confirmation"),
+        stderr.contains("canceled attempt without run-owner confirmation"),
         "{stderr}"
     );
     let task = store.get("legacy-cancel").unwrap();
@@ -769,7 +769,7 @@ fn cancel_reaps_owned_child_and_records_terminal_state() {
         .arg("--task-id")
         .arg("cancel-task")
         .arg("--objective")
-        .arg("wait until cancelled")
+        .arg("wait until canceled")
         .arg("--base-ref")
         .arg("main")
         .arg("--agent-program")
@@ -799,7 +799,7 @@ fn cancel_reaps_owned_child_and_records_terminal_state() {
     let identity = store
         .session_identity("cancel-task", &task.sessions[0].id)
         .unwrap()
-        .expect("cancelled session identity");
+        .expect("canceled session identity");
     assert_eq!(identity.pid, agent_pid);
     assert!(identity.process_group.is_some());
     assert!(identity.start_time_micros.is_some());
@@ -868,7 +868,7 @@ fn wait_for_exit(mut run: Child) -> Output {
             );
             return run.wait_with_output().expect("collect CLI output");
         }
-        assert!(Instant::now() < deadline, "cancelled CLI run did not exit");
+        assert!(Instant::now() < deadline, "canceled CLI run did not exit");
         thread::sleep(Duration::from_millis(20));
     }
 }

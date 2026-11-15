@@ -62,7 +62,7 @@ const ok = (data: Partial<SystemMetrics>): SurfaceState<SystemMetrics> => {
 };
 
 describe("ResourceStrip with D13 fixtures", () => {
-  it("shows four rows with value, unit, scope and age, labelled PLACEHOLDER DATA", async () => {
+  it("shows four rows with value, unit, scope and age, labeled PLACEHOLDER DATA", async () => {
     renderStrip(fixtureServices());
     const cpu = await screen.findByRole("meter", { name: "CPU utilization" });
     expect(cpu).toHaveAttribute("aria-valuenow", "44");
@@ -107,7 +107,7 @@ describe("ResourceStrip with D13 fixtures", () => {
     expect(screen.queryByRole("meter", { name: /GPU/ })).toBeNull();
   });
 
-  it("summarises the values while collapsed and keeps the badge visible", async () => {
+  it("summarizes the values while collapsed and keeps the badge visible", async () => {
     renderStrip(fixtureServices(), false);
     expect(await screen.findByTestId("resource-strip-compact")).toHaveTextContent(
       "CPU 44% · Memory 18.5 GiB · GPU unsupported · Disk 71%",
@@ -315,14 +315,14 @@ describe("ResourceStripView", () => {
     expect(cpuRow).toHaveTextContent("Scope: CPU · observed 4 s ago");
   });
 
-  it("states that the colour scale is not an alert threshold and that disk means capacity", () => {
+  it("states that the color scale is not an alert threshold and that disk means capacity", () => {
     view(ok({}));
     expect(screen.getByText(/not an alert threshold/)).toBeInTheDocument();
     expect(screen.getByText(/Disk is capacity used, not activity/)).toBeInTheDocument();
   });
 });
 
-describe("ResourceStrip behaviour", () => {
+describe("ResourceStrip behavior", () => {
   it("toggles from the keyboard-focusable summary", async () => {
     const user = userEvent.setup();
     renderStrip(fixtureServices(), false);
@@ -335,7 +335,7 @@ describe("ResourceStrip behaviour", () => {
     expect(screen.getByRole("meter", { name: "CPU utilization" })).toBeInTheDocument();
   });
 
-  it("keeps ageing the observation after the snapshot, so a stale value does not look current", async () => {
+  it("keeps aging the observation after the snapshot, so a stale value does not look current", async () => {
     let clock = NOW;
     const services = fixtureServices();
     render(
@@ -362,7 +362,7 @@ describe("ResourceStrip behaviour", () => {
     expect(meters[1]).toHaveAttribute("aria-valuetext", expect.stringContaining("observed 2 min ago"));
     unmount();
   });
-  it("stops ageing while the window is hidden and catches up when it is shown again", async () => {
+  it("stops aging while the window is hidden and catches up when it is shown again", async () => {
     let clock = NOW;
     const services = fixtureServices();
     const setHidden = (hidden: boolean) => {

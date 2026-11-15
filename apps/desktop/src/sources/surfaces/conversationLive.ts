@@ -4,7 +4,7 @@
  *
  * What this shows, and what it does not:
  * - The daemon records the user message and starts a turn. A turn ends as
- *   completed, failed or cancelled. The daemon (M7-25) routes the message to an
+ *   completed, failed or canceled. The daemon (M7-25) routes the message to an
  *   installed, launchable and pinned agent and records its reply; when none is
  *   available the turn fails with `runtime_unavailable`. This adapter shows a
  *   failure as a status line and never produces reply text of its own.
@@ -109,7 +109,7 @@ export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
 /**
  * Maps wire entries to view entries. Reply chunks of one turn become a single
  * reply that stays `streaming` until the daemon records the end of the turn;
- * a failed, cancelled or empty turn becomes a `status` line, never a reply.
+ * a failed, canceled or empty turn becomes a `status` line, never a reply.
  */
 export function mapEntries(wire: readonly ConversationWireEntry[]): ConversationEntry[] {
   const out: ConversationEntry[] = [];
@@ -156,7 +156,7 @@ export function mapEntries(wire: readonly ConversationWireEntry[]): Conversation
         break;
       case "turn_cancelled":
         if (reply) reply.streaming = false;
-        out.push(status(entry, "This turn was cancelled."));
+        out.push(status(entry, "This turn was canceled."));
         break;
     }
   }
@@ -300,7 +300,7 @@ export function createLiveConversation(
     },
 
     async cancel(target, turnId) {
-      if (!isLiveTarget(target)) throw new DaemonError("method-unavailable", "Only Global and workstream turns can be cancelled.");
+      if (!isLiveTarget(target)) throw new DaemonError("method-unavailable", "Only Global and workstream turns can be canceled.");
       refuseFixture(target);
       if (isFixtureLikeId(turnId)) throw new DaemonError("invalid-params", "Fixture turn ids are never sent to the daemon.");
       const scope = `cancel:${scopeOf(target)}:${turnId}`;

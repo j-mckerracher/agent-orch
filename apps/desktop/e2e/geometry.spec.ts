@@ -28,7 +28,7 @@ test("System Usage stays reachable and unclipped in the activity popover at 960 
     await expect(usage.getByText(name, { exact: true })).toBeVisible();
   }
   await expect(
-    usage.getByText("Scale colours (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.", {
+    usage.getByText("Scale colors (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.", {
       exact: true,
     }),
   ).toBeVisible();

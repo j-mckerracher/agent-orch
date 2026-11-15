@@ -173,7 +173,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await waitFor(() => expect(fake.callsTo("conversations.cancel")).toHaveLength(1));
     const cancelParams = fake.callsTo("conversations.cancel")[0]!.params as Record<string, unknown>;
     expect(cancelParams.turn_id).toBe(convo.turn?.id);
-    expect(await screen.findByText(/Cancelled the reply/)).toBeInTheDocument();
+    expect(await screen.findByText(/Canceled the reply/)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(/Waiting for the orchestrator.s reply…/)).toBeNull());
   });
 
@@ -670,7 +670,7 @@ describe("conversation target dropdown", () => {
 });
 
 describe("accessibility structure", () => {
-  it("exposes a heading, a labelled conversation region, a log and a labelled composer", async () => {
+  it("exposes a heading, a labeled conversation region, a log and a labeled composer", async () => {
     const services = build();
     await mountView(services);
     expect(await screen.findByRole("heading", { name: "Orchestrator Workspace", level: 1 })).toBeInTheDocument();
@@ -881,7 +881,7 @@ describe("workspace view, history actions", () => {
     expect(box).toHaveValue("still here");
   });
 
-  it("in fixture mode, clearing is simulated, labelled as placeholder data, and reaches no daemon", async () => {
+  it("in fixture mode, clearing is simulated, labeled as placeholder data, and reaches no daemon", async () => {
     const services = build();
     const { user } = await mountView(services);
     await user.click(await screen.findByRole("button", { name: "Conversation actions for Global orchestrator" }));

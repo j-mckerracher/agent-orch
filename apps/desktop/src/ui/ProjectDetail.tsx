@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { DaemonError } from "../daemon/errors";
 import type { AutonomyPolicy, DeliveryPolicy, TaskKind } from "../daemon/types";
 import { Crumbs } from "./ConnectionStrip";
-import { TASK_STATES, basename, pendingApprovals } from "./format";
+import { TASK_STATES, basename, pendingApprovals, stateLabel } from "./format";
 import { buildSubmission } from "./submission";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { ErrorNotice, LoadableRegion, Notice, SourceSection } from "./widgets";
@@ -103,7 +103,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                         disabled={count === 0}
                         onClick={() => router.navigate({ name: "tasks", projectId, filter: `state:${state}` })}
                       >
-                        {state}: {count}
+                        {stateLabel(state)}: {count}
                       </Button>{" "}
                       <span className="muted">of {own?.length ?? 0}</span>
                     </li>

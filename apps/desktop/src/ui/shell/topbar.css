@@ -1,7 +1,7 @@
 /*
  * Top bar content (M7-16): counts, usage pill and local search. The surrounding flex
  * layout, the 760 px full-width search row and the wrapper elements belong to shell.css;
- * this file styles only what the three slots render. Colours read tokens.css names.
+ * this file styles only what the three slots render. Colors read tokens.css names.
  */
 .top-sr {
   position: absolute;

@@ -70,7 +70,7 @@ the thread without joining it.
 
 ## Library choice: sysinfo 0.40.1
 
-- Licence MIT. MSRV 1.95 (workspace toolchain 1.95+).
+- License MIT. MSRV 1.95 (workspace toolchain 1.95+).
 - `default-features = false`, features `system` and `disk` only (no
   network/component/user crates). On macOS also `gpu`.
 - Platform sources are sysinfo's own native APIs (no shelling out). On macOS

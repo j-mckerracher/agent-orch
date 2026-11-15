@@ -97,12 +97,12 @@ export function AmbientBackgroundControl({ settings, className }: { settings?: A
           {reduced ? " Reduced motion is on, so the pattern stays still." : ""}
         </p>
         <details className="ambient-licences">
-          <summary>Animation licences</summary>
+          <summary>Animation licenses</summary>
           <p className="ambient-note">
             The wave uses the MIT-licensed ocean renderer from Agent-Native (Builder.io) and the vgpu library (Vercel).
           </p>
-          <pre tabIndex={0} aria-label="Agent-Native licence">{agentNativeLicense}</pre>
-          <pre tabIndex={0} aria-label="vgpu licence">{vgpuLicense}</pre>
+          <pre tabIndex={0} aria-label="Agent-Native license">{agentNativeLicense}</pre>
+          <pre tabIndex={0} aria-label="vgpu license">{vgpuLicense}</pre>
         </details>
       </div>
     </details>

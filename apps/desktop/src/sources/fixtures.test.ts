@@ -6,7 +6,7 @@ import type { TaskRef } from "./types";
 const real = (state: Parameters<typeof Object>[0]): TaskRef => ({ origin: "real", taskId: "task-1", state: state as never });
 
 describe("fixture sources (D1-D6)", () => {
-  it("returns labelled placeholder data for every source", async () => {
+  it("returns labeled placeholder data for every source", async () => {
     const s = createFixtureSources();
     const sources = [s.agents, s.execution, s.recovery, s.retry, s.coordinator, s.journal];
     expect(sources.map((x) => x.provenance.id)).toEqual(["D1", "D2", "D3", "D4", "D5", "D6"]);
@@ -21,7 +21,7 @@ describe("fixture sources (D1-D6)", () => {
     ]);
   });
 
-  it.each(["empty", "unavailable", "error"] as FixtureScenario[])("honours the %s scenario", async (scenario) => {
+  it.each(["empty", "unavailable", "error"] as FixtureScenario[])("honors the %s scenario", async (scenario) => {
     const s = createFixtureSources({ scenario });
     const results = await Promise.all([
       s.agents.listAgents(),

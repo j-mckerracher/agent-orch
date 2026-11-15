@@ -3,7 +3,7 @@
  * application state, makes no requests and never suggests live activity.
  *
  * Adapted from the workspace integration in `docs/operator-experience/animation/particle-wave.js`
- * (see THIRD-PARTY-NOTICES.md). Behaviour:
+ * (see THIRD-PARTY-NOTICES.md). Behavior:
  * - `webgpu`: the vendored Agent-Native FFT ocean renderer, loaded with a dynamic `import()`
  *   (a same-origin chunk, so CSP `script-src 'self'` holds with no `unsafe-eval`). It is
  *   attempted only when `navigator.gpu` exists and falls back on any error, device loss, or
@@ -200,7 +200,7 @@ export function mountAmbientBackground(host: HTMLElement, options: AmbientOption
       fallbackCanvas.hidden = true;
       setEngine("webgpu");
     } else {
-      // While the renderer initialises its canvas must stay laid out so it can size itself.
+      // While the renderer initializes its canvas must stay laid out so it can size itself.
       gpuCanvas.hidden = !renderer;
       fallbackCanvas.hidden = false;
       setEngine("canvas2d");

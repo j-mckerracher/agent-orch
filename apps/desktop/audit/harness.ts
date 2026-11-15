@@ -62,7 +62,7 @@ export async function openWireframe(page: Page, screen: string, bp: Bp = "deskto
   await page.waitForTimeout(400);
 }
 
-/** Generic layout map: landmarks, headings, labelled regions, with boxes and key computed styles. */
+/** Generic layout map: landmarks, headings, labeled regions, with boxes and key computed styles. */
 export async function layoutMap(page: Page) {
   return page.evaluate(() => {
     const vis = (el: Element) => {

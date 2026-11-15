@@ -11,7 +11,7 @@ const DAEMON: Provenance = { kind: "daemon", id: "D2" };
 const glyphOf = (testId: string) => screen.getByTestId(testId).querySelector(".conn-glyph")?.textContent;
 
 describe("M7-15 restyled project screens: widgets", () => {
-  it("renders task states as text plus a non-colour mark, with unknown states neutral", () => {
+  it("renders task states as text plus a non-color mark, with unknown states neutral", () => {
     render(
       <>
         <StateText state="Failed" />
@@ -111,7 +111,7 @@ describe("M7-15 restyled project screens: connection strip", () => {
   });
 });
 
-describe("M7-15 restyled project screens: behaviour is unchanged", () => {
+describe("M7-15 restyled project screens: behavior is unchanged", () => {
   it("renders a breadcrumb with a hidden separator and a current-page marker", async () => {
     const fake = new FakeDaemon();
     fake.projects = [{ id: REPO }];

@@ -326,7 +326,7 @@ const summary = [
     : []),
   ...(process.platform === "win32"
     ? ["### Not covered by this result (UNPROVEN by construction)", "", ...UNPROVEN_ROWS.map((r) => `- ${r}`), ""]
-    : ["### macOS notes", "", "- Windows-only gates (`windows-transport-tests`, the installer) run on the Windows job; Windows runtime behaviour is not proven by this job.", ""]),
+    : ["### macOS notes", "", "- Windows-only gates (`windows-transport-tests`, the installer) run on the Windows job; Windows runtime behavior is not proven by this job.", ""]),
 ].join("\n");
 writeText("summary.md", summary);
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${redactText(summary, identity)}\n`);

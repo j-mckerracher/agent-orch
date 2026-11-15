@@ -224,7 +224,7 @@ describe("local search", () => {
   const search = () => screen.getByRole("combobox", { name: "Search" });
   const status = () => screen.getByTestId("top-search-status");
 
-  it("is a labelled search landmark with a visible loaded-records note", async () => {
+  it("is a labeled search landmark with a visible loaded-records note", async () => {
     const { user } = await mount(daemon());
     expect(screen.getByRole("search", { name: "Search loaded records" })).toBeInTheDocument();
     expect(search()).toHaveAttribute("placeholder", "Search projects, tasks, sessions, approvals");

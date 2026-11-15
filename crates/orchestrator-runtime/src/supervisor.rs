@@ -241,7 +241,7 @@ impl ChildSupervisor {
         #[cfg(unix)]
         // Own process group: PGID 0 means "use the child's own PID as the
         // group ID" (setpgid(0, 0)), so the whole descendant tree can be
-        // signalled with one negative PID. This is the pattern verified by
+        // signaled with one negative PID. This is the pattern verified by
         // the M0-02 feasibility probe.
         cmd.process_group(0);
 
@@ -448,7 +448,7 @@ impl Drop for ChildSupervisor {
     fn drop(&mut self) {
         // Last-resort cleanup if the caller abandoned the supervisor with
         // a live tree. Same kill path as `cancel`; safe if the tree is
-        // already gone (signalling a dead pid/job is a no-op).
+        // already gone (signaling a dead pid/job is a no-op).
         #[cfg(windows)]
         if let Some(job) = std::mem::take(&mut self.job.0) {
             windows_impl::terminate_job(job)

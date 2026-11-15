@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import type { Provenance } from "../../../sources/types";
-import { TASK_STATES, basename } from "../../format";
+import { TASK_STATES, basename, stateLabel } from "../../format";
 import { useGate, useServices } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -473,7 +473,7 @@ function Detail({
               {counts !== null &&
                 TASK_STATES.filter((state) => counts[state] > 0).map((state) => (
                   <Pill key={state} tone={STATE_TONE[state]} data-testid={`count-${state}`}>
-                    {counts[state]} {state}
+                    {counts[state]} {stateLabel(state)}
                   </Pill>
                 ))}
             </>

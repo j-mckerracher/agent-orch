@@ -1,9 +1,9 @@
 /*
- * Ambient background layer (M7-18). Colours come from the M7-01 tokens; the layer's
+ * Ambient background layer (M7-18). Colors come from the M7-01 tokens; the layer's
  * opacity is capped so the worst case (a fully covered pixel) keeps text at 4.5:1 in both
  * themes (asserted in ambient.test.ts).
  */
-/* Light is dimmer than the wireframe's 0.16: at 0.16 the green state colour falls to 4.1:1 on a fully covered pixel. */
+/* Light is dimmer than the wireframe's 0.16: at 0.16 the green state color falls to 4.1:1 on a fully covered pixel. */
 .ambient-background {
   --ambient-opacity: 0.1;
   position: fixed;

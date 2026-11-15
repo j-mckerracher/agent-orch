@@ -231,7 +231,7 @@ describe("Agents & Sessions, live mode", () => {
     const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
     expect(cancel).toHaveAccessibleDescription(/cancels the whole task, not only this attempt or session/i);
     await user.click(cancel);
-    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled/)).toBeInTheDocument();
+    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled/)).toBeInTheDocument();
     expect(screen.getByText(/applied to the whole task, not only this attempt or session/)).toBeInTheDocument();
     expect(screen.getByText(/not proof that any process has stopped/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
@@ -267,7 +267,7 @@ describe("Agents & Sessions, live mode", () => {
     const { user } = await liveView(fake);
     await user.click(screen.getByRole("button", { name: /t-run/ }));
     await user.click(screen.getByRole("button", { name: "Cancel attempt" }));
-    expect(await screen.findByText(/Cancelling the task failed/)).toBeInTheDocument();
+    expect(await screen.findByText(/Canceling the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ idempotency_key: expect.any(String) });

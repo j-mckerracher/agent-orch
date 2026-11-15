@@ -1,6 +1,6 @@
 //! Secrets the process knows exactly, masked wherever they appear.
 //!
-//! Shape-based redaction cannot recognise a secret that is glued to other
+//! Shape-based redaction cannot recognize a secret that is glued to other
 //! text (`tok<value>`, `<value>-x`, two copies back to back) or wrapped across
 //! lines. A registered secret is matched by value instead, ignoring ASCII case
 //! and any ASCII whitespace or escaped line break (`\n`, `\r`, `\t`) between its

@@ -1,8 +1,8 @@
 /*
  * Project screens S1-S6 and the connection strip (M7-15). Tokens and primitives only:
- * colours come from theme/tokens.css, never literals. Class names are prefixed `ps-`
+ * colors come from theme/tokens.css, never literals. Class names are prefixed `ps-`
  * (screens) and `conn-` (connection strip) so nothing here collides with other M7 views.
- * Status is never colour-only: every pill, notice and strip row carries a glyph and text.
+ * Status is never color-only: every pill, notice and strip row carries a glyph and text.
  */
 
 /* Page ----------------------------------------------------------------------------------- */
@@ -233,7 +233,7 @@
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* The pressed mark is a glyph so selection is not colour-only. */
+/* The pressed mark is a glyph so selection is not color-only. */
 .ps-filters .ui-btn[aria-pressed="true"]::before {
   content: "●";
   content: "●" / "";
@@ -504,7 +504,7 @@
   margin-left: auto;
 }
 
-/* Rows: border style, glyph and text differ per kind, so none depends on colour. */
+/* Rows: border style, glyph and text differ per kind, so none depends on color. */
 .strip.conn-strip > p {
   flex: 1 1 100%;
   display: flex;
