@@ -8,6 +8,7 @@ import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Bubble, Button, EmptyState } from "../../theme";
 import { ErrorNotice } from "../../widgets";
+import { AddCoordinatorDialog, ConversationActions, historyActionReason } from "./ConversationActions";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { ModelPicker } from "./ModelPicker";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
@@ -50,11 +51,71 @@ export function WorkspaceView() {
     surfaces.workstreams.provenance,
   );
   const [simulated, setSimulated] = useState<Record<string, SimulatedEntry[]>>({});
-
-  const options = useMemo(
-    () => buildOptions(workstreams, live, live ? projectList.data : null),
-    [workstreams, live, projectList.data],
+  // Coordinators removed in this session's fixture mode (DPES-1105). Live state comes from the daemon.
+  const [fixtureRemoved, setFixtureRemoved] = useState<readonly string[]>([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addBusy, setAddBusy] = useState<string | null>(null);
+  const [actionNote, setActionNote] = useState<{ notice: string | null; error: DaemonError | null; action: string } | null>(
+    null,
   );
+  const removedIds = useMemo(
+    () =>
+      new Set(
+        live
+          ? (projectList.data ?? []).filter((project) => project.coordinator_active === false).map((project) => project.id)
+          : fixtureRemoved,
+      ),
+    [live, projectList.data, fixtureRemoved],
+  );
+  const options = useMemo(
+    () => buildOptions(workstreams, live, live ? projectList.data : null, removedIds),
+    [workstreams, live, projectList.data, removedIds],
+  );
+  const addable = useMemo(
+    () => Array.from(removedIds).map((id) => ({ id, label: projectLabel(id) })),
+    [removedIds],
+  );
+  const addReason = historyActionReason({
+    live,
+    connected: gate.connected,
+    supported: gate.can("conversation_history"),
+    running: false,
+    busy: addBusy !== null,
+  });
+
+  const removeCoordinator = async (projectId: string) => {
+    setActionNote(null);
+    try {
+      const receipt = await surfaces.conversation.removeCoordinator!(projectId);
+      if (live) void data.refreshAll();
+      else setFixtureRemoved((ids) => [...ids, projectId]);
+      // The removed coordinator's unsent draft has no target any more; discard it. Switch to Global.
+      drafts.setWorkspaceDraft(targetKey({ kind: "project", projectId }), "");
+      drafts.setWorkspaceTarget("global");
+      setActionNote({ notice: receipt.notice, error: null, action: "" });
+    } catch (thrown) {
+      setActionNote({ notice: null, error: asDaemonError(thrown), action: "Removing the coordinator" });
+    }
+  };
+
+  const addCoordinator = async (projectId: string) => {
+    setAddBusy(projectId);
+    setActionNote(null);
+    try {
+      const receipt = await surfaces.conversation.restoreCoordinator!(projectId);
+      if (live) void data.refreshAll();
+      else setFixtureRemoved((ids) => ids.filter((id) => id !== projectId));
+      drafts.setWorkspaceTarget(targetKey({ kind: "project", projectId }));
+      setAddOpen(false);
+      setActionNote({ notice: receipt.notice, error: null, action: "" });
+    } catch (thrown) {
+      setActionNote({ notice: null, error: asDaemonError(thrown), action: "Adding the coordinator" });
+    } finally {
+      setAddBusy(null);
+    }
+  };
+
+  const coordinatorControls = Boolean(surfaces.conversation.removeCoordinator && surfaces.conversation.restoreCoordinator);
   const stored = snapshot.workspace?.target ?? null;
   const known = stored !== null && options.some((option) => option.key === stored);
   const workstreamsLoading = workstreams.status === "loading";
@@ -91,6 +152,8 @@ export function WorkspaceView() {
           )}
         </p>
       )}
+      {actionNote?.error && <ErrorNotice error={actionNote.error} action={actionNote.action} />}
+      {actionNote?.notice && <p role="status">{actionNote.notice}</p>}
       <Conversation
         option={option}
         options={options}
@@ -100,7 +163,23 @@ export function WorkspaceView() {
         onSelect={(next) => drafts.setWorkspaceTarget(next.key)}
         onDraft={(text) => drafts.setWorkspaceDraft(resolved, text)}
         onSimulated={(entry) => setSimulated((all) => ({ ...all, [resolved]: [...(all[resolved] ?? []), entry] }))}
+        onSimulatedCleared={() =>
+          setSimulated((all) => {
+            const { [resolved]: _cleared, ...rest } = all;
+            return rest;
+          })
+        }
+        onRemoveCoordinator={coordinatorControls ? (projectId) => void removeCoordinator(projectId) : undefined}
+        addCoordinator={coordinatorControls ? { onAdd: () => setAddOpen(true), reason: addReason } : undefined}
       />
+      {addOpen && (
+        <AddCoordinatorDialog
+          projects={addable}
+          busyId={addBusy}
+          onAdd={(projectId) => void addCoordinator(projectId)}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -109,6 +188,7 @@ function buildOptions(
   workstreams: SurfaceState<Workstream[]>,
   live: boolean,
   liveProjects: readonly ProjectRow[] | null,
+  removedIds: ReadonlySet<string>,
 ): TargetOption[] {
   const global = globalOption(live);
   // A live workstream's `id` is the daemon's workstream id; fixture ids never become targets.
@@ -130,7 +210,8 @@ function buildOptions(
         })
       : [];
   if (live) {
-    const projects = (liveProjects ?? []).map<TargetOption>((project) => ({
+    // A removed coordinator is not a target until it is added back (DPES-1105).
+    const projects = (liveProjects ?? []).filter((project) => !removedIds.has(project.id)).map<TargetOption>((project) => ({
       key: targetKey({ kind: "project", projectId: project.id }),
       target: { kind: "project", projectId: project.id },
       label: projectLabel(project.id),
@@ -141,7 +222,7 @@ function buildOptions(
   }
   const projects: TargetOption[] =
     workstreams.status === "ok"
-      ? workstreams.data.map((ws) => ({
+      ? workstreams.data.filter((ws) => !removedIds.has(ws.id)).map((ws) => ({
           key: targetKey({ kind: "project", projectId: ws.id }),
           target: { kind: "project", projectId: ws.id },
           label: `${ws.title} coordinator`,
@@ -192,9 +273,26 @@ interface ConversationProps {
   onSelect: (option: TargetOption) => void;
   onDraft: (text: string) => void;
   onSimulated: (entry: SimulatedEntry) => void;
+  /** A clear emptied this conversation: drop what the fixture window had simulated for it. */
+  onSimulatedCleared: () => void;
+  /** Project coordinators only; absent when the surface cannot remove coordinators. */
+  onRemoveCoordinator?: (projectId: string) => void;
+  addCoordinator?: { onAdd: () => void; reason: string | null };
 }
 
-function Conversation({ option, options, live, draft, simulated, onSelect, onDraft, onSimulated }: ConversationProps) {
+function Conversation({
+  option,
+  options,
+  live,
+  draft,
+  simulated,
+  onSelect,
+  onDraft,
+  onSimulated,
+  onSimulatedCleared,
+  onRemoveCoordinator,
+  addCoordinator,
+}: ConversationProps) {
   const { surfaces, drafts } = useServices();
   const gate = useGate();
   const ids = useId();
@@ -268,6 +366,24 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
     }
   };
 
+  // Clears this conversation's history (DPES-1105). Drafts are kept: they are unsent text, not history.
+  const clearHistory = async () => {
+    if (!surfaces.conversation.clear) return;
+    const key = option.key;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const receipt = await surfaces.conversation.clear(target);
+      onSimulatedCleared();
+      setFeedback({ key, notice: receipt.notice, error: null });
+      setNonce((value) => value + 1);
+    } catch (thrown) {
+      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Clearing the history" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const cancel = async () => {
     if (!turn || !surfaces.conversation.cancel) return;
     const key = option.key;
@@ -325,6 +441,22 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
         {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
         {target.kind === "project" && <Badge tone="neutral">Notes, no reply</Badge>}
         <p className="ws-scope">{option.scope}</p>
+        {target.kind !== "workstream" && (
+          <ConversationActions
+            option={option}
+            live={live}
+            connected={gate.connected}
+            supported={gate.can("conversation_history")}
+            running={running}
+            busy={busy}
+            onClear={() => void clearHistory()}
+            onRemove={
+              target.kind === "project" && onRemoveCoordinator
+                ? () => onRemoveCoordinator(target.projectId)
+                : undefined
+            }
+          />
+        )}
       </header>
 
       <div
@@ -393,7 +525,12 @@ function Conversation({ option, options, live, draft, simulated, onSelect, onDra
           onKeyDown={onKeyDown}
         />
         <div className="ws-composer-row">
-          <ConversationTargetPicker options={options} selectedKey={option.key} onSelect={onSelect} />
+          <ConversationTargetPicker
+            options={options}
+            selectedKey={option.key}
+            onSelect={onSelect}
+            addCoordinator={addCoordinator}
+          />
           <ModelPicker
             catalog={modelCatalog}
             provenance={surfaces.models.provenance}

@@ -44,6 +44,10 @@ import type {
   WorkstreamTaskLinkWire,
   WorkstreamUpdateRequest,
   WorkstreamWire,
+  ClearedEntryReference,
+  ConversationClearResult,
+  CoordinatorChangeResult,
+  CoordinatorClearResult,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { UsageSummaryRequest } from "./usageWire";
@@ -207,7 +211,11 @@ export class DaemonApi {
   }
 
   /** Records a user message; the daemon never acts on it. */
-  async coordinatorSendMessage(projectId: string, text: string, idempotencyKey: string): Promise<CoordinatorEntry> {
+  async coordinatorSendMessage(
+    projectId: string,
+    text: string,
+    idempotencyKey: string,
+  ): Promise<CoordinatorEntry | ClearedEntryReference> {
     return this.session.request("coordinator.send_message", {
       project_id: realId(projectId),
       text,
@@ -235,6 +243,30 @@ export class DaemonApi {
     return this.session.request("coordinator.get", {
       project_id: realId(projectId),
       ...(afterSequence === undefined ? {} : { after_sequence: afterSequence }),
+    });
+  }
+
+  /** DPES-1105. Permanently deletes a project coordinator's log; the project and its tasks stay. */
+  async coordinatorClear(projectId: string, idempotencyKey: string): Promise<CoordinatorClearResult> {
+    return this.session.request("coordinator.clear", {
+      project_id: realId(projectId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1105. Removes a project's coordinator from the targets and deletes its log. Idempotent. */
+  async coordinatorRemove(projectId: string, idempotencyKey: string): Promise<CoordinatorChangeResult> {
+    return this.session.request("coordinator.remove", {
+      project_id: realId(projectId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1105. Restores a removed coordinator; it starts empty. Idempotent. */
+  async coordinatorRestore(projectId: string, idempotencyKey: string): Promise<CoordinatorChangeResult> {
+    return this.session.request("coordinator.restore", {
+      project_id: realId(projectId),
+      idempotency_key: idempotencyKey,
     });
   }
 
@@ -380,6 +412,14 @@ export class DaemonApi {
     return this.session.request("conversations.cancel", {
       target: realTarget(target),
       turn_id: realId(turnId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1105. Permanently deletes one conversation's history; refused with `conversation-busy` while a reply runs. */
+  async conversationsClear(target: ConversationWireTarget, idempotencyKey: string): Promise<ConversationClearResult> {
+    return this.session.request("conversations.clear", {
+      target: realTarget(target),
       idempotency_key: idempotencyKey,
     });
   }

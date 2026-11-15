@@ -2,7 +2,12 @@
 //!
 //! Method names are PROPOSED and not yet frozen in the protocol document:
 //! `conversations.send`, `conversations.get`, `conversations.cancel`. They
-//! reuse `Capability::Coordinator`, so no new capability is advertised.
+//! reuse `Capability::Coordinator`. `conversations.clear` (DPES-1105) needs
+//! `Capability::ConversationHistory`, which older daemons do not advertise.
+//!
+//! A send's idempotency record keeps references (entry id, sequence, turn id),
+//! never the message text. Each send response is rebuilt from the store, so a
+//! message that a clear deleted replays as `{"cleared": true}` instead of failing.
 //!
 //! A conversation carries no authority. Every result states `"authority":
 //! "none"`; nothing a message or a reply contains can create a task, approval
@@ -66,6 +71,13 @@ struct ConversationCancelParams {
     idempotency_key: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ConversationClearParams {
+    target: TargetParam,
+    idempotency_key: String,
+}
+
 impl DaemonApi {
     pub(super) fn conversations_send(&self, params: Value) -> Result<Value, RpcError> {
         let request: ConversationSendParams = parse_params(params)?;
@@ -74,15 +86,15 @@ impl DaemonApi {
         }
         let key = request.idempotency_key.clone();
         self.conversations.prepare()?;
-        let fresh = std::cell::Cell::new(false);
-        let mut reply = idempotency::run(
+        // The idempotency record keeps references only, never the message text
+        // (DPES-1105). Every reply, the first one included, is read back from the store.
+        let reference = idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "conversations.send",
             &key,
             &request,
             || {
-                fresh.set(true);
                 let target = request.target.to_store();
                 self.conversations.require_target(&target)?;
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
@@ -91,36 +103,75 @@ impl DaemonApi {
                     .start(&target, &turn_id, &request.text)
                     .map_err(map_conversation_error)?;
                 Ok(json!({
-                    "authority": "none",
-                    "target": request.target,
-                    "entry": entry_json(&begun.user_entry),
-                    "turn": turn_json(&begun.turn),
+                    "entry_id": begun.user_entry.id,
+                    "entry_sequence": begun.user_entry.sequence,
+                    "entry_created_at": begun.user_entry.created_at,
+                    "turn_id": begun.turn.id,
                     "epoch": self.store.store_epoch().map_err(map_store_error)?
                 }))
             },
         )?;
-        if !fresh.get() {
-            self.refresh_replayed_turn(&mut reply);
-        }
-        Ok(reply)
+        self.send_reply(&request.target, &reference)
     }
 
-    /// The recorded reply of a send says "running" because that was true when
-    /// it was recorded. A replay (a retry, or a retry after a restart) shows
-    /// the turn as it is now. The entry and the epoch stay as recorded.
-    fn refresh_replayed_turn(&self, reply: &mut Value) {
-        let Some(turn) = reply.get("turn") else {
-            return;
+    /// Builds a send response from its cached references. The turn is read as it is
+    /// now, and the epoch is the one recorded when the message was sent. A message
+    /// that a history clear deleted comes back as its id and sequence with
+    /// `cleared: true`, and its turn is `null`.
+    fn send_reply(&self, target: &TargetParam, reference: &Value) -> Result<Value, RpcError> {
+        let entry_id = reference_str(reference, "entry_id")?;
+        let turn_id = reference_str(reference, "turn_id")?;
+        let entry = match self
+            .store
+            .conversation_entry(entry_id)
+            .map_err(map_store_error)?
+        {
+            Some(entry) => entry_json(&entry),
+            None => cleared_reference_json(reference)?,
         };
-        if turn.get("state").and_then(Value::as_str) != Some("running") {
-            return;
-        }
-        let Some(id) = turn.get("id").and_then(Value::as_str) else {
-            return;
-        };
-        if let Ok(Some(current)) = self.store.conversation_turn(id) {
-            reply["turn"] = turn_json(&current);
-        }
+        let turn = self
+            .store
+            .conversation_turn(turn_id)
+            .map_err(map_conversation_error)?;
+        Ok(json!({
+            "authority": "none",
+            "target": target,
+            "entry": entry,
+            "turn": turn.as_ref().map(turn_json),
+            "epoch": reference.get("epoch").cloned().unwrap_or(Value::Null)
+        }))
+    }
+
+    /// Permanently deletes one conversation's history (DPES-1105). Refused with
+    /// `conversation_busy` while a turn runs; the refusal is cached for the key, so a
+    /// retry after the turn ends needs a new key.
+    pub(super) fn conversations_clear(&self, params: Value) -> Result<Value, RpcError> {
+        let request: ConversationClearParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "conversations.clear",
+            &key,
+            &request,
+            || {
+                let target = request.target.to_store();
+                self.conversations.require_target(&target)?;
+                let outcome = self
+                    .store
+                    .clear_conversation_history(&target)
+                    .map_err(map_clear_error)?;
+                Ok(json!({
+                    "authority": "none",
+                    "target": request.target,
+                    "cleared": outcome.cleared,
+                    "entries_deleted": outcome.entries_deleted,
+                    "turns_deleted": outcome.turns_deleted,
+                    "clear_generation": outcome.clear_generation,
+                    "epoch": self.store.store_epoch().map_err(map_store_error)?
+                }))
+            },
+        )
     }
 
     pub(super) fn conversations_get(&self, params: Value) -> Result<Value, RpcError> {
@@ -152,6 +203,7 @@ impl DaemonApi {
             "more": more,
             "next_after_sequence": next_after_sequence,
             "latest_sequence": page.latest_sequence,
+            "clear_generation": page.clear_generation,
             "turn": page.latest_turn.as_ref().map(turn_json),
             "epoch": epoch
         }))
@@ -185,6 +237,32 @@ impl DaemonApi {
             },
         )
     }
+}
+
+fn map_clear_error(error: ConversationError) -> RpcError {
+    match error {
+        ConversationError::TurnRunning { .. } => RpcError::ConversationBusy,
+        other => map_conversation_error(other),
+    }
+}
+
+/// The reference a cleared message is answered with: its id, sequence and creation
+/// time, and `cleared: true`. The body is never kept, so it is absent.
+pub(super) fn cleared_reference_json(reference: &Value) -> Result<Value, RpcError> {
+    Ok(json!({
+        "id": reference_str(reference, "entry_id")?,
+        "sequence": reference.get("entry_sequence").cloned().unwrap_or(Value::Null),
+        "created_at": reference.get("entry_created_at").cloned().unwrap_or(Value::Null),
+        "cleared": true
+    }))
+}
+
+/// Reads a reference the daemon wrote itself. A missing field is an internal fault.
+pub(super) fn reference_str<'a>(reference: &'a Value, field: &str) -> Result<&'a str, RpcError> {
+    reference
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or(RpcError::Internal)
 }
 
 fn map_conversation_error(error: ConversationError) -> RpcError {

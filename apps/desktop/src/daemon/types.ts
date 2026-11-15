@@ -21,7 +21,8 @@ export type Capability =
   | "host"
   | "coordinator"
   | "review"
-  | "workstreams";
+  | "workstreams"
+  | "conversation_history";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -38,6 +39,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "coordinator",
   "review",
   "workstreams",
+  "conversation_history",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -48,7 +50,7 @@ export const M5_03_CAPABILITIES: readonly Capability[] = ALL_CAPABILITIES;
  * `ConnectionManager` repeats it once without them when the daemon refuses; the matching feature then
  * degrades to `unsupported`. Older daemons reject any capability name they do not know.
  */
-export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue", "host", "workstreams"];
+export const OPTIONAL_CAPABILITIES: readonly Capability[] = ["queue", "host", "workstreams", "conversation_history"];
 
 export interface Welcome {
   version: number;
@@ -124,6 +126,8 @@ export interface TaskRecord {
 /** `projects.list` row. The id is the canonical repository root. */
 export interface ProjectRow {
   id: string;
+  /** False while the project's coordinator is removed (DPES-1105). Absent from older daemons, where it is active. */
+  coordinator_active?: boolean;
 }
 
 export interface SessionEntry {
@@ -271,6 +275,8 @@ export interface CoordinatorPage {
   entries: CoordinatorEntry[];
   more: boolean;
   next_after_sequence: number;
+  /** Advances on every clear and removal (DPES-1105). Absent from daemons before that. */
+  clear_generation?: number;
 }
 
 export type ReviewApprovalAction = "report_only" | "local_review";
@@ -525,12 +531,24 @@ export interface ConversationWireTurn {
   updated_at: string;
 }
 
+/**
+ * A message a history clear deleted (DPES-1105). Only its id and sequence survive; a replayed send
+ * answers with this instead of the entry. `created_at` is null when the daemon had none to return.
+ */
+export interface ClearedEntryReference {
+  id: string;
+  sequence: number;
+  created_at: string | null;
+  cleared: true;
+}
+
 /** `conversations.send` result: the daemon recorded the message; the turn may still fail. */
 export interface ConversationSendResult {
   authority: "none";
   target: ConversationWireTarget;
-  entry: ConversationWireEntry;
-  turn: ConversationWireTurn;
+  entry: ConversationWireEntry | ClearedEntryReference;
+  /** Null when the message was cleared, because its turn was cleared with it. */
+  turn: ConversationWireTurn | null;
   epoch: string;
 }
 
@@ -542,8 +560,38 @@ export interface ConversationWirePage {
   more: boolean;
   next_after_sequence: number;
   latest_sequence: number;
+  /** Advances on every clear. A reader that sees a new value discards what it has read (DPES-1105). */
+  clear_generation: number;
   turn: ConversationWireTurn | null;
   epoch: string;
+}
+
+/** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */
+export interface ConversationClearResult {
+  authority: "none";
+  target: ConversationWireTarget;
+  cleared: boolean;
+  entries_deleted: number;
+  turns_deleted: number;
+  clear_generation: number;
+  epoch: string;
+}
+
+/** `coordinator.clear` result (DPES-1105). */
+export interface CoordinatorClearResult {
+  project_id: string;
+  cleared: boolean;
+  entries_deleted: number;
+  clear_generation: number;
+}
+
+/** `coordinator.remove` and `coordinator.restore` result (DPES-1105). */
+export interface CoordinatorChangeResult {
+  project_id: string;
+  changed: boolean;
+  removed: boolean;
+  entries_deleted: number;
+  clear_generation: number;
 }
 
 export interface ConversationCancelResult {

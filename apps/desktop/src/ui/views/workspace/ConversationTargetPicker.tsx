@@ -7,6 +7,11 @@ export interface ConversationTargetPickerProps {
   options: readonly TargetOption[];
   selectedKey: string;
   onSelect: (option: TargetOption) => void;
+  /**
+   * The "Add coordinator…" entry (DPES-1105). `reason` explains why it is unavailable; while it is
+   * set the entry is shown disabled and does nothing.
+   */
+  addCoordinator?: { onAdd: () => void; reason: string | null };
 }
 
 /**
@@ -18,7 +23,7 @@ export interface ConversationTargetPickerProps {
  * count and the empty result are announced through one always-mounted status region, because a
  * live region that appears together with its text is not reliably announced.
  */
-export function ConversationTargetPicker({ options, selectedKey, onSelect }: ConversationTargetPickerProps) {
+export function ConversationTargetPicker({ options, selectedKey, onSelect, addCoordinator }: ConversationTargetPickerProps) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -100,6 +105,27 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect }: Con
           {status}
         </p>
         <p className="ws-small">Each target retains its own conversation and local draft.</p>
+        {addCoordinator && (
+          <div className="ws-target-add">
+            <button
+              type="button"
+              className="ws-chip-button"
+              aria-haspopup="dialog"
+              aria-disabled={addCoordinator.reason !== null || undefined}
+              aria-describedby={addCoordinator.reason !== null ? `${ids}-add-reason` : undefined}
+              onClick={() => {
+                if (addCoordinator.reason === null) addCoordinator.onAdd();
+              }}
+            >
+              Add coordinator…
+            </button>
+            {addCoordinator.reason !== null && (
+              <p id={`${ids}-add-reason`} className="ws-small">
+                {addCoordinator.reason}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

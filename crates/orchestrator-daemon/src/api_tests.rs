@@ -181,7 +181,10 @@ fn task_submission_is_deduplicated_and_hides_project_path() {
     let (directory, api) = new_api();
     register_project(&api);
     let project_list = api.dispatch("projects.list", Value::Null).unwrap();
-    assert_eq!(project_list, json!([{"id": "project-1"}]));
+    assert_eq!(
+        project_list,
+        json!([{"id": "project-1", "coordinator_active": true}])
+    );
     assert!(!project_list.to_string().contains("/private/project-root"));
 
     let params = submit_params("request-1", "Implement one safe task");
@@ -810,7 +813,7 @@ fn project_registration_validates_the_repository_and_is_idempotent() {
     );
     assert_eq!(
         api.dispatch("projects.list", Value::Null).unwrap(),
-        json!([registered])
+        json!([{"id": root, "coordinator_active": true}])
     );
     assert_eq!(api.store.get_project(&root).unwrap().root_path, root);
 

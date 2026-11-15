@@ -56,6 +56,7 @@ mod sqlite_approvals;
 mod sqlite_attempts;
 mod sqlite_conversations;
 mod sqlite_delivery;
+mod sqlite_history;
 mod sqlite_ops;
 mod sqlite_review;
 mod sqlite_verification;
@@ -65,6 +66,9 @@ pub use sqlite_conversations::{
     ConversationTurn, TurnOutcome, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
+};
+pub use sqlite_history::{
+    AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope,
 };
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};

@@ -145,6 +145,22 @@ impl SqliteStore {
         })
     }
 
+    /// One coordinator entry by id, or `None` once a history clear has deleted it.
+    pub fn coordinator_entry(&self, id: &str) -> Result<Option<CoordinatorEntry>, StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            sqlx::query(
+                "SELECT sequence, id, project_id, kind, author, body, validation, created_at \
+                 FROM coordinator_entries WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_optional(&pool)
+            .await?
+            .map(decode_entry)
+            .transpose()
+        })
+    }
+
     /// Load a bounded page of one project's conversation in sequence order.
     pub fn coordinator_entries_after(
         &self,

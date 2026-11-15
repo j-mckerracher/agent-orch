@@ -105,7 +105,9 @@ describe("derived D10 conversation", () => {
     const result = await s.conversation.transcript({ kind: "project", projectId: ALPHA });
     expect(result).toMatchObject({
       status: "ok",
-      provenance: { methods: ["coordinator.get", "coordinator.send_message"] },
+      provenance: {
+        methods: ["coordinator.get", "coordinator.send_message", "coordinator.clear", "coordinator.remove", "coordinator.restore"],
+      },
       data: { repliesExpected: false, truncated: false, entries: [{ id: "c-1", role: "user", text: "hello", kind: "message" }] },
     });
   });
@@ -131,7 +133,7 @@ describe("derived D10 conversation", () => {
     const fake = populate(new FakeDaemon());
     stubConversation(fake);
     const result = await (await live(fake)).conversation.transcript({ kind: "global" });
-    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null }, provenance: { methods: ["conversations.get", "conversations.send", "conversations.cancel"] } });
+    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null }, provenance: { methods: ["conversations.get", "conversations.send", "conversations.cancel", "conversations.clear"] } });
     expect(fake.callsTo("conversations.get")).toHaveLength(1);
     expect(fake.callsTo("coordinator.get")).toHaveLength(0);
   });

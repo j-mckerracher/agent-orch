@@ -714,3 +714,114 @@ describe("registration", () => {
     act(() => unmount());
   });
 });
+
+// DPES-1105: clearing history and removing or adding project coordinators, as the user sees them.
+describe("workspace view, history actions", () => {
+  it("removing a coordinator deletes its notes, drops it from the picker, switches to Global and discards its draft", async () => {
+    const fake = liveDaemon();
+    fake.projects = [
+      { id: ALPHA, coordinator_active: true },
+      { id: BETA, coordinator_active: true },
+    ];
+    fake.stub("coordinator.remove", () => {
+      fake.projects = fake.projects.map((p) => (p.id === ALPHA ? { ...p, coordinator_active: false } : p));
+      return { project_id: ALPHA, changed: true, removed: true, entries_deleted: 1, clear_generation: 1 };
+    });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
+    await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "unsent words");
+
+    await user.click(screen.getByRole("button", { name: "Conversation actions for alpha coordinator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
+    await user.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
+
+    expect(await screen.findByRole("heading", { name: "Talking to: Global orchestrator", level: 2 })).toBeInTheDocument();
+    expect(fake.callsTo("coordinator.remove")[0].params).toMatchObject({ project_id: ALPHA });
+    expect(await screen.findByText(/Coordinator removed\. Its notes were deleted/)).toBeInTheDocument();
+    expect(services.drafts.workspaceDraft(`project:${ALPHA}`)).toBe("");
+    await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /alpha coordinator/ })).toBeNull());
+    expect(screen.getByRole("radio", { name: /beta coordinator/ })).toBeInTheDocument();
+  });
+
+  it("adds a removed coordinator back from the picker and selects it", async () => {
+    const fake = liveDaemon();
+    fake.projects = [
+      { id: ALPHA, coordinator_active: false },
+      { id: BETA, coordinator_active: true },
+    ];
+    fake.stub("coordinator.restore", () => {
+      fake.projects = fake.projects.map((p) => (p.id === ALPHA ? { ...p, coordinator_active: true } : p));
+      return { project_id: ALPHA, changed: true, removed: false, entries_deleted: 0, clear_generation: 1 };
+    });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: "Talking to: beta coordinator", level: 2 });
+
+    await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
+    await user.click(screen.getByRole("button", { name: "Add coordinator…" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a coordinator" });
+    await user.click(within(dialog).getByRole("button", { name: "Add alpha coordinator" }));
+
+    expect(fake.callsTo("coordinator.restore")[0].params).toMatchObject({ project_id: ALPHA });
+    expect(await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("clearing a coordinator's history asks first, empties the transcript and keeps the unsent draft", async () => {
+    const fake = liveDaemon();
+    let cleared = false;
+    const note = {
+      sequence: 1,
+      id: "c-1",
+      project_id: ALPHA,
+      kind: "message",
+      author: "user",
+      body: "hello",
+      validation: null,
+      created_at: "2026-11-01T10:00:00Z",
+    };
+    fake.stub("coordinator.get", () => ({
+      project_id: ALPHA,
+      entries: cleared ? [] : [note],
+      more: false,
+      next_after_sequence: cleared ? 0 : 1,
+      clear_generation: cleared ? 1 : 0,
+    }));
+    fake.stub("coordinator.clear", () => {
+      cleared = true;
+      return { project_id: ALPHA, cleared: true, entries_deleted: 1, clear_generation: 1 };
+    });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const log = await screen.findByRole("log", { name: "Conversation with alpha coordinator" });
+    expect(await within(log).findByText("hello")).toBeInTheDocument();
+    const box = screen.getByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(box, "still here");
+
+    await user.click(screen.getByRole("button", { name: "Conversation actions for alpha coordinator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Clear history…" }));
+    expect(screen.getByRole("dialog", { name: "Clear history for alpha coordinator?" })).toBeInTheDocument();
+    expect(fake.callsTo("coordinator.clear")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Clear history permanently" }));
+
+    expect(fake.callsTo("coordinator.clear")[0].params).toMatchObject({ project_id: ALPHA });
+    expect(await screen.findByText("Coordinator history cleared. The deleted notes cannot be recovered.")).toBeInTheDocument();
+    await waitFor(() => expect(within(log).queryByText("hello")).toBeNull());
+    expect(box).toHaveValue("still here");
+  });
+
+  it("in fixture mode, clearing is simulated, labelled as placeholder data, and reaches no daemon", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    await user.click(await screen.findByRole("button", { name: "Conversation actions for Global orchestrator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Clear history…" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("PLACEHOLDER DATA");
+    await user.click(screen.getByRole("button", { name: "Clear history permanently" }));
+    expect(await screen.findByText(/Simulated history clear: placeholder data, nothing was changed\./)).toBeInTheDocument();
+  });
+});

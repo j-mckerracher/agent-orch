@@ -675,3 +675,254 @@ fn an_unused_conversation_reads_as_empty_not_as_an_error() {
     assert!(page["turn"].is_null());
     assert_eq!(page["next_after_sequence"], 0);
 }
+
+// DPES-1105: clearing history and removing project coordinators.
+
+fn clear(api: &DaemonApi, target: Value, key: &str) -> Result<Value, RpcError> {
+    api.dispatch(
+        "conversations.clear",
+        json!({"target": target, "idempotency_key": key}),
+    )
+}
+
+fn register_coordinator_project(api: &DaemonApi, id: &str) {
+    api.store
+        .register_project(&orchestrator_core::records::Project {
+            id: id.into(),
+            root_path: format!("/work/{id}"),
+            settings: json!({}),
+        })
+        .unwrap();
+}
+
+fn coordinator_note(api: &DaemonApi, project: &str, text: &str, key: &str) -> Result<Value, RpcError> {
+    api.dispatch(
+        "coordinator.send_message",
+        json!({"project_id": project, "text": text, "idempotency_key": key}),
+    )
+}
+
+fn coordinator_clear(api: &DaemonApi, project: &str, key: &str) -> Result<Value, RpcError> {
+    api.dispatch(
+        "coordinator.clear",
+        json!({"project_id": project, "idempotency_key": key}),
+    )
+}
+
+/// True when any file under `directory` contains `needle` as bytes.
+fn on_disk(directory: &std::path::Path, needle: &str) -> bool {
+    std::fs::read_dir(directory).unwrap().any(|entry| {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            on_disk(&path, needle)
+        } else {
+            std::fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|window| window == needle.as_bytes())
+        }
+    })
+}
+
+#[test]
+fn clearing_one_conversation_keeps_the_others_and_leaves_no_text_on_disk() {
+    let runtime = TestRuntime::new(Mode::Reply(vec!["REPLY-MARKER-4421".into()]));
+    let (directory, api) = pinned(runtime);
+    register_coordinator_project(&api, "project-1");
+    send(&api, global(), "MESSAGE-MARKER-4421", "k1").unwrap();
+    coordinator_note(&api, "project-1", "NOTE-MARKER-4421", "n1").unwrap();
+    assert!(on_disk(directory.path(), "MESSAGE-MARKER-4421"));
+
+    let cleared = clear(&api, global(), "k2").unwrap();
+    assert_eq!(cleared["cleared"], true);
+    assert_eq!(cleared["entries_deleted"], 3);
+    assert_eq!(cleared["turns_deleted"], 1);
+    assert_eq!(cleared["clear_generation"], 1);
+    assert!(get(&api, global(), 0)["entries"].as_array().unwrap().is_empty());
+
+    assert!(!on_disk(directory.path(), "MESSAGE-MARKER-4421"));
+    assert!(!on_disk(directory.path(), "REPLY-MARKER-4421"));
+    // The coordinator's note is another conversation, so it stays on disk and in the log.
+    assert!(on_disk(directory.path(), "NOTE-MARKER-4421"));
+    let notes = api
+        .dispatch("coordinator.get", json!({"project_id": "project-1"}))
+        .unwrap();
+    assert_eq!(notes["entries"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn the_daemon_advertises_the_history_capability_that_gates_the_clear_methods() {
+    let (_directory, api) = pinned(TestRuntime::new(Mode::Hold));
+    assert!(api
+        .capabilities()
+        .contains(&orchestrator_ipc::Capability::ConversationHistory));
+}
+
+#[test]
+fn a_clear_during_a_running_turn_is_refused_as_conversation_busy() {
+    let runtime = TestRuntime::new(Mode::Hold);
+    let (_directory, api) = pinned(runtime);
+    let sent = send(&api, global(), "hi", "k1").unwrap();
+    assert_eq!(clear(&api, global(), "k2"), Err(RpcError::ConversationBusy));
+    assert_eq!(kinds(&get(&api, global(), 0)), vec!["user_message"]);
+
+    // Ending the turn lets the clear through. A refusal is cached for its key, so the
+    // retry uses a new key.
+    api.dispatch(
+        "conversations.cancel",
+        json!({"target": global(), "turn_id": sent["turn"]["id"], "idempotency_key": "k3"}),
+    )
+    .unwrap();
+    assert_eq!(clear(&api, global(), "k4").unwrap()["cleared"], true);
+}
+
+#[test]
+fn a_clear_is_idempotent_per_key_and_a_second_clear_has_nothing_to_delete() {
+    let runtime = TestRuntime::new(Mode::Reply(vec!["ok".into()]));
+    let (_directory, api) = pinned(runtime);
+    send(&api, global(), "hi", "k1").unwrap();
+    let first = clear(&api, global(), "k2").unwrap();
+    assert_eq!(clear(&api, global(), "k2").unwrap(), first);
+
+    let second = clear(&api, global(), "k3").unwrap();
+    assert_eq!(second["cleared"], false);
+    assert_eq!(second["entries_deleted"], 0);
+    assert_eq!(second["clear_generation"], 1);
+    assert_eq!(api.store.conversation_audit().unwrap().len(), 1);
+}
+
+#[test]
+fn a_replayed_send_of_a_cleared_message_returns_the_cleared_reference_and_runs_nothing() {
+    let runtime = TestRuntime::new(Mode::Reply(vec!["ok".into()]));
+    let (_directory, api) = pinned(runtime.clone());
+    let first = send(&api, global(), "hi", "k1").unwrap();
+    clear(&api, global(), "k2").unwrap();
+
+    let replay = send(&api, global(), "hi", "k1").unwrap();
+    assert_eq!(replay["entry"]["id"], first["entry"]["id"]);
+    assert_eq!(replay["entry"]["cleared"], true);
+    assert!(replay["entry"].get("body").is_none());
+    assert!(replay["turn"].is_null());
+    assert_eq!(runtime.started.load(Ordering::SeqCst), 1);
+    assert!(get(&api, global(), 0)["entries"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn a_clear_moves_the_generation_and_a_stale_cursor_is_a_replay_gap() {
+    let runtime = TestRuntime::new(Mode::Reply(vec!["ok".into()]));
+    let (_directory, api) = pinned(runtime);
+    send(&api, global(), "hi", "k1").unwrap();
+    let before = get(&api, global(), 0);
+    let cursor = before["latest_sequence"].as_i64().unwrap();
+    assert_eq!(before["clear_generation"], 0);
+
+    clear(&api, global(), "k2").unwrap();
+    assert_eq!(
+        api.dispatch(
+            "conversations.get",
+            json!({"target": global(), "after_sequence": cursor})
+        ),
+        Err(RpcError::ReplayGap)
+    );
+    let after = get(&api, global(), 0);
+    assert_eq!(after["clear_generation"], 1);
+    assert_eq!(after["latest_sequence"], 0);
+
+    // A message sent after the clear reads as new, under the new generation.
+    send(&api, global(), "again", "k3").unwrap();
+    assert_eq!(get(&api, global(), 0)["clear_generation"], 1);
+}
+
+#[test]
+fn a_cleared_coordinator_message_replays_as_cleared_and_leaves_no_text_on_disk() {
+    let (directory, api) = pinned(TestRuntime::new(Mode::Hold));
+    register_coordinator_project(&api, "project-1");
+    let note = coordinator_note(&api, "project-1", "NOTE-REPLAY-MARKER", "n1").unwrap();
+    api.dispatch(
+        "coordinator.propose",
+        json!({"project_id": "project-1", "proposal": "PROPOSAL-REPLAY-MARKER", "idempotency_key": "p1"}),
+    )
+    .unwrap();
+    assert!(on_disk(directory.path(), "NOTE-REPLAY-MARKER"));
+
+    let cleared = coordinator_clear(&api, "project-1", "c1").unwrap();
+    assert_eq!(cleared["entries_deleted"], 2);
+    assert_eq!(cleared["clear_generation"], 1);
+
+    let replay = coordinator_note(&api, "project-1", "NOTE-REPLAY-MARKER", "n1").unwrap();
+    assert_eq!(replay["id"], note["id"]);
+    assert_eq!(replay["cleared"], true);
+    assert!(replay.get("body").is_none());
+    let proposal_replay = api
+        .dispatch(
+            "coordinator.propose",
+            json!({"project_id": "project-1", "proposal": "PROPOSAL-REPLAY-MARKER", "idempotency_key": "p1"}),
+        )
+        .unwrap();
+    assert_eq!(proposal_replay["cleared"], true);
+
+    assert!(!on_disk(directory.path(), "NOTE-REPLAY-MARKER"));
+    assert!(!on_disk(directory.path(), "PROPOSAL-REPLAY-MARKER"));
+    assert!(api
+        .dispatch("coordinator.get", json!({"project_id": "project-1"}))
+        .unwrap()["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn removing_a_coordinator_hides_it_persists_across_a_restart_and_restores_empty() {
+    let (directory, api) = pinned(TestRuntime::new(Mode::Hold));
+    register_coordinator_project(&api, "project-1");
+    coordinator_note(&api, "project-1", "a note", "n1").unwrap();
+
+    let removed = api
+        .dispatch(
+            "coordinator.remove",
+            json!({"project_id": "project-1", "idempotency_key": "r1"}),
+        )
+        .unwrap();
+    assert_eq!(removed["changed"], true);
+    assert_eq!(removed["entries_deleted"], 1);
+    let listed = json!([{"id": "project-1", "coordinator_active": false}]);
+    assert_eq!(api.dispatch("projects.list", Value::Null).unwrap(), listed);
+    assert_eq!(
+        api.dispatch("coordinator.get", json!({"project_id": "project-1"})),
+        Err(RpcError::NotFound)
+    );
+    assert_eq!(
+        coordinator_note(&api, "project-1", "again", "n2"),
+        Err(RpcError::NotFound)
+    );
+    // The project is still registered; only its coordinator is hidden.
+    assert!(api.store.get_project("project-1").is_ok());
+    drop(api);
+
+    let api = DaemonApi::new(directory.path()).unwrap();
+    assert_eq!(api.dispatch("projects.list", Value::Null).unwrap(), listed);
+    let restored = api
+        .dispatch(
+            "coordinator.restore",
+            json!({"project_id": "project-1", "idempotency_key": "r2"}),
+        )
+        .unwrap();
+    assert_eq!(restored["changed"], true);
+    assert_eq!(
+        api.dispatch("projects.list", Value::Null).unwrap(),
+        json!([{"id": "project-1", "coordinator_active": true}])
+    );
+    assert!(api
+        .dispatch("coordinator.get", json!({"project_id": "project-1"}))
+        .unwrap()["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let again = api
+        .dispatch(
+            "coordinator.restore",
+            json!({"project_id": "project-1", "idempotency_key": "r3"}),
+        )
+        .unwrap();
+    assert_eq!(again["changed"], false);
+}

@@ -1,0 +1,86 @@
+/* Conversation header actions and the add-coordinator list (DPES-1105). Kept apart from workspace.css. */
+.ws-actions {
+  position: relative;
+  margin-left: auto;
+}
+
+.ws-actions-trigger {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--control-surface);
+  color: var(--control-ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ws-actions-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 2px;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+
+.ws-actions-menu[hidden] {
+  display: none;
+}
+
+.ws-actions-item {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-actions-item:hover,
+.ws-actions-item:focus-visible {
+  background: var(--soft);
+}
+
+.ws-actions-item[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.ws-actions-reason {
+  margin: 4px 6px 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ws-actions :focus-visible,
+.ws-add-list :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ws-add-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-add-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}

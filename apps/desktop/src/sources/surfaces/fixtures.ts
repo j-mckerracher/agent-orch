@@ -22,7 +22,9 @@ import type {
   ActivitySnapshot,
   ActivitySource,
   ConversationEntry,
+  ClearReceipt,
   ConversationSource,
+  CoordinatorChangeReceipt,
   ConversationTarget,
   DecisionQueue,
   DecisionQueueSource,
@@ -155,9 +157,14 @@ function conversationSource(ctx: Ctx): ConversationSource {
   type Data = { global: ConversationEntry[]; project: ConversationEntry[] };
   const envelope = conversationFixture as unknown as Envelope<Data>;
   const counter = { n: 0 };
+  // Simulated clears (DPES-1105) empty a fixture transcript for the rest of the session only.
+  const cleared = new Set<string>();
+  const keyOf = (target: ConversationTarget) => JSON.stringify(target);
   // The fixture has no workstream transcripts; project notes must not stand in for one.
   const transcriptOf = (target: ConversationTarget, entries: ConversationEntry[]) =>
-    target.kind === "workstream" ? null : { target, entries, repliesExpected: true, truncated: false };
+    target.kind === "workstream"
+      ? null
+      : { target, entries: cleared.has(keyOf(target)) ? [] : entries, repliesExpected: true, truncated: false };
   return {
     provenance: provenance("D10", envelope),
     transcript: (target: ConversationTarget) =>
@@ -178,6 +185,19 @@ function conversationSource(ctx: Ctx): ConversationSource {
         at: base.at,
         entryId: `fixture:sent-${counter.n}`,
       });
+    },
+    clear: (target: ConversationTarget): Promise<ClearReceipt> => {
+      const base = receipt("D10", envelope, ctx, counter, "history clear");
+      cleared.add(keyOf(target));
+      return Promise.resolve({ simulated: true, provenance: base.provenance, cleared: true, notice: base.notice });
+    },
+    removeCoordinator: (projectId: string): Promise<CoordinatorChangeReceipt> => {
+      const base = receipt("D10", envelope, ctx, counter, `removal of the ${projectId} coordinator`);
+      return Promise.resolve({ simulated: true, provenance: base.provenance, changed: true, removed: true, notice: base.notice });
+    },
+    restoreCoordinator: (projectId: string): Promise<CoordinatorChangeReceipt> => {
+      const base = receipt("D10", envelope, ctx, counter, `restore of the ${projectId} coordinator`);
+      return Promise.resolve({ simulated: true, provenance: base.provenance, changed: true, removed: false, notice: base.notice });
     },
   };
 }

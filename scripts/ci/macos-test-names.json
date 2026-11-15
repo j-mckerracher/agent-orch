@@ -55,7 +55,9 @@
    "unsubscribed_connection_does_not_keep_the_server_alive",
    "a_call_longer_than_the_idle_timeout_does_not_stop_the_server",
    "server_idles_out_after_its_last_subscriber_leaves",
-   "live_subscription_keeps_an_otherwise_idle_server_running"
+   "live_subscription_keeps_an_otherwise_idle_server_running",
+   "the_history_capability_is_named_and_round_trips",
+   "every_history_method_is_gated_by_the_negotiated_capability"
   ],
   "daemon": [
    "sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it",
@@ -266,7 +268,15 @@
    "a_failed_launch_is_explained_in_the_log_without_the_credential",
    "host_metrics_needs_the_host_capability",
    "host_metrics_serves_every_resource_through_the_real_daemon",
-   "fast_exit_before_identity_preserves_failure_status"
+   "fast_exit_before_identity_preserves_failure_status",
+   "clearing_one_conversation_keeps_the_others_and_leaves_no_text_on_disk",
+   "a_clear_during_a_running_turn_is_refused_as_conversation_busy",
+   "a_clear_is_idempotent_per_key_and_a_second_clear_has_nothing_to_delete",
+   "a_replayed_send_of_a_cleared_message_returns_the_cleared_reference_and_runs_nothing",
+   "a_clear_moves_the_generation_and_a_stale_cursor_is_a_replay_gap",
+   "a_cleared_coordinator_message_replays_as_cleared_and_leaves_no_text_on_disk",
+   "removing_a_coordinator_hides_it_persists_across_a_restart_and_restores_empty",
+   "the_daemon_advertises_the_history_capability_that_gates_the_clear_methods"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -539,7 +549,18 @@
    "gate_state_requires_a_task_linked_to_the_same_workstream",
    "state_survives_reopening_the_database",
    "concurrent_writers_cannot_both_win_the_same_revision",
-   "update_rejects_stale_revision_and_writes_nothing"
+   "update_rejects_stale_revision_and_writes_nothing",
+   "cleared_fingerprint_is_a_well_formed_fingerprint",
+   "a_cleared_conversation_leaves_its_text_in_no_file_of_the_data_directory",
+   "a_clear_deletes_only_its_conversation_and_records_counts_without_content",
+   "a_clear_with_nothing_to_delete_changes_nothing_and_is_not_audited",
+   "a_running_turn_refuses_the_clear_and_nothing_is_deleted",
+   "a_cleared_send_keeps_its_key_spent_with_a_tombstone_fingerprint",
+   "a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty",
+   "a_coordinator_clear_keeps_the_project_and_is_refused_once_removed",
+   "history_rows_are_only_deleted_by_a_clear_and_audit_rows_never",
+   "a_database_from_before_the_clear_migrations_is_migrated_and_its_replies_scrubbed",
+   "a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

@@ -215,6 +215,35 @@ export interface ConversationSource {
   send(target: ConversationTarget, text: string): Promise<SendReceipt>;
   /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
+  /**
+   * DPES-1105. Permanently deletes one conversation's history: Global, workstream, or a project
+   * coordinator's log. Fixture targets are simulated. Refused while a reply runs (`conversation-busy`).
+   */
+  clear?(target: ConversationTarget): Promise<ClearReceipt>;
+  /** DPES-1105. Removes a project's coordinator from the targets and deletes its log. The project stays. */
+  removeCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
+  /** DPES-1105. Restores a removed coordinator; it starts empty. */
+  restoreCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
+}
+
+/** Outcome of a history clear. `simulated` receipts deleted nothing. */
+export interface ClearReceipt {
+  simulated: boolean;
+  provenance: Provenance;
+  /** False when there was nothing to clear. */
+  cleared: boolean;
+  notice: string;
+}
+
+/** Outcome of a remove or restore. `simulated` receipts changed nothing. */
+export interface CoordinatorChangeReceipt {
+  simulated: boolean;
+  provenance: Provenance;
+  /** False when the coordinator was already in the requested state. */
+  changed: boolean;
+  /** True after a removal, false after a restore. */
+  removed: boolean;
+  notice: string;
 }
 
 // D11 -- ActivitySource. queue.snapshot is primary; tasks.list and approvals.list enrich it or provide a limited fallback.

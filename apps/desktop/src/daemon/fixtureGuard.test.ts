@@ -50,6 +50,9 @@ const ROWS: Row[] = [
   ),
   row("coordinatorSendMessage", "coordinator.send_message", (a) => a.coordinatorSendMessage(FX, "hi", "k"), (a) => a.coordinatorSendMessage("/p", "hi", "k")),
   row("coordinatorPropose", "coordinator.propose", (a) => a.coordinatorPropose(FX, "{}", "k"), (a) => a.coordinatorPropose("/p", "{}", "k")),
+  row("coordinatorClear", "coordinator.clear", (a) => a.coordinatorClear(FX, "k"), (a) => a.coordinatorClear("/p", "k")),
+  row("coordinatorRemove", "coordinator.remove", (a) => a.coordinatorRemove(FX, "k"), (a) => a.coordinatorRemove("/p", "k")),
+  row("coordinatorRestore", "coordinator.restore", (a) => a.coordinatorRestore(FX, "k"), (a) => a.coordinatorRestore("/p", "k")),
   row("coordinatorGet", "coordinator.get", (a) => a.coordinatorGet(FX), (a) => a.coordinatorGet("/p")),
   row(
     "reviewRequestApproval",
@@ -80,6 +83,7 @@ const ROWS: Row[] = [
   row("conversationsSend", "conversations.send", (a) => a.conversationsSend({ kind: "workstream", workstream_id: FX }, "hi", "k"), (a) => a.conversationsSend({ kind: "global" }, "hi", "k")),
   row("conversationsGet", "conversations.get", (a) => a.conversationsGet({ kind: "workstream", workstream_id: FX }), (a) => a.conversationsGet({ kind: "global" })),
   row("conversationsCancel", "conversations.cancel", (a) => a.conversationsCancel({ kind: "global" }, FX, "k"), (a) => a.conversationsCancel({ kind: "global" }, "turn-1", "k")),
+  row("conversationsClear", "conversations.clear", (a) => a.conversationsClear({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.conversationsClear({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("agentsValidateSelection", "agents.validate_selection", (a) => a.agentsValidateSelection(FX, { model: "m" }), (a) => a.agentsValidateSelection("codex", { model: "m" })),
 ];
 

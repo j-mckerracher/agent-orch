@@ -17,7 +17,13 @@ import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../.
 import { IdempotencyTracker } from "../../daemon/idempotency";
 import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { createDerivedActivity } from "./activity";
-import { createLiveConversation, isLiveTarget, LIVE_METHODS } from "./conversationLive";
+import {
+  createLiveConversation,
+  HistoryChanged,
+  isLiveTarget,
+  LIVE_METHODS,
+  restartOnHistoryChange,
+} from "./conversationLive";
 import { createLiveMetrics } from "./liveMetrics";
 import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
@@ -25,8 +31,10 @@ import { createSearchSource } from "./search";
 import { createLiveUsageSource } from "./usageLive";
 import { createLiveWorkstreams } from "./workstreamsLive";
 import type {
+  ClearReceipt,
   ConversationSource,
   ConversationTarget,
+  CoordinatorChangeReceipt,
   DecisionItem,
   DecisionQueueSource,
   ModelCatalogSource,
@@ -83,7 +91,13 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   };
 
   const conversationProvenance = prov("D10", ["coordinator.get", "coordinator.send_message", ...LIVE_METHODS]);
-  const projectProvenance = prov("D10", ["coordinator.get", "coordinator.send_message"]);
+  const projectProvenance = prov("D10", [
+    "coordinator.get",
+    "coordinator.send_message",
+    "coordinator.clear",
+    "coordinator.remove",
+    "coordinator.restore",
+  ]);
   const liveConversation = createLiveConversation(connection, prov("D10", LIVE_METHODS), keys, now);
   const conversation: ConversationSource = {
     provenance: conversationProvenance,
@@ -92,31 +106,37 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
       if (isFixtureLikeId(target.projectId)) {
         return notOk(projectProvenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
-      return guarded(projectProvenance, now, async () => {
-        const api = connection.api();
-        const entries: CoordinatorEntry[] = [];
-        let after: number | undefined;
-        let more = false;
-        for (let page = 0; page < MAX_CONVERSATION_PAGES; page++) {
-          const result: CoordinatorPage = await api.coordinatorGet(target.projectId, after);
-          entries.push(...result.entries);
-          more = result.more;
-          if (!more) break;
-          after = result.next_after_sequence;
-        }
-        return {
-          target,
-          entries: entries.map((entry) => ({
-            id: entry.id,
-            kind: entry.kind,
-            role: entry.author,
-            text: entry.body,
-            at: entry.created_at,
-          })),
-          repliesExpected: false,
-          truncated: more,
-        };
-      });
+      // A clear between pages starts the read over, so the notes shown never mix two logs.
+      return guarded(projectProvenance, now, () =>
+        restartOnHistoryChange(async () => {
+          const api = connection.api();
+          const entries: CoordinatorEntry[] = [];
+          let after: number | undefined;
+          let more = false;
+          let generation: number | undefined;
+          for (let page = 0; page < MAX_CONVERSATION_PAGES; page++) {
+            const result: CoordinatorPage = await api.coordinatorGet(target.projectId, after);
+            generation ??= result.clear_generation;
+            if (result.clear_generation !== generation) throw new HistoryChanged();
+            entries.push(...result.entries);
+            more = result.more;
+            if (!more) break;
+            after = result.next_after_sequence;
+          }
+          return {
+            target,
+            entries: entries.map((entry) => ({
+              id: entry.id,
+              kind: entry.kind,
+              role: entry.author,
+              text: entry.body,
+              at: entry.created_at,
+            })),
+            repliesExpected: false,
+            truncated: more,
+          };
+        }),
+      );
     },
     async send(target, text) {
       if (isLiveTarget(target)) return liveConversation.send(target, text);
@@ -131,8 +151,11 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         return {
           simulated: false,
           provenance: projectProvenance,
-          notice: "Recorded by the daemon. The coordinator does not reply.",
-          at: entry.created_at,
+          notice:
+            "cleared" in entry
+              ? "That note was cleared. The coordinator does not reply."
+              : "Recorded by the daemon. The coordinator does not reply.",
+          at: entry.created_at ?? new Date(now()).toISOString(),
           entryId: entry.id,
         };
       } catch (error) {
@@ -141,7 +164,64 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
       }
     },
     cancel: (target, turnId) => liveConversation.cancel(target, turnId),
+    async clear(target: ConversationTarget): Promise<ClearReceipt> {
+      if (isLiveTarget(target)) return liveConversation.clear(target);
+      if (isFixtureLikeId(target.projectId)) {
+        throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
+      }
+      const scope = `clear:${target.projectId}`;
+      const key = keys.keyFor(scope, "clear");
+      try {
+        const result = await connection.api().coordinatorClear(target.projectId, key);
+        keys.settle(scope, null);
+        return {
+          simulated: false,
+          provenance: projectProvenance,
+          cleared: result.cleared,
+          notice: result.cleared
+            ? "Coordinator history cleared. The deleted notes cannot be recovered."
+            : "There was no coordinator history to clear.",
+        };
+      } catch (error) {
+        keys.settle(scope, asDaemonError(error));
+        throw error;
+      }
+    },
+    removeCoordinator: (projectId: string) => changeCoordinator(projectId, "remove"),
+    restoreCoordinator: (projectId: string) => changeCoordinator(projectId, "restore"),
   };
+
+  /** Removes or restores a project coordinator (DPES-1105). The project itself is never changed. */
+  async function changeCoordinator(projectId: string, action: "remove" | "restore"): Promise<CoordinatorChangeReceipt> {
+    if (isFixtureLikeId(projectId)) throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
+    const scope = `${action}:${projectId}`;
+    const key = keys.keyFor(scope, action);
+    try {
+      const api = connection.api();
+      const result =
+        action === "remove"
+          ? await api.coordinatorRemove(projectId, key)
+          : await api.coordinatorRestore(projectId, key);
+      keys.settle(scope, null);
+      const removed = action === "remove";
+      return {
+        simulated: false,
+        provenance: projectProvenance,
+        changed: result.changed,
+        removed,
+        notice: removed
+          ? result.changed
+            ? "Coordinator removed. Its notes were deleted; the project and its tasks are unchanged."
+            : "That coordinator was already removed."
+          : result.changed
+            ? "Coordinator restored. It starts with no notes."
+            : "That coordinator is already active.",
+      };
+    } catch (error) {
+      keys.settle(scope, asDaemonError(error));
+      throw error;
+    }
+  }
 
   const activity = createDerivedActivity(connection, now);
 
