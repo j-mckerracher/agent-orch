@@ -141,7 +141,7 @@ export function ResourceStripView({ state, provenance, nowMs, defaultOpen = fals
         })}
       </div>
       <p className="rs-note">
-        Scale colours (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.
+        Scale colors (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.
       </p>
     </Disclosure>
   );

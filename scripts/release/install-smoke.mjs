@@ -5,7 +5,7 @@
 //
 // --artifact-dir      the --out directory of `package.mjs` (artifact, SHA256SUMS, release-info.json).
 // --old-artifact-dir  the same for a PREVIOUS release; without it the run is a reinstall, not an upgrade. An old
-//                     build with the same version or the same sidecar bytes is a labelled same-version rerun
+//                     build with the same version or the same sidecar bytes is a labeled same-version rerun
 //                     and the N-1 upgrade stays UNPROVEN.
 // --smoke-bin         the `release_smoke` example built from `crates/orchestrator-daemon`.
 // --smoke-work        a new, SHORT directory for the smoke's repositories and data directory (a Unix

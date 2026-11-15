@@ -29,7 +29,7 @@ describe("local-tools fixtures", () => {
     expect(Object.keys(localToolsFixture.states).sort()).toEqual([...LOCAL_TOOLS_FIXTURE_STATES].sort());
   });
 
-  it("is labelled PLACEHOLDER DATA and holds no real paths", () => {
+  it("is labeled PLACEHOLDER DATA and holds no real paths", () => {
     expect(localToolsFixture.note).toContain("PLACEHOLDER DATA");
     expect(JSON.stringify(localToolsFixture)).not.toMatch(/\/Users\/|\/home\/|[A-Za-z]:\\\\/);
   });

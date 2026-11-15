@@ -119,7 +119,7 @@ test("the verdict passes when every selected job succeeded and every other job w
   assert.equal(windowsVerdict(needsFor({ selected: { desktop: true, package: true } })).ok, true);
 });
 
-test("a selected job that fails, is cancelled or is skipped fails the verdict", () => {
+test("a selected job that fails, is canceled or is skipped fails the verdict", () => {
   for (const result of ["failure", "cancelled", "skipped"]) {
     const verdict = windowsVerdict(needsFor({ selected: { engine: true }, results: { "engine-build": result } }));
     assert.equal(verdict.ok, false, result);

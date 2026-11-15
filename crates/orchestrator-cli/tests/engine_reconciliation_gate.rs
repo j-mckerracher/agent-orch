@@ -2,7 +2,7 @@
 //! capture and reconciliation gate, driven through the real `orchestrator-cli`
 //! binary. Nothing here is Unix-gated: the agent is the std-only fake in
 //! `tests/support/fake_codex.rs` (compiled with `rustc`), state is seeded through
-//! the portable `SqliteStore` API, and processes are only ever signalled after
+//! the portable `SqliteStore` API, and processes are only ever signaled after
 //! re-observing the exact identity captured when the test first saw them.
 //!
 //! Unlike `cli.rs`, `recovery.rs` and `multi_task_review.rs` (file-wide
@@ -250,7 +250,7 @@ fn open_store(fixture: &Fixture) -> SqliteStore {
     SqliteStore::new(&fixture.data.join("store.sqlite")).expect("open SQLite store")
 }
 
-/// Failure-path cleanup for processes this test started. A process is signalled
+/// Failure-path cleanup for processes this test started. A process is signaled
 /// only if the OS still reports the exact identity captured when it was first
 /// seen; a dead, replaced or unreadable process, and any untracked process, never is.
 #[derive(Default)]
@@ -1090,7 +1090,7 @@ fn interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evid
     assert_eq!(
         fs::read(dirty.join("sample.txt")).unwrap(),
         b"uncommitted agent edit\n",
-        "a dirty worktree is preserved, never reset or relabelled clean"
+        "a dirty worktree is preserved, never reset or relabeled clean"
     );
     assert_eq!(
         fs::read(dirty.join("unsaved.txt")).unwrap(),

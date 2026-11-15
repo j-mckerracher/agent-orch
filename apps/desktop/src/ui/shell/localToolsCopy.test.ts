@@ -192,7 +192,7 @@ describe("chip rules", () => {
     expect(chipText(null, true)).toBeNull();
   });
 
-  it("shows the estimate as a separate chip, labelled est. and partial when not complete", () => {
+  it("shows the estimate as a separate chip, labeled est. and partial when not complete", () => {
     expect(chipText(snapshot(), true)).toBe("Other tools ≈ $0.03 est.");
     expect(chipText(snapshot({ providers: [PROVIDERS[0]!, provider("codex", "Codex", { costComplete: false, unpricedModels: 1, unpricedTokens: 9 })] }), true)).toBe(
       "Other tools ≈ $0.02 est. (partial)",

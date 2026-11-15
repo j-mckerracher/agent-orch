@@ -8,7 +8,7 @@
  *   unsupported. Nothing is invented to fill a gap.
  * - A cold or slow catalog read is `unknown` with the daemon's "retry shortly"
  *   hint, not an error. A refused catalog read (`Conflict`) is treated the same.
- * - A daemon without `agents.catalog` keeps the earlier behaviour: providers
+ * - A daemon without `agents.catalog` keeps the earlier behavior: providers
  *   from `agents.capabilities` with models and efforts `unsupported`.
  */
 import type { ConnectionManager } from "../../daemon/connection";

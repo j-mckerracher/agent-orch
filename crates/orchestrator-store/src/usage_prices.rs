@@ -3,7 +3,7 @@
 //! Some providers report tokens but no cost (Codex always). `usage.summary`
 //! can turn those recorded token counts into an estimate at summary time. The
 //! estimate is never written back: stored receipts stay exactly as the provider
-//! reported them, and an estimate is always summarised as `estimated`.
+//! reported them, and an estimate is always summarized as `estimated`.
 //!
 //! # Rules
 //!
@@ -14,7 +14,7 @@
 //!   and a model that is not listed is never priced at 0.
 //! * Prices are the standard-tier, short-context list prices. Batch, flex,
 //!   priority, long-context (above 272k tokens) and 1-hour Anthropic cache
-//!   writes are not modelled, because the receipts do not record the tier, the
+//!   writes are not modeled, because the receipts do not record the tier, the
 //!   request size or the cache lifetime. An estimate is therefore a list-price
 //!   figure, not a bill, and can sit below the real charge.
 //! * No dependency and no network: the table is this constant.
@@ -86,7 +86,7 @@ const PRICES: &[ModelPrice] = &[
     price("claude-haiku-4-5", 1_000, 100, Some(1_250), 5_000),
 ];
 
-/// Token counts of one receipt, in the normalised meaning of
+/// Token counts of one receipt, in the normalized meaning of
 /// `orchestrator-agents::usage`: `input` excludes cache reads and writes and
 /// `output` already includes reasoning. `None` is unknown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

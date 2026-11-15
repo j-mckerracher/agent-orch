@@ -18,6 +18,13 @@ export const TASK_STATES: readonly TaskState[] = [
   "Cancelled",
 ];
 
+/** Display text for a daemon state. The wire value stays `Cancelled`; only the label is US-spelled. */
+const STATE_LABELS: Readonly<Record<string, string>> = { Cancelled: "Canceled", cancelled: "Canceled" };
+
+export function stateLabel(state: string): string {
+  return STATE_LABELS[state] ?? state;
+}
+
 export const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
   "Succeeded",
   "VerificationFailed",

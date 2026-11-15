@@ -18,7 +18,7 @@ test("a Windows runner.temp path with mixed separators is accepted and normalize
   assert.equal(resolveTargetDir("\\\\server\\share\\t", path.win32), "\\\\server\\share\\t");
 });
 
-test("relative, drive-relative, empty and unset values are rejected on both path flavours", () => {
+test("relative, drive-relative, empty and unset values are rejected on both path flavors", () => {
   for (const bad of [undefined, "", "target", "..\\target", "D:target"]) {
     assert.throws(() => resolveTargetDir(bad, path.win32), /absolute path/, String(bad));
   }

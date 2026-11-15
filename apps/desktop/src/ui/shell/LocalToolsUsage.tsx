@@ -37,7 +37,7 @@ function ProviderItem({ provider, figures }: { provider: LocalToolsProvider; fig
   );
 }
 
-/** The figures, shown only while the opt-in is on. Every figure is labelled as an estimate. */
+/** The figures, shown only while the opt-in is on. Every figure is labeled as an estimate. */
 function Figures({ snapshot }: { snapshot: LocalToolsSnapshot }) {
   const { figures, observedAtMs, stale, reader, providers } = snapshot;
   const reasonLine = readerLine(snapshot, true);

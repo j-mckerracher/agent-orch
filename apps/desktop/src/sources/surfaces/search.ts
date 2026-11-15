@@ -1,7 +1,7 @@
 /**
  * D15 search: a local, in-memory index over what D9 (workstreams and tasks)
  * and D16 (decisions) return. It has no daemon method and no fixture of its
- * own; its provenance mirrors its inputs, so fixture-backed inputs are labelled
+ * own; its provenance mirrors its inputs, so fixture-backed inputs are labeled
  * PLACEHOLDER DATA. Any mixed input also gives the aggregate fixture provenance;
  * individual hits retain their own origin. Daemon inputs list their source methods.
  *

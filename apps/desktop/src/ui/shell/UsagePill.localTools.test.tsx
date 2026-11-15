@@ -64,7 +64,7 @@ describe("usage pill: other AI tools", () => {
     expect(screen.queryByTestId("top-usage-tools-claude-code")).toBeNull();
   });
 
-  it("calls the source when opted in, and shows the estimate as its own labelled chip", async () => {
+  it("calls the source when opted in, and shows the estimate as its own labeled chip", async () => {
     const { user } = renderPill(fixtureSource("off"));
     await openPopover(user);
     await user.click(await screen.findByRole("checkbox", { name: OPT_IN_LABEL }));

@@ -328,7 +328,7 @@ describe("accessibility", () => {
 });
 
 describe("workspace activity popover", () => {
-  it("starts collapsed: a labelled trigger with aria-expanded=false and a hidden card it controls", async () => {
+  it("starts collapsed: a labeled trigger with aria-expanded=false and a hidden card it controls", async () => {
     const { panel } = await mountPanel(null, { open: false });
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -379,7 +379,7 @@ describe("workspace activity popover", () => {
     const { panel, user } = await mountPanel(null);
     for (const title of ["Execution queue", "Attention", "Agent slots"]) expect(detailsFor(panel, title).open).toBe(false);
     await expandSection(user, panel, "Execution queue");
-    // Running is a labelled group, not a disclosure; its rows (and their Stop control) stay collapsed.
+    // Running is a labeled group, not a disclosure; its rows (and their Stop control) stay collapsed.
     expect(within(panel).getByRole("group", { name: "Running" })).toBeInTheDocument();
     const runningRow = within(panel).getByText("Add refresh-token expiry", { selector: ".activity-item-title" }).closest("details") as HTMLDetailsElement;
     expect(runningRow.open).toBe(false);

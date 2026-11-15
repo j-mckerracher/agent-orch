@@ -391,12 +391,12 @@ function Conversation({
       const result = await surfaces.conversation.cancel(target, turn.id);
       setFeedback({
         key,
-        notice: result.applied ? "Cancelled the reply." : "The reply had already finished; nothing was cancelled.",
+        notice: result.applied ? "Canceled the reply." : "The reply had already finished; nothing was canceled.",
         error: null,
       });
       setNonce((value) => value + 1);
     } catch (thrown) {
-      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Cancelling the reply" });
+      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Canceling the reply" });
     }
   };
 

@@ -20,7 +20,7 @@ const LABEL: Record<ConnectionStatus, string> = {
   incompatible: "Incompatible version or capability",
 };
 
-/** Tone plus a per-state glyph, so each state differs by shape and text, never colour alone. */
+/** Tone plus a per-state glyph, so each state differs by shape and text, never color alone. */
 const STATE_STYLE: Record<ConnectionStatus, { tone: Tone; glyph: string }> = {
   idle: { tone: "neutral", glyph: "○" },
   connecting: { tone: "info", glyph: "◌" },

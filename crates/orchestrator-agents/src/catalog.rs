@@ -7,7 +7,7 @@
 //! (`codex login status`); Claude Code documents its `--effort` levels in
 //! `--help` and reports login state (`claude auth status`). Claude Code cannot
 //! enumerate the models an account can use, so its models are the stable
-//! aliases its documentation lists (`CLAUDE_ALIASES`). They are labelled as
+//! aliases its documentation lists (`CLAUDE_ALIASES`). They are labeled as
 //! documented, not verified for the account, and the CLI resolves them when a
 //! task runs. A fact the CLI does not expose is reported as `unsupported`, and
 //! a fact that could not be read (timeout, unparseable output) is `unknown`;

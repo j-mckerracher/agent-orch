@@ -6,6 +6,7 @@ import type { Approval, DeliveryResult, TaskRecord } from "../../../daemon/types
 import type { MutationView } from "../../../review/useReview";
 import type { ReviewEvidenceResult } from "../../../review/sources";
 import { Badge, Pill, type Tone } from "../../theme";
+import { stateLabel } from "../../format";
 
 export interface Fact {
   id: string;
@@ -40,7 +41,7 @@ export function deriveFacts({ approval, task, evidence, delivery, evidenceProble
       case "Failed":
         return { ...base, tone: "bad", status: "Ended without success", detail: `Task state ${task.state}.` };
       case "Cancelled":
-        return { ...base, tone: "warn", status: "Cancelled", detail: `Task state ${task.state}.` };
+        return { ...base, tone: "warn", status: "Canceled", detail: `Task state ${stateLabel(task.state)}.` };
       default:
         return { ...base, tone: "info", status: "Not finished", detail: `Task state ${task.state}.` };
     }

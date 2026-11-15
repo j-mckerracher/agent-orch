@@ -3,7 +3,7 @@
 //! that a live run owner still uses, and must leave the primary checkout alone.
 //! Reuses the std-only fake agent (`support/fake_codex.rs`) so the same tests run
 //! on macOS and native Windows. Every process the tests start is tracked by its
-//! exact identity and is signalled on failure only while that identity still
+//! exact identity and is signaled on failure only while that identity still
 //! matches, never by name.
 
 use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
@@ -191,9 +191,9 @@ fn read_pidfile(path: &Path) -> Option<(u32, u32)> {
     Some((pids.next()?.ok()?, pids.next()?.ok()?))
 }
 
-/// Failure-path cleanup for processes this test started. A process is signalled
+/// Failure-path cleanup for processes this test started. A process is signaled
 /// only while the OS still reports the exact identity captured when it was first
-/// seen; a dead, replaced, or unreadable process is never signalled.
+/// seen; a dead, replaced, or unreadable process is never signaled.
 #[derive(Default)]
 struct OwnedProcesses(Vec<(u32, ExactProcessIdentity)>);
 

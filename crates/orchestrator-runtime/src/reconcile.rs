@@ -9,7 +9,7 @@
 //! classifies each interrupted task (`classify_interrupted_task`) as
 //! recoverable, blocked, completed or requiring inspection; only the last
 //! keeps `scheduling_may_resume` false. Classification is advisory and
-//! read-only: it never authorises cleanup, merging or state advancement.
+//! read-only: it never authorizes cleanup, merging or state advancement.
 //!
 //! Updated: 2026-11-09T08:08:00+00:00.
 
@@ -447,7 +447,7 @@ pub enum WorkspaceEvidence {
     Unknown,
 }
 
-/// Observed partial-delivery state, summarised by [`delivery_evidence`] from the
+/// Observed partial-delivery state, summarized by [`delivery_evidence`] from the
 /// Git crate's delivery reconciliation steps: `Confirmed` = every step landed, `NotApplied` =
 /// none landed, `Partial` = a mix, `Ambiguous` = any step unprovable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -479,7 +479,7 @@ pub enum TaskRecovery {
     Blocked,
     /// Succeeded task, consistent with Git delivery evidence and a clean known
     /// workspace; never inferred from exit code. Advisory only: not
-    /// authorisation to clean up, merge or advance task state.
+    /// authorization to clean up, merge or advance task state.
     Completed,
     /// Ownership, workspace or delivery state is unproven; a human decides.
     RequiresInspection,
@@ -518,7 +518,7 @@ impl TaskRecovery {
 ///    with a `Matching` workspace (or `BranchMoved` with a `CandidateReady`
 ///    attempt), `Blocked` when `Missing`, else `RequiresInspection`.
 ///
-/// `Completed` is an advisory classification only. It does not authorise
+/// `Completed` is an advisory classification only. It does not authorize
 /// cleanup, merging, task-state advancement, or skipping verification, policy
 /// or approval, and it is not proof of destination integration: `Confirmed`
 /// means the recorded review ref equals the exact candidate, not that it was
@@ -605,7 +605,7 @@ pub fn workspace_evidence(
     }
 }
 
-/// Summarises one task's delivery steps: empty is `None`, any ambiguous step is
+/// Summarizes one task's delivery steps: empty is `None`, any ambiguous step is
 /// `Ambiguous`, a mix of landed and unlanded steps is `Partial`.
 pub fn delivery_evidence(steps: &[DeliveryStepDecision]) -> DeliveryEvidence {
     let confirmed = steps

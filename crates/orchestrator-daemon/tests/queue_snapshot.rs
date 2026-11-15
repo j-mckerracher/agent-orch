@@ -175,7 +175,7 @@ fn submit(data: &Path, project_id: &str, number: usize) -> String {
                 "contract": {
                     "project_id": project_id,
                     "parent_id": null,
-                    "objective": format!("run until cancelled {number}"),
+                    "objective": format!("run until canceled {number}"),
                     "kind": "Implement",
                     "agent": "codex",
                     "dependencies": [],
@@ -327,7 +327,7 @@ fn scenario(base: &Path) {
         "{snapshot}"
     );
 
-    step("6 cancelling a running task promotes the queued one");
+    step("6 canceling a running task promotes the queued one");
     let waiting = ids(&snapshot["queued"]).remove(0);
     let victim = ids(&snapshot["running"]).remove(0);
     call(&data, "tasks.cancel", |client| {

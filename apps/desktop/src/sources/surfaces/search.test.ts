@@ -102,7 +102,7 @@ describe("D15 local search", () => {
     expect(await mk("unsupported", "unsupported")).toMatchObject({ status: "unsupported" });
   });
 
-  it("is labelled fixture whenever a fixture input feeds it", async () => {
+  it("is labeled fixture whenever a fixture input feeds it", async () => {
     const fixtures = createFixtureSurfaces({ now: clock });
     expect(fixtures.search.provenance).toMatchObject({ kind: "fixture", id: "D15" });
     const result = await fixtures.search.search("auth");

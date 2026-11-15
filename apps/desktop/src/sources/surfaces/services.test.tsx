@@ -49,7 +49,7 @@ describe("services.surfaces", () => {
     }
   });
 
-  it("honours an explicit surfaces override", () => {
+  it("honors an explicit surfaces override", () => {
     const override = make().surfaces;
     const services = createServices({ surfaces: override });
     created.push(services);

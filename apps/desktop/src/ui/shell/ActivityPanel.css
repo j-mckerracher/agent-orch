@@ -127,7 +127,7 @@
   padding: 0 4px 12px 18px;
 }
 
-/* Queue groups are labelled, not collapsible. Each row is one compact disclosure: collapsed it is a
+/* Queue groups are labeled, not collapsible. Each row is one compact disclosure: collapsed it is a
    single line (state and objective), so the queue reads like the wireframe's queue cards. */
 .activity-queue-group + .activity-queue-group {
   margin-top: 6px;

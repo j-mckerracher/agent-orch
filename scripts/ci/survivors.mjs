@@ -48,7 +48,7 @@ export const ancestorsOf = (processes, pid) => {
 
 // A process is part of the gate when it is the launched child, one of its descendants, or an orphan:
 // its parent is gone from the table (Windows keeps the dead parent's pid; macOS reparents to 1), so
-// a detached grandchild of the gate is recognised after the child exited. A process whose parent is
+// a detached grandchild of the gate is recognized after the child exited. A process whose parent is
 // alive and not part of the gate, such as an operator's monitor shell that happens to name the run
 // directory on its command line, is not.
 const belongsToGate = (processes, launched) => {

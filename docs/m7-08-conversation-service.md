@@ -9,7 +9,7 @@ M7-25 (see "M7-25: the agent runtime" below).
 
 | Question | Decision |
 | --- | --- |
-| Runtime behind the conversation | **Provider-neutral.** The daemon depends on the `ConversationRuntime` trait (`api_conversation_runtime.rs`), not on a product. The OMP/model clauses of `orch-impl-m.md` are overridden by the UI gap analysis. No OMP behaviour is invented. |
+| Runtime behind the conversation | **Provider-neutral.** The daemon depends on the `ConversationRuntime` trait (`api_conversation_runtime.rs`), not on a product. The OMP/model clauses of `orch-impl-m.md` are overridden by the UI gap analysis. No OMP behavior is invented. |
 | Runtime that ships | M7-08 shipped `UnavailableRuntime` (every turn failed with `runtime_unavailable`). **M7-25 replaced it** with `AgentRuntime` (`api_conversation_agent.rs`), which launches an installed agent. When no agent is launchable the turn still fails closed with `runtime_unavailable`. |
 | Version pin | **Mandatory.** `ConversationService` takes the list of accepted `RuntimeIdentity` values (name + exact version). A runtime that requires a pin and has an empty list gets `runtime_unpinned`. An identity not in the list gets `version_mismatch`. In both cases the runtime never receives the message. M7-25 pins the versions it was live-checked against (see below). |
 | Persistence and recovery owner | The **daemon** owns the transcript (SQLite, migration `0031_conversations.sql`, renumbered from 0030 at integration). Runtime state is never trusted or resumed. On startup `with_config` marks every `running` turn `failed` with `interrupted_by_restart`. |
@@ -29,7 +29,7 @@ M7-25 (see "M7-25: the agent runtime" below).
   chunk is correlated to its message by `turn_id`.
 - Bounds: message 8 KiB, chunk 16 KiB (larger deltas are split at character
   boundaries), reply 256 KiB per turn (over the bound the turn fails with
-  `reply_too_large` and the runtime is cancelled).
+  `reply_too_large` and the runtime is canceled).
 - First terminal state wins. A late chunk after cancel or failure is rejected
   (`SinkClosed`) and never stored.
 
@@ -66,7 +66,7 @@ Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
   rejected attempt (for example `Conflict`) stays rejected for that key, so a
   retry after the turn ends needs a new key.
 - A crash between the idempotency claim and its completion leaves the key
-  `IdempotencyInProgress` (existing fail-closed behaviour of
+  `IdempotencyInProgress` (existing fail-closed behavior of
   `idempotency.rs`).
 - Reconnect replay is cursor polling: the client keeps `next_after_sequence`
   and calls `conversations.get`. Conversation events do not enter the global
@@ -149,7 +149,7 @@ no flag.
   running agent is recorded (pid, process group, start time) under
   `<data-dir>/conversation-agents`, and the next start kills the group of each
   record only when the process still matches that identity. A leader that is
-  gone, or any identity mismatch, is never signalled. A group whose leader
+  gone, or any identity mismatch, is never signaled. A group whose leader
   died first is left alone, as are agents spawned within milliseconds before
   the kill. Windows relies on the Job Object (`KILL_ON_JOB_CLOSE`).
 - **Known limit.** A launched agent can read the user's files and runs the

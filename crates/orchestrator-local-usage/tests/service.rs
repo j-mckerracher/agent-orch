@@ -1,5 +1,5 @@
 //! End-to-end checks of the collector against a FAKE reader: this test binary
-//! re-executed as `node`, with its behaviour chosen by a mode file. Covers the
+//! re-executed as `node`, with its behavior chosen by a mode file. Covers the
 //! opt-in, timeouts, crashes, bad and oversized output, a wrong day, a missing
 //! binary, the cache and refresh, and opt-out stopping every read.
 //!

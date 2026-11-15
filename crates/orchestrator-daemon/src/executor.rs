@@ -819,7 +819,7 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         .get(&job.task_id)
         .map_err(|error| format!("cannot reload task after agent exit: {error}"))?;
     if current.state == TaskState::Cancelled {
-        return Err("task was cancelled before this owner confirmed it".into());
+        return Err("task was canceled before this owner confirmed it".into());
     }
     let monitored = monitored.map_err(|reason| {
         format!("supervision failed, task stays Running for restart reconciliation: {reason}")
@@ -945,7 +945,7 @@ async fn monitor_agent(
                             // Keep what the agent reported before it was stopped.
                             record_usage(&mut *handle, store, owner, started_ms, requested_model);
                             let exit = exit.map_err(|error| {
-                                format!("cancelled but termination was not confirmed: {error}")
+                                format!("canceled but termination was not confirmed: {error}")
                             })?;
                             return Ok(MonitorOutcome {
                                 exit,

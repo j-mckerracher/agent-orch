@@ -49,7 +49,7 @@ pub(crate) struct TurnRequest {
     /// launches only this one.
     pub identity: RuntimeIdentity,
     /// Recent completed exchanges, oldest first, bounded in count and size.
-    /// Failed and cancelled turns are not included.
+    /// Failed and canceled turns are not included.
     pub history: Vec<HistoryTurn>,
     /// A short description of the workstream a workstream turn is about.
     pub context: Option<String>,
@@ -171,7 +171,7 @@ pub(crate) struct ReplySink {
 pub(crate) struct SinkClosed;
 
 impl ReplySink {
-    /// Append reply text. Fails once the turn is cancelled, failed, completed
+    /// Append reply text. Fails once the turn is canceled, failed, completed
     /// or too large.
     pub(crate) fn delta(&self, text: &str) -> Result<(), SinkClosed> {
         for piece in chunks(text) {
@@ -439,7 +439,7 @@ impl ConversationService {
         Ok(())
     }
 
-    /// Close a running turn as cancelled. Returns the turn and whether this
+    /// Close a running turn as canceled. Returns the turn and whether this
     /// call applied the cancellation. Stopping the runtime is best effort.
     pub(crate) fn cancel(
         &self,

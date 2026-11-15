@@ -19,7 +19,7 @@ export interface ConversationTargetPickerProps {
  *
  * Keyboard: Enter/Space on the button toggles; opening moves focus to the search box;
  * ArrowDown from the search box enters the radio list; arrow keys move and select inside the
- * list (native radio behaviour); Escape closes and returns focus to the button. The result
+ * list (native radio behavior); Escape closes and returns focus to the button. The result
  * count and the empty result are announced through one always-mounted status region, because a
  * live region that appears together with its text is not reliably announced.
  */

@@ -136,7 +136,7 @@ Attempts: recorded IDs + states | Sessions: [select recorded session]
 | --- | --- | --- | --- |
 | Task summary and attempts | REAL | `tasks.get({task_id})` -> contract, state, attempts, sessions, audit events, version | Back to S3; dependencies -> another S4 |
 | Recorded session selector/detail | REAL | `sessions.list({task_id})`, `sessions.get({task_id,session_id})`; display only returned identity/adapter/state fields | Select recorded session on S4; no session-created event assumed |
-| Event timeline and pagination | REAL | Task audit events from `tasks.get`; session replay through `sessions.events({task_id,session_id,after_sequence})` with `more` / `next_after_sequence`; live `events.subscribe` notifications filtered locally | Load more in place; unknown event kinds remain raw, labelled records |
+| Event timeline and pagination | REAL | Task audit events from `tasks.get`; session replay through `sessions.events({task_id,session_id,after_sequence})` with `more` / `next_after_sequence`; live `events.subscribe` notifications filtered locally | Load more in place; unknown event kinds remain raw, labeled records |
 | Cancellation request and acknowledgement | REAL | `tasks.cancel({task_id,idempotency_key})`, then `tasks.get`/events; only expose supported state/capability, surface Conflict/Forbidden | Stay S4; request acceptance is not proof of process termination |
 | Running process launch / scheduling / final cancellation effects | DUMMY D2 | `TaskExecutionSource`; no daemon executor owner yet | Fixture-only controls; cannot invoke live agents or mutate REAL records |
 | Retry a new attempt | DUMMY D4 | `TaskRetrySource`; `tasks.retry` is out of M5-02 scope | Fixture receipt/new attempt within fixture S4 |
@@ -204,12 +204,12 @@ Planned fixture root: `apps/desktop/src/fixtures/ui/`. Interface names are contr
 | D7 Complete review evidence | `ReviewEvidenceSource`: candidate/base identity, scoped snapshot, workspace identity, verification run/evidence, readable action/parameters/target and digest relationship, stale/missing state, source | `review-evidence.json` | New M5-02c: authorized read-side evidence contract and candidate binding |
 | D8 Request changes | `ChangeRequestSource`: task/candidate, feedback, request outcome, resulting review state, source | `change-request.json` | New M5-02c: engine-backed request-changes contract |
 
-Replacement acceptance for every row: source is visibly labelled while fixture-backed; real adapter can replace fixture with no UI change; fixture errors/empty states are reviewable; reconnects never promote fixture data into trusted state. M5-02b replaces D1–D4 and D6, not the missing D5/D7/D8 contracts. M5-05 reuses D2/D3/D6 interfaces for lifecycle previews; it does not define duplicate mocks or count them as native runtime acceptance.
+Replacement acceptance for every row: source is visibly labeled while fixture-backed; real adapter can replace fixture with no UI change; fixture errors/empty states are reviewable; reconnects never promote fixture data into trusted state. M5-02b replaces D1–D4 and D6, not the missing D5/D7/D8 contracts. M5-05 reuses D2/D3/D6 interfaces for lifecycle previews; it does not define duplicate mocks or count them as native runtime acceptance.
 
 ## Ownership and acceptance boundaries
 
-- M5-03: S1–S5 and C1 presentation; D1–D6. Accept UI rendering/navigation, real M5-02 reads/admission/cancel request/replay against the accepted contract, and isolated labelled fixture demos. It does not wait for M5-02b/M5-02c implementation or assert agents were launched/recovered.
-- M5-04: S6 with C1 integration; D7–D8. Accept real diff/approve/reject request contracts plus labelled complete fixture review. Missing live evidence disables protected operations. Request-changes transport remains a fixture until M5-02c.
+- M5-03: S1–S5 and C1 presentation; D1–D6. Accept UI rendering/navigation, real M5-02 reads/admission/cancel request/replay against the accepted contract, and isolated labeled fixture demos. It does not wait for M5-02b/M5-02c implementation or assert agents were launched/recovered.
+- M5-04: S6 with C1 integration; D7–D8. Accept real diff/approve/reject request contracts plus labeled complete fixture review. Missing live evidence disables protected operations. Request-changes transport remains a fixture until M5-02c.
 - M5-05: C1 native launch/reopen, window close/quit semantics and packaging of S1–S6. Build/package work uses the same adapters and need not wait for unavailable services. **Final completion still requires its existing M5-01b and M5-02b dependencies**, native Windows transport, and a real daemon task surviving client close/reopen; fixture survival cannot satisfy the milestone exit criterion. No new daemon methods for window lifecycle.
 - Closing a window disconnects the client; explicit daemon shutdown is distinct. Authenticated reconnect must not imply task reconciliation completed. M5-05 must not advertise production coordinator/request-changes/evidence support while M5-02c is incomplete.
 
@@ -221,7 +221,7 @@ Replacement acceptance for every row: source is visibly labelled while fixture-b
 4. M5-02 known D3 lacks store identity/epoch for reset-safe persisted resume. Track D6 replacement in M5-02b; until then use explicit unknown/fresh baseline behavior. Do not claim data loss-free cross-store replay.
 5. M5-05 has no existing details/acceptance fields and depends on M5-02b. Its plan milestone requires real tasks surviving UI reopen. Do not remove that edge or allow dummy lifecycle demos to pass it. Add details/acceptance for preview versus native completion.
 6. Context claimed no frontend, but this checkout has a minimal heading-only frontend; current daemon crates are stubs despite board foundation acceptance on other revisions. Preserve existing candidate/evidence history. No acceptance criteria existed on the three UI items; this change adds `acceptance` arrays.
-7. No existing status, priority or depends_on is changed. M5-02c is a newly proposed task at priority 10, depending on M5-02, M3-01 and M3-04 (which transitively includes approval and verification prerequisites). Recommend adding M5-02c as a **release gate** to M5-05 only if full live coordinator/request-changes/evidence support is required for the first package; that edge would raise M5-05 to priority 11, already its value. Keep M5-03/M5-04 free to implement labelled previews. Existing earlier-priority/runtime blocks in `important_context` still apply; this board edit is not worker dispatch or status acceptance.
+7. No existing status, priority or depends_on is changed. M5-02c is a newly proposed task at priority 10, depending on M5-02, M3-01 and M3-04 (which transitively includes approval and verification prerequisites). Recommend adding M5-02c as a **release gate** to M5-05 only if full live coordinator/request-changes/evidence support is required for the first package; that edge would raise M5-05 to priority 11, already its value. Keep M5-03/M5-04 free to implement labeled previews. Existing earlier-priority/runtime blocks in `important_context` still apply; this board edit is not worker dispatch or status acceptance.
 
 ## M7 revision (M7-00)
 
@@ -229,10 +229,10 @@ Recorded 2026-11-10 by board item M7-00 (docs only). Inputs:
 
 - Design reference (read-only, not modified): `/Users/mckerracher.joshua/Code/agent-orch/docs/operator-experience/wireframes.html`, sections `#command-center`, `#workstreams`, `#agents-sessions`, `#review-decisions`, plus the always-visible shell. Its own README states it is not a functioning application: every count, cost, session and candidate in it is fictional.
 - Analysis: `/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/.agent-worktrees/ui-gap-analysis/GAP-ANALYSIS.md`, sections 2–8.
-- Accepted baseline for every "existing" claim below: source `a5e1f43b9516b172247197c6c126acbc6aaf8d54`. Daemon methods were checked against the `dispatch` list in `crates/orchestrator-daemon/src/api.rs` and the session-level methods in `crates/orchestrator-ipc/src/session.rs`. Native end-to-end behaviour on Windows is only as proven as the board records; "existing" means the contract is in the accepted source, not that every path is proven natively.
+- Accepted baseline for every "existing" claim below: source `a5e1f43b9516b172247197c6c126acbc6aaf8d54`. Daemon methods were checked against the `dispatch` list in `crates/orchestrator-daemon/src/api.rs` and the session-level methods in `crates/orchestrator-ipc/src/session.rs`. Native end-to-end behavior on Windows is only as proven as the board records; "existing" means the contract is in the accepted source, not that every path is proven natively.
 - Plan: [technical implementation plan](/Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mclm-friendly-guide/docs/technical-implementation-plan.md) §§2, 9–12 and 14. §14 limits the initial scope; M7 is an extension recorded by decision, not a retroactive change to M5 acceptance.
 
-Nothing in this revision changes accepted M5 behaviour, routes, tests or board statuses.
+Nothing in this revision changes accepted M5 behavior, routes, tests or board statuses.
 
 ### Decision record D-1..D-11
 
@@ -243,12 +243,12 @@ Decision ids carry a hyphen (`D-1`). Placeholder-registry ids do not (`D1`). Eac
 | D-1 | Does the wireframe-derived UI request supersede the "Deferred — do not start" status of `docs/future/mcao-next-version-features.md`? | **Yes**, for the UI shell and for surfaces backed by existing data. OMP-dependent items (the Global/LLM conversation, provider/model/effort selection, streamed orchestrator replies) stay deferred and post-release. | The future-features document gets a status note only (M7-00). Its OMP migration list is unchanged and still not dispatchable from that document. |
 | D-2 | Adopt `wireframes.html` as the repo's visual reference, waiving the M5 "do not reuse an HTML design from a different checkout" rule? Which document is authoritative where they differ? | **Adopt** `wireframes.html` for visual design and information architecture. The M5 rule is waived (see Scope and evidence). This document stays authoritative for data provenance (PLACEHOLDER DATA, no fixture-to-mutation path, no automatic fallback) and for what the daemon actually provides; where the HTML shows a count, control or capability the daemon cannot back, this document wins. Operator-experience ids are renamed with an `OX-` prefix. | The supplied gap-analysis inventory is mapped below. The supplied, hash-pinned copy of the original HTML is mapped below. Illustrative HTML numbers never appear in live mode. |
 | D-3 | Information architecture: replace the project-first routes or keep them beneath a global shell? | **Keep** every accepted `#/project/...` route and add the global routes `#/workspace` (default), `#/workstreams`, `#/agents`, `#/review`. | See Global shell. No accepted route, parser or test is removed. |
-| D-4 | Workstream domain: new `Workstream`/`Objective` entity or interim grouping by project/`parent_id`? | **Interim grouping by project** for release: one workstream per registered project, tasks as children, labelled PLACEHOLDER DATA (D9) wherever a value is not derived from real records. A real entity is post-release work. | M7-11 builds the interim tree. M7-07 (backend entity) and M7-23 (live adapter) are post-release. |
-| D-5 | Which wireframe elements ship in the first release? | **Ship**: shell, theme, Review & Decisions, Agents & Sessions, activity panel, local search, CPU/memory/disk meters. **Ship only as clearly-labelled PLACEHOLDER or hidden**: usage, model picker, Global conversation. **Defer**: background animation, GPU meter, bulk operations. | See Release scope. |
-| D-6 | Global conversation target without an LLM: placeholder or hidden? | Per-project targets use the real `coordinator.*` methods and are labelled "notes; no reply". The Global target and any reply are PLACEHOLDER DATA (D10). | The coordinator keeps `authority: none`; conversation cannot create tasks or approvals. |
+| D-4 | Workstream domain: new `Workstream`/`Objective` entity or interim grouping by project/`parent_id`? | **Interim grouping by project** for release: one workstream per registered project, tasks as children, labeled PLACEHOLDER DATA (D9) wherever a value is not derived from real records. A real entity is post-release work. | M7-11 builds the interim tree. M7-07 (backend entity) and M7-23 (live adapter) are post-release. |
+| D-5 | Which wireframe elements ship in the first release? | **Ship**: shell, theme, Review & Decisions, Agents & Sessions, activity panel, local search, CPU/memory/disk meters. **Ship only as clearly-labeled PLACEHOLDER or hidden**: usage, model picker, Global conversation. **Defer**: background animation, GPU meter, bulk operations. | See Release scope. |
+| D-6 | Global conversation target without an LLM: placeholder or hidden? | Per-project targets use the real `coordinator.*` methods and are labeled "notes; no reply". The Global target and any reply are PLACEHOLDER DATA (D10). | The coordinator keeps `authority: none`; conversation cannot create tasks or approvals. |
 | D-7 | Fonts: bundle a webfont for parity? | **No.** Use the `system-ui` stack with `Segoe UI` and `Avenir Next` as named fallbacks for interface text. Keep the supplied wireframe's system-serif `h1` stack, `"Iowan Old Style", Palatino, Georgia, serif`. Do not bundle proprietary fonts. | Avenir Next exists only on macOS; Windows metrics differ. Verify truncation natively. |
 | D-8 | Interim attention severity (P1/P2): derive or hide? | **Derive** from approval state client-side and label it "derived". The daemon has no priority or latest-response time. | D16 carries real priority and deadlines later. |
-| D-9 | Ship the background animation? | **Post-release**, opt-in, off under reduced motion. | M7-18 is optional. WebGPU in WebView2/WKWebView, battery and CSP behaviour are unverified. |
+| D-9 | Ship the background animation? | **Post-release**, opt-in, off under reduced motion. | M7-18 is optional. WebGPU in WebView2/WKWebView, battery and CSP behavior are unverified. |
 | D-10 | Is a release before this UI acceptable? | **Yes. M6-04 release gating stands**; M7 is post-release unless the user later makes it a release gate. Any M7 merge after M6-04 acceptance requires M7-32 to re-run clean-machine install and upgrade smoke, because the packaged UI and CSP change. | M7 does not block M6-04. |
 | D-11 | Cost: which providers expose reported cost? | **Unknown** until the M7-06 spike. The UI shows "unknown" or "not available", never zero, and keeps estimates separate from reported cost. | D12 has no live source today. |
 
@@ -264,7 +264,7 @@ Unverified assumptions carried by these decisions: the Windows WebView2 runtime 
 
 | M5 id (this repo) | Meaning | OX id | Meaning in `wireframes.html` / `operational-design.md` §10 |
 | --- | --- | --- | --- |
-| S1 | Project list | OX-S1 | Overview. The HTML realises the first primary view as the **Orchestrator Workspace** (`#command-center`); no separate Overview is drawn. This document maps OX-S1 to `#command-center`. |
+| S1 | Project list | OX-S1 | Overview. The HTML realizes the first primary view as the **Orchestrator Workspace** (`#command-center`); no separate Overview is drawn. This document maps OX-S1 to `#command-center`. |
 | S2 | Project detail and submission | OX-S2 | Review & Decisions (`#review-decisions`) |
 | S3 | Task list | OX-S3 | Decision/action panel inside OX-S2 (the HTML eyebrow reads "S3 + S9") |
 | S4 | Task detail, session, timeline | OX-S4 | Workstreams (`#workstreams`) |
@@ -311,8 +311,8 @@ Shell rules:
 
 1. The M5 connection strip C1 is re-hosted persistently in the shell, never rewritten. It stays visible in every view and in all boot modes (`native`, `fixture`, `no-bridge`); a failed live request never falls back to fixtures.
 2. Theme is light by default, dark by explicit `data-theme` or `prefers-color-scheme`, applied before first paint, persisted with a safe fallback when storage is unavailable.
-3. Counts, tree rows and queue entries are computed from the same sources as the lists they summarise, so the shell cannot show "0 require attention" next to "Review & Decisions · 4" (an inconsistency inside `wireframes.html`; treat as a wireframe error).
-4. Status is never conveyed by colour alone (text or icon accompanies every meter, severity and connection state).
+3. Counts, tree rows and queue entries are computed from the same sources as the lists they summarize, so the shell cannot show "0 require attention" next to "Review & Decisions · 4" (an inconsistency inside `wireframes.html`; treat as a wireframe error).
+4. Status is never conveyed by color alone (text or icon accompanies every meter, severity and connection state).
 5. Navigation retains the M5 rule that a fixture id never reaches a real mutation, and that Review returns to its task or project.
 
 ### Daemon surface at the accepted baseline
@@ -333,7 +333,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 - **missing**: the accepted M5 baseline has no data or contract for the mapped component. Candidate-only routes are listed separately when present.
 - **deferred**: recorded as later-scope by `docs/future/mcao-next-version-features.md`, by the wireframe's own "Later-scope preview" label, or by decisions D-5/D-9.
 
-"Placeholder" names the registry id (D9–D16 below, D1–D8 above) that supplies labelled fixture values when the real source is absent. "Derived" means computed in the UI from records already loaded through the existing methods; a derived value that approximates something the daemon does not report is labelled as derived.
+"Placeholder" names the registry id (D9–D16 below, D1–D8 above) that supplies labeled fixture values when the real source is absent. "Derived" means computed in the UI from records already loaded through the existing methods; a derived value that approximates something the daemon does not report is labeled as derived.
 
 #### Shell (always visible)
 
@@ -356,7 +356,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 | OX id | `wireframes.html` element | Repo mapping | Accepted M5 data source | Accepted M5 status | Placeholder | M7 owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | OX-B1 | Header "Talking to: `<target>`" with scope subtitle | Target identity line | Project target: selected project id. Global target: none | existing (project) / missing (Global) | D10 | M7-10 |
-| OX-B2 | Transcript bubbles (coordinator vs human) | Per-project note log labelled "notes; no reply" | `coordinator.get` | existing (log, no replies) | D10 for Global and replies | M7-10 |
+| OX-B2 | Transcript bubbles (coordinator vs human) | Per-project note log labeled "notes; no reply" | `coordinator.get` | existing (log, no replies) | D10 for Global and replies | M7-10 |
 | OX-B2a | Chips "Escalate to Global", "Show dependency plan", "Request review", "Inspect candidate and delivery facts" | Navigation only: dependency plan from `TaskContract.dependencies`; review chips go to OX-S2 | `tasks.get`; client routing | existing (navigation); "Escalate to Global" missing | D10 | M7-10 |
 | OX-B3 | Composer (textarea, send) with per-target draft | Composer; draft retained per target | `coordinator.send_message` (project targets); drafts in `ui/drafts.ts` | existing (project) / missing (Global reply) | D10 | M7-10 |
 | OX-B4 | Conversation-target dropdown with search, radios and empty-result announcement | Target picker | Project targets only: `projects.list` | existing (project) / missing (Global, per-workstream) | D10 | M7-10 |
@@ -410,7 +410,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 | OX-R3 | Decision queue E1–E4 (P1/P2, response time, Compare / Inspect / Review exact action) | Pending approvals list; severity derived (D-8) | `approvals.list` | existing (items) / missing (priority, response time) | D16 | M7-13 |
 | OX-R4 | OX-S3 + OX-S9 candidate panel: diff summary, automated checks, independent review, requested operation | Existing S6 evidence and diff restyled | `workspaces.diff`, `review.evidence` | existing (native end-to-end on Windows still UNPROVEN per the board) | D7 | M7-13 |
 | OX-R5 | Actions: Request changes, Request additional checks, "Review PR creation authorization" | Request changes and approval request keep M5 semantics; "additional checks" has no method; draft-PR creation is not a supported delivery action | `review.request_changes`, `review.request_approval`, `approvals.resolve`, `delivery.request` (`report_only`, `local_review`) | existing (request changes, approve/reject, request approval) / missing (additional checks) / deferred (PR creation: PR automation stays deferred) | D8, D16 | M7-13 |
-| OX-R6 | "Six separate facts for the same candidate" (execution finished, agent claims completion, automated checks, independent review, delivery approved, changes integrated) | Composed in the UI from `review.evidence`; a fact the payload does not carry is labelled unavailable | `review.evidence`, `approvals.list` | existing (composition, needs payload audit) | D7 | M7-13 |
+| OX-R6 | "Six separate facts for the same candidate" (execution finished, agent claims completion, automated checks, independent review, delivery approved, changes integrated) | Composed in the UI from `review.evidence`; a fact the payload does not carry is labeled unavailable | `review.evidence`, `approvals.list` | existing (composition, needs payload audit) | D7 | M7-13 |
 | OX-R7 | "Decision behavior, delegation and safe waiting": acknowledge, postpone, dismiss, authorize, escalate; blanket-approval refusal | Approve and reject only; others disabled with reason | `approvals.resolve` accepts `approve` and `reject` only | existing (approve, reject) / missing (acknowledge, postpone, dismiss, escalate) | D16 | M7-13 |
 | OX-R8 | "Integration, recovery and audit history": Inspect integration history, Plan supported recovery, Export audit records | History from the event journal; export and recovery planning disabled | `events.subscribe`, `sessions.events` | existing (history) / missing (export, recovery planning) | D3 | M7-13 |
 
@@ -423,13 +423,13 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 | OX-X3 | Responsive layout (1150, 960, 760 px; `max-height: 760px`) and a native window minimum of 760×600 and default size of 1280×800 | Responsive shell; window minimum size reviewed | none | existing | M7-02, M7-30 |
 | OX-X4 | Print stylesheet | Optional | none | deferred | none |
 | OX-X5 | Reduced motion | Respected by every animation | none | existing | M7-01 |
-| OX-X6 | Accessibility: `aria-pressed`, `role="meter"`, native `<details>`, keyboard tree and menus, redundant non-colour cues | Verified by the M7-30 matrix | none | existing | M7-01, M7-30 |
+| OX-X6 | Accessibility: `aria-pressed`, `role="meter"`, native `<details>`, keyboard tree and menus, redundant non-color cues | Verified by the M7-30 matrix | none | existing | M7-01, M7-30 |
 | OX-X7 | Transparent surfaces via `color-mix()` | Needs WKWebView 16.2 or later and a WebView2 version supporting it; verify natively | none | existing (unverified on target runtimes) | M7-30, M7-32 |
 | OX-X8 | Offline, no external assets | Bundled assets only; CSP `script-src 'self'` holds | none | existing | M7-30 |
 
 ### Placeholder registry D9–D16 (extends D1–D8)
 
-The M5 `DUMMY interface and fixture registry` (D1–D8) is unchanged and its replacement-acceptance rules carry over: each interface keeps one typed boundary, fixture values are labelled in the UI, and a real adapter replaces a fixture only with its own acceptance evidence. M7 adds D9–D16. Fixture content follows the illustrative values in `wireframes.html` where the contract can carry them (CPU 44%, disk 71%, reported usage $26.00 with the estimate kept separate and never added to it); memory is an absolute figure because the D13 contract has no total, so the wireframe's 63% is not reproduced. It is visible only in fixture mode (`?fixture=1`) or where a row says a labelled placeholder is acceptable. Interfaces are owned by M7-03; adapters by M7-20..M7-24.
+The M5 `DUMMY interface and fixture registry` (D1–D8) is unchanged and its replacement-acceptance rules carry over: each interface keeps one typed boundary, fixture values are labeled in the UI, and a real adapter replaces a fixture only with its own acceptance evidence. M7 adds D9–D16. Fixture content follows the illustrative values in `wireframes.html` where the contract can carry them (CPU 44%, disk 71%, reported usage $26.00 with the estimate kept separate and never added to it); memory is an absolute figure because the D13 contract has no total, so the wireframe's 63% is not reproduced. It is visible only in fixture mode (`?fixture=1`) or where a row says a labeled placeholder is acceptable. Interfaces are owned by M7-03; adapters by M7-20..M7-24.
 
 | ID | Interface | Fixture content (illustrative only) | Accepted M5 source | Candidate API at source SHA `6c17442eaee5243b48034dfc53d7f43d25f1ab82` (in-flight) | Remaining gap or later scope | Adapter |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -462,21 +462,21 @@ Rules: Candidate APIs remain in-flight until their contracts and behavior are ac
 | Group | Items | Position |
 | --- | --- | --- |
 | Foundation | M7-00 (this record), M7-01 theme, M7-02 shell, M7-03 sources | Before any screen work |
-| Screens on existing data | M7-10 Workspace (Global conversation is a labelled placeholder), M7-11 Workstreams (project-grouped), M7-12 Activity panel, M7-13 Review, M7-14 Agents, M7-15 restyle of S1–S6, M7-16 top bar, usage pill and search, M7-17 resource strip | Before release if M7 is included in it |
+| Screens on existing data | M7-10 Workspace (Global conversation is a labeled placeholder), M7-11 Workstreams (project-grouped), M7-12 Activity panel, M7-13 Review, M7-14 Agents, M7-15 restyle of S1–S6, M7-16 top bar, usage pill and search, M7-17 resource strip | Before release if M7 is included in it |
 | Backend and live adapters for the resource strip and queue | M7-04 `host.metrics`, M7-05 queue and slots, M7-20, M7-21 | Before release if M7 is included |
 | Verification | M7-30, M7-32 | Before release if M7 is included |
-| Post-release or optional | M7-06 and M7-22 usage, M7-07 and M7-23 workstreams, M7-08, M7-09 and M7-24 conversation and catalog, M7-18 background | After release; the UI keeps labelled placeholders |
+| Post-release or optional | M7-06 and M7-22 usage, M7-07 and M7-23 workstreams, M7-08, M7-09 and M7-24 conversation and catalog, M7-18 background | After release; the UI keeps labeled placeholders |
 
 M6-04 stands and is not displaced by M7. Whether M7 is part of the first release is a release decision; this record does not make it one.
 
 ### Fixture boundary rules
 
-1. Every fixture value carries a visible "PLACEHOLDER DATA (D#)" badge with the registry id, in both themes, and in a form that does not rely on colour.
+1. Every fixture value carries a visible "PLACEHOLDER DATA (D#)" badge with the registry id, in both themes, and in a form that does not rely on color.
 2. `fixture:` ids stay unreachable from any mutation, as in M5.
 3. An action without a supported contract is disabled with a stated reason in live mode, and may be enabled only against fixtures in `?fixture=1`. No control is silently inert.
 4. Illustrative numbers from `wireframes.html` (10 workstreams, 40 tasks, 20 / 24 slots, $26.00, CPU 44%) never appear in live mode.
 5. Boot-mode selection is unchanged.
-6. A derived value that approximates something the daemon does not report is labelled as derived. A real-looking figure is never invented.
+6. A derived value that approximates something the daemon does not report is labeled as derived. A real-looking figure is never invented.
 
 ### Ownership of M7 work
 

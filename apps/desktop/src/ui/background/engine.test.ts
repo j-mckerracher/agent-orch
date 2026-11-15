@@ -182,7 +182,7 @@ describe("Canvas 2D fallback", () => {
     return vi.waitFor(() => expect(fillStyles.at(-1)).toBe("#ffffff"));
   });
 
-  it("uses the system colour scheme when the page has no explicit theme", () => {
+  it("uses the system color scheme when the page has no explicit theme", () => {
     installMedia({ dark: true });
     installFrames();
     mount();
@@ -224,7 +224,7 @@ describe("WebGPU path", () => {
     expect(ocean.renderer.setPaused).toHaveBeenLastCalledWith(false);
   });
 
-  it("passes theme colours to the renderer", async () => {
+  it("passes theme colors to the renderer", async () => {
     installMedia();
     installFrames();
     const ocean = fakeOcean();

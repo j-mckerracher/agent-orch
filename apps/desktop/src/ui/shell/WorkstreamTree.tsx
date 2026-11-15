@@ -13,7 +13,7 @@ import { Badge } from "../theme";
 import { PlaceholderBadge } from "../widgets";
 import "../views/workstreams/workstreams.css";
 
-/** Sessions shown per task in the tree; older ones are summarised as "+N earlier". */
+/** Sessions shown per task in the tree; older ones are summarized as "+N earlier". */
 const MAX_WORKER_ROWS = 3;
 
 interface TreeItem {

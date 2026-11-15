@@ -118,7 +118,7 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
 
 /**
  * Daily usage pill (D12) with an info popover. The headline is the reported amount. With nothing
- * reported it may be a price-table estimate, drawn "≈ $x" and labelled "estimated" with the table
+ * reported it may be a price-table estimate, drawn "≈ $x" and labeled "estimated" with the table
  * version; an estimate is never added to a reported figure. Anything else reads "not available"
  * (unknown) and is never drawn as $0. Fixture amounts carry the PLACEHOLDER badge. The popover keeps
  * the reporting window, timezone, currency, price table and per-provider coverage next to the figure.

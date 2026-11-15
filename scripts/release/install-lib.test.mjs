@@ -197,7 +197,7 @@ test("macOS signed with a genuinely older build: team ids compared, smoke gets b
   assert.ok(!steps.items.some((s) => /upgrade from a previous release/.test(s.name)));
 });
 
-test("macOS: a same-version 'old' build is a labelled rerun and the upgrade stays UNPROVEN", () => {
+test("macOS: a same-version 'old' build is a labeled rerun and the upgrade stays UNPROVEN", () => {
   const steps = quiet(() => runMacos(macCtx(macRun(), { readDir: readDirFor("macos", true) })));
   assert.deepEqual(failures(steps), []);
   assert.equal(steps.upgrade, "same-version");
@@ -371,7 +371,7 @@ test("Windows: an unsigned installer is INFO unless a signature is required", ()
   assert.ok(strict.items.some((s) => s.verdict === "FAIL" && /signed artifact was required/.test(`${s.name}${s.detail}`)));
 });
 
-test("Windows: the same-version rerun is labelled and is not an upgrade pass", () => {
+test("Windows: the same-version rerun is labeled and is not an upgrade pass", () => {
   const machine = windowsMachine({ oldVersion: "0.1.0" });
   const steps = quiet(() => runWindows(windowsCtx(machine, { readDir: readDirFor("windows", true) })));
   assert.equal(steps.upgrade, "same-version");

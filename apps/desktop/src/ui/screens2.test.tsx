@@ -72,7 +72,7 @@ describe("S3 task list", () => {
     expect(within(table).getByText("t-b")).toBeInTheDocument();
   });
 
-  it("keeps the execution preview separate and labelled as placeholder data", async () => {
+  it("keeps the execution preview separate and labeled as placeholder data", async () => {
     await mount(seeded(), { route: tasksRoute() });
     const section = await screen.findByRole("region", { name: "Execution preview (placeholder)" });
     expect(within(section).getByTestId("badge-D2")).toHaveTextContent("PLACEHOLDER DATA");
@@ -197,7 +197,7 @@ describe("S4 task and session detail", () => {
     const { user } = await mount(fake, { route: taskRoute("t-q") });
     await screen.findByTestId("task-state");
     await user.click(screen.getByRole("button", { name: "Request cancel" }));
-    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Cancelled\. This is not proof that any process has stopped\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled\. This is not proof that any process has stopped\./)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     expect((fake.callsTo("tasks.cancel")[0]!.params as { idempotency_key?: string }).idempotency_key).toEqual(
@@ -211,7 +211,7 @@ describe("S4 task and session detail", () => {
     await screen.findByTestId("task-state");
     fake.failNext("tasks.cancel", { code: -32011, message: "task already terminal" });
     await user.click(screen.getByRole("button", { name: "Request cancel" }));
-    expect(await screen.findByText(/Cancelling the task failed/)).toBeInTheDocument();
+    expect(await screen.findByText(/Canceling the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
   });
 

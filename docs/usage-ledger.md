@@ -13,7 +13,7 @@ Plan: /Users/mckerracher.joshua/Code/agent-orch-worktrees/mckerracher-joshua-mcl
 
 Before M7-06 every adapter discarded this data.
 
-## Normalisation
+## Normalization
 
 `UsageReport` (crate `orchestrator-agents`, `usage.rs`) is taken from an
 adapter with `AgentHandle::take_usage()`. `input_tokens` is fresh input only
@@ -39,7 +39,7 @@ adds a table, so existing data directories upgrade in place.
 
 The daemon executor records receipts while it supervises the agent: after every
 event, at session exit, when the event stream ends or fails, and after a
-cancellation, so a cancelled run keeps whatever it had already reported (for
+cancellation, so a canceled run keeps whatever it had already reported (for
 Claude Code, the cost on its `result` event only appears if the run got that
 far; otherwise the cost stays unknown, never zero). Model text is stored cut to
 128 bytes.
@@ -80,7 +80,7 @@ the tokens are not repeated there, because they are already in `reported`.
   `version` (currently `2026-11-11.1`) changes with any price edit; `basis` is
   `list_price_standard_tier`; `source` names where the prices were taken.
   Prices are list prices, not a bill. Batch, flex, priority and long-context
-  tiers are not modelled, and Anthropic cache writes use the 5-minute rate.
+  tiers are not modeled, and Anthropic cache writes use the 5-minute rate.
   An estimate may therefore understate. Prices are not refreshed at runtime
   (no network); a new table means a new version.
 * Unknown stays unknown: a model that is absent or not in the table, or a

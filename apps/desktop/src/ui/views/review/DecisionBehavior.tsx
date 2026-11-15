@@ -1,4 +1,4 @@
-// Decision behaviour and audit sections. Approve, reject, request changes and delivery live
+// Decision behavior and audit sections. Approve, reject, request changes and delivery live
 // in the accepted review flow above; everything here is an action the daemon cannot perform
 // today, shown disabled with the reason visible as text (not only in a tooltip).
 import type { TaskRecord } from "../../../daemon/types";

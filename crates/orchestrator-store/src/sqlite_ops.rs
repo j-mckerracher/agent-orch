@@ -104,7 +104,7 @@ pub enum CancellationStatus {
     Pending,
     /// The owner waited for its agent handle and confirmed cancellation.
     Confirmed,
-    /// The agent exited without being cancelled.
+    /// The agent exited without being canceled.
     Rejected,
     /// The owner could not confirm cancellation.
     Failed,
@@ -675,7 +675,7 @@ impl SqliteStore {
             if current_task_state(&mut transaction, &owner.task_id).await? == TaskState::Cancelled {
                 return Err(StoreError::CancellationConflict {
                     task_id: owner.task_id,
-                    detail: "task is already Cancelled",
+                    detail: "task is already Canceled",
                 });
             }
             write_cancellation_receipt(
@@ -703,7 +703,7 @@ impl SqliteStore {
     /// Manually closes one owner generation after an operator confirms that
     /// its process tree has exited. The target attempt and session must
     /// already be terminal; this never changes task lifecycle or marks a task
-    /// cancelled. `session_process` is the caller's observation of the target
+    /// canceled. `session_process` is the caller's observation of the target
     /// session's recorded process (`None` when no identity was recorded); it
     /// is audited but not interpreted here.
     pub fn manually_resolve_cancellation_owner(
@@ -768,7 +768,7 @@ impl SqliteStore {
             if current_task_state(&mut transaction, &owner.task_id).await? == TaskState::Cancelled {
                 return Err(StoreError::CancellationConflict {
                     task_id: owner.task_id,
-                    detail: "task is already Cancelled",
+                    detail: "task is already Canceled",
                 });
             }
             if !attempt_state_in(&mut transaction, &owner)
@@ -1040,7 +1040,7 @@ impl SqliteStore {
                 }
                 return Err(StoreError::CancellationConflict {
                     task_id: owner.task_id,
-                    detail: "task is cancelled without this owner's confirmation",
+                    detail: "task is canceled without this owner's confirmation",
                 });
             }
             if owner_result.is_some() {
@@ -1211,7 +1211,7 @@ impl SqliteStore {
         ) {
             return Err(StoreError::CancellationConflict {
                 task_id: owner.task_id.clone(),
-                detail: "non-cancelled owner must finish as rejected or failed",
+                detail: "non-canceled owner must finish as rejected or failed",
             });
         }
         let owner = owner.clone();

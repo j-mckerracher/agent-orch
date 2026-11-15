@@ -5,11 +5,12 @@ import type { Loadable } from "../daemon/appData";
 import type { Provenance } from "../sources/types";
 import type { SourceState } from "./services";
 import { Badge, Button, EmptyState, Pill, type Tone } from "./theme";
+import { stateLabel } from "./format";
 import "./projectScreens.css";
 
 const NOTICE_MARK: Record<Tone, string> = { neutral: "–", info: "i", ok: "✓", warn: "!", bad: "✕" };
 
-/** Inline notice. The glyph and the text carry the meaning; colour only reinforces it. */
+/** Inline notice. The glyph and the text carry the meaning; color only reinforces it. */
 export function Notice({
   tone = "warn",
   className,
@@ -43,7 +44,7 @@ const STATE_TONE: Record<string, Tone> = {
 
 /** Task, attempt or session state as text plus a glyph; unknown states render neutral. */
 export function StateText({ state }: { state: string }) {
-  return <Pill tone={STATE_TONE[state] ?? "neutral"}>{state}</Pill>;
+  return <Pill tone={STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</Pill>;
 }
 
 /** Wraps a table in a bordered, horizontally scrollable region. */
@@ -53,7 +54,7 @@ export function TableWrap({ children }: { children: ReactNode }) {
 
 /**
  * Loading / error / offline / empty / ready for a REAL snapshot. Empty is
- * distinct from offline and error; cached data is labelled stale when the
+ * distinct from offline and error; cached data is labeled stale when the
  * connection is not live.
  */
 export function LoadableRegion<T>({
@@ -124,7 +125,7 @@ export function PlaceholderBadge({ provenance, compact = false }: { provenance: 
   );
 }
 
-/** Receipts of simulated DUMMY actions: always labelled SIMULATED and with the source's PLACEHOLDER DATA badge. */
+/** Receipts of simulated DUMMY actions: always labeled SIMULATED and with the source's PLACEHOLDER DATA badge. */
 export function SimulatedReceipts({
   label,
   receipts,

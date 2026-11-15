@@ -10,11 +10,11 @@
 //! start time) is written to one small file in a registry directory. The next
 //! daemon reads the registry at startup, after it holds the data-directory
 //! lock, so no other daemon can own a listed agent. A listed process group is
-//! signalled only when the leader still exists and its observed identity
+//! signaled only when the leader still exists and its observed identity
 //! equals the recorded one. A PID alone is never trusted: a reused PID has a
 //! different start time and is left alone.
 //!
-//! A record is left in place, and nothing is signalled, when the identity
+//! A record is left in place, and nothing is signaled, when the identity
 //! cannot be proven. That happens when the leader has exited but a
 //! descendant keeps the group alive. Windows needs none of this: the
 //! supervisor puts the agent in a Job Object created with
@@ -63,7 +63,7 @@ impl Drop for AgentRecord {
 }
 
 /// Kills the agents a previous daemon left running and clears the registry.
-/// Returns how many process groups were signalled.
+/// Returns how many process groups were signaled.
 pub(crate) fn reap(dir: &Path) -> usize {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
@@ -245,7 +245,7 @@ mod tests {
 
         assert!(
             process_group_alive(child.id()),
-            "an unidentified group was signalled"
+            "an unidentified group was signaled"
         );
         assert_eq!(
             records(dir.path()),

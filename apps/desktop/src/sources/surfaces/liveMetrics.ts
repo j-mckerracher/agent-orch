@@ -76,7 +76,7 @@ function mapOk(meter: HostMeterWire, resource: Resource, nowMs: number): Measure
       obs,
     );
   }
-  return unknown(`The daemon reported ${resource} in an unrecognised unit.`);
+  return unknown(`The daemon reported ${resource} in an unrecognized unit.`);
 }
 
 function mapMeter(meter: HostMeterWire, resource: Resource, nowMs: number): Measured<MeterValue> {
@@ -84,7 +84,7 @@ function mapMeter(meter: HostMeterWire, resource: Resource, nowMs: number): Meas
   if (meter.state === "unavailable" || meter.state === "unsupported") {
     return { status: meter.state, reason: reasonOf(meter, resource) };
   }
-  return unknown(`The daemon reported an unrecognised ${resource} state.`);
+  return unknown(`The daemon reported an unrecognized ${resource} state.`);
 }
 
 /** CPU, memory and disk have one meter each; the first entry wins if a daemon repeats one. */
@@ -115,7 +115,7 @@ function mapGpu(meters: readonly HostMeterWire[], nowMs: number): Measured<Meter
 /** Maps one `host.metrics` result. Exported for tests. */
 export function mapHostMetrics(wire: HostMetricsWire, nowMs: number): SurfaceResult<SystemMetrics> {
   if (typeof wire !== "object" || wire === null || !Array.isArray(wire.meters)) {
-    return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with an unrecognised shape.", observation(nowMs));
+    return notOk(PROVENANCE, "unknown", "The daemon answered host.metrics with an unrecognized shape.", observation(nowMs));
   }
   if (wire.schema_version !== SCHEMA_VERSION) {
     return notOk(PROVENANCE, "unsupported", `host.metrics schema ${String(wire.schema_version)} is not understood (expected ${SCHEMA_VERSION}).`, observation(nowMs));

@@ -708,7 +708,7 @@ struct Turn {
 }
 
 /// Drives one agent process to the end of the turn and reports through `sink`.
-/// A closed sink (cancelled, too large) or a set cancel flag stops the agent.
+/// A closed sink (canceled, too large) or a set cancel flag stops the agent.
 fn run_turn(turn: Turn, sink: &ReplySink) {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()

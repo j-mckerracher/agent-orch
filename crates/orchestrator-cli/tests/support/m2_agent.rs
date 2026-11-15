@@ -3,7 +3,7 @@
 //!
 //! The agent writes one uncommitted file into its working directory, publishes
 //! its PID by atomically creating `M2_READY_MARKER`, then holds until
-//! `M2_BARRIER_FILE` exists. It never sleeps for synchronisation: the test
+//! `M2_BARRIER_FILE` exists. It never sleeps for synchronization: the test
 //! releases it through the barrier. The wait expires on its own so a failed test
 //! cannot leave a permanent orphan.
 //!
