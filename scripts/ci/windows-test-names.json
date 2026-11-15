@@ -222,7 +222,6 @@
    "host_metrics_needs_the_host_capability",
    "host_metrics_serves_every_resource_through_the_real_daemon",
    "windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent",
-   "copilot_is_refused_on_windows_with_the_reason_the_user_sees",
    "clearing_one_conversation_keeps_the_others_and_leaves_no_text_on_disk",
    "a_clear_during_a_running_turn_is_refused_as_conversation_busy",
    "a_clear_is_idempotent_per_key_and_a_second_clear_has_nothing_to_delete",

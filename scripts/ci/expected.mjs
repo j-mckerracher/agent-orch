@@ -26,7 +26,9 @@ export const WINDOWS = {
   // The Copilot executor tests are unix-only (under executor::tests), so they do not count here.
   // The chat model choice (DPES-1105) adds 6 portable unit tests and 8 process tests in conversation_runtime (fake agent),
   // so 150 becomes 164: the unit binary 130 becomes 136 and conversation_runtime 12 becomes 20 (CI run 43734333632).
-  daemon: { passed: 164, ignored: 1, sequence: [136, 20, 2, 4, 0, 1, 2] },
+  // The Copilot sandbox gate removal (PR #75) deletes the cfg(windows) refusal test (api_tests.rs), so 164 becomes 163 and the
+  // unit binary 136 becomes 135 (CI run 43757529505).
+  daemon: { passed: 163, ignored: 1, sequence: [135, 20, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -84,7 +86,9 @@ export const MACOS = {
   // The bundled usage reader (PR #62) adds 4 tests in orchestrator-local-usage (pin and service): 1119. Measured on a real
   // macOS run of the DPES-1105 fixture-identifier PR.
   // The chat model choice (DPES-1105) adds 15 tests (14 daemon, 1 ipc): 1119 becomes 1134 (CI run 43734333632).
-  workspace: { passed: 1134, ignored: 2 },
+  // The Copilot sandbox gate removal (PR #75) deletes 10 tests (the sandbox probes and the sandbox-gated catalog and launch
+  // tests) and adds 1 sign-in test: 1134 becomes 1125 (CI run 43757529505).
+  workspace: { passed: 1125, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },

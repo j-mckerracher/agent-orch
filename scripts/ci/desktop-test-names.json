@@ -1651,7 +1651,7 @@
     "src/ui/views/workspace/CopilotSignInCheck.test.tsx :: CopilotSignInCheck (DPES-1105) polls the free status read while the daemon's background check runs, then shows the settled state",
     "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows ready, the hook as a visible warning, and the hooks sentence in the provider details",
     "src/ui/views/workspace/CopilotSignInWarning.test.tsx :: CopilotSignInCheck: a completed turn with a hook warning (DPES-1105) shows no warning line when the run had no hook error",
-    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode lists GitHub Copilot by its display name, disables it when its sandbox host is unavailable, and never defaults to it",
+    "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode lists GitHub Copilot by its display name, disables it when its CLI is not installed, and never defaults to it",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode sends the picked agent, model and effort with the next message, and nothing while the picker is untouched",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode blocks a chosen model on a daemon without conversation_selection, and sends nothing without the choice",
     "src/ui/views/workspace/WorkspaceView.test.tsx :: workspace view, live (daemon-derived) mode does not send a chosen model to a coordinator note, where it would be dropped"
