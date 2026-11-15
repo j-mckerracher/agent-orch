@@ -24,12 +24,6 @@ const globalOption = (live: boolean): TargetOption => ({
 });
 const POLL_MS = 1000;
 const COMPOSER_PLACEHOLDER = "Ask a question, redirect work, or discuss the plan…";
-const LIVE_COPY =
-  "Messages are recorded by the daemon. A reply appears only if the daemon's conversation runtime produces one; nothing is simulated here.";
-const NOTE_COPY =
-  "Notes only, no reply: a message is recorded as a note for the coordinator, which does not respond. It does not create tasks or approvals, and it can be neither approved nor undone from here.";
-const SIMULATED_COPY = "Nothing typed here is sent or recorded anywhere; a send is only simulated in this window.";
-const GLOBAL_NOTE_COPY = "The Global orchestrator is placeholder data; nothing typed here is recorded.";
 
 interface SimulatedEntry {
   id: string;
@@ -415,15 +409,6 @@ function Conversation({
   };
 
   const headingId = `${ids}-heading`;
-  const hintId = `${ids}-hint`;
-  const keysId = `${ids}-keys`;
-  const noteCopy = !live
-    ? target.kind === "global"
-      ? GLOBAL_NOTE_COPY
-      : SIMULATED_COPY
-    : target.kind === "project"
-      ? NOTE_COPY
-      : LIVE_COPY;
   const sendId = `${ids}-send-reason`;
   const modelLoaded = useSurface(
     () => surfaces.models.catalog(),
@@ -491,9 +476,6 @@ function Conversation({
         </p>
       )}
 
-      <p className="ws-small" id={hintId}>
-        {noteCopy}
-      </p>
       {target.kind === "project" && (
         <div className="ws-chips">
           <Button variant="quiet" disabled aria-describedby={`${ids}-chips`}>
@@ -512,15 +494,13 @@ function Conversation({
       )}
 
       <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
-        <label className="ws-small" htmlFor={`${ids}-draft`}>
-          Message {option.label}
-        </label>
         <textarea
           id={`${ids}-draft`}
-          rows={3}
+          aria-label={`Message ${option.label}`}
+          rows={2}
           value={draft}
           placeholder={COMPOSER_PLACEHOLDER}
-          aria-describedby={`${hintId} ${keysId}${blocked ? ` ${sendId}` : ""}`}
+          aria-describedby={blocked ? sendId : undefined}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
@@ -548,9 +528,6 @@ function Conversation({
             {busy ? "…" : "↑"}
           </Button>
         </div>
-        <p id={keysId} className="ws-small">
-          Press Enter to send, Shift+Enter for a new line.
-        </p>
         {blocked && (
           <p id={sendId} className="ws-small ws-blocked">
             Sending is disabled. {blocked}

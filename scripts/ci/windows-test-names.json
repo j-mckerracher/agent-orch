@@ -228,7 +228,10 @@
    "a_clear_moves_the_generation_and_a_stale_cursor_is_a_replay_gap",
    "a_cleared_coordinator_message_replays_as_cleared_and_leaves_no_text_on_disk",
    "removing_a_coordinator_hides_it_persists_across_a_restart_and_restores_empty",
-   "the_daemon_advertises_the_history_capability_that_gates_the_clear_methods"
+   "the_daemon_advertises_the_history_capability_that_gates_the_clear_methods",
+   "the_opt_in_is_persisted_and_turning_it_off_clears_the_snapshot",
+   "window_params_are_validated_before_anything_runs",
+   "the_read_method_reports_off_by_default_without_reading"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
