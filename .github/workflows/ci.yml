@@ -168,6 +168,11 @@ jobs:
           restore-keys: |
             cargo-v2-windows-engine-build-${{ env.RUST_TOOLCHAIN }}-
 
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -258,6 +263,11 @@ jobs:
           key: cargo-v2-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             cargo-v2-windows-engine-tests-a-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -350,6 +360,11 @@ jobs:
           restore-keys: |
             cargo-v2-windows-engine-tests-b-${{ env.RUST_TOOLCHAIN }}-
 
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -441,6 +456,11 @@ jobs:
           restore-keys: |
             cargo-v2-windows-tauri-build-${{ env.RUST_TOOLCHAIN }}-
 
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -531,6 +551,11 @@ jobs:
           key: cargo-v2-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             cargo-v2-windows-tauri-tests-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
@@ -670,6 +695,11 @@ jobs:
           key: cargo-v2-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock') }}
           restore-keys: |
             cargo-v2-windows-desktop-package-${{ env.RUST_TOOLCHAIN }}-
+
+      # Cargo judges local packages by file mtimes. A restored target can only look newer than the checkout if it was
+      # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
+      - name: Touch the local sources after the cache restore
+        run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
       - name: Native gates
         run: |
