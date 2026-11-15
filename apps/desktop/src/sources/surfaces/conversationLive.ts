@@ -31,6 +31,7 @@ import type {
   ConversationSource,
   ConversationTarget,
   ConversationTurnInfo,
+  ModelChoice,
   Provenance,
   SendReceipt,
 } from "./types";
@@ -91,6 +92,17 @@ const FAILURE_TEXT: Record<string, string> = {
   runtime_busy: "The orchestrator is already answering other conversations. Try again in a moment.",
   reply_too_large: "The reply was larger than the daemon allows and was dropped.",
   interrupted_by_restart: "The daemon restarted before the reply finished. The reply is incomplete or missing.",
+  // The daemon refused the model choice from the picker (DPES-1105). Each reason has its own code.
+  selection_agent_unavailable: "The chosen agent is not installed or cannot be launched. Choose another agent. No reply was produced.",
+  selection_authentication_failed: "The chosen agent is not signed in. Sign in to it, or choose another agent. No reply was produced.",
+  selection_agent_state_unknown: "The chosen agent's state could not be checked. Try again shortly. No reply was produced.",
+  selection_agent_unsupported: "The chosen agent cannot answer a message. Choose another agent. No reply was produced.",
+  selection_models_unsupported: "The chosen agent does not offer model choices. Choose the default model. No reply was produced.",
+  selection_models_unknown: "The chosen agent's models could not be read. Try again shortly. No reply was produced.",
+  selection_unknown_model: "The chosen agent does not offer that model. Choose another model. No reply was produced.",
+  selection_effort_requires_model: "That effort needs a model. Choose a model, or the default effort. No reply was produced.",
+  selection_effort_unsupported: "The chosen agent does not offer that effort for this model. Choose another effort. No reply was produced.",
+  selection_effort_unknown: "The chosen agent's effort levels could not be read. Try again shortly. No reply was produced.",
 };
 
 export function failureText(code: string | null): string {
@@ -188,7 +200,7 @@ export function createLiveConversation(
   now: () => number,
 ): Required<Pick<ConversationSource, "cancel" | "clear">> & {
   transcript: (target: LiveTarget) => ReturnType<ConversationSource["transcript"]>;
-  send: (target: LiveTarget, text: string) => Promise<SendReceipt>;
+  send: (target: LiveTarget, text: string, selection?: ModelChoice) => Promise<SendReceipt>;
 } {
   const scopeOf = (target: LiveTarget) => (target.kind === "global" ? "global" : `workstream:${target.workstreamId}`);
 
@@ -242,12 +254,13 @@ export function createLiveConversation(
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));
     },
 
-    async send(target, text) {
+    async send(target, text, selection) {
       refuseFixture(target);
       const scope = `send:${scopeOf(target)}`;
-      const key = keys.keyFor(scope, text);
+      // A retry with another choice is another message: it must not reuse the key of the first.
+      const key = keys.keyFor(scope, JSON.stringify([text, selection ?? null]));
       try {
-        const result = await connection.api().conversationsSend(toWireTarget(target), text, key);
+        const result = await connection.api().conversationsSend(toWireTarget(target), text, key, selection);
         keys.settle(scope, null);
         const { entry } = result;
         // A replay of a message that a clear deleted has no entry body and no turn (DPES-1105).

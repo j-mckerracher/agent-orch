@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
@@ -245,6 +248,40 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(await t.direct((api) => api.approvalsList())).toEqual([]);
     } finally {
       await t.stop();
+    }
+  }, 90000);
+
+  it("sends the model and effort the picker chose to the agent for that message", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mc-model-choice-"));
+    const log = join(dir, "agent.log");
+    const t = await prepare({ ...fakeAgentEnv(), FAKE_AGENT_LOG: log, AGENT_ORCH_ENV_PASSTHROUGH: "FAKE_AGENT_LOG" });
+    try {
+      // A cold agent catalog makes the first send a retryable conflict; warm it first.
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
+      await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "fake-model");
+      const effort = screen.getByRole("combobox", { name: "Effort" });
+      await waitFor(() => expect((effort as HTMLSelectElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.selectOptions(effort, "high");
+      const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+      await userEvent.type(box, "pick my model");
+      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+
+      expect(await screen.findByText("fake reply to: pick my model", undefined, { timeout: 20000 })).toBeTruthy();
+      const launched = readFileSync(log, "utf8");
+      expect(launched).toContain('"-m", "fake-model"');
+      expect(launched).toContain('model_reasoning_effort=\\"high\\"');
+    } finally {
+      await t.stop();
+      rmSync(dir, { recursive: true, force: true });
     }
   }, 90000);
 

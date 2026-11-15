@@ -64,6 +64,8 @@ describe("mapEntries", () => {
     for (const [code, pattern] of [
       ["runtime_timeout", /too long/],
       ["runtime_busy", /already answering/],
+      ["selection_unknown_model", /does not offer that model/],
+      ["selection_agent_unsupported", /cannot answer a message/],
     ] as const) {
       const entries = mapEntries([wire(1, "t1", "user_message", "hi"), wire(2, "t1", "turn_failed", "", code)]);
       expect(entries[1]).toMatchObject({ kind: "status", role: "system", errorCode: code });
@@ -250,6 +252,21 @@ describe("live conversation adapter", () => {
     const keys = fake.callsTo("conversations.send").map((c) => (c.params as Record<string, string>).idempotency_key);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[1]);
+  });
+
+  it("sends the chosen selection with the message, and a retry with another choice is a new message", async () => {
+    const fake = populate(new FakeDaemon());
+    stubConversation(fake);
+    fake.failNext("conversations.send", "hang");
+    const s = await live(fake);
+    const choice = { agent: "codex", model: "gpt-a", effort: "high" };
+    await expect(s.conversation.send({ kind: "global" }, "same", choice)).rejects.toMatchObject({ kind: "timeout" });
+    await s.conversation.send({ kind: "global" }, "same");
+    const [first, second] = fake.callsTo("conversations.send").map((c) => c.params as Record<string, unknown>);
+    expect(first!.selection).toEqual(choice);
+    // Without a choice the request has no `selection` key at all, as before the picker sent one.
+    expect(second).not.toHaveProperty("selection");
+    expect(second!.idempotency_key).not.toBe(first!.idempotency_key);
   });
 
   it("refuses a fixture workstream id before any request", async () => {

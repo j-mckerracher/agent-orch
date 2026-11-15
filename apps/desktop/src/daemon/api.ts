@@ -13,6 +13,7 @@ import type {
   AgentCatalogEntry,
   Approval,
   ConversationCancelResult,
+  ConversationSelectionWire,
   ConversationSendResult,
   ConversationWirePage,
   ConversationWireTarget,
@@ -394,16 +395,21 @@ export class DaemonApi {
     });
   }
 
-  /** M7-08. Records the message and starts a turn; the turn can still fail (e.g. `runtime_unavailable`). */
+  /**
+   * M7-08. Records the message and starts a turn; the turn can still fail (e.g. `runtime_unavailable`).
+   * `selection` is omitted unless the caller has one, so an older daemon sees the request it always did.
+   */
   async conversationsSend(
     target: ConversationWireTarget,
     text: string,
     idempotencyKey: string,
+    selection?: ConversationSelectionWire,
   ): Promise<ConversationSendResult> {
     return this.session.request("conversations.send", {
       target: realTarget(target),
       text,
       idempotency_key: idempotencyKey,
+      ...(selection === undefined ? {} : { selection }),
     });
   }
 
