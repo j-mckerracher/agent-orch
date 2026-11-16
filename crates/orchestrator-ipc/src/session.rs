@@ -1,7 +1,7 @@
 use crate::auth::{authenticate, AuthError, Secret};
 use crate::protocol::{self, Capability, Handshake, RpcFailure, RpcId, RpcRequest, RpcResponse};
 use crate::transport::IpcStream;
-use crate::{Health, IpcError, IpcEvent, RpcError, RpcHandler};
+use crate::{CallContext, Health, IpcError, IpcEvent, RpcError, RpcHandler};
 use serde_json::{json, Value};
 use std::io;
 use std::path::PathBuf;
@@ -373,7 +373,7 @@ fn handle_request(
     if let Some((id, _)) = &traced {
         trace(format_args!("request start id={id} method={method}"));
     }
-    let outcome = handler.dispatch(method, request.params);
+    let outcome = handler.dispatch_in(method, request.params, &CallContext::new(capabilities));
     if let Some((id, started)) = &traced {
         let status = match &outcome {
             Ok(_) => "ok".to_owned(),

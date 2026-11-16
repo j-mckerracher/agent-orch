@@ -10,6 +10,7 @@
 //! start a line of its own.
 
 use orchestrator_core::approval::ApprovalActionKind;
+use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
 use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, WorkstreamStoreError};
@@ -35,6 +36,10 @@ const RANK_THIS_WORKSTREAM: u8 = 0;
 const RANK_PROJECTS: u8 = 1;
 const RANK_WORKSTREAMS: u8 = 2;
 const RANK_OPEN_TASKS: u8 = 3;
+/// Proposals of this conversation, cut first when the snapshot is full.
+const RANK_PROPOSALS: u8 = 4;
+/// Newest proposals of this conversation listed (DPES-1105).
+const PROPOSALS_LISTED: usize = 10;
 
 /// One part of the snapshot. `head` always appears. `items` are listed after
 /// it, newest first, and cut from the end when the snapshot is full. The
@@ -65,8 +70,14 @@ impl Block {
 }
 
 /// Builds the app-state snapshot for a turn scoped to `target`. A failed read
-/// shows that section as unavailable and does not fail the turn.
-pub(crate) fn build_snapshot(store: &SqliteStore, target: &ConversationTarget) -> String {
+/// shows that section as unavailable and does not fail the turn. `actions` is
+/// the session's negotiated `orchestrator_actions`: only then do revisions and
+/// proposals appear, because only then can the agent act on them.
+pub(crate) fn build_snapshot(
+    store: &SqliteStore,
+    target: &ConversationTarget,
+    actions: bool,
+) -> String {
     let scope = match target {
         ConversationTarget::Global => "Scope: the global orchestrator.",
         ConversationTarget::Workstream(_) => "Scope: one workstream.",
@@ -76,13 +87,19 @@ pub(crate) fn build_snapshot(store: &SqliteStore, target: &ConversationTarget) -
         Block::text(scope),
     ];
     if let ConversationTarget::Workstream(id) = target {
-        blocks.push(this_workstream(store, id));
+        blocks.push(this_workstream(store, id, actions));
     }
     blocks.push(projects(store));
-    blocks.push(workstreams(store));
+    blocks.push(workstreams(store, actions));
     blocks.extend(tasks(store));
     blocks.push(approvals(store));
-    blocks.push(Block::text("Actions: none yet"));
+    if actions {
+        let kinds: Vec<&str> = ActionKind::ALL.map(ActionKind::as_str).into();
+        blocks.push(Block::text(format!("Action kinds: {}", kinds.join(", "))));
+        blocks.push(proposals(store, target));
+    } else {
+        blocks.push(Block::text("Actions: none yet"));
+    }
     blocks.push(Block::text("END APP STATE"));
     lay_out(blocks)
 }
@@ -146,7 +163,7 @@ fn more_len(total: usize) -> usize {
     }
 }
 
-fn this_workstream(store: &SqliteStore, workstream_id: &str) -> Block {
+fn this_workstream(store: &SqliteStore, workstream_id: &str, actions: bool) -> Block {
     match load_one(store, workstream_id) {
         Ok((workstream, objectives)) => {
             let summary = field(&workstream.summary, TEXT_BYTES);
@@ -156,12 +173,17 @@ fn this_workstream(store: &SqliteStore, workstream_id: &str) -> Block {
                 summary
             };
             let head = format!(
-                "This workstream:\n- {} [id {}] state {}; summary: {summary}",
+                "This workstream:\n- {} [id {}]{} state {}; summary: {summary}",
                 field(&workstream.title, TEXT_BYTES),
                 field(&workstream.id, TEXT_BYTES),
+                revision_text(workstream.revision, actions),
                 workstream.state.tag(),
             );
-            let items: Vec<String> = objectives.iter().rev().map(objective_block).collect();
+            let items: Vec<String> = objectives
+                .iter()
+                .rev()
+                .map(|objective| objective_block(objective, actions))
+                .collect();
             Block {
                 head,
                 total: items.len(),
@@ -191,12 +213,12 @@ fn projects(store: &SqliteStore) -> Block {
     }
 }
 
-fn workstreams(store: &SqliteStore) -> Block {
+fn workstreams(store: &SqliteStore, actions: bool) -> Block {
     match load_workstreams(store) {
         Ok(loaded) => {
             let items: Vec<String> = loaded
                 .iter()
-                .map(|(workstream, objectives)| workstream_line(workstream, objectives))
+                .map(|(workstream, objectives)| workstream_line(workstream, objectives, actions))
                 .collect();
             Block {
                 head: format!("Workstreams ({}):", items.len()),
@@ -233,6 +255,44 @@ fn tasks(store: &SqliteStore) -> Vec<Block> {
             Block::text("Tasks: unavailable"),
             Block::unavailable("Open tasks"),
         ],
+    }
+}
+
+/// This conversation's newest proposals and their states, one line each. The
+/// line names the kind and the title from the canonical parameters. It never
+/// shows the subject, which can hold an internal proposal id, and never shows
+/// an id (DPES-1105).
+fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
+    match store.action_proposals(target, PROPOSALS_LISTED) {
+        Ok(proposals) => {
+            let items: Vec<String> = proposals
+                .iter()
+                .map(|proposal| {
+                    let title = serde_json::from_str::<serde_json::Value>(&proposal.params_json)
+                        .ok()
+                        .and_then(|params| params.get("title")?.as_str().map(str::to_owned));
+                    match title {
+                        Some(title) => format!(
+                            "- {} {}: {}",
+                            proposal.kind.as_str(),
+                            proposal.state.as_str(),
+                            field(&title, TEXT_BYTES),
+                        ),
+                        None => format!("- {} {}", proposal.kind.as_str(), proposal.state.as_str()),
+                    }
+                })
+                .collect();
+            if items.is_empty() {
+                return Block::text("Recent proposals:\n- none");
+            }
+            Block {
+                head: "Recent proposals:".to_owned(),
+                total: items.len(),
+                items,
+                rank: RANK_PROPOSALS,
+            }
+        }
+        Err(_) => Block::unavailable("Recent proposals"),
     }
 }
 
@@ -273,24 +333,36 @@ fn load_workstreams(
     Ok(loaded)
 }
 
-fn workstream_line(workstream: &Workstream, objectives: &[Objective]) -> String {
+fn workstream_line(workstream: &Workstream, objectives: &[Objective], actions: bool) -> String {
     let gates = gate_counts(objectives.iter().flat_map(|objective| &objective.gates));
     format!(
-        "- {} [id {}] state {}; objectives {}; {gates}",
+        "- {} [id {}]{} state {}; objectives {}; {gates}",
         field(&workstream.title, TEXT_BYTES),
         field(&workstream.id, TEXT_BYTES),
+        revision_text(workstream.revision, actions),
         workstream.state.tag(),
         objectives.len(),
     )
 }
 
+/// " rev N" on a workstream or objective line, shown only when actions are on.
+/// An update must name the revision it was read at (DPES-1105).
+fn revision_text(revision: i64, actions: bool) -> String {
+    if actions {
+        format!(" rev {revision}")
+    } else {
+        String::new()
+    }
+}
+
 /// One objective line, then one line per gate. Gates past `GATE_LINES` are
 /// summarised, so one objective stays bounded.
-fn objective_block(objective: &Objective) -> String {
+fn objective_block(objective: &Objective, actions: bool) -> String {
     let mut lines = vec![format!(
-        "- Objective \"{}\" [id {}]: {}",
+        "- Objective \"{}\" [id {}]{}: {}",
         field(&objective.title, TEXT_BYTES),
         field(&objective.id, TEXT_BYTES),
+        revision_text(objective.revision, actions),
         gate_counts(&objective.gates),
     )];
     lines.extend(objective.gates.iter().take(GATE_LINES).map(|gate| {
@@ -419,6 +491,27 @@ mod tests {
         (directory, store)
     }
 
+    #[test]
+    fn revisions_and_proposals_appear_only_when_actions_are_negotiated() {
+        let (_directory, store) = store();
+        make_workstream(&store, "ws-1", "Alpha", "");
+        let plain = snapshot_for_global(&store);
+        assert!(plain.contains("Actions: none yet"), "{plain}");
+        assert!(!plain.contains(" rev "), "{plain}");
+
+        let actions = build_snapshot(&store, &ConversationTarget::Global, true);
+        assert!(actions.contains("[id ws-1] rev "), "{actions}");
+        assert!(
+            actions.contains(
+                "Action kinds: workstream.create, workstream.update, objective.add, objective.revise"
+            ),
+            "{actions}"
+        );
+        assert!(actions.contains("Recent proposals:\n- none"), "{actions}");
+        assert!(!actions.contains("Actions: none yet"), "{actions}");
+        assert!(actions.len() <= SNAPSHOT_MAX_BYTES);
+    }
+
     fn make_project(store: &SqliteStore, id: &str, root_path: &str, settings: serde_json::Value) {
         store
             .register_project(&Project {
@@ -503,7 +596,7 @@ mod tests {
     }
 
     fn snapshot_for_global(store: &SqliteStore) -> String {
-        build_snapshot(store, &ConversationTarget::Global)
+        build_snapshot(store, &ConversationTarget::Global, false)
     }
 
     #[test]
@@ -674,7 +767,11 @@ mod tests {
             )
             .unwrap();
 
-        let snapshot = build_snapshot(&store, &ConversationTarget::Workstream("ws-1".into()));
+        let snapshot = build_snapshot(
+            &store,
+            &ConversationTarget::Workstream("ws-1".into()),
+            false,
+        );
 
         assert!(snapshot.contains("Scope: one workstream.\n"));
         assert!(snapshot

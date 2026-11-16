@@ -13,7 +13,7 @@ M7-25 (see "M7-25: the agent runtime" below).
 | Runtime that ships | M7-08 shipped `UnavailableRuntime` (every turn failed with `runtime_unavailable`). **M7-25 replaced it** with `AgentRuntime` (`api_conversation_agent.rs`), which launches an installed agent. When no agent is launchable the turn still fails closed with `runtime_unavailable`. |
 | Version pin | **Mandatory.** `ConversationService` takes the list of accepted `RuntimeIdentity` values (name + exact version). A runtime that requires a pin and has an empty list gets `runtime_unpinned`. An identity not in the list gets `version_mismatch`. In both cases the runtime never receives the message. M7-25 pins the versions it was live-checked against (see below). |
 | Persistence and recovery owner | The **daemon** owns the transcript (SQLite, migration `0031_conversations.sql`, renumbered from 0030 at integration). Runtime state is never trusted or resumed. On startup `with_config` marks every `running` turn `failed` with `interrupted_by_restart`. |
-| Authority | **None.** Conversation methods only read and write conversation rows. Text (user or runtime) is data; it is never parsed into methods. Proposals still go through `coordinator.propose` and engine validation. Every response carries `"authority": "none"`. |
+| Authority | **None.** Conversation methods only read and write conversation rows. Text (user or runtime) is data and is never parsed into methods, with one exception: a completed reply may end with one `mcao-actions` block, which the daemon parses into pending proposals. The block is parsed only for a session that negotiated `orchestrator_actions`; for any other session it is stripped (`action_block` is `stripped`) and creates no proposals. A proposal carries no authority until the user approves it in a later step. Coordinator proposals still go through `coordinator.propose` and engine validation. Every response carries `"authority": "none"`. |
 
 ## Data model
 
@@ -208,7 +208,14 @@ no flag.
   zero-width joiner and non-joiner stay, because emoji sequences and several
   scripts need them; tag-based flag emoji lose their tags.
 - **Authority.** The runtime holds no store, task, approval or delivery handle
-  beyond the reply sink. A reply is data. Nothing is parsed from it.
+  beyond the reply sink. A reply is data, with one exception: a completed reply
+  may end with one `mcao-actions` block. The daemon parses that block into
+  pending proposals, which carry no authority until the user approves them in a
+  later step. Only a session that negotiated `orchestrator_actions` gets a
+  parse. For any other session the block is stripped, recorded as
+  `action_block` `stripped`, and creates no proposals. A block that does not
+  pass is recorded as `rejected`, and a block in a canceled or failed turn is
+  ignored.
 - **Recovery.** Unchanged: the daemon owns the transcript, a turn the daemon
   lost fails with `interrupted_by_restart`, and replay is by sequence. A
   replayed `conversations.send` returns the turn as it is now, not as
