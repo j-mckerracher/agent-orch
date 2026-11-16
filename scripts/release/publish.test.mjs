@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  checkTagVersions, isPrerelease, releaseAssets, releaseNotes, sha256Sums, tomlSectionVersion,
+  changelogSection, checkTagVersions, isPrerelease, releaseAssets, releaseNotes, sha256Sums, tomlSectionVersion,
 } from "./publish.mjs";
 
 const commit = "0123456789abcdef0123456789abcdef01234567";
@@ -80,6 +80,31 @@ test("unsigned notes open with the prerelease warning and name only the unsigned
   assert.match(notes, /\| macOS \| `MCAO\.zip` \| Signed and notarized \|/);
   assert.match(notes, /\| Windows \| `MCAO-setup\.exe` \| UNSIGNED \|/);
   assert.ok(notes.includes(`commit \`${commit}\` for tag \`v0.1.0\``));
+});
+
+test("a version's changelog section is read under either heading form, and never a longer version's", () => {
+  const text = [
+    "# Changelog", "",
+    "## [0.1.1](https://github.com/x/y/compare/v0.1.0...v0.1.1) (2026-11-17)", "",
+    "### Bug Fixes", "", "* keep the tray open", "",
+    "## [0.1.10](https://github.com/x/y/compare/v0.1.9...v0.1.10) (2026-12-01)", "", "### Updates", "",
+    "## v0.1.0", "", "- Prevent the model selector.", "",
+  ].join("\n");
+  assert.equal(changelogSection(text, "0.1.1"), "### Bug Fixes\n\n* keep the tray open");
+  assert.equal(changelogSection(text, "0.1.10"), "### Updates");
+  assert.equal(changelogSection(text, "0.1.0"), "- Prevent the model selector.");
+  assert.throws(() => changelogSection(text, "0.1.2"), /no section for 0\.1\.2/);
+  assert.throws(() => changelogSection("## Unreleased\n\n- x\n", "0.1.0"), /no section for 0\.1\.0/);
+});
+
+test("the changelog section sits under the unsigned warning and above the installers", () => {
+  const assets = [{ platform: "macos", file: "MCAO.zip", signed: false, notarized: false, sha256: "" }];
+  const notes = releaseNotes({ tag: "v0.1.1", commit, assets, changelog: "### Updates\n\n* x" });
+  const at = (text) => notes.indexOf(text);
+  assert.ok(at("> **Unsigned build") < at("## Changes"));
+  assert.ok(at("## Changes") < at("### Updates"));
+  assert.ok(at("### Updates") < at("## Installers"));
+  assert.doesNotMatch(releaseNotes({ tag: "v0.1.1", commit, assets }), /## Changes/);
 });
 
 test("fully signed notes carry no unsigned warning", () => {

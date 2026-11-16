@@ -1,7 +1,8 @@
 // Prepares one GitHub release from the platform builds of a `v*` tag: checks the tag against every
 // version source, collects the installers, verifies each against the digest its build recorded, and
-// writes the assets (installers and SHA256SUMS) and the release notes. The release itself is created by
-// the `gh release create` step of .github/workflows/release.yml, the only step that holds the token.
+// writes the assets (installers and SHA256SUMS) and the release notes, which carry the version's section
+// of docs/changelog.md. The release itself is created and published by the `Publish the GitHub release`
+// step of .github/workflows/release.yml, the only step that holds the token.
 //
 //   node scripts/release/publish.mjs <tag> --downloads DIR --out DIR
 //
@@ -81,6 +82,20 @@ export const isPrerelease = (assets) => assets.some((asset) => !asset.signed);
 // The `sha256sum -c` format: "<digest>  <file>" per line.
 export const sha256Sums = (assets) => assets.map((asset) => `${asset.sha256}  ${asset.file}\n`).join("");
 
+// The body of the `## ` section of docs/changelog.md for `version`, without its heading. release-please
+// writes `## [X.Y.Z](link) (date)`, and a hand-written section reads `## vX.Y.Z`; `(?![\d.])` keeps 0.1.1
+// from matching 0.1.10. Throws when there is no section: a release has to say what changed.
+export function changelogSection(text, version) {
+  const lines = text.split(/\r?\n/);
+  const escaped = version.replace(/\./g, "\\.");
+  const heading = new RegExp(`^## \\[?v?${escaped}(?![\\d.])`);
+  const start = lines.findIndex((line) => heading.test(line));
+  if (start < 0) throw new Error(`docs/changelog.md has no section for ${version}`);
+  const rest = lines.slice(start + 1);
+  const next = rest.findIndex((line) => line.startsWith("## "));
+  return (next < 0 ? rest : rest.slice(0, next)).join("\n").trim();
+}
+
 const signingLabel = (asset) => {
   if (!asset.signed) return "UNSIGNED";
   if (asset.platform === "macos") return asset.notarized ? "Signed and notarized" : "Signed, not notarized";
@@ -88,7 +103,8 @@ const signingLabel = (asset) => {
 };
 
 // The notes name only the unsigned platforms in the warning, so a signed platform never reads as unsigned.
-export function releaseNotes({ tag, commit, assets }) {
+// `changelog` is the version's changelog section, placed under the warning and above the installers.
+export function releaseNotes({ tag, commit, assets, changelog }) {
   const unsigned = assets.filter((asset) => !asset.signed);
   const lines = [];
   if (unsigned.length > 0) {
@@ -98,6 +114,7 @@ export function releaseNotes({ tag, commit, assets }) {
     for (const asset of unsigned) lines.push(">", `> ${UNSIGNED_WARNING[asset.platform]}`);
     lines.push("");
   }
+  if (changelog) lines.push("## Changes", "", changelog, "");
   lines.push(
     "## Installers",
     "",
@@ -173,7 +190,8 @@ function publish(argv) {
     }
   }
   writeFileSync(join(assetsDir, "SHA256SUMS"), sha256Sums(assets));
-  writeFileSync(join(out, "release-notes.md"), releaseNotes({ tag, commit, assets }));
+  const changelog = changelogSection(readFileSync(join(repo, "docs", "changelog.md"), "utf8"), sources[0].version);
+  writeFileSync(join(out, "release-notes.md"), releaseNotes({ tag, commit, assets, changelog }));
 
   const prerelease = isPrerelease(assets);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${prerelease}\n`);

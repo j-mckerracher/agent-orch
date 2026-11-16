@@ -165,7 +165,9 @@ export const NODE_SELF_TESTS = { passed: 132 };
 // 1667 tests, as the desktop-vitest gate measured them on macOS and Windows in CI run 43945842537.
 // The chat model choice for GitHub Copilot (DPES-1105, PR #99) adds 6 net tests to the existing ModelPicker and CopilotSignInCheck
 // test files: 1673 tests in 80 files, as measured by `npx vitest run` on the merged tree (CI measured 1668 in 79 files before main's 5).
-export const VITEST = { files: 80, tests: 1673 };
+// DPES-1105 persisting the chosen provider and model across views adds one file and 26 tests: 81 files and 1699 tests, counted by
+// `npx vitest run` on the merged tree and by the desktop-vitest gate in CI run 43963037995.
+export const VITEST = { files: 81, tests: 1699 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

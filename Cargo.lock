@@ -930,7 +930,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "orchestrator-agents"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "libc",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "orchestrator-agents",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -974,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "orchestrator-agents",
@@ -997,7 +997,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-diagnostics"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orchestrator-core",
  "orchestrator-diagnostics",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tempfile",
  "thiserror",
@@ -1026,7 +1026,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-host-metrics"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-ipc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-local-usage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "serde",
@@ -1060,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-private-fs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tempfile",
  "windows-sys",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "orchestrator-core",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jiff",
  "orchestrator-core",
