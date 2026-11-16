@@ -364,10 +364,21 @@ fn daemon_versions(log: &Path) -> Vec<String> {
     fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .flat_map(events)
         .filter(|event| event["event"] == "daemon_start")
         .filter_map(|event| event["version"].as_str().map(str::to_owned))
         .collect()
+}
+
+/// Every JSON event on a log line. A daemon killed mid-write (this smoke does that on purpose)
+/// leaves a partial line, and the next daemon's event can follow it on the same line.
+fn events(line: &str) -> impl Iterator<Item = Value> + '_ {
+    line.match_indices('{').filter_map(move |(start, _)| {
+        serde_json::Deserializer::from_str(&line[start..])
+            .into_iter::<Value>()
+            .next()?
+            .ok()
+    })
 }
 
 fn submit(data: &Path, project_id: &str, key: &str) -> String {
