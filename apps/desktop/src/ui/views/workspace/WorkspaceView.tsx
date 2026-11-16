@@ -17,7 +17,7 @@ import { ErrorNotice } from "../../widgets";
 import { AddCoordinatorDialog, ConversationActions, historyActionReason } from "./ConversationActions";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { ModelPicker } from "./ModelPicker";
-import { PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
+import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
 import { useRetained } from "./useRetained";
@@ -349,6 +349,9 @@ function Conversation({
     saveLevel(next);
     setPermission(next);
   };
+  // The level is chosen in the model picker, so a coordinator note, which runs no agent, has no level to choose.
+  const permissionControl =
+    target.kind === "project" ? undefined : { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission };
 
   let blocked: string | null = null;
   if (live) {
@@ -541,14 +544,6 @@ function Conversation({
             onSelect={onSelect}
             addCoordinator={addCoordinator}
           />
-          {target.kind !== "project" && (
-            <PermissionLevelPicker
-              level={shownLevel}
-              daemonAdvertises={!olderDaemon}
-              agent={choice?.agent}
-              onChange={choosePermission}
-            />
-          )}
           <ModelPicker
             catalog={modelCatalog}
             provenance={surfaces.models.provenance}
@@ -556,6 +551,7 @@ function Conversation({
             copilotSignIn={surfaces.models}
             onRetry={retryModels}
             onChoiceChange={setChoice}
+            permission={permissionControl}
           />
           <Button
             type="submit"
@@ -570,15 +566,12 @@ function Conversation({
         </div>
         {target.kind !== "project" && (
           <PermissionLevelNotes
-            level={shownLevel}
             olderDaemon={olderDaemon}
-            agent={choice?.agent}
             lastTurn={
               live && turn
                 ? { daemonLevel: turn.permissionLevel ?? null, sentLevel: sentLevels.current.get(turn.id) ?? null }
                 : null
             }
-            onChange={choosePermission}
           />
         )}
         {blocked && (

@@ -3,20 +3,25 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
 import { PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
-import { INDICATOR, OLDER_DAEMON_NOTICE } from "./permissionLevel";
+import { OLDER_DAEMON_NOTICE } from "./permissionLevel";
 
-function picker(level: PermissionLevel, onChange: (next: PermissionLevel) => void, options: { daemonAdvertises?: boolean; agent?: string } = {}) {
+function picker(
+  level: PermissionLevel,
+  onChange: (next: PermissionLevel) => void,
+  options: { daemonAdvertises?: boolean; agent?: string; closePanel?: () => void } = {},
+) {
   return render(
     <PermissionLevelPicker
       level={level}
       daemonAdvertises={options.daemonAdvertises ?? true}
       agent={options.agent}
       onChange={onChange}
+      closePanel={options.closePanel ?? vi.fn()}
     />,
   );
 }
 
-describe("permission level dropdown", () => {
+describe("permission level control in the model picker panel", () => {
   it("lists the four levels, with Extended disabled and its reason shown", () => {
     picker("auto", vi.fn());
     const select = screen.getByRole("combobox", { name: "Permission level" });
@@ -27,11 +32,13 @@ describe("permission level dropdown", () => {
     expect(screen.getByRole("option", { name: "Full" })).toBeEnabled();
   });
 
-  it("changes straight to Restricted or Auto without a confirmation", async () => {
+  it("changes straight to Restricted or Auto without a confirmation or closing the panel", async () => {
     const onChange = vi.fn();
-    picker("auto", onChange);
+    const closePanel = vi.fn();
+    picker("auto", onChange, { closePanel });
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
     expect(onChange).toHaveBeenCalledWith("restricted");
+    expect(closePanel).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -47,6 +54,14 @@ describe("permission level dropdown", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(dialog).not.toBeInTheDocument();
     expect(select).toHaveValue("auto");
+  });
+
+  it("closes the panel before the Full confirmation opens, so the dialog can return focus to the chip", async () => {
+    const closePanel = vi.fn();
+    picker("auto", vi.fn(), { closePanel });
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Full");
+    await screen.findByRole("dialog", { name: "Run this chat at Full?" });
+    expect(closePanel).toHaveBeenCalledTimes(1);
   });
 
   it("changes to Full only when the user confirms", async () => {
@@ -94,69 +109,32 @@ describe("permission level dropdown", () => {
   });
 });
 
-describe("permission level notes", () => {
-  it("shows the Auto indicator with a one-click switch to Restricted", async () => {
-    const onChange = vi.fn();
-    render(<PermissionLevelNotes level="auto" olderDaemon={false} agent={undefined} lastTurn={null} onChange={onChange} />);
-    expect(screen.getByText(INDICATOR.auto)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Switch to Restricted" }));
-    expect(onChange).toHaveBeenCalledWith("restricted");
-  });
-
-  it("shows the Full indicator while Full is active", () => {
-    render(<PermissionLevelNotes level="full" olderDaemon={false} agent={undefined} lastTurn={null} onChange={vi.fn()} />);
-    expect(screen.getByText(INDICATOR.full)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Switch to Restricted" })).toBeInTheDocument();
-  });
-
-  it("shows no indicator and no switch at Restricted", () => {
-    render(<PermissionLevelNotes level="restricted" olderDaemon={false} agent={undefined} lastTurn={null} onChange={vi.fn()} />);
-    expect(screen.queryByText(INDICATOR.auto)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Switch to Restricted" })).toBeNull();
+describe("permission level notes below the composer", () => {
+  it("shows no level indicator and no one-click switch: the level is chosen in the model picker", () => {
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={null} />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText(/automatic review/i)).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("shows the older-daemon notice when the daemon predates permission levels", () => {
-    render(<PermissionLevelNotes level="restricted" olderDaemon agent={undefined} lastTurn={null} onChange={vi.fn()} />);
+    render(<PermissionLevelNotes olderDaemon lastTurn={null} />);
     expect(screen.getByRole("status")).toHaveTextContent(OLDER_DAEMON_NOTICE);
   });
 
   it("reports the level the daemon recorded for the last turn", () => {
-    render(
-      <PermissionLevelNotes
-        level="auto"
-        olderDaemon={false}
-        agent={undefined}
-        lastTurn={{ daemonLevel: "auto", sentLevel: "auto" }}
-        onChange={vi.fn()}
-      />,
-    );
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "auto", sentLevel: "auto" }} />);
     expect(screen.getByText("The daemon reports the last reply ran at Auto.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("shows an error when the daemon reports a different level from the one sent", () => {
-    render(
-      <PermissionLevelNotes
-        level="auto"
-        olderDaemon={false}
-        agent={undefined}
-        lastTurn={{ daemonLevel: "restricted", sentLevel: "auto" }}
-        onChange={vi.fn()}
-      />,
-    );
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "restricted", sentLevel: "auto" }} />);
     expect(screen.getByRole("alert")).toHaveTextContent("ran at Restricted, not Auto.");
   });
 
   it("says so when the daemon recorded no level for the last turn", () => {
-    render(
-      <PermissionLevelNotes
-        level="auto"
-        olderDaemon={false}
-        agent={undefined}
-        lastTurn={{ daemonLevel: null, sentLevel: "auto" }}
-        onChange={vi.fn()}
-      />,
-    );
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: null, sentLevel: "auto" }} />);
     expect(screen.getByText("The daemon has not recorded a permission level for the last turn.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });

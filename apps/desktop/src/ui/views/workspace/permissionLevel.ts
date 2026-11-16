@@ -1,6 +1,6 @@
 /**
  * The chat permission level (DPES-1105): its labels, the level a request carries, why a level cannot be
- * chosen, the wording each level shows, and the one saved preference. Pure, so the rules are tested
+ * chosen, the Full confirmation's wording, and the one saved preference. Pure, so the rules are tested
  * without rendering.
  */
 import type { PermissionLevel } from "../../../sources/surfaces/types";
@@ -39,17 +39,6 @@ export function chatChoiceBlock(level: PermissionLevel, daemonAdvertises: boolea
 
 export const OLDER_DAEMON_NOTICE = "This daemon predates permission levels. Update the daemon, or choose Restricted.";
 
-/** The short line shown while a level other than Restricted is active. */
-export const INDICATOR: Record<PermissionLevel, string> = {
-  restricted: "Restricted: read-only. The agent cannot change files.",
-  extended: "Extended is not available for chat yet.",
-  auto: "Auto: automatic review. This is not a guarantee.",
-  full: "Full: no sandbox and no approval checks from MCAO.",
-};
-
-export const AUTO_TEXT =
-  "Auto: automatic review. The agent can run commands and edit files in its workspace without asking you. The review decides risky actions, and it can be wrong. This is not a guarantee. Web access, memory, MCP servers and repository instruction files stay off. Switch to Restricted at any time.";
-
 export const FULL_SUMMARY =
   "Full lets the agent run any command and edit any file your account can. MCAO adds no sandbox and no approval checks.";
 
@@ -61,13 +50,6 @@ export const FULL_SAVE_TEXT = "Full lasts until you choose another level. It is 
 
 export type AgentId = "codex" | "claude-code" | "github-copilot";
 const AGENT_IDS: readonly AgentId[] = ["codex", "claude-code", "github-copilot"];
-
-export const AUTO_AGENT_TEXT: Record<AgentId, string> = {
-  codex: "Codex's automatic review decides approval requests. Commands run in a workspace-write sandbox.",
-  "claude-code": "Claude's auto mode uses a classifier with rule lists. Shell commands are not confined to the worktree.",
-  "github-copilot":
-    "The review is a probabilistic LLM judge. Copilot's documentation says it is not a security boundary and may approve dangerous or unintended actions. Copilot runs without an OS sandbox.",
-};
 
 export const FULL_AGENT_TEXT: Record<AgentId, string> = {
   codex:

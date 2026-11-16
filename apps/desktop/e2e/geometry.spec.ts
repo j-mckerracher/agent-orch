@@ -430,6 +430,20 @@ for (const [width, height] of [
   });
 }
 
+test("the model chip keeps its text and its permission level whole, on one line left of the send button, at 960 CSS px", async ({ page }) => {
+  await openFixture(page, 960);
+  const chip = page.locator(".ws-model-root > .ws-chip-button");
+  const model = chip.locator("span").first();
+  const level = chip.locator(".ws-chip-level");
+  await expect(level).toBeVisible();
+  expect(await model.evaluate((el) => el.scrollWidth <= el.clientWidth), "model text is not truncated").toBe(true);
+  expect(await level.evaluate((el) => el.scrollWidth <= el.clientWidth), "permission level is not truncated").toBe(true);
+  const chipBox = (await chip.boundingBox())!;
+  const sendBox = (await page.locator(".ws-composer .ws-send").boundingBox())!;
+  expect(chipBox.height, "chip stays on one line").toBeLessThan(40);
+  expect(chipBox.x + chipBox.width, "chip ends before the send button").toBeLessThanOrEqual(sendBox.x);
+});
+
 test.describe("connection strip collapse (DPES-1105)", () => {
   for (const width of [1440, 960, 760]) {
     test(`collapsing the strip shortens it and moves the content up at ${width} CSS px`, async ({ page }) => {

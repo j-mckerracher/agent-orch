@@ -6,6 +6,7 @@ import type {
   ModelOption,
   ModelProvider,
   ModelSelectionCheck,
+  PermissionLevel,
   Provenance,
   SurfaceResult,
 } from "../../../sources/surfaces/types";
@@ -14,6 +15,8 @@ import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
+import { PermissionLevelPicker } from "./PermissionLevelPicker";
+import { permissionLabel } from "./permissionLevel";
 
 const LIVE_NOTE =
   "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message. Task submissions do not use it yet.";
@@ -91,7 +94,7 @@ function effortHelp(
  * Provider / model / effort menu. Live (daemon provenance): real catalog data with per-model
  * efforts, each choice checked with `agents.validate_selection`, and a cold catalog retried
  * shortly. Fixtures: placeholder options that can be tried locally. Neither mode sends or
- * persists a choice.
+ * persists a choice. A chat also shows its permission level at the end of the chip and offers it in the panel.
  */
 export function ModelPicker({
   catalog,
@@ -100,6 +103,7 @@ export function ModelPicker({
   copilotSignIn,
   onRetry,
   onChoiceChange,
+  permission,
 }: {
   catalog: SurfaceState<ModelCatalog>;
   provenance: Provenance;
@@ -108,6 +112,8 @@ export function ModelPicker({
   onRetry?: () => void;
   /** Live only: the choice each message is sent with, or null until the user changes a part of it (DPES-1105). */
   onChoiceChange?: (choice: ModelChoice | null) => void;
+  /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
+  permission?: { level: PermissionLevel; daemonAdvertises: boolean; onChange: (level: PermissionLevel) => void };
 }) {
   const popover = usePopover();
   const ids = useId();
@@ -136,10 +142,12 @@ export function ModelPicker({
     chosenEffort = efforts.includes(effort ?? "") ? effort : (efforts[1] ?? efforts[0] ?? null);
   }
 
-  const summary =
+  const modelSummary =
     provider === undefined
       ? "Model settings unavailable"
       : `${provider.name} · ${modelChip(provider, model)} · ${chosenEffort ?? (live ? "default effort" : "effort not available")}`;
+  const levelLabel = permission ? permissionLabel(permission.level) : null;
+  const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
   const lock = provider === undefined;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
@@ -254,7 +262,8 @@ export function ModelPicker({
         aria-label={`Model settings: ${summary}${!live && catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
-        <span>{summary}</span>
+        <span>{modelSummary}</span>
+        {levelLabel && <span className="ws-chip-level"> · {levelLabel}</span>}
         {!live && catalog.status === "ok" && (
           <>
             {" "}
@@ -368,6 +377,15 @@ export function ModelPicker({
         <p id={noteId} className="ws-small">
           {note}
         </p>
+        {permission && (
+          <PermissionLevelPicker
+            level={permission.level}
+            daemonAdvertises={permission.daemonAdvertises}
+            agent={choice?.agent}
+            onChange={permission.onChange}
+            closePanel={popover.close}
+          />
+        )}
       </div>
     </div>
   );

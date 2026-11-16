@@ -65,3 +65,58 @@ describe("ModelPicker in a live chat", () => {
     );
   });
 });
+
+describe("ModelPicker permission level in a chat", () => {
+  it("shows the level at the end of the chip and offers the four levels in the panel", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        permission={{ level: "auto", daemonAdvertises: true, onChange }}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: "Model settings: Codex · default model · default effort · Auto" });
+    expect(chip).toHaveTextContent("Codex · default model · default effort · Auto");
+    await user.click(chip);
+    const level = screen.getByRole("combobox", { name: "Permission level" });
+    expect(level).toHaveValue("auto");
+    expect(within(level).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Restricted",
+      "Extended (not available for chat yet)",
+      "Auto",
+      "Full",
+    ]);
+    expect(within(level).getByRole("option", { name: "Extended (not available for chat yet)" })).toBeDisabled();
+    await user.selectOptions(level, "Restricted");
+    expect(onChange).toHaveBeenCalledWith("restricted");
+  });
+
+  it("asks before Full, and on Cancel returns focus to the chip with the panel closed", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        permission={{ level: "auto", daemonAdvertises: true, onChange }}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: /^Model settings/ });
+    await user.click(chip);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Full");
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(chip).toHaveFocus();
+    expect(chip).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows no level, and offers no level control, where no message runs", async () => {
+    const user = userEvent.setup();
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} />);
+    await user.click(screen.getByRole("button", { name: "Model settings: Codex · default model · default effort" }));
+    expect(screen.getByRole("combobox", { name: "Provider" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Permission level" })).toBeNull();
+  });
+});
