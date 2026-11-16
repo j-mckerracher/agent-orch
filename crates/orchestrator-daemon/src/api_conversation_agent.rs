@@ -48,6 +48,7 @@ use orchestrator_ipc::RpcError;
 use orchestrator_store::{ConversationTarget, SqliteStore, TurnPermission, WorkstreamStoreError};
 use uuid::Uuid;
 
+use super::conversation_help::{self as help, Help, HelpCache};
 use super::conversation_orphans as orphans;
 use super::conversation_runtime::{
     Choice, ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity,
@@ -60,9 +61,11 @@ pub(crate) const CODEX: &str = "codex";
 pub(crate) const CLAUDE: &str = "claude-code";
 pub(crate) const GITHUB_COPILOT: &str = "github-copilot";
 
-/// Versions of the agent CLIs this runtime has been proven against. A CLI at
-/// any other version is refused (`version_mismatch`) until an operator adds it
-/// to `AGENT_ORCH_CONVERSATION_PINS`.
+/// Versions of the agent CLIs whose conversation output this runtime has been
+/// checked against. These are verified: they run without a warning. Any other
+/// version runs with an unverified-version warning, after its `--help` shows
+/// every flag the chat needs (see [`required_flags`]). Operators add to this with
+/// `AGENT_ORCH_CONVERSATION_PINS`.
 const KNOWN_PINS: [(&str, &str); 4] = [
     (CODEX, "0.167.0"),
     (CODEX, "0.167.2"),
@@ -186,6 +189,9 @@ struct Selected {
     identity: RuntimeIdentity,
     model: Option<String>,
     effort: Option<String>,
+    /// What the installed CLI's help lists. Read once, only for an unverified
+    /// version; `None` for a verified one, which is not checked (DPES-1106).
+    help: Option<Arc<Help>>,
 }
 
 #[derive(Clone)]
@@ -212,6 +218,8 @@ pub(crate) struct AgentRuntime {
     /// definitive outcome. Bounds the `Conflict` retries.
     pending_since: Mutex<Option<Instant>>,
     running: Arc<AtomicUsize>,
+    /// The `--help` read of each unverified CLI version, once.
+    helps: HelpCache,
 }
 
 impl AgentRuntime {
@@ -227,6 +235,7 @@ impl AgentRuntime {
             selections: Mutex::new(HashMap::new()),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
+            helps: HelpCache::default(),
         }
     }
 
@@ -240,6 +249,13 @@ impl AgentRuntime {
             })
             .chain(self.config.extra_pins.iter().cloned())
             .collect()
+    }
+
+    /// A verified identity is a pin: checked against its output, or marked by
+    /// the operator. Any other identity runs with an unverified-version warning
+    /// (DPES-1106).
+    fn verified(&self, identity: &RuntimeIdentity) -> bool {
+        self.pins().contains(identity)
     }
 
     fn current(&self, choice: Option<&Choice>) -> Option<Selection> {
@@ -364,6 +380,7 @@ impl AgentRuntime {
                 },
                 model: choice.model.clone(),
                 effort: choice.effort.clone(),
+                help: None,
             })),
             Err(error) => {
                 eprintln!(
@@ -460,6 +477,7 @@ impl AgentRuntime {
                 },
                 model: self.config.model.clone(),
                 effort: self.config.effort.clone(),
+                help: None,
             }));
         }
         if pending {
@@ -526,6 +544,10 @@ impl ConversationRuntime for AgentRuntime {
     }
 
     /// Only a selected agent produces output and so needs a pin.
+    fn verified(&self, identity: &RuntimeIdentity) -> bool {
+        AgentRuntime::verified(self, identity)
+    }
+
     fn requires_pin(&self, choice: Option<&Choice>) -> bool {
         matches!(self.current(choice), Some(Selection::Ready(_)))
     }
@@ -552,6 +574,19 @@ impl ConversationRuntime for AgentRuntime {
             return Ok(());
         }
         let selection = self.resolve(choice)?;
+        // The one place a CLI's help is read: before the request gate, so the
+        // bounded read never blocks other requests (DPES-1106).
+        let selection = match selection {
+            Selection::Ready(mut selected) if !self.verified(&selected.identity) => {
+                selected.help = Some(self.helps.get_or_read(
+                    &selected.program,
+                    selected.agent,
+                    &selected.identity.version,
+                ));
+                Selection::Ready(selected)
+            }
+            other => other,
+        };
         let mut selections = self
             .selections
             .lock()
@@ -576,7 +611,15 @@ impl ConversationRuntime for AgentRuntime {
         // The service pinned `request.identity`; a selection that changed since
         // then must not receive the message.
         if selected.identity != request.identity {
-            return Err(RuntimeFailure::VersionMismatch);
+            return Err(RuntimeFailure::RuntimeChanged);
+        }
+        // Refused only when the help was read and a flag the chat needs is
+        // definitely absent. A help that could not be read never refuses.
+        if let Some(Help::Listed(listed)) = selected.help.as_deref() {
+            let required = help::required_flags(selected.agent, request.level);
+            if let Some(flag) = help::missing_flag(listed, &required) {
+                return Err(RuntimeFailure::MissingFlag(flag));
+            }
         }
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
@@ -624,6 +667,7 @@ impl ConversationRuntime for AgentRuntime {
             run,
             _turn_dir: turn_dir,
             sign_in: self.exec.copilot_sign_in.clone(),
+            unverified: !self.verified(&request.identity),
         };
         let thread_sink = sink.clone();
         std::thread::Builder::new()
@@ -803,7 +847,7 @@ fn read_version(program: &Path, agent: &str) -> Probe {
     parsed.map_or(Probe::Rejected, Probe::Version)
 }
 
-fn kill_probe(child: &mut std::process::Child) {
+pub(crate) fn kill_probe(child: &mut std::process::Child) {
     #[cfg(unix)]
     if let Ok(leader) = i32::try_from(child.id()) {
         // SAFETY: signals only the group this probe created.
@@ -882,6 +926,10 @@ struct Turn {
     /// The Codex or Claude Code turn directory, held until the turn's handle drops.
     _turn_dir: Option<TurnDir>,
     sign_in: Arc<CopilotSignIn>,
+    /// An unverified version whose output ends with no text fails the turn: a
+    /// clean exit with no reply is not something the runtime can tell apart from
+    /// an output shape it does not read (DPES-1106).
+    unverified: bool,
 }
 
 /// An empty directory for one Codex or Claude Code turn, under the scratch
@@ -965,6 +1013,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     _record = orphans::AgentRecord::register(&turn.agents, handle.pid());
     let deadline = Instant::now() + turn.timeout;
     let mut messages = 0usize;
+    let mut any_text = false;
     loop {
         if turn.cancelled.load(Ordering::Acquire) {
             let _ = handle.cancel().await;
@@ -995,6 +1044,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                 }
                 if !piece.is_empty() {
                     messages += 1;
+                    any_text = true;
                     if sink.delta(&piece).is_err() {
                         let _ = handle.cancel().await;
                         return;
@@ -1017,6 +1067,9 @@ async fn drive(turn: Turn, sink: &ReplySink) {
         }
     }
     match exit {
+        Ok(AgentExit::Completed { .. }) if turn.unverified && !any_text => {
+            sink.fail(RuntimeFailure::Failed);
+        }
         Ok(AgentExit::Completed { .. }) => sink.complete(),
         Ok(AgentExit::Cancelled { .. }) => {}
         _ if turn.agent == GITHUB_COPILOT => sink.fail(copilot_failure(&turn.sign_in)),
@@ -1100,6 +1153,13 @@ mod tests {
             .map(|p| (p.name.as_str(), p.version.as_str()))
             .collect();
         assert_eq!(names, [("codex", "0.168.0"), ("claude-code", "3.0.0-rc1")]);
+    }
+
+    #[test]
+    fn codex_0169_is_unverified_and_the_checked_codex_releases_stay_verified() {
+        assert!(!KNOWN_PINS.contains(&(CODEX, "0.169.0")));
+        assert!(KNOWN_PINS.contains(&(CODEX, "0.167.0")));
+        assert!(KNOWN_PINS.contains(&(CODEX, "0.167.2")));
     }
 
     #[test]

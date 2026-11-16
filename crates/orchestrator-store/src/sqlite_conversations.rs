@@ -447,11 +447,27 @@ impl SqliteStore {
         turn_id: &str,
         outcome: &TurnOutcome,
     ) -> Result<Option<ConversationEntry>, ConversationError> {
+        self.finish_conversation_turn_with_detail(turn_id, outcome, "")
+    }
+
+    /// Like [`Self::finish_conversation_turn`], and the terminal entry's body is
+    /// `detail`. The detail is a daemon-chosen token of at most 64 bytes, such as
+    /// the flag a refused agent no longer lists; it is never runtime text.
+    pub fn finish_conversation_turn_with_detail(
+        &self,
+        turn_id: &str,
+        outcome: &TurnOutcome,
+        detail: &str,
+    ) -> Result<Option<ConversationEntry>, ConversationError> {
+        if detail.len() > 64 {
+            return Err(ConversationError::InvalidInput("turn detail"));
+        }
         let turn_id = turn_id.to_owned();
         let outcome = outcome.clone();
+        let detail = detail.to_owned();
         conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            let entry = finish_turn(&mut transaction, &turn_id, &outcome).await?;
+            let entry = finish_turn(&mut transaction, &turn_id, &outcome, &detail).await?;
             transaction.commit().await?;
             Ok(entry)
         })
@@ -473,6 +489,7 @@ impl SqliteStore {
                     &mut transaction,
                     turn_id,
                     &TurnOutcome::Failed(INTERRUPTED_BY_RESTART.to_owned()),
+                    "",
                 )
                 .await?;
             }
@@ -695,6 +712,7 @@ async fn finish_turn(
     connection: &mut sqlx::SqliteConnection,
     turn_id: &str,
     outcome: &TurnOutcome,
+    detail: &str,
 ) -> Result<Option<ConversationEntry>, ConversationError> {
     let (state, error_code, kind, author) = match outcome {
         TurnOutcome::Completed => ("completed", None, "turn_completed", "system"),
@@ -733,7 +751,7 @@ async fn finish_turn(
         turn_id,
         kind,
         author,
-        "",
+        detail,
         error_code,
     )
     .await

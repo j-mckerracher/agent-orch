@@ -206,12 +206,12 @@ impl DaemonApi {
             catalog_cache.clone(),
             conversation_agent::ConversationConfig::for_data_dir(data_dir),
         );
-        let pins = runtime.pins();
+        let pinned = !runtime.pins().is_empty();
         let conversations = conversation_runtime::ConversationService::new(
             store.clone(),
             Arc::new(runtime),
             Arc::new(conversation_agent::StoreWorkstreams(store.clone())),
-            pins,
+            pinned,
         );
         conversations.recover()?;
         Ok(Self {
@@ -1449,6 +1449,8 @@ thread_local! {
 
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
+#[path = "api_conversation_help.rs"]
+mod conversation_help;
 #[path = "api_conversation_orphans.rs"]
 mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]

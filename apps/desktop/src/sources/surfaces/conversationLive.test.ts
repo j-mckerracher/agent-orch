@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { stubConversation } from "../../test/m724Stubs";
 import type { ConversationWireEntry } from "../../daemon/types";
-import { mapEntries } from "./conversationLive";
+import { mapEntries, turnInfo, unverifiedWarning } from "./conversationLive";
 import { connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
@@ -58,6 +58,31 @@ describe("mapEntries", () => {
     expect(entries[1]).toMatchObject({ kind: "status", role: "system", errorCode: "runtime_unavailable" });
     expect(entries[1]!.text).toMatch(/Orchestrator runtime unavailable/);
     expect(entries.some((e) => e.role === "coordinator")).toBe(false);
+  });
+
+  it("names the agent, its version and the pin that accepts it when a version is refused (DPES-1106)", () => {
+    const refused = { ...wire(2, "t1", "turn_failed", "", "version_mismatch"), runtime: { name: "codex", version: "0.169.0" } };
+    const entries = mapEntries([wire(1, "t1", "user_message", "hi"), refused]);
+    expect(entries[1]).toMatchObject({ kind: "status", errorCode: "version_mismatch" });
+    expect(entries[1]!.text).toBe(
+      "Codex 0.169.0 is not a supported version yet. Set AGENT_ORCH_CONVERSATION_PINS=codex@0.169.0 and restart the daemon to try it. No reply was produced.",
+    );
+  });
+
+  it("uses the agent's display name for a refused Claude Code version", () => {
+    const refused = { ...wire(2, "t1", "turn_failed", "", "version_mismatch"), runtime: { name: "claude-code", version: "2.2.0" } };
+    const entries = mapEntries([wire(1, "t1", "user_message", "hi"), refused]);
+    expect(entries[1]!.text).toMatch(/^Claude Code 2\.2\.0 is not a supported version yet\. Set AGENT_ORCH_CONVERSATION_PINS=claude-code@2\.2\.0 /);
+  });
+
+  it("keeps the generic unsupported-version text when the daemon names no runtime", () => {
+    const entries = mapEntries([wire(1, "t1", "user_message", "hi"), wire(2, "t1", "turn_failed", "", "version_mismatch")]);
+    expect(entries[1]!.text).toBe("The orchestrator runtime has an unsupported version. No reply was produced.");
+  });
+
+  it("says the agent changed before the send when the selection moved mid-turn", () => {
+    const entries = mapEntries([wire(1, "t1", "user_message", "hi"), wire(2, "t1", "turn_failed", "", "runtime_changed")]);
+    expect(entries[1]!.text).toMatch(/agent changed before this message was sent/);
   });
 
   it("names the M7-25 runtime failures instead of showing a generic message", () => {
@@ -315,5 +340,83 @@ describe("live conversation adapter", () => {
     const result = await s.conversation.transcript({ kind: "project", projectId: "/repos/alpha" });
     expect(result.status).toBe("ok");
     expect(fake.callsTo("conversations.get")).toHaveLength(0);
+  });
+});
+
+describe("unverified-version warning (DPES-1106)", () => {
+  const turn = (verified: boolean | undefined, name = "codex", version = "0.169.0") =>
+    turnInfo({
+      id: "t1",
+      state: "completed",
+      error_code: null,
+      runtime: { name, version },
+      ...(verified === undefined ? {} : { verified }),
+      reply_bytes: 0,
+      created_at: "2026-11-10T21:00:00Z",
+      updated_at: "2026-11-10T21:00:00Z",
+    });
+
+  it("says a version has not been verified, in plain words, and names the agent and version", () => {
+    const warned = new Set<string>();
+    expect(unverifiedWarning(turn(false), warned)).toBe(
+      "Codex 0.169.0 has not been verified with MCAO. Replies may fail.",
+    );
+  });
+
+  it("shows the warning once per agent and version for the session, not on every message", () => {
+    const warned = new Set<string>();
+    expect(unverifiedWarning(turn(false), warned)).toBeDefined();
+    expect(unverifiedWarning(turn(false), warned)).toBeUndefined();
+    expect(unverifiedWarning(turn(false, "codex", "0.170.0"), warned)).toBeDefined();
+    expect(unverifiedWarning(turn(false, "claude-code", "2.2.0"), warned)).toMatch(/^Claude Code 2\.2\.0 /);
+  });
+
+  it("is never shown for a verified turn, or for a daemon that does not say", () => {
+    const warned = new Set<string>();
+    expect(unverifiedWarning(turn(true), warned)).toBeUndefined();
+    expect(unverifiedWarning(turn(undefined), warned)).toBeUndefined();
+    expect(warned.size).toBe(0);
+  });
+
+  it("is sent with the notice of a send, without blocking it, and only the first send of a version carries it", async () => {
+    const fake = populate(new FakeDaemon());
+    let seq = 0;
+    fake.stub("conversations.send", (params: Record<string, unknown>) => {
+      seq += 1;
+      const entry = {
+        sequence: seq,
+        id: `e${seq}`,
+        turn_id: `turn-${seq}`,
+        kind: "user_message",
+        author: "user",
+        body: String(params.text),
+        error_code: null,
+        created_at: "2026-11-10T21:00:00Z",
+      };
+      return {
+        authority: "none",
+        target: params.target,
+        entry,
+        turn: {
+          id: `turn-${seq}`,
+          state: "running",
+          error_code: null,
+          runtime: { name: "codex", version: "0.169.0" },
+          verified: false,
+          reply_bytes: 0,
+          created_at: "2026-11-10T21:00:00Z",
+          updated_at: "2026-11-10T21:00:00Z",
+        },
+        epoch: "epoch-1",
+      };
+    });
+    const s = await live(fake);
+    const first = await s.conversation.send({ kind: "global" }, "one");
+    const second = await s.conversation.send({ kind: "global" }, "two");
+    expect(first.simulated).toBe(false);
+    expect(first.notice).toMatch(/Recorded by the daemon\. .*Codex 0\.169\.0 has not been verified with MCAO\. Replies may fail\./);
+    expect(first.warning).toBe("Codex 0.169.0 has not been verified with MCAO. Replies may fail.");
+    expect(second.notice).not.toMatch(/has not been verified/);
+    expect(second.warning).toBeUndefined();
   });
 });
