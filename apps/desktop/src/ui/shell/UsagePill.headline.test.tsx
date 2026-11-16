@@ -49,9 +49,9 @@ describe("usage pill headline", () => {
     expect(screen.getByTestId("top-usage-value").textContent).not.toMatch(/\$|\d/);
   });
 
-  it("says no cost was reported when sessions started but none carried a cost", async () => {
+  it("keeps not available when sessions started but none carried a cost, with the reason in the popover", async () => {
     renderPill(usageWith(answered(summary(3))));
-    await waitFor(() => expect(screen.getByTestId("top-usage-value")).toHaveTextContent("no cost reported"));
+    await waitFor(() => expect(screen.getByTestId("top-usage-value")).toHaveTextContent("not available"));
     expect(screen.getByTestId("top-usage-value").textContent).not.toMatch(/\$|\d/);
   });
 

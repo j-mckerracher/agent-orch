@@ -6,7 +6,7 @@ import { PlaceholderBadge } from "../widgets";
 import { LocalToolsChip, LocalToolsSection } from "./LocalToolsUsage";
 import { chipText } from "./localToolsCopy";
 import { useLocalTools } from "./useLocalTools";
-import { money, unpricedHeadline } from "./usageMoney";
+import { money } from "./usageMoney";
 import { usageHeading } from "./usageWindow";
 import "./topbar.css";
 
@@ -171,8 +171,8 @@ export function UsagePill() {
         ? money(reported, summary.currency)
         : summary && estimate !== null
           ? `≈ ${money(estimate, summary.currency)}`
-          : summary && summary.reported.status === "unknown"
-            ? unpricedHeadline(summary.costCoverage)
+          : summary && summary.reported.status === "unknown" && summary.costCoverage?.sessions === 0
+            ? "nothing recorded yet"
             : "not available";
   const reason =
     result.status === "loading" || result.status === "ok" ? null : `Usage is ${result.status}: ${trimStop(result.reason)}.`;

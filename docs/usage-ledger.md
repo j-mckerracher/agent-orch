@@ -189,12 +189,11 @@ figures above.
   says "Saving the setting." It is never disabled because of the reader.
 * While the reader is starting or running, the popover re-reads the daemon
   every second; otherwise every 15 seconds. A read only returns the cache.
-* The top bar pill shows the reported cost. When none is reported it says
-  "nothing recorded yet" if no session started in the window, and "no cost
-  reported" if sessions started but none carried a cost. It says "not
-  available" only when the daemon's answer could not be read. None of these
-  is drawn as `$0`: a missing cost is not zero. The popover keeps the full
-  reason and the window.
+* The top bar pill shows the reported cost. When none is reported and no
+  session started in the window, it says "nothing recorded yet". When sessions
+  started but none carried a cost, or the daemon's answer could not be read, it
+  says "not available". Neither is drawn as `$0`: a missing cost is not zero.
+  The popover keeps the full reason and the window.
 * Estimates only. Costs are list-price estimates from the reader's price table
   (`basis` is not provider billing). A model without a price is counted as
   unpriced and makes the total a lower bound; it is never zero.
