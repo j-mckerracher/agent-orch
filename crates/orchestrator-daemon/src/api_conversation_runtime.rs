@@ -26,6 +26,8 @@ use orchestrator_store::{
     TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
 };
 
+use super::conversation_snapshot::build_snapshot;
+
 /// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
 
@@ -66,7 +68,9 @@ pub(crate) struct TurnRequest {
     /// Recent completed exchanges, oldest first, bounded in count and size.
     /// Failed and canceled turns are not included.
     pub history: Vec<HistoryTurn>,
-    /// A short description of the workstream a workstream turn is about.
+    /// The app state when the turn started, built by the service from the
+    /// store (DPES-1105). Data for the agent, never instructions. `None` only
+    /// in tests.
     pub context: Option<String>,
 }
 
@@ -188,16 +192,11 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     ) -> Result<Box<dyn TurnControl>, RuntimeFailure>;
 }
 
-/// The conversation service only asks whether an identifier names a workstream
-/// and, for a turn, for a short description of it. The workstream entity and
-/// its store belong to M7-07; fixtures and unknown identifiers never resolve.
+/// The conversation service only asks whether an identifier names a
+/// workstream. The workstream entity and its store belong to M7-07; fixtures
+/// and unknown identifiers never resolve.
 pub(crate) trait WorkstreamDirectory: Send + Sync {
     fn exists(&self, workstream_id: &str) -> Result<bool, RpcError>;
-
-    /// A short description for the runtime prompt. Best effort.
-    fn describe(&self, _workstream_id: &str) -> Option<String> {
-        None
-    }
 }
 
 /// No workstream exists, so none can be addressed.
@@ -441,10 +440,7 @@ impl ConversationService {
             choice: choice.cloned(),
             level,
             history: self.history(target, turn_id),
-            context: match target {
-                ConversationTarget::Workstream(id) => self.workstreams.describe(id),
-                ConversationTarget::Global => None,
-            },
+            context: Some(build_snapshot(&self.shared.store, target)),
         };
         let sink = ReplySink {
             shared: self.shared.clone(),

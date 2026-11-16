@@ -1455,6 +1455,8 @@ mod conversation_help;
 mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]
 mod conversation_runtime;
+#[path = "api_conversation_snapshot.rs"]
+mod conversation_snapshot;
 #[path = "api_conversations.rs"]
 mod conversations;
 #[path = "api_coordinator.rs"]

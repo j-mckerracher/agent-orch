@@ -32,6 +32,31 @@ pub struct EventJournalEntry {
     pub created_at: String,
 }
 
+/// Task counts by state and the newest open tasks, read from task rows only:
+/// no attempts, sessions or events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOverview {
+    /// Every state that has tasks, in state order.
+    pub counts: Vec<(TaskState, usize)>,
+    /// The newest non-terminal tasks, newest first, at most the limit asked for.
+    pub open: Vec<OpenTask>,
+}
+
+/// The states [`TaskState::is_terminal`] names, for SQL that must skip them.
+const TERMINAL_TASK_STATES: [TaskState; 2] = [TaskState::Succeeded, TaskState::Cancelled];
+
+/// The list fields of one non-terminal task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenTask {
+    pub id: String,
+    pub project_id: String,
+    pub state: TaskState,
+    /// Objective as stored in the contract.
+    pub objective: String,
+    /// Workstream the task serves, when it is linked to one.
+    pub workstream_id: Option<String>,
+}
+
 /// Identity of the process that owns a running session's [`AgentHandle`].
 ///
 /// `generation` is a fresh UUID for each run. It is not a PID: requests are
@@ -170,6 +195,48 @@ impl SqliteStore {
                     })
                 })
                 .collect()
+        })
+    }
+
+    /// Counts tasks by state and reads at most `open_limit` of the newest
+    /// non-terminal tasks ([`TERMINAL_TASK_STATES`]).
+    pub fn task_overview(&self, open_limit: usize) -> Result<TaskOverview, StoreError> {
+        let limit = i64::try_from(open_limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let mut counts = Vec::new();
+            for row in sqlx::query("SELECT state, COUNT(*) AS n FROM tasks GROUP BY state")
+                .fetch_all(&pool)
+                .await?
+            {
+                let state: TaskState = decode(&row.try_get::<String, _>("state")?)?;
+                let n: i64 = row.try_get("n")?;
+                counts.push((state, usize::try_from(n).unwrap_or(0)));
+            }
+            counts.sort_by_key(|(state, _)| *state);
+            let [first, second] = TERMINAL_TASK_STATES;
+            let mut open = Vec::new();
+            for row in sqlx::query(
+                "SELECT tasks.id, tasks.project_id, tasks.state, \
+                 COALESCE(json_extract(tasks.contract_json, '$.objective'), '') AS objective, \
+                 workstream_tasks.workstream_id \
+                 FROM tasks LEFT JOIN workstream_tasks ON workstream_tasks.task_id = tasks.id \
+                 WHERE tasks.state NOT IN (?, ?) ORDER BY tasks.rowid DESC LIMIT ?",
+            )
+            .bind(encode(&first)?)
+            .bind(encode(&second)?)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?
+            {
+                open.push(OpenTask {
+                    id: row.try_get("id")?,
+                    project_id: row.try_get("project_id")?,
+                    state: decode(&row.try_get::<String, _>("state")?)?,
+                    objective: row.try_get("objective")?,
+                    workstream_id: row.try_get("workstream_id")?,
+                });
+            }
+            Ok(TaskOverview { counts, open })
         })
     }
 
@@ -2475,6 +2542,56 @@ mod tests {
         assert_eq!(
             store.list().unwrap().len(),
             results.iter().filter(|r| r.is_ok()).count()
+        );
+    }
+
+    #[test]
+    fn task_overview_counts_states_and_lists_the_newest_open_tasks() {
+        assert!(TERMINAL_TASK_STATES.iter().all(|state| state.is_terminal()));
+        use orchestrator_core::workstream::{Workstream, WorkstreamState, INITIAL_REVISION};
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+        store.register_project(&project()).unwrap();
+        for id in ["t1", "t2", "t3", "t4"] {
+            store.create(&contract(id)).unwrap();
+        }
+        store.transition("t2", TaskEvent::Admit).unwrap();
+        store.transition("t4", TaskEvent::CancelRequested).unwrap();
+        store
+            .create_workstream(
+                &Workstream {
+                    id: "w1".into(),
+                    title: "Ship".into(),
+                    summary: String::new(),
+                    state: WorkstreamState::Active,
+                    revision: INITIAL_REVISION,
+                },
+                "test",
+            )
+            .unwrap();
+        store.link_task("w1", "t2", None).unwrap();
+
+        let open = |id: &str, state, workstream_id: Option<&str>| OpenTask {
+            id: id.into(),
+            project_id: "p1".into(),
+            state,
+            objective: "Implement the thing".into(),
+            workstream_id: workstream_id.map(Into::into),
+        };
+        assert_eq!(
+            store.task_overview(2).unwrap(),
+            TaskOverview {
+                counts: vec![
+                    (TaskState::Created, 2),
+                    (TaskState::Queued, 1),
+                    (TaskState::Cancelled, 1),
+                ],
+                open: vec![
+                    open("t3", TaskState::Created, None),
+                    open("t2", TaskState::Queued, Some("w1")),
+                ],
+            }
         );
     }
 }
