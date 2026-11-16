@@ -185,13 +185,25 @@ chose for that message. The rules:
 - **Replaces the configured default.** A message with a choice ignores
   `AGENT_ORCH_CONVERSATION_*` for that message. A chosen "Default model" means
   the agent's own default, which is what the picker shows.
-- **Validated by the catalog.** The chosen agent must be `codex` or
-  `claude-code`. Any other agent, including `github-copilot` (a paid run, opt-in
-  through `AGENT_ORCH_CONVERSATION_AGENT` only) and `pi` (no chat adapter), is
-  refused with `selection_agent_unsupported`. The model and effort go through
-  the catalog's `validate` with its reason, as in the M7-09 catalog. A refusal is
-  a failed turn with that reason's code. The message stays in the transcript,
-  and no agent is launched and no other agent answers.
+- **Validated by the catalog.** The chosen agent must be `codex`,
+  `claude-code` or `github-copilot`. `pi` has no chat adapter and is refused
+  with `selection_agent_unsupported`. The model and effort go through the
+  catalog's `validate` with its reason, as in the M7-09 catalog. A refusal is a
+  failed turn with that reason's code. The message stays in the transcript, and
+  no agent is launched and no other agent answers.
+- **Copilot is chosen like the others, with its own limits (DPES-1105).** A
+  Copilot choice runs only when the daemon can launch the CLI at the pinned
+  version. A missing or unpinned CLI fails the turn with `runtime_unavailable`.
+  The Copilot CLI cannot list models or efforts without a billable call, so its
+  catalog offers neither: a model is refused with `selection_models_unsupported`
+  and an effort with `selection_effort_unsupported`. A choice with neither runs
+  the default model from the user's Copilot settings. A send never starts a
+  sign-in check. The sign-in record comes from earlier runs and from the
+  explicit check. A run that shows the account signed out fails its turn with
+  `selection_authentication_failed`, and one that shows no Copilot seat fails
+  with `selection_agent_unavailable`. Those records are kept, so the next send
+  and the picker give the same reason. A Copilot message uses premium requests
+  or AI credits on the user's Copilot seat, and the picker says so.
 - **Malformed is a bad request.** An empty agent, a model or effort that fails
   the contract's id and effort rules, or an unknown field is `InvalidParams`
   and records no turn. The picker never sends one.

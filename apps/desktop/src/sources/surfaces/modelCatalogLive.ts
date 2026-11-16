@@ -111,6 +111,7 @@ export function createLiveModels(
             modelSelection: supported,
             models,
             modelsNote: row && models.status === "ok" && row.models.detail ? row.models.detail : undefined,
+            ...(row && row.state !== "available" && row.detail ? { detail: row.detail } : {}),
             efforts: row
               ? facetValue(row, row.efforts, obs, (items) => items)
               : withoutRow<string[]>("effort settings"),

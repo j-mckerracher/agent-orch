@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { CopilotSignInRecord } from "../../../daemon/types";
 import type { ModelChoice, ModelProvider, SurfaceResult } from "../../../sources/surfaces/types";
 import { ModelPicker } from "./ModelPicker";
 
@@ -23,21 +24,129 @@ function catalog(providers: ModelProvider[]): SurfaceResult<{ providers: ModelPr
   return { status: "ok", data: { providers }, provenance, ...observed };
 }
 
+/** Copilot as the daemon reports it: no model or effort list, since its CLI cannot list them without a billable call. */
+function copilot(overrides: Partial<ModelProvider> = {}): ModelProvider {
+  return {
+    id: "github-copilot",
+    name: "GitHub Copilot",
+    installed: true,
+    launchable: true,
+    modelSelection: "unsupported",
+    models: { status: "unsupported", reason: "The Copilot CLI cannot list models without a billable call." },
+    efforts: { status: "unsupported", reason: "Reasoning effort is not offered for GitHub Copilot." },
+    ...overrides,
+  };
+}
+
+function signIn(state: CopilotSignInRecord["state"], reason: string | null = null): CopilotSignInRecord {
+  return { state, reason, checked_at_ms: 1, premium_requests: null, ai_credits: null, warning: null };
+}
+
+/** The copilotSignIn source the picker reads: the free status read answers `record`, and a check is never run here. */
+function copilotSource(record: CopilotSignInRecord) {
+  return {
+    checkCopilotSignIn: vi.fn(async () => ({ status: "ok", data: record, provenance, ...observed }) as SurfaceResult<CopilotSignInRecord>),
+    copilotSignInStatus: vi.fn(async () => ({ status: "ok", data: record, provenance, ...observed }) as SurfaceResult<CopilotSignInRecord>),
+  };
+}
+
 describe("ModelPicker in a live chat", () => {
-  it("lists the agents chat cannot run as unavailable for chat, and never defaults to them", async () => {
+  it("lists a launchable Copilot as choosable, never as the default, and a launchable Codex stays the default", async () => {
     const user = userEvent.setup();
+    const pi = provider("pi", "Pi");
     render(
       <ModelPicker
-        catalog={catalog([provider("github-copilot", "GitHub Copilot"), provider("pi", "Pi"), provider("codex", "Codex")])}
+        catalog={catalog([copilot(), { ...pi, launchable: false, detail: "the daemon cannot launch pi" }, provider("codex", "Codex")])}
         provenance={provenance}
       />,
     );
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     const select = screen.getByRole("combobox", { name: "Provider" });
-    expect(within(select).getByRole("option", { name: "GitHub Copilot (not available for chat)" })).toBeDisabled();
-    expect(within(select).getByRole("option", { name: "Pi (not available for chat)" })).toBeDisabled();
+    expect(within(select).getByRole("option", { name: "GitHub Copilot" })).toBeEnabled();
+    expect(within(select).getByRole("option", { name: "Pi (not launchable)" })).toBeDisabled();
     expect(within(select).getByRole("option", { name: "Codex" })).toBeEnabled();
     expect(select).toHaveValue("codex");
+    expect(screen.getByText("Pi: the daemon cannot launch pi")).toBeInTheDocument();
+  });
+
+  it("sends the Copilot choice with the message, and says once that a message uses the user's Copilot seat", async () => {
+    const user = userEvent.setup();
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        provenance={provenance}
+        copilotSignIn={copilotSource(signIn("ready"))}
+        onChoiceChange={onChoiceChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.queryByText(/premium requests or AI credits/)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Provider" }), "github-copilot");
+    await waitFor(() => expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "github-copilot" }));
+    expect(screen.getByText("A Copilot message uses premium requests or AI credits on your Copilot seat.")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).toBeDisabled();
+  });
+
+  it("lists Copilot as not signed in, with the daemon's fix, and does not let it be chosen", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        provenance={provenance}
+        copilotSignIn={copilotSource(signIn("not_signed_in", "Not signed in to GitHub Copilot. Run `copilot login`, then retry."))}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const select = await screen.findByRole("combobox", { name: "Provider" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "GitHub Copilot (not signed in)" })).toBeDisabled());
+    expect(screen.getByText(/GitHub Copilot: Not signed in to GitHub Copilot/)).toBeInTheDocument();
+    expect(select).toHaveValue("codex");
+  });
+
+  it("lists Copilot on an account with no seat, and shows the daemon's reason", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        provenance={provenance}
+        copilotSignIn={copilotSource(signIn("no_seat", "This GitHub account has no GitHub Copilot subscription."))}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const select = await screen.findByRole("combobox", { name: "Provider" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "GitHub Copilot (no Copilot seat)" })).toBeDisabled());
+    expect(screen.getByText(/This GitHub account has no GitHub Copilot subscription/)).toBeInTheDocument();
+  });
+
+  it("keeps Copilot choosable while sign-in is not confirmed, and says so", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        provenance={provenance}
+        copilotSignIn={copilotSource(signIn("not_checked", "Not confirmed yet: sign-in is checked on your first Copilot use."))}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const select = await screen.findByRole("combobox", { name: "Provider" });
+    await waitFor(() => expect(screen.getByText(/GitHub Copilot: Not confirmed yet/)).toBeInTheDocument());
+    expect(within(select).getByRole("option", { name: "GitHub Copilot" })).toBeEnabled();
+  });
+
+  it("shows Copilot's own reason when its CLI is missing, instead of a blanket not-available message", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot({ launchable: false, detail: "the copilot executable was not found" })])}
+        provenance={provenance}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const select = screen.getByRole("combobox", { name: "Provider" });
+    expect(within(select).getByRole("option", { name: "GitHub Copilot (not launchable)" })).toBeDisabled();
+    expect(screen.getByText("GitHub Copilot: the copilot executable was not found")).toBeInTheDocument();
+    expect(screen.queryByText(/not available for chat/)).not.toBeInTheDocument();
   });
 
   it("reports nothing until the user changes a part of the choice, then the displayed choice", async () => {

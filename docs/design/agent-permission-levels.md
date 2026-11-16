@@ -38,7 +38,7 @@ Basis: `motif-mcao/main` at `cc2b17d36`. PR #75 (removes the Copilot sandbox gat
 - Revision 3 proposed keeping `sandbox_host_status` and its tests for a later restore. D2 drops that. PR #75 already removes the gate and adds `assert!(!args.iter().any(|arg| arg == "--sandbox"))`.
 - Revision 3 treated the Copilot sandbox as an optional bound on shell. Under D2, Copilot shell has no OS boundary. See "Copilot without a sandbox".
 - `tasks.submit` denies unknown fields (`api.rs:78-79`), as `conversations.send` does (`api_conversations.rs:90`). An older daemon rejects a `permission` task field and runs nothing.
-- Copilot is not a chat agent in the picker. Copilot chat exists only when `AGENT_ORCH_CONVERSATION_AGENT=github-copilot` (PR 74). The Copilot chat rows below apply only in that configuration.
+- Copilot is a chat agent in the picker (DPES-1105). A message can choose it when the daemon can launch the CLI, and `AGENT_ORCH_CONVERSATION_AGENT=github-copilot` still makes it the configured default. The Copilot chat rows below apply to every Copilot chat, and a chat is billed to the user's Copilot seat.
 - The desktop submits tasks today (`ProjectDetail.tsx`, `daemon/api.ts`). The older-daemon task rule is a real path.
 
 ## Basis and limits

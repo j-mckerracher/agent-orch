@@ -229,6 +229,57 @@ fn copilot_is_listed_unavailable_and_its_check_records_nothing_when_the_cli_is_m
     assert_eq!(copilot["sign_in"]["state"], "not_checked");
 }
 
+/// DPES-1105: a Copilot choice is checked against its catalog, which offers no model or effort list. A choice
+/// with neither is valid when the CLI is installed and pinned; a missing CLI is refused with its own reason.
+/// Unix only: the fake is a shell script.
+#[cfg(unix)]
+#[test]
+fn a_copilot_choice_is_validated_by_its_catalog_and_names_a_missing_cli() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let copilot = fixture.script(
+        "fake-copilot",
+        "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\nexit 1\n",
+    );
+    let api = fixture.api_with(&agents.codex, |config| {
+        config.claude_program = Some(agents.claude.clone());
+        config.copilot_program = Some(copilot);
+    });
+
+    // A selection with neither part is not checked (the picker sends none), so the checks below name a model or effort.
+    assert_eq!(
+        validate(
+            &api,
+            "github-copilot",
+            json!("claude-haiku-4.5"),
+            Value::Null
+        )["reason"],
+        "models_unsupported"
+    );
+    assert_eq!(
+        validate(&api, "github-copilot", Value::Null, json!("high"))["reason"],
+        "effort_unsupported"
+    );
+
+    let missing = fixture.marker("no-such-copilot");
+    let api = fixture.api_with(&agents.codex, |config| {
+        config.claude_program = Some(agents.claude.clone());
+        config.copilot_program = Some(missing);
+    });
+    let refused = validate(
+        &api,
+        "github-copilot",
+        json!("claude-haiku-4.5"),
+        Value::Null,
+    );
+    assert_eq!(refused["valid"], false, "{refused}");
+    assert_eq!(refused["reason"], "agent_unavailable", "{refused}");
+    assert!(
+        refused["detail"].as_str().unwrap().contains("not found"),
+        "{refused}"
+    );
+}
+
 /// DPES-1105: the explicit check answers at once and runs on its own thread. The
 /// fake CLI takes three seconds, so a request that waited for it would be slow.
 /// Unix only: the fake is a shell script.

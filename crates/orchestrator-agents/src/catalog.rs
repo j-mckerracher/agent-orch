@@ -235,10 +235,13 @@ impl AgentCatalog {
         match self.state {
             CatalogState::Available => {}
             CatalogState::Unavailable => {
-                return Err(refuse(
-                    SelectionReason::AgentUnavailable,
-                    format!("agent {agent} is not installed"),
-                ))
+                // The adapter's own reason: a missing CLI, an unverified version, or a Copilot account without a seat.
+                let detail = if self.detail.is_empty() {
+                    format!("agent {agent} is not installed")
+                } else {
+                    self.detail.clone()
+                };
+                return Err(refuse(SelectionReason::AgentUnavailable, detail));
             }
             CatalogState::AuthenticationFailed => {
                 return Err(refuse(
@@ -1474,6 +1477,16 @@ mod tests {
             pi.validate(None, Some("low")).unwrap_err().reason,
             SelectionReason::AgentUnsupported
         );
+        // The adapter's own reason reaches the refusal, so a Copilot without a seat is not called "not installed".
+        let no_seat = AgentCatalog::uniform(
+            COPILOT_AGENT,
+            Some(COPILOT_PROVIDER),
+            CatalogState::Unavailable,
+            NO_SEAT_DETAIL,
+        );
+        let refusal = no_seat.validate(None, None).unwrap_err();
+        assert_eq!(refusal.reason, SelectionReason::AgentUnavailable);
+        assert_eq!(refusal.detail, NO_SEAT_DETAIL);
         // Unknown model lists are not an empty list.
         let signed_in = captured(0, "ok");
         let unknown = codex_catalog(&signed_in, captured(0, "{"));
