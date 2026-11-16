@@ -110,7 +110,9 @@ export const MACOS = {
   // WI-DPES-747: Three additional portable daemon token-warning tests.
   // DPES-1105 task permission levels (PR #93, CI run 43915710007, measured on macOS, `cargo test --locked --workspace`): 12 new
   // tests (8 daemon, 1 core, 1 agents unit, 2 agents integration), so 1157 becomes 1169 passed plus 2 ignored.
-  workspace: { passed: 1169, ignored: 2 },
+  // DPES-1105 usage controls (PR #97) adds three orchestrator-local-usage preflight unit tests: 1169 becomes 1172 passed
+  // plus 2 ignored, as the macOS workspace-tests gate measured them in CI run 43945842537.
+  workspace: { passed: 1172, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -125,7 +127,9 @@ export const MACOS = {
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 69 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
-  e2eFiles: 8,
+  // DPES-1105 usage controls (PR #97) adds two real-daemon e2e files (3 and 1 tests): 8 files and 46 tests become 10 and 50,
+  // as the macOS desktop-e2e gate measured them in CI run 43945842537.
+  e2eFiles: 10,
 };
 
 // `node --test "scripts/**/*.test.mjs"`: no test is platform-gated, so both platforms run the same number. The 26
@@ -151,12 +155,14 @@ export const NODE_SELF_TESTS = { passed: 132 };
 // desktop-test-names.json holds 1638 titles across 76 files. CI measures the real total.
 // DPES-1123 adds two files and 14 tests to main: 78 files and 1652 tests.
 // WI-DPES-747: One additional boundary test file and ten frontend regression cases.
-export const VITEST = { files: 79, tests: 1662 };
+// DPES-1105 usage controls (PR #97) adds one file (UsagePill.headline.test.tsx, 5 tests) and renames two titles: 80 files and
+// 1667 tests, as the desktop-vitest gate measured them on macOS and Windows in CI run 43945842537.
+export const VITEST = { files: 80, tests: 1667 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
 // 46 e2e tests (`Tests 1 failed | 45 passed (46)`, before the fix in the next commit).
-export const E2E_TESTS = 46;
+export const E2E_TESTS = 50;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;
