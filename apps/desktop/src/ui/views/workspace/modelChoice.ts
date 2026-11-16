@@ -30,6 +30,15 @@ export function readSavedChoice(storage: PreferenceStorage | null = browserStora
   }
 }
 
+/** Removes the saved choice, so the picker starts at the daemon default. Only the user's explicit control calls this. */
+export function clearSavedChoice(storage: PreferenceStorage | null = browserStorage()): void {
+  try {
+    storage?.removeItem(CHOICE_PREFERENCE_KEY);
+  } catch {
+    // Nothing to remove when storage is blocked; the picker still starts at the default in this session.
+  }
+}
+
 /** Saves the choice. A failed write means it is not kept after a reload; the choice still applies to this session. */
 export function saveChoice(choice: ModelChoice, storage: PreferenceStorage | null = browserStorage()): void {
   try {

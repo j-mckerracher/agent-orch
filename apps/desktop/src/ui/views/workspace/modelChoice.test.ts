@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CHOICE_PREFERENCE_KEY, readSavedChoice, saveChoice } from "./modelChoice";
+import { CHOICE_PREFERENCE_KEY, clearSavedChoice, readSavedChoice, saveChoice } from "./modelChoice";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial));
@@ -53,6 +53,26 @@ describe("reading the saved choice", () => {
     saveChoice({ agent: "github-copilot" });
     expect(readSavedChoice()).toEqual({ agent: "github-copilot" });
     window.localStorage.removeItem(CHOICE_PREFERENCE_KEY);
+  });
+});
+
+describe("clearing the choice", () => {
+  it("removes the saved choice, so the picker starts at the daemon default", () => {
+    const storage = memoryStorage({ [CHOICE_PREFERENCE_KEY]: JSON.stringify({ agent: "codex" }) });
+    clearSavedChoice(storage);
+    expect(storage.removeItem).toHaveBeenCalledWith(CHOICE_PREFERENCE_KEY);
+    expect(readSavedChoice(storage)).toBeNull();
+  });
+
+  it("does not throw when storage is blocked", () => {
+    const storage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(() => {
+        throw new Error("storage blocked");
+      }),
+    };
+    expect(() => clearSavedChoice(storage)).not.toThrow();
   });
 });
 

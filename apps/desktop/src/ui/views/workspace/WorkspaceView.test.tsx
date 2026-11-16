@@ -142,6 +142,81 @@ describe("saved model choice across a remount, live (DPES-1105)", () => {
     expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
   });
 
+  it("blocks a saved choice on a daemon without conversation_selection, names the control, and keeps the saved value", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    expect(screen.getByRole("button", { name: "Send message to Global orchestrator" })).toBeDisabled();
+    expect(
+      screen.getByText(/Open model settings and choose "Use the daemon default", or update the daemon\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/choose the default in model settings/i)).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.getByText(/The connected daemon cannot take a model choice, so a message/)).toBeInTheDocument();
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+  });
+
+  it("Use the daemon default clears the saved choice, and the next send goes without a selection", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.click(screen.getByRole("button", { name: "Use the daemon default" }));
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBeNull();
+    await user.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    expect(send).toBeEnabled();
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "hello" });
+    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+  });
+
+  it("keeps a saved choice the daemon cannot take, and sends it after a reconnect to a daemon that can", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    expect(send).toBeDisabled();
+    // The window reconnects, now to a daemon that takes a model choice.
+    services.connection.stop();
+    fake.capabilitiesOverride = null;
+    services.connection.start();
+    await waitLive(services);
+    await waitFor(() => expect(send).toBeEnabled());
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({
+      text: "hello",
+      selection: { agent: "codex", model: "gpt-a" },
+    });
+  });
+
   it("keeps the chosen target and an unsent draft across a remount, in live mode", async () => {
     const fake = liveDaemon();
     stubConversation(fake, "completed");

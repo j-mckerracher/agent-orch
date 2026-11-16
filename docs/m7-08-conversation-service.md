@@ -186,12 +186,21 @@ chose for that message. The rules:
   mounts, and sends it with each message until the user changes it (DPES-1105).
   A restored choice counts as the user's own: it is sent as if just picked.
   Fixture mode neither restores nor saves a choice.
-- **Unavailable is shown, never replaced.** A saved choice the daemon no longer
-  offers is shown as unavailable, with the daemon's reason: its agent is not
-  launchable, signed out, or not listed, or its model or effort is not listed.
-  It is not sent, and the message goes without a choice, as an untouched picker
-  does. A choice the catalog has not confirmed yet is treated the same way until
-  it is confirmed. The saved choice is kept until the user changes it.
+- **Unavailable is shown, never replaced.** On a daemon that takes a choice, a
+  saved choice the daemon no longer offers is shown as unavailable, with the
+  daemon's reason: its agent is not launchable, signed out, or not listed, or its
+  model or effort is not listed. It is not sent, and the message goes without a
+  choice, as an untouched picker does. A choice the catalog has not confirmed yet
+  is treated the same way until it is confirmed. The saved choice is kept until
+  the user changes it.
+- **A daemon that cannot take a choice blocks the send, and never drops it
+  (DPES-1105).** When the connected daemon lacks the `conversation_selection`
+  capability and a choice is saved, a Global or workstream message is blocked,
+  never sent without the choice. The picker's note says why, and the blocked
+  message says to open model settings and choose "Use the daemon default", or to
+  update the daemon. That control removes the saved choice, so the next send goes
+  without a selection. Nothing else clears a saved choice, so a reconnect to a
+  daemon that takes one sends the saved choice again.
 - **Coordinator notes carry no choice (DPES-1105).** A note runs no agent, so the
   desktop sends `coordinator.send_message` without `selection` and without
   `permission`, whatever the picker holds. A note leaves the saved choice and the

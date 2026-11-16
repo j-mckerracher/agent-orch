@@ -16,7 +16,7 @@ import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
-import { readSavedChoice, saveChoice } from "./modelChoice";
+import { clearSavedChoice, readSavedChoice, saveChoice } from "./modelChoice";
 import { PermissionLevelPicker } from "./PermissionLevelPicker";
 import { permissionLabel } from "./permissionLevel";
 
@@ -170,6 +170,7 @@ export function ModelPicker({
   copilotSignIn,
   onRetry,
   onChoiceChange,
+  selectionSupported = true,
   permission,
 }: {
   catalog: SurfaceState<ModelCatalog>;
@@ -179,9 +180,12 @@ export function ModelPicker({
   onRetry?: () => void;
   /**
    * Live only: the choice each message is sent with. Null until the user chooses or a saved choice is restored, and
-   * null while a choice is unavailable or not confirmed yet (DPES-1105).
+   * null while a choice is unavailable or not confirmed yet (DPES-1105). When the connected daemon cannot take a model
+   * choice (`selectionSupported` false), a saved choice is still reported, so a send is blocked and never sent without it.
    */
   onChoiceChange?: (choice: ModelChoice | null) => void;
+  /** Live only: false when the connected daemon has no `conversation_selection` capability (DPES-1105). */
+  selectionSupported?: boolean;
   /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
   permission?: { level: PermissionLevel; daemonAdvertises: boolean; onChange: (level: PermissionLevel) => void };
 }) {
@@ -223,6 +227,8 @@ export function ModelPicker({
   const missingAgent = live && pinned !== null && catalog.status === "ok" && pinnedProvider === undefined ? pinned.agent : null;
   const unavailableModel = live && modelId !== null && provider !== undefined && model === undefined ? modelId : null;
   const unavailableEffort = live && effort !== null && !efforts.includes(effort) ? effort : null;
+  // A saved choice on a daemon that cannot take one. A message is then blocked, never sent without the choice (DPES-1105).
+  const savedBlocked = live && pinned !== null && !selectionSupported;
 
   const effortText = chosenEffort ?? (live ? "default effort" : "effort not available");
   const problemWord = problem === null ? null : problem.pending ? "not confirmed" : "unavailable";
@@ -245,8 +251,9 @@ export function ModelPicker({
   const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
   const lock = provider === undefined && missingAgent === null;
+  // A blocked send says so in the capability note instead, so this note never claims a send goes without the choice.
   const problemNote =
-    problem === null
+    problem === null || savedBlocked
       ? null
       : `Your choice is ${problemWord}. ${sentence(problem.text)} Messages are sent without a choice until ${problem.pending ? "it is confirmed" : "you change it"}.`;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
@@ -304,9 +311,11 @@ export function ModelPicker({
           ...(chosenEffort ? { effort: chosenEffort } : {}),
         }
       : null;
-  const choiceKey = choice === null ? "" : JSON.stringify(choice);
+  // The saved choice is reported as it is saved when the daemon cannot take one, so the send is blocked (DPES-1105).
+  const reported: ModelChoice | null = savedBlocked ? pinned : choice;
+  const choiceKey = reported === null ? "" : JSON.stringify(reported);
   useEffect(() => {
-    onChoiceChange?.(choice);
+    onChoiceChange?.(reported);
     // Keyed by value, so a new object for the same choice is not reported again.
   }, [choiceKey]);
 
@@ -368,6 +377,12 @@ export function ModelPicker({
   const pin = (next: ModelChoice) => {
     setPinned(next);
     if (live) saveChoice(next);
+  };
+  // The user's own way back to the daemon default: it removes the saved choice and sends no selection until the user
+  // chooses again. Nothing else clears a saved choice, so a daemon that cannot take one keeps it (DPES-1105).
+  const useDaemonDefault = () => {
+    setPinned(null);
+    if (live) clearSavedChoice();
   };
 
   return (
@@ -453,6 +468,13 @@ export function ModelPicker({
             {problemNote}
           </p>
         )}
+        {savedBlocked && (
+          <p role="status" className="ws-small">
+            The connected daemon cannot take a model choice, so a message to the Global orchestrator or a workstream is blocked
+            while this choice is saved. Use the daemon default in this panel to send, or update the daemon. Coordinator notes
+            are not affected.
+          </p>
+        )}
         {live && provider?.id === COPILOT && <p className="ws-small">{COPILOT_COST_NOTE}</p>}
         <label className="ws-field">
           Model
@@ -518,6 +540,11 @@ export function ModelPicker({
           <p id={effortHelpId} className="ws-small">
             {effortHelpText}
           </p>
+        )}
+        {pinned !== null && (
+          <Button variant="quiet" onClick={useDaemonDefault}>
+            Use the daemon default
+          </Button>
         )}
         {verdictText && (
           <p role="status" className="ws-small">

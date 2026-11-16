@@ -378,7 +378,8 @@ function Conversation({
     if (id !== null && isFixtureId(id)) blocked = "This is a placeholder target; it has nothing to send to.";
     else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports conversations.";
     else if (choiceOnWire !== undefined && !gate.can("conversation_selection"))
-      blocked = "This daemon cannot use a chosen model or effort. Choose the default in model settings, or update the daemon.";
+      blocked =
+        'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
     else if (running) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
@@ -568,6 +569,7 @@ function Conversation({
             copilotSignIn={surfaces.models}
             onRetry={retryModels}
             onChoiceChange={setChoice}
+            selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
             permission={permissionControl}
           />
           <Button

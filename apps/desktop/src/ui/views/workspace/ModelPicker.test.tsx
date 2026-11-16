@@ -284,6 +284,68 @@ describe("ModelPicker saved choice (DPES-1105)", () => {
     expect(source.copilotSignInStatus).toHaveBeenCalled();
   });
 
+  it("on a daemon that cannot take a model choice, reports the saved choice so a send is blocked, and keeps it", async () => {
+    const user = userEvent.setup();
+    save({ agent: "codex", model: "m1" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        selectionSupported={false}
+        onChoiceChange={onChoiceChange}
+      />,
+    );
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "codex", model: "m1" });
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.getByText(/The connected daemon cannot take a model choice, so a message/)).toBeInTheDocument();
+    expect(screen.queryByText(/Your choice is/)).toBeNull();
+    expect(savedValue()).toEqual({ agent: "codex", model: "m1" });
+  });
+
+  it("still blocks a saved choice on a daemon that cannot take one when the catalog is also unavailable", () => {
+    save({ agent: "codex", model: "m1" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    const down: SurfaceResult<ModelCatalog> = {
+      status: "unavailable",
+      reason: "the catalog is not answering",
+      provenance,
+      ...observed,
+    };
+    render(
+      <ModelPicker catalog={down} provenance={provenance} selectionSupported={false} onChoiceChange={onChoiceChange} />,
+    );
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "codex", model: "m1" });
+    expect(savedValue()).toEqual({ agent: "codex", model: "m1" });
+  });
+
+  it("Use the daemon default removes the saved choice, reports no choice, and shows the daemon default", async () => {
+    const user = userEvent.setup();
+    save({ agent: "codex", model: "m1" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        selectionSupported={false}
+        onChoiceChange={onChoiceChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.click(screen.getByRole("button", { name: "Use the daemon default" }));
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBeNull();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+    expect(screen.getByRole("button", { name: "Model settings: Codex · default model · default effort" })).toBeInTheDocument();
+    expect(screen.queryByText(/The connected daemon cannot take a model choice/)).toBeNull();
+  });
+
+  it("offers Use the daemon default only while a choice is made", async () => {
+    const user = userEvent.setup();
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} />);
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.queryByRole("button", { name: "Use the daemon default" })).toBeNull();
+  });
+
   it("neither restores nor saves the choice in fixture mode, so the live store is never changed", async () => {
     const user = userEvent.setup();
     save({ agent: "claude-code" });
