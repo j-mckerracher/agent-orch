@@ -38,7 +38,9 @@ export const WINDOWS = {
   // The old Copilot refusal test is replaced by the Pi refusal and the missing-CLI tests, so 178 becomes 179 passed plus 1 ignored.
   // DPES-1106 unverified agent versions (PR #101, CI run 43965574766, measured on Windows): the unit binary 147 becomes 154 and
   // conversation_runtime 24 becomes 30. The not-pinned refusal tests are replaced by the unverified-run tests, so 179 becomes 192 passed.
-  daemon: { passed: 192, ignored: 1, sequence: [154, 30, 2, 4, 0, 1, 2] },
+  // DPES-1105 orchestrator preamble and snapshot (PR #108, CI run 43974417288, measured on Windows): the unit binary 154 becomes 165 and
+  // conversation_runtime 30 becomes 31; one service test is renamed, so 192 becomes 204 passed.
+  daemon: { passed: 204, ignored: 1, sequence: [165, 31, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -68,9 +70,11 @@ export const WINDOWS = {
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on Windows): the store lib is 68 (up from 65) and
   // the store totals 170 passed plus 1 ignored. The lib gains 3 portable tests (permission level and migration checks).
   // WI-DPES-736: Seven portable audit-envelope tests add the new binary after attempt_history. Windows counts are derived; native CI verifies them.
-  store: { passed: 177, ignored: 1, sequence: [68, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // DPES-1105 task overview (PR #108, CI run 43974417288, measured on Windows): the lib 68 becomes 69, so 177 becomes 178 passed.
+  store: { passed: 178, ignored: 1, sequence: [69, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 67 },
+  // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 68 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -99,7 +103,9 @@ export const MACOS = {
   // and conversation_runtime 26 becomes 29 (the Copilot choice tests; the executor catalog test is Unix-only), so 260 becomes 265.
   // DPES-1106 unverified agent versions (PR #101, CI run 43965574766, measured on macOS): the unit binary 217 becomes 224 and
   // conversation_runtime 29 becomes 35, so 265 becomes 278 passed.
-  daemon: { passed: 278, ignored: 1, sequence: [224, 35, 2, 4, 11, 1, 2] },
+  // DPES-1105 orchestrator preamble and snapshot (PR #108, CI run 43974417288, measured on macOS): the unit binary 224 becomes 235 and
+  // conversation_runtime 35 becomes 36; one service test is renamed, so 278 becomes 290 passed.
+  daemon: { passed: 290, ignored: 1, sequence: [235, 36, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -123,7 +129,8 @@ export const MACOS = {
   // The chat model choice for GitHub Copilot (DPES-1105, PR #99) adds 5 tests to the workspace total, as the macOS workspace-tests
   // gate measured them in CI run 43951278199 (1174 against 1169 before main's 3 usage preflight tests): 1172 becomes 1177.
   // DPES-1106 unverified agent versions (PR #101) adds 13 tests to the workspace total (macOS workspace-tests gate, CI run 43965574766): 1177 becomes 1190.
-  workspace: { passed: 1190, ignored: 2 },
+  // DPES-1105 orchestrator preamble and snapshot (PR #108, macOS workspace-tests gate, CI run 43974417288): 1190 becomes 1203.
+  workspace: { passed: 1203, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -134,9 +141,11 @@ export const MACOS = {
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS): the lib is 70 (3 new tests), and the store
   // totals 174 passed plus 1 ignored.
   // WI-DPES-736: Measured default-parallel macOS store run, 181 passed and 1 ignored, with seven tests in the audit_envelope binary.
-  store: { passed: 181, ignored: 1, sequence: [70, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  // DPES-1105 task overview (PR #108, CI run 43974417288, measured on macOS): the lib 70 becomes 71, so 181 becomes 182 passed.
+  store: { passed: 182, ignored: 1, sequence: [71, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 69 },
+  // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 70 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   // DPES-1105 usage controls (PR #97) adds two real-daemon e2e files (3 and 1 tests): 8 files and 46 tests become 10 and 50,
   // as the macOS desktop-e2e gate measured them in CI run 43945842537.

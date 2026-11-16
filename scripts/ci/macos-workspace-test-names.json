@@ -360,7 +360,6 @@
   "api::conversations::tests::a_cleared_coordinator_message_replays_as_cleared_and_leaves_no_text_on_disk",
   "api::conversations::tests::a_replayed_send_shows_the_turn_as_it_is_now_not_as_it_was_recorded",
   "api::conversations::tests::a_replayed_send_of_a_cleared_message_returns_the_cleared_reference_and_runs_nothing",
-  "api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context",
   "api::conversations::tests::a_reply_streams_in_order_and_is_correlated_with_its_message",
   "api::conversations::tests::a_reply_over_the_turn_bound_fails_the_turn_and_stops_the_runtime",
   "api::conversations::tests::a_retried_send_returns_the_first_result_and_runs_once",
@@ -1188,5 +1187,19 @@
   "an_unreadable_help_never_refuses_a_version",
   "an_unverified_turn_whose_output_cannot_be_read_fails_and_never_goes_empty",
   "an_unverified_version_missing_a_chat_flag_is_refused_and_names_the_flag",
-  "an_unverified_version_with_every_chat_flag_runs_and_is_marked_unverified"
+  "an_unverified_version_with_every_chat_flag_runs_and_is_marked_unverified",
+  "api::conversation_agent::tests::an_oversized_prompt_drops_the_oldest_history_first",
+  "api::conversation_agent::tests::the_instructions_explain_the_app_within_their_cap",
+  "api::conversation_snapshot::tests::a_windows_project_path_is_named_by_its_folder",
+  "api::conversation_snapshot::tests::empty_store_has_frame_and_fits",
+  "api::conversation_snapshot::tests::open_tasks_are_capped_and_newest_kept",
+  "api::conversation_snapshot::tests::project_root_path_is_not_included",
+  "api::conversation_snapshot::tests::project_settings_are_not_included",
+  "api::conversation_snapshot::tests::task_objective_is_cut_to_80_bytes",
+  "api::conversation_snapshot::tests::workstream_target_lists_objectives_and_gates",
+  "api::conversation_snapshot::tests::workstream_text_cannot_start_a_line",
+  "api::conversation_snapshot::tests::workstreams_are_capped_and_newest_kept",
+  "api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_app_state",
+  "the_agent_gets_the_app_instructions_and_state_apart_from_the_message",
+  "sqlite_ops::tests::task_overview_counts_states_and_lists_the_newest_open_tasks"
 ]
