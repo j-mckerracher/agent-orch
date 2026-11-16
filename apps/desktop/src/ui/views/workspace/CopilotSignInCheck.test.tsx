@@ -41,6 +41,26 @@ describe("CopilotSignInCheck (DPES-1105)", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Run `copilot login`, then retry."));
   });
 
+  it("makes a new call after a failed sign-in, so a fixed sign-in is seen, and keeps a ready answer", async () => {
+    const check = vi.fn(async (force: boolean) =>
+      force
+        ? ok(READY)
+        : ok({ state: "not_signed_in", reason: "Not signed in to GitHub Copilot. Run `copilot login`, then retry.", checked_at_ms: 2, premium_requests: null, ai_credits: null, warning: null }),
+    );
+    render(<CopilotSignInCheck check={check} />);
+    await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Not signed in to GitHub Copilot/));
+    expect(check).toHaveBeenLastCalledWith(false);
+
+    await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Ready: GitHub Copilot is signed in/));
+    expect(check).toHaveBeenLastCalledWith(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
+    await waitFor(() => expect(check).toHaveBeenCalledTimes(3));
+    expect(check).toHaveBeenLastCalledWith(false);
+  });
+
   it("shows a no-seat result as text, without implying a retry will help", async () => {
     const check = vi.fn(async () =>
       ok({ state: "no_seat", reason: "This GitHub account has no GitHub Copilot subscription.", checked_at_ms: 3, premium_requests: null, ai_credits: null, warning: null }),

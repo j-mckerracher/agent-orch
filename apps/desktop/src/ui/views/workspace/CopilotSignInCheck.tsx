@@ -5,7 +5,7 @@
  * control polls the zero-cost status read until the run settles. The state is shown as text, never as a control.
  */
 import { useEffect, useRef, useState } from "react";
-import type { CopilotSignInRecord } from "../../../daemon/types";
+import type { CopilotSignInRecord, CopilotSignInState } from "../../../daemon/types";
 import type { SurfaceResult } from "../../../sources/surfaces/types";
 import { Button } from "../../theme";
 
@@ -20,7 +20,10 @@ const MAX_POLLS = 150;
 const HOOKS_NOTE = "Copilot runs your own Copilot hooks from ~/.copilot";
 
 const COST_NOTE =
-  "Checking makes one billable Copilot call on claude-haiku-4.5 (documented as 0.33 premium requests). It runs once per session. Sign-in is also confirmed by any successful Copilot run.";
+  "Checking makes one billable Copilot call on claude-haiku-4.5 (documented as 0.33 premium requests). A settled ready answer is kept for the session. After a failed or missing sign-in, pressing again makes a new call. Sign-in is also confirmed by any successful Copilot run.";
+
+/** The states a new check can change. Pressing the button again after one of these makes a new call. */
+const RECHECK_STATES = new Set<CopilotSignInState>(["not_signed_in", "no_seat", "error"]);
 
 function stateText(record: CopilotSignInRecord): string {
   switch (record.state) {
@@ -49,11 +52,17 @@ function usageText(record: CopilotSignInRecord): string {
 export function CopilotSignInCheck({
   check,
   status,
+  known = null,
+  onRecord,
   pollIntervalMs = POLL_INTERVAL_MS,
 }: {
   check: CopilotSignInCheckFn;
   /** Zero-cost status read. Without it a run that is still checking is shown as checking, not polled. */
   status?: () => Promise<SurfaceResult<CopilotSignInRecord>>;
+  /** The sign-in state the picker last read, so a press after a failed sign-in makes a new check. */
+  known?: CopilotSignInRecord | null;
+  /** Told each settled record, so the model picker can show the new sign-in state at once. */
+  onRecord?: (record: CopilotSignInRecord) => void;
   pollIntervalMs?: number;
 }) {
   const [result, setResult] = useState<SurfaceResult<CopilotSignInRecord> | null>(null);
@@ -69,7 +78,8 @@ export function CopilotSignInCheck({
   const run = async () => {
     setBusy(true);
     try {
-      let current = await check(false);
+      const last = result?.status === "ok" ? result.data : known;
+      let current = await check(last !== null && RECHECK_STATES.has(last.state));
       for (let polls = 0; polls < MAX_POLLS && alive.current; polls += 1) {
         if (current.status !== "ok" || current.data.state !== "checking" || status === undefined) break;
         setResult(current);
@@ -78,6 +88,7 @@ export function CopilotSignInCheck({
         current = await status();
       }
       if (alive.current) setResult(current);
+      if (alive.current && current.status === "ok") onRecord?.(current.data);
     } finally {
       if (alive.current) setBusy(false);
     }

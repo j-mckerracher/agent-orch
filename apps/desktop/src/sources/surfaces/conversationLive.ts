@@ -94,8 +94,8 @@ const FAILURE_TEXT: Record<string, string> = {
   reply_too_large: "The reply was larger than the daemon allows and was dropped.",
   interrupted_by_restart: "The daemon restarted before the reply finished. The reply is incomplete or missing.",
   // The daemon refused the model choice from the picker (DPES-1105). Each reason has its own code.
-  selection_agent_unavailable: "The chosen agent is not installed or cannot be launched. Choose another agent. No reply was produced.",
-  selection_authentication_failed: "The chosen agent is not signed in. Sign in to it, or choose another agent. No reply was produced.",
+  selection_agent_unavailable: "The chosen agent cannot run: it is not installed, cannot be launched, or its account has no access to it. Choose another agent. No reply was produced.",
+  selection_authentication_failed: "The chosen agent is not signed in. Sign in to it (for GitHub Copilot, run copilot login), or choose another agent. No reply was produced.",
   selection_agent_state_unknown: "The chosen agent's state could not be checked. Try again shortly. No reply was produced.",
   selection_agent_unsupported: "The chosen agent cannot answer a message. Choose another agent. No reply was produced.",
   selection_models_unsupported: "The chosen agent does not offer model choices. Choose the default model. No reply was produced.",

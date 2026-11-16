@@ -5,8 +5,9 @@
 //!
 //! [`AgentRuntime`] answers one conversation turn by launching an installed
 //! agent CLI (Codex, then Claude Code) through the same adapters tasks use.
-//! GitHub Copilot answers only when `AGENT_ORCH_CONVERSATION_AGENT` names it.
-//! The agent is picked from the M7-09 catalog: it must be installed, signed in
+//! A message may choose GitHub Copilot (DPES-1105), and
+//! `AGENT_ORCH_CONVERSATION_AGENT` may name it as the default; the default order
+//! never reaches it. The agent is picked from the M7-09 catalog: it must be installed, signed in
 //! and launchable, and an optional configured model and effort must be offered
 //! by its catalog. A runtime that is missing or not launchable never receives
 //! a message; the turn fails closed with `runtime_unavailable`.
@@ -39,7 +40,7 @@ use orchestrator_agents::permission::chat_profile;
 use orchestrator_agents::{
     AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
-    SelectionReason, COPILOT_PINNED_VERSION,
+    SelectionReason, SignInState, COPILOT_PINNED_VERSION,
 };
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::workstream::Workstream;
@@ -670,14 +671,25 @@ impl TurnControl for Control {
     }
 }
 
-/// The agents a message may choose. GitHub Copilot answers only when it is the
-/// configured agent, so no message starts a paid Copilot run (DPES-1105). Any
-/// other name, including one the picker lists but chat cannot run, is refused.
+/// The agents a message may choose (DPES-1105). Any other name, including one
+/// the picker lists but chat cannot run (Pi), is refused.
 fn chat_agent(name: &str) -> Option<&'static str> {
     match name {
         CODEX => Some(CODEX),
         CLAUDE => Some(CLAUDE),
+        GITHUB_COPILOT => Some(GITHUB_COPILOT),
         _ => None,
+    }
+}
+
+/// The failure of a Copilot run that did not complete. A run that showed the
+/// account signed out, or without a seat, fails with the code the next
+/// selection gives, so every later send reports the same reason.
+fn copilot_failure(sign_in: &CopilotSignIn) -> RuntimeFailure {
+    match sign_in.snapshot().state {
+        SignInState::NotSignedIn => RuntimeFailure::Refused(SelectionReason::AuthenticationFailed),
+        SignInState::NoSeat => RuntimeFailure::Refused(SelectionReason::AgentUnavailable),
+        _ => RuntimeFailure::Failed,
     }
 }
 
@@ -1007,6 +1019,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     match exit {
         Ok(AgentExit::Completed { .. }) => sink.complete(),
         Ok(AgentExit::Cancelled { .. }) => {}
+        _ if turn.agent == GITHUB_COPILOT => sink.fail(copilot_failure(&turn.sign_in)),
         _ => sink.fail(RuntimeFailure::Failed),
     }
 }

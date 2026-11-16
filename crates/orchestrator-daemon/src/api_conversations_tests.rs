@@ -554,7 +554,26 @@ fn a_malformed_choice_is_a_bad_request_and_records_nothing() {
 }
 
 #[test]
-fn a_chosen_copilot_is_refused_as_a_failed_turn_without_launching_anything() {
+fn a_chosen_pi_is_refused_as_a_failed_turn_without_launching_anything() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    let sent = api
+        .dispatch(
+            "conversations.send",
+            json!({"target": global(), "text": "hi", "idempotency_key": "k", "selection": {"agent": "pi"}}),
+        )
+        .unwrap();
+    assert_eq!(sent["turn"]["state"], "failed");
+    assert_eq!(sent["turn"]["error_code"], "selection_agent_unsupported");
+    // The message stays in the transcript, as for every failed turn.
+    assert_eq!(
+        kinds(&get(&api, global(), 0)),
+        ["user_message", "turn_failed"]
+    );
+}
+
+#[test]
+fn a_chosen_copilot_without_its_cli_fails_the_turn_as_unavailable() {
     let directory = tempfile::tempdir().unwrap();
     let api = without_agents(directory.path());
     let sent = api
@@ -564,8 +583,7 @@ fn a_chosen_copilot_is_refused_as_a_failed_turn_without_launching_anything() {
         )
         .unwrap();
     assert_eq!(sent["turn"]["state"], "failed");
-    assert_eq!(sent["turn"]["error_code"], "selection_agent_unsupported");
-    // The message stays in the transcript, as for every failed turn.
+    assert_eq!(sent["turn"]["error_code"], "runtime_unavailable");
     assert_eq!(
         kinds(&get(&api, global(), 0)),
         ["user_message", "turn_failed"]
@@ -591,6 +609,8 @@ fn without_agents(directory: &std::path::Path) -> DaemonApi {
     let missing = directory.join("no-such-agent");
     let mut config = crate::executor::ExecutorConfig::for_data_dir(directory);
     config.codex_program = Some(missing.clone());
+    // Never resolve `copilot` on PATH: a launchable Copilot would start a paid run.
+    config.copilot_program = Some(missing.clone());
     config.claude_program = Some(missing);
     DaemonApi::with_executor(directory, config).unwrap()
 }

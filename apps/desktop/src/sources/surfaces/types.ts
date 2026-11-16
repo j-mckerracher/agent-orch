@@ -475,6 +475,8 @@ export interface ModelProvider {
   models: Measured<ModelOption[]>;
   /** Where the model list comes from, as the daemon states it (for example, documented aliases). Present with an `ok` list. */
   modelsNote?: string;
+  /** The daemon's reason this agent is not available, from its catalog row. Present when the row is not available. */
+  detail?: string;
   /** Adapter-wide efforts; per-model efforts are on each `ModelOption`. */
   efforts: Measured<string[]>;
 }

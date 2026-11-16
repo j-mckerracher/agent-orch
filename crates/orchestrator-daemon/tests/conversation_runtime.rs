@@ -751,17 +751,173 @@ fn a_chosen_agent_that_is_not_installed_fails_the_turn_without_another_agent() {
 }
 
 #[test]
-fn github_copilot_is_not_offered_to_a_message() {
+fn pi_is_not_offered_to_a_message() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
     let mut chat = Chat::open(&layout);
-    let sent = chat.send_choice(&global(), "hi", "m-1", json!({"agent": "github-copilot"}));
+    let sent = chat.send_choice(&global(), "hi", "m-1", json!({"agent": "pi"}));
     assert_eq!(
         sent["turn"]["error_code"], "selection_agent_unsupported",
         "{sent}"
     );
     assert!(!log.exists(), "the agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+/// A completed Copilot run: one assistant message, then the provider's result.
+#[cfg(unix)]
+const COPILOT_COMPLETED: &str = concat!(
+    "{\"type\":\"session.start\",\"data\":{\"sessionId\":\"00000000-0000-4000-8000-000000000001\",\"copilotVersion\":\"1.0.109\",\"selectedModel\":\"claude-haiku-4.5\"}}\n",
+    "{\"type\":\"assistant.message\",\"data\":{\"content\":\"OK\",\"model\":\"claude-haiku-4.5\",\"providerId\":\"copilot\",\"toolRequests\":[]}}\n",
+    "{\"type\":\"result\",\"exitCode\":0,\"usage\":{\"premiumRequests\":0.33}}\n",
+);
+
+/// A Copilot run that the CLI refused because nobody is signed in.
+#[cfg(unix)]
+const COPILOT_NOT_SIGNED_IN: &str = "{\"type\":\"session.error\",\"data\":{\"errorType\":\"auth\",\"message\":\"Not logged in. Please run copilot login.\"}}\n{\"type\":\"result\",\"exitCode\":1}\n";
+
+/// A fake `copilot`. `--version` prints the pinned version. Each run appends
+/// its working directory and arguments to `copilot.log`, prints `stream` and
+/// exits with `code`. Returns the program and the log.
+#[cfg(unix)]
+fn fake_copilot(layout: &Layout, stream: &str, code: i32) -> (PathBuf, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let stream_file = layout.data.join("copilot-stream.jsonl");
+    std::fs::write(&stream_file, stream).unwrap();
+    let log = layout.data.join("copilot.log");
+    let program = layout.data.join("fake-copilot");
+    let body = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n\
+         printf 'cwd=%s args=%s\\n' \"$PWD\" \"$(printf '%s ' \"$@\" | /usr/bin/tr '\\n' ' ')\" >> '{log}'\n\
+         /bin/cat '{stream}'\n\
+         exit {code}\n",
+        log = log.display(),
+        stream = stream_file.display(),
+    );
+    std::fs::write(&program, body).unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (program, log)
+}
+
+#[cfg(unix)]
+#[test]
+fn each_copilot_level_launches_with_its_flags_and_records_it() {
+    let layout = Layout::new();
+    let (copilot, log) = fake_copilot(&layout, COPILOT_COMPLETED, 0);
+    let daemon = start(&layout, &[("AGENT_ORCH_COPILOT_PROGRAM", &text(&copilot))]);
+    let mut chat = Chat::open(&layout);
+    let choice = json!({"agent": "github-copilot"});
+
+    for (level, key, profile) in [
+        ("restricted", "m-1", "github-copilot:restricted:v1"),
+        ("auto", "m-2", "github-copilot:auto:v1"),
+        ("full", "m-3", "github-copilot:full:v1"),
+    ] {
+        let sent = chat.send_params(json!({
+            "target": global(),
+            "text": "hi",
+            "idempotency_key": key,
+            "selection": choice,
+            "permission": level,
+        }));
+        assert_eq!(sent["turn"]["permission_level"], level, "{sent}");
+        let page = chat.settled(&global());
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+        assert_eq!(page["turn"]["permission_profile"], profile, "{page}");
+        assert_eq!(page["turn"]["runtime"]["name"], "github-copilot", "{page}");
+        assert_eq!(page["turn"]["runtime"]["version"], "1.0.109", "{page}");
+        assert_eq!(reply(&page), "OK", "{page}");
+    }
+
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    for line in &lines {
+        // The prompt is the fixed frame and then the message; the fake flattens its newlines onto one line.
+        assert!(line.contains("Current message: hi"), "{line}");
+        assert!(line.contains("--no-ask-user"), "{line}");
+        // No sandbox flag, and no model or effort on a normal run (PR #75, PR #80).
+        assert!(!line.contains("--sandbox"), "{line}");
+        assert!(
+            !line.contains("--model") && !line.contains("--reasoning-effort"),
+            "{line}"
+        );
+        assert!(!launch_cwd(line).is_empty(), "{line}");
+    }
+    // Each turn runs in its own empty run directory, so no turn reads another's files.
+    assert_ne!(launch_cwd(&lines[0]), launch_cwd(&lines[1]));
+    // Restricted reads only: no shell, write, URL or memory tool, and no approval.
+    assert!(
+        lines[0].contains("--deny-tool shell") && lines[0].contains("--deny-tool write"),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        !lines[0].contains("--allow-all") && !lines[0].contains("--assisted-approval"),
+        "{}",
+        lines[0]
+    );
+    // Auto sends shell requests to the judge, and still denies git push.
+    assert!(
+        lines[1].contains("--assisted-approval")
+            && lines[1].contains("--deny-tool shell(git push)"),
+        "{}",
+        lines[1]
+    );
+    assert!(!lines[1].contains("--allow-all"), "{}", lines[1]);
+    // Full is the level the user chose: all tools allowed.
+    assert!(lines[2].contains("--allow-all"), "{}", lines[2]);
+    stop(&layout, daemon, chat);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_copilot_that_is_not_signed_in_fails_the_turn_with_its_reason() {
+    let layout = Layout::new();
+    let (copilot, log) = fake_copilot(&layout, COPILOT_NOT_SIGNED_IN, 1);
+    let daemon = start(&layout, &[("AGENT_ORCH_COPILOT_PROGRAM", &text(&copilot))]);
+    let mut chat = Chat::open(&layout);
+    chat.send_choice(&global(), "hi", "m-1", json!({"agent": "github-copilot"}));
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "failed", "{page}");
+    assert_eq!(
+        page["turn"]["error_code"], "selection_authentication_failed",
+        "{page}"
+    );
+    assert_eq!(launch_lines(&log).len(), 1, "the run was not started once");
+    stop(&layout, daemon, chat);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_model_or_effort_for_copilot_is_refused_before_anything_launches() {
+    let layout = Layout::new();
+    let (copilot, log) = fake_copilot(&layout, COPILOT_COMPLETED, 0);
+    let daemon = start(&layout, &[("AGENT_ORCH_COPILOT_PROGRAM", &text(&copilot))]);
+    let mut chat = Chat::open(&layout);
+    // The Copilot CLI cannot list models or efforts, so the catalog offers neither.
+    let sent = chat.send_choice(
+        &global(),
+        "hi",
+        "m-1",
+        json!({"agent": "github-copilot", "model": "claude-haiku-4.5"}),
+    );
+    assert_eq!(
+        sent["turn"]["error_code"], "selection_models_unsupported",
+        "{sent}"
+    );
+    let sent = chat.send_choice(
+        &global(),
+        "hi",
+        "m-2",
+        json!({"agent": "github-copilot", "effort": "high"}),
+    );
+    assert_eq!(
+        sent["turn"]["error_code"], "selection_effort_unsupported",
+        "{sent}"
+    );
+    assert!(launch_lines(&log).is_empty(), "the agent was launched");
     stop(&layout, daemon, chat);
 }
 

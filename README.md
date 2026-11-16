@@ -19,7 +19,7 @@ The daemon launches the vendor CLIs you have installed (Codex, Claude Code, and 
 
 ## Features
 
-- **Workspace chat.** Chat with an agent in the Global workspace or in a project. The composer has a target picker, a model picker, and a permission level control. Each message can use a different model. Codex and Claude Code answer chat. The picker does not offer Copilot for a message. Copilot answers chat only when the daemon is configured for it with `AGENT_ORCH_CONVERSATION_AGENT=github-copilot`.
+- **Workspace chat.** Chat with an agent in the Global workspace or in a project. The composer has a target picker, a model picker, and a permission level control. Each message can use a different model. Codex, Claude Code and GitHub Copilot answer chat. The picker offers Copilot when the daemon can launch its CLI and shows why when it cannot. A Copilot message uses premium requests or AI credits on your Copilot seat.
 - **Permission levels.** There are four levels: Restricted, Extended, Auto, and Full. Auto is the default for chats. Extended is not yet available for chat. Full gives the agent the same access as your account, with no MCAO sandbox or approval checks, and has no automatic review step. Only Restricted is kept across a reload. The other levels reset to Auto. Auto relies on each CLI's own automatic review, which is not a guarantee.
 - **Agents view.** Lists the configured agent adapters and their sessions. Without a running daemon, it shows fixture data.
 - **AI usage.** Shows estimated AI usage across the machine, read from local Claude Code, Codex, and GitHub Copilot data by a pinned `codeburn` reader (see `crates/orchestrator-local-usage/codeburn-pin.json`). The figures are estimates.

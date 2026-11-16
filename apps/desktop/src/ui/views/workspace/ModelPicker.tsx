@@ -10,6 +10,7 @@ import type {
   Provenance,
   SurfaceResult,
 } from "../../../sources/surfaces/types";
+import type { CopilotSignInRecord, CopilotSignInState } from "../../../daemon/types";
 import type { SurfaceState } from "../../services";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
@@ -26,18 +27,42 @@ const DEFAULT_EFFORT = "Default effort";
 const RETRY_MS = 2000;
 const MAX_AUTO_RETRIES = 5;
 const COLD_REASONS = new Set(["agent_state_unknown", "models_unknown", "effort_unknown"]);
-// The agents a chat message can run (the daemon's `chat_agent`). Copilot is listed but cannot answer a message.
-const CHAT_AGENTS = new Set(["codex", "claude-code"]);
+const COPILOT = "github-copilot";
+/** Shown once, under the provider list, while Copilot is the chosen provider. A Copilot message is billed to the user's seat. */
+const COPILOT_COST_NOTE = "A Copilot message uses premium requests or AI credits on your Copilot seat.";
+/** What the picker says for a Copilot sign-in state the record gives no reason for. */
+const SIGN_IN_TEXT: Partial<Record<CopilotSignInState, string>> = {
+  not_checked: "Not confirmed yet: sign-in is checked on your first Copilot use. If you have not signed in, run `copilot login`.",
+  checking: "Checking GitHub Copilot sign-in now. Retry shortly.",
+};
+/** The Copilot sign-in states the daemon refuses a choice for, with the label the list shows. Not checked and ready can be chosen. */
+const SIGN_IN_BLOCKS: Partial<Record<CopilotSignInState, string>> = {
+  not_signed_in: "not signed in",
+  no_seat: "no Copilot seat",
+  checking: "sign-in being checked",
+  error: "sign-in not confirmed",
+};
 
 type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checking" };
 
 /**
- * Why a provider cannot be chosen, or null. It stays listed with the reason, so the user is not offered a
- * choice that always fails. Live mode also excludes the agents chat cannot run.
+ * Why a provider cannot be chosen, with its list label and the daemon's reason, or null. A provider the daemon
+ * cannot launch is blocked with the daemon's own reason. Copilot is also blocked in the sign-in states the daemon
+ * refuses a choice for, so the list never offers a choice that always fails. Until the sign-in state is read, Copilot
+ * stays choosable: the daemon decides each send.
  */
-function unchoosableReason(item: ModelProvider, live: boolean): string | null {
-  if (!item.launchable) return " (not launchable)";
-  if (live && !CHAT_AGENTS.has(item.id)) return " (not available for chat)";
+function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null): { label: string; reason: string } | null {
+  if (!item.launchable) return { label: "not launchable", reason: item.detail ?? "The daemon cannot launch this agent." };
+  if (item.id !== COPILOT || signIn === null) return null;
+  const label = SIGN_IN_BLOCKS[signIn.state];
+  return label ? { label, reason: signIn.reason ?? SIGN_IN_TEXT[signIn.state] ?? `GitHub Copilot sign-in is ${label}.` } : null;
+}
+
+/** The line under the provider list that says why a provider cannot be chosen, or that Copilot sign-in is not confirmed yet. */
+function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null): string | null {
+  const block = blockOf(item, signIn);
+  if (block) return `${item.name}: ${block.reason}`;
+  if (item.id === COPILOT && signIn?.state === "not_checked") return `${item.name}: ${SIGN_IN_TEXT.not_checked}`;
   return null;
 }
 
@@ -132,12 +157,18 @@ export function ModelPicker({
   const [touched, setTouched] = useState(false);
   const [check, setCheck] = useState<Check | null>(null);
   const [retries, setRetries] = useState(0);
+  const [signIn, setSignIn] = useState<CopilotSignInRecord | null>(null);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
-  const choosable = (item: ModelProvider) => item.launchable && (!live || CHAT_AGENTS.has(item.id));
-  // A provider that cannot be chosen is listed but never chosen, and never the default.
+  const providerNotes = live
+    ? providers.map((item) => providerNote(item, signIn)).filter((note): note is string => note !== null)
+    : [];
+  const choosable = (item: ModelProvider) => blockOf(item, signIn) === null;
+  // A provider that cannot be chosen is listed but never chosen. Live, Copilot is never the default: the daemon's
+  // default is Codex, then Claude Code.
+  const defaultChoosable = (item: ModelProvider) => choosable(item) && (!live || item.id !== COPILOT);
   const provider: ModelProvider | undefined =
-    providers.find((item) => choosable(item) && item.id === providerId) ?? providers.find(choosable);
+    providers.find((item) => choosable(item) && item.id === providerId) ?? providers.find(defaultChoosable);
   const models = provider?.models.status === "ok" ? provider.models.value : [];
   // No model chosen is the default model: no `--model` is given, so the agent's own choice applies.
   const model = models.find((item) => item.id === modelId);
@@ -189,6 +220,20 @@ export function ModelPicker({
     }, RETRY_MS);
     return () => clearTimeout(timer);
   }, [cold, retries, onRetry]);
+
+  // The Copilot sign-in state is read as the panel opens. The read is free and nothing waits for it: until it arrives,
+  // Copilot is choosable, and the daemon still decides each send.
+  const signInStatus = copilotSignIn?.copilotSignInStatus;
+  useEffect(() => {
+    if (!live || !popover.open || !signInStatus) return;
+    let current = true;
+    void signInStatus().then((result) => {
+      if (current && result.status === "ok") setSignIn(result.data);
+    });
+    return () => {
+      current = false;
+    };
+  }, [live, popover.open, signInStatus]);
 
   let noProviderLabel = "No launchable providers";
   if (providers.length === 0) noProviderLabel = "Not available";
@@ -323,14 +368,23 @@ export function ModelPicker({
             }}
           >
             {provider === undefined && <option value="">{noProviderLabel}</option>}
-            {providers.map((item) => (
-              <option key={item.id} value={item.id} disabled={unchoosableReason(item, live) !== null}>
-                {item.name}
-                {unchoosableReason(item, live) ?? ""}
-              </option>
-            ))}
+            {providers.map((item) => {
+              const block = blockOf(item, signIn);
+              return (
+                <option key={item.id} value={item.id} disabled={block !== null}>
+                  {item.name}
+                  {block ? ` (${block.label})` : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
+        {providerNotes.map((note) => (
+          <p key={note} className="ws-small">
+            {note}
+          </p>
+        ))}
+        {live && provider?.id === COPILOT && <p className="ws-small">{COPILOT_COST_NOTE}</p>}
         <label className="ws-field">
           Model
           <select
@@ -387,7 +441,12 @@ export function ModelPicker({
           </p>
         )}
         {provider?.id === "github-copilot" && copilotSignIn?.checkCopilotSignIn && copilotSignIn.copilotSignInStatus && (
-          <CopilotSignInCheck check={copilotSignIn.checkCopilotSignIn} status={copilotSignIn.copilotSignInStatus} />
+          <CopilotSignInCheck
+            check={copilotSignIn.checkCopilotSignIn}
+            status={copilotSignIn.copilotSignInStatus}
+            known={signIn}
+            onRecord={setSignIn}
+          />
         )}
         <p id={noteId} className="ws-small">
           {note}
