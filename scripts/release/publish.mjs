@@ -16,9 +16,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PLATFORMS = ["macos", "windows"];
 const PLATFORM_NAMES = { macos: "macOS", windows: "Windows" };
+// The workarounds apply because the app is unsigned and internal. On macOS 15 and later, Control-click Open
+// no longer bypasses Gatekeeper, so the Privacy & Security step is the one that works.
 const UNSIGNED_WARNING = {
-  macos: "**macOS:** Gatekeeper will block or warn on the first launch of an unsigned app. Allow it under System Settings, Privacy & Security only if you trust this build.",
-  windows: "**Windows:** SmartScreen will warn that Windows protected your PC. Choose More info, then Run anyway, only if you trust this build.",
+  macos: "**macOS (Gatekeeper):** the first launch is blocked. Try to open MCAO once, then open System Settings, Privacy & Security, and click Open Anyway. Or, after moving MCAO.app to /Applications, run `xattr -dr com.apple.quarantine /Applications/MCAO.app` in Terminal.",
+  windows: "**Windows (SmartScreen):** Windows protected your PC. Choose More info, then Run anyway.",
 };
 
 // The version of one `[section]` of a TOML document. Only that table is searched, so a dependency's
@@ -90,7 +92,9 @@ export function releaseNotes({ tag, commit, assets }) {
   const unsigned = assets.filter((asset) => !asset.signed);
   const lines = [];
   if (unsigned.length > 0) {
-    lines.push("> **Unsigned build: this release is a prerelease.** Its installers are not code-signed.");
+    lines.push(
+      "> **Unsigned build: this release is a prerelease.** Its installers are not code-signed or notarized. That is expected: the app is unsigned and internal.",
+    );
     for (const asset of unsigned) lines.push(">", `> ${UNSIGNED_WARNING[asset.platform]}`);
     lines.push("");
   }

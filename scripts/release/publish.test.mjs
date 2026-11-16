@@ -70,8 +70,13 @@ test("unsigned notes open with the prerelease warning and name only the unsigned
   ];
   const notes = releaseNotes({ tag: "v0.1.0", commit, assets });
   assert.match(notes, /^> \*\*Unsigned build: this release is a prerelease\.\*\*/);
-  assert.match(notes, /SmartScreen will warn/);
+  assert.match(notes, /the app is unsigned and internal/);
+  assert.match(notes, /Windows \(SmartScreen\):.*More info, then Run anyway/);
   assert.doesNotMatch(notes, /Gatekeeper/);
+  const mac = releaseNotes({ tag: "v0.1.0", commit, assets: [{ platform: "macos", file: "MCAO.zip", signed: false, notarized: false, sha256: "" }] });
+  assert.match(mac, /Open Anyway/);
+  assert.ok(mac.includes("xattr -dr com.apple.quarantine /Applications/MCAO.app"));
+  assert.doesNotMatch(mac, /SmartScreen/);
   assert.match(notes, /\| macOS \| `MCAO\.zip` \| Signed and notarized \|/);
   assert.match(notes, /\| Windows \| `MCAO-setup\.exe` \| UNSIGNED \|/);
   assert.ok(notes.includes(`commit \`${commit}\` for tag \`v0.1.0\``));

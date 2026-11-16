@@ -36,9 +36,8 @@ commit in the changelog entry that adopts it.
 - Maintainer rights on `mc-innersource/motif-mcao`, including permission to create `v*` tags
   under the repository's tag ruleset, and permission to approve deployments to the `release`
   environment.
-- Signing secrets in the `release` environment, or the repository variable
-  `ALLOW_UNSIGNED_RELEASE=true` for an unsigned alpha build. A `v*` tag build fails without one
-  of these (see [release-ci.md](release-ci.md#release-builds-and-signing)).
+- The repository variable `ALLOW_UNSIGNED_RELEASE` set to `true`. Releases are unsigned today, and a `v*`
+  tag build fails without this variable (see [Unsigned releases](release-ci.md#unsigned-releases)).
 - `main` is green: the latest `ci.yml` and `audit.yml` runs on `main` passed.
 
 ## Version sources
@@ -110,9 +109,10 @@ Replace `X.Y.Z` with the new version and `DPES-NNN` with the release's Jira work
 The manifests already hold `0.1.0`, and the changelog records `v0.1.0`, so steps 1 to 3 are done
 by the PR that introduced this document. After it merges, run step 4 with `X.Y.Z = 0.1.0`:
 
-Decide the signing first. Without signing secrets in the `release` environment, the tag build
-fails unless the repository variable `ALLOW_UNSIGNED_RELEASE` is `true`. An unsigned v0.1.0 is a
-prerelease whose installers warn on first run (see [Unsigned releases](release-ci.md#unsigned-releases)).
+Releases are unsigned today, so the repository variable `ALLOW_UNSIGNED_RELEASE` must be `true` before
+this tag is pushed. The coordinator sets it once the PR that adds the publish job merges; the tag build
+fails at the signing check without it. v0.1.0 is then a prerelease whose installers need the steps in its
+notes to open on macOS and Windows (see [Unsigned releases](release-ci.md#unsigned-releases)).
 
 ```bash
 git checkout main && git pull --ff-only origin main

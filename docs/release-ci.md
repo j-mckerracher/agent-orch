@@ -332,16 +332,17 @@ a message.
 | Tag build (`v*`) and no secret is set | Error, like `REQUIRE_SIGNING=true` (on macOS this also requires the notarization secrets). To build an unsigned release on purpose, set the repository variable `ALLOW_UNSIGNED_RELEASE` to `true`; the artifact is then still labeled `unsigned`. |
 | All signing secrets set | Signed build; verified afterwards. |
 
-Secrets live in the GitHub environment `release`. Configure it before the first release:
+The GitHub environment `release` gates the build jobs and the `publish` job, so configure it before the first
+tag, even while releases are unsigned. Signing secrets, once added, also live there. Configure:
 
 - **Deployment branches and tags**: select *Selected branches and tags* and allow only the tag
   pattern `v*` (add `main` only if manual signed runs from `main` are wanted). An environment that
   does not exist is created on first use **without protection**, so any branch could then run
   `workflow_dispatch` and read the secrets; the restriction is the control, the workflow cannot
   enforce it.
-- **Required reviewers**: add at least one, so a tag push waits for approval before the secrets are
-  released to the build jobs. The `publish` job uses the same environment, so it waits for a second
-  approval once both builds pass (see [Publishing a release](#publishing-a-release)).
+- **Required reviewers**: add at least one, so a tag push waits for approval before the build jobs run. The
+  `publish` job uses the same environment, so it waits for a second approval once both builds pass, and that
+  approval is what makes the release public (see [Publishing a release](#publishing-a-release)).
 - **Tag protection**: add a repository ruleset that restricts who can create or delete `v*` tags;
   a pushed tag is what starts a release.
 - Keep the secrets in the environment only, not at repository or organization level.
@@ -387,9 +388,10 @@ signing secrets.
 The release is named after the tag. Its assets are the two installers and `SHA256SUMS`, named
 `MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.zip` and `MCAO-X.Y.Z-windows-x64-<signed|unsigned>-setup.exe`.
 
-The release is a prerelease while any installer is unsigned. Its notes then open with a warning that
-names each unsigned system. Otherwise the notes list the installers with their signing state, the
-commit, the install steps and how to check a download.
+While releases are unsigned (the current mode), every release is a prerelease. Its notes open with the
+unsigned warning and the per-system install steps, then list the installers, the commit and how to check a
+download (see [Unsigned releases](#unsigned-releases)). A release with only signed installers is not a
+prerelease, and its notes carry no warning.
 
 A failed check stops the job before anything is created. If `gh release create` fails after it has
 created the release, delete that release with `gh release delete <tag> --yes` (the tag is kept), then
@@ -397,17 +399,35 @@ re-run the job.
 
 ## Unsigned releases
 
-A tag build without signing secrets fails unless the repository variable `ALLOW_UNSIGNED_RELEASE` is
-`true`. That setting allows unsigned builds for every tag, so set it only for a deliberate unsigned
-release, and remove it, or add the secrets, before a release that must be signed. An unsigned release
-is a prerelease. What unsigned means differs by system:
+Releases are unsigned today. No signing secrets are set in the `release` environment, so the
+installers are not code-signed or notarized. This is the current mode, not an exception.
 
-- macOS: the app has no Developer ID signature and no notarization. Gatekeeper blocks or warns on its
-  first launch. A user can allow it under System Settings, Privacy & Security.
-- Windows: the installer has no Authenticode signature. SmartScreen warns when it runs, and the user
-  can choose More info, then Run anyway.
-- The install smoke of an unsigned build runs with `--allow-unsigned`. It proves nothing about signing,
-  Gatekeeper or SmartScreen.
+- The repository variable `ALLOW_UNSIGNED_RELEASE` is `true`. The coordinator sets it once the PR that
+  adds the publish job merges; maintainers do not set it per release. Without it, a `v*` tag build fails
+  at the signing check, on purpose.
+- The variable is repository-wide. While it is `true`, any tag build with no signing secrets ships
+  unsigned: labelled `unsigned`, and a prerelease. If the secrets are ever removed, set the variable to
+  `false` to get the failure back.
+- Every unsigned release is a prerelease, and its notes open with the warning and the install steps below.
+
+These steps apply because the app is unsigned and internal:
+
+- macOS: Gatekeeper blocks the first launch of an unsigned app. Control-click Open no longer bypasses it on
+  macOS 15 and later. Either try to open MCAO once, then open System Settings, Privacy & Security, and click
+  Open Anyway; or move `MCAO.app` to `/Applications` and run
+  `xattr -dr com.apple.quarantine /Applications/MCAO.app` in Terminal.
+- Windows: SmartScreen shows "Windows protected your PC" when the installer runs. Choose More info, then
+  Run anyway.
+- The install smoke of an unsigned build runs with `--allow-unsigned`. It proves the artifact installs and
+  upgrades. It proves nothing about Gatekeeper or SmartScreen.
+
+To turn signing on later:
+
+1. Add the secrets from the table above to the `release` environment: the Windows pair, and for macOS the
+   signing trio plus the notarization trio, all or none.
+2. Set nothing else. A complete set makes the next build signed, and notarized on macOS. The notes and the
+   prerelease flag follow the build. `ALLOW_UNSIGNED_RELEASE` has no effect on a signed build, so it can stay
+   as it is. Signed on macOS without notarization is still labelled and still warns under Gatekeeper.
 
 ## Run it locally
 
