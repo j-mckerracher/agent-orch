@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use orchestrator_local_usage::{
-    LocalUsageService, ReaderFault, ReaderOrigin, ReaderSource, ResolvedReader, Snapshot, Timing,
-    Window,
+    LocalUsageService, ReaderFault, ReaderOrigin, ReaderSource, ReaderState, ResolvedReader,
+    Snapshot, Timing, Window,
 };
 
 /// Recorded reader output for Claude Code (synthetic: one priced call, one unpriced),
@@ -99,10 +99,25 @@ struct FakeSource {
     mode_file: PathBuf,
     marker: PathBuf,
     missing_binary: bool,
+    /// Set when the build has no reader at all (for example a release build with no bundle).
+    no_reader: Option<ReaderState>,
 }
 
 impl ReaderSource for FakeSource {
+    fn missing(&self) -> Option<ReaderState> {
+        self.no_reader
+    }
+
     fn resolve(&self) -> Result<ResolvedReader, ReaderFault> {
+        if let Some(state) = self.no_reader {
+            return Err(ReaderFault {
+                state,
+                version: None,
+                node_version: None,
+                exit_status: None,
+                origin: None,
+            });
+        }
         let program = if self.missing_binary {
             PathBuf::from("/definitely/not/a/real/reader")
         } else {
@@ -152,12 +167,22 @@ impl Scenario {
     }
 
     fn service(&self, timing: Timing, missing_binary: bool) -> LocalUsageService {
+        self.service_with(timing, missing_binary, None)
+    }
+
+    fn service_with(
+        &self,
+        timing: Timing,
+        missing_binary: bool,
+        no_reader: Option<ReaderState>,
+    ) -> LocalUsageService {
         LocalUsageService::new(
             self.dir.path(),
             Box::new(FakeSource {
                 mode_file: self.mode_file.clone(),
                 marker: self.marker.clone(),
                 missing_binary,
+                no_reader,
             }),
             timing,
         )
@@ -410,6 +435,25 @@ fn a_crash_bad_output_and_oversized_output_are_reported() -> Result<(), String> 
     Ok(())
 }
 
+fn a_build_with_no_reader_says_so_at_opt_in_and_never_runs_one() -> Result<(), String> {
+    let scenario = Scenario::new("ok");
+    let service = scenario.service_with(timing(), false, Some(ReaderState::NotBundled));
+    let on = service
+        .set_enabled(true, window())
+        .map_err(|e| e.to_string())?;
+    check(
+        state_of(&on) == "not_bundled",
+        "opt-in reports the missing reader at once, not not_started",
+    )?;
+    std::thread::sleep(Duration::from_millis(600));
+    let later = service.read(window());
+    check(
+        state_of(&later) == "not_bundled" && !has_figures(&later),
+        "the missing reader stays reported, with no figures",
+    )?;
+    check(scenario.runs() == 0, "no reader process is ever started")
+}
+
 fn a_missing_binary_is_failed_not_zero() -> Result<(), String> {
     let scenario = Scenario::new("ok");
     let service = scenario.service(timing(), true);
@@ -507,6 +551,10 @@ fn main() {
         (
             "crash, bad output, oversized and wrong-day are reported",
             a_crash_bad_output_and_oversized_output_are_reported,
+        ),
+        (
+            "a build with no reader says so at opt-in",
+            a_build_with_no_reader_says_so_at_opt_in_and_never_runs_one,
         ),
         (
             "a missing binary is failed, not zero",

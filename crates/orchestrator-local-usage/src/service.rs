@@ -119,6 +119,13 @@ impl ReaderFault {
 pub trait ReaderSource: Send + Sync + 'static {
     fn resolve(&self) -> Result<ResolvedReader, ReaderFault>;
 
+    /// Why no reader can run at all (nothing bundled, or in development no
+    /// codeburn found), when that is known without running or hashing one.
+    /// `None` means a reader might be found: `resolve` decides.
+    fn missing(&self) -> Option<ReaderState> {
+        None
+    }
+
     /// True when the source may use development-only locations (debug builds).
     fn development_build(&self) -> bool {
         false
@@ -284,6 +291,13 @@ impl ReaderSource for CodeburnSource {
                     .ok_or_else(|| fault(ReaderState::NodeMissing))?;
                 resolve_installed(&root, entry, node, origin, pin())
             }
+        }
+    }
+
+    fn missing(&self) -> Option<ReaderState> {
+        match self.locations.plan() {
+            Plan::Missing(state) => Some(state),
+            Plan::Bundle(_) | Plan::Command { .. } => None,
         }
     }
 
@@ -499,6 +513,10 @@ impl LocalUsageService {
         state.next_due = None;
         if enabled {
             state.refresh_asked = true;
+            // A reader that cannot exist is reported now, with its reason, rather than after a worker run.
+            if let Some(missing) = self.shared.source.missing() {
+                state.cache.reader = Some(ReaderFault::new(missing).status());
+            }
             ensure_worker(&self.shared, &mut state);
         } else {
             state.refresh_asked = false;
@@ -941,6 +959,34 @@ mod tests {
         put_codeburn_on_path(dir.path());
         let plan = locations(dir.path(), false).plan();
         assert_eq!(plan, Plan::Missing(ReaderState::NotBundled));
+    }
+
+    #[test]
+    fn a_release_build_without_a_bundle_is_known_missing_before_any_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = CodeburnSource {
+            locations: locations(dir.path(), false),
+        };
+        assert_eq!(source.missing(), Some(ReaderState::NotBundled));
+    }
+
+    #[test]
+    fn a_development_build_without_codeburn_is_known_missing_before_any_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = CodeburnSource {
+            locations: locations(dir.path(), true),
+        };
+        assert_eq!(source.missing(), Some(ReaderState::NotInstalled));
+    }
+
+    #[test]
+    fn a_found_reader_is_not_reported_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        put_codeburn_on_path(dir.path());
+        let source = CodeburnSource {
+            locations: locations(dir.path(), true),
+        };
+        assert_eq!(source.missing(), None);
     }
 
     #[test]

@@ -79,9 +79,14 @@ describe("reader copy", () => {
     );
   });
 
-  it("says a release build without the reader is not bundled, with no fix", () => {
-    expect(readerNote(reader("not_bundled"))).toEqual({ text: "not available: the usage reader is not bundled in this build." });
-    expect(readerLine(snapshot({ reader: reader("not_bundled") }), true)).toBe("not available: the usage reader is not bundled in this build.");
+  it("says a build without the reader cannot read other tools, with the release that fixes it", () => {
+    expect(readerNote(reader("not_bundled"))).toEqual({
+      text: "This build does not include the usage reader, so other AI tools cannot be read.",
+      fix: "Install a release build of MCAO, which includes the pinned reader.",
+    });
+    expect(readerLine(snapshot({ reader: reader("not_bundled") }), true)).toBe(
+      "This build does not include the usage reader, so other AI tools cannot be read. Install a release build of MCAO, which includes the pinned reader.",
+    );
   });
 
   it("never mentions npm in any reader copy, in any state", () => {

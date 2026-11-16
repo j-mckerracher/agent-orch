@@ -59,7 +59,10 @@ export function readerNote(reader: LocalToolsReader): ReaderNote | null {
     case "not_started":
       return { text: CHECKING };
     case "not_bundled":
-      return { text: "not available: the usage reader is not bundled in this build." };
+      return {
+        text: "This build does not include the usage reader, so other AI tools cannot be read.",
+        fix: "Install a release build of MCAO, which includes the pinned reader.",
+      };
     case "not_installed":
       return {
         text: `codeburn ${pinned} was not found on PATH or at AGENT_ORCH_CODEBURN_BIN (development builds only).`,

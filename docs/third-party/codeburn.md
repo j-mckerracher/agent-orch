@@ -23,6 +23,19 @@ The staged layout is the seam in `crates/orchestrator-local-usage/src/service.rs
 (`ReaderLocations`): `<folder beside the daemon>/codeburn/` on Windows and in development,
 and `Contents/Resources/codeburn/` in a macOS app bundle.
 
+## Using codeburn in a development build
+
+Release builds carry the bundle above and never read `PATH`. A development build
+(debug) looks for the reader in this order: `AGENT_ORCH_CODEBURN_BIN`, then `PATH`,
+then the common global folders (`/opt/homebrew/bin`, `/usr/local/bin`). Any other
+version is refused, because only the pinned version is checked and run.
+
+* An npm global install (`npm install -g codeburn@0.9.28`) passes the check.
+* A Homebrew install of codeburn 0.9.28 also passes. Homebrew rewrites the
+  `#!` line of `dist/cli.js`, which the check ignores, so its SHA-256 matches
+  the `npm` layout. Checked on a 0.9.28 install: the reader reports `ok`.
+* Node.js 22.15 or newer must be on `PATH`. Node 26 passes.
+
 ## Decisions and why
 
 ### Runtime: the official Node.js archive, trimmed to `node`

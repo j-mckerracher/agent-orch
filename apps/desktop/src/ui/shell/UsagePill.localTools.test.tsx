@@ -148,11 +148,13 @@ describe("usage pill: other AI tools", () => {
     expect(screen.getByTestId("top-usage-tools").textContent).not.toMatch(/npm/i);
   });
 
-  it("says a release build has no reader bundled, with no fix and no npm", async () => {
+  it("says a build without the reader cannot read other tools, and names the release that fixes it", async () => {
     const { user } = renderPill(fixtureSource("not_bundled"));
     await openPopover(user);
     expect(await screen.findByTestId("top-usage-chip")).toHaveTextContent("Other tools: not available");
-    expect(screen.getByTestId("top-usage-tools-reader")).toHaveTextContent("not available: the usage reader is not bundled in this build.");
+    expect(screen.getByTestId("top-usage-tools-reader")).toHaveTextContent(
+      "This build does not include the usage reader, so other AI tools cannot be read. Install a release build of MCAO, which includes the pinned reader.",
+    );
     expect(screen.queryByTestId("top-usage-tools-source")).toBeNull();
     expect(screen.getByTestId("top-usage-tools").textContent).not.toMatch(/npm/i);
   });
