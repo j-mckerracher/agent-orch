@@ -1,0 +1,64 @@
+name: security
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: "security gate (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "true"
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      # Before checkout, so the working tree is written with LF and long paths work on Windows.
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - name: Check out pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Full history: the merge base with the base branch must be present for the change set.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.20.0
+          package-manager-cache: false
+      - name: Install pinned scanners
+        run: node scripts/security/gate.mjs install --dest "$RUNNER_TEMP/scanners"
+      - name: Run real-scanner controls
+        run: node scripts/security/gate.mjs controls --scanners "$RUNNER_TEMP/scanners" --evidence-dir "$RUNNER_TEMP/security-evidence/controls"
+      - name: Scan pull request change set and full repository
+        run: >-
+          node scripts/security/gate.mjs scan --repo .
+          --base "$BASE_SHA" --head "$HEAD_SHA"
+          --scanners "$RUNNER_TEMP/scanners"
+          --evidence-dir "$RUNNER_TEMP/security-evidence/scan"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/security-evidence
+          if-no-files-found: warn
+          retention-days: 30
