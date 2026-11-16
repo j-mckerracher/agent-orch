@@ -47,6 +47,12 @@ status checks, so the failure does not block the merge.
 release-please writes each version's section of `docs/changelog.md` from the conventional commit
 subjects that reach `main`. Do not edit a generated section by hand. There is no `Unreleased` section.
 
+The changelog's header sets three markdownlint rules for that file only, to match what release-please
+writes: MD012 off (two blank lines before each type heading), MD004 off (`*` list items, while the 0.1.0
+section uses `-`) and MD024 `siblings_only` (every release repeats headings such as `### Features`).
+Every other rule still applies, and gitleaks still scans the file. Keep the comment in the header, above
+the first release section, where release-please leaves it unchanged.
+
 - The commit subject is the changelog line, and it appears with its scope and Jira key as written.
   Write it for a reader of the release notes: `fix(desktop): DPES-1234 - Keep the tray open after a
   restart`. Start the description with a capital letter, as the commit rules require.
