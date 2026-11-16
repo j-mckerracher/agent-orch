@@ -43,8 +43,9 @@ Names are proposals so concurrent daemon work does not collide; no new
   runtime then fails; the failure is a `turn_failed` entry plus
   `turn.error_code`. A second send while a turn is `running` is `Conflict`.
   `selection` is the model choice for this message (see "Per-message choice"
-  under M7-25); it is omitted when the picker has not changed, and a send
-  without it is the request older clients have always sent. `permission` is the
+  under M7-25); it is omitted when the user has chosen none and no saved choice
+  is in effect, or when the choice is unavailable or not confirmed yet, and a
+  send without it is the request older clients have always sent. `permission` is the
   level the message runs at (see "Permission levels" under M7-25); a send
   without it runs at `restricted`.
 - `conversations.get {target, after_sequence?, epoch?}` — page of 100 entries,
@@ -227,9 +228,33 @@ no flag.
 `selection: {agent, model?, effort?}`, the agent, model and effort the picker
 chose for that message. The rules:
 
-- **Per message, not sticky.** The choice applies to the message it is sent
-  with. The desktop remembers the last choice in its window only; the daemon
-  stores nothing beyond the turn's identity.
+- **Per message.** The choice applies to the message it is sent with, and the
+  daemon stores nothing beyond the turn's identity. The desktop saves the
+  choice in its browser storage on each change, restores it when the picker
+  mounts, and sends it with each message until the user changes it (DPES-1105).
+  A restored choice counts as the user's own: it is sent as if just picked.
+  Fixture mode neither restores nor saves a choice.
+- **Unavailable is shown, never replaced.** On a daemon that takes a choice, a
+  saved choice the daemon no longer offers is shown as unavailable, with the
+  daemon's reason: its agent is not launchable, signed out, or not listed, or its
+  model or effort is not listed. It is not sent, and the message goes without a
+  choice, as an untouched picker does. A choice the catalog has not confirmed yet
+  is treated the same way until it is confirmed. The saved choice is kept until
+  the user changes it.
+- **A daemon that cannot take a choice blocks the send, and never drops it
+  (DPES-1105).** When the connected daemon lacks the `conversation_selection`
+  capability and a choice is saved, a Global or workstream message is blocked,
+  never sent without the choice. The picker's note says why, and the blocked
+  message says to open model settings and choose "Use the daemon default", or to
+  update the daemon. That control removes the saved choice, so the next send goes
+  without a selection. Nothing else clears a saved choice, so a reconnect to a
+  daemon that takes one sends the saved choice again.
+- **Coordinator notes carry no choice (DPES-1105).** A note runs no agent, so the
+  desktop sends `coordinator.send_message` without `selection` and without
+  `permission`, whatever the picker holds. A note leaves the saved choice and the
+  level as they were. The daemon's send-message params deny unknown fields, and
+  the desktop source refuses a choice or level for a note with `invalid-params`
+  before any request is sent, so a note never carries one.
 - **Replaces the configured default.** A message with a choice ignores
   `AGENT_ORCH_CONVERSATION_*` for that message. A chosen "Default model" means
   the agent's own default, which is what the picker shows.

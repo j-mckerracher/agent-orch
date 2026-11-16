@@ -361,6 +361,9 @@ function Conversation({
   const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
   // A coordinator note runs no agent, so it carries no level (the daemon refuses one there).
   const permissionOnWire = live && target.kind !== "project" ? permissionForSend(permission, !olderDaemon) : undefined;
+  // A coordinator note runs no agent either, so it carries no choice (the daemon refuses one there). The picker keeps the
+  // choice, so a note never clears or changes it (DPES-1105).
+  const choiceOnWire = target.kind === "project" ? undefined : (choice ?? undefined);
   const choosePermission = (next: PermissionLevel) => {
     saveLevel(next);
     setPermission(next);
@@ -374,11 +377,9 @@ function Conversation({
     const id = targetId(target);
     if (id !== null && isFixtureId(id)) blocked = "This is a placeholder target; it has nothing to send to.";
     else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports conversations.";
-    // A coordinator note takes no choice, and an older daemon would drop it: either way the message is not sent (DPES-1105).
-    else if (choice !== null && target.kind === "project")
-      blocked = "Coordinator notes take no model or effort. Choose the default in model settings to send one.";
-    else if (choice !== null && !gate.can("conversation_selection"))
-      blocked = "This daemon cannot use a chosen model or effort. Choose the default in model settings, or update the daemon.";
+    else if (choiceOnWire !== undefined && !gate.can("conversation_selection"))
+      blocked =
+        'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
     else if (running) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
@@ -391,7 +392,7 @@ function Conversation({
     setBusy(true);
     setFeedback(null);
     try {
-      const receipt = await surfaces.conversation.send(target, sent, choice ?? undefined, permissionOnWire);
+      const receipt = await surfaces.conversation.send(target, sent, choiceOnWire, permissionOnWire);
       if (receipt.simulated) {
         onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
@@ -568,6 +569,7 @@ function Conversation({
             copilotSignIn={surfaces.models}
             onRetry={retryModels}
             onChoiceChange={setChoice}
+            selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
             permission={permissionControl}
           />
           <Button

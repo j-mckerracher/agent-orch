@@ -16,11 +16,12 @@ import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
+import { clearSavedChoice, readSavedChoice, saveChoice } from "./modelChoice";
 import { PermissionLevelPicker } from "./PermissionLevelPicker";
 import { permissionLabel } from "./permissionLevel";
 
 const LIVE_NOTE =
-  "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message. Task submissions do not use it yet.";
+  "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message and remembered in this app until you change it. Task submissions do not use it yet.";
 const FIXTURE_NOTE = "Placeholder options. A choice stays in this window and is never sent anywhere.";
 const DEFAULT_MODEL = "Default model";
 const DEFAULT_EFFORT = "Default effort";
@@ -70,6 +71,38 @@ function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null): 
 function effortsFor(provider: ModelProvider | undefined, model: ModelOption | undefined): string[] {
   if (model?.efforts && model.efforts.length > 0) return model.efforts;
   return provider?.efforts.status === "ok" ? provider.efforts.value : [];
+}
+
+/** `pending` means the catalog has not confirmed the choice yet: it is not refused, only not sent yet. */
+type Problem = { pending: boolean; text: string };
+
+/**
+ * Why the user's choice cannot be sent, or null when it can. The daemon's own reason is shown, and the choice is never
+ * replaced by the default. A part is checked only once the catalog has read it.
+ */
+function problemOf(
+  choice: ModelChoice,
+  catalog: SurfaceState<ModelCatalog>,
+  provider: ModelProvider | undefined,
+  signIn: CopilotSignInRecord | null,
+  efforts: string[],
+): Problem | null {
+  if (catalog.status === "loading") return { pending: true, text: "the model catalog is still being read" };
+  if (catalog.status !== "ok") return { pending: false, text: "the model catalog is not available" };
+  if (provider === undefined) return { pending: false, text: `the daemon's catalog does not list ${choice.agent}` };
+  const block = blockOf(provider, signIn);
+  if (block) return { pending: provider.id === COPILOT && signIn?.state === "checking", text: block.reason };
+  if (choice.model !== undefined) {
+    if (provider.models.status === "unknown") return { pending: true, text: "the model list is still being read" };
+    if (provider.models.status !== "ok") return { pending: false, text: provider.models.reason };
+    if (!provider.models.value.some((item) => item.id === choice.model)) {
+      return { pending: false, text: `the daemon's catalog does not list model ${choice.model}` };
+    }
+  }
+  if (choice.effort !== undefined && !efforts.includes(choice.effort)) {
+    return { pending: provider.efforts.status === "unknown", text: `effort ${choice.effort} is not offered` };
+  }
+  return null;
 }
 
 /** A catalog reason shown as helper text: one sentence with a capital letter. */
@@ -126,8 +159,9 @@ function effortHelp(
 /**
  * Provider / model / effort menu. Live (daemon provenance): real catalog data with per-model
  * efforts, each choice checked with `agents.validate_selection`, and a cold catalog retried
- * shortly. Fixtures: placeholder options that can be tried locally. Neither mode sends or
- * persists a choice. A chat also shows its permission level at the end of the chip and offers it in the panel.
+ * shortly. The choice is saved on each change and restored on mount, so a remount keeps it
+ * (DPES-1105). Fixtures: placeholder options that can be tried locally. Fixtures send nothing
+ * and never save a choice. A chat also shows its permission level at the end of the chip and offers it in the panel.
  */
 export function ModelPicker({
   catalog,
@@ -136,6 +170,7 @@ export function ModelPicker({
   copilotSignIn,
   onRetry,
   onChoiceChange,
+  selectionSupported = true,
   permission,
 }: {
   catalog: SurfaceState<ModelCatalog>;
@@ -143,18 +178,22 @@ export function ModelPicker({
   validate?: ModelCatalogSource["validate"];
   copilotSignIn?: Pick<ModelCatalogSource, "checkCopilotSignIn" | "copilotSignInStatus">;
   onRetry?: () => void;
-  /** Live only: the choice each message is sent with, or null until the user changes a part of it (DPES-1105). */
+  /**
+   * Live only: the choice each message is sent with. Null until the user chooses or a saved choice is restored, and
+   * null while a choice is unavailable or not confirmed yet (DPES-1105). When the connected daemon cannot take a model
+   * choice (`selectionSupported` false), a saved choice is still reported, so a send is blocked and never sent without it.
+   */
   onChoiceChange?: (choice: ModelChoice | null) => void;
+  /** Live only: false when the connected daemon has no `conversation_selection` capability (DPES-1105). */
+  selectionSupported?: boolean;
   /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
   permission?: { level: PermissionLevel; daemonAdvertises: boolean; onChange: (level: PermissionLevel) => void };
 }) {
   const popover = usePopover();
   const ids = useId();
   const live = provenance.kind === "daemon";
-  const [providerId, setProviderId] = useState<string | null>(null);
-  const [modelId, setModelId] = useState<string | null>(null);
-  const [effort, setEffort] = useState<string | null>(null);
-  const [touched, setTouched] = useState(false);
+  // The user's choice, or the saved one restored on mount: null until one is made. Fixtures never restore or save one.
+  const [pinned, setPinned] = useState<ModelChoice | null>(() => (live ? readSavedChoice() : null));
   const [check, setCheck] = useState<Check | null>(null);
   const [retries, setRetries] = useState(0);
   const [signIn, setSignIn] = useState<CopilotSignInRecord | null>(null);
@@ -165,11 +204,13 @@ export function ModelPicker({
     : [];
   const choosable = (item: ModelProvider) => blockOf(item, signIn) === null;
   // A provider that cannot be chosen is listed but never chosen. Live, Copilot is never the default: the daemon's
-  // default is Codex, then Claude Code.
+  // default is Codex, then Claude Code. A chosen or restored provider is shown even when it cannot be chosen now.
   const defaultChoosable = (item: ModelProvider) => choosable(item) && (!live || item.id !== COPILOT);
-  const provider: ModelProvider | undefined =
-    providers.find((item) => choosable(item) && item.id === providerId) ?? providers.find(defaultChoosable);
+  const pinnedProvider = providers.find((item) => item.id === pinned?.agent);
+  const provider: ModelProvider | undefined = pinned === null ? providers.find(defaultChoosable) : pinnedProvider;
   const models = provider?.models.status === "ok" ? provider.models.value : [];
+  const modelId = pinned?.model ?? null;
+  const effort = pinned?.effort ?? null;
   // No model chosen is the default model: no `--model` is given, so the agent's own choice applies.
   const model = models.find((item) => item.id === modelId);
   const efforts = live ? effortsFor(provider, model) : provider?.efforts.status === "ok" ? provider.efforts.value : [];
@@ -180,9 +221,19 @@ export function ModelPicker({
   } else {
     chosenEffort = efforts.includes(effort ?? "") ? effort : (efforts[1] ?? efforts[0] ?? null);
   }
+  // A chosen or restored part the catalog does not offer is never replaced by the default: it is shown as unavailable,
+  // with the reason, and the choice is not sent (DPES-1105).
+  const problem = live && pinned !== null ? problemOf(pinned, catalog, provider, signIn, efforts) : null;
+  const missingAgent = live && pinned !== null && catalog.status === "ok" && pinnedProvider === undefined ? pinned.agent : null;
+  const unavailableModel = live && modelId !== null && provider !== undefined && model === undefined ? modelId : null;
+  const unavailableEffort = live && effort !== null && !efforts.includes(effort) ? effort : null;
+  // A saved choice on a daemon that cannot take one. A message is then blocked, never sent without the choice (DPES-1105).
+  const savedBlocked = live && pinned !== null && !selectionSupported;
 
   const effortText = chosenEffort ?? (live ? "default effort" : "effort not available");
-  const modelSummary =
+  const problemWord = problem === null ? null : problem.pending ? "not confirmed" : "unavailable";
+  const chosenName = provider?.name ?? pinned?.agent;
+  let modelSummary =
     provider === undefined ? "Model settings unavailable" : `${provider.name} · ${modelChip(provider, model)} · ${effortText}`;
   // The chip's visible text is shorter than the full summary, so it fits beside the conversation target at 960 CSS px.
   // "default model" reads "default", and one "default" stands for a live choice that is default in both parts.
@@ -192,10 +243,19 @@ export function ModelPicker({
     const bothDefault = live && model === undefined && chosenEffort === null && chipModel === "default";
     chipText = `${chipName(provider.name)} · ${bothDefault ? "default" : `${chipModel} · ${effortText}`}`;
   }
+  if (problemWord !== null && chosenName !== undefined) {
+    modelSummary = `${chosenName} · ${problemWord}`;
+    chipText = `${chipName(chosenName)} · ${problemWord}`;
+  }
   const levelLabel = permission ? permissionLabel(permission.level) : null;
   const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
-  const lock = provider === undefined;
+  const lock = provider === undefined && missingAgent === null;
+  // A blocked send says so in the capability note instead, so this note never claims a send goes without the choice.
+  const problemNote =
+    problem === null || savedBlocked
+      ? null
+      : `Your choice is ${problemWord}. ${sentence(problem.text)} Messages are sent without a choice until ${problem.pending ? "it is confirmed" : "you change it"}.`;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
   const noteId = `${ids}-note`;
   const modelHelpId = `${ids}-model-help`;
@@ -221,11 +281,13 @@ export function ModelPicker({
     return () => clearTimeout(timer);
   }, [cold, retries, onRetry]);
 
-  // The Copilot sign-in state is read as the panel opens. The read is free and nothing waits for it: until it arrives,
+  // The Copilot sign-in state is read as the panel opens, and at mount for a restored Copilot choice, so a signed-out
+  // choice is known before a send (DPES-1105). The read is free and nothing waits for it: until it arrives,
   // Copilot is choosable, and the daemon still decides each send.
   const signInStatus = copilotSignIn?.copilotSignInStatus;
+  const readSignIn = popover.open || pinned?.agent === COPILOT;
   useEffect(() => {
-    if (!live || !popover.open || !signInStatus) return;
+    if (!live || !readSignIn || !signInStatus) return;
     let current = true;
     void signInStatus().then((result) => {
       if (current && result.status === "ok") setSignIn(result.data);
@@ -233,30 +295,33 @@ export function ModelPicker({
     return () => {
       current = false;
     };
-  }, [live, popover.open, signInStatus]);
+  }, [live, readSignIn, signInStatus]);
 
   let noProviderLabel = "No launchable providers";
   if (providers.length === 0) noProviderLabel = "Not available";
   else if (providers.some((item) => item.launchable)) noProviderLabel = "No provider available for chat";
 
-  // The choice a message carries is what the picker displays, once the user has changed one part of it.
+  // The choice a message carries is what the picker displays, once the user has chosen or restored one. A choice that is
+  // unavailable or not confirmed yet is never sent: the message goes without a choice, as an untouched picker's does.
   const choice: ModelChoice | null =
-    live && touched && provider !== undefined
+    live && pinned !== null && provider !== undefined && problem === null
       ? {
           agent: provider.id,
           ...(model ? { model: model.id } : {}),
           ...(chosenEffort ? { effort: chosenEffort } : {}),
         }
       : null;
-  const choiceKey = choice === null ? "" : JSON.stringify(choice);
+  // The saved choice is reported as it is saved when the daemon cannot take one, so the send is blocked (DPES-1105).
+  const reported: ModelChoice | null = savedBlocked ? pinned : choice;
+  const choiceKey = reported === null ? "" : JSON.stringify(reported);
   useEffect(() => {
-    onChoiceChange?.(choice);
+    onChoiceChange?.(reported);
     // Keyed by value, so a new object for the same choice is not reported again.
   }, [choiceKey]);
 
   const selectionKey = `${provider?.id}|${model?.id}|${chosenEffort}|${catalog.status}`;
   useEffect(() => {
-    if (!live || !validate || !provider || !popover.open || (!model && !chosenEffort)) return;
+    if (!live || !validate || !provider || !popover.open || problem !== null || (!model && !chosenEffort)) return;
     let current = true;
     setCheck({ key: selectionKey, result: "checking" });
     validate(provider.id, {
@@ -305,6 +370,20 @@ export function ModelPicker({
       verdictText = `Not confirmed yet: the catalog is still being read; retry shortly. (${verdict.data.reason})`;
     } else verdictText = `Not supported: ${verdict.data.detail} (${verdict.data.reason})`;
   }
+
+  // The agent the picker shows: the chosen or saved one, else the default.
+  const shownAgent = provider?.id ?? pinned?.agent;
+  // Pins the whole choice as the user sees it, so a change to one part keeps the other parts, and saves it (live only).
+  const pin = (next: ModelChoice) => {
+    setPinned(next);
+    if (live) saveChoice(next);
+  };
+  // The user's own way back to the daemon default: it removes the saved choice and sends no selection until the user
+  // chooses again. Nothing else clears a saved choice, so a daemon that cannot take one keeps it (DPES-1105).
+  const useDaemonDefault = () => {
+    setPinned(null);
+    if (live) clearSavedChoice();
+  };
 
   return (
     <div
@@ -357,17 +436,17 @@ export function ModelPicker({
         <label className="ws-field">
           Provider
           <select
-            value={provider?.id ?? ""}
+            value={provider?.id ?? missingAgent ?? ""}
             disabled={lock}
             aria-describedby={noteId}
-            onChange={(event) => {
-              setTouched(true);
-              setProviderId(event.target.value);
-              setModelId(null);
-              setEffort(null);
-            }}
+            onChange={(event) => pin({ agent: event.target.value })}
           >
-            {provider === undefined && <option value="">{noProviderLabel}</option>}
+            {provider === undefined && missingAgent === null && <option value="">{noProviderLabel}</option>}
+            {missingAgent !== null && (
+              <option value={missingAgent} disabled>
+                {`${missingAgent} (saved)`}
+              </option>
+            )}
             {providers.map((item) => {
               const block = blockOf(item, signIn);
               return (
@@ -384,17 +463,29 @@ export function ModelPicker({
             {note}
           </p>
         ))}
+        {problemNote && (
+          <p role="status" className="ws-small">
+            {problemNote}
+          </p>
+        )}
+        {savedBlocked && (
+          <p role="status" className="ws-small">
+            The connected daemon cannot take a model choice, so a message to the Global orchestrator or a workstream is blocked
+            while this choice is saved. Use the daemon default in this panel to send, or update the daemon. Coordinator notes
+            are not affected.
+          </p>
+        )}
         {live && provider?.id === COPILOT && <p className="ws-small">{COPILOT_COST_NOTE}</p>}
         <label className="ws-field">
           Model
           <select
-            value={model?.id ?? ""}
+            value={model?.id ?? unavailableModel ?? ""}
             disabled={lock || models.length === 0}
             aria-describedby={describedBy(modelHelpText ? modelHelpId : null, noteId)}
             onChange={(event) => {
-              setTouched(true);
-              setModelId(event.target.value === "" ? null : event.target.value);
-              setEffort(null);
+              if (shownAgent !== undefined) {
+                pin({ agent: shownAgent, ...(event.target.value === "" ? {} : { model: event.target.value }) });
+              }
             }}
           >
             {provider === undefined ? <option value="">Not available</option> : <option value="">{DEFAULT_MODEL}</option>}
@@ -403,6 +494,11 @@ export function ModelPicker({
                 {item.label}
               </option>
             ))}
+            {unavailableModel !== null && (
+              <option value={unavailableModel} disabled>
+                {`${unavailableModel} (saved)`}
+              </option>
+            )}
           </select>
         </label>
         {modelHelpText && (
@@ -413,12 +509,17 @@ export function ModelPicker({
         <label className="ws-field">
           Effort
           <select
-            value={chosenEffort ?? ""}
+            value={unavailableEffort ?? chosenEffort ?? ""}
             disabled={lock || efforts.length === 0}
             aria-describedby={describedBy(effortHelpText ? effortHelpId : null, noteId)}
             onChange={(event) => {
-              setTouched(true);
-              setEffort(event.target.value === "" ? null : event.target.value);
+              if (shownAgent !== undefined) {
+                pin({
+                  agent: shownAgent,
+                  ...(modelId === null ? {} : { model: modelId }),
+                  ...(event.target.value === "" ? {} : { effort: event.target.value }),
+                });
+              }
             }}
           >
             {efforts.length === 0 && <option value="">{live && provider !== undefined ? DEFAULT_EFFORT : "Not available"}</option>}
@@ -428,12 +529,22 @@ export function ModelPicker({
                 {item}
               </option>
             ))}
+            {unavailableEffort !== null && (
+              <option value={unavailableEffort} disabled>
+                {`${unavailableEffort} (saved)`}
+              </option>
+            )}
           </select>
         </label>
         {effortHelpText && (
           <p id={effortHelpId} className="ws-small">
             {effortHelpText}
           </p>
+        )}
+        {pinned !== null && (
+          <Button variant="quiet" onClick={useDaemonDefault}>
+            Use the daemon default
+          </Button>
         )}
         {verdictText && (
           <p role="status" className="ws-small">

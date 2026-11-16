@@ -19,6 +19,8 @@ import {
 } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
+import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
+import { RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 import { workspaceRegistration } from "./register";
 import { formatAt } from "./time";
 import { WorkspaceView } from "./WorkspaceView";
@@ -70,6 +72,169 @@ async function pickTarget(user: ReturnType<typeof userEvent.setup>, name: RegExp
   if (button.getAttribute("aria-expanded") !== "true") await user.click(button);
   await user.click(screen.getByRole("radio", { name }));
 }
+
+/** The agents `agents.capabilities` lists for the picker, each launchable or not (DPES-1105). */
+function stubAgents(fake: FakeDaemon, launchable: Record<string, boolean>) {
+  fake.stub(
+    "agents.capabilities",
+    Object.entries(launchable).map(([agent, ok]) => ({
+      agent,
+      installed: true,
+      launchable: ok,
+      capabilities: {
+        streaming: true,
+        interactive_input: false,
+        structured_output: true,
+        cancellation: true,
+        session_resumption: false,
+        approvals: false,
+        model_selection: true,
+      },
+    })),
+  );
+}
+
+describe("saved model choice across a remount, live (DPES-1105)", () => {
+  it("keeps Claude Code after the view is left and reopened, and sends it with the next message", async () => {
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG, CLAUDE_CATALOG];
+    stubAgents(fake, { codex: true, "claude-code": true });
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    stubConversation(fake, "completed");
+    const before = track(build({ fake }));
+    const first = await mountView(before, false);
+    await waitLive(before);
+    await pickTarget(first.user, /Global orchestrator/);
+    await first.user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await first.user.selectOptions(await screen.findByRole("combobox", { name: "Provider" }), "claude-code");
+    first.view.unmount();
+
+    const after = track(build({ fake }));
+    const second = await mountView(after, false);
+    await waitLive(after);
+    await pickTarget(second.user, /Global orchestrator/);
+    expect(screen.getByRole("button", { name: /^Model settings: Claude Code/ })).toBeInTheDocument();
+    await second.user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    await second.user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({
+      text: "hello",
+      selection: { agent: "claude-code" },
+    });
+  });
+
+  it("sends without a choice when the saved provider is no longer launchable, and shows the daemon's reason", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "claude-code" }));
+    const fake = liveDaemon();
+    stubAgents(fake, { codex: true, "claude-code": false });
+    fake.stub("agents.catalog", [CODEX_CATALOG, { ...CLAUDE_CATALOG, state: "unavailable", detail: "the claude executable was not found" }]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    expect(screen.getByRole("button", { name: /^Model settings: Claude Code · unavailable/ })).toBeInTheDocument();
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "hello" });
+    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+  });
+
+  it("blocks a saved choice on a daemon without conversation_selection, names the control, and keeps the saved value", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    expect(screen.getByRole("button", { name: "Send message to Global orchestrator" })).toBeDisabled();
+    expect(
+      screen.getByText(/Open model settings and choose "Use the daemon default", or update the daemon\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/choose the default in model settings/i)).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.getByText(/The connected daemon cannot take a model choice, so a message/)).toBeInTheDocument();
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+  });
+
+  it("Use the daemon default clears the saved choice, and the next send goes without a selection", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.click(screen.getByRole("button", { name: "Use the daemon default" }));
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBeNull();
+    await user.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    expect(send).toBeEnabled();
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "hello" });
+    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+  });
+
+  it("keeps a saved choice the daemon cannot take, and sends it after a reconnect to a daemon that can", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "conversation_selection");
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    stubValidate(fake, [CODEX_CATALOG]);
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    expect(send).toBeDisabled();
+    // The window reconnects, now to a daemon that takes a model choice.
+    services.connection.stop();
+    fake.capabilitiesOverride = null;
+    services.connection.start();
+    await waitLive(services);
+    await waitFor(() => expect(send).toBeEnabled());
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    await user.click(send);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({
+      text: "hello",
+      selection: { agent: "codex", model: "gpt-a" },
+    });
+  });
+
+  it("keeps the chosen target and an unsent draft across a remount, in live mode", async () => {
+    const fake = liveDaemon();
+    stubConversation(fake, "completed");
+    const storage = memoryStorage();
+    const before = track(build({ fake, storage }));
+    const first = await mountView(before, false);
+    await waitLive(before);
+    await pickTarget(first.user, /Global orchestrator/);
+    await first.user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "half a thought");
+    first.view.unmount();
+
+    const after = track(build({ fake, storage }));
+    await mountView(after, false);
+    await waitLive(after);
+    expect(await screen.findByRole("heading", { name: "Talking to: Global orchestrator" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Global orchestrator" })).toHaveValue("half a thought");
+  });
+});
 
 describe("workspace view, live (daemon-derived) mode", () => {
   it("defaults to the first project coordinator and shows the recorded transcript, with no placeholder badge", async () => {
@@ -354,7 +519,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(fake.callsTo("conversations.send")).toHaveLength(1);
   });
 
-  it("does not send a chosen model to a coordinator note, where it would be dropped", async () => {
+  it("sends a coordinator note without the model choice, and keeps the choice the user made (DPES-1105)", async () => {
     const fake = liveDaemon();
     const catalog = [CODEX_CATALOG];
     fake.stub("agents.catalog", catalog);
@@ -365,11 +530,38 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await screen.findByRole("heading", { name: /alpha coordinator/ });
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     await user.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "gpt-a");
-    const box = screen.getByRole("textbox", { name: "Message alpha coordinator" });
-    await user.type(box, "a note");
-    expect(screen.getByRole("button", { name: "Send message to alpha coordinator" })).toBeDisabled();
-    expect(screen.getByText(/Coordinator notes take no model or effort/)).toBeInTheDocument();
-    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+    await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
+    expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
+    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
+    expect(fake.callsTo("coordinator.send_message")[0]!.params).not.toHaveProperty("selection");
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A/ })).toBeInTheDocument();
+  });
+
+  it("sends a coordinator note with a saved choice and level present, and sends neither on the request (DPES-1105)", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }));
+    window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A · high/ })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
+    expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
+    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
+    const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
+    expect(Object.keys(params).sort()).toEqual(["idempotency_key", "project_id", "text"]);
+    expect(params).toMatchObject({ text: "a note" });
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(
+      JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }),
+    );
+    expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
   });
 
   it("keeps Enter on the model selector from submitting the unsent draft in either direction", async () => {
