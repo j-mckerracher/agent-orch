@@ -2,7 +2,9 @@
 
 How maintainers version and release `motif-mcao`. Releases are manual in alpha: a maintainer
 bumps the version, merges, and pushes an annotated tag. The tag starts the release build
-described in [release-ci.md](release-ci.md). Nothing is published automatically.
+described in [release-ci.md](release-ci.md). When both platform builds pass and the `release`
+environment approves the publish job, the tag becomes a GitHub release with the macOS and Windows
+installers attached. A push to `main` and a manual run publish nothing.
 
 ## Versioning
 
@@ -32,7 +34,8 @@ commit in the changelog entry that adopts it.
 
 - `git`, `node`/`npm` and a Rust toolchain matching [README.md](../README.md#building).
 - Maintainer rights on `mc-innersource/motif-mcao`, including permission to create `v*` tags
-  under the repository's tag ruleset.
+  under the repository's tag ruleset, and permission to approve deployments to the `release`
+  environment.
 - Signing secrets in the `release` environment, or the repository variable
   `ALLOW_UNSIGNED_RELEASE=true` for an unsigned alpha build. A `v*` tag build fails without one
   of these (see [release-ci.md](release-ci.md#release-builds-and-signing)).
@@ -40,7 +43,8 @@ commit in the changelog entry that adopts it.
 
 ## Version sources
 
-Every release updates these together. They must all hold the same version.
+Every release updates these together. They must all hold the same version. The publish job
+refuses a tag that is not `v` plus the version in each of the first four files.
 
 | File | Field |
 | --- | --- |
@@ -90,8 +94,13 @@ Replace `X.Y.Z` with the new version and `DPES-NNN` with the release's Jira work
    git push origin vX.Y.Z
    ```
 
-5. **Approve the release build.** The tag push starts `.github/workflows/release.yml`. Approve the
-   `release` environment deployment, then confirm the macOS and Windows artifacts were uploaded.
+5. **Approve the release.** The tag push starts `.github/workflows/release.yml`. The build jobs wait
+   for approval of the `release` environment, because they read the signing secrets. Once both builds
+   pass, the `publish` job waits for a second approval of the same environment. Check the built
+   installers before you approve it: approving publishes them. With no required reviewers on the
+   environment, neither job waits. Then check the release page: it lists the installers and
+   `SHA256SUMS`, and it is a prerelease when any installer is unsigned. See
+   [Publishing a release](release-ci.md#publishing-a-release).
 
 6. **Notify consumers.** Tell the maintainers of anything that pins a release (for example the
    `ai-local-setup` install skill's `MOA_VERSION`) to move to `vX.Y.Z`.
@@ -100,6 +109,10 @@ Replace `X.Y.Z` with the new version and `DPES-NNN` with the release's Jira work
 
 The manifests already hold `0.1.0`, and the changelog records `v0.1.0`, so steps 1 to 3 are done
 by the PR that introduced this document. After it merges, run step 4 with `X.Y.Z = 0.1.0`:
+
+Decide the signing first. Without signing secrets in the `release` environment, the tag build
+fails unless the repository variable `ALLOW_UNSIGNED_RELEASE` is `true`. An unsigned v0.1.0 is a
+prerelease whose installers warn on first run (see [Unsigned releases](release-ci.md#unsigned-releases)).
 
 ```bash
 git checkout main && git pull --ff-only origin main
@@ -118,7 +131,11 @@ git tag -l --sort=v:refname 'v*'             # releases in semver order
 git tag -l --format='%(objecttype) %(refname:short) %(subject)' 'v*'
 git describe --tags vX.Y.Z                   # prints "vX.Y.Z"
 git show vX.Y.Z:apps/desktop/src-tauri/tauri.conf.json | grep '"version"'
+gh release view vX.Y.Z --json tagName,isPrerelease,assets \
+  --jq '{tag: .tagName, prerelease: .isPrerelease, assets: [.assets[].name]}'
 ```
+
+The release lists the two installers and `SHA256SUMS`. It is a prerelease when the build was unsigned.
 
 A consumer pins a release by checking out its tag:
 
@@ -139,6 +156,12 @@ git checkout vX.Y.Z
 
 - **Release already built or pinned.** Do not delete or move the tag. Fix forward with the next
   patch release (`vX.Y.(Z+1)`) and tell consumers to skip the bad version.
+- **Release published by mistake, and nobody has downloaded it.** Delete the release and keep the
+  tag: `gh release delete vX.Y.Z --yes`. A release that someone has downloaded or pinned is fixed
+  forward, as above.
+- **The publish job failed after it created the release** (for example, an upload failed).
+  `gh release create` refuses an existing release, so delete it with
+  `gh release delete vX.Y.Z --yes` (the tag stays), then re-run the `publish` job from the run page.
 - **Version bump merged but not yet tagged and no longer wanted.** Revert the release PR's merge
   commit with a new PR (`git revert -m 1 <merge-sha>`). No tag cleanup is needed.
 - **Wrong commit tagged.** If the tag is still unused, delete it as above and tag the right
