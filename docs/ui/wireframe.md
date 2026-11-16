@@ -248,7 +248,7 @@ Decision ids carry a hyphen (`D-1`). Placeholder-registry ids do not (`D1`). Eac
 | D-6 | Global conversation target without an LLM: placeholder or hidden? | Per-project targets use the real `coordinator.*` methods and are labeled "notes; no reply". The Global target and any reply are PLACEHOLDER DATA (D10). | The coordinator keeps `authority: none`; conversation cannot create tasks or approvals. |
 | D-7 | Fonts: bundle a webfont for parity? | **No.** Use the `system-ui` stack with `Segoe UI` and `Avenir Next` as named fallbacks for interface text. Keep the supplied wireframe's system-serif `h1` stack, `"Iowan Old Style", Palatino, Georgia, serif`. Do not bundle proprietary fonts. | Avenir Next exists only on macOS; Windows metrics differ. Verify truncation natively. |
 | D-8 | Interim attention severity (P1/P2): derive or hide? | **Derive** from approval state client-side and label it "derived". The daemon has no priority or latest-response time. | D16 carries real priority and deadlines later. |
-| D-9 | Ship the background animation? | **Post-release**, opt-in, off under reduced motion. | M7-18 is optional. WebGPU in WebView2/WKWebView, battery and CSP behavior are unverified. |
+| D-9 | Ship the background animation? | **On by default** (DPES-1105; was opt-in). A stored Off choice is kept. Under reduced motion it draws one still field and no motion. | M7-18 is optional. WebGPU in WebView2/WKWebView, battery and CSP behavior are unverified. |
 | D-10 | Is a release before this UI acceptable? | **Yes. M6-04 release gating stands**; M7 is post-release unless the user later makes it a release gate. Any M7 merge after M6-04 acceptance requires M7-32 to re-run clean-machine install and upgrade smoke, because the packaged UI and CSP change. | M7 does not block M6-04. |
 | D-11 | Cost: which providers expose reported cost? | **Unknown** until the M7-06 spike. The UI shows "unknown" or "not available", never zero, and keeps estimates separate from reported cost. | D12 has no live source today. |
 
@@ -348,7 +348,7 @@ Screen mapping tables describe the accepted M5 data source and status. Candidate
 | OX-A7 | Top-bar search "Search tasks, sessions, artifacts, decisions, errors" | Local search over loaded records, with an explicit "searches loaded records only" note | Loaded `projects.list`, `tasks.list`, `sessions.list`, `approvals.list` | existing (local); global index deferred | D15 | M7-16 |
 | OX-A8 | Counts "N workstreams · N tasks · N running · N require attention" | Top-bar counts | derived: projects, `tasks.list`, `approvals.list` | existing (derived) | D9, D11 | M7-16 |
 | OX-A9 | System Usage in the activity panel: CPU, Memory, GPU, Disk (`role="meter"`) | Resource strip; unsupported or unavailable shown as text, never 0 | none | missing (GPU deferred) | D13 | M7-04, M7-17 |
-| OX-A10 | Ambient particle-wave background (WebGPU, Canvas2D fallback) | Optional bundled module | none (client) | deferred (D-9) | — | M7-18 (optional) |
+| OX-A10 | Ambient particle-wave background (WebGPU, Canvas2D fallback) | Optional bundled module | none (client) | on by default (D-9, DPES-1105) | — | M7-18 (optional) |
 | OX-A11 | (not drawn) Connection state | C1 re-hosted in the shell | `health`, `events.subscribe` epoch and sequence | existing | D6 | M7-02, M7-15 |
 
 #### OX-S1 Orchestrator Workspace (`#command-center`)

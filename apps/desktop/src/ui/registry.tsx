@@ -23,8 +23,8 @@ export const appGlobalViews: Partial<Record<GlobalView, GlobalViewRenderer>> = {
 };
 
 /**
- * The ambient background (M7-18, deferred per D-5) is an opt-in setting that is off by default:
- * the control sits under the theme toggle and the layer renders nothing until the user enables it.
+ * The ambient background (M7-18, D-9) is on by default: the control sits under the theme toggle,
+ * and turning the layer off is remembered.
  */
 export const appShellSlots: Partial<ShellSlots> = {
   ...workstreamsShellSlots,

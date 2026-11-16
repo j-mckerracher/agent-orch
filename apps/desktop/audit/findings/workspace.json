@@ -150,7 +150,7 @@
       "justification": "none in spec. operational-design.md line 854 (section 24) describes the layer as present and 'fixed across all primary views'; no opt-in is stated. The code calls it an 'Opt-in switch' (apps/desktop/src/ui/background/AmbientBackground.tsx line 61), which is a code decision without spec or commit support.",
       "suspected_root_cause": "apps/desktop/src/ui/background/settings.ts lines 43-49: read() returns false unless localStorage 'on' is set, so the default is off. AmbientBackground.tsx line 38 returns null while disabled.",
       "check": "test('ambient background is on by default', async ({ page }) => { await openApp(page, '#/workspace', 'populated', 'desktop'); await expect(page.getByTestId('ambient-background')).toBeVisible(); });",
-      "covered_by": null
+      "covered_by": "feat/DPES-1105_desktop-ambient-background-default-on"
     },
     {
       "id": "workspace-10",

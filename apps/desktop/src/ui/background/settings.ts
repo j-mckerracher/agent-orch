@@ -1,9 +1,9 @@
 /**
- * Persisted opt-in for the ambient background animation (decision D-9).
+ * Persisted switch for the ambient background animation (decision D-9). On by default.
  *
  * Contract:
- * - Off unless the stored value is exactly `"on"`; any other value, a missing key or an
- *   unreadable store means off.
+ * - Only the stored values `"on"` and `"off"` are a user choice and win over the default. A
+ *   missing key, any other value or an unreadable store means the default (on).
  * - Storage may be missing or may throw (blocked profile, quota). The choice then applies
  *   for the current page only and `persisted` reports false.
  * - The `prefers-reduced-motion` media query is not part of this setting: the engine turns
@@ -13,11 +13,12 @@ import { useSyncExternalStore } from "react";
 
 export const AMBIENT_STORAGE_KEY = "agent-orch.ambient-background";
 
+const DEFAULT_ENABLED = true;
+
 /** The subset of `Storage` used here, so tests can pass a throwing fake. */
 export interface AmbientStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
-  removeItem(key: string): void;
 }
 
 export interface AmbientSnapshot {
@@ -41,19 +42,20 @@ function defaultStorage(): AmbientStorage | null {
 }
 
 function read(storage: AmbientStorage | null): boolean {
-  if (!storage) return false;
   try {
-    return storage.getItem(AMBIENT_STORAGE_KEY) === "on";
+    const stored = storage?.getItem(AMBIENT_STORAGE_KEY);
+    if (stored === "on" || stored === "off") return stored === "on";
   } catch {
-    return false;
+    // An unreadable store holds no choice, so the default applies.
   }
+  return DEFAULT_ENABLED;
 }
 
+// Both values are written, so a chosen "off" survives while the default stays on.
 function write(storage: AmbientStorage | null, enabled: boolean): boolean {
   if (!storage) return false;
   try {
-    if (enabled) storage.setItem(AMBIENT_STORAGE_KEY, "on");
-    else storage.removeItem(AMBIENT_STORAGE_KEY);
+    storage.setItem(AMBIENT_STORAGE_KEY, enabled ? "on" : "off");
     return true;
   } catch {
     return false;
