@@ -56,17 +56,25 @@ function sentence(text: string): string {
 }
 
 /** The model part of the chip: the chosen model, the default model, or an honest "not confirmed". */
-function modelChip(provider: ModelProvider, model: ModelOption | undefined): string {
+function modelChip(provider: ModelProvider, model: ModelOption | undefined, defaultWord = "default model"): string {
   if (model) return model.label;
   switch (provider.models.status) {
     case "ok":
     case "unsupported":
-      return "default model";
+      return defaultWord;
     case "unavailable":
       return "models unavailable";
     default:
       return "models not confirmed";
   }
+}
+
+/**
+ * The agent's name as the chip shows it. A trailing qualifier such as "(placeholder)" is dropped, because the chip's
+ * placeholder badge already says so. The popover and the accessible name keep the full name.
+ */
+function chipName(name: string): string {
+  return name.replace(/\s*\([^()]*\)$/, "");
 }
 
 /** Helper text under the Model select, or null when there is nothing to say. */
@@ -142,10 +150,17 @@ export function ModelPicker({
     chosenEffort = efforts.includes(effort ?? "") ? effort : (efforts[1] ?? efforts[0] ?? null);
   }
 
+  const effortText = chosenEffort ?? (live ? "default effort" : "effort not available");
   const modelSummary =
-    provider === undefined
-      ? "Model settings unavailable"
-      : `${provider.name} · ${modelChip(provider, model)} · ${chosenEffort ?? (live ? "default effort" : "effort not available")}`;
+    provider === undefined ? "Model settings unavailable" : `${provider.name} · ${modelChip(provider, model)} · ${effortText}`;
+  // The chip's visible text is shorter than the full summary, so it fits beside the conversation target at 960 CSS px.
+  // "default model" reads "default", and one "default" stands for a live choice that is default in both parts.
+  let chipText = modelSummary;
+  if (provider !== undefined) {
+    const chipModel = modelChip(provider, model, "default");
+    const bothDefault = live && model === undefined && chosenEffort === null && chipModel === "default";
+    chipText = `${chipName(provider.name)} · ${bothDefault ? "default" : `${chipModel} · ${effortText}`}`;
+  }
   const levelLabel = permission ? permissionLabel(permission.level) : null;
   const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
@@ -262,7 +277,7 @@ export function ModelPicker({
         aria-label={`Model settings: ${summary}${!live && catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
-        <span>{modelSummary}</span>
+        <span>{chipText}</span>
         {levelLabel && <span className="ws-chip-level"> · {levelLabel}</span>}
         {!live && catalog.status === "ok" && (
           <>

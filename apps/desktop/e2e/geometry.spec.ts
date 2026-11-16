@@ -430,18 +430,27 @@ for (const [width, height] of [
   });
 }
 
-test("the model chip keeps its text and its permission level whole, on one line left of the send button, at 960 CSS px", async ({ page }) => {
+test("the model chip's label, level and badge are whole and on one line beside the target, at 960 CSS px", async ({ page }) => {
   await openFixture(page, 960);
   const chip = page.locator(".ws-model-root > .ws-chip-button");
-  const model = chip.locator("span").first();
+  const target = page.locator(".ws-composer-row > .ws-popover-root:not(.ws-model-root) > .ws-chip-button");
+  const label = chip.locator(":scope > span").first();
   const level = chip.locator(".ws-chip-level");
-  await expect(level).toBeVisible();
-  expect(await model.evaluate((el) => el.scrollWidth <= el.clientWidth), "model text is not truncated").toBe(true);
-  expect(await level.evaluate((el) => el.scrollWidth <= el.clientWidth), "permission level is not truncated").toBe(true);
+  const badge = chip.locator(".ui-badge");
+  await expect(chip).toContainText("Codex · default · medium · Auto");
+  for (const [name, part] of [
+    ["label", label],
+    ["level", level],
+    ["badge", badge],
+  ] as const) {
+    expect(await part.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} is not clipped`).toBe(true);
+    expect((await part.boundingBox())!.height, `${name} is one line`).toBeLessThan(24);
+  }
   const chipBox = (await chip.boundingBox())!;
+  const targetBox = (await target.boundingBox())!;
   const sendBox = (await page.locator(".ws-composer .ws-send").boundingBox())!;
-  expect(chipBox.height, "chip stays on one line").toBeLessThan(40);
-  expect(chipBox.x + chipBox.width, "chip ends before the send button").toBeLessThanOrEqual(sendBox.x);
+  expect(Math.abs(chipBox.y - targetBox.y), "the chip sits on the target's row, not a new one").toBeLessThan(2);
+  expect(chipBox.x + chipBox.width, "the chip ends before the send button").toBeLessThanOrEqual(sendBox.x);
 });
 
 test.describe("connection strip collapse (DPES-1105)", () => {

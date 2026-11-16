@@ -183,11 +183,10 @@
   opacity: 1;
 }
 
-/* The target and the send button share the first row. When the model chip (with its permission level) cannot fit
-   beside the target, it wraps to a row of its own with the send button, so its text is not cut (DPES-1105). */
+/* One row at every width: the chips shrink and truncate instead of wrapping the send button away. */
 .ws-composer-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
 }
@@ -201,8 +200,8 @@
   margin-left: auto;
 }
 
-/* The conversation target names the thread, so it keeps its width. The model chip keeps its natural width and wraps
-   instead of shrinking. The column beside the conversation (shell.css) makes the row narrower than the full window. */
+/* The conversation target names the thread, so it keeps its width; the model chip gives up space first.
+   The column beside the conversation (shell.css) makes the row narrower than the full window. */
 .ws-composer-row .ws-popover-root:not(.ws-model-root) {
   flex: none;
 }

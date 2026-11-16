@@ -78,7 +78,7 @@ describe("ModelPicker permission level in a chat", () => {
       />,
     );
     const chip = screen.getByRole("button", { name: "Model settings: Codex · default model · default effort · Auto" });
-    expect(chip).toHaveTextContent("Codex · default model · default effort · Auto");
+    expect(chip).toHaveTextContent("Codex · default · Auto");
     await user.click(chip);
     const level = screen.getByRole("combobox", { name: "Permission level" });
     expect(level).toHaveValue("auto");
@@ -110,6 +110,75 @@ describe("ModelPicker permission level in a chat", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(chip).toHaveFocus();
     expect(chip).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("reads the model and effort in the chip as chosen or default, with the full words in the accessible name", async () => {
+    const user = userEvent.setup();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        permission={{ level: "auto", daemonAdvertises: true, onChange: vi.fn() }}
+      />,
+    );
+    const chip = () => screen.getByRole("button", { name: /^Model settings/ });
+    // Both default: one word covers both.
+    expect(chip()).toHaveTextContent("Codex · default · Auto");
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · default effort · Auto");
+    await user.click(chip());
+    // The default model with a chosen effort: "default" names the model, and the effort is the one chosen.
+    await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "high");
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · default · high · Auto"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · high · Auto");
+    // A chosen model keeps its label. Choosing a model clears the effort, so the default effort shows its words.
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "m1");
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · default effort · Auto"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · default effort · Auto");
+    // Both chosen.
+    await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "high");
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · high · Auto"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · high · Auto");
+  });
+
+  it.each([
+    ["restricted", "Restricted"],
+    ["extended", "Extended"],
+    ["auto", "Auto"],
+    ["full", "Full"],
+  ] as const)("shows the %s level as its label at the end of the chip", (level, label) => {
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex")])}
+        provenance={provenance}
+        permission={{ level, daemonAdvertises: true, onChange: vi.fn() }}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: /^Model settings/ });
+    expect(chip).toHaveTextContent(`Codex · default · ${label}`);
+    expect(chip).toHaveAccessibleName(`Model settings: Codex · default model · default effort · ${label}`);
+  });
+
+  it("shows a fixture agent without its placeholder qualifier, and keeps the qualifier in the accessible name", () => {
+    const fixture = { kind: "fixture", id: "D14", fixture: "model-catalog" } as const;
+    const fixtureCatalog: SurfaceResult<{ providers: ModelProvider[] }> = {
+      status: "ok",
+      data: { providers: [provider("codex", "Codex (placeholder)")] },
+      provenance: fixture,
+      ...observed,
+    };
+    render(
+      <ModelPicker
+        catalog={fixtureCatalog}
+        provenance={fixture}
+        permission={{ level: "auto", daemonAdvertises: true, onChange: vi.fn() }}
+      />,
+    );
+    const chip = screen.getByRole("button", { name: /^Model settings/ });
+    expect(within(chip).getByText("Codex · default · high")).toBeInTheDocument();
+    expect(within(chip).getByText("PLACEHOLDER (D14)")).toBeInTheDocument();
+    expect(chip).toHaveAccessibleName(
+      "Model settings: Codex (placeholder) · default model · high · Auto PLACEHOLDER (D14)",
+    );
   });
 
   it("shows no level, and offers no level control, where no message runs", async () => {
