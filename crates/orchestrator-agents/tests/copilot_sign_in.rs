@@ -55,7 +55,7 @@ fn start(cache: &Arc<CopilotSignIn>, program: &Path, dir: &Path, force: bool) ->
     let adapter = CopilotAdapter::new().with_program(program);
     let parent = dir.to_path_buf();
     cache.start(force, move || {
-        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(30)))
+        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(30), false))
     })
 }
 

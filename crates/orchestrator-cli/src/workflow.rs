@@ -331,6 +331,7 @@ pub async fn run_task(
         max_retries: 0,
         max_repairs: 0,
         model_selection: None,
+        permission: Default::default(),
     };
     store
         .create(&contract)
@@ -2170,6 +2171,7 @@ mod tests {
                 max_retries: 0,
                 max_repairs: 0,
                 model_selection: None,
+                permission: Default::default(),
             })
             .unwrap();
         store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -3269,6 +3271,7 @@ mod tests {
                 max_retries: 0,
                 max_repairs: 0,
                 model_selection: None,
+                permission: Default::default(),
             })
             .unwrap();
         store.transition(task_id, TaskEvent::Admit).unwrap();

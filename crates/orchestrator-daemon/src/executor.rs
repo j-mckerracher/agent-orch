@@ -38,6 +38,7 @@ use orchestrator_agents::{
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
 };
 use orchestrator_core::contract::ModelSelection;
+use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
@@ -67,6 +68,9 @@ pub(crate) struct ExecutorConfig {
     pub(crate) claude_program: Option<PathBuf>,
     pub(crate) pi_program: Option<PathBuf>,
     pub(crate) copilot_program: Option<PathBuf>,
+    /// Whether Copilot runs pass `--max-ai-credits`, a soft cap. Off unless the
+    /// daemon starts with `AGENT_ORCH_COPILOT_CREDIT_CAP=1` (DPES-1105 O2).
+    pub(crate) copilot_credit_cap: bool,
     /// Copilot sign-in state for this daemon session. Shared by the catalog,
     /// the explicit check, and every Copilot run.
     pub(crate) copilot_sign_in: Arc<CopilotSignIn>,
@@ -150,6 +154,8 @@ impl ExecutorConfig {
             claude_program: std::env::var_os("AGENT_ORCH_CLAUDE_PROGRAM").map(PathBuf::from),
             pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
             copilot_program: std::env::var_os("AGENT_ORCH_COPILOT_PROGRAM").map(PathBuf::from),
+            copilot_credit_cap: std::env::var("AGENT_ORCH_COPILOT_CREDIT_CAP").as_deref()
+                == Ok("1"),
             copilot_sign_in: Arc::default(),
             limits: SchedulerLimits::default(),
             poll: Duration::from_millis(500),
@@ -464,6 +470,7 @@ impl Inner {
             agent: task.contract.agent.clone(),
             objective: task.contract.objective.clone(),
             model_selection: task.contract.model_selection.clone(),
+            permission: task.contract.permission,
             worktree: PathBuf::new(),
             diag: self.config.diagnostics.clone(),
         };
@@ -582,6 +589,7 @@ struct Job {
     agent: String,
     objective: String,
     model_selection: Option<ModelSelection>,
+    permission: PermissionLevel,
     worktree: PathBuf,
     diag: Diagnostics,
 }
@@ -698,6 +706,7 @@ pub(crate) fn agent_command(
     agent: &str,
     objective: &str,
     selection: Option<&ModelSelection>,
+    permission: PermissionLevel,
 ) -> Option<(PathBuf, Vec<String>)> {
     let model = selection.and_then(|s| s.model.as_deref());
     let effort = selection.and_then(|s| s.effort.as_deref());
@@ -707,19 +716,14 @@ pub(crate) fn agent_command(
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex")),
-            ["exec", "--json", "--approve-for-me"]
-                .into_iter()
-                .map(str::to_owned)
-                .chain(CodexAdapter::selection_args(model, effort))
-                .chain(["--".to_owned(), objective.to_owned()])
-                .collect(),
+            CodexAdapter::args_for_task(permission, objective, model, effort)?,
         )),
         CLAUDE_AGENT => Some((
             config
                 .claude_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("claude")),
-            ClaudeCodeAdapter::args_for_prompt_with_selection(objective, model, effort),
+            ClaudeCodeAdapter::args_for_task(permission, objective, model, effort),
         )),
         // Submit-time length check only. The launch builds the real vector in
         // `spawn_copilot`, where the run directory and worktree are known; these
@@ -733,6 +737,8 @@ pub(crate) fn agent_command(
                 objective,
                 Path::new("<copilot-usage-file>"),
                 Path::new("<task-worktree>"),
+                permission,
+                config.copilot_credit_cap,
             ),
         )),
         _ => None,
@@ -755,7 +761,13 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
     adapter.detect().await.map_err(|error| error.to_string())?;
     let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
         .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
-    let args = CopilotAdapter::task_args(&job.objective, &run.usage_file(), &job.worktree);
+    let args = CopilotAdapter::task_args(
+        &job.objective,
+        &run.usage_file(),
+        &job.worktree,
+        job.permission,
+        inner.config.copilot_credit_cap,
+    );
     let request = AgentLaunchRequest {
         program: inner
             .config
@@ -776,8 +788,13 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
         return spawn_copilot(inner, job).await;
     }
     let selection = job.model_selection.as_ref();
-    let Some((program, args)) = agent_command(&inner.config, &job.agent, &job.objective, selection)
-    else {
+    let Some((program, args)) = agent_command(
+        &inner.config,
+        &job.agent,
+        &job.objective,
+        selection,
+        job.permission,
+    ) else {
         return Err(format!("agent {:?} has no daemon launcher", job.agent));
     };
     if let Some(selection) = selection {
@@ -848,6 +865,19 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
             return Ok(());
         }
     };
+    // The level and the argument mapping the run launched with. Recorded here,
+    // after the spawn, so a launch that never started records nothing.
+    let profile =
+        orchestrator_agents::permission::task_profile(&job.agent, job.permission).unwrap_or("none");
+    job.diag.info(
+        LOG,
+        "agent_launched",
+        &job.event_fields(&[
+            ("agent", &job.agent),
+            ("permission_level", job.permission.as_str()),
+            ("permission_profile", profile),
+        ]),
+    );
     #[cfg(test)]
     if inner.config.wait_for_exit_before_identity {
         let deadline = std::time::Instant::now() + Duration::from_secs(20);

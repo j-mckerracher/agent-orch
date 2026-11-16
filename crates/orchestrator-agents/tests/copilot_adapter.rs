@@ -54,16 +54,112 @@ fn conversation(prompt: &str) -> Vec<String> {
 }
 
 fn conversation_at(level: PermissionLevel, prompt: &str) -> Vec<String> {
-    CopilotAdapter::conversation_args(level, prompt, &usage_path(), &cwd_path())
+    CopilotAdapter::conversation_args(level, prompt, &usage_path(), &cwd_path(), false)
         .expect("every level but Extended has a mapping")
 }
 
 fn task(objective: &str) -> Vec<String> {
-    CopilotAdapter::task_args(objective, &usage_path(), &worktree_path())
+    task_at(PermissionLevel::Restricted, objective)
+}
+
+fn task_at(level: PermissionLevel, objective: &str) -> Vec<String> {
+    CopilotAdapter::task_args(objective, &usage_path(), &worktree_path(), level, false)
 }
 
 fn sign_in_check() -> Vec<String> {
-    CopilotAdapter::sign_in_check_args(&usage_path(), &cwd_path())
+    CopilotAdapter::sign_in_check_args(&usage_path(), &cwd_path(), false)
+}
+
+/// The exact argv of each task level, written out in full so a change to any
+/// flag shows here. Full drops the two flags every other level keeps.
+#[test]
+fn copilot_task_argv_per_level_is_exact() {
+    let usage = usage_path().to_string_lossy().into_owned();
+    let worktree = worktree_path().to_string_lossy().into_owned();
+    let write_rule = format!("write({worktree}/**)");
+    let objective = "do the work";
+    let prompt = format!("--prompt={objective}");
+    let expected = |level: PermissionLevel, tail: &[&str]| -> Vec<String> {
+        let mut want = vec![prompt.clone()];
+        want.extend(["--output-format", "json", "--log-level", "none"].map(str::to_owned));
+        want.extend(["--no-auto-update", "--no-ask-user"].map(str::to_owned));
+        if level != PermissionLevel::Full {
+            want.push("--no-custom-instructions".to_owned());
+        }
+        want.push("--disable-builtin-mcps".to_owned());
+        if level != PermissionLevel::Full {
+            want.push("--disallow-temp-dir".to_owned());
+        }
+        want.extend(["--usage-output-file", usage.as_str()].map(str::to_owned));
+        want.extend(["-C", worktree.as_str()].map(str::to_owned));
+        want.extend(tail.iter().map(|flag| {
+            flag.replace("<write>", &write_rule)
+                .replace("<wt>", worktree.as_str())
+        }));
+        want
+    };
+    let cases = [
+        (
+            PermissionLevel::Restricted,
+            vec![
+                "--allow-tool",
+                "read",
+                "--allow-tool",
+                "<write>",
+                "--deny-tool",
+                "shell",
+                "--deny-tool",
+                "url",
+                "--deny-tool",
+                "memory",
+            ],
+        ),
+        (
+            PermissionLevel::Extended,
+            vec![
+                "--allow-tool",
+                "read",
+                "--allow-tool",
+                "<write>",
+                "--allow-tool",
+                "shell(git status)",
+                "--allow-tool",
+                "shell(git diff)",
+                "--allow-tool",
+                "shell(git log)",
+                "--allow-tool",
+                "shell(git show)",
+                "--deny-tool",
+                "url",
+                "--deny-tool",
+                "memory",
+            ],
+        ),
+        (
+            PermissionLevel::Auto,
+            vec![
+                "--assisted-approval",
+                "--allow-tool",
+                "read",
+                "--allow-tool",
+                "<write>",
+                "--deny-tool",
+                "url",
+                "--deny-tool",
+                "memory",
+                "--deny-tool",
+                "shell(git push)",
+            ],
+        ),
+        (PermissionLevel::Full, vec!["--allow-all"]),
+    ];
+    for (level, tail) in cases {
+        assert_eq!(
+            task_at(level, objective),
+            expected(level, &tail),
+            "{level:?}"
+        );
+    }
 }
 
 /// Values that follow `flag` in `args`, in order.
@@ -128,6 +224,46 @@ fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
     }
 }
 
+/// The credit cap is off by default. When it is on, every Copilot run passes
+/// exactly one `--max-ai-credits 30`: a chat, a task and the sign-in check.
+#[test]
+fn credit_cap_is_off_by_default_and_exactly_thirty_when_on() {
+    let chat_off = conversation("hi");
+    let task_off = task_at(PermissionLevel::Auto, "x");
+    let check_off = sign_in_check();
+    for args in [&chat_off, &task_off, &check_off] {
+        assert!(
+            !args.iter().any(|arg| arg == "--max-ai-credits"),
+            "{args:?}"
+        );
+    }
+
+    let chat_on = CopilotAdapter::conversation_args(
+        PermissionLevel::Auto,
+        "hi",
+        &usage_path(),
+        &cwd_path(),
+        true,
+    )
+    .unwrap();
+    let task_on = CopilotAdapter::task_args(
+        "x",
+        &usage_path(),
+        &worktree_path(),
+        PermissionLevel::Auto,
+        true,
+    );
+    let check_on = CopilotAdapter::sign_in_check_args(&usage_path(), &cwd_path(), true);
+    for args in [&chat_on, &task_on, &check_on] {
+        assert_eq!(values_of(args, "--max-ai-credits"), ["30"], "{args:?}");
+        assert_eq!(
+            args.iter().filter(|arg| *arg == "--max-ai-credits").count(),
+            1,
+            "{args:?}"
+        );
+    }
+}
+
 /// The exact argv of each conversation level. Paths are spelled as the
 /// platform spells them, so the expected vectors build them the same way.
 #[test]
@@ -138,8 +274,9 @@ fn copilot_conversation_argv_per_level_is_exact() {
     fn as_strs(args: &[String]) -> Vec<&str> {
         args.iter().map(String::as_str).collect()
     }
-    let argv =
-        |level| CopilotAdapter::conversation_args(level, "hi", &usage_path(), &cwd_path()).unwrap();
+    let argv = |level| {
+        CopilotAdapter::conversation_args(level, "hi", &usage_path(), &cwd_path(), false).unwrap()
+    };
 
     assert_eq!(
         as_strs(&argv(PermissionLevel::Restricted)),
@@ -158,8 +295,6 @@ fn copilot_conversation_argv_per_level_is_exact() {
             usage.as_str(),
             "-C",
             cwd.as_str(),
-            "--max-ai-credits",
-            "30",
             "--allow-tool",
             "read",
             "--deny-tool",
@@ -189,8 +324,6 @@ fn copilot_conversation_argv_per_level_is_exact() {
             usage.as_str(),
             "-C",
             cwd.as_str(),
-            "--max-ai-credits",
-            "30",
             "--assisted-approval",
             "--allow-tool",
             "read",
@@ -219,8 +352,6 @@ fn copilot_conversation_argv_per_level_is_exact() {
             usage.as_str(),
             "-C",
             cwd.as_str(),
-            "--max-ai-credits",
-            "30",
             "--allow-all",
         ]
     );
@@ -228,7 +359,8 @@ fn copilot_conversation_argv_per_level_is_exact() {
         PermissionLevel::Extended,
         "hi",
         &usage_path(),
-        &cwd_path()
+        &cwd_path(),
+        false
     )
     .is_none());
 }
@@ -395,7 +527,7 @@ async fn windows_is_not_refused_and_a_missing_cli_is_reported_as_missing() {
     let dir = tempfile::tempdir().unwrap();
     let record = CopilotAdapter::new()
         .with_program(dir.path().join("absent.exe"))
-        .sign_in_check(dir.path(), Duration::from_secs(5))
+        .sign_in_check(dir.path(), Duration::from_secs(5), false)
         .await;
     assert_eq!(record.state, SignInState::NotChecked);
     assert!(record
@@ -482,6 +614,7 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
             "hi",
             &run.usage_file(),
             &run.cwd(),
+            false,
         )
         .unwrap(),
         working_dir: run.cwd(),
@@ -538,6 +671,7 @@ async fn a_leading_dash_prompt_reaches_the_child_as_one_argument() {
         "--leading-dash",
         &run.usage_file(),
         &run.cwd(),
+        false,
     )
     .unwrap();
     let request = AgentLaunchRequest {
@@ -617,6 +751,7 @@ async fn a_replayed_completed_run_exits_completed_and_marks_sign_in_ready() {
             "hi",
             &run.usage_file(),
             &run.cwd(),
+            false,
         )
         .unwrap(),
         working_dir: run.cwd(),
@@ -767,7 +902,7 @@ async fn a_check_that_cannot_run_records_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let record = CopilotAdapter::new()
         .with_program(dir.path().join("absent"))
-        .sign_in_check(dir.path(), Duration::from_secs(5))
+        .sign_in_check(dir.path(), Duration::from_secs(5), false)
         .await;
     assert_eq!(record.state, SignInState::NotChecked);
     assert!(record.reason.is_some());
@@ -786,7 +921,7 @@ async fn a_check_that_meets_the_bogus_model_reports_a_model_error() {
     );
     let record = CopilotAdapter::new()
         .with_program(&program)
-        .sign_in_check(dir.path(), Duration::from_secs(10))
+        .sign_in_check(dir.path(), Duration::from_secs(10), false)
         .await;
     assert_eq!(record.state, SignInState::Error);
     assert!(record.reason.unwrap().starts_with("model unavailable"));
@@ -814,7 +949,7 @@ fn a_check_that_is_not_signed_in_says_so_and_is_cached() {
     let counted = Arc::clone(&runs);
     let started = cache.start(false, move || {
         counted.fetch_add(1, Ordering::SeqCst);
-        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(10)))
+        futures_block(adapter.sign_in_check(&parent, Duration::from_secs(10), false))
     });
     assert_eq!(
         started.state,
@@ -861,7 +996,7 @@ fn a_check_whose_turn_completes_records_ready() {
     .unwrap();
     let program = fake_copilot(dir.path(), "copilot", "1.0.109", &replay_body(&text, 0));
     let adapter = CopilotAdapter::new().with_program(&program);
-    let record = futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10)));
+    let record = futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10), false));
     assert_eq!(
         record.state,
         SignInState::Ready,
@@ -892,7 +1027,7 @@ fn sign_in_over(stream: &str, exit_code: i32) -> SignInRecord {
         &replay_body(&text, exit_code),
     );
     let adapter = CopilotAdapter::new().with_program(&program);
-    futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10)))
+    futures_block(adapter.sign_in_check(dir.path(), Duration::from_secs(10), false))
 }
 
 /// The captured run: the agentStop hook failed in the sandbox, the turn still
@@ -954,7 +1089,7 @@ async fn a_check_that_runs_too_long_is_cancelled_and_reported() {
     let started = Instant::now();
     let record = CopilotAdapter::new()
         .with_program(&program)
-        .sign_in_check(dir.path(), Duration::from_millis(400))
+        .sign_in_check(dir.path(), Duration::from_millis(400), false)
         .await;
     assert!(started.elapsed() < Duration::from_secs(20));
     assert_eq!(record.state, SignInState::Error);
@@ -1000,6 +1135,7 @@ async fn a_replayed_bogus_model_run_exits_failed_with_the_message() {
             "hi",
             &run.usage_file(),
             &run.cwd(),
+            false,
         )
         .unwrap(),
         working_dir: cwd,
@@ -1035,6 +1171,7 @@ async fn cancelling_a_running_turn_reports_cancelled_not_completed() {
             "hi",
             &run.usage_file(),
             &run.cwd(),
+            false,
         )
         .unwrap(),
         working_dir: run.cwd(),

@@ -39,9 +39,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use orchestrator_core::permission::PermissionLevel;
+
 use crate::executor::{agent_command, Executor, ExecutorConfig, COPILOT_RUNS_DIR};
-use orchestrator_diagnostics::Level;
 use crate::idempotency;
+use orchestrator_diagnostics::Level;
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
 const EVENT_PAGE_SIZE: usize = 256;
@@ -98,6 +100,10 @@ struct TaskSubmission {
     max_repairs: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_selection: Option<ModelSelection>,
+    /// The permission level (DPES-1105). Absent means Restricted, and an absent
+    /// field is omitted from the request, so its idempotency key is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    permission: Option<PermissionLevel>,
 }
 
 #[derive(Deserialize)]
@@ -471,6 +477,27 @@ impl DaemonApi {
                 if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
                     return Err(RpcError::Forbidden);
                 }
+                let permission = request.contract.permission.unwrap_or_default();
+                // A level the agent has no task mapping for is refused, so no task is
+                // created for it. Restricted always takes the existing path, so an
+                // agent with no launcher still fails at launch, as before.
+                if permission != PermissionLevel::Restricted
+                    && orchestrator_agents::permission::task_profile(
+                        &request.contract.agent,
+                        permission,
+                    )
+                    .is_none()
+                {
+                    self.config.diagnostics.warn(
+                        "api",
+                        orchestrator_core::permission::PERMISSION_LEVEL_UNSUPPORTED,
+                        &[
+                            ("agent", &request.contract.agent),
+                            ("permission", permission.as_str()),
+                        ],
+                    );
+                    return Err(RpcError::InvalidParams);
+                }
                 let contract = TaskContract {
                     id: idempotency::stable_id("task", &key),
                     project_id: request.contract.project_id.clone(),
@@ -485,6 +512,7 @@ impl DaemonApi {
                     max_retries: request.contract.max_retries,
                     max_repairs: request.contract.max_repairs,
                     model_selection: request.contract.model_selection.clone(),
+                    permission,
                 };
                 self.store
                     .get_project(&contract.project_id)
@@ -626,6 +654,7 @@ impl DaemonApi {
         } else {
             let program = self.config.copilot_program.clone();
             let runs = self.config.data_dir.join(COPILOT_RUNS_DIR);
+            let credit_cap = self.config.copilot_credit_cap;
             self.config.copilot_sign_in.start(force, move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -642,7 +671,7 @@ impl DaemonApi {
                 if let Some(program) = program {
                     copilot = copilot.with_program(program);
                 }
-                runtime.block_on(copilot.sign_in_check(&runs, COPILOT_SIGN_IN_TIMEOUT))
+                runtime.block_on(copilot.sign_in_check(&runs, COPILOT_SIGN_IN_TIMEOUT, credit_cap))
             })
         };
         serde_json::to_value(record).map_err(|_| RpcError::Internal)
@@ -657,6 +686,7 @@ impl DaemonApi {
             &contract.agent,
             &contract.objective,
             contract.model_selection.as_ref(),
+            contract.permission,
         ) else {
             return Ok(());
         };
@@ -718,6 +748,7 @@ fn canonical_agent_id(agent: &str) -> Option<&'static str> {
     match agent.trim().to_ascii_lowercase().as_str() {
         "codex" => Some("codex"),
         "claude-code" | "claude code" => Some("claude-code"),
+        "github-copilot" | "github copilot" => Some("github-copilot"),
         "pi" => Some("pi"),
         _ => None,
     }

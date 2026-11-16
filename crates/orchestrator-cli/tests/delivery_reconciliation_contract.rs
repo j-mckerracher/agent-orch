@@ -158,6 +158,7 @@ fn seed_task(store: &SqliteStore, project: &str, task: &str) {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     store.transition(task, TaskEvent::Admit).unwrap();

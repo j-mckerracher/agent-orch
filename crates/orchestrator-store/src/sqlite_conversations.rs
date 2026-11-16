@@ -593,16 +593,18 @@ impl SqliteStore {
             if let Some(turn_id) = running {
                 return Err(ConversationError::TurnRunning { turn_id });
             }
-            let entries: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?")
-                    .bind(&conversation_id)
-                    .fetch_one(&mut *transaction)
-                    .await?;
-            let turns: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM conversation_turns WHERE conversation_id = ?")
-                    .bind(&conversation_id)
-                    .fetch_one(&mut *transaction)
-                    .await?;
+            let entries: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?",
+            )
+            .bind(&conversation_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            let turns: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM conversation_turns WHERE conversation_id = ?",
+            )
+            .bind(&conversation_id)
+            .fetch_one(&mut *transaction)
+            .await?;
             if entries == 0 && turns == 0 {
                 let clear_generation: Option<i64> =
                     sqlx::query_scalar("SELECT clear_generation FROM conversations WHERE id = ?")

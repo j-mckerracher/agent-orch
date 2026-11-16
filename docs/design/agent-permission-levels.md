@@ -1,6 +1,6 @@
 # Agent permission levels (DPES-1105)
 
-Status: design, revision 4. Not implemented. Shipped as a docs-only PR for review, not merged.
+Status: design, revision 4. Chats are implemented (PR A, #80). Tasks are implemented by PR C (DPES-1105). The live check with signed-in CLIs has not run; it is a follow-up, not a gate.
 
 Levels: Restricted, Extended, Auto (default), Full. Agents: Codex, Claude Code, GitHub Copilot.
 
@@ -17,12 +17,12 @@ Basis: `motif-mcao/main` at `cc2b17d36`. PR #75 (removes the Copilot sandbox gat
 ### Open. Each has a working default that applies until you decide
 
 - **O1. Codex Full.** Working default: no `--dangerously-bypass-approvals-and-sandbox`. Full adds no sandbox or approval flag, so `~/.codex/config.toml` decides. Cost: what Full can do depends on a config MCAO does not read.
-- **O2. `--max-ai-credits` for Copilot runs.** Working default: 30, the minimum the CLI accepts, on every Copilot task and chat. Cost: a long run can stop partway. The cap is soft, so one response can exceed it (help). The value is yours.
+- **O2. `--max-ai-credits` for Copilot runs.** Working default: the cap is off. It sits behind one switch, `AGENT_ORCH_COPILOT_CREDIT_CAP=1`, read when the daemon starts. With the switch on, every Copilot run (chat, task and the sign-in check) passes `--max-ai-credits 30`, the minimum the CLI accepts. The user has not chosen the value 30. Cost when on: a long run can stop partway. The cap is soft, so one response can exceed it (help).
 - **O3. Review denial fails the turn.** Working default: yes. A denial or an "ask" gives `permission_review_denied`, and the reply text is kept. Cost: a chat that answered well but had one blocked action shows as failed.
 - **O4. Persistence.** Working default: a Restricted choice persists per surface (chat or task). Auto, Extended and Full reset to Auto on restart. Full never persists. Cost: Extended is chosen again on each launch.
 - **O5. Label.** Working default: "Auto", with an agent-specific subtitle. Cost: Copilot's `--auto-tier` routing uses the same word.
 - **O6. Older daemon.** Working default: chats fall back to Restricted with a notice. Tasks are blocked with a message. See "Wire contract and older daemon".
-- **O7. Claude spend cap on tasks (new).** `--max-budget-usd` works only with `--print` (help), which MCAO uses. Working default: pass it with a value you set. Until you set one, a Claude task has no cap. Codex `exec` help lists no spend flag, so MCAO sets no Codex cap.
+- **O7. Claude spend cap on tasks (new).** `--max-budget-usd` works only with `--print` (help), which MCAO uses. Working default: no cap. No Claude run passes the flag, and no switch for it exists yet. Whether to add one is open. Codex `exec` help lists no spend flag, so MCAO sets no Codex cap.
 - **O8. Delivery by the agent (new).** Working default: task runs deny `git push` and `gh`, where the CLI can match a rule. Otherwise a task agent could publish a branch outside MCAO's delivery path. Copilot: `--deny-tool 'shell(git push)'` (rule form from help). Claude: `--disallowedTools "Bash(git push *)" "Bash(gh *)"` (pattern syntax unverified). Codex: no per-command deny exists, and network under `workspace-write` is unverified.
 
 ### Settled in this design. Reviewable, no user input needed
@@ -69,7 +69,7 @@ Basis: `motif-mcao/main` at `cc2b17d36`. PR #75 (removes the Copilot sandbox gat
 | Repository instructions (AGENTS.md, CLAUDE.md) | Unverified | Unverified; `--restricted` does not name CLAUDE.md | Off, `--no-custom-instructions` |
 | User hooks | Not bypassed; trust unverified | Off under `--restricted` | On. No help flag disables them |
 | Provider keys in child env | `OPENAI_*` forwarded, readable by shell | `ANTHROPIC_API_KEY` forwarded, readable by shell | None. No `COPILOT_*` entry in the env policy |
-| Spend cap | None set by MCAO | O7 | O2 |
+| Spend cap | None set by MCAO | None (O7 open) | Off by default, behind the O2 switch |
 | Git push, `gh` | Unverified | Denied, O8 | Denied, O8 |
 
 ## Cross-agent argv by level
@@ -81,9 +81,9 @@ Copilot base flags at every level, as `base_args` builds them after PR #75: `--p
 | **Restricted, chat** | `exec --json --sandbox read-only --skip-git-repo-check --ephemeral` [C-today], plus `--ignore-user-config` (new) | `--tools ""` (unchanged) [CL-today] | `--allow-tool read --deny-tool write --deny-tool shell --deny-tool url --deny-tool memory` [CP-today] |
 | **Restricted, task** | `exec --json --sandbox workspace-write --ignore-user-config`. No approval flag, so an approval request has no reviewer and is refused (unverified) | `--permission-mode dontAsk --permission-prompts none --restricted --strict-mcp-config --tools Read,Edit,Write --allowedTools Read,Edit,Write` [CL-today] | `--allow-tool read --allow-tool 'write(<worktree>/**)' --deny-tool shell --deny-tool url --deny-tool memory` |
 | **Extended, task** | No equivalent. `exec` has no tool allowlist and no web flag. Hidden [C-exec] | `--tools Read,Edit,Write,Bash --allowedTools Read,Edit,Write,"Bash(git status *)","Bash(git diff *)","Bash(git log *)","Bash(git show *)"` with Restricted's permission flags. Pattern syntax unverified [CL-tools] | `--allow-tool read --allow-tool 'write(<worktree>/**)' --allow-tool 'shell(git status)' --allow-tool 'shell(git diff)' --allow-tool 'shell(git log)' --allow-tool 'shell(git show)' --deny-tool url --deny-tool memory`. No shell deny, since a deny would beat the allows. Unmatched shell is denied in `-p` with no judge [CP-allow] |
-| **Auto, chat** | `exec --json --sandbox workspace-write --approve-for-me --ignore-user-config --skip-git-repo-check --ephemeral` [C-approve] | `--permission-mode auto --permission-prompts none --restricted --strict-mcp-config --no-session-persistence --tools Read,Edit,Write,Bash --allowedTools Read,Edit,Write`. Bash is not pre-approved, so the classifier decides each call [CL-auto] | `--assisted-approval --allow-tool read --allow-tool 'write(<run-dir>/**)' --deny-tool url --deny-tool memory --deny-tool 'shell(git push)' --max-ai-credits 30`. Copilot chat only, see Corrections |
-| **Auto, task** | `exec --json --sandbox workspace-write --approve-for-me --ignore-user-config -- <objective>` | Auto chat flags without `--no-session-persistence`, plus `--disallowedTools "Bash(git push *)" "Bash(gh *)"` (O8) and `--max-budget-usd <value>` (O7). Working directory is the worktree | `--assisted-approval --allow-tool read --allow-tool 'write(<worktree>/**)' --deny-tool url --deny-tool memory --deny-tool 'shell(git push)' --max-ai-credits 30`. No `--allow-all`, no shell allow |
-| **Full** (chat and task) | `exec --json` plus model selection only. No sandbox, no approval flag, user config loaded. Not the bypass flag (O1) | `--permission-mode bypassPermissions --permission-prompts none --allow-dangerously-skip-permissions`. Drop `--restricted`, `--strict-mcp-config`, `--tools`, `--allowedTools`. Whether the allow flag is needed is unverified [CL-bypass] | Base flags, minus `--disallow-temp-dir` and `--no-custom-instructions`, plus `--allow-all` (`--allow-all-tools --allow-all-paths --allow-all-urls`) [CP-allow]. Keeps `--disable-builtin-mcps` and `--no-ask-user`. Plus `--max-ai-credits` (O2) |
+| **Auto, chat** | `exec --json --sandbox workspace-write --approve-for-me --ignore-user-config --skip-git-repo-check --ephemeral` [C-approve] | `--permission-mode auto --permission-prompts none --restricted --strict-mcp-config --no-session-persistence --tools Read,Edit,Write,Bash --allowedTools Read,Edit,Write`. Bash is not pre-approved, so the classifier decides each call [CL-auto] | `--assisted-approval --allow-tool read --allow-tool 'write(<run-dir>/**)' --deny-tool url --deny-tool memory --deny-tool 'shell(git push)' --max-ai-credits 30` (only with the O2 switch on). Copilot chat only, see Corrections |
+| **Auto, task** | `exec --json --sandbox workspace-write --approve-for-me --ignore-user-config -- <objective>` | Auto chat flags without `--no-session-persistence`, plus `--disallowedTools "Bash(git push *)" "Bash(gh *)"` (O8) and `--max-budget-usd <value>` (O7). Working directory is the worktree | `--assisted-approval --allow-tool read --allow-tool 'write(<worktree>/**)' --deny-tool url --deny-tool memory --deny-tool 'shell(git push)' --max-ai-credits 30` (only with the O2 switch on). No `--allow-all`, no shell allow |
+| **Full** (chat and task) | `exec --json` plus model selection only. No sandbox, no approval flag, user config loaded. Not the bypass flag (O1) | `--permission-mode bypassPermissions --permission-prompts none --allow-dangerously-skip-permissions`. Drop `--restricted`, `--strict-mcp-config`, `--tools`, `--allowedTools`. Whether the allow flag is needed is unverified [CL-bypass] | Base flags, minus `--disallow-temp-dir` and `--no-custom-instructions`, plus `--allow-all` (`--allow-all-tools --allow-all-paths --allow-all-urls`) [CP-allow]. Keeps `--disable-builtin-mcps` and `--no-ask-user`. Plus `--max-ai-credits` (O2 switch on only) |
 
 Notes on the table:
 
@@ -105,7 +105,7 @@ These are argv or environment limits, so they hold when the review fails. Each i
 6. **No human in the loop.** `--permission-prompts none`, `--no-ask-user`, `--no-auto-update`.
 7. **Git and settings writes need a person.** Claude `--restricted`: "lets only a person or the configured permission handler approve writes to settings, git and tool-configuration files" [CL3].
 8. **Delivery stays with MCAO.** No `git push` or `gh` by a task agent (O8). Enforced by rule on Copilot and Claude. Unverified on Codex.
-9. **Spend caps on paid runs.** O2 for Copilot, O7 for Claude tasks. Codex has no MCAO cap.
+9. **Spend caps on paid runs.** O2 for Copilot, off by default behind a switch. O7 for Claude tasks, not implemented. Codex has no MCAO cap.
 
 ## When the review cannot answer (fail closed)
 
@@ -176,7 +176,7 @@ The safe outcome is always denial. A turn never retries at another level and nev
 1. **PR A, daemon and wire (chats).** Argv per level for chats, all three agents. `permission` and `extended_groups` on `conversations.send`. Capability `permission_levels`. Failure codes. Migration `0035`, turn fields. Files: `crates/orchestrator-agents` (`catalog.rs`, adapters), `crates/orchestrator-daemon` (`api_conversations.rs`, `api_conversation_agent.rs`), `crates/orchestrator-store` (migration, turn writes). Rebase on #75 and #76. Size L.
 2. **PR B and PR C, in parallel after A.** They share no Rust files.
    - **PR B, desktop chat UI.** Level control in the model picker chip and panel, Auto default for chats, Full confirmation, older-daemon chat notice, displayed level. Files: `apps/desktop/src/ui/views/workspace/*` (`WorkspaceView.tsx`, `ModelPicker`, new picker, chip and confirm components), `apps/desktop/src/daemon/types.ts`, fixtures, e2e. Can be built against fixtures while A is in review. Rebase on #75. Size M.
-   - **PR C, tasks.** `permission` on `TaskSubmitParams` (`api.rs`). Contract field (`crates/orchestrator-core/src/contract.rs`). Executor mapping (`executor.rs`: `agent_command` around line 682, `spawn_agent`, `spawn_copilot`). Codex task pin. Spend flags (O2, O7). Delivery denies (O8). Desktop task-form control in `ProjectDetail.tsx`, which reuses B's picker, so that part merges after B. Size M. Rebase on #75 and A, since C shares `copilot_adapter.rs` and `catalog.rs` with A.
+   - **PR C, tasks.** `permission` on `TaskSubmitParams` (`api.rs`). Contract field (`crates/orchestrator-core/src/contract.rs`). Executor mapping (`executor.rs`: `agent_command` around line 682, `spawn_agent`, `spawn_copilot`). Codex task pin. Spend cap behind the O2 switch (off by default). No Claude task cap (O7 open). Delivery denies (O8). Desktop task-form control in `ProjectDetail.tsx`, which reuses B's picker, so that part merges after B. Size M. Rebase on #75 and A, since C shares `copilot_adapter.rs` and `catalog.rs` with A.
 
 Order: #75 and #76, then A, then B and C together. Every PR uses the org template, the Jira key, a Key Decisions section, a Workflow Runs section with real run links, and a Trivy scan that exits 0 before it is opened or updated.
 
@@ -184,7 +184,7 @@ Order: #75 and #76, then A, then B and C together. Every PR uses the org templat
 
 - **Argv, per level and agent.** Exact vectors, in A for chats and in C for tasks. Assert: no `--sandbox` on any Copilot argv (matches #75), the Auto vectors above, and Full dropping the listed flags.
 - **Hard limits.** Below Full: no `--allow-all*`, `--dangerously-*`, `--ignore-rules`, `--autopilot`, `--experimental`, `--allow-all-mcp-server-instructions`, `--add-dir` or `--allow-all-paths`. No `COPILOT_*` name in any forwarded environment.
-- **Caps and delivery.** Copilot runs carry `--max-ai-credits 30` (O2). Claude task runs carry `--max-budget-usd` when a value is set (O7). Task runs carry the `git push` and `gh` denies (O8).
+- **Caps and delivery.** Copilot runs carry `--max-ai-credits 30` only when the O2 switch is on (`AGENT_ORCH_COPILOT_CREDIT_CAP=1`). Claude task runs carry no spend cap (O7 open). Task runs carry the `git push` and `gh` denies (O8).
 - **Codex task pin.** Restricted and Auto tasks pass `--sandbox workspace-write` and no `--dangerously-*` flag.
 - **Wire, in-process.** Absent means `restricted` for chats and tasks. An unknown `permission` value is rejected with no turn or task. Codex Extended is refused with `permission_level_unsupported`. Capability gating. The idempotency key includes `permission`.
 - **Store.** Migration `0035` is nullable, and the CHECK holds. Old turn rows read NULL. An old contract with no field reads as `restricted`.

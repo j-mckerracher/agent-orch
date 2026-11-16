@@ -26,8 +26,8 @@ pub use catalog::{
     pi_catalog, provider_of, AgentCatalog, CatalogState, Facet, ModelOption, SelectionError,
     SelectionReason,
 };
-pub use codex_adapter::CodexAdapter;
 pub use claude_code_adapter::ClaudeCodeAdapter;
+pub use codex_adapter::CodexAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,

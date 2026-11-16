@@ -590,6 +590,7 @@ impl ConversationRuntime for AgentRuntime {
                 &prompt,
                 &run.usage_file(),
                 &run.cwd(),
+                self.exec.copilot_credit_cap,
             )
             .ok_or(RuntimeFailure::LevelUnsupported)?;
             let launch = AgentLaunchRequest {
@@ -779,7 +780,12 @@ fn read_version(program: &Path, agent: &str) -> Probe {
         eprintln!(
             "orchestrator-daemon: `--version` probe via {} printed no version: {}",
             program.display(),
-            log_safe(&String::from_utf8_lossy(&output).chars().take(80).collect::<String>())
+            log_safe(
+                &String::from_utf8_lossy(&output)
+                    .chars()
+                    .take(80)
+                    .collect::<String>()
+            )
         );
     }
     parsed.map_or(Probe::Rejected, Probe::Version)

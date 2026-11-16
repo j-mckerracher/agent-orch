@@ -46,6 +46,7 @@ fn new_store() -> (TempDir, SqliteStore) {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .expect("create task");
     (directory, store)

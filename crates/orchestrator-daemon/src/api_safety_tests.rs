@@ -86,6 +86,7 @@ fn fixture() -> Fixture {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -169,6 +170,7 @@ fn invalid_path_fixture() -> (TempDir, DaemonApi, PathBuf, PathBuf) {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();

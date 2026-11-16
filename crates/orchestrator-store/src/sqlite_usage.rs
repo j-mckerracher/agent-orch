@@ -566,6 +566,7 @@ mod tests {
                 max_retries: 1,
                 max_repairs: 1,
                 model_selection: None,
+                permission: Default::default(),
             })
             .unwrap();
         store.transition("t1", TaskEvent::Admit).unwrap();

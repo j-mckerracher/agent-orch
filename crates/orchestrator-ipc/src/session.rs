@@ -435,7 +435,9 @@ fn method_capability(method: &str) -> Option<Capability> {
         }
         // DPES-1105: clearing history and removing or restoring coordinators. An older
         // daemon does not know this capability, so the desktop disables these actions.
-        "conversations.clear" | "coordinator.clear" | "coordinator.remove"
+        "conversations.clear"
+        | "coordinator.clear"
+        | "coordinator.remove"
         | "coordinator.restore" => Some(Capability::ConversationHistory),
         _ => None,
     }

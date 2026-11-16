@@ -2295,6 +2295,7 @@ mod tests {
             max_retries: 1,
             max_repairs: 1,
             model_selection: None,
+            permission: Default::default(),
         }
     }
 
