@@ -75,7 +75,10 @@
    "live_subscription_keeps_an_otherwise_idle_server_running",
    "the_history_capability_is_named_and_round_trips",
    "every_history_method_is_gated_by_the_negotiated_capability",
-   "the_selection_capability_is_named_and_round_trips"
+   "the_selection_capability_is_named_and_round_trips",
+   "actions_tests::a_context_reports_only_the_capabilities_it_was_given",
+   "actions_tests::a_handler_that_ignores_the_context_runs_dispatch",
+   "actions_tests::orchestrator_actions_is_named_and_round_trips"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -287,7 +290,20 @@
    "api::conversation_snapshot::tests::workstream_text_cannot_start_a_line",
    "api::conversation_snapshot::tests::workstreams_are_capped_and_newest_kept",
    "api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_app_state",
-   "the_agent_gets_the_app_instructions_and_state_apart_from_the_message"
+   "the_agent_gets_the_app_instructions_and_state_apart_from_the_message",
+   "api::conversation_agent::tests::the_block_format_is_in_the_preamble_only_with_actions",
+   "api::conversation_snapshot::tests::revisions_and_proposals_appear_only_when_actions_are_negotiated",
+   "a_block_before_a_failure_or_cancel_is_ignored",
+   "a_block_split_across_claude_fragments_parses_after_the_turn",
+   "a_block_in_the_user_message_or_history_is_never_parsed",
+   "a_scripted_block_becomes_pending_proposals_and_is_not_in_the_reply",
+   "a_session_without_the_capability_gets_the_block_stripped",
+   "a_snapshot_title_carrying_a_block_yields_no_proposal",
+   "a_workstream_revision_must_name_an_objective_of_that_workstream",
+   "the_block_format_reaches_the_agent_only_with_the_capability",
+   "the_outcome_is_the_same_at_restricted_auto_and_full",
+   "the_same_request_twice_gives_one_pending_proposal",
+   "the_snapshot_names_proposals_by_title_and_never_by_id"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -575,7 +591,17 @@
    "released_cancellation_row_matches_golden_fixture",
    "unknown_payload_keys_do_not_change_the_projection",
    "unmapped_kind_and_empty_session_refuse_without_a_partial_event",
-   "sqlite_ops::tests::task_overview_counts_states_and_lists_the_newest_open_tasks"
+   "sqlite_ops::tests::task_overview_counts_states_and_lists_the_newest_open_tasks",
+   "a_turn_already_cancelled_or_failed_records_no_block",
+   "a_changed_request_supersedes_the_older_pending_one_with_an_event",
+   "an_accepted_block_stores_pending_proposals_and_events_atomically",
+   "non_pending_proposals_are_never_deduplicated_or_superseded",
+   "proposals_list_by_scope_newest_first_and_get_by_id",
+   "stripped_rejected_and_absent_blocks_set_the_outcome_without_proposals",
+   "the_same_request_twice_returns_the_existing_cards_including_dependents",
+   "a_clear_deletes_its_proposals_and_keeps_their_events",
+   "a_database_from_0036_is_migrated_with_its_turns_and_no_action_block",
+   "action_proposals_are_deleted_only_by_a_clear_and_events_never"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
