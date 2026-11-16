@@ -212,6 +212,11 @@ describe("S2 project detail and submission", () => {
     const { user } = await mount(fake, { route });
     await user.type(screen.getByLabelText("Objective"), "Add a login page");
     await user.type(screen.getByLabelText("Agent"), "codex");
+    expect(
+      screen.getByText(
+        "Submitting queues the task. Eligible queued work may start automatically when the scheduler can run it.",
+      ),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
     expect(screen.getByText(/no agent has been launched and no session is recorded/)).toBeInTheDocument();
@@ -250,7 +255,7 @@ describe("S2 project detail and submission", () => {
     const { user } = await mount(fake, { route });
     fake.failNext("tasks.submit", { code: -32010, message: "project is not registered" });
     await user.type(screen.getByLabelText("Objective"), "x");
-    await user.type(screen.getByLabelText("Agent"), "a");
+    await user.type(screen.getByLabelText("Agent"), "codex");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText(/Submitting the task failed/)).toBeInTheDocument();
     expect(screen.getByLabelText("Objective")).toHaveValue("x");
@@ -261,7 +266,7 @@ describe("S2 project detail and submission", () => {
     const { user } = await mount(fake, { route, connection: { requestTimeoutMs: 40 } });
     fake.failNext("tasks.submit", "hang");
     await user.type(screen.getByLabelText("Objective"), "x");
-    await user.type(screen.getByLabelText("Agent"), "a");
+    await user.type(screen.getByLabelText("Agent"), "codex");
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText(/The outcome is unknown/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Submit" }));

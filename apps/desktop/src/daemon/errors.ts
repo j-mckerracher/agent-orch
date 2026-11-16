@@ -2,7 +2,7 @@
  * Daemon and transport failures as one typed error.
  *
  * Codes come from `crates/orchestrator-ipc` (handshake -32001..-32004,
- * -32601, -32600) and `RpcError` (-32602, -32010..-32018, -32603). Messages
+ * -32601, -32600) and `RpcError` (-32602, -32010..-32020, -32603). Messages
  * from the daemon are sanitized and path-free; the UI still never renders a
  * token, which the webview does not hold.
  */
@@ -16,6 +16,7 @@ export type DaemonErrorKind =
   | "invalid-handshake"
   | "invalid-params"
   | "not-found"
+  | "parent-not-found"
   | "conflict"
   | "forbidden"
   | "idempotency-conflict"
@@ -40,6 +41,7 @@ const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
   [-32601]: "method-unavailable",
   [-32602]: "invalid-params",
   [-32010]: "not-found",
+  [-32020]: "parent-not-found",
   [-32011]: "conflict",
   [-32012]: "forbidden",
   [-32013]: "idempotency-conflict",
@@ -149,6 +151,10 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   "not-found": {
     reason: "The record no longer exists.",
     nextStep: "Refresh the list.",
+  },
+  "parent-not-found": {
+    reason: "The parent task does not exist.",
+    nextStep: "Enter an existing task ID or leave the parent blank.",
   },
   conflict: {
     reason: "The record is not in a state that allows this action.",

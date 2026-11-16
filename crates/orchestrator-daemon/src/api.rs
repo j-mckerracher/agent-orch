@@ -341,7 +341,7 @@ impl RpcHandler for DaemonApi {
         // Caller mistakes (invalid params, unknown ids) stay quiet.
         if let Err(error) = &result {
             let level = match error {
-                RpcError::InvalidParams | RpcError::NotFound => None,
+                RpcError::InvalidParams | RpcError::NotFound | RpcError::ParentNotFound => None,
                 RpcError::Internal => Some(Level::Error),
                 _ => Some(Level::Warn),
             };
@@ -446,7 +446,10 @@ impl DaemonApi {
     }
 
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
-        let request: TaskSubmitParams = parse_params(params)?;
+        let mut request: TaskSubmitParams = parse_params(params)?;
+        request.contract.agent = canonical_agent_id(&request.contract.agent)
+            .ok_or(RpcError::InvalidParams)?
+            .to_owned();
         let key = request.idempotency_key.clone();
         // The catalog read can take as long as a CLI probe, so it happens
         // before the idempotency gate is taken: the gate serializes every
@@ -487,6 +490,15 @@ impl DaemonApi {
                     .get_project(&contract.project_id)
                     .map_err(map_store_error)?;
                 contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
+                if let Some(parent_id) = &contract.parent_id {
+                    match self.store.get(parent_id) {
+                        Ok(_) => {}
+                        Err(StoreError::NotFound(_) | StoreError::InvalidTaskId(_)) => {
+                            return Err(RpcError::ParentNotFound);
+                        }
+                        Err(error) => return Err(map_store_error(error)),
+                    }
+                }
                 self.check_agent_command_line(&contract)?;
                 if let Some(selection) = &contract.model_selection {
                     // `contract::validate` has accepted the selection, so the
@@ -697,6 +709,17 @@ impl DaemonApi {
         let params: TaskIdParams = parse_params(params)?;
         serde_json::to_value(self.store.get(&params.task_id).map_err(map_store_error)?)
             .map_err(|_| RpcError::Internal)
+    }
+}
+
+/// The daemon launches only canonical identifiers. Case-insensitive display
+/// names are accepted at the boundary and persisted as the launcher's ID.
+fn canonical_agent_id(agent: &str) -> Option<&'static str> {
+    match agent.trim().to_ascii_lowercase().as_str() {
+        "codex" => Some("codex"),
+        "claude-code" | "claude code" => Some("claude-code"),
+        "pi" => Some("pi"),
+        _ => None,
     }
 }
 

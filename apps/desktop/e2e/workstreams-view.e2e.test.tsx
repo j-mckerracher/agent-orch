@@ -9,7 +9,7 @@ import { M5_03_CAPABILITIES } from "../src/daemon/types";
 import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
 import { WorkstreamsView } from "../src/ui/views/workstreams/WorkstreamsView";
-import { NodeConnector, startDaemon } from "./harness";
+import { NodeConnector, noAgentsEnv, startDaemon } from "./harness";
 
 afterEach(cleanup);
 
@@ -17,7 +17,7 @@ afterEach(cleanup);
 // gate through the real workstreams.* methods, then confirm the daemon holds exactly that.
 describe("WorkstreamsView over the real daemon", () => {
   it("creates, adds an objective, links a task and verifies a gate, all persisted by the daemon", async () => {
-    const daemon = await startDaemon();
+    const daemon = await startDaemon(noAgentsEnv());
     const connector = new NodeConnector(daemon.dataDir);
     const direct = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
     const api = new DaemonApi(direct);
@@ -29,7 +29,7 @@ describe("WorkstreamsView over the real daemon", () => {
         parent_id: null,
         objective: "Prove the view",
         kind: "Implement",
-        agent: "e2e-agent",
+        agent: "codex",
         dependencies: [],
         verification: "None",
         delivery: "LocalReview",

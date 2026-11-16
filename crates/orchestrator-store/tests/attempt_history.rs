@@ -43,6 +43,7 @@ fn attempt(id: &str, attempt_number: u32, state: AttemptState) -> Attempt {
         task_id: "task-1".into(),
         attempt_number,
         state,
+        failure_reason: None,
     }
 }
 

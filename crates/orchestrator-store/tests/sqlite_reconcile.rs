@@ -65,6 +65,7 @@ fn add_session(store: &SqliteStore, task_id: &str) {
                 task_id: task_id.into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .expect("add attempt");

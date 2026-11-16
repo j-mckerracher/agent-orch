@@ -20,6 +20,7 @@ import {
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { workspaceRegistration } from "./register";
+import { formatAt } from "./time";
 import { WorkspaceView } from "./WorkspaceView";
 
 function memoryStorage(): DraftStorage & { data: Map<string, string> } {
@@ -160,6 +161,58 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
     expect(await screen.findByText("Hello from the runtime.")).toBeInTheDocument();
     expect(screen.queryByText(/runtime unavailable/i)).toBeNull();
+  });
+
+  it.each([
+    { label: "Global orchestrator", target: /Global orchestrator/ },
+    { label: "Session hardening orchestrator", target: /Session hardening orchestrator/ },
+  ])("clears the waiting status after a successful $label turn", async ({ target }) => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, target);
+
+    const composer = screen.getByRole("textbox", { name: /^Message / });
+    await user.type(composer, "hello");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText(/Waiting for the orchestrator.s reply…/)).toBeInTheDocument();
+    expect(await screen.findByText("Recorded by the daemon. Waiting for the orchestrator's reply.")).toBeInTheDocument();
+    expect(fake.callsTo("conversations.send")).toHaveLength(1);
+
+    act(() => convo.finishRunning(null, "Hello from the runtime."));
+    await waitFor(() => expect(screen.getByText("Hello from the runtime.")).toBeInTheDocument(), { timeout: 3000 });
+    await waitFor(() => {
+      expect(screen.queryByText(/Waiting for the orchestrator.s reply/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Cancel reply" })).toBeNull();
+      expect(screen.queryByText("Recorded by the daemon. Waiting for the orchestrator's reply.")).toBeNull();
+    });
+    expect(fake.callsTo("conversations.send")).toHaveLength(1);
+  });
+
+  it("replaces a running notice with the recorded failure after a turn fails", async () => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    const composer = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+    await user.type(composer, "fail this turn");
+    await user.keyboard("{Enter}");
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+    expect(screen.getByRole("button", { name: "Cancel reply" })).toBeInTheDocument();
+
+    act(() => convo.finishRunning("runtime_failed"));
+    expect(await screen.findByText("The orchestrator runtime failed. The reply is incomplete or missing.", {}, { timeout: 3000 })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/Waiting for the orchestrator.s reply/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Cancel reply" })).toBeNull();
+      expect(screen.queryByText("Recorded by the daemon. Waiting for the orchestrator's reply.")).toBeNull();
+    });
   });
 
   it("polls a running turn, blocks a second send, and cancels through the daemon", async () => {
@@ -317,6 +370,44 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.getByRole("button", { name: "Send message to alpha coordinator" })).toBeDisabled();
     expect(screen.getByText(/Coordinator notes take no model or effort/)).toBeInTheDocument();
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+  });
+
+  it("keeps Enter on the model selector from submitting the unsent draft in either direction", async () => {
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    const draft = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(draft, "keep this draft");
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(model).toBeEnabled());
+
+    await user.selectOptions(model, "gpt-b");
+    model.focus();
+    expect(model).toHaveValue("gpt-b");
+    await user.keyboard("{Enter}");
+    fireEvent.submit(screen.getByRole("form", { name: "Message alpha coordinator" }));
+    await user.keyboard("{Enter}");
+    fireEvent.submit(screen.getByRole("form", { name: "Message alpha coordinator" }));
+    expect(model).toHaveValue("gpt-b");
+    expect(draft).toHaveValue("keep this draft");
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+
+    await user.selectOptions(model, "gpt-a");
+    model.focus();
+    expect(model).toHaveValue("gpt-a");
+    await user.keyboard("{Enter}");
+    fireEvent.submit(screen.getByRole("form", { name: "Message alpha coordinator" }));
+    await user.keyboard("{Enter}");
+    fireEvent.submit(screen.getByRole("form", { name: "Message alpha coordinator" }));
+    expect(model).toHaveValue("gpt-a");
+    expect(draft).toHaveValue("keep this draft");
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
   });
 
   it("disables a non-launchable provider and never defaults to it", async () => {
@@ -805,12 +896,39 @@ describe("accessibility structure", () => {
     expect(screen.getByRole("button", { name: "Send message to Global orchestrator" })).toBeDisabled();
   });
 
-  it("sends on Ctrl+Enter in fixture mode", async () => {
-    const services = build();
-    const { user } = await mountView(services);
+  it("sends on Enter and inserts a newline on Shift+Enter", async () => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
     const box = await screen.findByRole("textbox", { name: "Message Global orchestrator" });
-    await user.type(box, "hi{Control>}{Enter}{/Control}");
-    expect(await screen.findByText(/SIMULATED:/)).toBeInTheDocument();
+    await user.type(box, "line one");
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(box).toHaveValue("line one\n");
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "line one\n" });
+    expect(box).toHaveValue("");
+    expect(await screen.findByText("Hello from the runtime.")).toBeInTheDocument();
+    expect(convo.turn?.state).toBe("completed");
+  });
+});
+
+describe("conversation timestamps", () => {
+  it("shows local time with its zone across UTC and the Boise daylight-saving boundary", () => {
+    const boise = (at: string) => formatAt(at, "America/Boise").replace(/\s/g, "");
+    const utc = (at: string) => formatAt(at, "UTC").replace(/\s/g, "");
+
+    expect(boise("2026-11-10T21:00:00Z")).toContain("02:00PMMST");
+    expect(utc("2026-11-10T21:00:00Z")).toContain("09:00PMUTC");
+    expect(boise("2026-03-08T08:59:00Z")).toContain("01:59AMMST");
+    expect(boise("2026-03-08T09:00:00Z")).toContain("03:00AMMDT");
+    expect(formatAt("not-a-time", "America/Boise")).toBe("Unrecognized time");
   });
 });
 

@@ -44,6 +44,7 @@ fn add_session_history(store: &SqliteStore) {
                 task_id: "task-1".into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();

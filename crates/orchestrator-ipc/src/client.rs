@@ -674,6 +674,7 @@ fn map_remote(code: i32) -> IpcError {
         -32003 => IpcError::UnsupportedVersion,
         -32602 => IpcError::InvalidParams,
         -32010 => IpcError::NotFound,
+        -32020 => IpcError::ParentNotFound,
         -32011 => IpcError::Conflict,
         -32012 => IpcError::Forbidden,
         -32013 => IpcError::IdempotencyConflict,

@@ -161,6 +161,7 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
         task_id: task_id.to_owned(),
         attempt_number: 1,
         state: AttemptState::Pending,
+        failure_reason: None,
     };
     store.add_attempt(task_id, &attempt).unwrap();
     store

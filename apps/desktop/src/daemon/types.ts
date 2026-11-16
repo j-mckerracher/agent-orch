@@ -115,6 +115,8 @@ export interface Attempt {
   task_id: string;
   attempt_number: number;
   state: AttemptState;
+  /** Safe explanation for a failed attempt; absent in older task records. */
+  failure_reason?: string;
 }
 
 export interface Session {

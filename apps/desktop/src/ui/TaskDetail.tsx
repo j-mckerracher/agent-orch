@@ -31,8 +31,8 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
     setRetryError(null);
     setRetrying(true);
     try {
-      const result = await realRetry.call(sources.retry, taskRef);
-      setRetryNote(`Retry accepted; the daemon now records the task as ${result.state} with ${result.attempts} attempt(s).`);
+      await realRetry.call(sources.retry, taskRef);
+      setRetryNote("The retry request was accepted by the daemon.");
       void data.watchTask(ownId);
       void data.refreshAll();
     } catch (error) {
@@ -258,6 +258,11 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                   {record.attempts.map((attempt) => (
                     <li key={attempt.id}>
                       #{attempt.attempt_number} <code>{attempt.id}</code>: {stateLabel(attempt.state)}
+                      {attempt.state === "Failed" && (
+                        <p data-testid={`failure-reason-${attempt.id}`}>
+                          Failure reason: {attempt.failure_reason?.trim() || "unavailable."}
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>

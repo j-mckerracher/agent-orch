@@ -22,11 +22,26 @@ function limit(text: string, label: string, errors: string[]): number {
   return value;
 }
 
+/** Accept display capitalization, but send only identifiers with a daemon launcher. */
+function canonicalAgentId(value: string): "codex" | "claude-code" | null {
+  switch (value.trim().toLowerCase()) {
+    case "codex":
+      return "codex";
+    case "claude-code":
+    case "claude code":
+      return "claude-code";
+    default:
+      return null;
+  }
+}
+
 /** Validates the form locally; the daemon remains the authority on the contract. */
 export function buildSubmission(projectId: string, draft: SubmitDraft): SubmissionResult {
   const errors: string[] = [];
   if (draft.objective.trim() === "") errors.push("Objective is required.");
+  const agent = canonicalAgentId(draft.agent);
   if (draft.agent.trim() === "") errors.push("Agent is required; no agent is chosen automatically.");
+  else if (agent === null) errors.push("Agent must be codex or claude-code.");
   const dependencies = ids(draft.dependencies);
   const parent = draft.parentId.trim();
   if (dependencies.some(isFixtureId) || isFixtureId(parent)) {
@@ -52,7 +67,7 @@ export function buildSubmission(projectId: string, draft: SubmitDraft): Submissi
       parent_id: parent === "" ? null : parent,
       objective: draft.objective.trim(),
       kind: draft.kind,
-      agent: draft.agent.trim(),
+      agent: agent!,
       dependencies,
       verification,
       delivery: draft.delivery,

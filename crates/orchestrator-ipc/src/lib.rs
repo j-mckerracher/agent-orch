@@ -125,6 +125,7 @@ pub struct IpcEvent {
 pub enum RpcError {
     InvalidParams,
     NotFound,
+    ParentNotFound,
     Conflict,
     Forbidden,
     IdempotencyConflict,
@@ -143,6 +144,7 @@ impl RpcError {
         match self {
             Self::InvalidParams => -32602,
             Self::NotFound => -32010,
+            Self::ParentNotFound => -32020,
             Self::Conflict => -32011,
             Self::Forbidden => -32012,
             Self::IdempotencyConflict => -32013,
@@ -160,6 +162,9 @@ impl RpcError {
         match self {
             Self::InvalidParams => "request parameters are invalid",
             Self::NotFound => "resource was not found",
+            Self::ParentNotFound => {
+                "parent task was not found; provide an existing task ID or leave the parent blank"
+            }
             Self::Conflict => "operation conflicts with current state",
             Self::Forbidden => "operation is not authorized",
             Self::IdempotencyConflict => "idempotency key conflicts with prior request",
@@ -225,6 +230,8 @@ pub enum IpcError {
     InvalidParams,
     #[error("RPC resource not found")]
     NotFound,
+    #[error("RPC parent task was not found")]
+    ParentNotFound,
     #[error("RPC operation conflicts with current state")]
     Conflict,
     #[error("RPC operation is not authorized")]

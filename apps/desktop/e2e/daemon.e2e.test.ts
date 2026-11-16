@@ -8,7 +8,7 @@ import { DaemonSession } from "../src/daemon/session";
 import { DaemonApi } from "../src/daemon/api";
 import { toReviewEvidence } from "../src/review/daemonSources";
 import { M5_03_CAPABILITIES, type DaemonEvent, type TaskSubmission } from "../src/daemon/types";
-import { NodeConnector, startDaemon, type RunningDaemon, type SeededReview } from "./harness";
+import { NodeConnector, noAgentsEnv, startDaemon, type RunningDaemon, type SeededReview } from "./harness";
 
 let daemon: RunningDaemon;
 let connector: NodeConnector;
@@ -19,7 +19,7 @@ const submission = (overrides: Partial<TaskSubmission> = {}): TaskSubmission => 
   parent_id: null,
   objective: "e2e objective",
   kind: "Implement",
-  agent: "e2e-agent",
+  agent: "codex",
   dependencies: [],
   verification: "None",
   delivery: "LocalReview",
@@ -44,7 +44,7 @@ async function openSession() {
 }
 
 beforeAll(async () => {
-  daemon = await startDaemon();
+  daemon = await startDaemon(noAgentsEnv());
   connector = new NodeConnector(daemon.dataDir);
   projectId = realpathSync(daemon.repo);
 });
@@ -106,7 +106,7 @@ describe("real M5-02 daemon: projects, tasks and errors", () => {
     const record = await api.tasksSubmit("e2e-key-submit-1", submission());
     expect(record.state).toBe("Queued");
     expect(record.sessions).toEqual([]);
-    expect(record.contract.agent).toBe("e2e-agent");
+    expect(record.contract.agent).toBe("codex");
 
     const replay = await api.tasksSubmit("e2e-key-submit-1", submission());
     expect(replay.contract.id).toBe(record.contract.id);
@@ -248,7 +248,7 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
 
 describe("real daemon: journal epoch", () => {
   it("names the journal in the Welcome and rejects a stale cursor against a replaced store (-32018)", async () => {
-    const own = await startDaemon();
+    const own = await startDaemon(noAgentsEnv());
     try {
       const own_connector = new NodeConnector(own.dataDir);
       const first = new DaemonSession(await own_connector.open(M5_03_CAPABILITIES));
@@ -285,7 +285,7 @@ describe("real daemon: journal epoch", () => {
   });
 
   it("ConnectionManager drops its cursor, reports incomplete history and re-baselines on a replaced store", async () => {
-    const own = await startDaemon();
+    const own = await startDaemon(noAgentsEnv());
     const own_connector = new NodeConnector(own.dataDir);
     // Restart may take longer than five short retries on CI.
     const manager = new ConnectionManager({ connector: own_connector, backoffMs: [50], maxAutoAttempts: 400, requestTimeoutMs: 5000 });
@@ -356,7 +356,7 @@ describe("real daemon: review flow on a seeded task (workspaces.diff, review.*, 
   let own_connector: NodeConnector;
 
   beforeAll(async () => {
-    own = await startDaemon();
+    own = await startDaemon(noAgentsEnv());
     seeded = await own.seedReview();
     own_connector = new NodeConnector(own.dataDir);
   });
