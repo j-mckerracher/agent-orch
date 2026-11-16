@@ -175,11 +175,13 @@ no flag.
   message last. The conversation service builds the snapshot from the store
   (`api_conversation_snapshot.rs`, at most 6 KiB, oldest items dropped first);
   the runtime gets it as `TurnRequest.context` and holds no store handle. The
-  snapshot lists the scope, project ids, workstreams with objective and gate
+  snapshot lists the scope, projects, workstreams with objective and gate
   counts, a workstream target's objectives and gates, task counts and up to 20
   open tasks (id, state, project, workstream, objective cut to 80 bytes), and
-  the pending delivery approval count. It never holds a project path, settings,
-  tokens, environment, diffs or session output; every field is one line. Claude
+  the pending delivery approval count. A project id is its root path, so a
+  project is named by its folder name and a short hash of the id. The snapshot
+  never holds a project path, settings, tokens, environment, diffs or session
+  output; every snapshot field and every earlier turn is one line. Claude
   gets the instructions through `--append-system-prompt` and the content
   through `-p`. Codex and Copilot have no system prompt flag, so the
   instructions lead their one prompt argument between fixed delimiters. When the

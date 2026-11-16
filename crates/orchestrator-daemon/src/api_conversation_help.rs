@@ -235,7 +235,8 @@ mod tests {
         assert!(
             restricted.contains(&"--output-format".to_owned()),
             "{restricted:?}"
-        );        assert!(
+        );
+        assert!(
             restricted.contains(&"--append-system-prompt".to_owned()),
             "{restricted:?}"
         );

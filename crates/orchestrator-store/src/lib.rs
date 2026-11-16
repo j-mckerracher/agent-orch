@@ -78,7 +78,9 @@ mod sqlite_reconcile;
 mod sqlite_usage;
 pub mod usage_prices;
 pub use sqlite::SqliteStore;
-pub use sqlite_ops::{CancellationOwner, CancellationStatus, EventJournalEntry, TaskOverview};
+pub use sqlite_ops::{
+    CancellationOwner, CancellationStatus, EventJournalEntry, OpenTask, TaskOverview,
+};
 pub use sqlite_usage::{
     ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,
     UsageWindowSummary,

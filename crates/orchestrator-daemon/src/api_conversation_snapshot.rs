@@ -1,18 +1,19 @@
 //! App-state snapshot for one orchestrator conversation turn (DPES-1105).
 //!
 //! Plan: `docs/design/orchestrator-actions.md`, "Snapshot content" and "Size".
-//! The text lists only the fields that design names: project ids, workstream
+//! The text lists only the fields that design names: projects, workstream
 //! and objective text with gate counts, open tasks, and a pending-approval
 //! count. It never holds a project root path, settings, tokens, environment,
-//! diffs, session output or attempts. Every free-text field is flattened to
-//! one bounded line, so no field can start a line of its own.
-
-use std::collections::BTreeMap;
+//! diffs, session output or attempts. A project id is its root path, so a
+//! project is named by its folder name and a short hash of the id instead.
+//! Every free-text field is flattened to one bounded line, so no field can
+//! start a line of its own.
 
 use orchestrator_core::approval::ApprovalActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
-use orchestrator_store::{ConversationTarget, SqliteStore, TaskOverview, WorkstreamStoreError};
+use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, WorkstreamStoreError};
+use sha2::{Digest, Sha256};
 
 use super::conversation_agent::sanitize;
 
@@ -113,6 +114,11 @@ fn lay_out(blocks: Vec<Block>) -> String {
 /// more" line for the rest, and takes that space from `budget`. The line's
 /// space is reserved up front, so it always fits.
 fn fit(items: &[String], total: usize, budget: &mut usize) -> usize {
+    let whole: usize = items.iter().map(|item| item.len() + 1).sum();
+    if items.len() == total && whole <= *budget {
+        *budget -= whole;
+        return total;
+    }
     let mut used = more_len(total);
     let mut shown = 0;
     for item in items {
@@ -172,7 +178,7 @@ fn projects(store: &SqliteStore) -> Block {
         Ok(projects) => {
             let items: Vec<String> = projects
                 .iter()
-                .map(|project| format!("- {}", field(&project.id, TEXT_BYTES)))
+                .map(|project| format!("- {}", project_label(&project.id)))
                 .collect();
             Block {
                 head: format!("Projects ({}):", items.len()),
@@ -205,23 +211,20 @@ fn workstreams(store: &SqliteStore) -> Block {
 
 /// The task count line, then the open tasks, newest first.
 fn tasks(store: &SqliteStore) -> Vec<Block> {
-    match store.task_overview() {
-        Ok(tasks) => {
-            let open: Vec<&TaskOverview> = tasks
+    match store.task_overview(OPEN_TASK_LINES) {
+        Ok(overview) => {
+            let open_total = overview
+                .counts
                 .iter()
-                .rev()
-                .filter(|task| !task.state.is_terminal())
-                .collect();
+                .filter(|(state, _)| !state.is_terminal())
+                .map(|(_, count)| count)
+                .sum();
             vec![
-                Block::text(task_counts(&tasks)),
+                Block::text(task_counts(&overview.counts)),
                 Block {
                     head: "Open tasks (up to 20, newest first):".to_owned(),
-                    items: open
-                        .iter()
-                        .take(OPEN_TASK_LINES)
-                        .map(|task| task_line(task))
-                        .collect(),
-                    total: open.len(),
+                    items: overview.open.iter().map(task_line).collect(),
+                    total: open_total,
                     rank: RANK_OPEN_TASKS,
                 },
             ]
@@ -304,7 +307,7 @@ fn objective_block(objective: &Objective) -> String {
     lines.join("\n")
 }
 
-fn task_line(task: &TaskOverview) -> String {
+fn task_line(task: &OpenTask) -> String {
     let workstream = task
         .workstream_id
         .as_deref()
@@ -313,17 +316,14 @@ fn task_line(task: &TaskOverview) -> String {
         "- {} {} project {} workstream {workstream}: {}",
         field(&task.id, TEXT_BYTES),
         state_tag(task.state),
-        field(&task.project_id, TEXT_BYTES),
+        project_label(&task.project_id),
         field(&task.objective, TASK_OBJECTIVE_BYTES),
     )
 }
 
 /// "Tasks: 3 total; running 2, queued 1" with states in declaration order.
-fn task_counts(tasks: &[TaskOverview]) -> String {
-    let mut counts: BTreeMap<TaskState, usize> = BTreeMap::new();
-    for task in tasks {
-        *counts.entry(task.state).or_insert(0) += 1;
-    }
+fn task_counts(counts: &[(TaskState, usize)]) -> String {
+    let total: usize = counts.iter().map(|(_, count)| count).sum();
     let states: Vec<String> = counts
         .iter()
         .map(|(state, count)| format!("{} {count}", state_tag(*state)))
@@ -333,7 +333,20 @@ fn task_counts(tasks: &[TaskOverview]) -> String {
     } else {
         states.join(", ")
     };
-    format!("Tasks: {} total; {states}", tasks.len())
+    format!("Tasks: {total} total; {states}")
+}
+
+/// A project's id is its root path, which the snapshot never holds. The label
+/// is the last path component and a short hash of the whole id, such as
+/// `motif-mcao (p-3fa9c1d2)`, so two folders with one name stay apart.
+fn project_label(project_id: &str) -> String {
+    let name = project_id
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or("project");
+    let hash = Sha256::digest(project_id.as_bytes());
+    let short: String = hash[..4].iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("{} (p-{short})", field(name, TEXT_BYTES))
 }
 
 /// "gates 1 pending, 0 verified, 0 failed" for the gates given.
@@ -417,10 +430,14 @@ mod tests {
     }
 
     fn make_task(store: &SqliteStore, id: &str, objective: &str) {
+        make_task_in(store, "alpha", id, objective);
+    }
+
+    fn make_task_in(store: &SqliteStore, project_id: &str, id: &str, objective: &str) {
         store
             .create(&TaskContract {
                 id: id.into(),
-                project_id: "alpha".into(),
+                project_id: project_id.into(),
                 parent_id: None,
                 objective: objective.into(),
                 kind: TaskKind::Implement,
@@ -506,12 +523,19 @@ mod tests {
     #[test]
     fn project_root_path_is_not_included() {
         let (_directory, store) = store();
-        make_project(&store, "alpha", "/private/root-7731-distinct", json!({}));
+        // A registered project's id is its root path (`projects.register`).
+        let root = "/Users/someone/root-7731-distinct/alpha";
+        make_project(&store, root, root, json!({}));
+        make_task_in(&store, root, "t1", "Objective");
 
         let snapshot = snapshot_for_global(&store);
 
-        assert!(snapshot.contains("Projects (1):\n- alpha\n"));
-        assert!(!snapshot.contains("root-7731-distinct"));
+        let label = project_label(root);
+        assert!(label.starts_with("alpha (p-"), "{label}");
+        assert!(snapshot.contains(&format!("Projects (1):\n- {label}\n")));
+        assert!(snapshot.contains(&format!("project {label} workstream none")));
+        assert!(!snapshot.contains("root-7731-distinct"), "{snapshot}");
+        assert!(!snapshot.contains("/Users/someone"), "{snapshot}");
     }
 
     #[test]
@@ -546,9 +570,10 @@ mod tests {
         let snapshot = snapshot_for_global(&store);
 
         assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
-        assert!(
-            snapshot.contains("- task-199 created project alpha workstream none: Objective 199\n")
-        );
+        assert!(snapshot.contains(&format!(
+            "- task-199 created project {} workstream none: Objective 199\n",
+            project_label("alpha")
+        )));
         assert!(!snapshot.contains("task-000"));
         assert!(snapshot.contains("\n- and 180 more\n"));
     }
@@ -574,6 +599,13 @@ mod tests {
         assert!(snapshot
             .lines()
             .any(|line| line.starts_with("- and ") && line.ends_with(" more")));
+    }
+
+    #[test]
+    fn a_windows_project_path_is_named_by_its_folder() {
+        let label = project_label("C:\\Users\\someone\\beta\\");
+        assert!(label.starts_with("beta (p-"), "{label}");
+        assert_ne!(project_label("/a/beta"), project_label("/b/beta"));
     }
 
     #[test]
@@ -611,7 +643,10 @@ mod tests {
             .find(|line| line.starts_with("- t1 "))
             .unwrap();
         let objective = line
-            .strip_prefix("- t1 created project alpha workstream none: ")
+            .strip_prefix(&format!(
+                "- t1 created project {} workstream none: ",
+                project_label("alpha")
+            ))
             .unwrap();
         assert_eq!(objective, format!("a{}…", "é".repeat(39)));
         assert!(objective.len() <= 80 + "…".len());

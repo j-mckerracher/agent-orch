@@ -1253,9 +1253,11 @@ fn the_agent_gets_the_app_instructions_and_state_apart_from_the_message() {
     );
     assert!(created["result"]["id"].is_string(), "{created}");
 
-    chat.send(&global(), "[fake:echo]", "m-1");
+    // Both agents are installed, so each send names its agent.
+    chat.send_choice(&global(), "[fake:echo]", "m-1", json!({"agent": "codex"}));
     let page = chat.settled(&global());
     assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["runtime"]["name"], "codex", "{page}");
     let echoed = reply(&page);
     assert!(
         echoed.contains("Scope: the global orchestrator."),

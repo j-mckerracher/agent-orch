@@ -1621,6 +1621,29 @@ mod tests {
         let argv = |level| {
             ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None, None).unwrap()
         };
+        for level in [
+            PermissionLevel::Restricted,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+        ] {
+            let plain = argv(level);
+            assert!(!plain.iter().any(|arg| arg == "--append-system-prompt"));
+            let with = ClaudeCodeAdapter::args_for_conversation(
+                level,
+                "hi",
+                Some("rules"),
+                Some("m"),
+                None,
+            )
+            .unwrap();
+            let at = with.len() - 4;
+            assert_eq!(with[..at], plain[..], "{level:?}");
+            assert_eq!(
+                with[at..],
+                ["--append-system-prompt", "rules", "--model", "m"],
+                "{level:?}"
+            );
+        }
         let auto = argv(PermissionLevel::Auto);
         assert_eq!(
             auto[..],
