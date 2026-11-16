@@ -387,6 +387,7 @@ fn start_task(store: &SqliteStore, task_id: &str) -> String {
                 task_id: task_id.into(),
                 attempt_number: 1,
                 state: orchestrator_core::task::AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .expect("record scheduled attempt");

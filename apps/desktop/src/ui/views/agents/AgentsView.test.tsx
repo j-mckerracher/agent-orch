@@ -249,14 +249,53 @@ describe("Agents & Sessions, live mode", () => {
     expect(task.getByRole("button", { name: "Reassign via new attempt" })).toBeInTheDocument();
   });
 
-  it("retries a failed task through tasks.retry", async () => {
+  it("reports an accepted reassign request as a past event", async () => {
     const { fake, user } = await liveView();
     await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
     await user.click(screen.getByRole("button", { name: /t-failed/ }));
-    const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
-    await waitFor(() => expect(retry).toBeEnabled());
-    await user.click(retry);
-    expect(await screen.findByText(/Reassignment accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
+    const reassign = await screen.findByRole("button", { name: "Reassign via new attempt" });
+    await waitFor(() => expect(reassign).toBeEnabled());
+    await user.click(reassign);
+    expect(await screen.findByText("The request for a new attempt was accepted by the daemon.")).toBeInTheDocument();
+    expect(fake.callsTo("tasks.retry")).toHaveLength(1);
+    expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the new-attempt acknowledgement historical when the later task state is failed", async () => {
+    const fake = seeded();
+    fake.stub("tasks.retry", (params: Record<string, unknown>) => {
+      const taskId = String(params.task_id);
+      const queuedAcknowledgement = mkTask(taskId, REPO, {
+        state: "Queued",
+        attempts: [{ id: "attempt-1", task_id: taskId, attempt_number: 1, state: "Pending" }],
+      });
+      const latest = mkTask(taskId, REPO, {
+        state: "Failed",
+        attempts: [1, 2].map((attempt_number) => ({
+          id: `attempt-${attempt_number}`,
+          task_id: taskId,
+          attempt_number,
+          state: "Failed" as const,
+        })),
+      });
+      const index = fake.tasks.findIndex((task) => task.contract.id === taskId);
+      if (index >= 0) fake.tasks[index] = latest;
+      return queuedAcknowledgement;
+    });
+    const { user } = await liveView(fake);
+    await user.click(screen.getByRole("tab", { name: "Failed sessions (0)" }));
+    await user.click(screen.getByRole("button", { name: /t-failed/ }));
+    const reassign = await screen.findByRole("button", { name: "Reassign via new attempt" });
+    await waitFor(() => expect(reassign).toBeEnabled());
+    await user.click(reassign);
+    expect(await screen.findByText("The request for a new attempt was accepted by the daemon.")).toBeInTheDocument();
+    const detail = within(screen.getByRole("complementary", { name: "Selected task / session detail" }));
+    await waitFor(() => expect(detail.getByText("t-failed").parentElement).toHaveTextContent("Failed"));
+    const history = within(detail.getByRole("region", { name: "Attempt history" }));
+    expect(history.getAllByRole("listitem")).toHaveLength(2);
+    expect(history.getAllByRole("listitem")[0]).toHaveTextContent(/Attempt 1 attempt-1.*Failed/);
+    expect(history.getAllByRole("listitem")[1]).toHaveTextContent(/Attempt 2 attempt-2.*Failed/);
+    expect(screen.queryByText(/daemon now records the task as Queued with 1 attempt/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
   });

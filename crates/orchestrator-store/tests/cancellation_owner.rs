@@ -52,6 +52,7 @@ fn running_task(store: &SqliteStore, task_id: &str, register_owner: bool) -> Can
                 task_id: task_id.into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();
@@ -162,6 +163,7 @@ fn retry_owner(store: &SqliteStore, task_id: &str, identity: ProcessIdentity) ->
                 task_id: task_id.into(),
                 attempt_number: 2,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();

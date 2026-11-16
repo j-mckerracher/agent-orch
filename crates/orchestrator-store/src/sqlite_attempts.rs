@@ -24,7 +24,7 @@ impl SqliteStore {
             }
 
             let rows = sqlx::query(
-                "SELECT id, attempt_number, state FROM attempts WHERE task_id = ? ORDER BY attempt_number",
+                "SELECT id, attempt_number, state, failure_reason FROM attempts WHERE task_id = ? ORDER BY attempt_number",
             )
             .bind(&task_id)
             .fetch_all(&pool)
@@ -42,6 +42,7 @@ impl SqliteStore {
                         task_id: task_id.clone(),
                         attempt_number,
                         state: serde_json::from_str(&encoded_state)?,
+                        failure_reason: row.try_get("failure_reason")?,
                     })
                 })
                 .collect()

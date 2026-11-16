@@ -414,6 +414,7 @@ pub async fn run_task(
         task_id: task_id.clone(),
         attempt_number: 1,
         state: AttemptState::Pending,
+        failure_reason: None,
     };
     store.add_attempt(&task_id, &attempt).map_err(|error| {
         format!("cannot record attempt {attempt_id} for task {task_id}: {error}")
@@ -2183,6 +2184,7 @@ mod tests {
                     task_id: task_id.into(),
                     attempt_number: 1,
                     state: AttemptState::Pending,
+                    failure_reason: None,
                 },
             )
             .unwrap();
@@ -3287,6 +3289,7 @@ mod tests {
                     task_id: "task-unowned".into(),
                     attempt_number: 1,
                     state: AttemptState::Pending,
+                    failure_reason: None,
                 },
             )
             .unwrap();

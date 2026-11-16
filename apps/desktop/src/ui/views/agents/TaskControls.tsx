@@ -36,8 +36,8 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
     if (!realRetry) return;
     setBusy(true);
     try {
-      const result = await realRetry.call(sources.retry, ref);
-      setNote(`Reassignment accepted; the daemon now records the task as ${result.state} with ${result.attempts} attempt(s).`);
+      await realRetry.call(sources.retry, ref);
+      setNote("The request for a new attempt was accepted by the daemon.");
       void data.watchTask(row.id);
       void data.refreshAll();
     } catch (error) {

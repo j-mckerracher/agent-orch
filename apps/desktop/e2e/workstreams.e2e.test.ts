@@ -6,7 +6,7 @@ import { DaemonSession } from "../src/daemon/session";
 import { M5_03_CAPABILITIES, type TaskSubmission } from "../src/daemon/types";
 import { createDerivedSurfaces } from "../src/sources/surfaces/derived";
 import type { WorkstreamSource } from "../src/sources/surfaces/types";
-import { NodeConnector, startDaemon, type RunningDaemon } from "./harness";
+import { NodeConnector, noAgentsEnv, startDaemon, type RunningDaemon } from "./harness";
 
 let daemon: RunningDaemon;
 let connector: NodeConnector;
@@ -21,7 +21,7 @@ const submission = (projectId: string, objective: string, dependencies: string[]
   parent_id: null,
   objective,
   kind: "Implement",
-  agent: "e2e-agent",
+  agent: "codex",
   dependencies,
   verification: "None",
   delivery: "LocalReview",
@@ -47,7 +47,7 @@ const read = async () => {
 };
 
 beforeAll(async () => {
-  daemon = await startDaemon();
+  daemon = await startDaemon(noAgentsEnv());
   connector = new NodeConnector(daemon.dataDir);
   const projectId = realpathSync(daemon.repo);
   session = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
@@ -97,8 +97,8 @@ describe("live workstreams adapter over the real daemon", () => {
     expect(stream).toMatchObject({ id: created.id, title: "E2E stream", summary: "Proves the adapter", state: "active", revision: 1 });
     expect(stream!.tasks.map((t) => [t.id, t.objectiveId, t.state, t.agent, t.objective]).sort()).toEqual(
       [
-        [t1, withObjective.id, "Queued", "e2e-agent", "first task"],
-        [t2, null, "Queued", "e2e-agent", "second task"],
+        [t1, withObjective.id, "Queued", "codex", "first task"],
+        [t2, null, "Queued", "codex", "second task"],
       ].sort(),
     );
     expect(stream!.projectIds).toEqual([realpathSync(daemon.repo)]);

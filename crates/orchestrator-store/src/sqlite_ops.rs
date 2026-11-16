@@ -1954,6 +1954,64 @@ impl Store for SqliteStore {
         })
     }
 
+    fn record_attempt_failure(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        failure_reason: &str,
+    ) -> Result<(), StoreError> {
+        validate_task_id(task_id)?;
+        let task_id = task_id.to_owned();
+        let attempt_id = attempt_id.to_owned();
+        let failure_reason = failure_reason.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            current_task_state(&mut transaction, &task_id).await?;
+            let row = sqlx::query("SELECT state FROM attempts WHERE task_id = ? AND id = ?")
+                .bind(&task_id)
+                .bind(&attempt_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .ok_or_else(|| StoreError::NoAttempt {
+                    attempt_id: attempt_id.clone(),
+                    task_id: task_id.clone(),
+                })?;
+            let current: AttemptState = decode(&row.try_get::<String, _>("state")?)?;
+            if current.is_terminal() {
+                return Err(StoreError::TerminalAttempt {
+                    attempt_id,
+                    state: current,
+                });
+            }
+            attempt_transition(current, AttemptState::Failed)?;
+            sqlx::query(
+                "UPDATE attempts SET state = ?, failure_reason = ? WHERE task_id = ? AND id = ?",
+            )
+            .bind(encode(&AttemptState::Failed)?)
+            .bind(&failure_reason)
+            .bind(&task_id)
+            .bind(&attempt_id)
+            .execute(&mut *transaction)
+            .await?;
+            bump_task_version(&mut transaction, &task_id).await?;
+            let payload = serde_json::json!({
+                "attempt_id": &attempt_id,
+                "state": AttemptState::Failed,
+                "failure_reason_available": true,
+            });
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                "attempt.state_changed",
+                &payload,
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         let task_id = task_id.to_owned();
@@ -2091,7 +2149,7 @@ async fn load_record(
         })?;
 
     let attempt_rows = sqlx::query(
-        "SELECT id, attempt_number, state FROM attempts WHERE task_id = ? ORDER BY attempt_number",
+        "SELECT id, attempt_number, state, failure_reason FROM attempts WHERE task_id = ? ORDER BY attempt_number",
     )
     .bind(task_id)
     .fetch_all(&mut **transaction)
@@ -2110,6 +2168,7 @@ async fn load_record(
                     task_id: task_id.to_owned(),
                     attempt_number,
                     state: decode(&row.try_get::<String, _>("state")?)?,
+                    failure_reason: row.try_get("failure_reason")?,
                 })
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
@@ -2245,6 +2304,7 @@ mod tests {
             task_id: "t1".into(),
             attempt_number: 1,
             state: AttemptState::Pending,
+            failure_reason: None,
         }
     }
 

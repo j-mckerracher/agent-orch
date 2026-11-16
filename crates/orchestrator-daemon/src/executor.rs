@@ -43,7 +43,7 @@ use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Error as GitError, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
@@ -484,18 +484,12 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
-        let worktree = Repository::new(Path::new(&task.contract.project_id))
-            .map_err(|error| error.to_string())
-            .and_then(|repository| {
-                std::fs::create_dir_all(&self.config.worktrees_root)
-                    .map_err(|error| error.to_string())?;
-                let root = std::fs::canonicalize(&self.config.worktrees_root)
-                    .map_err(|error| error.to_string())?;
-                let prefix =
-                    BranchPrefix::read(&self.config.data_dir).map_err(|error| error.to_string())?;
-                create_task_worktree(&repository, &task_id, "HEAD", &root, &prefix)
-                    .map_err(|error| error.to_string())
-            });
+        let worktree = Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
+            std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
+            let root = std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
+            let prefix = BranchPrefix::read(&self.config.data_dir)?;
+            create_task_worktree(&repository, &task_id, "HEAD", &root, &prefix)
+        });
         store
             .add_attempt(
                 &task_id,
@@ -504,6 +498,7 @@ impl Inner {
                     task_id: task_id.clone(),
                     attempt_number: number,
                     state: AttemptState::Pending,
+                    failure_reason: None,
                 },
             )
             .map_err(|error| format!("cannot record attempt: {error}"))?;
@@ -519,7 +514,11 @@ impl Inner {
                     .update_attempt_state(&task_id, &job.attempt_id, AttemptState::Running)
                     .map_err(|e| format!("cannot start attempt: {e}"))?;
                 store
-                    .update_attempt_state(&task_id, &job.attempt_id, AttemptState::Failed)
+                    .record_attempt_failure(
+                        &task_id,
+                        &job.attempt_id,
+                        worktree_failure_reason(&error),
+                    )
                     .map_err(|e| format!("cannot fail attempt: {e}"))?;
                 store
                     .transition(&task_id, TaskEvent::ExecutionFailed)
@@ -564,7 +563,11 @@ impl Inner {
                 inner.request_pass();
             });
         if let Err(error) = spawned {
-            fail_before_agent_exit(store, &job);
+            fail_before_agent_exit(
+                store,
+                &job,
+                Some("The daemon could not start the agent supervisor. Check the daemon log for details."),
+            );
             return Err(format!("cannot start supervisor thread: {error}"));
         }
         Ok(())
@@ -617,6 +620,18 @@ fn preserved_work(job: &Job) -> (String, String) {
     (worktree, uncommitted)
 }
 
+/// User-facing worktree failure reasons must never copy paths or raw Git
+/// output from the daemon log into task records.
+fn worktree_failure_reason(error: &GitError) -> &'static str {
+    match error {
+        GitError::InvalidBaseRef { refspec, .. } if refspec == "HEAD" => {
+            "The repository has no commit at HEAD. Create an initial commit in the registered repository, then retry."
+        }
+        GitError::CreationFailed { source, .. } => worktree_failure_reason(source),
+        _ => "The daemon could not prepare a task worktree. Check the daemon log for details, then retry.",
+    }
+}
+
 fn supervise(inner: &Inner, job: Job) {
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         supervise_inner(inner, &job)
@@ -652,7 +667,11 @@ fn supervise_inner(inner: &Inner, job: &Job) {
                 "async_runtime_unavailable",
                 &job.event_fields(&[("error", &error.to_string())]),
             );
-            fail_before_agent_exit(&inner.store, job);
+            fail_before_agent_exit(
+                &inner.store,
+                job,
+                Some("The daemon could not start the agent runtime. Check the daemon log for details."),
+            );
             return;
         }
     };
@@ -810,7 +829,11 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let mut handle = match spawn_agent(inner, job).await {
         Ok(handle) => handle,
         Err(error) => {
-            fail_before_agent_exit(store, job);
+            fail_before_agent_exit(
+                store,
+                job,
+                Some("The daemon could not start the selected agent. Check that its CLI is installed and signed in, then retry; see the daemon log for details."),
+            );
             let (worktree, uncommitted) = preserved_work(job);
             job.diag.error(
                 LOG,
@@ -850,7 +873,11 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     };
     if let Err(message) = identity {
         reap(&mut *handle, job).await;
-        fail_before_agent_exit(store, job);
+        fail_before_agent_exit(
+            store,
+            job,
+            Some("The daemon could not verify the agent process and stopped the run. Check the daemon log for details."),
+        );
         return Err(message);
     }
     store
@@ -1247,26 +1274,33 @@ fn finish(
     }
 }
 
-fn fail_before_agent_exit(store: &SqliteStore, job: &Job) {
-    fail_records(store, job, SessionState::Aborted);
+fn fail_before_agent_exit(store: &SqliteStore, job: &Job, failure_reason: Option<&str>) {
+    fail_records(store, job, SessionState::Aborted, failure_reason);
 }
 
 fn fail_after_agent_exit(store: &SqliteStore, job: &Job) {
-    fail_records(store, job, SessionState::Exited);
+    fail_records(store, job, SessionState::Exited, None);
 }
 
 /// Ends the session, attempt and task of a launch that produced no candidate.
 /// Each write is attempted independently so one refusal cannot hide the rest.
 /// The worktree is left in place and named in the event, so nothing the agent
 /// wrote is discarded.
-fn fail_records(store: &SqliteStore, job: &Job, session: SessionState) {
+fn fail_records(
+    store: &SqliteStore,
+    job: &Job,
+    session: SessionState,
+    failure_reason: Option<&str>,
+) {
+    let failed_attempt = match failure_reason {
+        Some(reason) => store.record_attempt_failure(&job.task_id, &job.attempt_id, reason),
+        None => store.update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::Failed),
+    };
     let results = [
         store
             .update_session_state(&job.task_id, &job.session_id, session)
             .map_err(|error| format!("session: {error}")),
-        store
-            .update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::Failed)
-            .map_err(|error| format!("attempt: {error}")),
+        failed_attempt.map_err(|error| format!("attempt: {error}")),
         store
             .transition(&job.task_id, TaskEvent::ExecutionFailed)
             .map(|_| ())

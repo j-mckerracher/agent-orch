@@ -239,6 +239,10 @@ pub struct Attempt {
     pub task_id: String,
     pub attempt_number: u32,
     pub state: AttemptState,
+    /// A safe, user-facing explanation when the attempt failed. Older task
+    /// records may not carry one; callers must represent that as unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 /// Lifecycle state of one execution attempt.
@@ -584,12 +588,14 @@ mod tests {
             task_id: "t1".into(),
             attempt_number: 1,
             state: AttemptState::Failed,
+            failure_reason: None,
         };
         let retried = Attempt {
             id: "a2".into(),
             task_id: "t1".into(),
             attempt_number: 2,
             state: AttemptState::Pending,
+            failure_reason: None,
         };
         assert_eq!(failed.attempt_number, 1);
         assert_eq!(retried.attempt_number, 2);

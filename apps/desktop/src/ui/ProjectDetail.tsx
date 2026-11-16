@@ -139,6 +139,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             Agent
             <input value={draft.agent} onChange={(e) => set({ agent: e.target.value })} />
           </label>
+          <p className="muted ps-wide">Use the launcher ID: codex or claude-code. Display capitalization is accepted.</p>
           <label>
             Parent task ID (optional)
             <input value={draft.parentId} onChange={(e) => set({ parentId: e.target.value })} />
@@ -193,7 +194,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             {!gate.connected && (
               <span className="muted"> Submission is unavailable while offline; the draft is kept.</span>
             )}
-            <p className="muted">Submitting queues the task. It does not launch an agent.</p>
+            <p className="muted">
+              Submitting queues the task. Eligible queued work may start automatically when the scheduler can run it.
+            </p>
           </div>
           {errors.length > 0 && (
             <ul role="alert" className="ps-steps ps-wide">

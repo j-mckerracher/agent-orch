@@ -101,6 +101,7 @@ fn record_task_stream(store: &SqliteStore) -> Vec<TaskDurableEvent> {
                 task_id: TASK.into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .expect("add attempt");
