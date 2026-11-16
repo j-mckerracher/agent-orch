@@ -174,7 +174,10 @@ export const NODE_SELF_TESTS = { passed: 137 };
 // test files: 1673 tests in 80 files, as measured by `npx vitest run` on the merged tree (CI measured 1668 in 79 files before main's 5).
 // DPES-1106 unverified agent versions (PR #101) adds 8 tests to conversationLive.test.ts: 1681 tests in 80 files, counted by
 // `npx vitest run` on the merged tree and by the desktop-vitest gate in CI run 43965574766.
-export const VITEST = { files: 80, tests: 1681 };
+// The persisted model choice and its coordinator-note rule (DPES-1105) add one file (modelChoice.test.ts) and 36 tests, and
+// remove one test (the old coordinator-note block): 81 files and 1716 tests, as the Windows desktop-vitest gate measured them
+// in CI run 43974286338 (81 passed, 1716 passed). The name list holds the same 1716 titles.
+export const VITEST = { files: 81, tests: 1716 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
