@@ -23,7 +23,8 @@ export type Capability =
   | "review"
   | "workstreams"
   | "conversation_history"
-  | "conversation_selection";
+  | "conversation_selection"
+  | "permission_levels";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -42,6 +43,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "workstreams",
   "conversation_history",
   "conversation_selection",
+  "permission_levels",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -58,6 +60,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "workstreams",
   "conversation_history",
   "conversation_selection",
+  "permission_levels",
 ];
 
 export interface Welcome {
@@ -545,6 +548,9 @@ export interface ConversationWireEntry {
   created_at: string;
 }
 
+/** The permission level a message runs at (DPES-1105). Absent from older daemons; null when no agent launched. */
+export type PermissionLevelWire = "restricted" | "extended" | "auto" | "full";
+
 export interface ConversationWireTurn {
   id: string;
   state: "running" | "completed" | "failed" | "cancelled";
@@ -553,6 +559,9 @@ export interface ConversationWireTurn {
   reply_bytes: number;
   created_at: string;
   updated_at: string;
+  /** The level the daemon recorded the agent ran with. Null before launch and for turns from before levels. */
+  permission_level?: PermissionLevelWire | null;
+  permission_profile?: string | null;
 }
 
 /**
