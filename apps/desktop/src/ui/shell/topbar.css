@@ -54,6 +54,17 @@
   font-size: 12px;
 }
 
+.top-usage-token-warning {
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  background: var(--soft);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .top-usage-info {
   position: relative;
   display: inline-block;

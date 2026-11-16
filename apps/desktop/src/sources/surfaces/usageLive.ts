@@ -25,6 +25,7 @@ import type {
 } from "../../daemon/usageWire";
 import { measured, notOk, observation, okResult, unsupportedValue } from "./result";
 import type { Measured, Provenance, UsageCoverage, UsageSource, UsageSummary } from "./types";
+import { parseTokenWarnings } from "./usageTokenWarnings";
 
 const MAX_WINDOW_MS = 26 * 3_600_000;
 const DECIMAL = /^\d+(\.\d+)?$/;
@@ -141,6 +142,7 @@ export function parseUsageSummary(value: unknown): UsageSummaryWire {
   }
   if (!Array.isArray(raw.providers)) return malformed("providers");
   const table = priceTable(raw.price_table);
+  const tokenWarnings = parseTokenWarnings(raw.token_warnings);
   return {
     window: {
       start_unix_ms: start,
@@ -154,6 +156,7 @@ export function parseUsageSummary(value: unknown): UsageSummaryWire {
       provider: text((entry as { provider?: unknown } | null)?.provider, "provider name"),
     })),
     ...(table ? { price_table: table } : {}),
+    ...(tokenWarnings ? { token_warnings: tokenWarnings } : {}),
   };
 }
 
@@ -225,6 +228,7 @@ export function mapUsageSummary(wire: UsageSummaryWire, nowMs: number): UsageSum
     ...(estimateCoverage ? { estimateCoverage } : {}),
     ...(knownCostCoverage ? { knownCostCoverage } : {}),
     ...(table ? { priceTable: { version: table.version, basis: table.basis, ...(table.source ? { source: table.source } : {}) } } : {}),
+    ...(wire.token_warnings ? { tokenWarnings: wire.token_warnings } : {}),
     reported: figure(
       reported.costs,
       currency,

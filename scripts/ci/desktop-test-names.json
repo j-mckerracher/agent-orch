@@ -75,7 +75,8 @@
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
     "src/ui/views/workstreams/evidence.test.ts",
-    "src/ui/views/workstreams/model.test.ts"
+    "src/ui/views/workstreams/model.test.ts",
+    "src/sources/surfaces/usageTokenWarnings.test.ts"
   ],
   "tests": [
     "src/daemon/agentDisplayNames.test.ts :: agentDisplayName (DPES-1105) labels each daemon agent id with its product name",
@@ -1653,7 +1654,7 @@
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data exposes a failed AppData refresh when task rows use retained data",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data keeps the header count equal to the tree groups and the view list",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data shows every objective with its gate states and evidence task",
-    "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data shows worker rows as adapter · state under the open group only",
+    "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data shows worker rows as adapter \u00b7 state under the open group only",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data opens the existing task detail route from a tree row and a table row",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data derives the table: objective link, state, assignment and required evidence",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx :: live data selecting another workstream swaps the table and the objectives",
@@ -1715,6 +1716,16 @@
     "src/ui/views/workstreams/model.test.ts :: layoutGraph draws nothing when no dependency is known and ignores dependencies outside the workstream",
     "src/ui/views/workstreams/model.test.ts :: layoutGraph survives a cycle",
     "src/ui/views/workstreams/model.test.ts :: layoutGraph caps the drawing and reports what it left out",
-    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers"
+    "src/ui/views/workstreams/model.test.ts :: textDependencies lists in-workstream predecessors, external ones and consumers",
+    "src/sources/surfaces/usageLive.test.tsx :: usage pill with the live adapter shows a token-only overrun, keeps refreshes unique and clears at equality",
+    "src/sources/surfaces/usageLive.test.tsx :: usage pill with the live adapter discloses broken warning data while retaining the reported usage figure",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary accepts an older daemon without warnings and preserves exact large counters",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 0)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 1)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 2)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 3)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 4)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 5)",
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary keeps unavailable counts unknown and refuses duplicate or excessive rules"
   ]
 }

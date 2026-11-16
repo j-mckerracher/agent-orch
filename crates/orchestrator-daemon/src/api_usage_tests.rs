@@ -120,6 +120,92 @@ fn provider<'a>(summary: &'a Value, name: &str) -> &'a Value {
 }
 
 #[test]
+fn token_warning_uses_deduplicated_receipts_and_the_requested_day() {
+    let (directory, api) = new_api();
+    task_with_sessions(&api, &[("s-codex", "codex"), ("s-silent", "codex")]);
+    std::fs::write(
+        directory.path().join("usage-token-warnings.json"),
+        r#"{"schema_version":1,"rules":[
+          {"provider":"codex","metric":"output_tokens","limit":20},
+          {"provider":"codex","metric":"cache_read_tokens","limit":5},
+          {"provider":"github-copilot","metric":"input_tokens","limit":10}
+        ]}"#,
+    )
+    .unwrap();
+    let now = now_ms();
+    let mut row = receipt("s-codex", "turn:1", now);
+    api.store.record_usage_receipt(&row).unwrap();
+    let first = api.usage_summary(around_now()).unwrap();
+    assert_eq!(first["token_warnings"]["state"], "ok");
+    let rules = &first["token_warnings"]["rules"];
+    assert_eq!(rules[0]["observed"], "20");
+    assert_eq!(rules[0]["exceeded"], false, "equality does not exceed");
+    assert!(
+        rules[1]["observed"].is_null(),
+        "missing cache count stays unknown"
+    );
+    assert!(rules[1]["exceeded"].is_null());
+    assert!(rules[2]["observed"].is_null(), "silent harness is not zero");
+    assert!(rules[2]["exceeded"].is_null());
+    api.store.record_usage_receipt(&row).unwrap();
+    assert_eq!(
+        api.usage_summary(around_now()).unwrap()["token_warnings"],
+        first["token_warnings"]
+    );
+
+    row.output_tokens = Some(21);
+    row.reported_at_ms += 1;
+    api.store.record_usage_receipt(&row).unwrap();
+    let above = api.usage_summary(around_now()).unwrap();
+    assert_eq!(above["token_warnings"]["rules"][0]["observed"], "21");
+    assert_eq!(above["token_warnings"]["rules"][0]["exceeded"], true);
+    assert_eq!(provider(&above, "codex")["token_status"], "partial");
+    assert_eq!(provider(&above, "codex")["reported"]["costs"], json!([]));
+
+    row.output_tokens = Some(19);
+    row.reported_at_ms += HOUR;
+    api.store.record_usage_receipt(&row).unwrap();
+    assert_eq!(
+        api.usage_summary(around_now()).unwrap()["token_warnings"]["rules"][0]["observed"],
+        "19"
+    );
+    assert_eq!(
+        api.usage_summary(around_now()).unwrap()["token_warnings"]["rules"][0]["exceeded"],
+        false
+    );
+    let tomorrow = json!({
+        "timezone": "UTC", "utc_offset_seconds": 0,
+        "window_start_unix_ms": now + HOUR,
+        "window_end_unix_ms": now + 25 * HOUR,
+    });
+    let next = api.usage_summary(tomorrow).unwrap();
+    assert!(next["token_warnings"]["rules"][0]["observed"].is_null());
+    assert!(next["token_warnings"]["rules"][0]["exceeded"].is_null());
+}
+
+#[test]
+fn invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts() {
+    let (directory, api) = new_api();
+    task_with_sessions(&api, &[("s-codex", "codex")]);
+    std::fs::write(
+        directory.path().join("usage-token-warnings.json"),
+        "invalid",
+    )
+    .unwrap();
+    api.store
+        .record_usage_receipt(&receipt("s-codex", "turn:1", now_ms()))
+        .unwrap();
+    let summary = api.usage_summary(around_now()).unwrap();
+    assert_eq!(summary["token_warnings"]["state"], "invalid_configuration");
+    assert_eq!(provider(&summary, "codex")["reported"]["output_tokens"], 20);
+    std::fs::remove_file(directory.path().join("usage-token-warnings.json")).unwrap();
+    assert_eq!(
+        api.usage_summary(around_now()).unwrap()["token_warnings"]["state"],
+        "off"
+    );
+}
+
+#[test]
 fn silent_provider_is_unknown_and_never_zero() {
     let (_directory, api) = new_api();
     task_with_sessions(
