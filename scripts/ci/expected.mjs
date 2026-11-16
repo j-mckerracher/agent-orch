@@ -126,7 +126,9 @@ export const NODE_SELF_TESTS = { passed: 112 };
 // desktop gate measured them in CI run 43734333632.
 // The permission level control (DPES-1105) adds 3 files (permissionLevel, PermissionLevelPicker and
 // WorkspaceView.permission tests) and 46 tests. Counted from a full `vitest run --reporter=json` of apps/desktop: 76 files and 1626 tests.
-export const VITEST = { files: 76, tests: 1626 };
+// The ambient background is on by default (DPES-1105): 9 tests replace 5, so 1626 becomes 1630 (same 76 files), as a full
+// `vitest run --reporter=json` of apps/desktop measured them.
+export const VITEST = { files: 76, tests: 1630 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
