@@ -166,9 +166,22 @@ function readerProgram() {
   return runner;
 }
 
+/**
+ * Removes a temp directory. Windows can keep a file in it busy for a moment after the process that ran
+ * it exited, so the delete retries. A directory still busy after the retries is a warning, not a failure:
+ * a leftover temp directory must not fail a test that passed.
+ */
+function removeTemp(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`warning: could not remove temp directory ${dir} (${error.code ?? error.message}); left in place`);
+  }
+}
+
 const extracted = [];
 after(() => {
-  for (const dir of extracted) rmSync(dir, { recursive: true, force: true });
+  for (const dir of extracted) removeTemp(dir);
 });
 
 function requireSupportedNode() {
@@ -219,7 +232,7 @@ test("the pinned reader reports the synthetic claude totals, with unpriced usage
     assert.equal(claude.unpricedModels[0].tokens, 770, "reader: its tokens are reported");
     assert.ok(label.length > 0);
   } finally {
-    rmSync(home, { recursive: true, force: true });
+    removeTemp(home);
   }
 });
 
@@ -239,7 +252,7 @@ test("the pinned reader reports codex as an estimate and copilot with no calls o
     assert.equal(copilot.overview.calls, 0, "reader: no Copilot calls on a machine without Copilot data");
     assert.equal(copilot.overview.cost, 0, "reader: no calls means no cost figure");
   } finally {
-    rmSync(home, { recursive: true, force: true });
+    removeTemp(home);
   }
 });
 

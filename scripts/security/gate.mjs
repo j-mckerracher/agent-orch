@@ -90,7 +90,7 @@ export const install = async (tool, dest) => {
   // Windows: System32 bsdtar reads zip; a Git-for-Windows GNU tar earlier on PATH does not.
   const tar = process.platform === "win32" ? join(process.env.SYSTEMROOT ?? "C:\\Windows", "System32", "tar.exe") : "tar";
   const extracted = spawnSync(tar, ["-xf", archivePath, "-C", toolDir]);
-  rmSync(archivePath, { force: true });
+  rmSync(archivePath, { force: true, maxRetries: 10, retryDelay: 200 });
   if (extracted.status !== 0) throw new GateError(`${tool} extract failed`);
   const bin = join(toolDir, pin.bin + EXE);
   if (!existsSync(bin)) throw new GateError(`${tool} binary missing after extract`);
