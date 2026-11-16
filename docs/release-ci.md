@@ -1,9 +1,9 @@
 # Release CI (M6-02)
 
 Native macOS and Windows gates, dependency audits, and signed or unsigned release builds on
-GitHub Actions. A `v*` tag also publishes its GitHub release (see
-[Publishing a release](#publishing-a-release)). Versioning and the maintainer steps that cut a
-release tag are in [RELEASE.md](RELEASE.md).
+GitHub Actions. A merged release pull request, opened by release-please, creates a `v*` tag, and
+the tag's run publishes its GitHub release (see [Publishing a release](#publishing-a-release)).
+Versioning and the steps to release are in [RELEASE.md](RELEASE.md).
 
 ## Workflows
 
@@ -11,13 +11,16 @@ release tag are in [RELEASE.md](RELEASE.md).
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
 | `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --audit-level=high`. |
-| `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads each build's artifacts. For a tag only, the `publish` job creates the GitHub release (see [Publishing a release](#publishing-a-release)). |
+| `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`; manual; dispatched by `release-please.yml` | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads each build's artifacts. For a `v*` tag with `publish` set (or a tag push), the `publish` job publishes the GitHub release (see [Publishing a release](#publishing-a-release)). |
+| `.github/workflows/release-please.yml` | `ubuntu-24.04` | push to `main` | Opens or updates the release pull request. When a release pull request has merged, creates the annotated `v*` tag and dispatches `release.yml` on it with `publish=true`. Publishes nothing itself (see [RELEASE.md](RELEASE.md)). |
 
 Every third-party action is pinned to a commit SHA. Workflows set top-level `permissions: {}`, and
-each job grants only `contents: read`, except `publish` in `release.yml`, which grants
-`contents: write` to create the release. Secrets are mapped only into the `Package` step of
-`release.yml`. `ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a
-scheduled, `main` or release run always completes.
+each job grants only what it uses: `contents: read` for the builds, `contents: write` for `publish`
+in `release.yml` (it publishes the release), `contents`, `issues` and `pull-requests: write` for the
+release-please job, and `actions: write` plus `contents: write` for the job in `release-please.yml`
+that tags and starts the release. Secrets are mapped only into the `Package` step of `release.yml`.
+`ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a scheduled, `main` or
+release run always completes.
 
 ## Gates
 
@@ -338,15 +341,15 @@ The GitHub environment `release` gates the build jobs and the `publish` job, so 
 tag, even while releases are unsigned. Signing secrets, once added, also live there. Configure:
 
 - **Deployment branches and tags**: select *Selected branches and tags* and allow only the tag
-  pattern `v*` (add `main` only if manual signed runs from `main` are wanted). An environment that
-  does not exist is created on first use **without protection**, so any branch could then run
-  `workflow_dispatch` and read the secrets; the restriction is the control, the workflow cannot
-  enforce it.
-- **Required reviewers**: add at least one, so a tag push waits for approval before the build jobs run. The
-  `publish` job uses the same environment, so it waits for a second approval once both builds pass, and that
-  approval is what makes the release public (see [Publishing a release](#publishing-a-release)).
-- **Tag protection**: add a repository ruleset that restricts who can create or delete `v*` tags;
-  a pushed tag is what starts a release.
+  pattern `v*`. The release-please flow needs no branch: its run is dispatched on the tag, so the
+  build and publish jobs see a tag ref. An environment that does not exist is created on first use
+  **without protection**, so any branch could then run `workflow_dispatch` and read the secrets; the
+  restriction is the control, the workflow cannot enforce it.
+- **Required reviewers**: none today. A release run therefore builds and publishes without an
+  approval once its tag exists. Add reviewers only if an approval must gate the release; a required
+  reviewer holds the release-please run at the build job until someone approves it.
+- **Tag protection**: no tag ruleset exists today. A ruleset that restricts `v*` tag creation must
+  allow the `github-actions[bot]` actor, or the release-please job cannot create the tag.
 - Keep the secrets in the environment only, not at repository or organization level.
 
 | Platform | Signing | Notarization |
@@ -371,10 +374,22 @@ anything: only the PowerShell call that imports the certificate receives the pas
 
 ## Publishing a release
 
-A `v*` tag push runs `release.yml` through to the `publish` job. The job runs only for a tag push, and
-only after both platform builds passed, signed or unsigned. It uses the `release` environment, so it
-waits for approval there (see [Release builds and signing](#release-builds-and-signing)). It holds no
-signing secrets.
+The `publish` job runs for a `v*` tag, and only after both platform builds passed, signed or unsigned.
+It runs for a tag push, or for a `release.yml` run on a tag that set `publish`. A run on a branch never
+reaches it, and neither does a manual run without `publish`. The job uses the `release` environment (see
+[Release builds and signing](#release-builds-and-signing)) and holds no signing secrets.
+
+A release starts in one of two ways:
+
+- **From a merged release pull request (the normal path).** release-please makes a draft release for the
+  new version when its pull request merges. `release-please.yml` then creates the annotated tag at the
+  merge commit and dispatches `release.yml` on that tag with `publish=true`. The run's ref is the tag,
+  so the release environment's `v*` rule applies to it, and `GITHUB_REF_TYPE` is `tag` for the signing
+  and version checks.
+- **From a tag push (manual).** A person pushes an annotated `v*` tag. No draft exists, so the job
+  creates one.
+
+The job then does the following:
 
 1. Check out the tag and read the four version sources: `apps/desktop/src-tauri/tauri.conf.json`,
    `apps/desktop/package.json`, the `[workspace.package]` table of `Cargo.toml` and the `[package]`
@@ -383,20 +398,23 @@ signing secrets.
    macOS and one Windows build of that version, from one commit, with one installer each. Each installer
    must match the sha256 its build recorded.
 3. Write `SHA256SUMS` and the release notes (`scripts/release/publish.mjs`, unit-tested by
-   `scripts/release/publish.test.mjs`).
-4. Run `gh release create` with `--verify-tag`, so the tag must already be on the remote. It attaches the
-   installers and `SHA256SUMS`. The token reaches only this step.
+   `scripts/release/publish.test.mjs`). The notes carry the version's section of `docs/changelog.md`.
+   The script fails if that file has no section for the version.
+4. In the `Publish the GitHub release` step, the only step that sees the token: create the release as a
+   draft if none exists (`--verify-tag`), upload the installers and `SHA256SUMS`, then publish it with
+   `gh release edit --draft=false --verify-tag`. The installers are attached before the release is public.
 
 The release is named after the tag. Its assets are the two installers and `SHA256SUMS`, named
 `MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.zip` and `MCAO-X.Y.Z-windows-x64-<signed|unsigned>-setup.exe`.
 
 While releases are unsigned (the current mode), every release is a prerelease. Its notes open with the
-unsigned warning and the per-system install steps, then list the installers, the commit and how to check a
+unsigned warning, then the version's changes, then the installers, the commit and how to check a
 download (see [Unsigned releases](#unsigned-releases)). A release with only signed installers is not a
 prerelease, and its notes carry no warning.
 
-A failed check stops the job before anything is created. If `gh release create` fails after it has
-created the release, delete that release with `gh release delete <tag> --yes` (the tag is kept), then
+A failed check stops the job before anything is published, and a draft stays unpublished. To retry
+after a fix to the workflow, re-run the job from the run page. If a release was published by mistake
+and nobody has downloaded it, delete it with `gh release delete <tag> --yes` (the tag is kept), then
 re-run the job.
 
 ## Unsigned releases
@@ -404,9 +422,8 @@ re-run the job.
 Releases are unsigned today. No signing secrets are set in the `release` environment, so the
 installers are not code-signed or notarized. This is the current mode, not an exception.
 
-- The repository variable `ALLOW_UNSIGNED_RELEASE` is `true`. The coordinator sets it once the PR that
-  adds the publish job merges; maintainers do not set it per release. Without it, a `v*` tag build fails
-  at the signing check, on purpose.
+- The repository variable `ALLOW_UNSIGNED_RELEASE` is `true`, set once for the repository; maintainers do
+  not set it per release. Without it, a `v*` tag build fails at the signing check, on purpose.
 - The variable is repository-wide. While it is `true`, any tag build with no signing secrets ships
   unsigned: labelled `unsigned`, and a prerelease. If the secrets are ever removed, set the variable to
   `false` to get the failure back.
@@ -517,9 +534,12 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 - the Apple and Windows signing, notarization and timestamp paths with real certificates;
 - artifact upload, `environment: release` behavior, and wall-clock time against the 180-minute
   and 120-minute limits;
-- the `publish` job on a real tag: the download of both builds, the version check, `gh release create`,
-  the prerelease flag and the release assets. A manual run skips that job, so the first tag push is its
-  first real run;
+- the `publish` job on a real tag: the download of both builds, the version check, the draft and upload,
+  the publish step, the prerelease flag and the release assets. A branch run skips that job, so the first
+  `v*` tag run (from a merged release pull request, or a tag push) is its first real run;
+- the `release-please.yml` path end to end: the release pull request, the annotated tag, and the dispatch
+  of `release.yml` on the tag, which depends on the `release` environment accepting a tag-ref run from a
+  token-created dispatch;
 - that reusable-workflow `workflow_call` composition in `release.yml` resolves on the default
   branch.
 
