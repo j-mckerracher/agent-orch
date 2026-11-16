@@ -302,6 +302,7 @@ fn fixture() -> (Fixture, Vec<Expected>) {
         task_id: "t-running".to_owned(),
         attempt_number: 1,
         state: AttemptState::Pending,
+        failure_reason: None,
     };
     store.add_attempt("t-running", &attempt).unwrap();
     store

@@ -5,7 +5,7 @@ import { DaemonApi } from "../src/daemon/api";
 import { DaemonSession } from "../src/daemon/session";
 import { M5_03_CAPABILITIES, type TaskSubmission } from "../src/daemon/types";
 import { createDerivedSurfaces } from "../src/sources/surfaces/derived";
-import { NodeConnector, startDaemon, type RunningDaemon } from "./harness";
+import { NodeConnector, noAgentsEnv, startDaemon, type RunningDaemon } from "./harness";
 
 let daemon: RunningDaemon;
 let connector: NodeConnector;
@@ -16,7 +16,7 @@ const submission = (objective: string, dependencies: string[] = []): TaskSubmiss
   parent_id: null,
   objective,
   kind: "Implement",
-  agent: "e2e-agent",
+  agent: "codex",
   dependencies,
   verification: "None",
   delivery: "LocalReview",
@@ -36,7 +36,7 @@ async function until<T>(read: () => T | undefined | false, label: string, ms = 8
 }
 
 beforeAll(async () => {
-  daemon = await startDaemon();
+  daemon = await startDaemon(noAgentsEnv());
   connector = new NodeConnector(daemon.dataDir);
   projectId = realpathSync(daemon.repo);
 });
