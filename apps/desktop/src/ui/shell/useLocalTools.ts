@@ -4,6 +4,8 @@ import { useServices, useStore } from "../services";
 
 /** The daemon answers from its cache, so re-reading this often shows a first answer or a finished refresh soon. */
 export const LOCAL_TOOLS_POLL_MS = 15_000;
+/** While the reader is starting or running, re-read often so its figures appear soon after turning the opt-in on. */
+export const LOCAL_TOOLS_CHECKING_POLL_MS = 1_000;
 
 export interface LocalToolsState {
   /** Null until the first read settles. */
@@ -37,19 +39,23 @@ export function useLocalTools(source: LocalToolsSource): LocalToolsState {
     setResult(value);
   }, []);
 
+  const checking =
+    result?.status === "ok" && result.data.enabled && (result.data.reader.state === "not_started" || result.data.refreshing);
+  const pollMs = checking ? LOCAL_TOOLS_CHECKING_POLL_MS : LOCAL_TOOLS_POLL_MS;
+
   useEffect(() => {
     const load = () => {
       const seq = ++requests.current.started;
       void source.local().then((value) => settle(seq, value));
     };
     load();
-    const timer = setInterval(load, LOCAL_TOOLS_POLL_MS);
+    const timer = setInterval(load, pollMs);
     window.addEventListener("focus", load);
     return () => {
       clearInterval(timer);
       window.removeEventListener("focus", load);
     };
-  }, [source, generation, status, settle]);
+  }, [source, generation, status, settle, pollMs]);
 
   /** A failed change or refresh is reported in words, and the figures shown are the daemon's current answer. */
   const exchange = useCallback(
