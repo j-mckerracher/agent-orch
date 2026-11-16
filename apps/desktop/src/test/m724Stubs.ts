@@ -17,10 +17,10 @@ export interface ConversationStub {
   entries: ConversationWireEntry[];
   turn: ConversationWireTurn | null;
   outcome: Outcome;
-  finishRunning(code?: string | null): void;
+  finishRunning(code?: string | null, reply?: string): void;
 }
 
-/** A daemon-shaped Global conversation: send records a turn, get pages the log, cancel ends a running turn. */
+/** A daemon-shaped live conversation: send records a turn, get pages the log, cancel ends a running turn. */
 export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_unavailable"): ConversationStub {
   let seq = 0;
   let turns = 0;
@@ -28,9 +28,10 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
     entries: [],
     turn: null,
     outcome,
-    finishRunning(code = null) {
+    finishRunning(code = null, reply) {
       if (!this.turn || this.turn.state !== "running") return;
       const id = this.turn.id;
+      if (reply !== undefined) this.entries.push(entry(id, "reply_chunk", "orchestrator", reply, null, `chunk:${seq}`));
       this.entries.push(
         code === null
           ? entry(id, "turn_completed", "system", "", null, "end")
@@ -76,14 +77,14 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
       state.entries.push(entry(id, "reply_chunk", "orchestrator", "Hello from the runtime.", null, "chunk:0"));
       state.finishRunning(null);
     }
-    return { authority: "none", target: GLOBAL, entry: sent, turn: state.turn, epoch: "epoch-1" };
+    return { authority: "none", target: conversationTarget(params), entry: sent, turn: state.turn, epoch: "epoch-1" };
   });
   fake.stub("conversations.get", (params: Record<string, unknown>) => {
     const after = typeof params.after_sequence === "number" ? params.after_sequence : 0;
     const entries = state.entries.filter((item) => item.sequence > after);
     return {
       authority: "none",
-      target: GLOBAL,
+      target: conversationTarget(params),
       entries,
       more: false,
       next_after_sequence: seq,
@@ -92,7 +93,7 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
       epoch: "epoch-1",
     };
   });
-  fake.stub("conversations.cancel", () => {
+  fake.stub("conversations.cancel", (params: Record<string, unknown>) => {
     const running = state.turn?.state === "running";
     if (state.turn && running) {
       state.entries.push(entry(state.turn.id, "turn_cancelled", "system", "", null, "end"));
@@ -100,13 +101,24 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
     }
     return {
       authority: "none",
-      target: GLOBAL,
+      target: conversationTarget(params),
       turn: state.turn,
       cancel_applied: running,
       epoch: "epoch-1",
     };
   });
   return state;
+}
+
+function conversationTarget(params: Record<string, unknown>): ConversationWireTarget {
+  const target = params.target;
+  if (typeof target !== "object" || target === null) return GLOBAL;
+  const candidate = target as Partial<ConversationWireTarget>;
+  if (candidate.kind === "global") return GLOBAL;
+  if (candidate.kind === "workstream" && typeof candidate.workstream_id === "string") {
+    return { kind: "workstream", workstream_id: candidate.workstream_id };
+  }
+  return GLOBAL;
 }
 
 export const CODEX_CATALOG: AgentCatalogEntry = {

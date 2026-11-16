@@ -548,6 +548,7 @@ fn seed_interrupted_run(store: &SqliteStore, fixture: &Fixture, task_id: &str, p
                 task_id: task_id.into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();
@@ -769,6 +770,86 @@ fn launch_failure_is_reported_without_leaking_the_credential_in_the_program_path
     for line in diag.lines() {
         assert!(!line.contains("SECRETVALUE"), "credential leaked: {line}");
     }
+    api.shutdown();
+}
+
+#[test]
+fn launch_failures_are_stored_on_their_attempt_and_survive_retry() {
+    let fixture = Fixture::new();
+    let empty_repo = fixture.root.path().join("empty-repo");
+    fs::create_dir_all(&empty_repo).unwrap();
+    run_git(&empty_repo, &["init", "--initial-branch=main"]);
+    let project_id = fs::canonicalize(&empty_repo).unwrap().display().to_string();
+
+    let data = fixture.data();
+    let store = SqliteStore::new(&data.join("store.sqlite")).unwrap();
+    store
+        .register_project(&Project {
+            id: project_id.clone(),
+            root_path: project_id.clone(),
+            settings: json!({}),
+        })
+        .unwrap();
+    drop(store);
+    let missing_agent = fixture.root.path().join("missing-codex");
+    let api = fixture.api_with(&missing_agent, |_| {});
+    let submitted = api
+        .dispatch(
+            "tasks.submit",
+            json!({
+                "idempotency_key": "empty-head-launch",
+                "contract": {
+                    "project_id": project_id,
+                    "parent_id": null,
+                    "objective": "Fail before launching in an empty repository",
+                    "kind": "Implement",
+                    "agent": "codex",
+                    "dependencies": [],
+                    "verification": "None",
+                    "delivery": "ReportOnly",
+                    "autonomy": "WorkspaceWrites",
+                    "max_retries": 1,
+                    "max_repairs": 0
+                }
+            }),
+        )
+        .unwrap();
+    let task_id = submitted["contract"]["id"].as_str().unwrap();
+    let first = wait_state(&api, task_id, "Failed");
+    assert_eq!(
+        first["attempts"][0]["failure_reason"],
+        "The repository has no commit at HEAD. Create an initial commit in the registered repository, then retry."
+    );
+    assert_eq!(first["sessions"], json!([]));
+
+    run_git(&empty_repo, &["config", "user.name", "executor test"]);
+    run_git(
+        &empty_repo,
+        &["config", "user.email", "executor@example.invalid"],
+    );
+    fs::write(empty_repo.join("initial.txt"), "initial\n").unwrap();
+    run_git(&empty_repo, &["add", "initial.txt"]);
+    run_git(&empty_repo, &["commit", "-m", "initial"]);
+
+    api.dispatch(
+        "tasks.retry",
+        json!({"task_id": task_id, "idempotency_key": "empty-head-retry"}),
+    )
+    .unwrap();
+    wait_until("second launch failure", || {
+        let record = task(&api, task_id);
+        record["state"] == "Failed" && record["attempts"].as_array().unwrap().len() == 2
+    });
+    let retried = task(&api, task_id);
+    let attempts = retried["attempts"].as_array().unwrap();
+    assert_eq!(attempts[0]["state"], "Failed");
+    assert_eq!(attempts[1]["state"], "Failed");
+    assert_eq!(
+        attempts[1]["failure_reason"],
+        "The daemon could not start the selected agent. Check that its CLI is installed and signed in, then retry; see the daemon log for details."
+    );
+    assert_ne!(attempts[0]["failure_reason"], attempts[1]["failure_reason"]);
+    assert_eq!(retried["sessions"][0]["attempt_id"], attempts[1]["id"]);
     api.shutdown();
 }
 

@@ -98,6 +98,11 @@ body:has(.shell) {
     --shell-sidebar-col: 0px;
   }
 
+  /* Keep the connection disclosure clear of the expand button at the collapsed sidebar edge. */
+  .shell-body[data-sidebar-collapsed] > .shell-strip .strip.conn-strip {
+    padding-left: 36px;
+  }
+
   .shell-body[data-sidebar-collapsed] .shell-sidebar {
     visibility: hidden;
     overflow: hidden;

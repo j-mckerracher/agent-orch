@@ -15,6 +15,78 @@ async function openFixture(page: Page, width: number) {
   await expect(page.getByTestId("fixture-banner")).toBeVisible();
 }
 
+async function expectSidebarAndConnectionControlsSeparate(page: Page): Promise<void> {
+  const geometry = await page.evaluate(() => {
+    const bounds = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing control: ${selector}`);
+      const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+      return { left, right, top, bottom, width, height };
+    };
+    const sidebar = bounds(".shell-splitter-toggle");
+    const connection = bounds(".conn-toggle");
+    return {
+      sidebar,
+      connection,
+      overlap:
+        sidebar.left < connection.right &&
+        sidebar.right > connection.left &&
+        sidebar.top < connection.bottom &&
+        sidebar.bottom > connection.top,
+    };
+  });
+
+  expect(geometry.sidebar.width).toBeGreaterThan(0);
+  expect(geometry.connection.width).toBeGreaterThan(0);
+  expect(geometry.overlap, JSON.stringify(geometry)).toBe(false);
+}
+
+test("sidebar and connection controls stay separate and independent", async ({ page }) => {
+  for (const width of [761, 960, 961, 1150, 1151, 1280]) {
+    await openFixture(page, width);
+    const body = page.locator(".shell-body");
+    const sidebarToggle = page.getByTestId("shell-sidebar-toggle");
+    const connectionToggle = page.getByTestId("connection-toggle");
+
+    await expect(sidebarToggle).toBeVisible();
+    await expect(connectionToggle).toBeVisible();
+    await expect(sidebarToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "true");
+    await expectSidebarAndConnectionControlsSeparate(page);
+
+    await connectionToggle.click();
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(sidebarToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(body).not.toHaveAttribute("data-sidebar-collapsed");
+
+    await sidebarToggle.click();
+    await expect(body).toHaveAttribute("data-sidebar-collapsed");
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "false");
+    await expectSidebarAndConnectionControlsSeparate(page);
+
+    await connectionToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(body).toHaveAttribute("data-sidebar-collapsed");
+
+    await sidebarToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(body).not.toHaveAttribute("data-sidebar-collapsed");
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "true");
+
+    await connectionToggle.click();
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(sidebarToggle).toHaveAttribute("aria-expanded", "true");
+    await page.getByRole("navigation", { name: "Primary views" })
+      .getByRole("link", { name: /Agents & Sessions/ })
+      .click();
+    await expect(page).toHaveURL(/#\/agents$/);
+    await expect(page.getByTestId("shell-sidebar")).toBeVisible();
+    await connectionToggle.click();
+    await expect(connectionToggle).toHaveAttribute("aria-expanded", "true");
+  }
+});
+
 test("System Usage stays reachable and unclipped in the activity popover at 960 CSS px", async ({ page }) => {
   await openFixture(page, viewport.width);
 

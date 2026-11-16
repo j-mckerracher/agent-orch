@@ -20,6 +20,7 @@ import { ModelPicker } from "./ModelPicker";
 import { PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
+import { formatAt } from "./time";
 import { useRetained } from "./useRetained";
 import "./workspace.css";
 
@@ -311,6 +312,7 @@ function Conversation({
     key: string;
     notice: string | null;
     error: DaemonError | null;
+    turnId?: string;
     action?: string;
   } | null>(null);
   const notice = feedback?.key === option.key ? feedback.notice : null;
@@ -334,6 +336,20 @@ function Conversation({
   // The daemon has no push stream: read again while the latest turn is still running.
   const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
   const running = live && turn?.state === "running";
+  useEffect(() => {
+    if (turn?.state === "running") return;
+    setFeedback((current) => {
+      if (
+        current?.key !== option.key ||
+        current.turnId !== turn?.id ||
+        current.notice !== "Recorded by the daemon. Waiting for the orchestrator's reply."
+      ) {
+        return current;
+      }
+      // The transcript carries the terminal reply, failure, or cancellation state.
+      return { ...current, notice: null };
+    });
+  }, [option.key, turn?.id, turn?.state]);
   useEffect(() => {
     if (!running) return;
     const timer = setTimeout(() => setNonce((value) => value + 1), POLL_MS);
@@ -377,7 +393,7 @@ function Conversation({
         onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
       } else {
-        setFeedback({ key, notice: receipt.notice, error: null });
+        setFeedback({ key, notice: receipt.notice, error: null, ...(receipt.turn ? { turnId: receipt.turn.id } : {}) });
         if (receipt.turn && permissionOnWire) sentLevels.current.set(receipt.turn.id, permissionOnWire);
         setNonce((value) => value + 1);
       }
@@ -426,6 +442,7 @@ function Conversation({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
+    if (document.activeElement instanceof HTMLElement && document.activeElement.closest(".ws-model-root")) return;
     void send();
   };
   // Enter sends. Shift+Enter keeps the default newline; Ctrl/Cmd+Enter also sends. Enter that confirms an IME
@@ -623,7 +640,7 @@ function TranscriptBody({
       author="You"
       time={
         <>
-          {formatAt(entry.at)} <Badge tone="placeholder">SIMULATED, not recorded</Badge>
+          <time dateTime={entry.at}>{formatAt(entry.at)}</time> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
         </>
       }
     >
@@ -692,7 +709,7 @@ function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string
       author={human ? "You" : label}
       time={
         <>
-          {formatAt(entry.at)}
+          <time dateTime={entry.at}>{formatAt(entry.at)}</time>
           {entry.streaming && (
             <>
               {" "}
@@ -711,9 +728,4 @@ function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string
       {entry.text}
     </Bubble>
   );
-}
-
-function formatAt(at: string): string {
-  const date = new Date(at);
-  return Number.isNaN(date.getTime()) ? at : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

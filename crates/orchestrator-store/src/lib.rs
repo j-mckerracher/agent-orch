@@ -298,6 +298,15 @@ pub trait Store {
         state: AttemptState,
     ) -> Result<(), StoreError>;
 
+    /// Mark a nonterminal attempt failed and store its safe display reason in
+    /// the same mutation. This never touches task state.
+    fn record_attempt_failure(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        failure_reason: &str,
+    ) -> Result<(), StoreError>;
+
     /// Append a new agent session. The attempt must already be recorded on
     /// the task. This never touches task state.
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError>;
@@ -553,6 +562,42 @@ impl Store for FileStore {
         Ok(())
     }
 
+    fn record_attempt_failure(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        failure_reason: &str,
+    ) -> Result<(), StoreError> {
+        self.mutate(task_id, |r| {
+            let attempt = r
+                .attempts
+                .iter_mut()
+                .find(|attempt| attempt.id == attempt_id)
+                .ok_or_else(|| StoreError::NoAttempt {
+                    attempt_id: attempt_id.to_owned(),
+                    task_id: task_id.to_owned(),
+                })?;
+            if attempt.state.is_terminal() {
+                return Err(StoreError::TerminalAttempt {
+                    attempt_id: attempt_id.to_owned(),
+                    state: attempt.state,
+                });
+            }
+            attempt_transition(attempt.state, AttemptState::Failed)?;
+            if attempt.task_id != r.contract.id {
+                return Err(StoreError::CrossTaskAttempt {
+                    attempt_id: attempt_id.to_owned(),
+                    attempt_task: attempt.task_id.clone(),
+                    record_task: r.contract.id.clone(),
+                });
+            }
+            attempt.state = AttemptState::Failed;
+            attempt.failure_reason = Some(failure_reason.to_owned());
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError> {
         self.mutate(task_id, |r| {
             if r.sessions.iter().any(|s| s.id == session.id) {
@@ -664,6 +709,7 @@ mod tests {
             task_id: task_id.into(),
             attempt_number: n,
             state: AttemptState::Pending,
+            failure_reason: None,
         }
     }
 
@@ -861,7 +907,7 @@ mod tests {
             .unwrap();
         store.transition("t1", TaskEvent::ExecutionStarted).unwrap();
         store
-            .update_attempt_state("t1", "a1", AttemptState::Failed)
+            .record_attempt_failure("t1", "a1", "safe failure detail")
             .unwrap();
         // Task fails; retry is legal and moves it back to Queued.
         store.transition("t1", TaskEvent::ExecutionFailed).unwrap();
@@ -874,6 +920,10 @@ mod tests {
         assert_eq!(rec.attempts.len(), 2);
         assert_eq!(rec.attempts[0].id, "a1");
         assert_eq!(rec.attempts[0].state, AttemptState::Failed);
+        assert_eq!(
+            rec.attempts[0].failure_reason.as_deref(),
+            Some("safe failure detail")
+        );
         assert_eq!(rec.attempts[1].id, "a2");
         assert_eq!(rec.attempts[1].state, AttemptState::Pending);
         // A terminal attempt cannot be rewritten back to Running.

@@ -70,6 +70,7 @@ fn create_running_task(api: &DaemonApi, task_id: &str) {
                 task_id: task_id.into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();
@@ -208,6 +209,76 @@ fn task_submission_is_deduplicated_and_hides_project_path() {
 }
 
 #[test]
+fn task_submission_normalizes_display_agent_names_and_rejects_unknown_agents() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+
+    let mut display_name = submit_params("display-agent", "Submit with a display name");
+    display_name["contract"]["agent"] = json!("Codex");
+    let accepted = api.dispatch("tasks.submit", display_name).unwrap();
+    assert_eq!(accepted["contract"]["agent"], "codex");
+
+    let mut unknown = submit_params("unknown-agent", "Reject an unsupported agent");
+    unknown["contract"]["agent"] = json!("not-a-launcher");
+    assert_eq!(
+        api.dispatch("tasks.submit", unknown),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(api.store.list().unwrap().len(), 1);
+}
+
+#[test]
+fn task_submission_rejects_a_missing_parent_before_creating_a_task() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+    let mut params = submit_params("missing-parent", "Task with a missing parent");
+    params["contract"]["parent_id"] = json!("not-a-task");
+
+    assert_eq!(
+        api.dispatch("tasks.submit", params.clone()),
+        Err(RpcError::ParentNotFound)
+    );
+    assert_eq!(
+        api.dispatch("tasks.submit", params),
+        Err(RpcError::ParentNotFound),
+        "the same request key must replay its validation failure"
+    );
+    assert!(api.store.list().unwrap().is_empty());
+}
+
+#[test]
+fn task_submission_accepts_an_existing_parent() {
+    use orchestrator_core::contract::{
+        AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+    };
+
+    let (_directory, api) = new_api();
+    register_project(&api);
+    api.store
+        .create(&TaskContract {
+            id: "parent-task".into(),
+            project_id: "project-1".into(),
+            parent_id: None,
+            objective: "Parent task".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::ReportOnly,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+        })
+        .unwrap();
+
+    let mut params = submit_params("valid-parent", "Child task");
+    params["contract"]["parent_id"] = json!("parent-task");
+    let child = api.dispatch("tasks.submit", params).unwrap();
+    assert_eq!(child["contract"]["parent_id"], "parent-task");
+}
+
+#[test]
 fn missing_task_returns_typed_not_found() {
     let (_directory, api) = new_api();
     assert_eq!(
@@ -258,6 +329,7 @@ fn session_events_replay_task_and_only_selected_session_events() {
                 task_id: "task-1".into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
+                failure_reason: None,
             },
         )
         .unwrap();

@@ -8,10 +8,16 @@ function seeded() {
   fake.projects = [{ id: REPO }];
   fake.tasks = [mkTask("t-failed", REPO, { state: "Failed" }), mkTask("t-q", REPO)];
   fake.stub("agents.capabilities", [{ agent: "codex", installed: true, launchable: true, capabilities: null }]);
-  fake.stub("tasks.retry", (params: Record<string, unknown>) => ({
-    ...mkTask(String(params.task_id), REPO),
-    state: "Queued",
-  }));
+  fake.stub("tasks.retry", (params: Record<string, unknown>) => {
+    const taskId = String(params.task_id);
+    const queued = mkTask(taskId, REPO, {
+      state: "Queued",
+      attempts: [{ id: "attempt-1", task_id: taskId, attempt_number: 1, state: "Pending" }],
+    });
+    const index = fake.tasks.findIndex((task) => task.contract.id === taskId);
+    if (index >= 0) fake.tasks[index] = queued;
+    return queued;
+  });
   return fake;
 }
 
@@ -41,9 +47,50 @@ describe("daemon-backed D1-D6 screens", () => {
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.queryByRole("button", { name: "Preview retry" })).not.toBeInTheDocument();
     await user.click(button);
-    expect(await screen.findByText(/Retry accepted; the daemon now records the task as Queued/)).toBeInTheDocument();
+    expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("task-state")).toHaveTextContent("Queued"));
+    const attempts = within(screen.getByRole("region", { name: "Attempts" }));
+    expect(attempts.getAllByRole("listitem")[0]).toHaveTextContent("#1 attempt-1: Pending");
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps retry acknowledgement historical when the latest task state is failed", async () => {
+    const fake = seeded();
+    fake.stub("tasks.retry", (params: Record<string, unknown>) => {
+      const taskId = String(params.task_id);
+      const queuedAcknowledgement = mkTask(taskId, REPO, {
+        state: "Queued",
+        attempts: [{ id: "attempt-1", task_id: taskId, attempt_number: 1, state: "Pending" }],
+      });
+      const latest = mkTask(taskId, REPO, {
+        state: "Failed",
+        attempts: [1, 2].map((attempt_number) => ({
+          id: `attempt-${attempt_number}`,
+          task_id: taskId,
+          attempt_number,
+          state: "Failed" as const,
+        })),
+      });
+      const index = fake.tasks.findIndex((task) => task.contract.id === taskId);
+      if (index >= 0) fake.tasks[index] = latest;
+      return queuedAcknowledgement;
+    });
+    const { user } = await mount(fake, {
+      route: { name: "task", projectId: REPO, taskId: "t-failed" },
+      daemonSources: true,
+    });
+    const button = await screen.findByRole("button", { name: "Retry task" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+
+    expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("task-state")).toHaveTextContent("Failed"));
+    const attempts = within(screen.getByRole("region", { name: "Attempts" }));
+    expect(attempts.getAllByRole("listitem")).toHaveLength(2);
+    expect(attempts.getAllByRole("listitem")[0]).toHaveTextContent("#1 attempt-1: Failed");
+    expect(attempts.getAllByRole("listitem")[1]).toHaveTextContent("#2 attempt-2: Failed");
+    expect(screen.queryByText(/daemon now records the task as Queued with 1 attempt/)).not.toBeInTheDocument();
   });
 
   it("disables retry for a task the daemon would refuse", async () => {

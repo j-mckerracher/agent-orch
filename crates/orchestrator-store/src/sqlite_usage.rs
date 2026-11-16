@@ -577,6 +577,7 @@ mod tests {
                     task_id: "t1".into(),
                     attempt_number: 1,
                     state: AttemptState::Pending,
+                    failure_reason: None,
                 },
             )
             .unwrap();
