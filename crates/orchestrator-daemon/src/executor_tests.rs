@@ -77,6 +77,7 @@ impl Fixture {
             codex_program: Some(program.to_owned()),
             claude_program: None,
             pi_program: None,
+            copilot_credit_cap: false,
             // Never probe a real copilot from a test: a missing path is a fact.
             copilot_program: Some(self.root.path().join("no-such-copilot")),
             copilot_sign_in: Default::default(),
@@ -511,7 +512,393 @@ fn queued_contract(fixture: &Fixture, id: &str) -> TaskContract {
         max_retries: 0,
         max_repairs: 0,
         model_selection: None,
+        permission: Default::default(),
     }
+}
+
+/// A fake CLI that records its argv, one argument per line, to `record`, then
+/// finishes as a successful run would. It answers `--version` as Copilot does.
+/// The record is written under a temporary name and renamed, so a reader that
+/// sees the file sees all of it.
+fn recording_agent(fixture: &Fixture, record: &Path) -> PathBuf {
+    fixture.script(
+        "recording-agent",
+        &format!(
+            "if [ \"$1\" = \"--version\" ]; then echo 'GitHub Copilot CLI 1.0.109'; exit 0; fi\n\
+             printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
+             {THREAD_STARTED}{TURN_COMPLETED}",
+            record.display()
+        ),
+    )
+}
+
+fn strs(argv: &[String]) -> Vec<&str> {
+    argv.iter().map(String::as_str).collect()
+}
+
+/// Submits one task for `agent` at `permission` (`None` leaves the field out)
+/// and returns the argv the run launched with. The Copilot usage file and
+/// worktree differ per run, so they are replaced by fixed names here.
+fn launched_argv(
+    agent: &str,
+    permission: Option<&str>,
+    adjust: impl FnOnce(&mut ExecutorConfig),
+) -> Vec<String> {
+    let fixture = Fixture::new();
+    let record = fixture.marker("argv");
+    let program = recording_agent(&fixture, &record);
+    let api = fixture.api_with(&program, |config| {
+        config.claude_program = Some(program.clone());
+        config.copilot_program = Some(program.clone());
+        adjust(config);
+    });
+    let mut contract = launch_contract(&fixture, agent);
+    if let Some(level) = permission {
+        contract["permission"] = json!(level);
+    }
+    api.dispatch(
+        "tasks.submit",
+        json!({"idempotency_key": "launch", "contract": contract}),
+    )
+    .unwrap();
+    wait_until("the agent to record its argv", || record.exists());
+    let mut argv: Vec<String> = fs::read_to_string(&record)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    api.shutdown();
+    if let Some(i) = argv.iter().position(|arg| arg == "--usage-output-file") {
+        argv[i + 1] = "<usage>".to_owned();
+    }
+    if let Some(i) = argv.iter().position(|arg| arg == "-C") {
+        let worktree = argv[i + 1].clone();
+        argv = argv
+            .into_iter()
+            .map(|arg| arg.replace(&worktree, "<worktree>"))
+            .collect();
+    }
+    argv
+}
+
+fn launch_contract(fixture: &Fixture, agent: &str) -> Value {
+    json!({
+        "project_id": fixture.project_id(),
+        "parent_id": null,
+        "objective": "objective of launch",
+        "kind": "Implement",
+        "agent": agent,
+        "dependencies": [],
+        "verification": "None",
+        "delivery": "ReportOnly",
+        "autonomy": "WorkspaceWrites",
+        "max_retries": 0,
+        "max_repairs": 0
+    })
+}
+
+/// The head every Claude task vector shares, up to its tool flags.
+const CLAUDE_TASK_HEAD: [&str; 13] = [
+    "-p",
+    "objective of launch",
+    "--verbose",
+    "--output-format",
+    "stream-json",
+    "--include-partial-messages",
+    "--permission-mode",
+    "dontAsk",
+    "--permission-prompts",
+    "none",
+    "--restricted",
+    "--strict-mcp-config",
+    "--tools",
+];
+
+#[test]
+fn codex_task_argv_per_level_is_exact() {
+    let objective = "objective of launch";
+    let argv = |permission| launched_argv("codex", permission, |_| {});
+    let restricted = vec![
+        "exec",
+        "--json",
+        "--sandbox",
+        "workspace-write",
+        "--ignore-user-config",
+        "--",
+        objective,
+    ];
+    // A task with no level is Restricted, so an existing Codex task changes.
+    assert_eq!(strs(&argv(None)), restricted);
+    assert_eq!(strs(&argv(Some("restricted"))), restricted);
+    assert_eq!(
+        strs(&argv(Some("auto"))),
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--approve-for-me",
+            "--ignore-user-config",
+            "--",
+            objective,
+        ]
+    );
+    assert_eq!(
+        strs(&argv(Some("full"))),
+        ["exec", "--json", "--", objective]
+    );
+}
+
+#[test]
+fn extended_and_unknown_levels_are_refused_at_submit_and_create_nothing() {
+    let fixture = Fixture::new();
+    let mut diagnostics = None;
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        diagnostics = Some(config.diagnostics.clone());
+    });
+    for level in ["extended", "sandboxed"] {
+        let mut contract = launch_contract(&fixture, "codex");
+        contract["permission"] = json!(level);
+        let refused = api.dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": level, "contract": contract}),
+        );
+        assert_eq!(refused, Err(RpcError::InvalidParams), "{level}");
+    }
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.list().unwrap().is_empty());
+    let lines = diagnostics.unwrap().lines();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("permission_level_unsupported")),
+        "{lines:?}"
+    );
+    api.shutdown();
+}
+
+#[test]
+fn claude_task_argv_per_level_is_exact() {
+    let claude = |permission, adjust: fn(&mut ExecutorConfig)| {
+        launched_argv("claude-code", permission, adjust)
+    };
+    let mut restricted = CLAUDE_TASK_HEAD.to_vec();
+    restricted.extend(["Read,Edit,Write", "--allowedTools", "Read,Edit,Write"]);
+    // Absent and Restricted both launch the vector a Claude task has always had.
+    assert_eq!(strs(&claude(None, |_| {})), restricted);
+    assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted);
+
+    let mut extended = CLAUDE_TASK_HEAD.to_vec();
+    extended.extend([
+        "Read,Edit,Write,Bash",
+        "--allowedTools",
+        "Read,Edit,Write",
+        "Bash(git status *)",
+        "Bash(git diff *)",
+        "Bash(git log *)",
+        "Bash(git show *)",
+    ]);
+    assert_eq!(strs(&claude(Some("extended"), |_| {})), extended);
+
+    let auto = [
+        "-p",
+        "objective of launch",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--permission-mode",
+        "auto",
+        "--permission-prompts",
+        "none",
+        "--restricted",
+        "--strict-mcp-config",
+        "--tools",
+        "Read,Edit,Write,Bash",
+        "--allowedTools",
+        "Read,Edit,Write",
+        "--disallowedTools",
+        "Bash(git push *)",
+        "Bash(gh *)",
+    ];
+    assert_eq!(strs(&claude(Some("auto"), |_| {})), auto);
+
+    assert_eq!(
+        strs(&claude(Some("full"), |_| {})),
+        [
+            "-p",
+            "objective of launch",
+            "--verbose",
+            "--output-format",
+            "stream-json",
+            "--include-partial-messages",
+            "--permission-mode",
+            "bypassPermissions",
+            "--permission-prompts",
+            "none",
+            "--allow-dangerously-skip-permissions",
+        ]
+    );
+}
+
+#[test]
+fn copilot_task_argv_per_level_is_exact() {
+    let prompt = "--prompt=objective of launch";
+    let mut restricted = vec![
+        prompt,
+        "--output-format",
+        "json",
+        "--log-level",
+        "none",
+        "--no-auto-update",
+        "--no-ask-user",
+        "--no-custom-instructions",
+        "--disable-builtin-mcps",
+        "--disallow-temp-dir",
+        "--usage-output-file",
+        "<usage>",
+        "-C",
+        "<worktree>",
+    ];
+    restricted.extend([
+        "--allow-tool",
+        "read",
+        "--allow-tool",
+        "write(<worktree>/**)",
+        "--deny-tool",
+        "shell",
+        "--deny-tool",
+        "url",
+        "--deny-tool",
+        "memory",
+    ]);
+    let head = restricted[..restricted.len() - 10].to_vec();
+    assert_eq!(
+        strs(&launched_argv(COPILOT_AGENT, None, |_| {})),
+        restricted
+    );
+    assert_eq!(
+        strs(&launched_argv(COPILOT_AGENT, Some("restricted"), |_| {})),
+        restricted
+    );
+
+    let mut extended = head.clone();
+    extended.extend([
+        "--allow-tool",
+        "read",
+        "--allow-tool",
+        "write(<worktree>/**)",
+        "--allow-tool",
+        "shell(git status)",
+        "--allow-tool",
+        "shell(git diff)",
+        "--allow-tool",
+        "shell(git log)",
+        "--allow-tool",
+        "shell(git show)",
+        "--deny-tool",
+        "url",
+        "--deny-tool",
+        "memory",
+    ]);
+    assert_eq!(
+        strs(&launched_argv(COPILOT_AGENT, Some("extended"), |_| {})),
+        extended
+    );
+
+    let mut auto = head.clone();
+    auto.push("--assisted-approval");
+    auto.extend([
+        "--allow-tool",
+        "read",
+        "--allow-tool",
+        "write(<worktree>/**)",
+        "--deny-tool",
+        "url",
+        "--deny-tool",
+        "memory",
+        "--deny-tool",
+        "shell(git push)",
+    ]);
+    assert_eq!(
+        strs(&launched_argv(COPILOT_AGENT, Some("auto"), |_| {})),
+        auto
+    );
+
+    let full = [
+        prompt,
+        "--output-format",
+        "json",
+        "--log-level",
+        "none",
+        "--no-auto-update",
+        "--no-ask-user",
+        "--disable-builtin-mcps",
+        "--usage-output-file",
+        "<usage>",
+        "-C",
+        "<worktree>",
+        "--allow-all",
+    ];
+    assert_eq!(
+        strs(&launched_argv(COPILOT_AGENT, Some("full"), |_| {})),
+        full
+    );
+}
+
+/// The credit cap reaches a Copilot task launch only when the daemon turns it on.
+#[test]
+fn copilot_task_passes_the_credit_cap_only_when_it_is_on() {
+    let off = launched_argv(COPILOT_AGENT, Some("auto"), |_| {});
+    assert!(!off.iter().any(|arg| arg == "--max-ai-credits"), "{off:?}");
+    let on = launched_argv(COPILOT_AGENT, Some("auto"), |config| {
+        config.copilot_credit_cap = true;
+    });
+    let at = on
+        .iter()
+        .position(|arg| *arg == "--max-ai-credits")
+        .unwrap();
+    assert_eq!(on[at + 1], "30");
+    assert_eq!(
+        on.iter().filter(|arg| **arg == "--max-ai-credits").count(),
+        1
+    );
+}
+
+#[test]
+fn launch_event_and_task_record_report_the_level() {
+    let fixture = Fixture::new();
+    let record = fixture.marker("argv");
+    let program = recording_agent(&fixture, &record);
+    let mut diagnostics = None;
+    let api = fixture.api_with(&program, |config| {
+        config.claude_program = Some(program.clone());
+        diagnostics = Some(config.diagnostics.clone());
+    });
+    let diagnostics = diagnostics.unwrap();
+    let mut contract = launch_contract(&fixture, "claude-code");
+    contract["permission"] = json!("auto");
+    let submitted = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "level-report", "contract": contract}),
+        )
+        .unwrap();
+    assert_eq!(submitted["contract"]["permission"], "auto");
+    wait_until("the launch event", || {
+        diagnostics
+            .lines()
+            .iter()
+            .any(|line| line.contains("agent_launched"))
+    });
+    let lines = diagnostics.lines();
+    assert!(
+        lines.iter().any(|line| line.contains("agent_launched")
+            && line.contains("claude-code:auto:task:v1")
+            && line.contains("auto")),
+        "{lines:?}"
+    );
+    api.shutdown();
 }
 
 /// Leaves `task_id` Running with a Running session, as a daemon that died
@@ -1262,6 +1649,7 @@ mod usage_paths {
             agent: "codex".into(),
             objective: "objective".into(),
             model_selection: None,
+            permission: Default::default(),
             worktree: PathBuf::new(),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
         };
@@ -1444,6 +1832,7 @@ mod usage_paths {
                 model: model.map(str::to_owned),
                 effort: None,
             }),
+            permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
         };

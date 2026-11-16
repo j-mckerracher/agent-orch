@@ -142,6 +142,7 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();

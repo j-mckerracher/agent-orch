@@ -38,6 +38,7 @@ fn create_task(api: &DaemonApi, project: &str, id: &str) {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
 }

@@ -10,6 +10,7 @@
 //! caller's [`Authorization`] envelope.
 
 use crate::authorization::Authorization;
+use crate::permission::PermissionLevel;
 
 /// Kind of work a contract requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -171,6 +172,10 @@ pub struct TaskContract {
     /// Optional model/effort request. Absent on every pre-M7-09 contract.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_selection: Option<ModelSelection>,
+    /// The permission level the task launches with (DPES-1105). Absent on every
+    /// contract written before the field, and read as Restricted.
+    #[serde(default, skip_serializing_if = "PermissionLevel::is_restricted")]
+    pub permission: PermissionLevel,
 }
 
 /// Errors from [`validate`]. Each variant names the invariant that failed.
@@ -484,6 +489,7 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
         max_retries: proposal.max_retries,
         max_repairs: proposal.max_repairs,
         model_selection: None,
+        permission: Default::default(),
     };
     match validate(&probe) {
         Ok(()) => Validation::Accept,
@@ -514,6 +520,7 @@ mod tests {
             max_retries: 1,
             max_repairs: 1,
             model_selection: None,
+            permission: Default::default(),
         }
     }
 
@@ -569,6 +576,29 @@ mod tests {
             Some("gpt-6-luna")
         );
         value["model_selection"] = serde_json::json!({"model": "x", "provider": "y"});
+        assert!(serde_json::from_value::<TaskContract>(value).is_err());
+    }
+
+    #[test]
+    fn permission_is_restricted_when_absent_and_omitted_when_restricted() {
+        let mut value = serde_json::to_value(contract()).unwrap();
+        assert!(value.get("permission").is_none());
+        let legacy: TaskContract = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(legacy.permission, PermissionLevel::Restricted);
+        for (level, name) in [
+            (PermissionLevel::Extended, "extended"),
+            (PermissionLevel::Auto, "auto"),
+            (PermissionLevel::Full, "full"),
+        ] {
+            let mut selected = contract();
+            selected.permission = level;
+            let written = serde_json::to_value(&selected).unwrap();
+            assert_eq!(written["permission"], serde_json::json!(name));
+            value["permission"] = serde_json::json!(name);
+            let read: TaskContract = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(read.permission, level);
+        }
+        value["permission"] = serde_json::json!("sandboxed");
         assert!(serde_json::from_value::<TaskContract>(value).is_err());
     }
 

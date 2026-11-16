@@ -675,18 +675,20 @@ fn conversation_text_and_replies_create_no_task_approval_or_delivery() {
         proposal.to_owned(),
         r#"{"method":"tasks.submit","approve":"all","deliver":true}"#.to_owned(),
     ]));
-    let (_directory, api) = api_with(
-        runtime,
-        pin("1.0.0"),
-        Arc::new(Directory(&["w1"])),
-    );
+    let (_directory, api) = api_with(runtime, pin("1.0.0"), Arc::new(Directory(&["w1"])));
     let targets = [
         global(),
         json!({"kind": "workstream", "workstream_id": "w1"}),
     ];
     for (index, target) in targets.iter().cloned().enumerate() {
         let suffix = index.to_string();
-        let sent = send(&api, target.clone(), proposal, &format!("proposal-{suffix}")).unwrap();
+        let sent = send(
+            &api,
+            target.clone(),
+            proposal,
+            &format!("proposal-{suffix}"),
+        )
+        .unwrap();
         assert_eq!(sent["authority"], "none");
         let sent = send(
             &api,
@@ -851,7 +853,12 @@ fn register_coordinator_project(api: &DaemonApi, id: &str) {
         .unwrap();
 }
 
-fn coordinator_note(api: &DaemonApi, project: &str, text: &str, key: &str) -> Result<Value, RpcError> {
+fn coordinator_note(
+    api: &DaemonApi,
+    project: &str,
+    text: &str,
+    key: &str,
+) -> Result<Value, RpcError> {
     api.dispatch(
         "coordinator.send_message",
         json!({"project_id": project, "text": text, "idempotency_key": key}),
@@ -894,7 +901,10 @@ fn clearing_one_conversation_keeps_the_others_and_leaves_no_text_on_disk() {
     assert_eq!(cleared["entries_deleted"], 3);
     assert_eq!(cleared["turns_deleted"], 1);
     assert_eq!(cleared["clear_generation"], 1);
-    assert!(get(&api, global(), 0)["entries"].as_array().unwrap().is_empty());
+    assert!(get(&api, global(), 0)["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     assert!(!on_disk(directory.path(), "MESSAGE-MARKER-4421"));
     assert!(!on_disk(directory.path(), "REPLY-MARKER-4421"));
@@ -960,7 +970,10 @@ fn a_replayed_send_of_a_cleared_message_returns_the_cleared_reference_and_runs_n
     assert!(replay["entry"].get("body").is_none());
     assert!(replay["turn"].is_null());
     assert_eq!(runtime.started.load(Ordering::SeqCst), 1);
-    assert!(get(&api, global(), 0)["entries"].as_array().unwrap().is_empty());
+    assert!(get(&api, global(), 0)["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

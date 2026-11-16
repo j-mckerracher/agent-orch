@@ -204,10 +204,7 @@ fn describe_tree(dir: &Path, report: &mut String) {
             continue;
         }
         let contents = match fs::read(&path) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes)
-                .chars()
-                .take(2000)
-                .collect(),
+            Ok(bytes) => String::from_utf8_lossy(&bytes).chars().take(2000).collect(),
             Err(error) => format!("<unreadable: {error}>"),
         };
         report.push_str(&format!("--- {}\n{contents}\n", path.display()));
@@ -382,6 +379,7 @@ fn create_admitted_task(fixture: &Fixture, task_id: &str, project_id: &str, proj
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -967,6 +965,7 @@ fn planned_and_admitted_tasks_without_attempts_do_not_block_scheduling() {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
 

@@ -876,6 +876,44 @@ impl CodexAdapter {
         args.extend(["--".to_owned(), prompt.to_owned()]);
         Some(args)
     }
+
+    /// Arguments for a task run at `level` in its worktree, or `None` when Codex
+    /// has no mapping for it (Extended: `exec` has no tool allowlist and no web
+    /// flag). The objective is one argument after `--`; no shell is involved.
+    ///
+    /// Restricted writes only inside the workspace sandbox, and an approval
+    /// request has no reviewer. Auto adds `--approve-for-me`, so approval
+    /// requests go to automatic review. Both pin the sandbox and ignore the
+    /// user's config. Full adds no sandbox or approval flag, so the user's
+    /// `~/.codex/config.toml` decides.
+    pub fn args_for_task(
+        level: PermissionLevel,
+        objective: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Option<Vec<String>> {
+        let flags: &[&str] = match level {
+            PermissionLevel::Restricted => {
+                &["--sandbox", "workspace-write", "--ignore-user-config"]
+            }
+            PermissionLevel::Auto => &[
+                "--sandbox",
+                "workspace-write",
+                "--approve-for-me",
+                "--ignore-user-config",
+            ],
+            PermissionLevel::Full => &[],
+            PermissionLevel::Extended => return None,
+        };
+        let mut args: Vec<String> = ["exec", "--json"]
+            .into_iter()
+            .chain(flags.iter().copied())
+            .map(str::to_owned)
+            .collect();
+        args.extend(Self::selection_args(model, effort));
+        args.extend(["--".to_owned(), objective.to_owned()]);
+        Some(args)
+    }
 }
 
 impl ClaudeCodeAdapter {
@@ -897,6 +935,97 @@ impl ClaudeCodeAdapter {
         log_probe(CLAUDE_AGENT, "auth status", &program, &auth);
         log_probe(CLAUDE_AGENT, "--help", &program, &help);
         claude_catalog(&auth, help)
+    }
+
+    /// Arguments for a task run at `level` in its worktree. Restricted is the
+    /// [`Self::args_for_prompt`] vector, unchanged. Extended adds Bash, allowed
+    /// only for read-only git commands. Auto lets the classifier judge each Bash
+    /// call, and denies `git push` and `gh`. Full drops every restriction. Tasks
+    /// keep no session-persistence flag, because a task is not a chat turn. No
+    /// spend cap is passed.
+    pub fn args_for_task(
+        level: PermissionLevel,
+        objective: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = match level {
+            PermissionLevel::Restricted => Self::args_for_prompt(objective),
+            PermissionLevel::Extended => [
+                "-p",
+                objective,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "dontAsk",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--tools",
+                "Read,Edit,Write,Bash",
+                "--allowedTools",
+                "Read,Edit,Write",
+                "Bash(git status *)",
+                "Bash(git diff *)",
+                "Bash(git log *)",
+                "Bash(git show *)",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            PermissionLevel::Auto => [
+                "-p",
+                objective,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "auto",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--tools",
+                "Read,Edit,Write,Bash",
+                "--allowedTools",
+                "Read,Edit,Write",
+                "--disallowedTools",
+                "Bash(git push *)",
+                "Bash(gh *)",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+            PermissionLevel::Full => [
+                "-p",
+                objective,
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "bypassPermissions",
+                "--permission-prompts",
+                "none",
+                "--allow-dangerously-skip-permissions",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        };
+        if let Some(model) = model {
+            args.push("--model".into());
+            args.push(model.into());
+        }
+        if let Some(effort) = effort {
+            args.push("--effort".into());
+            args.push(effort.into());
+        }
+        args
     }
 
     /// [`Self::args_for_prompt`] plus the selected model and effort. The

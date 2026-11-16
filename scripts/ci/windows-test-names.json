@@ -147,6 +147,8 @@
    "proposals_cannot_smuggle_authority_fields",
    "agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one",
    "approval_resolution_uses_allowlisted_actor_and_is_idempotent",
+   "canonical_agent_ids_map_each_launcher_and_its_display_name_only",
+   "copilot_task_submission_persists_the_launcher_id_for_either_name",
    "every_rpc_method_rejects_malformed_parameters",
    "idempotency_fingerprint_normalizes_omitted_optional_fields",
    "request_approval_refuses_unsafe_requests",

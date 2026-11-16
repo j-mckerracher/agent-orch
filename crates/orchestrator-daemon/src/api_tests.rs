@@ -59,6 +59,7 @@ fn create_running_task(api: &DaemonApi, task_id: &str) {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     api.store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -209,6 +210,34 @@ fn task_submission_is_deduplicated_and_hides_project_path() {
 }
 
 #[test]
+fn canonical_agent_ids_map_each_launcher_and_its_display_name_only() {
+    assert_eq!(canonical_agent_id("codex"), Some("codex"));
+    assert_eq!(canonical_agent_id("Claude Code"), Some("claude-code"));
+    assert_eq!(canonical_agent_id("github-copilot"), Some("github-copilot"));
+    assert_eq!(canonical_agent_id("GitHub Copilot"), Some("github-copilot"));
+    assert_eq!(canonical_agent_id("pi"), Some("pi"));
+    assert_eq!(canonical_agent_id("copilot"), None);
+    assert_eq!(canonical_agent_id("GitHub"), None);
+}
+
+#[test]
+fn copilot_task_submission_persists_the_launcher_id_for_either_name() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+
+    for (key, agent) in [
+        ("copilot-id", "github-copilot"),
+        ("copilot-name", "GitHub Copilot"),
+    ] {
+        let mut params = submit_params(key, "Submit a Copilot task");
+        params["contract"]["agent"] = json!(agent);
+        let accepted = api.dispatch("tasks.submit", params).unwrap();
+        assert_eq!(accepted["contract"]["agent"], "github-copilot", "{agent}");
+    }
+    assert_eq!(api.store.list().unwrap().len(), 2);
+}
+
+#[test]
 fn task_submission_normalizes_display_agent_names_and_rejects_unknown_agents() {
     let (_directory, api) = new_api();
     register_project(&api);
@@ -269,6 +298,7 @@ fn task_submission_accepts_an_existing_parent() {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
 
@@ -318,6 +348,7 @@ fn session_events_replay_task_and_only_selected_session_events() {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -745,6 +776,7 @@ fn approval_resolution_uses_allowlisted_actor_and_is_idempotent() {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            permission: Default::default(),
         })
         .unwrap();
     let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();
@@ -1006,7 +1038,11 @@ fn session_events_page_and_report_a_cursor_beyond_the_journal() {
     );
 }
 
-fn api_with_memory_sink() -> (tempfile::TempDir, DaemonApi, orchestrator_diagnostics::Diagnostics) {
+fn api_with_memory_sink() -> (
+    tempfile::TempDir,
+    DaemonApi,
+    orchestrator_diagnostics::Diagnostics,
+) {
     let directory = tempfile::tempdir().unwrap();
     let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
     let mut config = ExecutorConfig::for_data_dir(directory.path());
@@ -1063,13 +1099,17 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
     let (_directory, api) = new_api();
     let objective = "z".repeat(65_000);
     for agent in ["codex", "claude-code"] {
-        let (program, args) = agent_command(&api.config, agent, &objective, None).unwrap();
-        assert!(args.contains(&objective), "{agent}: the objective is passed whole");
+        let (program, args) =
+            agent_command(&api.config, agent, &objective, None, Default::default()).unwrap();
+        assert!(
+            args.contains(&objective),
+            "{agent}: the objective is passed whole"
+        );
         let error = orchestrator_runtime::command_line::check_windows(&program, &args)
             .expect_err("65,000 characters plus flags exceed the 32,767 limit");
         assert_eq!(error.limit, 32_767);
     }
-    assert!(agent_command(&api.config, "pi", &objective, None).is_none());
+    assert!(agent_command(&api.config, "pi", &objective, None, Default::default()).is_none());
 }
 
 // The objective passes contract validation (at most 64 KiB) and only the
@@ -1079,10 +1119,15 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
 fn windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent() {
     let (_directory, api, diagnostics) = api_with_memory_sink();
     register_project(&api);
-    let result = api.dispatch("tasks.submit", submit_params("too-long", &"z".repeat(65_000)));
+    let result = api.dispatch(
+        "tasks.submit",
+        submit_params("too-long", &"z".repeat(65_000)),
+    );
     assert_eq!(result, Err(RpcError::InvalidParams));
     let lines = diagnostics.lines().join("\n");
-    assert!(lines.contains("task_submit_command_line_too_long"), "{lines}");
+    assert!(
+        lines.contains("task_submit_command_line_too_long"),
+        "{lines}"
+    );
     assert!(lines.contains("Shorten the task objective"), "{lines}");
 }
-

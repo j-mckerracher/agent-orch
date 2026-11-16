@@ -519,7 +519,9 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
         [
             "exec",
             "--json",
-            "--approve-for-me",
+            "--sandbox",
+            "workspace-write",
+            "--ignore-user-config",
             "-m",
             "gpt-6-luna",
             "-c",
@@ -573,7 +575,9 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
         [
             "exec",
             "--json",
-            "--approve-for-me",
+            "--sandbox",
+            "workspace-write",
+            "--ignore-user-config",
             "--",
             "objective of plain-1"
         ]

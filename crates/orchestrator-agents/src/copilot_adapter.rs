@@ -8,7 +8,8 @@
 //!   default. The adapter neither probes for that sandbox nor gates on it;
 //! - starts from the shared environment baseline, with no provider variable,
 //!   so no GitHub token reaches the child;
-//! - passes `--max-ai-credits` (a soft cap, see [`AI_CREDIT_CAP`]);
+//! - passes `--max-ai-credits` only when the caller turns the credit cap on (a
+//!   soft cap, see [`AI_CREDIT_CAP`]);
 //! - passes a widening flag only at the Full level, which the user chose, and
 //!   never passes a model or effort on a normal run (see
 //!   [`CopilotAdapter::sign_in_check_args`] for the one exception).
@@ -46,9 +47,9 @@ pub const PINNED_VERSION: &str = "1.0.109";
 pub const SIGN_IN_MODEL: &str = "claude-haiku-4.5";
 const SIGN_IN_PROMPT: &str = "Reply with the single word OK.";
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-/// Every run's `--max-ai-credits`, in credits. 30 is the minimum the CLI accepts.
-/// The cap is soft: one response can exceed it. This is a working default, not a
-/// value the user chose (DPES-1105 O2).
+/// The `--max-ai-credits` value passed when the credit cap is on, in credits. 30
+/// is the minimum the CLI accepts. The cap is soft: one response can exceed it.
+/// The user has not chosen this value (DPES-1105 O2). The cap is off by default.
 pub const AI_CREDIT_CAP: &str = "30";
 
 /// The version on the first line of `copilot --version`
@@ -184,6 +185,7 @@ impl CopilotAdapter {
         prompt: &str,
         usage_file: &Path,
         scratch: &Path,
+        credit_cap: bool,
     ) -> Option<Vec<String>> {
         let flags = match level {
             PermissionLevel::Restricted => restricted_flags(),
@@ -191,36 +193,65 @@ impl CopilotAdapter {
             PermissionLevel::Full => vec!["--allow-all".to_owned()],
             PermissionLevel::Extended => return None,
         };
-        let mut args = base_args(prompt, usage_file, scratch, level);
+        let mut args = base_args(prompt, usage_file, scratch, level, credit_cap);
         args.extend(flags);
         Some(args)
     }
 
-    /// Arguments for a task run in `worktree`. It reads what the CLI allows and
-    /// writes only under the worktree. It has no shell, URL or memory tool.
-    pub fn task_args(objective: &str, usage_file: &Path, worktree: &Path) -> Vec<String> {
-        let mut args = base_args(objective, usage_file, worktree, PermissionLevel::Restricted);
+    /// Arguments for a task run in `worktree` at `level`. Every level writes only
+    /// under the worktree and has no URL or memory tool. Restricted has no shell.
+    /// Extended allows shell only for read-only git commands, and an unmatched
+    /// shell request is denied in `-p` with no judge. Auto sends a shell request
+    /// with no allow rule to the judge, and denies `git push` by rule. Full passes
+    /// `--allow-all`, the user's per-task choice.
+    pub fn task_args(
+        objective: &str,
+        usage_file: &Path,
+        worktree: &Path,
+        level: PermissionLevel,
+        credit_cap: bool,
+    ) -> Vec<String> {
         let write_rule = format!("write({}/**)", path_text(worktree));
-        args.extend(pairs(&[
-            ("--allow-tool", "read"),
-            ("--allow-tool", write_rule.as_str()),
-        ]));
-        args.extend(pairs(&[
-            ("--deny-tool", "shell"),
-            ("--deny-tool", "url"),
-            ("--deny-tool", "memory"),
-        ]));
+        let flags = match level {
+            PermissionLevel::Restricted => {
+                let mut flags = pairs(&[
+                    ("--allow-tool", "read"),
+                    ("--allow-tool", write_rule.as_str()),
+                ]);
+                flags.extend(pairs(&[
+                    ("--deny-tool", "shell"),
+                    ("--deny-tool", "url"),
+                    ("--deny-tool", "memory"),
+                ]));
+                flags
+            }
+            PermissionLevel::Extended => pairs(&[
+                ("--allow-tool", "read"),
+                ("--allow-tool", write_rule.as_str()),
+                ("--allow-tool", "shell(git status)"),
+                ("--allow-tool", "shell(git diff)"),
+                ("--allow-tool", "shell(git log)"),
+                ("--allow-tool", "shell(git show)"),
+                ("--deny-tool", "url"),
+                ("--deny-tool", "memory"),
+            ]),
+            PermissionLevel::Auto => auto_flags(worktree),
+            PermissionLevel::Full => vec!["--allow-all".to_owned()],
+        };
+        let mut args = base_args(objective, usage_file, worktree, level, credit_cap);
+        args.extend(flags);
         args
     }
 
     /// The Restricted conversation arguments plus the one model this adapter
     /// ever names: the explicit sign-in check. Normal runs pass no `--model`.
-    pub fn sign_in_check_args(usage_file: &Path, scratch: &Path) -> Vec<String> {
+    pub fn sign_in_check_args(usage_file: &Path, scratch: &Path, credit_cap: bool) -> Vec<String> {
         let mut args = base_args(
             SIGN_IN_PROMPT,
             usage_file,
             scratch,
             PermissionLevel::Restricted,
+            credit_cap,
         );
         args.extend(restricted_flags());
         args.extend(["--model".to_owned(), SIGN_IN_MODEL.to_owned()]);
@@ -241,7 +272,12 @@ impl CopilotAdapter {
     /// fresh run directory under `parent`, bounded by `limit`. The result says
     /// what the call established, plus the usage it reported. A check that
     /// cannot run returns an unrecorded [`SignInRecord::refused`].
-    pub async fn sign_in_check(&self, parent: &Path, limit: Duration) -> SignInRecord {
+    pub async fn sign_in_check(
+        &self,
+        parent: &Path,
+        limit: Duration,
+        credit_cap: bool,
+    ) -> SignInRecord {
         let Some(program) = self.locate() else {
             return SignInRecord::refused(format!("the {COPILOT_AGENT} executable was not found"));
         };
@@ -260,7 +296,7 @@ impl CopilotAdapter {
         let working_dir = run.cwd();
         let request = AgentLaunchRequest {
             program,
-            args: Self::sign_in_check_args(&usage_file, &working_dir),
+            args: Self::sign_in_check_args(&usage_file, &working_dir, credit_cap),
             working_dir,
         };
         let mut handle = match spawn_copilot_handle(request, Some(run)) {
@@ -358,7 +394,13 @@ fn auto_flags(scratch: &Path) -> Vec<String> {
 /// does not disable them, because the CLI has no flag for that and moving
 /// `COPILOT_HOME` would break the stored login. A hook error shows as a warning
 /// (see `copilot_parser`). Decision recorded in the PR.
-fn base_args(prompt: &str, usage_file: &Path, cwd: &Path, level: PermissionLevel) -> Vec<String> {
+fn base_args(
+    prompt: &str,
+    usage_file: &Path,
+    cwd: &Path,
+    level: PermissionLevel,
+    credit_cap: bool,
+) -> Vec<String> {
     let keeps_restrictions = level != PermissionLevel::Full;
     let mut args = vec![format!("--prompt={prompt}")];
     args.extend(["--output-format", "json", "--log-level", "none"].map(str::to_owned));
@@ -373,7 +415,9 @@ fn base_args(prompt: &str, usage_file: &Path, cwd: &Path, level: PermissionLevel
     args.push("--usage-output-file".to_owned());
     args.push(path_text(usage_file));
     args.extend(["-C".to_owned(), path_text(cwd)]);
-    args.extend(["--max-ai-credits".to_owned(), AI_CREDIT_CAP.to_owned()]);
+    if credit_cap {
+        args.extend(["--max-ai-credits".to_owned(), AI_CREDIT_CAP.to_owned()]);
+    }
     args
 }
 

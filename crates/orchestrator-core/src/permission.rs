@@ -28,6 +28,12 @@ pub enum PermissionLevel {
 }
 
 impl PermissionLevel {
+    /// Whether this is the level a request without one means. A stored contract
+    /// omits a Restricted level, so it is written exactly as before the field.
+    pub fn is_restricted(&self) -> bool {
+        *self == Self::Restricted
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Restricted => "restricted",

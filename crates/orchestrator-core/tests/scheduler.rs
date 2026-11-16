@@ -35,6 +35,7 @@ fn contract_in_project(id: &str, project_id: &str, dependencies: &[&str]) -> Tas
         max_retries: 0,
         max_repairs: 0,
         model_selection: None,
+        permission: Default::default(),
     }
 }
 

@@ -67,10 +67,8 @@ pub use sqlite_conversations::{
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
 };
-pub use sqlite_history::{
-    AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope,
-};
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
+pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
 pub mod audit_envelope;
@@ -700,6 +698,7 @@ mod tests {
             max_retries: 1,
             max_repairs: 1,
             model_selection: None,
+            permission: Default::default(),
         }
     }
 

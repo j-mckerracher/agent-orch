@@ -32,6 +32,7 @@ fn contract(id: &str, project: &str) -> TaskContract {
         max_retries: 0,
         max_repairs: 0,
         model_selection: None,
+        permission: Default::default(),
     }
 }
 

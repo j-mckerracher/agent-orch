@@ -321,18 +321,49 @@ runs at. Rules:
 - **Codex.** `--skip-git-repo-check` and `--ephemeral` stay at every level,
   Full included. Neither loosens anything, and the per-turn directory is not a
   repository.
-- **Copilot.** Every run carries `--max-ai-credits 30`. The cap is soft and 30
-  is the minimum the CLI accepts. This is a working default the user has not
-  chosen.
+- **Copilot.** `--max-ai-credits 30` is passed only when the credit cap is on.
+  The daemon reads `AGENT_ORCH_COPILOT_CREDIT_CAP` once at start, and the value
+  `1` turns the cap on. It is off by default, and then no Copilot run carries
+  it. The cap is soft and 30 is the minimum the CLI accepts. The user has not
+  chosen the value 30.
 - **Denials.** A denied action does not run, and the turn still completes with
   its reply. No flag makes an agent continue past a denial. The denial codes
   `permission_review_denied` and `permission_review_unavailable` are defined,
   but **no code emits them yet**. How the CLIs report a denial or a failed
   review is unverified, and a parser written before that is known would test
-  only itself. The live check in the design file decides this.
-- **Not passed.** Codex `--ignore-user-config` is not passed. It would drop the
-  user's model and provider settings from `~/.codex/config.toml`, and that is
-  unverified. It is a follow-up.
+  only itself. The live check in the design file decides this. It is a follow-up, not a gate,
+  and it has not run. Tasks follow the same rule.
+- **Not passed.** Codex `--ignore-user-config` is not passed to chats. It would
+  drop the user's model and provider settings from `~/.codex/config.toml`, and
+  that is unverified. Tasks do pass it (see "Task permission levels" below).
+
+**Task permission levels (DPES-1105, PR C).** `tasks.submit` takes an optional
+`permission` with the same four values. Its rules:
+
+- **Default and storage.** Absent means `restricted`, both on the wire and in
+  the stored contract (`contract_json`). A Restricted contract omits the field,
+  so every task stored before this change reads back as Restricted.
+- **Codex tasks change.** Before this change a Codex task ran
+  `exec --json --approve-for-me` with no sandbox pin. Now a task with no level
+  runs as Restricted: `exec --json --sandbox workspace-write
+  --ignore-user-config`, with no `--approve-for-me`, so an approval request has
+  no reviewer and is refused. Auto runs `exec --json --sandbox workspace-write
+  --approve-for-me --ignore-user-config`, the closest equivalent of the old
+  argv with the sandbox pinned. Full runs `exec --json` with the user's config.
+- **Claude and Copilot tasks.** Restricted keeps the argv these tasks already
+  had. Extended, Auto and Full are mapped per the design file. Claude Auto
+  denies `git push` and `gh`. Copilot Auto denies `git push` and sends shell
+  requests with no allow rule to the judge.
+- **Extended on Codex is refused.** `tasks.submit` returns `InvalidParams` and
+  creates no task. The diagnostics log records `permission_level_unsupported`.
+  The RPC error carries no code, because `RpcError` has no variant for it.
+- **Spend caps.** No Claude task run passes a spend cap, and no switch for one
+  exists yet. Copilot task runs follow the same switch as chats: they pass
+  `--max-ai-credits 30` only when `AGENT_ORCH_COPILOT_CREDIT_CAP` is `1`.
+- **Recorded.** A launched task writes an `agent_launched` diagnostics event
+  with `permission_level` and `permission_profile` (for example
+  `codex:auto:task:v1`). Tasks need no migration. The stored contract carries the
+  level the task was submitted with, which is the level it launches with.
 
 **Not covered.** Workstream conversations can be cleared through the API, but
 the desktop does not offer it. Single messages cannot be deleted. No retention
