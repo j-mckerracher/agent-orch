@@ -69,9 +69,10 @@ export function agentTexts(texts: Record<AgentId, string>, agent: string | undef
   return (named.length > 0 ? named : AGENT_IDS).map((id) => ({ agent: id, text: texts[id] }));
 }
 
-type PreferenceStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type PreferenceStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-function browserStorage(): PreferenceStorage | null {
+/** The app's browser storage, or null when the browser blocks it. Shared by the saved chat preferences. */
+export function browserStorage(): PreferenceStorage | null {
   try {
     return window.localStorage ?? null;
   } catch {

@@ -2,7 +2,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { CopilotSignInRecord } from "../../../daemon/types";
-import type { ModelChoice, ModelProvider, SurfaceResult } from "../../../sources/surfaces/types";
+import type { ModelCatalog, ModelChoice, ModelProvider, SurfaceResult } from "../../../sources/surfaces/types";
+import type { SurfaceState } from "../../services";
+import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
 import { ModelPicker } from "./ModelPicker";
 
 const observed = { observedAt: "2026-11-15T10:00:00Z", ageMs: 0 };
@@ -172,6 +174,164 @@ describe("ModelPicker in a live chat", () => {
     await waitFor(() =>
       expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "claude-code", model: "m1", effort: "high" }),
     );
+  });
+});
+
+describe("ModelPicker saved choice (DPES-1105)", () => {
+  const savedValue = (): unknown => JSON.parse(window.localStorage.getItem(CHOICE_PREFERENCE_KEY) ?? "null");
+  const save = (value: ModelChoice) => window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify(value));
+  const fixture = { kind: "fixture", id: "D14", fixture: "model-catalog" } as const;
+
+  it("restores the saved choice on mount, before any default, and sends it as the user's own choice", () => {
+    save({ agent: "claude-code", model: "m1", effort: "high" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), provider("claude-code", "Claude Code")])}
+        provenance={provenance}
+        onChoiceChange={onChoiceChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Model settings: Claude Code · Model one · high" })).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "claude-code", model: "m1", effort: "high" });
+  });
+
+  it("saves each change, and saves nothing until the user changes a part", async () => {
+    const user = userEvent.setup();
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex"), provider("claude-code", "Claude Code")])} provenance={provenance} />);
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Provider" }), "claude-code");
+    expect(savedValue()).toEqual({ agent: "claude-code" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "m1");
+    expect(savedValue()).toEqual({ agent: "claude-code", model: "m1" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "high");
+    expect(savedValue()).toEqual({ agent: "claude-code", model: "m1", effort: "high" });
+  });
+
+  it("keeps a saved provider the daemon cannot launch, shows its reason, and sends no choice", async () => {
+    const user = userEvent.setup();
+    save({ agent: "claude-code", model: "m1" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    const unlaunchable = { ...provider("claude-code", "Claude Code"), launchable: false, detail: "the claude executable was not found" };
+    render(
+      <ModelPicker catalog={catalog([provider("codex", "Codex"), unlaunchable])} provenance={provenance} onChoiceChange={onChoiceChange} />,
+    );
+    expect(screen.getByRole("button", { name: "Model settings: Claude Code · unavailable" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("claude-code");
+    expect(screen.getByText(/Your choice is unavailable\. The claude executable was not found\./)).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+    expect(savedValue()).toEqual({ agent: "claude-code", model: "m1" });
+  });
+
+  it("keeps a saved model the daemon's catalog no longer lists, and sends no choice", () => {
+    save({ agent: "codex", model: "gone" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} onChoiceChange={onChoiceChange} />);
+    expect(screen.getByRole("button", { name: "Model settings: Codex · unavailable" })).toBeInTheDocument();
+    expect(screen.getByText(/Your choice is unavailable\. The daemon's catalog does not list model gone\./)).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("sends a saved provider-only choice even when that provider's model list is never read", () => {
+    save({ agent: "codex" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    const unread: ModelProvider = { ...provider("codex", "Codex"), models: { status: "unknown", reason: "not read yet" } };
+    render(<ModelPicker catalog={catalog([unread])} provenance={provenance} onChoiceChange={onChoiceChange} />);
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "codex" });
+  });
+
+  it("keeps a saved provider the catalog no longer lists, and does not show the default in its place", async () => {
+    const user = userEvent.setup();
+    save({ agent: "pi" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} onChoiceChange={onChoiceChange} />);
+    expect(screen.getByRole("button", { name: "Model settings: pi · unavailable" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+    expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("pi");
+    expect(screen.getByRole("option", { name: "pi (saved)" })).toBeDisabled();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("shows a saved choice as not confirmed while the catalog loads, then sends it once the catalog confirms it", () => {
+    save({ agent: "codex", model: "m1" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    const loading: SurfaceState<ModelCatalog> = { status: "loading" };
+    const { rerender } = render(<ModelPicker catalog={loading} provenance={provenance} onChoiceChange={onChoiceChange} />);
+    expect(screen.getByRole("button", { name: "Model settings: codex · not confirmed" })).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+    rerender(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} onChoiceChange={onChoiceChange} />);
+    expect(screen.getByRole("button", { name: "Model settings: Codex · Model one · default effort" })).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "codex", model: "m1" });
+  });
+
+  it("keeps a saved Copilot choice when the account is signed out, shows the daemon's reason, and sends no choice", async () => {
+    save({ agent: "github-copilot" });
+    const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+    const source = copilotSource(signIn("not_signed_in", "Run copilot login, then try again."));
+    render(
+      <ModelPicker
+        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        provenance={provenance}
+        copilotSignIn={source}
+        onChoiceChange={onChoiceChange}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "Model settings: GitHub Copilot · unavailable" })).toBeInTheDocument();
+    expect(screen.getByText(/Your choice is unavailable\. Run copilot login, then try again\./)).toBeInTheDocument();
+    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+    expect(source.copilotSignInStatus).toHaveBeenCalled();
+  });
+
+  it("neither restores nor saves the choice in fixture mode, so the live store is never changed", async () => {
+    const user = userEvent.setup();
+    save({ agent: "claude-code" });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    try {
+      const fixtureCatalog: SurfaceResult<{ providers: ModelProvider[] }> = {
+        status: "ok",
+        data: { providers: [provider("codex", "Codex"), provider("claude-code", "Claude Code")] },
+        provenance: fixture,
+        ...observed,
+      };
+      const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+      render(<ModelPicker catalog={fixtureCatalog} provenance={fixture} onChoiceChange={onChoiceChange} />);
+      expect(screen.getByRole("button", { name: /^Model settings: Codex/ })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+      await user.selectOptions(screen.getByRole("combobox", { name: "Provider" }), "claude-code");
+      expect(setItem).not.toHaveBeenCalledWith(CHOICE_PREFERENCE_KEY, expect.anything());
+      expect(savedValue()).toEqual({ agent: "claude-code" });
+      expect(onChoiceChange.mock.calls.every(([choice]) => choice === null)).toBe(true);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("starts at the default, and keeps the picker working, when browser storage is blocked", async () => {
+    const user = userEvent.setup();
+    const blocked = () => {
+      throw new DOMException("storage is blocked", "SecurityError");
+    };
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(blocked);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
+    try {
+      const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
+      render(
+        <ModelPicker
+          catalog={catalog([provider("codex", "Codex"), provider("claude-code", "Claude Code")])}
+          provenance={provenance}
+          onChoiceChange={onChoiceChange}
+        />,
+      );
+      expect(screen.getByRole("button", { name: "Model settings: Codex · default model · default effort" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+      await user.selectOptions(screen.getByRole("combobox", { name: "Provider" }), "claude-code");
+      expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "claude-code" });
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
   });
 });
 

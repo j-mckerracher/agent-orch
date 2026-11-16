@@ -11,10 +11,15 @@ import { M5_03_CAPABILITIES } from "../src/daemon/types";
 import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
 import { WorkspaceView } from "../src/ui/views/workspace/WorkspaceView";
+import { CHOICE_PREFERENCE_KEY } from "../src/ui/views/workspace/modelChoice";
 import { RESTRICTED_PREFERENCE_KEY } from "../src/ui/views/workspace/permissionLevel";
 import { NodeConnector, fakeAgentEnv, noAgentsEnv, startDaemon } from "./harness";
 
-afterEach(cleanup);
+// A saved model choice (DPES-1105) lives in browser storage, which outlives a test.
+afterEach(() => {
+  cleanup();
+  window.localStorage.removeItem(CHOICE_PREFERENCE_KEY);
+});
 
 async function until<T>(read: () => T | undefined | false | Promise<T | undefined | false>, label: string, ms = 15000): Promise<T> {
   const deadline = Date.now() + ms;
