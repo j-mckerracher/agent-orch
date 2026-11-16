@@ -502,6 +502,29 @@ for (const [width, height] of [
   });
 }
 
+test("the model chip's label, level and badge are whole and on one line beside the target, at 960 CSS px", async ({ page }) => {
+  await openFixture(page, 960);
+  const chip = page.locator(".ws-model-root > .ws-chip-button");
+  const target = page.locator(".ws-composer-row > .ws-popover-root:not(.ws-model-root) > .ws-chip-button");
+  const label = chip.locator(":scope > span").first();
+  const level = chip.locator(".ws-chip-level");
+  const badge = chip.locator(".ui-badge");
+  await expect(chip).toContainText("Codex · default · medium · Auto");
+  for (const [name, part] of [
+    ["label", label],
+    ["level", level],
+    ["badge", badge],
+  ] as const) {
+    expect(await part.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} is not clipped`).toBe(true);
+    expect((await part.boundingBox())!.height, `${name} is one line`).toBeLessThan(24);
+  }
+  const chipBox = (await chip.boundingBox())!;
+  const targetBox = (await target.boundingBox())!;
+  const sendBox = (await page.locator(".ws-composer .ws-send").boundingBox())!;
+  expect(Math.abs(chipBox.y - targetBox.y), "the chip sits on the target's row, not a new one").toBeLessThan(2);
+  expect(chipBox.x + chipBox.width, "the chip ends before the send button").toBeLessThanOrEqual(sendBox.x);
+});
+
 test.describe("connection strip collapse (DPES-1105)", () => {
   for (const width of [1440, 960, 760]) {
     test(`collapsing the strip shortens it and moves the content up at ${width} CSS px`, async ({ page }) => {

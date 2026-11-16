@@ -11,7 +11,7 @@ import { stubConversation } from "../../../test/m724Stubs";
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { WorkspaceView } from "./WorkspaceView";
-import { INDICATOR, OLDER_DAEMON_NOTICE, RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
+import { OLDER_DAEMON_NOTICE, RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 
 function memoryStorage(): DraftStorage {
   const data = new Map<string, string>();
@@ -75,7 +75,10 @@ async function sendFromGlobal(user: ReturnType<typeof userEvent.setup>, text: st
   await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
 }
 
-function levelSelect() {
+/** Opens the model picker, where the level is chosen, and returns the level control. */
+async function levelSelect(user: ReturnType<typeof userEvent.setup>) {
+  const button = screen.getByRole("button", { name: /^Model settings/ });
+  if (button.getAttribute("aria-expanded") !== "true") await user.click(button);
   return screen.getByRole("combobox", { name: "Permission level" });
 }
 
@@ -145,7 +148,7 @@ describe("permission level in the chat composer, live daemon", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     await pickGlobal(user);
-    expect(levelSelect()).toHaveValue("auto");
+    expect(await levelSelect(user)).toHaveValue("auto");
     await sendFromGlobal(user, "hello");
     await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
     expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "hello", permission: "auto" });
@@ -158,7 +161,7 @@ describe("permission level in the chat composer, live daemon", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     await pickGlobal(user);
-    await user.selectOptions(levelSelect(), "Restricted");
+    await user.selectOptions(await levelSelect(user), "Restricted");
     await sendFromGlobal(user, "stay read-only");
     await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
     expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "stay read-only", permission: "restricted" });
@@ -171,10 +174,10 @@ describe("permission level in the chat composer, live daemon", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     await pickGlobal(user);
-    await user.selectOptions(levelSelect(), "Full");
+    await user.selectOptions(await levelSelect(user), "Full");
     await user.click(await screen.findByRole("button", { name: "Use Full" }));
-    expect(levelSelect()).toHaveValue("full");
-    expect(screen.getByText(INDICATOR.full)).toBeInTheDocument();
+    expect(await levelSelect(user)).toHaveValue("full");
+    expect(screen.getByRole("button", { name: /^Model settings: .* · Full$/ })).toBeInTheDocument();
     await sendFromGlobal(user, "run it");
     await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
     expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "run it", permission: "full" });
@@ -188,12 +191,25 @@ describe("permission level in the chat composer, live daemon", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     await pickGlobal(user);
-    expect(levelSelect()).toHaveValue("restricted");
-    expect(screen.getByRole("status")).toHaveTextContent(OLDER_DAEMON_NOTICE);
+    expect(await levelSelect(user)).toHaveValue("restricted");
+    expect(screen.getByText(OLDER_DAEMON_NOTICE)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Auto (needs an updated daemon)" })).toBeDisabled();
     await sendFromGlobal(user, "old daemon");
     await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
     expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("permission");
+  });
+
+  it("shows the level in the model picker chip, and no indicator or one-click switch below the composer", async () => {
+    const fake = liveDaemon();
+    stubConversation(fake, "completed");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickGlobal(user);
+    expect(screen.getByRole("button", { name: /^Model settings: .* · Auto$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Switch to Restricted" })).toBeNull();
+    expect(screen.queryByText(/What automatic review does/)).toBeNull();
+    expect((await levelSelect(user)).closest(".ws-model-panel")).not.toBeNull();
   });
 
   it("warns when the daemon reports a different level from the one sent", async () => {
@@ -229,11 +245,11 @@ describe("permission level in the chat composer, live daemon", () => {
       const { user } = await mountView(services, false);
       await waitLive(services);
       await pickGlobal(user);
-      await user.selectOptions(levelSelect(), "Restricted");
+      await user.selectOptions(await levelSelect(user), "Restricted");
       expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
-      await user.selectOptions(levelSelect(), "Auto");
+      await user.selectOptions(await levelSelect(user), "Auto");
       expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBeNull();
-      await user.selectOptions(levelSelect(), "Full");
+      await user.selectOptions(await levelSelect(user), "Full");
       await user.click(await screen.findByRole("button", { name: "Use Full" }));
       expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBeNull();
       expect(setItem.mock.calls).toEqual([[RESTRICTED_PREFERENCE_KEY, "restricted"]]);
@@ -252,7 +268,7 @@ describe("permission level in the chat composer, live daemon", () => {
     const first = await mountView(firstServices, false);
     await waitLive(firstServices);
     await pickGlobal(first.user);
-    expect(levelSelect()).toHaveValue("restricted");
+    expect(await levelSelect(first.user)).toHaveValue("restricted");
     first.view.unmount();
 
     window.localStorage.clear();
@@ -260,7 +276,7 @@ describe("permission level in the chat composer, live daemon", () => {
     const second = await mountView(secondServices, false);
     await waitLive(secondServices);
     await pickGlobal(second.user);
-    await second.user.selectOptions(levelSelect(), "Full");
+    await second.user.selectOptions(await levelSelect(second.user), "Full");
     await second.user.click(await screen.findByRole("button", { name: "Use Full" }));
     second.view.unmount();
 
@@ -268,7 +284,7 @@ describe("permission level in the chat composer, live daemon", () => {
     const third = await mountView(thirdServices, false);
     await waitLive(thirdServices);
     await pickGlobal(third.user);
-    expect(levelSelect()).toHaveValue("auto");
+    expect(await levelSelect(third.user)).toHaveValue("auto");
     third.view.unmount();
   });
 });
@@ -279,11 +295,11 @@ describe("permission level in the chat composer, fixture mode", () => {
     const services = track(build({ fake, fixtures: true }));
     const { user } = await mountView(services);
     const before = fake.calls.length;
-    await user.selectOptions(levelSelect(), "Restricted");
+    await user.selectOptions(await levelSelect(user), "Restricted");
     await sendFromGlobal(user, "first");
     expect(await screen.findByText(/SIMULATED: this message was not sent or recorded anywhere/)).toBeInTheDocument();
-    await user.selectOptions(levelSelect(), "Auto");
-    await user.selectOptions(levelSelect(), "Full");
+    await user.selectOptions(await levelSelect(user), "Auto");
+    await user.selectOptions(await levelSelect(user), "Full");
     await user.click(await screen.findByRole("button", { name: "Use Full" }));
     await sendFromGlobal(user, "second");
     await waitFor(() => expect(screen.getAllByText(/SIMULATED/).length).toBeGreaterThan(1));

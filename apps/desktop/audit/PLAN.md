@@ -11,9 +11,9 @@ Spec citations: `wireframe.md` = `/Users/mckerracher.joshua/Code/agent-orch-run/
 
 | Class | Count | Notes |
 | --- | --- | --- |
-| defect (fix needed) | 58 | 57 have a check; `workstreams-04` is unverifiable and has none |
+| defect (fix needed) | 59 | 57 have a check; `workstreams-04` is unverifiable and has none; `workspace-09` is covered by this branch and its check is only in `workspace.json` |
 | blocked-on-data | 2 | `review-and-app-only-06` (DPES-1108), `agents-06` (DPES-1107); checks exist, marked `test.fixme` |
-| intentional | 20 | 16 original plus 4 reclassified from defect |
+| intentional | 19 | 16 original plus 3 reclassified from defect |
 | wireframe-gap | 23 | 21 original gaps, `review-and-app-only-04` (not in wireframe), and `workstreams-03` (DPES-1105) |
 | total findings | 103 | matches the 103 entries in the four findings files |
 
@@ -27,7 +27,7 @@ Old class to new class. Coordinator-directed items are confirmed unless noted.
 
 | Finding | Old → new | Spec citation and reason |
 | --- | --- | --- |
-| workspace-09 | defect → intentional | D-9 (`wireframe.md` line 249): background animation is post-release and opt-in. OX-A10 deferred (line 349). |
+| workspace-09 | defect → intentional, reverted by DPES-1105 (defect, covered by `feat/DPES-1105_desktop-ambient-background-default-on`) | D-9 (`wireframe.md` line 251) now ships the animation on by default. The earlier post-release opt-in reason no longer applies. |
 | workspace-10 | defect → intentional | OX-B4 lists per-workstream targets as missing (line 360). D-4 (line 244): real workstream and objective entities are post-release. No objective data source. |
 | workspace-11 | defect (narrowed) | "Notes, no reply" is intentional: D-6 (line 246) and OX-B2 (line 357). The disabled "Request review" stays a defect: OX-B2a (line 358) says review chips navigate to OX-S2, which exists. "Escalate to Global" stays disabled with a reason (fixture rule 3, line 474). |
 | workspace-17 | wireframe-gap → defect | `operational-design.md` line 244: "exactly four persistent primary destinations". The wireframe has no Projects nav item (verified). |
