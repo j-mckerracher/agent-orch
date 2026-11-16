@@ -204,8 +204,10 @@ The macOS `workspace-tests` count is 723 passed (the two added `orchestrator-git
 **Priority 12 round 4** (the native Windows FAIL of round 3) fixed six defects, each read from the raw Windows
 logs:
 
-- `bounded.test.mjs` `EBUSY` on cleanup: Node's synchronous `rmSync` ignores `maxRetries` for `EBUSY`, so the
-  round 3 retry option did nothing. Cleanup is now `scripts/ci/remove-dir.mjs`, an awaited retry loop over the
+- `bounded.test.mjs` `EBUSY` on cleanup: Node 22's synchronous `rmSync` retries `EBUSY` for a file and for a
+  directory once its children are gone, but not for a directory's first `rmdir`, so the round 3 retry option
+  could not cover that case (checked in Node 22.20.0's `lib/internal/fs/rimraf.js`). Cleanup is now
+  `scripts/ci/remove-dir.mjs`, an awaited retry loop over the
   asynchronous `rm`, the test's grandchild no longer starts with the temp directory as its working directory,
   and the timeout test waits until the grandchild is gone before it removes anything. `runBounded` now returns
   the pid it launched.

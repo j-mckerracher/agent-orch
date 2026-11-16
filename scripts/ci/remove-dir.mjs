@@ -1,8 +1,9 @@
 // Removes a directory that a process may still be releasing.
 //
 // Windows keeps a directory busy (EBUSY, EPERM, EACCES, ENOTEMPTY) for a moment after the process
-// that had it as its working directory exited or was killed. Node's synchronous `rmSync` ignores
-// `maxRetries` for EBUSY and throws at once, so the retry loop is here, around the async `rm`.
+// that had it as its working directory exited or was killed. Node's synchronous `rmSync` does not
+// retry a busy directory's first `rmdir` (it does retry busy files), so the retry loop is here, around
+// the async `rm`.
 import { rm } from "node:fs/promises";
 
 const RETRYABLE = new Set(["EBUSY", "EPERM", "EACCES", "ENOTEMPTY"]);

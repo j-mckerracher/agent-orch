@@ -95,7 +95,7 @@ try {
         { PFX_PATH: pfx, WINDOWS_CERTIFICATE_PASSWORD: windowsSecrets.WINDOWS_CERTIFICATE_PASSWORD },
       );
     } finally {
-      rmSync(pfx, { force: true });
+      rmSync(pfx, { force: true, maxRetries: 10, retryDelay: 200 });
       windowsSecrets = {};
     }
     if (!/^[0-9A-Fa-f]{40}$/.test(certThumbprint)) throw new Error("certificate import did not return a thumbprint");
