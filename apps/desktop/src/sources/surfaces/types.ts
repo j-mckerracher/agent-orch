@@ -187,6 +187,8 @@ export interface ConversationTurnInfo {
   runtime: { name: string; version: string };
   /** The level the daemon reports the agent ran with. Null when none was recorded (DPES-1105). */
   permissionLevel?: PermissionLevel | null;
+  /** False when the turn ran a version the daemon has not verified (DPES-1106). */
+  verified: boolean;
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -208,6 +210,11 @@ export interface SendReceipt {
   entryId: string;
   /** Live Global and workstream targets: the turn this message opened. */
   turn?: ConversationTurnInfo;
+  /**
+   * Informational only, never a block: the turn ran a version the daemon has not verified. Set once per agent and
+   * version per app session (DPES-1106).
+   */
+  warning?: string;
 }
 export interface ConversationSource {
   readonly provenance: Provenance;

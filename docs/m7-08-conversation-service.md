@@ -59,9 +59,10 @@ Names are proposals so concurrent daemon work does not collide; no new
   Unknown fields are rejected.
 
 Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
-`permission_denied`, `version_mismatch`, `runtime_unpinned`, `runtime_failed`,
-`runtime_timeout`, `runtime_busy`, `reply_too_large`, `interrupted_by_restart`,
-and, for a choice the catalog refuses (DPES-1105), one code per refusal reason:
+`permission_denied`, `version_mismatch` (a required flag is absent from a
+readable help; the entry's body names the flag), `runtime_changed`, `runtime_unpinned`,
+`runtime_failed`, `runtime_timeout`, `runtime_busy`, `reply_too_large`,
+`interrupted_by_restart`, and, for a choice the catalog refuses (DPES-1105), one code per refusal reason:
 `selection_agent_unavailable`, `selection_authentication_failed`,
 `selection_agent_state_unknown`, `selection_agent_unsupported`,
 `selection_models_unsupported`, `selection_models_unknown`,
@@ -128,13 +129,42 @@ no flag.
   15 s (`conversations.send` calls `prepare()` before the idempotency gate);
   after that the turn fails `runtime_unavailable` too. The selection and
   version are cached for 30 s.
-- **Pins.** Known-good versions are compiled in (`codex` 0.167.0 and 0.167.2,
-  `claude-code` 2.1.311). 0.167.2 was checked against its `codex exec --json`
-  event order and command lifecycle. The operator can add more
-  with `AGENT_ORCH_CONVERSATION_PINS=name@version,...`. An unpinned version gets
-  `version_mismatch` and never receives the message. `start_turn` compares the
-  identity again, but only against the cached selection: an upgrade of the CLI
-  inside the 30 s window is not detected.
+- **Verified versions.** Compiled in (`codex` 0.167.0 and 0.167.2,
+  `claude-code` 2.1.311, `github-copilot` at its pinned version). 0.167.2 was
+  checked against its `codex exec --json` event order and command lifecycle.
+  These run with no warning. An operator marks another version verified with
+  `AGENT_ORCH_CONVERSATION_PINS=name@version,...`, and a pinned version's help
+  is never read. The pin list is the only thing that decides whether the
+  warning shows; it does not decide whether a version may run.
+- **Unverified versions (DPES-1106).** A CLI version the list does not name
+  runs, and the desktop shows once per agent and version per app session:
+  `<Agent> <version> has not been verified with MCAO. Replies may fail.` The
+  warning is informational and never blocks a send, and needs no action. The
+  turn records the version it ran on, and `conversations.get` reports
+  `verified: false` for it.
+- **Help probe.** Before an unverified version runs, the daemon reads the
+  installed CLI's help once per program and version (`codex exec --help`;
+  `--help` for Claude Code and Copilot), with a 5 s limit and 256 KiB of
+  output. It reads only help text, never a turn. The flags the chat argv
+  needs at the requested level are taken from the adapter's own argv, so the
+  check cannot drift from what runs. The version is refused with
+  `version_mismatch` only when the help was read and a required flag is
+  definitely absent. The refusal names the flag: the terminal entry's body
+  carries it, and the desktop names the agent, version and flag. When the help
+  times out, fails, or shows no flags, the version is not refused and the turn
+  runs with the warning.
+- **Output the parser cannot read.** The parser stays fail-closed. An unverified
+  turn whose output the parser rejects fails `runtime_failed`, and the turn's
+  recorded version names what ran. An unverified turn that exits cleanly with
+  no text also fails `runtime_failed`, never an empty reply.
+- **The one risk the probe cannot catch.** A version can list every flag and
+  still change the JSONL event shapes. The daemon cannot know that until a
+  turn runs; the parser then fails the turn rather than showing a wrong reply.
+- A selection that changes between the selection and the launch fails
+  `runtime_changed` instead, so a version that was verified is never reported as
+  unsupported. `start_turn` compares the identity again, but only against the
+  cached selection: an upgrade of the CLI inside the 30 s window is not
+  detected.
 - **Prompt.** A fixed frame (talk only, no actions), the scope, a bounded
   workstream context, up to 6 earlier completed turns (4 KiB per reply, 12 KiB
   in total, which keeps the Windows command line short) and the current message

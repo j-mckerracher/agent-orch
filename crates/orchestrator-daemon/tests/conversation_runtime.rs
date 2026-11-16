@@ -592,7 +592,9 @@ fn the_agent_runs_read_only_in_an_empty_scratch_directory() {
 }
 
 #[test]
-fn a_version_that_is_not_pinned_never_receives_the_message() {
+fn a_version_that_is_not_pinned_runs_with_the_warning_and_records_its_version() {
+    // An unknown version is not refused by its version. Its help lists the chat's
+    // flags, so it runs, and the turn records the version it ran on (DPES-1106).
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let daemon = start(
@@ -603,11 +605,161 @@ fn a_version_that_is_not_pinned_never_receives_the_message() {
         ],
     );
     let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["runtime"]["version"], "9.9.9", "{page}");
+    assert_eq!(page["turn"]["verified"], false, "{page}");
+    assert_eq!(
+        launch_lines(&log).len(),
+        1,
+        "the unverified version did not run"
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_unverified_version_with_every_chat_flag_runs_and_is_marked_unverified() {
+    // Outcome 2: an unknown version whose help lists every flag runs, with the
+    // unverified-version warning (DPES-1106).
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
     let sent = chat.send(&global(), "hi", "m-1");
-    assert_eq!(sent["turn"]["state"], "failed");
-    assert_eq!(sent["turn"]["error_code"], "version_mismatch");
-    assert_eq!(sent["turn"]["runtime"]["version"], "9.9.9");
+    let page = chat.settled(&global());
+    assert_eq!(sent["turn"]["runtime"]["version"], "0.169.0", "{sent}");
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["verified"], false, "{page}");
+    assert_eq!(
+        page["turn"]["runtime"],
+        json!({"name": "codex", "version": "0.169.0"}),
+        "{page}"
+    );
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--""#),
+        "{}",
+        lines[0]
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_pinned_version_is_verified_and_its_help_is_never_read() {
+    // Outcome 1: a verified pin runs with no warning. Its help would refuse (the
+    // flag is missing), so the run proves the help was not read.
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_FAKE_VERSION", "0.0.0-fake"),
+            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(sent["turn"]["state"], "running", "{sent}");
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["verified"], true, "{page}");
+    assert_eq!(launch_lines(&log).len(), 1);
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_unverified_version_missing_a_chat_flag_is_refused_and_names_the_flag() {
+    // Outcome 3: the help was read and a flag the chat needs is absent, so the
+    // version is refused and the agent is never launched.
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
+            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "hi", "m-1");
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(sent["turn"]["error_code"], "version_mismatch", "{sent}");
     assert!(!log.exists(), "the agent was launched");
+    let page = chat.get(&global(), 0);
+    assert_eq!(page["entries"][1]["body"], "--ephemeral", "{page}");
+    assert_eq!(
+        page["entries"][1]["runtime"],
+        json!({"name": "codex", "version": "0.169.0"})
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_unreadable_help_never_refuses_a_version() {
+    // A help text that shows no flags, or cannot be read, is not a refusal: the
+    // turn runs with the warning (DPES-1106).
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
+            ("AGENT_ORCH_FAKE_HELP_MODE", "unreadable"),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["verified"], false, "{page}");
+    assert_eq!(launch_lines(&log).len(), 1, "{sent}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_unverified_turn_whose_output_cannot_be_read_fails_and_never_goes_empty() {
+    // The parser stays fail-closed: output it cannot read fails the turn; it is
+    // never a silent empty reply (DPES-1106).
+    let layout = Layout::new();
+    let daemon = start(&layout, &[("AGENT_ORCH_FAKE_VERSION", "0.169.0")]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "[fake:unreadable] hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "failed", "{page}");
+    assert_eq!(page["turn"]["error_code"], "runtime_failed", "{page}");
+    assert_eq!(page["turn"]["runtime"]["version"], "0.169.0", "{page}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_pin_marks_an_otherwise_unknown_version_verified() {
+    // Outcome 4: AGENT_ORCH_CONVERSATION_PINS is the operator's verification. The
+    // version is verified, so its help is not read and no warning is shown.
+    let layout = Layout::new();
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
+            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
+            ("AGENT_ORCH_CONVERSATION_PINS", "codex@0.169.0"),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["verified"], true, "{page}");
     stop(&layout, daemon, chat);
 }
 

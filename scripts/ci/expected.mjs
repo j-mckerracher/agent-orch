@@ -36,7 +36,9 @@ export const WINDOWS = {
   // API tests; the executor tests are Unix-only), so 176 becomes 178 passed plus 1 ignored, sequence [146, 24, 2, 4, 0, 1, 2].
   // The chat model choice for GitHub Copilot (DPES-1105, PR #99, CI run 43951278199, measured on Windows): the unit binary 146 becomes 147.
   // The old Copilot refusal test is replaced by the Pi refusal and the missing-CLI tests, so 178 becomes 179 passed plus 1 ignored.
-  daemon: { passed: 179, ignored: 1, sequence: [147, 24, 2, 4, 0, 1, 2] },
+  // DPES-1106 unverified agent versions (PR #101, CI run 43965574766, measured on Windows): the unit binary 147 becomes 154 and
+  // conversation_runtime 24 becomes 30. The not-pinned refusal tests are replaced by the unverified-run tests, so 179 becomes 192 passed.
+  daemon: { passed: 192, ignored: 1, sequence: [154, 30, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -95,7 +97,9 @@ export const MACOS = {
   // API tests and 6 Unix-only executor tests), so 252 becomes 260 passed plus 1 ignored.
   // The chat model choice for GitHub Copilot (DPES-1105, PR #99, CI run 43951278199, measured on macOS): the unit binary 215 becomes 217
   // and conversation_runtime 26 becomes 29 (the Copilot choice tests; the executor catalog test is Unix-only), so 260 becomes 265.
-  daemon: { passed: 265, ignored: 1, sequence: [217, 29, 2, 4, 11, 1, 2] },
+  // DPES-1106 unverified agent versions (PR #101, CI run 43965574766, measured on macOS): the unit binary 217 becomes 224 and
+  // conversation_runtime 29 becomes 35, so 265 becomes 278 passed.
+  daemon: { passed: 278, ignored: 1, sequence: [224, 35, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -118,7 +122,8 @@ export const MACOS = {
   // plus 2 ignored, as the macOS workspace-tests gate measured them in CI run 43945842537.
   // The chat model choice for GitHub Copilot (DPES-1105, PR #99) adds 5 tests to the workspace total, as the macOS workspace-tests
   // gate measured them in CI run 43951278199 (1174 against 1169 before main's 3 usage preflight tests): 1172 becomes 1177.
-  workspace: { passed: 1177, ignored: 2 },
+  // DPES-1106 unverified agent versions (PR #101) adds 13 tests to the workspace total (macOS workspace-tests gate, CI run 43965574766): 1177 becomes 1190.
+  workspace: { passed: 1190, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -165,7 +170,9 @@ export const NODE_SELF_TESTS = { passed: 132 };
 // 1667 tests, as the desktop-vitest gate measured them on macOS and Windows in CI run 43945842537.
 // The chat model choice for GitHub Copilot (DPES-1105, PR #99) adds 6 net tests to the existing ModelPicker and CopilotSignInCheck
 // test files: 1673 tests in 80 files, as measured by `npx vitest run` on the merged tree (CI measured 1668 in 79 files before main's 5).
-export const VITEST = { files: 80, tests: 1673 };
+// DPES-1106 unverified agent versions (PR #101) adds 8 tests to conversationLive.test.ts: 1681 tests in 80 files, counted by
+// `npx vitest run` on the merged tree and by the desktop-vitest gate in CI run 43965574766.
+export const VITEST = { files: 80, tests: 1681 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

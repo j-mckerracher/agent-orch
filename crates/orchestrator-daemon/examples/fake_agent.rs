@@ -15,11 +15,14 @@
 //! - `[fake:slow]` replies in five pieces, 200 ms apart.
 //! - `[fake:control]` replies with control, bidirectional and invisible characters.
 //! - `[fake:flood]` replies with more text than a turn may store.
+//! - `[fake:unreadable]` prints an event the parser does not know, so the turn fails.
 //! - `[fake:echo]` replies with the prompt's context and history lines.
 //!
 //! Environment: `AGENT_ORCH_FAKE_VERSION` (default `0.0.0-fake`),
 //! `AGENT_ORCH_FAKE_VERSION_MODE` (`fail`, `garbage`, `hang` or `flood`: how
-//! `--version` misbehaves), `FAKE_AGENT_LOG` (appends one line per turn
+//! `--version` misbehaves), `AGENT_ORCH_FAKE_HELP_MODE` (`full`, the default,
+//! lists every chat flag; `missing:<flag>` leaves one flag out; `unreadable`
+//! prints no flags, so the probe cannot read them), `FAKE_AGENT_LOG` (appends one line per turn
 //! with the working directory and arguments) and `FAKE_AGENT_PID_FILE`
 //! (written with this process's id when a turn starts). A turn runs with a
 //! filtered environment, so a test lists these two names in
@@ -30,6 +33,57 @@ use std::io::Write;
 use std::time::Duration;
 
 const SESSION_ID: &str = "01a1b721-1f91-7393-ae1d-6aace8e4646a";
+
+/// The flags `codex exec --help` lists for the chat argv (DPES-1106).
+const CODEX_EXEC_FLAGS: &[&str] = &[
+    "--json",
+    "--sandbox",
+    "--approve-for-me",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--model",
+    "--config",
+];
+
+/// The flags Claude Code's `--help` lists for the chat argv, with the effort and
+/// model lines the catalog reads.
+const CLAUDE_FLAGS: &[&str] = &[
+    "-p",
+    "--print",
+    "--verbose",
+    "--output-format",
+    "--include-partial-messages",
+    "--permission-mode",
+    "--permission-prompts",
+    "--restricted",
+    "--strict-mcp-config",
+    "--no-session-persistence",
+    "--tools",
+    "--allowedTools",
+    "--effort",
+    "--model",
+];
+
+/// Prints a help text that lists `flags`, as `AGENT_ORCH_FAKE_HELP_MODE` says.
+/// `missing:<flag>` leaves one out, so the probe refuses it. `unreadable`
+/// prints no flags at all, so the probe cannot tell what is offered.
+fn print_help(flags: &[&str]) {
+    match std::env::var("AGENT_ORCH_FAKE_HELP_MODE").as_deref() {
+        Ok("unreadable") => println!("Run the agent with a prompt."),
+        Ok(mode) if mode.starts_with("missing:") => {
+            let gone = &mode["missing:".len()..];
+            for flag in flags.iter().filter(|flag| **flag != gone) {
+                println!("  {flag} <VALUE>    listed");
+            }
+        }
+        _ => {
+            for flag in flags {
+                println!("  {flag} <VALUE>    listed");
+            }
+        }
+    }
+}
 const MARKER: &str = "Current message:\n";
 
 fn main() {
@@ -43,9 +97,12 @@ fn main() {
             r#"{{"models":[{{"slug":"fake-model","display_name":"Fake model","visibility":"list","default_reasoning_level":"low","supported_reasoning_levels":[{{"effort":"low"}},{{"effort":"high"}}]}}]}}"#
         ),
         ["auth", "status"] => println!(r#"{{"loggedIn":true}}"#),
-        ["--help", ..] => println!(
-            "Usage: claude [options]\n  --effort <level>   Effort level (low, medium, high)\n  --model <model>    Model"
-        ),
+        ["exec", "--help"] => print_help(CODEX_EXEC_FLAGS),
+        ["--help", ..] => {
+            // The catalog reads the effort levels from this line (`parse_claude_efforts`).
+            println!("Usage: claude [options]\n  --effort <level>   Effort level (low, medium, high)\n  --model <model>    Model");
+            print_help(CLAUDE_FLAGS);
+        }
         ["exec", ..] => {
             let prompt = args.last().cloned().unwrap_or_default();
             turn(&args, &prompt, Dialect::Codex);
@@ -141,6 +198,12 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
     }
     started(dialect);
     let message = prompt.rsplit_once(MARKER).map_or(prompt, |(_, tail)| tail);
+    if message.contains("[fake:unreadable]") {
+        // An event type the parser does not know: the turn must fail, never end
+        // as an empty reply (DPES-1106).
+        emit(r#"{"type":"mystery.event","payload":{"unknown":true}}"#);
+        return;
+    }
     let mut pieces: Vec<String> = Vec::new();
     if message.contains("[fake:fail]") {
         eprintln!("fake_agent: failing on request");
