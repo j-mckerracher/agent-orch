@@ -2,18 +2,17 @@
 
 | Item | Value |
 |---|---|
-| Source | `mc-innersource/motif-mcao`, branch `main`, **latest at the start of your run** |
-| Pin at authoring | commit `400d542f8faa035ad928c722f4470d73d72cca33`, tree `b56571f49d6492cac1ffd259b5b2e877e0a06921` (2026-11-16) |
+| Source | History-free snapshot of `mc-innersource/motif-mcao` `main` commit `400d542f8faa035ad928c722f4470d73d72cca33` (tree `b56571f49d6492cac1ffd259b5b2e877e0a06921`, 2026-11-16), on branch `snap/win-mcao-400d542f` of the private agent-bus hub repo. Snapshot commit `ea5b5abca917ff9bf8799a486b2e425afa755a87`. |
 | Runbook URL | `https://github.com/j-mckerracher/agent-orch/blob/runbook/motif-mcao-windows-tests/docs/evidence/motif-mcao-windows-test-runbook.md` |
 | Machine | Windows 11, interactive desktop, Rust 1.96.0 (MSVC), Node 22.x, Visual Studio C++ Build Tools, Windows SDK |
 
 You run the automated tests of motif-mcao natively on Windows and report. You do not change code, the `origin` remote, global Git config, PATH or credentials. Use process-scope environment variables only.
 
-The source is private. This runbook holds no source. Do not copy source, logs or evidence into the public `j-mckerracher/agent-orch` repository.
+The source is private and this machine cannot reach it. This runbook holds no source. Do not copy source, logs or evidence into the public `j-mckerracher/agent-orch` repository.
 
 ## 0. Rules
 
-1. Test latest `main`. Resolve it once in step 1, record the commit and tree, and test that commit only, even if `main` moves during the run.
+1. Test the pinned snapshot only. It was latest `main` when the snapshot was taken.
 2. Report defects. Do not fix code, do not edit `scripts/ci/expected.mjs`, do not run `git clean`, `git reset` or `git stash` in the checkout.
 3. Never elevate. Do not install software. If a tool is missing, mark the affected steps `BLOCKED` and continue with the independent ones.
 4. Status per step: `PASS` (observed), `FAIL` (observed otherwise; say what), `BLOCKED` (named prerequisite missing), `SKIPPED`. Never write `PASS` for anything you did not observe. A `SKIPPED` gate in the harness is `INCONCLUSIVE`, not a pass.
@@ -23,21 +22,21 @@ The source is private. This runbook holds no source. Do not copy source, logs or
 
 ## 1. Get the source and pin it
 
-Use whatever authenticated Git access this machine already has for `mc-innersource/motif-mcao`. Do not log in, add credentials or change Git config for this. If you cannot read the repository, mark the whole run `BLOCKED` with the exact error and stop.
+The task spec on the agent bus names the hub repository. Fetch only branch `snap/win-mcao-400d542f` with the Git access and bus tooling this machine already uses for the hub. Do not log in, add credentials or change Git config. If you cannot fetch it, mark the whole run `BLOCKED` with the exact error and stop.
 
 ```powershell
 $Run = 'C:\t\' + ([guid]::NewGuid().ToString('N').Substring(0,8))
 New-Item -ItemType Directory -Path $Run | Out-Null
-git clone --no-tags --branch main https://github.com/mc-innersource/motif-mcao.git "$Run\src"
+git clone --no-tags --single-branch --branch snap/win-mcao-400d542f <hub URL from the task spec> "$Run\src"
 Set-Location "$Run\src"
 git config --local core.autocrlf false
 git config --local core.longpaths true
 git rev-parse HEAD
-git rev-parse 'HEAD^{tree}'
+git ls-files | Measure-Object -Line
 git status --porcelain
 ```
 
-Record the commit and tree. `git status --porcelain` must print nothing. Report whether the commit equals the authoring pin above. A different commit is expected if `main` moved; test it anyway.
+`git rev-parse HEAD` must print `ea5b5abca917ff9bf8799a486b2e425afa755a87`; stop if it does not. The file count must be 1445. `git status --porcelain` must print nothing. The snapshot has no Git history, and `.github/workflows` (9 files) was removed on purpose. A test that reads a workflow file fails because of that: report it as `FAIL (snapshot omits .github/workflows)`, not as a product defect, and say which gate. The gate harness may also require a Git history or remote; if so, report that limit rather than working around it.
 
 ## 2. Toolchain and isolation
 
