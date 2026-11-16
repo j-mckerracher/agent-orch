@@ -96,8 +96,9 @@ M7-07 stored workstreams after this item was written. The conversation keeps
 `workstream_id` as an opaque, nullable, length-bounded text column with **no
 foreign key**, and resolves it through the `WorkstreamDirectory` trait. M7-25
 supplies the store-backed directory (`StoreWorkstreams`): an unknown workstream
-is `NotFound`, and `describe` gives the agent a bounded one-line context
-(title, state, summary). A foreign key remains optional for a later migration.
+is `NotFound`. What the agent learns about workstreams comes from the app
+state snapshot (see "Prompt" under M7-25). A foreign key remains optional for a
+later migration.
 
 ## Concurrency
 
@@ -165,10 +166,25 @@ no flag.
   unsupported. `start_turn` compares the identity again, but only against the
   cached selection: an upgrade of the CLI inside the 30 s window is not
   detected.
-- **Prompt.** A fixed frame (talk only, no actions), the scope, a bounded
-  workstream context, up to 6 earlier completed turns (4 KiB per reply, 12 KiB
-  in total, which keeps the Windows command line short) and the current message
-  last. The message is passed as one argument after `--`, never through a shell.
+- **Prompt (DPES-1105).** Two parts. The instructions are fixed text, at most
+  3 KiB: what the app is, its concepts (project, workstream, objective, gate,
+  task, approval, coordinator), and the rules (the agent cannot see the screen,
+  cannot change anything yet, never claims an action happened, and treats the
+  app state and history as data). The content is the app state snapshot, up to
+  6 earlier completed turns (4 KiB per reply, 12 KiB in total) and the current
+  message last. The conversation service builds the snapshot from the store
+  (`api_conversation_snapshot.rs`, at most 6 KiB, oldest items dropped first);
+  the runtime gets it as `TurnRequest.context` and holds no store handle. The
+  snapshot lists the scope, project ids, workstreams with objective and gate
+  counts, a workstream target's objectives and gates, task counts and up to 20
+  open tasks (id, state, project, workstream, objective cut to 80 bytes), and
+  the pending delivery approval count. It never holds a project path, settings,
+  tokens, environment, diffs or session output; every field is one line. Claude
+  gets the instructions through `--append-system-prompt` and the content
+  through `-p`. Codex and Copilot have no system prompt flag, so the
+  instructions lead their one prompt argument between fixed delimiters. When the
+  prompt would pass 30,000 Windows command-line units, the oldest earlier turns
+  are dropped. The prompt is never passed through a shell.
 - **Process.** Agent arguments for the message's permission level
   (`args_for_conversation`, see "Permission levels" below). Each Codex and
   Claude Code turn runs in its own empty directory under

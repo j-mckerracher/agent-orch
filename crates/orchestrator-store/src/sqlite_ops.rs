@@ -32,6 +32,18 @@ pub struct EventJournalEntry {
     pub created_at: String,
 }
 
+/// The list fields of one task, read without its attempts, sessions or events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOverview {
+    pub id: String,
+    pub project_id: String,
+    pub state: TaskState,
+    /// Objective as stored in the contract.
+    pub objective: String,
+    /// Workstream the task serves, when it is linked to one.
+    pub workstream_id: Option<String>,
+}
+
 /// Identity of the process that owns a running session's [`AgentHandle`].
 ///
 /// `generation` is a fresh UUID for each run. It is not a PID: requests are
@@ -167,6 +179,32 @@ impl SqliteStore {
                         id: row.try_get("id")?,
                         root_path: row.try_get("root_path")?,
                         settings: decode(&row.try_get::<String, _>("settings")?)?,
+                    })
+                })
+                .collect()
+        })
+    }
+
+    /// Lists every task's overview in creation order. Reads task rows only.
+    pub fn task_overview(&self) -> Result<Vec<TaskOverview>, StoreError> {
+        self.call(|pool| async move {
+            let rows = sqlx::query(
+                "SELECT tasks.id, tasks.project_id, tasks.state, \
+                 COALESCE(json_extract(tasks.contract_json, '$.objective'), '') AS objective, \
+                 workstream_tasks.workstream_id \
+                 FROM tasks LEFT JOIN workstream_tasks ON workstream_tasks.task_id = tasks.id \
+                 ORDER BY tasks.rowid",
+            )
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    Ok(TaskOverview {
+                        id: row.try_get("id")?,
+                        project_id: row.try_get("project_id")?,
+                        state: decode(&row.try_get::<String, _>("state")?)?,
+                        objective: row.try_get("objective")?,
+                        workstream_id: row.try_get("workstream_id")?,
                     })
                 })
                 .collect()
@@ -2475,6 +2513,51 @@ mod tests {
         assert_eq!(
             store.list().unwrap().len(),
             results.iter().filter(|r| r.is_ok()).count()
+        );
+    }
+
+    #[test]
+    fn task_overview_lists_state_objective_and_workstream_in_creation_order() {
+        use orchestrator_core::workstream::{Workstream, WorkstreamState, INITIAL_REVISION};
+
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+        store.register_project(&project()).unwrap();
+        store.create(&contract("t1")).unwrap();
+        store.create(&contract("t2")).unwrap();
+        store.transition("t2", TaskEvent::Admit).unwrap();
+        store
+            .create_workstream(
+                &Workstream {
+                    id: "w1".into(),
+                    title: "Ship".into(),
+                    summary: String::new(),
+                    state: WorkstreamState::Active,
+                    revision: INITIAL_REVISION,
+                },
+                "test",
+            )
+            .unwrap();
+        store.link_task("w1", "t2", None).unwrap();
+
+        assert_eq!(
+            store.task_overview().unwrap(),
+            vec![
+                TaskOverview {
+                    id: "t1".into(),
+                    project_id: "p1".into(),
+                    state: TaskState::Created,
+                    objective: "Implement the thing".into(),
+                    workstream_id: None,
+                },
+                TaskOverview {
+                    id: "t2".into(),
+                    project_id: "p1".into(),
+                    state: TaskState::Queued,
+                    objective: "Implement the thing".into(),
+                    workstream_id: Some("w1".into()),
+                },
+            ]
         );
     }
 }

@@ -1058,9 +1058,13 @@ impl ClaudeCodeAdapter {
     /// prompts. Auto keeps the restricted flags, enables Bash and lets the
     /// classifier judge each call. Full drops the restrictions and skips
     /// permission checks, which the user chose per turn in the picker.
+    ///
+    /// `instructions`, when given, go to `--append-system-prompt`, so they stay
+    /// apart from the prompt and Claude keeps its own system prompt.
     pub fn args_for_conversation(
         level: PermissionLevel,
         prompt: &str,
+        instructions: Option<&str>,
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<Vec<String>> {
@@ -1126,6 +1130,10 @@ impl ClaudeCodeAdapter {
             .collect(),
             PermissionLevel::Extended => return None,
         };
+        if let Some(instructions) = instructions {
+            args.push("--append-system-prompt".into());
+            args.push(instructions.into());
+        }
         if let Some(model) = model {
             args.push("--model".into());
             args.push(model.into());
@@ -1536,6 +1544,7 @@ mod tests {
         let claude = ClaudeCodeAdapter::args_for_conversation(
             PermissionLevel::Restricted,
             prompt,
+            Some("rules"),
             None,
             Some("max"),
         )
@@ -1545,6 +1554,11 @@ mod tests {
         assert_eq!(claude[tools + 1], "");
         assert!(claude.iter().any(|arg| arg == "--no-session-persistence"));
         assert!(!claude.iter().any(|arg| arg == "--allowedTools"));
+        let system = claude
+            .iter()
+            .position(|arg| arg == "--append-system-prompt")
+            .unwrap();
+        assert_eq!(claude[system + 1], "rules");
         assert_eq!(&claude[claude.len() - 2..], ["--effort", "max"]);
     }
 
@@ -1604,8 +1618,9 @@ mod tests {
     /// permission levels. Full drops every restriction flag.
     #[test]
     fn claude_argv_per_level_is_exact() {
-        let argv =
-            |level| ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None).unwrap();
+        let argv = |level| {
+            ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None, None).unwrap()
+        };
         let auto = argv(PermissionLevel::Auto);
         assert_eq!(
             auto[..],
@@ -1656,7 +1671,13 @@ mod tests {
             assert!(!full.iter().any(|arg| arg == flag), "{flag}");
         }
         assert_eq!(
-            ClaudeCodeAdapter::args_for_conversation(PermissionLevel::Extended, "hi", None, None),
+            ClaudeCodeAdapter::args_for_conversation(
+                PermissionLevel::Extended,
+                "hi",
+                None,
+                None,
+                None
+            ),
             None
         );
     }

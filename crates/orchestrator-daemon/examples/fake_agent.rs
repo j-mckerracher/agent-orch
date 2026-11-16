@@ -61,6 +61,7 @@ const CLAUDE_FLAGS: &[&str] = &[
     "--no-session-persistence",
     "--tools",
     "--allowedTools",
+    "--append-system-prompt",
     "--effort",
     "--model",
 ];
@@ -226,7 +227,7 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
             .lines()
             .filter(|line| {
                 line.starts_with("Scope:")
-                    || line.starts_with("Workstream context:")
+                    || line.starts_with("- ")
                     || line.starts_with("Operator:")
                     || line.starts_with("Assistant:")
             })

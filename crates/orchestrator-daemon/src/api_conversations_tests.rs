@@ -112,18 +112,6 @@ impl WorkstreamDirectory for Directory {
     }
 }
 
-struct Described(&'static [&'static str], &'static str);
-
-impl WorkstreamDirectory for Described {
-    fn exists(&self, workstream_id: &str) -> Result<bool, RpcError> {
-        Ok(self.0.contains(&workstream_id))
-    }
-
-    fn describe(&self, _workstream_id: &str) -> Option<String> {
-        Some(self.1.to_owned())
-    }
-}
-
 fn api_with(
     runtime: Arc<TestRuntime>,
     pinned: bool,
@@ -629,13 +617,9 @@ fn without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable() 
 }
 
 #[test]
-fn a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context() {
+fn a_new_turn_sees_the_completed_turns_before_it_and_the_app_state() {
     let runtime = TestRuntime::new(Mode::Reply(vec!["one".into(), "!".into()]));
-    let (_directory, api) = api_with(
-        runtime.clone(),
-        true,
-        Arc::new(Described(&["w1"], "Auth rewrite (state: draft).")),
-    );
+    let (_directory, api) = api_with(runtime.clone(), true, Arc::new(Directory(&["w1"])));
     let w1 = json!({"kind": "workstream", "workstream_id": "w1"});
     send(&api, w1.clone(), "first", "k1").unwrap();
     send(&api, w1.clone(), "second", "k2").unwrap();
@@ -643,9 +627,18 @@ fn a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context() {
     let seen = runtime.requests.lock().unwrap();
     assert!(seen[0].0.is_empty());
     assert_eq!(seen[1].0, vec![("first".to_owned(), "one!".to_owned())]);
-    assert_eq!(seen[1].1.as_deref(), Some("Auth rewrite (state: draft)."));
+    let workstream = seen[1].1.as_deref().unwrap();
+    assert!(
+        workstream.contains("Scope: one workstream."),
+        "{workstream}"
+    );
     assert!(seen[2].0.is_empty(), "histories are per conversation");
-    assert_eq!(seen[2].1, None);
+    let global = seen[2].1.as_deref().unwrap();
+    assert!(
+        global.contains("Scope: the global orchestrator."),
+        "{global}"
+    );
+    assert!(global.starts_with("BEGIN APP STATE"), "{global}");
 }
 
 #[test]

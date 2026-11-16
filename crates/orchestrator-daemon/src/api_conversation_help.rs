@@ -41,7 +41,9 @@ pub(crate) fn required_flags(agent: &str, level: PermissionLevel) -> Vec<String>
     let argv: Vec<String> = if agent == CODEX {
         CodexAdapter::args_for_conversation(level, "p", None, None).unwrap_or_default()
     } else if agent == CLAUDE {
-        ClaudeCodeAdapter::args_for_conversation(level, "p", None, None).unwrap_or_default()
+        // Every Claude chat turn passes the app instructions as a system prompt.
+        ClaudeCodeAdapter::args_for_conversation(level, "p", Some("i"), None, None)
+            .unwrap_or_default()
     } else {
         // Copilot's chat argv is built with a run directory and a usage file that
         // this module does not have; it is checked against its own top-level flags.
@@ -232,6 +234,9 @@ mod tests {
         assert!(restricted.contains(&"-p".to_owned()), "{restricted:?}");
         assert!(
             restricted.contains(&"--output-format".to_owned()),
+            "{restricted:?}"
+        );        assert!(
+            restricted.contains(&"--append-system-prompt".to_owned()),
             "{restricted:?}"
         );
     }
