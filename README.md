@@ -158,8 +158,8 @@ CI runs Trivy with the same scanners and severities, plus TruffleHog. The threat
 - Write commit messages and PR titles as Conventional Commits with the Jira key: `type(scope): DPES-NNNN - Description`. The description starts with a capital letter. The allowed types are in the PR template.
 - Use the [organization PR template](https://github.com/mc-innersource/.github) for every pull request. Fill in the Jira work-item block, and list every CI run under Workflow Runs.
 - Open pull requests as ready for review, not as drafts. Do not merge while a check is red.
-- Record user-visible changes under `## Unreleased` in `docs/changelog.md`.
-- Maintainers cut releases as described in `docs/RELEASE.md`.
+- Write each commit subject for the changelog: user-visible changes need a `feat`, `fix` or `update` subject, and release-please turns it into the changelog entry. See `docs/RELEASE.md`.
+- Merging a release pull request, opened by release-please, is how a release is cut. See `docs/RELEASE.md`.
 
 ## Links
 
