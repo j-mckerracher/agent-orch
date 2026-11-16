@@ -4,6 +4,19 @@ MCAO is a desktop app and a local daemon that run coding agents on your machine.
 
 The daemon launches the vendor CLIs you have installed (Codex, Claude Code, and GitHub Copilot) as child processes. MCAO makes no direct calls to any provider API and keeps no credential store of its own. It passes a short list of provider environment variables, such as `OPENAI_API_KEY`, from its own environment to the CLI it starts.
 
+## Install and first launch (unsigned build)
+
+> Important: these builds are unsigned.
+> The macOS and Windows installers are not code-signed or notarized, so the operating system warns or blocks the first launch. The first release, [v0.1.0](https://github.com/mc-innersource/motif-mcao/releases/tag/v0.1.0), is a prerelease.
+>
+> - macOS (Apple Silicon, arm64 only): Gatekeeper blocks the first launch. Try to open MCAO once, then open System Settings, Privacy & Security, and click Open Anyway. Or move `MCAO.app` to `/Applications`, then run `xattr -dr com.apple.quarantine /Applications/MCAO.app` in Terminal.
+> - Windows: SmartScreen shows "Windows protected your PC". Choose More info, then Run anyway.
+> - To check a download, run `shasum -a 256 <file>` on macOS or `Get-FileHash <file>` on Windows, and compare the digest with its line in `SHA256SUMS`.
+>
+> Downloads are on the [releases page](https://github.com/mc-innersource/motif-mcao/releases). Details are in [docs/RELEASE.md](docs/RELEASE.md).
+>
+> Nobody has launched the installed app on a clean machine yet, so these first-launch prompts are not yet checked on one.
+
 ## Features
 
 - **Workspace chat.** Chat with an agent in the Global workspace or in a project. The composer has a target picker, a model picker, and a permission level control. Each message can use a different model. Codex, Claude Code and GitHub Copilot answer chat. The picker offers Copilot when the daemon can launch its CLI and shows why when it cannot. A Copilot message uses premium requests or AI credits on your Copilot seat.
@@ -17,7 +30,7 @@ The daemon launches the vendor CLIs you have installed (Codex, Claude Code, and 
 
 ## Status
 
-- MCAO is alpha. Releases are manual, unsigned, and marked as prereleases. See [Install](#install).
+- MCAO is alpha. Releases are manual, unsigned, and marked as prereleases. See [Install and first launch](#install-and-first-launch-unsigned-build).
 - Windows behavior of Copilot and permission levels is not verified.
 - Workstreams and Review views show placeholder data in places. The move of the agent harness to Oh My Pi is deferred. See `docs/future/mcao-next-version-features.md`.
 
@@ -58,12 +71,10 @@ The data directory defaults to `~/.local/share/agent-orch` on macOS and `%LOCALA
 
 ## Install
 
-No release is published yet. Check the [releases page](https://github.com/mc-innersource/motif-mcao/releases). A release lists two installers, one for macOS and one for Windows, and `SHA256SUMS`. It is marked as a prerelease while the builds are unsigned.
+Download the installers from the [releases page](https://github.com/mc-innersource/motif-mcao/releases). Read [Install and first launch](#install-and-first-launch-unsigned-build) before you open them, because the builds are unsigned.
 
-The unsigned builds show a warning on first launch:
-
-- macOS: Gatekeeper blocks the first launch. Try to open MCAO once. Then open System Settings, Privacy & Security, and click Open Anyway. Control-click Open no longer bypasses this on macOS 15 and later. Alternatively, move `MCAO.app` to `/Applications` and run `xattr -dr com.apple.quarantine /Applications/MCAO.app`.
-- Windows: SmartScreen shows "Windows protected your PC". Choose More info, then Run anyway.
+- macOS: unzip `MCAO-0.1.0-macos-arm64-unsigned.zip` and move `MCAO.app` to `/Applications`.
+- Windows: run `MCAO-0.1.0-windows-x64-unsigned-setup.exe` and follow the installer.
 
 ## Development
 

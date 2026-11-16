@@ -115,6 +115,7 @@ pub(super) fn start_local_usage(data_dir: &Path) -> LocalUsageService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchestrator_local_usage::ReaderSource;
 
     fn window_params(start: i64, end: i64) -> Value {
         json!({
@@ -174,7 +175,15 @@ mod tests {
         on["enabled"] = json!(true);
         let snapshot = api.dispatch("usage.localTools.setEnabled", on).unwrap();
         assert_eq!(snapshot["enabled"], true);
-        assert_eq!(snapshot["reader"]["state"], "not_started");
+        // The reader's own answer at opt-in: a build with no reader is named at once, and a build that might
+        // have one starts as not_started. The answer depends on the machine (CI has no codeburn), so the
+        // expectation is read from the same source, not hardcoded. The missing-reader path is covered
+        // deterministically by the orchestrator-local-usage integration scenarios.
+        let expected = match CodeburnSource::default().missing() {
+            Some(state) => serde_json::to_value(state).unwrap(),
+            None => json!("not_started"),
+        };
+        assert_eq!(snapshot["reader"]["state"], expected);
         assert!(directory.path().join("usage-local-tools.json").is_file());
 
         let mut off = window.clone();

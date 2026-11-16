@@ -171,7 +171,9 @@ export function UsagePill() {
         ? money(reported, summary.currency)
         : summary && estimate !== null
           ? `≈ ${money(estimate, summary.currency)}`
-          : "not available";
+          : summary && summary.reported.status === "unknown" && summary.costCoverage?.sessions === 0
+            ? "nothing recorded yet"
+            : "not available";
   const reason =
     result.status === "loading" || result.status === "ok" ? null : `Usage is ${result.status}: ${trimStop(result.reason)}.`;
 
