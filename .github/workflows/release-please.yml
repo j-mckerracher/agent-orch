@@ -1,0 +1,74 @@
+name: release-please
+
+# Opens or updates the release pull request on every push to main. Merging that pull request is the
+# release: release-please then creates a draft release, and this workflow creates the annotated v* tag
+# it names and starts release.yml on that tag, which builds, verifies and publishes the release.
+# release-please publishes nothing itself. See docs/RELEASE.md.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release-please (release pull request)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The action works through the API, so the job needs no checkout. issues: write lets it label
+    # the release pull request.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: release-please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  release:
+    name: release (tag and release run)
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # actions: write lets this job start release.yml. A run started by the token is still allowed,
+    # because workflow_dispatch is the exception to the token's no-recursion rule.
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      SHA: ${{ needs.release-please.outputs.sha }}
+    steps:
+      # release-please made the draft release for this tag, but git only creates a tag from a draft when it
+      # is published. The annotated tag is created here, before the run that builds from it.
+      - name: Create the annotated tag
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "tag $TAG already exists"
+            exit 0
+          fi
+          object=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$TAG" -f message="Release $TAG" -f object="$SHA" -f type=commit --jq .sha)
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
+          echo "created annotated tag $TAG at $SHA"
+
+      # The run's ref is the tag, so the release environment's v* rule applies to it. publish=true lets
+      # its publish job publish the draft; without it the run builds and stops.
+      - name: Start the release run on the tag
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f publish=true

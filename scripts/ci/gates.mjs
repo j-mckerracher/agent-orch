@@ -17,6 +17,8 @@ const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
 
 const UI = "apps/desktop";
 const TAURI = "apps/desktop/src-tauri";
+// The installer's file name carries the app version, which release-please bumps.
+const APP_VERSION = JSON.parse(readFileSync(join(here, "..", "..", TAURI, "tauri.conf.json"), "utf8")).version;
 const lifecyclePattern = "^lifecycle: PASS[ \\t]*\\r?$";
 
 export const UNPROVEN_ROWS = [
@@ -204,7 +206,7 @@ export function gatesFor(platform) {
       ? {
           name: "desktop-package-win", mode: "exit", cwd: UI, exe: "npm", args: ["run", "package:win"], timeout: 3600,
           needs: ["desktop-npm-ci"],
-          artifacts: [{ target: "release/bundle/nsis/MCAO_0.1.0_x64-setup.exe", record: "installer.txt" }],
+          artifacts: [{ target: `release/bundle/nsis/MCAO_${APP_VERSION}_x64-setup.exe`, record: "installer.txt" }],
         }
       : {
           name: "desktop-package-mac", mode: "exit", cwd: UI, exe: "npm", args: ["run", "package:mac"], timeout: 3600,
