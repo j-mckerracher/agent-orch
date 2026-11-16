@@ -15,30 +15,33 @@ const MAX_CONFIG_BYTES: u64 = 16 * 1024;
 const MAX_RULES: usize = 32;
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
 enum Metric {
-    InputTokens,
-    CacheReadTokens,
-    CacheWriteTokens,
-    OutputTokens,
+    #[serde(rename = "input_tokens")]
+    Input,
+    #[serde(rename = "cache_read_tokens")]
+    CacheRead,
+    #[serde(rename = "cache_write_tokens")]
+    CacheWrite,
+    #[serde(rename = "output_tokens")]
+    Output,
 }
 
 impl Metric {
     fn name(self) -> &'static str {
         match self {
-            Self::InputTokens => "input_tokens",
-            Self::CacheReadTokens => "cache_read_tokens",
-            Self::CacheWriteTokens => "cache_write_tokens",
-            Self::OutputTokens => "output_tokens",
+            Self::Input => "input_tokens",
+            Self::CacheRead => "cache_read_tokens",
+            Self::CacheWrite => "cache_write_tokens",
+            Self::Output => "output_tokens",
         }
     }
 
     fn count(self, figures: &UsageFigures) -> Option<u64> {
         match self {
-            Self::InputTokens => figures.input_tokens,
-            Self::CacheReadTokens => figures.cache_read_tokens,
-            Self::CacheWriteTokens => figures.cache_write_tokens,
-            Self::OutputTokens => figures.output_tokens,
+            Self::Input => figures.input_tokens,
+            Self::CacheRead => figures.cache_read_tokens,
+            Self::CacheWrite => figures.cache_write_tokens,
+            Self::Output => figures.output_tokens,
         }
     }
 }
