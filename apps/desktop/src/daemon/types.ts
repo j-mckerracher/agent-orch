@@ -547,6 +547,8 @@ export interface ConversationWireEntry {
   author: "user" | "orchestrator" | "system";
   body: string;
   error_code: string | null;
+  /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
+  runtime?: { name: string; version: string };
   created_at: string;
 }
 
@@ -558,6 +560,8 @@ export interface ConversationWireTurn {
   state: "running" | "completed" | "failed" | "cancelled";
   error_code: string | null;
   runtime: { name: string; version: string };
+  /** False when the daemon has not verified the version the turn ran on (DPES-1106). Absent from older daemons. */
+  verified?: boolean;
   reply_bytes: number;
   created_at: string;
   updated_at: string;

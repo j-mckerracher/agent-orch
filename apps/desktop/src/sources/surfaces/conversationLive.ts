@@ -15,6 +15,7 @@
  *   log shows its newest entries; the oldest are cut and the result says so.
  */
 import type { ConnectionManager } from "../../daemon/connection";
+import { agentDisplayName } from "../../daemon/agentDisplayNames";
 import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
@@ -87,6 +88,7 @@ const FAILURE_TEXT: Record<string, string> = {
   credentials_missing: "The orchestrator could not start: its credentials are missing. No reply was produced.",
   permission_denied: "The orchestrator was denied permission to run. No reply was produced.",
   version_mismatch: "The orchestrator runtime has an unsupported version. No reply was produced.",
+  runtime_changed: "The orchestrator's agent changed before this message was sent, so no reply was produced. Send the message again.",
   runtime_unpinned: "The orchestrator runtime is not pinned to a version. No reply was produced.",
   runtime_failed: "The orchestrator runtime failed. The reply is incomplete or missing.",
   runtime_timeout: "The orchestrator took too long to answer and was stopped. The reply is incomplete or missing.",
@@ -108,8 +110,20 @@ const FAILURE_TEXT: Record<string, string> = {
   permission_level_unsupported: "This permission level is not available for chat with this agent yet. Choose another level. No reply was produced.",
 };
 
-export function failureText(code: string | null): string {
+/** The agent and version a turn refused because they are not pinned (DPES-1106). */
+export interface RefusedRuntime {
+  name: string;
+  version: string;
+}
+
+/** Names the refused agent and the pin that would accept it. `runtime` is what the daemon recorded for the turn. */
+function unsupportedVersionText({ name, version }: RefusedRuntime): string {
+  return `${agentDisplayName(name)} ${version} is not a supported version yet. Set AGENT_ORCH_CONVERSATION_PINS=${name}@${version} and restart the daemon to try it. No reply was produced.`;
+}
+
+export function failureText(code: string | null, runtime?: RefusedRuntime): string {
   if (code === null) return "The turn failed without a reason code. No reply was produced.";
+  if (code === "version_mismatch" && runtime) return unsupportedVersionText(runtime);
   return FAILURE_TEXT[code] ?? `The turn failed (${code}). No reply was produced.`;
 }
 
@@ -124,6 +138,8 @@ export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
     errorCode: turn.error_code,
     runtime: turn.runtime,
     permissionLevel: turn.permission_level ?? null,
+    // A daemon from before the verified field (DPES-1106) is not warned about.
+    verified: turn.verified ?? true,
   };
 }
 
@@ -173,7 +189,7 @@ export function mapEntries(wire: readonly ConversationWireEntry[]): Conversation
         break;
       case "turn_failed":
         if (reply) reply.streaming = false;
-        out.push(status(entry, failureText(entry.error_code)));
+        out.push(status(entry, failureText(entry.error_code, entry.runtime)));
         break;
       case "turn_cancelled":
         if (reply) reply.streaming = false;
@@ -184,9 +200,22 @@ export function mapEntries(wire: readonly ConversationWireEntry[]): Conversation
   return out;
 }
 
+/**
+ * The informational line for a turn that ran a version the daemon has not verified (DPES-1106). It does not block a
+ * send and needs no action. Shown once per agent and version per app session: `warned` is that session's memory and
+ * is never stored.
+ */
+export function unverifiedWarning(turn: ConversationTurnInfo, warned: Set<string>): string | undefined {
+  if (turn.verified) return undefined;
+  const key = `${turn.runtime.name}@${turn.runtime.version}`;
+  if (warned.has(key)) return undefined;
+  warned.add(key);
+  return `${agentDisplayName(turn.runtime.name)} ${turn.runtime.version} has not been verified with MCAO. Replies may fail.`;
+}
+
 export const sendNotice = (turn: ConversationTurnInfo): string =>
   turn.state === "failed"
-    ? `Recorded by the daemon. ${failureText(turn.errorCode)}`
+    ? `Recorded by the daemon. ${failureText(turn.errorCode, turn.runtime)}`
     : turn.state === "running"
       ? "Recorded by the daemon. Waiting for the orchestrator's reply."
       : "Recorded by the daemon.";
@@ -212,6 +241,8 @@ export function createLiveConversation(
   send: (target: LiveTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
 } {
   const scopeOf = (target: LiveTarget) => (target.kind === "global" ? "global" : `workstream:${target.workstreamId}`);
+  // The unverified versions already warned about in this app session. Kept in memory only, never stored.
+  const warned = new Set<string>();
 
   return {
     async transcript(target) {
@@ -285,13 +316,16 @@ export function createLiveConversation(
           };
         }
         const turn = turnInfo(result.turn);
+        const warning = unverifiedWarning(turn, warned);
         return {
           simulated: false,
           provenance,
-          notice: sendNotice(turn),
+          // The warning joins the notice, so every view that shows a send's notice shows it.
+          notice: warning ? `${sendNotice(turn)} ${warning}` : sendNotice(turn),
           at: entry.created_at,
           entryId: entry.id,
           turn,
+          ...(warning ? { warning } : {}),
         };
       } catch (error) {
         keys.settle(scope, asDaemonError(error));

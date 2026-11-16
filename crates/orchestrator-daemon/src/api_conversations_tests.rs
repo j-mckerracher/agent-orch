@@ -68,6 +68,11 @@ impl ConversationRuntime for TestRuntime {
         self.identity.clone()
     }
 
+    /// Only the version the tests pin (`1.0.0`) is verified; any other is not.
+    fn verified(&self, identity: &RuntimeIdentity) -> bool {
+        identity.version == "1.0.0"
+    }
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -84,7 +89,7 @@ impl ConversationRuntime for TestRuntime {
             request.context.clone(),
         ));
         match &self.mode {
-            Mode::Fail(failure) => return Err(*failure),
+            Mode::Fail(failure) => return Err(failure.clone()),
             Mode::Hold => *self.held.lock().unwrap() = Some(sink),
             Mode::Reply(parts) => {
                 for part in parts {
@@ -121,24 +126,17 @@ impl WorkstreamDirectory for Described {
 
 fn api_with(
     runtime: Arc<TestRuntime>,
-    pin: Vec<RuntimeIdentity>,
+    pinned: bool,
     workstreams: Arc<dyn WorkstreamDirectory>,
 ) -> (tempfile::TempDir, DaemonApi) {
     let directory = tempfile::tempdir().unwrap();
     let mut api = DaemonApi::new(directory.path()).unwrap();
-    api.conversations = ConversationService::new(api.store.clone(), runtime, workstreams, pin);
+    api.conversations = ConversationService::new(api.store.clone(), runtime, workstreams, pinned);
     (directory, api)
 }
 
-fn pin(version: &str) -> Vec<RuntimeIdentity> {
-    vec![RuntimeIdentity {
-        name: "test-runtime".into(),
-        version: version.into(),
-    }]
-}
-
 fn pinned(runtime: Arc<TestRuntime>) -> (tempfile::TempDir, DaemonApi) {
-    api_with(runtime, pin("1.0.0"), Arc::new(NoWorkstreams))
+    api_with(runtime, true, Arc::new(NoWorkstreams))
 }
 
 fn global() -> Value {
@@ -311,7 +309,7 @@ fn cancel_closes_the_turn_stops_the_runtime_and_discards_late_output() {
 #[test]
 fn cancel_is_scoped_to_its_conversation_and_turn() {
     let runtime = TestRuntime::new(Mode::Hold);
-    let (_directory, api) = api_with(runtime, pin("1.0.0"), Arc::new(Directory(&["w1"])));
+    let (_directory, api) = api_with(runtime, true, Arc::new(Directory(&["w1"])));
     let sent = send(&api, global(), "first", "k1").unwrap();
     let turn_id = sent["turn"]["id"].as_str().unwrap();
     for (target, id, key) in [
@@ -414,7 +412,12 @@ fn runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message() {
     for (failure, code) in [
         (RuntimeFailure::CredentialsMissing, "credentials_missing"),
         (RuntimeFailure::PermissionDenied, "permission_denied"),
-        (RuntimeFailure::VersionMismatch, "version_mismatch"),
+        (
+            RuntimeFailure::MissingFlag("--ephemeral".into()),
+            "version_mismatch",
+        ),
+        (RuntimeFailure::Unpinned, "runtime_unpinned"),
+        (RuntimeFailure::RuntimeChanged, "runtime_changed"),
         (RuntimeFailure::Failed, "runtime_failed"),
         (RuntimeFailure::Unavailable, "runtime_unavailable"),
     ] {
@@ -630,7 +633,7 @@ fn a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context() {
     let runtime = TestRuntime::new(Mode::Reply(vec!["one".into(), "!".into()]));
     let (_directory, api) = api_with(
         runtime.clone(),
-        pin("1.0.0"),
+        true,
         Arc::new(Described(&["w1"], "Auth rewrite (state: draft).")),
     );
     let w1 = json!({"kind": "workstream", "workstream_id": "w1"});
@@ -646,19 +649,24 @@ fn a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context() {
 }
 
 #[test]
-fn a_runtime_that_does_not_match_its_pin_never_sees_the_message() {
-    let mismatched = TestRuntime::versioned("2.0.0", Mode::Reply(vec!["x".into()]));
-    let (_directory, api) = pinned(mismatched.clone());
-    let sent = send(&api, global(), "secret", "k1").unwrap();
-    assert_eq!(sent["turn"]["error_code"], "version_mismatch");
-    assert_eq!(sent["turn"]["runtime"]["version"], "2.0.0");
-    assert_eq!(mismatched.started.load(Ordering::SeqCst), 0);
-
+fn a_runtime_with_no_pins_at_all_never_sees_the_message() {
     let unpinned = TestRuntime::new(Mode::Reply(vec!["x".into()]));
-    let (_directory, api) = api_with(unpinned.clone(), Vec::new(), Arc::new(NoWorkstreams));
+    let (_directory, api) = api_with(unpinned.clone(), false, Arc::new(NoWorkstreams));
     let sent = send(&api, global(), "secret", "k1").unwrap();
     assert_eq!(sent["turn"]["error_code"], "runtime_unpinned");
     assert_eq!(unpinned.started.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn an_unverified_version_runs_and_is_reported_unverified() {
+    // The service does not refuse a version it has not verified; the runtime
+    // decides whether its help allows the turn, and the turn says what it ran on.
+    let unverified = TestRuntime::versioned("2.0.0", Mode::Reply(vec!["x".into()]));
+    let (_directory, api) = pinned(unverified.clone());
+    let sent = send(&api, global(), "hi", "k1").unwrap();
+    assert_eq!(sent["turn"]["runtime"]["version"], "2.0.0");
+    assert_eq!(sent["turn"]["verified"], false, "{sent}");
+    assert_eq!(unverified.started.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -677,7 +685,7 @@ fn workstream_targets_need_a_resolvable_workstream_and_stay_separate() {
     assert_eq!(runtime.started.load(Ordering::SeqCst), 0);
 
     let runtime = TestRuntime::new(Mode::Reply(vec!["ok".into()]));
-    let (_directory, api) = api_with(runtime, pin("1.0.0"), Arc::new(Directory(&["w1", "w2"])));
+    let (_directory, api) = api_with(runtime, true, Arc::new(Directory(&["w1", "w2"])));
     let w1 = json!({"kind": "workstream", "workstream_id": "w1"});
     let w2 = json!({"kind": "workstream", "workstream_id": "w2"});
     send(&api, w1.clone(), "one", "k1").unwrap();
@@ -695,7 +703,7 @@ fn conversation_text_and_replies_create_no_task_approval_or_delivery() {
         proposal.to_owned(),
         r#"{"method":"tasks.submit","approve":"all","deliver":true}"#.to_owned(),
     ]));
-    let (_directory, api) = api_with(runtime, pin("1.0.0"), Arc::new(Directory(&["w1"])));
+    let (_directory, api) = api_with(runtime, true, Arc::new(Directory(&["w1"])));
     let targets = [
         global(),
         json!({"kind": "workstream", "workstream_id": "w1"}),

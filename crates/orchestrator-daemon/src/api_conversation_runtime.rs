@@ -72,12 +72,19 @@ pub(crate) struct TurnRequest {
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
 /// text is never stored or returned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RuntimeFailure {
     Unavailable,
     CredentialsMissing,
     PermissionDenied,
-    VersionMismatch,
+    /// The installed agent's help no longer lists a flag this chat needs at its
+    /// permission level. The flag is the detail, a daemon-chosen token.
+    MissingFlag(String),
+    /// No pins are configured, so no selected agent may receive a message.
+    Unpinned,
+    /// The selected agent changed between the pin check and the launch. The
+    /// message is not sent; a new message gets the current selection.
+    RuntimeChanged,
     Failed,
     Timeout,
     Busy,
@@ -88,17 +95,27 @@ pub(crate) enum RuntimeFailure {
 }
 
 impl RuntimeFailure {
-    pub(crate) fn code(self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::Unavailable => "runtime_unavailable",
             Self::CredentialsMissing => "credentials_missing",
             Self::PermissionDenied => "permission_denied",
-            Self::VersionMismatch => "version_mismatch",
+            Self::MissingFlag(_) => "version_mismatch",
+            Self::Unpinned => "runtime_unpinned",
+            Self::RuntimeChanged => "runtime_changed",
             Self::Failed => "runtime_failed",
             Self::Timeout => "runtime_timeout",
             Self::Busy => "runtime_busy",
-            Self::Refused(reason) => refusal_code(reason),
+            Self::Refused(reason) => refusal_code(*reason),
             Self::LevelUnsupported => PERMISSION_LEVEL_UNSUPPORTED,
+        }
+    }
+
+    /// The body of the terminal entry: a daemon-chosen token, or empty.
+    pub(crate) fn detail(&self) -> String {
+        match self {
+            Self::MissingFlag(flag) => flag.clone(),
+            _ => String::new(),
         }
     }
 }
@@ -147,6 +164,13 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     /// False only for a runtime that never produces output, so it needs no
     /// version pin.
     fn requires_pin(&self, _choice: Option<&Choice>) -> bool {
+        true
+    }
+
+    /// Whether `identity` is one the daemon has verified. An unverified identity
+    /// still runs (DPES-1106), and the desktop warns about it once per version.
+    fn verified(&self, identity: &RuntimeIdentity) -> bool {
+        let _ = identity;
         true
     }
 
@@ -289,8 +313,9 @@ pub(crate) struct ConversationService {
     shared: Arc<Shared>,
     runtime: Arc<dyn ConversationRuntime>,
     workstreams: Arc<dyn WorkstreamDirectory>,
-    /// Exact identities a runtime may report. Empty means no pinned runtime.
-    pins: Vec<RuntimeIdentity>,
+    /// Whether the daemon has any pin at all. Without one no agent may answer.
+    /// Which versions are verified is decided by the runtime, not here.
+    pinned: bool,
 }
 
 impl ConversationService {
@@ -298,7 +323,7 @@ impl ConversationService {
         store: Arc<SqliteStore>,
         runtime: Arc<dyn ConversationRuntime>,
         workstreams: Arc<dyn WorkstreamDirectory>,
-        pins: Vec<RuntimeIdentity>,
+        pinned: bool,
     ) -> Self {
         Self {
             shared: Arc::new(Shared {
@@ -307,7 +332,7 @@ impl ConversationService {
             }),
             runtime,
             workstreams,
-            pins,
+            pinned,
         }
     }
 
@@ -326,6 +351,12 @@ impl ConversationService {
     /// See [`ConversationRuntime::prepare`].
     pub(crate) fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
         self.runtime.prepare(choice)
+    }
+
+    /// Whether a turn that recorded `identity` ran a verified version. Read when a
+    /// turn is shown, so the desktop can warn about an unverified one (DPES-1106).
+    pub(crate) fn verified(&self, identity: &RuntimeIdentity) -> bool {
+        self.runtime.verified(identity)
     }
 
     pub(crate) fn require_target(&self, target: &ConversationTarget) -> Result<(), RpcError> {
@@ -368,15 +399,19 @@ impl ConversationService {
             return Ok(begun);
         }
         let failure = match permission {
-            Err(failure) => Some(failure.code().to_owned()),
+            Err(failure) => Some(failure),
             Ok(permission) => self
                 .launch(&identity, choice, level, target, turn_id, text)
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
                 }),
         };
-        if let Some(code) = failure {
-            store.finish_conversation_turn(turn_id, &TurnOutcome::Failed(code))?;
+        if let Some(failure) = failure {
+            store.finish_conversation_turn_with_detail(
+                turn_id,
+                &TurnOutcome::Failed(failure.code().to_owned()),
+                &failure.detail(),
+            )?;
         }
         let turn = store
             .conversation_turn(turn_id)?
@@ -395,9 +430,9 @@ impl ConversationService {
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
-    ) -> Option<String> {
-        if let Some(code) = self.pin_failure(identity, choice) {
-            return Some(code.to_owned());
+    ) -> Option<RuntimeFailure> {
+        if let Some(failure) = self.pin_failure(choice) {
+            return Some(failure);
         }
         let request = TurnRequest {
             target: target.clone(),
@@ -419,26 +454,20 @@ impl ConversationService {
             Ok(control) => self
                 .register(turn_id, control)
                 .err()
-                .map(|_| RuntimeFailure::Failed.code().to_owned()),
-            Err(failure) => Some(failure.code().to_owned()),
+                .map(|_| RuntimeFailure::Failed),
+            Err(failure) => Some(failure),
         }
     }
 
-    fn pin_failure(
-        &self,
-        identity: &RuntimeIdentity,
-        choice: Option<&Choice>,
-    ) -> Option<&'static str> {
+    /// Refuses a selected agent only when the daemon has no pins at all. A
+    /// version that is not pinned is not refused here: the runtime checks that
+    /// the agent still offers what the chat needs, and the turn runs with an
+    /// unverified-version warning otherwise (DPES-1106).
+    fn pin_failure(&self, choice: Option<&Choice>) -> Option<RuntimeFailure> {
         if !self.runtime.requires_pin(choice) {
             return None;
         }
-        if self.pins.is_empty() {
-            Some("runtime_unpinned")
-        } else if self.pins.contains(identity) {
-            None
-        } else {
-            Some("version_mismatch")
-        }
+        (!self.pinned).then_some(RuntimeFailure::Unpinned)
     }
 
     /// The newest completed exchanges before `current_turn`, oldest first.
@@ -491,7 +520,7 @@ impl ConversationService {
     /// Record the level of a turn whose agent has just started. A store error
     /// stops the agent and fails the turn, so nothing runs unrecorded. Returns
     /// the failure code, or `None` when the level was recorded.
-    fn record_launched(&self, turn_id: &str, permission: TurnPermission) -> Option<String> {
+    fn record_launched(&self, turn_id: &str, permission: TurnPermission) -> Option<RuntimeFailure> {
         if self
             .shared
             .store
@@ -500,14 +529,14 @@ impl ConversationService {
         {
             return None;
         }
-        let code = RuntimeFailure::Failed.code();
+        let failure = RuntimeFailure::Failed;
         if let Some(control) = self
             .shared
-            .finish(turn_id, &TurnOutcome::Failed(code.to_owned()))
+            .finish(turn_id, &TurnOutcome::Failed(failure.code().to_owned()))
         {
             control.cancel();
         }
-        Some(code.to_owned())
+        Some(failure)
     }
 
     /// Keep the control only while the turn is still running; a runtime that

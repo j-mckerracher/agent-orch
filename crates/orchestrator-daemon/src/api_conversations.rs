@@ -27,7 +27,7 @@ use orchestrator_store::{
     MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
-use super::conversation_runtime::Choice;
+use super::conversation_runtime::{Choice, RuntimeIdentity};
 use super::*;
 
 const CONVERSATION_PAGE_SIZE: usize = 100;
@@ -190,7 +190,7 @@ impl DaemonApi {
             "authority": "none",
             "target": target,
             "entry": entry,
-            "turn": turn.as_ref().map(turn_json),
+            "turn": turn.as_ref().map(|turn| self.turn_wire(turn)),
             "epoch": reference.get("epoch").cloned().unwrap_or(Value::Null)
         }))
     }
@@ -249,15 +249,20 @@ impl DaemonApi {
         let more = page.entries.len() > CONVERSATION_PAGE_SIZE;
         page.entries.truncate(CONVERSATION_PAGE_SIZE);
         let next_after_sequence = page.entries.last().map_or(cursor, |entry| entry.sequence);
+        let entries = page
+            .entries
+            .iter()
+            .map(|entry| entry_wire(&self.store, entry))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({
             "authority": "none",
             "target": request.target,
-            "entries": page.entries.iter().map(entry_json).collect::<Vec<_>>(),
+            "entries": entries,
             "more": more,
             "next_after_sequence": next_after_sequence,
             "latest_sequence": page.latest_sequence,
             "clear_generation": page.clear_generation,
-            "turn": page.latest_turn.as_ref().map(turn_json),
+            "turn": page.latest_turn.as_ref().map(|turn| self.turn_wire(turn)),
             "epoch": epoch
         }))
     }
@@ -283,7 +288,7 @@ impl DaemonApi {
                 Ok(json!({
                     "authority": "none",
                     "target": request.target,
-                    "turn": turn_json(&turn),
+                    "turn": self.turn_wire(&turn),
                     "cancel_applied": applied,
                     "epoch": self.store.store_epoch().map_err(map_store_error)?
                 }))
@@ -342,6 +347,37 @@ fn entry_json(entry: &ConversationEntry) -> Value {
         "error_code": entry.error_code,
         "created_at": entry.created_at
     })
+}
+
+/// An entry as `conversations.get` returns it. A turn refused for its version
+/// also names the agent and version it refused (DPES-1106), so the desktop can
+/// say which one to pin. Both are read from the turn the daemon recorded.
+fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, RpcError> {
+    let mut value = entry_json(entry);
+    if entry.error_code.as_deref() == Some("version_mismatch") {
+        let turn = store
+            .conversation_turn(&entry.turn_id)
+            .map_err(map_conversation_error)?;
+        if let Some(turn) = turn {
+            value["runtime"] = json!({"name": turn.runtime_name, "version": turn.runtime_version});
+        }
+    }
+    Ok(value)
+}
+
+impl DaemonApi {
+    /// A turn as the wire shows it. `verified` says whether the version the turn
+    /// recorded is one the daemon has verified; the desktop warns once per version
+    /// when it is not (DPES-1106). The version itself is always recorded.
+    fn turn_wire(&self, turn: &ConversationTurn) -> Value {
+        let identity = RuntimeIdentity {
+            name: turn.runtime_name.clone(),
+            version: turn.runtime_version.clone(),
+        };
+        let mut value = turn_json(turn);
+        value["verified"] = json!(self.conversations.verified(&identity));
+        value
+    }
 }
 
 fn turn_json(turn: &ConversationTurn) -> Value {
