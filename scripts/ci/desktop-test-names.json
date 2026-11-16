@@ -31,6 +31,7 @@
     "src/sources/surfaces/search.test.ts",
     "src/sources/surfaces/services.test.tsx",
     "src/sources/surfaces/usageLive.test.tsx",
+    "src/sources/surfaces/usageTokenWarnings.test.ts",
     "src/sources/surfaces/workstreamsLive.test.ts",
     "src/ui/ConnectionStrip.test.tsx",
     "src/ui/background/AmbientBackground.test.tsx",
@@ -78,8 +79,7 @@
     "src/ui/views/workstreams/WorkstreamsDetail.test.tsx",
     "src/ui/views/workstreams/WorkstreamsView.test.tsx",
     "src/ui/views/workstreams/evidence.test.ts",
-    "src/ui/views/workstreams/model.test.ts",
-    "src/sources/surfaces/usageTokenWarnings.test.ts"
+    "src/ui/views/workstreams/model.test.ts"
   ],
   "tests": [
     "src/daemon/agentDisplayNames.test.ts :: agentDisplayName (DPES-1105) labels each daemon agent id with its product name",
@@ -1754,6 +1754,14 @@
     "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 3)",
     "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 4)",
     "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary discloses invalid or contradictory warning data as unavailable (case 5)",
-    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary keeps unavailable counts unknown and refuses duplicate or excessive rules"
+    "src/sources/surfaces/usageTokenWarnings.test.ts :: token warning boundary keeps unavailable counts unknown and refuses duplicate or excessive rules",
+    "src/sources/surfaces/conversationLive.test.ts :: mapEntries keeps the generic unsupported-version text when the daemon names no runtime",
+    "src/sources/surfaces/conversationLive.test.ts :: mapEntries names the agent, its version and the pin that accepts it when a version is refused (DPES-1106)",
+    "src/sources/surfaces/conversationLive.test.ts :: mapEntries says the agent changed before the send when the selection moved mid-turn",
+    "src/sources/surfaces/conversationLive.test.ts :: mapEntries uses the agent's display name for a refused Claude Code version",
+    "src/sources/surfaces/conversationLive.test.ts :: unverified-version warning (DPES-1106) is never shown for a verified turn, or for a daemon that does not say",
+    "src/sources/surfaces/conversationLive.test.ts :: unverified-version warning (DPES-1106) is sent with the notice of a send, without blocking it, and only the first send of a version carries it",
+    "src/sources/surfaces/conversationLive.test.ts :: unverified-version warning (DPES-1106) says a version has not been verified, in plain words, and names the agent and version",
+    "src/sources/surfaces/conversationLive.test.ts :: unverified-version warning (DPES-1106) shows the warning once per agent and version for the session, not on every message"
   ]
 }
