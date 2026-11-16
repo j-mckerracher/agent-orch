@@ -186,8 +186,22 @@ const exitCodeOf = (run) => {
   return run.code;
 };
 
+// WI-DPES-1100: an analysis error is not clean evidence, even when a scanner exits zero.
+const rejectErrorDiagnostics = (run, scanner) => {
+  const failed = (run.stderr ?? "").split("\n").some((line) => {
+    try {
+      const diagnostic = JSON.parse(line);
+      return ["error", "fatal", "panic"].includes(String(diagnostic.level ?? "").toLowerCase());
+    } catch {
+      return /(?:^|\s|\[)(?:ERROR|FATAL)(?:\]|\s|:)/.test(line);
+    }
+  });
+  if (failed) throw new GateError(`${scanner} reported an execution or analysis error`);
+};
+
 export const scanTrivy = (run, outFile) => {
   const code = exitCodeOf(run);
+  rejectErrorDiagnostics(run, "trivy");
   if (code !== 0 && code !== 1) throw new GateError(`trivy exit ${code}`);
   const findings = curateTrivy(parseJson(readFileSync(outFile, "utf8"), "trivy evidence"));
   if ((code === 0) !== (findings.length === 0)) throw new GateError("trivy exit code contradicts evidence");
@@ -196,6 +210,7 @@ export const scanTrivy = (run, outFile) => {
 
 export const scanTruffleHog = (run) => {
   const code = exitCodeOf(run);
+  rejectErrorDiagnostics(run, "trufflehog");
   if (code !== 0 && code !== 183) throw new GateError(`trufflehog exit ${code}`);
   const findings = run.stdout
     .split("\n")
@@ -299,6 +314,8 @@ export const runControls = async ({ scanners, evidenceDir }) => {
       expect: { trivy: "PASS", trufflehog: "PASS" } },
     { name: "iac-misconfig", files: { Dockerfile: 'FROM alpine:3.20\nUSER root\nCMD ["sh"]\n' },
       expect: { trivy: "FAIL", trufflehog: "PASS" } },
+    { name: "parser-error", files: { Dockerfile: 'FROM alpine:3.20\nUSER app\nCMD ["sh"]\n', "Dockerfile.dockerignore": "**\n" },
+      expect: { trivy: "ERROR", trufflehog: "PASS" } },
     { name: "seeded-secret", files: { "README.md": "seed\n" }, second: { "config/seed.env": `SEED_TOKEN=${token}\n` },
       expect: { trivy: "FAIL", trufflehog: "FAIL" } },
   ];

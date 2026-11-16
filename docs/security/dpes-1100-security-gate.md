@@ -30,7 +30,7 @@ Hashes come from the upstream `*_checksums.txt` release manifests for v0.76.2 (T
 
 - Trivy: `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 --format json --output <work>/trivy.json --config "" --secret-config "" --ignorefile "" --cache-dir <work>/trivy-cache --timeout 15m --disable-telemetry --skip-version-check --no-progress .`, run from the repository root. The mandated options are `--scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1` and `.`. The rest is runner hardening: private JSON output, no repository-supplied config, secret config, or ignore file is read, the cache is task-local, and there is no telemetry or version check.
 - TruffleHog: `trufflehog git file://. --since-commit <merge-base> --branch <head> --results=verified,unverified,unknown --no-verification --no-update --no-ignore-tag --fail --fail-on-scan-errors --json`. `<merge-base>` is the merge base of the base and head SHAs, `<head>` is the pull request head SHA, and the range is the pull request change set. `--no-verification` means no online credential verification.
-- Exit codes: Trivy 0 (clean) or 1 (findings); TruffleHog 0 (clean) or 183 (findings). Any other exit, signal, timeout, abandoned pipe, malformed or mismatched evidence, version mismatch, dirty working tree, HEAD not equal to `--head`, or unresolvable merge base is ERROR.
+- Exit codes: Trivy 0 (clean) or 1 (findings); TruffleHog 0 (clean) or 183 (findings). Any other exit, signal, timeout, abandoned pipe, malformed or mismatched evidence, version mismatch, dirty working tree, HEAD not equal to `--head`, or unresolvable merge base is ERROR. An ERROR/FATAL diagnostic also refuses the scan even when its exit is zero; JSON error/fatal/panic severity is checked without retaining the diagnostic message.
 - Runner exit codes: 0 PASS, 1 FAIL (findings or a refused configuration), 2 ERROR. ERROR never becomes PASS.
 - Waivers: none exist. Strict default refuses the run (FAIL) when the tree tracks a Trivy ignore or config file (`.trivyignore*`, `trivy.y*ml`, `trivy-secret.y*ml`) or contains an inline ignore marker for either scanner.
 
@@ -49,6 +49,7 @@ Raw matches, code lines, redacted values, scanner stderr, and committer email ad
 
 - clean: Trivy PASS, TruffleHog PASS.
 - iac-misconfig (`USER root` Dockerfile): Trivy FAIL.
+- parser-error (malformed `Dockerfile.dockerignore`): Trivy ERROR, TruffleHog PASS. This verifies that an analysis error cannot become a clean scan.
 - seeded-secret: a PAT-shaped token generated per run, committed in the scanned range. Trivy FAIL and TruffleHog FAIL. The token is never printed and never verified online. The run fails if the token appears in any evidence file.
 
 ## Workflow

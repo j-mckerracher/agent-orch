@@ -106,6 +106,24 @@ test("trufflehog: exit code must agree with output; other codes are errors", () 
   assert.throws(() => scanTruffleHog(run(0, { stdout: "not json\n" })), GateError);
 });
 
+test("trivy: exit-zero analysis-error diagnostics refuse a clean report", () => {
+  for (const stderr of [
+    '2026-11-16T05:00:00Z\tERROR\t[dockerfile scanner] Failed to parse file',
+    '{"level":"fatal","msg":"synthetic diagnostic"}',
+  ]) {
+    assert.throws(() => scanTrivy(run(0, { stderr }), reportFile({ ...header, Results: [] })), GateError);
+  }
+  assert.equal(scanTrivy(run(0, { stderr: '{"level":"info","msg":"error count is zero"}' }),
+    reportFile({ ...header, Results: [] })).status, "PASS");
+});
+
+test("trufflehog: exit-zero error diagnostics refuse empty findings without leaking the message", () => {
+  const stderr = '{"level":"error","msg":"SYNTHETIC-DIAGNOSTIC-LITERAL"}';
+  assert.throws(() => scanTruffleHog(run(0, { stderr })), (error) =>
+    error instanceof GateError && !error.message.includes("LITERAL"));
+  assert.equal(scanTruffleHog(run(0, { stderr: '{"level":"info","msg":"error count is zero"}' })).status, "PASS");
+});
+
 test("version: observed output must match the pin exactly", () => {
   assert.equal(checkVersion("trivy", "Version: 0.76.2\nVulnerability DB:"), "0.76.2");
   assert.equal(checkVersion("trufflehog", "trufflehog 3.99.9\n"), "3.99.9");
