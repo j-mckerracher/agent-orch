@@ -1,0 +1,28 @@
+{
+  "schema": "mcao.siem.event/v1",
+  "event_type": "audit.activity",
+  "event_id": "audit.activity:0190a6f0-7c1d-7e2a-9b3c-0a1b2c3d4e5f",
+  "occurred_at_utc": "2026-01-03T04:05:06.789Z",
+  "source_route": "mcao.audit-envelope.v1",
+  "lineage": {
+    "event_id": "0190a6f0-7c1d-7e2a-9b3c-0a1b2c3d4e5f",
+    "seq": 0,
+    "prev_hash": null
+  },
+  "data": {
+    "event": "session.created",
+    "category": "lifecycle",
+    "outcome": "not_applicable",
+    "platform": "mcao",
+    "home_id": "6f1c2a4e-9b3d-4c5e-8f60-718293a4b5c6",
+    "day_key": "2026-01-02",
+    "session_id": "session-1",
+    "task_id": "task-1",
+    "agent": {"role": "firstmate", "harness": "codex", "model": null},
+    "actor": {"type": "system", "id": "orchestrator"},
+    "repo": null,
+    "pr": null,
+    "commit": null,
+    "user": {"id": "hmac-sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", "identity_source": "github_login"}
+  }
+}

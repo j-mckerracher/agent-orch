@@ -59,7 +59,8 @@ export const WINDOWS = {
   // data_lock 8 becomes 9. Both are portable.
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on Windows): the store lib is 68 (up from 65) and
   // the store totals 170 passed plus 1 ignored. The lib gains 3 portable tests (permission level and migration checks).
-  store: { passed: 170, ignored: 1, sequence: [68, 9, 2, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // WI-DPES-736: Seven portable audit-envelope tests add the new binary after attempt_history. Windows counts are derived; native CI verifies them.
+  store: { passed: 177, ignored: 1, sequence: [68, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 67 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
@@ -96,7 +97,8 @@ export const MACOS = {
   // tests) and adds 1 sign-in test: 1134 becomes 1125 (CI run 43757529505).
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS, `cargo test --locked --workspace`): 18 new
   // tests across orchestrator-agents, orchestrator-core, orchestrator-daemon and orchestrator-store, so 1125 becomes 1143.
-  workspace: { passed: 1143, ignored: 2 },
+  // WI-DPES-736: Seven portable store audit-envelope tests are added.
+  workspace: { passed: 1150, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -106,7 +108,8 @@ export const MACOS = {
   // Measured on the DPES-1106 branch (macOS `cargo test -p orchestrator-store`): the lib has 67 tests and data_lock.rs 9 (8 passed, 1 ignored).
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS): the lib is 70 (3 new tests), and the store
   // totals 174 passed plus 1 ignored.
-  store: { passed: 174, ignored: 1, sequence: [70, 9, 2, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  // WI-DPES-736: Measured default-parallel macOS store run, 181 passed and 1 ignored, with seven tests in the audit_envelope binary.
+  store: { passed: 181, ignored: 1, sequence: [70, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 69 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
@@ -126,10 +129,12 @@ export const NODE_SELF_TESTS = { passed: 112 };
 // desktop gate measured them in CI run 43734333632.
 // The permission level control (DPES-1105) adds 3 files (permissionLevel, PermissionLevelPicker and
 // WorkspaceView.permission tests) and 46 tests. Counted from a full `vitest run --reporter=json` of apps/desktop: 76 files and 1626 tests.
-// The composer permission cleanup (DPES-1105) moves the level into the model picker's chip and panel. It changes the tests
-// of four of those files, with no file added or removed: 76 files and 1628 tests. The chip label states (DPES-1105) add 6 tests
-// to ModelPicker.test.tsx. Counted from a full `vitest run --reporter=json` of apps/desktop: 76 files and 1634 tests.
-export const VITEST = { files: 76, tests: 1634 };
+// The ambient background is on by default (DPES-1105): 9 tests replace 5, so 1626 becomes 1630 (same 76 files), as a full
+// `vitest run --reporter=json` of apps/desktop measured them.
+// The composer permission cleanup (DPES-1105) moves the level into the model picker's chip and panel and adds 6 label-state
+// tests: it adds 8 tests to that base with no file added or removed, so 1630 becomes 1638. The merged name list in
+// desktop-test-names.json holds 1638 titles across 76 files. CI measures the real total.
+export const VITEST = { files: 76, tests: 1638 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

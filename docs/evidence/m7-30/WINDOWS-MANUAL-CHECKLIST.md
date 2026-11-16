@@ -52,7 +52,7 @@ Record for each row: tester, date, build (git HEAD/tree), WebView2 runtime versi
 
 ## 6. Reduced motion
 
-- [ ] Windows "Show animations" off maps to `prefers-reduced-motion: reduce`: no transition or animation; the ambient background stays off.
+- [ ] Windows "Show animations" off maps to `prefers-reduced-motion: reduce`: no transition or animation; the ambient background shows its still dot field and does not animate.
 
 ## 7. Connection failure and recovery
 

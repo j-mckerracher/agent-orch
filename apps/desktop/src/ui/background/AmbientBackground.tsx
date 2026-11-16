@@ -11,8 +11,8 @@ export interface AmbientBackgroundProps extends AmbientOptions {
 }
 
 /**
- * The fixed, decorative layer under the whole interface. Renders nothing (and loads no
- * renderer code) until the user opts in. It is portalled to `<body>` so it can sit below
+ * The fixed, decorative layer under the whole interface. It is on by default and renders
+ * nothing (and loads no renderer code) once the user has turned it off. It is portalled to `<body>` so it can sit below
  * every in-flow element regardless of where the integrator mounts it. `data-ambient-background`
  * on `<html>` lets `background.css` make the shell's page background see-through only
  * while the layer is on.
@@ -59,7 +59,7 @@ function matchMediaOrNull(): MediaQueryList | null {
 }
 
 /**
- * Opt-in switch for the sidebar theme row. The row is 38 px, the Dark mode toggle's height, so the switch is a compact
+ * On/off switch for the sidebar theme row. The row is 38 px, the Dark mode toggle's height, so the switch is a compact
  * icon. Its name, state, the "decorative only" note and the MIT attribution the bundled renderer requires sit in a
  * disclosure on that icon: the summary is keyboard-operable and the content is in the DOM for screen readers.
  */

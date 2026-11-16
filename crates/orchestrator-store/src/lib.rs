@@ -73,8 +73,9 @@ pub use sqlite_history::{
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
+pub mod audit_envelope;
 mod sqlite_events;
-pub use sqlite_events::{IdempotencyStart, StreamEvent};
+pub use sqlite_events::{DeliveryLineage, IdempotencyStart, StreamEvent, TaskDurableEvent};
 mod sqlite_reconcile;
 mod sqlite_usage;
 pub mod usage_prices;

@@ -1,12 +1,18 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createServices } from "./createServices";
 import { appGlobalViews, appShellSlots } from "./registry";
 import type { GlobalView, Route } from "./router";
 
+beforeEach(() => {
+  // The ambient layer is on by default and jsdom has no 2D canvas; it draws nothing here.
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+});
+
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   window.localStorage.clear();
 });
 
@@ -34,13 +40,13 @@ describe("M7 wiring", () => {
     expect(screen.queryByRole("button", { name: /^Workspace activity/ }) !== null).toBe(view === "workspace");
   });
 
-  it("keeps the ambient background off by default and offers the opt-in control", async () => {
+  it("turns the ambient background on by default, with the switch beside the theme toggle", async () => {
     const services = createServices({ initialRoute: route("workspace") });
     render(<App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />);
     const slot = screen.getByTestId("slot-theme-toggle");
     const control = await within(slot).findByRole("button", { name: /^background/i });
-    expect(control).toHaveAttribute("aria-pressed", "false");
-    expect(document.querySelector("canvas")).toBeNull();
+    expect(control).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('[data-testid="ambient-background"]')).not.toBeNull();
     await waitFor(() => expect(window.localStorage.length).toBe(0));
   });
 });

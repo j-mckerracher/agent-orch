@@ -262,3 +262,84 @@ fn decode_event(row: sqlx::sqlite::SqliteRow) -> Result<StreamEvent, StoreError>
         created_at: row.try_get("created_at")?,
     })
 }
+
+/// One task-scoped journal row. Delivery rows carry the approval and candidate they recorded.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskDurableEvent {
+    /// Global journal cursor: the `durable_events` AUTOINCREMENT position, shared by every task
+    /// in the store. A task's results skip the positions of other tasks' rows, so a gap in them
+    /// does not mean a row was deleted. This is not the audit envelope `seq`; that is per home,
+    /// writer-assigned, and held in `audit_envelope::WriterFields::seq`.
+    pub sequence: i64,
+    /// Owning task. Non-null in the journal.
+    pub task_id: String,
+    /// Owning agent session, when the event belongs to one.
+    pub session_id: Option<String>,
+    /// Stable event kind, for example `session.created` or `approval.approved`.
+    pub kind: String,
+    /// Payload exactly as recorded. Readers ignore keys they do not know.
+    pub payload: Value,
+    /// SQLite `CURRENT_TIMESTAMP` at journal write: UTC, whole seconds, `YYYY-MM-DD HH:MM:SS`.
+    /// Write time, not the event instant. Projection never uses it as `occurred_at_utc`.
+    pub created_at: String,
+    /// Lineage joined through `payload.step_id`; `None` for other kinds.
+    pub delivery: Option<DeliveryLineage>,
+}
+
+/// Approval and candidate identifiers of one recorded delivery step.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DeliveryLineage {
+    pub approval_id: String,
+    pub verification_run_id: String,
+    pub candidate_sha: String,
+}
+
+impl SqliteStore {
+    /// Returns one task's journal rows after `after_sequence`, in journal order.
+    ///
+    /// This single query correlates dispatch (`attempt.created`, `session.created`), session
+    /// (`session.*`), approval (`approval.*`, `payload.approval_id`), and delivery (`delivery.*`,
+    /// joined to `delivery_steps` through `payload.step_id`) rows for one task.
+    pub fn task_events_after(
+        &self,
+        task_id: &str,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<TaskDurableEvent>, StoreError> {
+        validate_page(after_sequence, limit)?;
+        let task_id = task_id.to_owned();
+        let limit = i64::try_from(limit).map_err(|_| StoreError::InvalidEventLimit)?;
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT e.sequence, e.task_id, e.session_id, e.kind, e.payload, e.created_at, d.approval_id, d.verification_run_id, d.candidate_sha FROM durable_events e LEFT JOIN delivery_steps d ON d.task_id = e.task_id AND d.id = json_extract(e.payload, '$.step_id') WHERE e.task_id = ? AND e.sequence > ? ORDER BY e.sequence LIMIT ?",
+            )
+            .bind(&task_id)
+            .bind(after_sequence)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter().map(decode_task_event).collect()
+        })
+    }
+}
+
+fn decode_task_event(row: sqlx::sqlite::SqliteRow) -> Result<TaskDurableEvent, StoreError> {
+    let approval_id: Option<String> = row.try_get("approval_id")?;
+    let delivery = match approval_id {
+        Some(approval_id) => Some(DeliveryLineage {
+            approval_id,
+            verification_run_id: row.try_get("verification_run_id")?,
+            candidate_sha: row.try_get("candidate_sha")?,
+        }),
+        None => None,
+    };
+    Ok(TaskDurableEvent {
+        sequence: row.try_get("sequence")?,
+        task_id: row.try_get("task_id")?,
+        session_id: row.try_get("session_id")?,
+        kind: row.try_get("kind")?,
+        payload: serde_json::from_str(&row.try_get::<String, _>("payload")?)?,
+        created_at: row.try_get("created_at")?,
+        delivery,
+    })
+}
