@@ -192,6 +192,12 @@ chose for that message. The rules:
   It is not sent, and the message goes without a choice, as an untouched picker
   does. A choice the catalog has not confirmed yet is treated the same way until
   it is confirmed. The saved choice is kept until the user changes it.
+- **Coordinator notes carry no choice (DPES-1105).** A note runs no agent, so the
+  desktop sends `coordinator.send_message` without `selection` and without
+  `permission`, whatever the picker holds. A note leaves the saved choice and the
+  level as they were. The daemon's send-message params deny unknown fields, and
+  the desktop source refuses a choice or level for a note with `invalid-params`
+  before any request is sent, so a note never carries one.
 - **Replaces the configured default.** A message with a choice ignores
   `AGENT_ORCH_CONVERSATION_*` for that message. A chosen "Default model" means
   the agent's own default, which is what the picker shows.

@@ -20,6 +20,7 @@ import {
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
+import { RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 import { workspaceRegistration } from "./register";
 import { formatAt } from "./time";
 import { WorkspaceView } from "./WorkspaceView";
@@ -443,7 +444,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(fake.callsTo("conversations.send")).toHaveLength(1);
   });
 
-  it("does not send a chosen model to a coordinator note, where it would be dropped", async () => {
+  it("sends a coordinator note without the model choice, and keeps the choice the user made (DPES-1105)", async () => {
     const fake = liveDaemon();
     const catalog = [CODEX_CATALOG];
     fake.stub("agents.catalog", catalog);
@@ -454,11 +455,38 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await screen.findByRole("heading", { name: /alpha coordinator/ });
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     await user.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "gpt-a");
-    const box = screen.getByRole("textbox", { name: "Message alpha coordinator" });
-    await user.type(box, "a note");
-    expect(screen.getByRole("button", { name: "Send message to alpha coordinator" })).toBeDisabled();
-    expect(screen.getByText(/Coordinator notes take no model or effort/)).toBeInTheDocument();
-    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+    await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
+    expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
+    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
+    expect(fake.callsTo("coordinator.send_message")[0]!.params).not.toHaveProperty("selection");
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A/ })).toBeInTheDocument();
+  });
+
+  it("sends a coordinator note with a saved choice and level present, and sends neither on the request (DPES-1105)", async () => {
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }));
+    window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
+    const fake = liveDaemon();
+    const catalog = [CODEX_CATALOG];
+    fake.stub("agents.catalog", catalog);
+    stubValidate(fake, catalog);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A · high/ })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
+    expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
+    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
+    const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
+    expect(Object.keys(params).sort()).toEqual(["idempotency_key", "project_id", "text"]);
+    expect(params).toMatchObject({ text: "a note" });
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(
+      JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }),
+    );
+    expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
   });
 
   it("keeps Enter on the model selector from submitting the unsent draft in either direction", async () => {
