@@ -126,8 +126,10 @@ export const MACOS = {
 // tests of install-lib.test.mjs build paths with node:path (checked under scripts/release/win32-path-sim).
 // 112 = 97 + the 13 tests of windows-jobs.test.mjs and the 2 of prune-target.test.mjs (DPES-1106). The 4 tests of the
 // usage reader smoke test live in scripts/smoke/ (outside this glob) and run only when the smoke group is selected.
-// WI-DPES-1100: Thirteen security-gate regression tests are discovered by the same scripts glob.
-export const NODE_SELF_TESTS = { passed: 125 };
+// 132 = 112 + the 13 security-gate regression tests of DPES-1100 (main: 125) + the 7 tests of publish.test.mjs
+// (DPES-1106, release publish). The branch measured 119 = 112 + 7 in release dispatch run 43810534672; the merged total
+// is the sum, and CI measures the real value.
+export const NODE_SELF_TESTS = { passed: 132 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests

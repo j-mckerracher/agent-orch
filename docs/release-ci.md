@@ -1,7 +1,8 @@
 # Release CI (M6-02)
 
 Native macOS and Windows gates, dependency audits, and signed or unsigned release builds on
-GitHub Actions. Nothing here publishes a release. Versioning and the maintainer steps that cut a
+GitHub Actions. A `v*` tag also publishes its GitHub release (see
+[Publishing a release](#publishing-a-release)). Versioning and the maintainer steps that cut a
 release tag are in [RELEASE.md](RELEASE.md).
 
 ## Workflows
@@ -10,10 +11,11 @@ release tag are in [RELEASE.md](RELEASE.md).
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
 | `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --audit-level=high`. |
-| `.github/workflows/release.yml` | `macos-15`, `windows-2025` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads artifacts only. |
+| `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`, manual | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads each build's artifacts. For a tag only, the `publish` job creates the GitHub release (see [Publishing a release](#publishing-a-release)). |
 
 Every third-party action is pinned to a commit SHA. Workflows set top-level `permissions: {}`, and
-each job grants only `contents: read`. Secrets are mapped only into the `Package` step of
+each job grants only `contents: read`, except `publish` in `release.yml`, which grants
+`contents: write` to create the release. Secrets are mapped only into the `Package` step of
 `release.yml`. `ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a
 scheduled, `main` or release run always completes.
 
@@ -330,15 +332,17 @@ a message.
 | Tag build (`v*`) and no secret is set | Error, like `REQUIRE_SIGNING=true` (on macOS this also requires the notarization secrets). To build an unsigned release on purpose, set the repository variable `ALLOW_UNSIGNED_RELEASE` to `true`; the artifact is then still labeled `unsigned`. |
 | All signing secrets set | Signed build; verified afterwards. |
 
-Secrets live in the GitHub environment `release`. Configure it before the first release:
+The GitHub environment `release` gates the build jobs and the `publish` job, so configure it before the first
+tag, even while releases are unsigned. Signing secrets, once added, also live there. Configure:
 
 - **Deployment branches and tags**: select *Selected branches and tags* and allow only the tag
   pattern `v*` (add `main` only if manual signed runs from `main` are wanted). An environment that
   does not exist is created on first use **without protection**, so any branch could then run
   `workflow_dispatch` and read the secrets; the restriction is the control, the workflow cannot
   enforce it.
-- **Required reviewers**: add at least one, so a tag push waits for approval before the secrets are
-  released to the job.
+- **Required reviewers**: add at least one, so a tag push waits for approval before the build jobs run. The
+  `publish` job uses the same environment, so it waits for a second approval once both builds pass, and that
+  approval is what makes the release public (see [Publishing a release](#publishing-a-release)).
 - **Tag protection**: add a repository ruleset that restricts who can create or delete `v*` tags;
   a pushed tag is what starts a release.
 - Keep the secrets in the environment only, not at repository or organization level.
@@ -362,6 +366,68 @@ anything: only the PowerShell call that imports the certificate receives the pas
 
 `CARGO_TARGET_DIR` must be absolute; any separator style is accepted and normalized, so
 `${{ runner.temp }}/target` (`D:\a\_temp/target`) works on Windows.
+
+## Publishing a release
+
+A `v*` tag push runs `release.yml` through to the `publish` job. The job runs only for a tag push, and
+only after both platform builds passed, signed or unsigned. It uses the `release` environment, so it
+waits for approval there (see [Release builds and signing](#release-builds-and-signing)). It holds no
+signing secrets.
+
+1. Check out the tag and read the four version sources: `apps/desktop/src-tauri/tauri.conf.json`,
+   `apps/desktop/package.json`, the `[workspace.package]` table of `Cargo.toml` and the `[package]`
+   table of `apps/desktop/src-tauri/Cargo.toml`. The tag must equal `v` plus each of them.
+2. Download the `release-*` artifacts of both builds. Each build's `release-info.json` must describe one
+   macOS and one Windows build of that version, from one commit, with one installer each. Each installer
+   must match the sha256 its build recorded.
+3. Write `SHA256SUMS` and the release notes (`scripts/release/publish.mjs`, unit-tested by
+   `scripts/release/publish.test.mjs`).
+4. Run `gh release create` with `--verify-tag`, so the tag must already be on the remote. It attaches the
+   installers and `SHA256SUMS`. The token reaches only this step.
+
+The release is named after the tag. Its assets are the two installers and `SHA256SUMS`, named
+`MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.zip` and `MCAO-X.Y.Z-windows-x64-<signed|unsigned>-setup.exe`.
+
+While releases are unsigned (the current mode), every release is a prerelease. Its notes open with the
+unsigned warning and the per-system install steps, then list the installers, the commit and how to check a
+download (see [Unsigned releases](#unsigned-releases)). A release with only signed installers is not a
+prerelease, and its notes carry no warning.
+
+A failed check stops the job before anything is created. If `gh release create` fails after it has
+created the release, delete that release with `gh release delete <tag> --yes` (the tag is kept), then
+re-run the job.
+
+## Unsigned releases
+
+Releases are unsigned today. No signing secrets are set in the `release` environment, so the
+installers are not code-signed or notarized. This is the current mode, not an exception.
+
+- The repository variable `ALLOW_UNSIGNED_RELEASE` is `true`. The coordinator sets it once the PR that
+  adds the publish job merges; maintainers do not set it per release. Without it, a `v*` tag build fails
+  at the signing check, on purpose.
+- The variable is repository-wide. While it is `true`, any tag build with no signing secrets ships
+  unsigned: labelled `unsigned`, and a prerelease. If the secrets are ever removed, set the variable to
+  `false` to get the failure back.
+- Every unsigned release is a prerelease, and its notes open with the warning and the install steps below.
+
+These steps apply because the app is unsigned and internal:
+
+- macOS: Gatekeeper blocks the first launch of an unsigned app. Control-click Open no longer bypasses it on
+  macOS 15 and later. Either try to open MCAO once, then open System Settings, Privacy & Security, and click
+  Open Anyway; or move `MCAO.app` to `/Applications` and run
+  `xattr -dr com.apple.quarantine /Applications/MCAO.app` in Terminal.
+- Windows: SmartScreen shows "Windows protected your PC" when the installer runs. Choose More info, then
+  Run anyway.
+- The install smoke of an unsigned build runs with `--allow-unsigned`. It proves the artifact installs and
+  upgrades. It proves nothing about Gatekeeper or SmartScreen.
+
+To turn signing on later:
+
+1. Add the secrets from the table above to the `release` environment: the Windows pair, and for macOS the
+   signing trio plus the notarization trio, all or none.
+2. Set nothing else. A complete set makes the next build signed, and notarized on macOS. The notes and the
+   prerelease flag follow the build. `ALLOW_UNSIGNED_RELEASE` has no effect on a signed build, so it can stay
+   as it is. Signed on macOS without notarization is still labelled and still warns under Gatekeeper.
 
 ## Run it locally
 
@@ -449,6 +515,9 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
 - the Apple and Windows signing, notarization and timestamp paths with real certificates;
 - artifact upload, `environment: release` behavior, and wall-clock time against the 180-minute
   and 120-minute limits;
+- the `publish` job on a real tag: the download of both builds, the version check, `gh release create`,
+  the prerelease flag and the release assets. A manual run skips that job, so the first tag push is its
+  first real run;
 - that reusable-workflow `workflow_call` composition in `release.yml` resolves on the default
   branch.
 
