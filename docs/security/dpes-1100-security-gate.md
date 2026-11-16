@@ -6,7 +6,7 @@ Status: first unit only. The whole DPES-1100 board scope is not complete. See "O
 
 Run from the repository root. Scanner binaries are installed into a directory the runner reads; nothing is installed globally.
 
-```
+```text
 node scripts/security/gate.mjs install --dest <scanners-dir>
 node scripts/security/gate.mjs controls --scanners <scanners-dir> --evidence-dir <dir>
 node scripts/security/gate.mjs scan --repo . --base <sha> --head <sha> --scanners <scanners-dir> --evidence-dir <dir>
