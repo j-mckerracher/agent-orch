@@ -91,14 +91,13 @@ A firstmate secondmate is a persistent mate with a written scope, its own backlo
 
 Missing for full parity, by phase: workstream conversations propose tasks inside their scope (2); the workstream reports up to Global when a gate or task changes (3); the Global orchestrator routes work by scope (6). Depth stays flat: a workstream conversation cannot create workstreams. Remote hosts are phase 6 and design only. The IPC is a local socket with a token handshake, so a remote daemon needs an authenticated network transport and a new threat model. No date is promised.
 
-### Shapes, modes, landing, backlog, recovery, quota
+### Shapes, modes, landing, backlog, recovery
 
 - **Scout and ship.** Ship is `Implement` with local review or PR delivery. Scout is `Investigate` with `ReportOnly`. Phase 4 adds the report relay and promotion.
 - **Project modes.** Phase 4 adds a per-project default: `no-mistakes` maps to full verification and PR delivery, `direct-PR` to PR delivery with the project's checks, `local-only` to local review. A proposal that drops below the default shows the drop on the card.
 - **Landing.** Delivery writes a review ref and opens PRs but never merges. Phase 4 adds a PR state poller and a merge action bound to the head commit, per-action approval only.
 - **Backlog and holds.** Tasks with dependencies are the queue. Phase 4 adds held decisions with an until date in Review and Decisions.
 - **Stuck recovery.** Phase 3 detects, phase 4 proposes.
-- **Quota-aware dispatch.** Phase 6 extends assignment profile policy v1 with remaining quota from local usage and catalog sign-in.
 - **Bearings and captain holds.** Phase 1 answers status from the snapshot. Phase 3 adds the return catch-up.
 - **Validation supervision.** Phase 4 routes a finding that needs the user to a decision card.
 
@@ -237,7 +236,7 @@ Never grantable: grant creation or change (only the user, in the UI, never by pr
 | 3 | The orchestrator notices finished, failed and stalled work and speaks up without being asked, within limits | L | 2 | 3a first, then 3b and 3c, then 3d | 3a chat usage receipts. 3b stall detector and wake records. 3c wake scheduler, limits and modes. 3d desktop monitoring chip and labels |
 | 4 | Scout reports are relayed, scouts promote to ships, projects have a default mode, work lands on approval | L | 2, parts of 3 | 4a to 4d mostly independent | 4a scout relay and promotion. 4b project defaults, base branch, per-project prefix. 4c PR poller and merge action. 4d `task.revise`, holds, project remove |
 | 5 | The user grants scoped standing approvals, leaves in away mode, and gets a brief on return | M | 3, 4c | 5a then 5b | 5a grants with audit and revoke. 5b away mode, return brief, orchestrator notes |
-| 6 | Quota-aware dispatch, workstreams that act as secondmates, read-only MCP tools, remote design | L | 5 | Independent | 6a quota selection. 6b routing by scope. 6c read-only MCP server. 6d remote threat model, design only |
+| 6 | Workstreams that act as secondmates, read-only MCP tools, remote design | L | 5 | Independent | 6a routing by scope. 6b read-only MCP server. 6c remote threat model, design only |
 
 ## Tests
 

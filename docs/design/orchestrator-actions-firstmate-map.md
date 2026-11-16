@@ -122,7 +122,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | F2 | Route work to the secondmate whose scope fits | GAP | Phase 6: the Global orchestrator proposes a task linked to a workstream (`workstreams.link_task`). Phase 2 already allows an explicit link. |
 | F3 | A secondmate reports up through a parent channel | GAP | Phase 3: the daemon posts a summary entry to Global when a workstream gate or task changes state. |
 | F4 | Remote secondmates on an SSH host | GAP | Phase 6, design only. The IPC is a local socket with a token handshake. A remote daemon needs an authenticated network transport and a new threat model. |
-| F5 | Quota-aware dispatch across accounts and CLIs | PARTIAL | Assignment profile policy v1, `usage.localTools`, catalog sign-in states. Missing: selection that reads remaining quota. Phase 6. |
+| F5 | Quota-aware dispatch across accounts and CLIs | PARTIAL | Assignment profile policy v1, `usage.localTools`, catalog sign-in states. Missing: selection that reads remaining quota. Not planned: removed from phase 6 by the user (DPES-1105). |
 | F6 | Refresh local clones after a merge (fleet sync) | GAP | Phase 4: fast-forward the registered project after a landed merge, refusing on local changes. |
 | F7 | Flat command structure, depth capped | HAVE | Global, then workstream, then task. Phase 1 rule: a workstream conversation cannot create workstreams. |
 
