@@ -84,6 +84,9 @@
    "approval_flow_rejects_and_requests_changes_through_the_real_daemon"
   ],
   "daemon": [
+   "missing_configuration_is_off_and_bad_configuration_is_disclosed",
+   "token_warning_uses_deduplicated_receipts_and_the_requested_day",
+   "invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts",
    "sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it",
    "sanitize_drops_characters_that_render_as_nothing",
    "the_prompt_ends_with_the_current_message_and_carries_history_and_context",

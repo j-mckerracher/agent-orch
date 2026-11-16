@@ -39,6 +39,7 @@
  *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
 import type { ApprovalState, CopilotSignInRecord, TaskState } from "../../daemon/types";
+import type { UsageTokenWarningsWire } from "../../daemon/usageWire";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
 
 export type { Provenance, SimulatedReceipt, SourceId };
@@ -347,6 +348,7 @@ export interface UsageSummary {
   estimateCoverage?: UsageEstimateCoverage;
   knownCostCoverage?: UsageKnownCostCoverage;
   priceTable?: UsagePriceTable;
+  tokenWarnings?: UsageTokenWarningsWire;
   reported: Measured<number>;
   estimated: Measured<number>;
   budget: Measured<number>;

@@ -75,6 +75,22 @@ export interface UsageSummaryWire {
   totals: UsageBucketWire;
   providers: UsageProviderWire[];
   price_table?: UsagePriceTableWire;
+  token_warnings?: UsageTokenWarningsWire;
+}
+
+export type TokenWarningMetric = "input_tokens" | "cache_read_tokens" | "cache_write_tokens" | "output_tokens";
+
+export interface UsageTokenWarningsWire {
+  schema_version: 1;
+  state: "off" | "ok" | "invalid_configuration" | "unavailable";
+  rules: Array<{
+    provider: string;
+    metric: TokenWarningMetric;
+    /** Decimal strings preserve the full unsigned 64-bit counter range. */
+    limit: string;
+    observed: string | null;
+    exceeded: boolean | null;
+  }>;
 }
 
 /** Window params shared by `usage.localTools`, `.setEnabled` and `.refresh`; all four are required. */

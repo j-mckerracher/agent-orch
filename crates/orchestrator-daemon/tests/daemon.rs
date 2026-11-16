@@ -17,23 +17,38 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-struct Daemon(Option<Child>);
+const LOG_TAIL_LINES: usize = 60;
+
+struct Daemon {
+    child: Option<Child>,
+    log: PathBuf,
+}
 
 impl Daemon {
     fn start(data_dir: &Path) -> Self {
-        Self(Some(
-            Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
-                .arg("--data-dir")
-                .arg(data_dir)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap(),
-        ))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
+        command
+            .arg("--data-dir")
+            .arg(data_dir)
+            .stdout(Stdio::piped());
+        Self::spawn(&mut command, data_dir)
+    }
+
+    /// Spawns `command` with stderr in `daemon.log` under `data_dir`. A file,
+    /// not a pipe: an unread pipe fills up and stalls the daemon, and its
+    /// lines are lost when the test panics.
+    fn spawn(command: &mut Command, data_dir: &Path) -> Self {
+        let log = data_dir.join("daemon.log");
+        let stderr = fs::File::create(&log).unwrap();
+        let child = command.stderr(stderr).spawn().unwrap();
+        Self {
+            child: Some(child),
+            log,
+        }
     }
 
     fn child(&mut self) -> &mut Child {
-        self.0.as_mut().unwrap()
+        self.child.as_mut().unwrap()
     }
 
     fn pid(&mut self) -> u32 {
@@ -49,15 +64,35 @@ impl Daemon {
             );
             thread::sleep(Duration::from_millis(10));
         }
-        self.0.take().unwrap().wait_with_output().unwrap()
+        let mut output = self.child.take().unwrap().wait_with_output().unwrap();
+        output.stderr = fs::read(&self.log).unwrap();
+        output
     }
 }
 
 impl Drop for Daemon {
     fn drop(&mut self) {
-        if let Some(child) = self.0.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+        let Some(child) = self.child.as_mut() else {
+            return;
+        };
+        // State before the kill: "running" means the daemon did not exit on its own.
+        let state = match child.try_wait() {
+            Ok(None) => "running".to_string(),
+            Ok(Some(status)) => format!("exited ({status})"),
+            Err(error) => format!("unknown ({error})"),
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        if thread::panicking() {
+            let text =
+                orchestrator_diagnostics::tail_redacted(&self.log, 64 * 1024).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().collect();
+            let tail = lines[lines.len().saturating_sub(LOG_TAIL_LINES)..].join("\n");
+            eprintln!("--- daemon at failure: {state} ---");
+            eprintln!(
+                "--- daemon log tail ({}) ---\n{tail}\n--- end daemon log ---",
+                self.log.display()
+            );
         }
     }
 }
@@ -143,16 +178,14 @@ fn second_daemon_reports_holder_and_shutdown_removes_resources() {
 fn daemon_survives_accept_descriptor_exhaustion() {
     let dir = TempDir::new().unwrap();
     // `ulimit` lowers the limit for this child only; `exec` keeps its pid.
-    let child = Command::new("sh")
+    let mut command = Command::new("sh");
+    command
         .args(["-c", "ulimit -n 32 && exec \"$0\" \"$@\""])
         .arg(env!("CARGO_BIN_EXE_orchestrator-daemon"))
         .arg("--data-dir")
         .arg(dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut daemon = Daemon(Some(child));
+        .stdout(Stdio::piped());
+    let mut daemon = Daemon::spawn(&mut command, dir.path());
     wait_for_ipc(dir.path(), &mut daemon);
 
     let idle: Vec<_> = (0..64)
@@ -565,17 +598,15 @@ impl RunningAgentFixture {
     }
 
     fn start_daemon(&self) -> Daemon {
-        self.start_daemon_with(Stdio::null(), None)
+        self.start_daemon_with(None)
     }
 
-    /// Starts the daemon with stderr in `daemon.log` (as the desktop host
-    /// does) and the given passthrough list.
+    /// Starts the daemon with the given passthrough list, as the desktop host does.
     fn start_daemon_logging(&self, passthrough: &str) -> Daemon {
-        let log = fs::File::create(self.data.join("daemon.log")).unwrap();
-        self.start_daemon_with(Stdio::from(log), Some(passthrough))
+        self.start_daemon_with(Some(passthrough))
     }
 
-    fn start_daemon_with(&self, stderr: Stdio, passthrough: Option<&str>) -> Daemon {
+    fn start_daemon_with(&self, passthrough: Option<&str>) -> Daemon {
         let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
         command
             .arg("--data-dir")
@@ -589,12 +620,11 @@ impl RunningAgentFixture {
                 "AGENT_ORCH_COPILOT_PROGRAM",
                 self.root.path().join("no-such-copilot"),
             )
-            .stdout(Stdio::null())
-            .stderr(stderr);
+            .stdout(Stdio::null());
         if let Some(list) = passthrough {
             command.env("AGENT_ORCH_ENV_PASSTHROUGH", list);
         }
-        Daemon(Some(command.spawn().unwrap()))
+        Daemon::spawn(&mut command, &self.data)
     }
 
     fn submit(&self, client: &mut Client, key: &str, max_retries: u32) -> String {
