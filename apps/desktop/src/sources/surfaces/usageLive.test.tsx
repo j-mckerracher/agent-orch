@@ -396,6 +396,48 @@ describe("usage pill with the live adapter", () => {
     return { user, unmount: view.unmount };
   }
 
+  it("shows a token-only overrun, keeps refreshes unique and clears at equality", async () => {
+    const fake = new FakeDaemon();
+    let observed = 21;
+    fake.stub("usage.summary", () => {
+      const counts = bucket({ sessions: 1, withTokens: 1 });
+      counts.reported.output_tokens = observed;
+      return {
+        ...summary(counts, [["codex", counts]]),
+        token_warnings: { schema_version: 1, state: "ok", rules: [{ provider: "codex", metric: "output_tokens", limit: "20", observed: String(observed), exceeded: observed > 20 }] },
+      };
+    });
+    const { user } = await mountLive(fake);
+    const warning = await screen.findByRole("button", { name: "Token threshold exceeded" });
+    await user.click(warning);
+    expect(screen.getByLabelText("More information about usage").closest("details")).toHaveAttribute("open");
+    const details = screen.getByRole("region", { name: "Daily token warnings" });
+    expect(details).toHaveTextContent("Codex: threshold exceeded, 21 output tokens recorded; daily output tokens warning threshold 20.");
+    expect(details).toHaveTextContent("Missing usage may mean the actual total is higher");
+    expect(details.textContent).not.toMatch(/\$/);
+    const calls = fake.callsTo("usage.summary").length;
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(fake.callsTo("usage.summary").length).toBeGreaterThan(calls));
+    expect(within(details).getAllByRole("listitem")).toHaveLength(1);
+    observed = 20;
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(screen.queryByTestId("top-token-warning")).not.toBeInTheDocument());
+    expect(details).toHaveTextContent("20 output tokens recorded");
+    expect(details).not.toHaveTextContent("threshold exceeded");
+  });
+
+  it("discloses broken warning data while retaining the reported usage figure", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("usage.summary", {
+      ...summary(bucket({ sessions: 1, withCost: 1, reported: [["USD", "2.25"]] })),
+      token_warnings: { schema_version: 99, state: "ok", rules: [] },
+    });
+    await mountLive(fake);
+    await screen.findByRole("button", { name: "Token warnings unavailable" });
+    expect(screen.getByTestId("top-usage-value")).toHaveTextContent("$2.25");
+    expect(screen.getByTestId("top-usage-info")).toHaveTextContent("Daily token warnings unavailable");
+  });
+
   it("shows a reported amount and the labeled window, estimate and provider coverage", async () => {
     const fake = new FakeDaemon();
     fake.stub(

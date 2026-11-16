@@ -34,6 +34,9 @@ use orchestrator_store::{UsageBucket, UsageFigures};
 
 use super::*;
 
+#[path = "api_usage_warnings.rs"]
+mod warnings;
+
 const DAY_MS: i64 = 86_400_000;
 const MAX_WINDOW_MS: i64 = 26 * 3_600_000;
 const MIN_OFFSET_SECONDS: i64 = -12 * 3600;
@@ -93,6 +96,7 @@ impl DaemonApi {
                 "utc_offset_seconds": request.utc_offset_seconds,
             },
             "totals": bucket_json(&summary.totals),
+            "token_warnings": warnings::evaluate(&self.config.data_dir, &summary),
             "price_table": price_table_json(),
             "providers": summary
                 .providers

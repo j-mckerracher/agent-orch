@@ -61,6 +61,9 @@
     "the_selection_capability_is_named_and_round_trips"
   ],
   "daemon": [
+   "api::usage::warnings::tests::missing_configuration_is_off_and_bad_configuration_is_disclosed",
+   "api::usage_tests::token_warning_uses_deduplicated_receipts_and_the_requested_day",
+   "api::usage_tests::invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts",
    "api::conversation_agent::tests::sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it",
    "api::conversation_agent::tests::running_turns_are_capped_and_released",
    "api::conversation_agent::tests::sanitize_drops_characters_that_render_as_nothing",

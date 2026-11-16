@@ -1,4 +1,7 @@
 [
+  "api::usage::warnings::tests::missing_configuration_is_off_and_bad_configuration_is_disclosed",
+  "api::usage_tests::token_warning_uses_deduplicated_receipts_and_the_requested_day",
+  "api::usage_tests::invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts",
   "catalog::tests::codex_without_credentials_offers_nothing",
   "catalog::tests::codex_states_never_turn_unreadable_into_empty",
   "catalog::tests::selection_args_build_exact_vectors",

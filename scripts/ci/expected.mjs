@@ -31,7 +31,8 @@ export const WINDOWS = {
   // DPES-1105 permission levels (PR #80, CI run 43767887059): the unit binary 135 becomes 138 (3 portable tests) and
   // conversation_runtime 20 becomes 24 (4 process tests), so 163 becomes 170 passed plus 1 ignored, sequence [138, 24, 2, 4, 0, 1, 2].
   // DPES-1123 adds three portable task-submission tests, so the unit binary is 141 and the total is 173.
-  daemon: { passed: 173, ignored: 1, sequence: [141, 24, 2, 4, 0, 1, 2] },
+  // WI-DPES-747: Three additional portable daemon token-warning tests; Windows totals are derived.
+  daemon: { passed: 176, ignored: 1, sequence: [144, 24, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -85,7 +86,8 @@ export const MACOS = {
   // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS): the unit binary 197 becomes 200 (3 in-process
   // daemon tests) and conversation_runtime 22 becomes 26 (4 process tests), so 238 becomes 245 passed plus 1 ignored.
   // DPES-1123 adds three portable API tests and one Unix-only executor retry test.
-  daemon: { passed: 249, ignored: 1, sequence: [204, 26, 2, 4, 11, 1, 2] },
+  // WI-DPES-747: Three additional portable daemon token-warning tests.
+  daemon: { passed: 252, ignored: 1, sequence: [207, 26, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -101,7 +103,8 @@ export const MACOS = {
   // tests across orchestrator-agents, orchestrator-core, orchestrator-daemon and orchestrator-store, so 1125 becomes 1143.
   // WI-DPES-736: Seven portable store audit-envelope tests are added.
   // DPES-1123 adds three portable daemon API tests and one Unix-only executor test.
-  workspace: { passed: 1154, ignored: 2 },
+  // WI-DPES-747: Three additional portable daemon token-warning tests.
+  workspace: { passed: 1157, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -123,9 +126,10 @@ export const MACOS = {
 // tests of install-lib.test.mjs build paths with node:path (checked under scripts/release/win32-path-sim).
 // 112 = 97 + the 13 tests of windows-jobs.test.mjs and the 2 of prune-target.test.mjs (DPES-1106). The 4 tests of the
 // usage reader smoke test live in scripts/smoke/ (outside this glob) and run only when the smoke group is selected.
-// 119 = 112 + the 7 tests of publish.test.mjs (DPES-1106, release publish). Measured, not counted by hand: the
-// node-self-tests gate of release dispatch run 43810534672 reported `pass is 119` on macOS and on Windows.
-export const NODE_SELF_TESTS = { passed: 119 };
+// 132 = 112 + the 13 security-gate regression tests of DPES-1100 (main: 125) + the 7 tests of publish.test.mjs
+// (DPES-1106, release publish). The branch measured 119 = 112 + 7 in release dispatch run 43810534672; the merged total
+// is the sum, and CI measures the real value.
+export const NODE_SELF_TESTS = { passed: 132 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
@@ -140,7 +144,8 @@ export const NODE_SELF_TESTS = { passed: 119 };
 // tests: it adds 8 tests to that base with no file added or removed, so 1630 becomes 1638. The merged name list in
 // desktop-test-names.json holds 1638 titles across 76 files. CI measures the real total.
 // DPES-1123 adds two files and 14 tests to main: 78 files and 1652 tests.
-export const VITEST = { files: 78, tests: 1652 };
+// WI-DPES-747: One additional boundary test file and ten frontend regression cases.
+export const VITEST = { files: 79, tests: 1662 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

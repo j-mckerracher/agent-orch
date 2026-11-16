@@ -114,6 +114,60 @@ its meaning, reported only.
 * Estimated cost is a standard-tier list price; Codex runs without a model
   selection have no model and stay unknown.
 
+## Daily token warnings (DPES-747)
+
+An operator can optionally put `usage-token-warnings.json` in the daemon data
+directory. An absent file disables warnings. The file is read on each
+`usage.summary` request, so a change takes effect on the desktop's next usage
+refresh, on focus, or at local midnight. Example:
+
+```json
+{
+  "schema_version": 1,
+  "rules": [
+    { "provider": "codex", "metric": "output_tokens", "limit": 100000 }
+  ]
+}
+```
+
+Each rule names the exact provider ID returned by `usage.summary`, one of
+`input_tokens`, `cache_read_tokens`, `cache_write_tokens`, or `output_tokens`,
+and a positive unsigned 64-bit integer limit. Input means fresh input; output
+already includes reasoning. Categories are evaluated separately. Duplicate
+provider/category rules, unknown configuration fields or versions, invalid
+limits, more than 32 rules, nonregular files and files over 16 KiB are refused.
+Replace the file atomically when editing it to avoid a temporarily incomplete
+configuration.
+
+The optional `token_warnings` result has `schema_version: 1`, a `state` of
+`off`, `ok`, `invalid_configuration`, or `unavailable`, and `rules`. Each result
+rule contains `provider`, `metric`, decimal-string `limit` and nullable
+decimal-string `observed`, and nullable boolean `exceeded`. Strings preserve
+the complete counter range. Unknown counts produce nulls. The desktop shows
+configuration/read failures without hiding the usage figures.
+
+A warning appears only when a recorded count is strictly greater than its
+limit. Equality does not exceed. Counts are lower bounds over actual stored
+receipts in the same reporting window as the usage summary. Missing receipts
+or token categories can make the actual use higher; an unexceeded known count
+does not establish that all usage was under the limit. The existing client
+supplies the local-day window, including DST boundaries. No separate billing
+day is inferred.
+
+Each refresh recomputes current deduplicated receipts. Replays do not add
+tokens; later receipt revisions replace earlier values in their original day.
+Corrections can raise or clear a warning. The UI renders one row per rule and
+does not append repeated notifications or journal events. The warning opens
+the usage details and shows provider, category, count, threshold and the
+window. It never blocks execution, admission, verification or merging.
+
+This token-only warning uses MCAO-started runs. Other local tools remain a
+separate source. A harness with no recorded count remains unknown, with no
+invented monetary value. Optional spend alerts still require the approved
+pricing, currency, threshold and delivery contract described in DPES-747;
+they are not enabled by this configuration. Repository enablement remains
+subject to its existing review gate.
+
 ## AI usage from local tools (DPES-1105)
 
 `usage.summary` covers only runs MCAO started. `usage.localTools` (with

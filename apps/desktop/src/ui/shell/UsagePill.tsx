@@ -58,6 +58,29 @@ function figure(label: string, value: Measured<number>, currency: string): strin
     : `${label}: ${value.status} (${trimStop(value.reason)}).`;
 }
 
+function TokenWarnings({ summary }: { summary: UsageSummary }) {
+  const warnings = summary.tokenWarnings;
+  if (!warnings) return null;
+  if (warnings.state === "off") return <p>Daily token warnings off.</p>;
+  if (warnings.state !== "ok") return <p>Daily token warnings unavailable. Check the token warning settings; usage figures remain available.</p>;
+  const labels = { input_tokens: "fresh input tokens", cache_read_tokens: "cache read tokens", cache_write_tokens: "cache write tokens", output_tokens: "output tokens" };
+  return (
+    <section aria-label="Daily token warnings">
+      <p>Known recorded tokens only. Missing usage may mean the actual total is higher. These warnings do not stop agents.</p>
+      <ul>
+        {warnings.rules.map((rule) => (
+          <li key={`${rule.provider}:${rule.metric}`}>
+            {agentDisplayName(rule.provider)}: {rule.exceeded ? "threshold exceeded, " : ""}
+            {rule.observed === null ? "count unavailable" : `${BigInt(rule.observed).toLocaleString()} ${labels[rule.metric]} recorded`}
+            {`; daily ${labels[rule.metric]} warning threshold ${BigInt(rule.limit).toLocaleString()}.`}
+          </li>
+        ))}
+      </ul>
+      {warnings.rules.length === 0 && <p>No daily token thresholds configured.</p>}
+    </section>
+  );
+}
+
 function UsageDetails({ summary }: { summary: UsageSummary }) {
   const { reported, estimated, budget, currency, timezone, windowStart, coverage, costCoverage, priceTable, knownCostCoverage } = summary;
   const zone = clip(timezone);
@@ -71,6 +94,7 @@ function UsageDetails({ summary }: { summary: UsageSummary }) {
           ? `${money(reported.value, currency)} reported ${since}.`
           : `Reported usage ${since} is ${reported.status}: ${trimStop(reported.reason)}.`}
       </p>
+      <TokenWarnings summary={summary} />
       {reported.status === "ok" && isPartial(costCoverage) && (
         <p data-testid="top-usage-partial">
           Partial: {costCoverage.sessionsWithCost} of {costCoverage.sessions}{" "}
@@ -132,6 +156,9 @@ export function UsagePill() {
   const tools = useLocalTools(surfaces.localTools);
   const details = useRef<HTMLDetailsElement>(null);
   const summary = result.status === "ok" ? result.data : null;
+  const tokenWarnings = summary?.tokenWarnings;
+  const tokenWarning = tokenWarnings?.state === "ok" && tokenWarnings.rules.some((rule) => rule.exceeded === true);
+  const tokenWarningUnavailable = tokenWarnings && tokenWarnings.state !== "ok" && tokenWarnings.state !== "off";
   const toolsSnapshot = tools.result?.status === "ok" ? tools.result.data : null;
   const toolsChip = chipText(toolsSnapshot, tools.pending ?? toolsSnapshot?.enabled ?? false);
   const reported = summary?.reported.status === "ok" ? summary.reported.value : null;
@@ -168,6 +195,11 @@ export function UsagePill() {
     <div className="top-usage" role="group" aria-label="Daily usage" data-testid="top-usage">
       <span>Usage:</span>
       <strong data-testid="top-usage-value">{text}</strong>
+      {(tokenWarning || tokenWarningUnavailable) && (
+        <button type="button" className="top-usage-token-warning" data-testid="top-token-warning" onClick={open}>
+          {tokenWarning ? "Token threshold exceeded" : "Token warnings unavailable"}
+        </button>
+      )}
       {summary && reported !== null && (
         <span title={isPartial(summary.costCoverage) ? "Only some sessions reported a cost; this is a lower bound." : undefined}>
           {isPartial(summary.costCoverage) ? "reported (partial)" : "reported"}
