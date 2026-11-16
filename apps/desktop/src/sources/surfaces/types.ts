@@ -175,12 +175,17 @@ export interface ConversationEntry {
   /** True while the daemon has not recorded the end of this reply. */
   streaming?: boolean;
 }
+/** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
+export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
+
 /** The latest turn the daemon recorded for a live target. */
 export interface ConversationTurnInfo {
   id: string;
   state: "running" | "completed" | "failed" | "cancelled";
   errorCode: string | null;
   runtime: { name: string; version: string };
+  /** The level the daemon reports the agent ran with. Null when none was recorded (DPES-1105). */
+  permissionLevel?: PermissionLevel | null;
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -211,8 +216,9 @@ export interface ConversationSource {
    * Derived: a project target records a note through `coordinator.send_message`;
    * a global or workstream target sends through `conversations.send` (M7-24).
    * Rejects for `fixture:` ids. Fixture: simulated. `selection` is the model choice for this message (DPES-1105).
+   * `permission` is the level the message runs at. It is sent only when the daemon advertises `permission_levels`.
    */
-  send(target: ConversationTarget, text: string, selection?: ModelChoice): Promise<SendReceipt>;
+  send(target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel): Promise<SendReceipt>;
   /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
   /**

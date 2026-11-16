@@ -124,11 +124,14 @@ export const NODE_SELF_TESTS = { passed: 112 };
 // (DPES-1105, PR #73): 1573, as the Windows desktop gate measured it in CI run 43726827533.
 // The chat model choice (DPES-1105) adds 1 file (ModelPicker.test.tsx) and 7 tests: 73 files and 1580 tests, as the
 // desktop gate measured them in CI run 43734333632.
-export const VITEST = { files: 73, tests: 1580 };
+// The permission level control (DPES-1105) adds 3 files (permissionLevel, PermissionLevelPicker and
+// WorkspaceView.permission tests) and 46 tests. Counted from a full `vitest run --reporter=json` of apps/desktop: 76 files and 1626 tests.
+export const VITEST = { files: 76, tests: 1626 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
-// (CI run 43734333632).
-export const E2E_TESTS = 45;
+// (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
+// 46 e2e tests (`Tests 1 failed | 45 passed (46)`, before the fix in the next commit).
+export const E2E_TESTS = 46;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;
