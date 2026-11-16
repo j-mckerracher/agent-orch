@@ -6,6 +6,7 @@ import type {
   ModelOption,
   ModelProvider,
   ModelSelectionCheck,
+  PermissionLevel,
   Provenance,
   SurfaceResult,
 } from "../../../sources/surfaces/types";
@@ -14,6 +15,8 @@ import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
+import { PermissionLevelPicker } from "./PermissionLevelPicker";
+import { permissionLabel } from "./permissionLevel";
 
 const LIVE_NOTE =
   "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message. Task submissions do not use it yet.";
@@ -53,17 +56,25 @@ function sentence(text: string): string {
 }
 
 /** The model part of the chip: the chosen model, the default model, or an honest "not confirmed". */
-function modelChip(provider: ModelProvider, model: ModelOption | undefined): string {
+function modelChip(provider: ModelProvider, model: ModelOption | undefined, defaultWord = "default model"): string {
   if (model) return model.label;
   switch (provider.models.status) {
     case "ok":
     case "unsupported":
-      return "default model";
+      return defaultWord;
     case "unavailable":
       return "models unavailable";
     default:
       return "models not confirmed";
   }
+}
+
+/**
+ * The agent's name as the chip shows it. A trailing qualifier such as "(placeholder)" is dropped, because the chip's
+ * placeholder badge already says so. The popover and the accessible name keep the full name.
+ */
+function chipName(name: string): string {
+  return name.replace(/\s*\([^()]*\)$/, "");
 }
 
 /** Helper text under the Model select, or null when there is nothing to say. */
@@ -91,7 +102,7 @@ function effortHelp(
  * Provider / model / effort menu. Live (daemon provenance): real catalog data with per-model
  * efforts, each choice checked with `agents.validate_selection`, and a cold catalog retried
  * shortly. Fixtures: placeholder options that can be tried locally. Neither mode sends or
- * persists a choice.
+ * persists a choice. A chat also shows its permission level at the end of the chip and offers it in the panel.
  */
 export function ModelPicker({
   catalog,
@@ -100,6 +111,7 @@ export function ModelPicker({
   copilotSignIn,
   onRetry,
   onChoiceChange,
+  permission,
 }: {
   catalog: SurfaceState<ModelCatalog>;
   provenance: Provenance;
@@ -108,6 +120,8 @@ export function ModelPicker({
   onRetry?: () => void;
   /** Live only: the choice each message is sent with, or null until the user changes a part of it (DPES-1105). */
   onChoiceChange?: (choice: ModelChoice | null) => void;
+  /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
+  permission?: { level: PermissionLevel; daemonAdvertises: boolean; onChange: (level: PermissionLevel) => void };
 }) {
   const popover = usePopover();
   const ids = useId();
@@ -136,10 +150,19 @@ export function ModelPicker({
     chosenEffort = efforts.includes(effort ?? "") ? effort : (efforts[1] ?? efforts[0] ?? null);
   }
 
-  const summary =
-    provider === undefined
-      ? "Model settings unavailable"
-      : `${provider.name} · ${modelChip(provider, model)} · ${chosenEffort ?? (live ? "default effort" : "effort not available")}`;
+  const effortText = chosenEffort ?? (live ? "default effort" : "effort not available");
+  const modelSummary =
+    provider === undefined ? "Model settings unavailable" : `${provider.name} · ${modelChip(provider, model)} · ${effortText}`;
+  // The chip's visible text is shorter than the full summary, so it fits beside the conversation target at 960 CSS px.
+  // "default model" reads "default", and one "default" stands for a live choice that is default in both parts.
+  let chipText = modelSummary;
+  if (provider !== undefined) {
+    const chipModel = modelChip(provider, model, "default");
+    const bothDefault = live && model === undefined && chosenEffort === null && chipModel === "default";
+    chipText = `${chipName(provider.name)} · ${bothDefault ? "default" : `${chipModel} · ${effortText}`}`;
+  }
+  const levelLabel = permission ? permissionLabel(permission.level) : null;
+  const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
   const lock = provider === undefined;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
@@ -254,7 +277,8 @@ export function ModelPicker({
         aria-label={`Model settings: ${summary}${!live && catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
-        <span>{summary}</span>
+        <span>{chipText}</span>
+        {levelLabel && <span className="ws-chip-level"> · {levelLabel}</span>}
         {!live && catalog.status === "ok" && (
           <>
             {" "}
@@ -368,6 +392,15 @@ export function ModelPicker({
         <p id={noteId} className="ws-small">
           {note}
         </p>
+        {permission && (
+          <PermissionLevelPicker
+            level={permission.level}
+            daemonAdvertises={permission.daemonAdvertises}
+            agent={choice?.agent}
+            onChange={permission.onChange}
+            closePanel={popover.close}
+          />
+        )}
       </div>
     </div>
   );

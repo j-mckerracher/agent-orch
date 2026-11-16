@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
 import {
-  AUTO_AGENT_TEXT,
-  AUTO_TEXT,
   DEFAULT_PERMISSION_LEVEL,
   FULL_AGENT_TEXT,
   FULL_REVIEW_TEXT,
-  INDICATOR,
   RESTRICTED_PREFERENCE_KEY,
   agentTexts,
   chatChoiceBlock,
@@ -62,25 +59,15 @@ describe("which levels a chat can choose", () => {
 });
 
 describe("the wording", () => {
-  it("says Auto is automatic review and that it is not a guarantee", () => {
-    expect(AUTO_TEXT).toContain("Auto: automatic review.");
-    expect(AUTO_TEXT).toContain("This is not a guarantee.");
-    expect(INDICATOR.auto).toContain("automatic review");
-    expect(INDICATOR.auto).toContain("not a guarantee");
-  });
-
   it("says Full has no review step and that automatic review is not a guarantee", () => {
     expect(FULL_REVIEW_TEXT).toContain("no automatic review step");
     expect(FULL_REVIEW_TEXT).toContain("not a guarantee");
   });
 
-  it("names each agent's own Full and Auto consequences", () => {
+  it("names each agent's own Full consequences", () => {
     expect(FULL_AGENT_TEXT.codex).toContain("~/.codex");
     expect(FULL_AGENT_TEXT["claude-code"]).toContain("skips its permission checks");
     expect(FULL_AGENT_TEXT["github-copilot"]).toContain("No OS sandbox is applied");
-    expect(AUTO_AGENT_TEXT.codex).toContain("workspace-write sandbox");
-    expect(AUTO_AGENT_TEXT["claude-code"]).toContain("Shell commands are not confined");
-    expect(AUTO_AGENT_TEXT["github-copilot"]).toContain("not a security boundary");
   });
 
   it("names one agent when the message names it, and every agent that could answer when the daemon routes it", () => {

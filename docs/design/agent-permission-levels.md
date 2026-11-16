@@ -120,7 +120,7 @@ The safe outcome is always denial. A turn never retries at another level and nev
 | Rule denial (deny rule, path check, `--restricted`, no allow rule) | Denied | Not a failure. Normal behavior | none |
 
 - **The Copilot judge-off case can fail silently.** The judge is "ignored, with [a] warning" when disabled (help), and MCAO runs at `--log-level none`. The live check decides whether a higher log level shows the warning, or whether MCAO needs a probe. Until then, MCAO promises the denial, not the reason.
-- **Chips and messages** say "automatic review", never "guaranteed" (see "Default, scope, persistence, indicator and confirmation").
+- **Wording.** Where the review is named, it says "automatic review", never "guaranteed" (see "Default, scope, persistence and confirmation").
 - **Do not reuse `permission_denied`.** It means the daemon refused access, per the m7-08 code list.
 
 ## Copilot without a sandbox
@@ -130,15 +130,11 @@ The safe outcome is always denial. A turn never retries at another level and nev
 - **What still bounds Copilot.** Deny rules (`url`, `memory`, `shell(git push)`), the worktree write rule, the path check on file tools, `--disallow-temp-dir`, `--no-ask-user`, and the judge at Auto.
 - **Restoring the sandbox later is a new design.** It needs a per-level host gate, a shell policy per level, Windows verification (MXC, on listed versions only, per `copilot help sandbox`) and new tests. Do not treat it as a flag switch.
 
-## Default, scope, persistence, indicator and confirmation
+## Default, scope, persistence and confirmation
 
 - **Default.** Auto for chats and tasks, for all three agents (D1). The task form starts at Auto and can be changed at submit.
-- **Chip.** Always visible beside the composer and in the task form. It shows the level the next message or task will use, and the daemon-reported level of the last turn or task. One click switches to Restricted. Task lists show each task's level.
-- **Auto wording, all agents:** "Auto: automatic review. The agent can run commands and edit files in its workspace without asking you. The review decides risky actions, and it can be wrong. This is not a guarantee. Web access, memory, MCP servers and repository instruction files stay off. Switch to Restricted at any time."
-- **Agent additions.**
-  - Copilot: "The review is a probabilistic LLM judge. Copilot's documentation says it is not a security boundary and may approve dangerous or unintended actions. Copilot runs without an OS sandbox."
-  - Claude: "Claude's auto mode uses a classifier with rule lists. Shell commands are not confined to the worktree."
-  - Codex: "Codex's automatic review decides approval requests. Commands run in a workspace-write sandbox."
+- **Chip.** The model picker chip beside the composer ends with the level the next message will use. Its visible label is short, for example `Codex · default · medium · Auto`, so it fits beside the conversation target at 960 CSS px without wrapping or clipping. A word that is default in both parts reads once (`Codex · default · Auto`). The accessible name and the panel carry the full words (`Codex · default model · medium · Auto`). A fixture agent's chip drops its placeholder qualifier, because the placeholder badge already says so. The level is chosen in the chip's panel, which lists the four levels. Extended, and on an older daemon every level but Restricted, stay listed disabled with the reason. The daemon-reported level of the last turn is shown below the composer row. The task form (PR C) takes the same control, and task lists show each task's level. The always-visible indicator and the one-click switch to Restricted were removed at the user's request (DPES-1105, after the PR #82 review), so the chip and its panel are the only place the level is shown and changed.
+- **Auto disclosure (removed).** The "What automatic review does" disclosure and its per-agent texts (Codex, Claude, Copilot) were removed from the UI at the user's request (DPES-1105). The Full confirmation still says that automatic review at Auto is not a guarantee.
 - **Full.** Confirmation each time Full is chosen, for chats and for each task submit. Focus starts on Cancel. Text: Codex: "Codex runs with your own ~/.codex settings. MCAO adds no sandbox or approval flags, so the settings in that config decide what runs." Claude: "Claude Code skips its permission checks and uses your own Claude settings and hooks. It can run any tool your account allows." Copilot: "Copilot can run any shell command, edit any file your account can, reach any URL, and use your own Copilot settings and hooks. No OS sandbox is applied. Copilot cannot ask you anything during the run." Tasks add: "This task runs unattended after you submit. Objective: `<text>`. Worktree: `<path>`."
 - **Displayed level.** Each turn and task shows the level the daemon reports it ran with, not the level chosen. A mismatch shows an error.
 
@@ -149,7 +145,7 @@ The safe outcome is always denial. A turn never retries at another level and nev
 - Capability `permission_levels`, advertised once all four levels are mapped for that agent.
 - Turn and task records carry `permission_level` and `permission_profile`, for example `copilot:assisted:v1`.
 - **Older daemon.** It rejects unknown fields and runs nothing, so the desktop must not send the field to it.
-  - **Chats (O6).** The chip switches to Restricted with a notice, and the send goes without the field. The older daemon runs chats read-only, which is Restricted. A chosen non-Restricted level is blocked with: "This daemon predates permission levels. Update the daemon, or choose Restricted."
+  - **Chats (O6).** The chip reads Restricted, with a notice below the composer, and the send goes without the field. The older daemon runs chats read-only, which is Restricted. A chosen non-Restricted level is blocked with: "This daemon predates permission levels. Update the daemon, or choose Restricted."
   - **Tasks (O6).** Blocked with: "This daemon predates task permission levels. Update the daemon to submit tasks." Tasks are blocked, not downgraded, because an older daemon runs a task with today's argv. For Codex that is `--approve-for-me` with no pin (`executor.rs:696`), which is looser than Restricted.
 - **Why it holds.** A `permission` field sent to an older daemon fails with `InvalidParams`, so a Restricted-looking request never runs as Full, and the daemon never upgrades a request.
 - **Failure codes** on `turn_failed` and task failures: `permission_review_denied`, `permission_review_unavailable`, `permission_level_unsupported` (Codex Extended).
@@ -179,7 +175,7 @@ The safe outcome is always denial. A turn never retries at another level and nev
 
 1. **PR A, daemon and wire (chats).** Argv per level for chats, all three agents. `permission` and `extended_groups` on `conversations.send`. Capability `permission_levels`. Failure codes. Migration `0035`, turn fields. Files: `crates/orchestrator-agents` (`catalog.rs`, adapters), `crates/orchestrator-daemon` (`api_conversations.rs`, `api_conversation_agent.rs`), `crates/orchestrator-store` (migration, turn writes). Rebase on #75 and #76. Size L.
 2. **PR B and PR C, in parallel after A.** They share no Rust files.
-   - **PR B, desktop chat UI.** Chip, Auto default for chats, one-click Restricted, Full confirmation, older-daemon chat notice, displayed level. Files: `apps/desktop/src/ui/views/workspace/*` (`WorkspaceView.tsx`, `ModelPicker`, new picker, chip and confirm components), `apps/desktop/src/daemon/types.ts`, fixtures, e2e. Can be built against fixtures while A is in review. Rebase on #75. Size M.
+   - **PR B, desktop chat UI.** Level control in the model picker chip and panel, Auto default for chats, Full confirmation, older-daemon chat notice, displayed level. Files: `apps/desktop/src/ui/views/workspace/*` (`WorkspaceView.tsx`, `ModelPicker`, new picker, chip and confirm components), `apps/desktop/src/daemon/types.ts`, fixtures, e2e. Can be built against fixtures while A is in review. Rebase on #75. Size M.
    - **PR C, tasks.** `permission` on `TaskSubmitParams` (`api.rs`). Contract field (`crates/orchestrator-core/src/contract.rs`). Executor mapping (`executor.rs`: `agent_command` around line 682, `spawn_agent`, `spawn_copilot`). Codex task pin. Spend flags (O2, O7). Delivery denies (O8). Desktop task-form control in `ProjectDetail.tsx`, which reuses B's picker, so that part merges after B. Size M. Rebase on #75 and A, since C shares `copilot_adapter.rs` and `catalog.rs` with A.
 
 Order: #75 and #76, then A, then B and C together. Every PR uses the org template, the Jira key, a Key Decisions section, a Workflow Runs section with real run links, and a Trivy scan that exits 0 before it is opened or updated.
@@ -193,7 +189,7 @@ Order: #75 and #76, then A, then B and C together. Every PR uses the org templat
 - **Wire, in-process.** Absent means `restricted` for chats and tasks. An unknown `permission` value is rejected with no turn or task. Codex Extended is refused with `permission_level_unsupported`. Capability gating. The idempotency key includes `permission`.
 - **Store.** Migration `0035` is nullable, and the CHECK holds. Old turn rows read NULL. An old contract with no field reads as `restricted`.
 - **Fake agent, process level.** The argv reaches the fake. Fake review-denial output yields `permission_review_denied`, and the fake is launched once. Fake error output yields `permission_review_unavailable`. These fakes test the parser only, not real CLI output.
-- **Desktop Vitest.** Auto is the default for chats and tasks. The chip is always rendered, with a one-click Restricted action. Only Restricted persists. Full needs confirmation each time. The displayed level comes from the daemon, and a mismatch shows an error. An older daemon falls back for chats and blocks tasks. Fixture mode never sends.
+- **Desktop Vitest.** Auto is the default for chats and tasks. The level is always in the model picker chip and panel. Only Restricted persists. Full needs confirmation each time. The displayed level comes from the daemon, and a mismatch shows an error. An older daemon falls back for chats and blocks tasks. Fixture mode never sends.
 - **Desktop e2e, real daemon and fake agent.** A default chat sends `permission: auto`, and the fake's argv shows the Auto flags. Switching to Restricted changes the argv.
 - **Cannot be tested without a signed-in CLI and paid calls.** Judge engagement, classifier behavior, the Codex reviewer, denial and error formats, Claude under `--print` on this account, whether `bypassPermissions` needs the allow flag, and network under `workspace-write`.
 

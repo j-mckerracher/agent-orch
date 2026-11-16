@@ -131,7 +131,10 @@ export const NODE_SELF_TESTS = { passed: 112 };
 // WorkspaceView.permission tests) and 46 tests. Counted from a full `vitest run --reporter=json` of apps/desktop: 76 files and 1626 tests.
 // The ambient background is on by default (DPES-1105): 9 tests replace 5, so 1626 becomes 1630 (same 76 files), as a full
 // `vitest run --reporter=json` of apps/desktop measured them.
-export const VITEST = { files: 76, tests: 1630 };
+// The composer permission cleanup (DPES-1105) moves the level into the model picker's chip and panel and adds 6 label-state
+// tests: it adds 8 tests to that base with no file added or removed, so 1630 becomes 1638. The merged name list in
+// desktop-test-names.json holds 1638 titles across 76 files. CI measures the real total.
+export const VITEST = { files: 76, tests: 1638 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
