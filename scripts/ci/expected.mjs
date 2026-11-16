@@ -32,7 +32,9 @@ export const WINDOWS = {
   // conversation_runtime 20 becomes 24 (4 process tests), so 163 becomes 170 passed plus 1 ignored, sequence [138, 24, 2, 4, 0, 1, 2].
   // DPES-1123 adds three portable task-submission tests, so the unit binary is 141 and the total is 173.
   // WI-DPES-747: Three additional portable daemon token-warning tests; Windows totals are derived.
-  daemon: { passed: 176, ignored: 1, sequence: [144, 24, 2, 4, 0, 1, 2] },
+  // DPES-1105 task permission levels (PR #93, CI run 43915710007, measured on Windows): the unit binary 144 becomes 146 (2 portable
+  // API tests; the executor tests are Unix-only), so 176 becomes 178 passed plus 1 ignored, sequence [146, 24, 2, 4, 0, 1, 2].
+  daemon: { passed: 178, ignored: 1, sequence: [146, 24, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
@@ -87,7 +89,9 @@ export const MACOS = {
   // daemon tests) and conversation_runtime 22 becomes 26 (4 process tests), so 238 becomes 245 passed plus 1 ignored.
   // DPES-1123 adds three portable API tests and one Unix-only executor retry test.
   // WI-DPES-747: Three additional portable daemon token-warning tests.
-  daemon: { passed: 252, ignored: 1, sequence: [207, 26, 2, 4, 11, 1, 2] },
+  // DPES-1105 task permission levels (PR #93, CI run 43915710007, measured on macOS): the unit binary 207 becomes 215 (2 portable
+  // API tests and 6 Unix-only executor tests), so 252 becomes 260 passed plus 1 ignored.
+  daemon: { passed: 260, ignored: 1, sequence: [215, 26, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -104,7 +108,9 @@ export const MACOS = {
   // WI-DPES-736: Seven portable store audit-envelope tests are added.
   // DPES-1123 adds three portable daemon API tests and one Unix-only executor test.
   // WI-DPES-747: Three additional portable daemon token-warning tests.
-  workspace: { passed: 1157, ignored: 2 },
+  // DPES-1105 task permission levels (PR #93, CI run 43915710007, measured on macOS, `cargo test --locked --workspace`): 12 new
+  // tests (8 daemon, 1 core, 1 agents unit, 2 agents integration), so 1157 becomes 1169 passed plus 2 ignored.
+  workspace: { passed: 1169, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
