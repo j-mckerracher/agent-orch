@@ -1,0 +1,1807 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded jiff-static v0.2.39
+  Downloaded jiff-core v0.1.8
+  Downloaded jiff-tzdb v0.1.10
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling windows-link v0.2.1
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling windows-sys v0.61.2
+   Compiling getrandom v0.4.3
+   Compiling thiserror v2.0.21
+   Compiling fastrand v2.5.0
+   Compiling pin-project-lite v0.2.17
+   Compiling bytes v1.12.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling litemap v0.8.3
+   Compiling writeable v0.6.4
+   Compiling smallvec v1.16.5
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling tempfile v3.27.0
+   Compiling futures-core v0.3.34
+   Compiling utf_types v1.0.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling generic-array v0.14.9
+   Compiling icu_properties_data v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling cpufeatures v0.2.17
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling scopeguard v1.2.0
+   Compiling futures-sink v0.3.34
+   Compiling lock_api v0.4.14
+   Compiling vcpkg v0.2.15
+   Compiling parking_lot_core v0.9.12
+   Compiling pkg-config v0.3.34
+   Compiling crossbeam-utils v0.8.23
+   Compiling cc v1.11.1
+   Compiling equivalent v1.0.3
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling digest v0.10.7
+   Compiling futures-task v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling foldhash v0.2.0
+   Compiling slab v0.4.12
+   Compiling allocator-api2 v0.2.21
+   Compiling sha2 v0.10.9
+   Compiling futures-io v0.3.34
+   Compiling autocfg v1.5.1
+   Compiling parking_lot v0.12.5
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling tracing-core v0.1.36
+   Compiling num-traits v0.2.19
+   Compiling log v0.4.35
+   Compiling hashbrown v0.17.1
+   Compiling crc-catalog v2.5.0
+   Compiling parking v2.2.1
+   Compiling crc v3.4.0
+   Compiling synstructure v0.14.0
+   Compiling hashlink v0.11.1
+   Compiling indexmap v2.14.2
+   Compiling event-listener v5.4.2
+   Compiling crossbeam-queue v0.3.14
+   Compiling futures-intrusive v0.5.0
+   Compiling base64 v0.22.1
+   Compiling libsqlite3-sys v0.37.0
+   Compiling tokio v1.54.1
+   Compiling spin v0.9.9
+   Compiling futures-channel v0.3.34
+   Compiling flume v0.12.0
+   Compiling heck v0.5.0
+   Compiling atoi v2.0.0
+   Compiling tracing-attributes v0.1.31
+   Compiling dotenvy v0.15.7
+   Compiling hex v0.4.3
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling futures-executor v0.3.34
+   Compiling jiff-tzdb v0.1.10
+   Compiling orchestrator-private-fs v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-private-fs)
+   Compiling jiff-tzdb-platform v0.1.3
+   Compiling zerofrom v0.1.8
+   Compiling jiff-core v0.1.8
+   Compiling tracing v0.1.44
+   Compiling getrandom v0.3.4
+   Compiling async-trait v0.1.89
+   Compiling orchestrator-diagnostics v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-diagnostics)
+   Compiling yoke v0.8.4
+   Compiling orchestrator-git v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-git)
+   Compiling tokio-stream v0.1.19
+   Compiling jiff v0.2.39
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling winapi v0.3.9
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling orchestrator-core v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-core)
+   Compiling either v1.19.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling uuid v1.18.1
+   Compiling windows-threading v0.2.1
+   Compiling ntapi v0.4.3
+   Compiling libc v0.2.191
+   Compiling windows-core v0.62.2
+   Compiling anstyle v1.0.14
+   Compiling icu_provider v2.4.0
+   Compiling orchestrator-runtime v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-runtime)
+   Compiling once_cell_polyfill v1.70.2
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling orchestrator-agents v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-agents)
+   Compiling utf8parse v0.2.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-future v0.3.2
+   Compiling windows-collections v0.3.2
+   Compiling anstyle-parse v1.0.0
+   Compiling anstyle-wincon v3.0.11
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling windows v0.62.2
+   Compiling colorchoice v1.0.5
+   Compiling subtle v2.6.1
+   Compiling orchestrator-local-usage v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-local-usage)
+   Compiling clap_lex v1.1.1
+   Compiling strsim v0.11.1
+   Compiling anstream v1.0.0
+   Compiling orchestrator-ipc v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-ipc)
+   Compiling idna_adapter v1.2.2
+   Compiling clap_derive v4.6.7
+   Compiling clap_builder v4.6.7
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling sqlx-core v0.9.0
+   Compiling clap v4.6.7
+warning: unused imports: `AtomicUsize` and `Ordering`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:7:25
+  |
+7 | use std::sync::atomic::{AtomicUsize, Ordering};
+  |                         ^^^^^^^^^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused import: `std::sync::Arc`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:8:5
+  |
+8 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `Instant`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:9:27
+  |
+9 | use std::time::{Duration, Instant};
+  |                           ^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `CopilotSignIn`
+  --> crates\orchestrator-agents\tests\copilot_adapter.rs:13:62
+   |
+13 | use orchestrator_agents::copilot_sign_in::{classify_failure, CopilotSignIn};
+   |                                                              ^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `AgentAdapter`, `AgentError`, `AgentExit`, `AgentLaunchRequest`, `CopilotRun`, and `RoutableAdapter`
+  --> crates\orchestrator-agents\tests\copilot_adapter.rs:16:18
+   |
+16 |     provider_of, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentLaunchRequest,
+   |                  ^^^^^^^^^^^^                ^^^^^^^^^^              ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+17 |     CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SignInRecord, SignInState,
+   |                                   ^^^^^^^^^^  ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+   Compiling sqlx-sqlite v0.9.0
+warning: function `futures_block` is never used
+   --> crates\orchestrator-agents\tests\copilot_adapter.rs:974:4
+    |
+974 | fn futures_block<F: std::future::Future>(future: F) -> F::Output {
+    |    ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `orchestrator-agents` (test "copilot_adapter") generated 6 warnings (run `cargo fix --test "copilot_adapter" -p orchestrator-agents` to apply 5 suggestions)
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sysinfo v0.40.1
+   Compiling sqlx v0.9.0
+   Compiling orchestrator-store v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-store)
+   Compiling orchestrator-host-metrics v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-host-metrics)
+   Compiling orchestrator-engine v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-engine)
+   Compiling orchestrator-cli v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-cli)
+   Compiling orchestrator-daemon v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-daemon)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:94:4
+   |
+94 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo fix --test "sqlite_reconcile" -p orchestrator-store` to apply 1 suggestion)
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo fix --lib -p orchestrator-cli --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 59s
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_agents-c60ce43a59eb9ddf.exe)
+
+running 54 tests
+test catalog::tests::claude_argv_per_level_is_exact ... ok
+test catalog::tests::claude_effort_parser_rejects_unsafe_levels ... ok
+test catalog::tests::codex_argv_per_level_is_exact ... ok
+test catalog::tests::claude_states_follow_login_and_help ... ok
+test catalog::tests::claude_offers_documented_aliases_with_their_provenance_and_efforts ... ok
+test catalog::tests::codex_models_keep_only_listed_safe_unique_entries ... ok
+test catalog::tests::codex_states_never_turn_unreadable_into_empty ... ok
+test catalog::tests::codex_without_credentials_offers_nothing ... ok
+test catalog::tests::a_probe_summary_names_the_probe_path_and_outcome_and_masks_tokens ... ok
+test catalog::tests::catalog_serializes_snake_case_states ... ok
+test catalog::tests::only_a_catalog_with_every_facet_known_is_definitive ... ok
+test catalog::tests::conversation_args_are_read_only_and_keep_the_prompt_whole ... ok
+test catalog::tests::selection_args_build_exact_vectors ... ok
+test catalog::tests::validation_refuses_every_unestablished_state ... ok
+test catalog::tests::validation_matrix_for_claude ... ok
+test claude_code_adapter::tests::error_result_with_clean_exit_is_not_completed ... ok
+test claude_code_adapter::tests::nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test catalog::tests::validation_matrix_for_codex ... ok
+test codex_adapter::tests::nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test codex_parser::tests::bad_thread_id_faults ... ok
+test claude_code_adapter::tests::a_model_the_cli_rejects_surfaces_its_own_message_as_the_failure ... ok
+test codex_parser::tests::blank_and_unknown_item_lines_are_skipped ... ok
+test codex_parser::tests::full_happy_sequence ... ok
+test codex_parser::tests::malformed_json_faults ... ok
+test codex_parser::tests::missing_turn_completed_is_detected ... ok
+test codex_parser::tests::non_object_line_faults ... ok
+test codex_parser::tests::ordering_violations_fault ... ok
+test codex_parser::tests::pre_turn_error_item_is_ignored_but_other_items_fault ... ok
+test codex_parser::tests::turn_failed_is_an_unknown_type_and_never_completes_the_turn ... ok
+test codex_parser::tests::unknown_type_faults ... ok
+test copilot_adapter::tests::the_first_line_of_the_version_output_is_the_version ... ok
+test copilot_sign_in::tests::a_fresh_cache_starts_not_checked_so_a_restart_never_shows_checking ... ok
+test copilot_sign_in::tests::a_run_that_is_not_a_sign_in_fact_leaves_the_state_alone ... ok
+test locate::tests::other_hosts_look_for_the_name_itself ... ok
+test copilot_sign_in::tests::failure_text_is_classified_model_then_seat_then_sign_in ... ok
+test permission::tests::extended_has_no_chat_profile_and_the_other_levels_do_for_every_agent ... ok
+test pi_rpc_adapter::tests::aborted_turn_with_clean_exit_is_not_completed ... ok
+test locate::tests::windows_prefers_exe_then_cmd_and_never_the_extensionless_script ... ok
+test pi_rpc_adapter::tests::malformed_json_is_recoverable_and_fails_settled_turn ... ok
+test pi_rpc_adapter::tests::nonzero_exit_after_settled_turn_fails ... ok
+test usage::tests::a_null_or_missing_token_field_is_unknown_not_zero ... ok
+test usage::tests::claude_recorded_result_reports_tokens_and_cost ... ok
+test usage::tests::claude_without_cost_or_usage_is_unknown ... ok
+test usage::tests::claude_result_names_a_model_only_when_exactly_one_ran ... ok
+test usage::tests::codex_inconsistent_or_absent_usage_is_unknown ... ok
+test usage::tests::codex_recorded_turn_subtracts_cached_input ... ok
+test usage::tests::cost_conversion_rejects_non_prices ... ok
+test usage::tests::pi_assistant_message_end_reports_and_zero_cost_is_unknown ... ok
+test usage::tests::pi_user_messages_and_empty_usage_report_nothing ... ok
+test copilot_sign_in::tests::a_check_reports_checking_at_once_and_settles_later ... ok
+test copilot_sign_in::tests::a_panicking_run_settles_as_an_error_and_never_stays_checking ... ok
+test copilot_sign_in::tests::a_second_start_while_checking_runs_nothing_more_even_when_forced ... ok
+test copilot_sign_in::tests::a_run_that_never_establishes_a_time_is_stored_as_an_error ... ok
+test copilot_sign_in::tests::the_settled_answer_is_cached_until_a_check_is_forced ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\claude_code_adapter.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\claude_code_adapter-d10fdbf896134f9d.exe)
+
+running 10 tests
+test arguments_keep_prompt_separate_and_restrict_tools ... ok
+test malformed_lines_report_a_protocol_violation_without_panicking ... ok
+test missing_fields_in_known_events_are_protocol_violations ... ok
+test unknown_events_are_ignored ... ok
+test parses_the_recorded_stream_json_output ... ok
+test detection_reports_verified_capabilities ... ok
+test malformed_process_output_fails_even_when_process_exits_zero ... ok
+test nonzero_exit_after_completed_turn_fails_and_keeps_last_message ... ok
+test eof_mid_turn_is_not_reported_as_completion ... ok
+test cancellation_is_reported_as_a_transport_outcome ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.19s
+
+     Running tests\codex_adapter.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\codex_adapter-04bf8af27dfe9084.exe)
+
+running 10 tests
+test detect_reports_not_found_for_missing_binary ... ok
+test detect_reports_capabilities_for_found_binary ... ok
+test oversized_stdout_and_stderr_lines_are_truncated_with_a_marker ... ok
+test garbage_stdout_is_a_protocol_error_not_success ... ok
+test cancel_reports_cancelled_exit ... ok
+test happy_run_streams_events_and_completes ... ok
+test deprecated_error_item_and_command_lifecycle_do_not_fail_a_successful_turn ... ok
+test supervisor_cancel_kills_descendants ... ok
+test stderr_is_diagnostics_and_nonzero_exit_fails ... ok
+test stream_lines_are_not_returned_after_exit_when_a_descendant_keeps_pipes_open ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.85s
+
+     Running tests\conformance.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\conformance-5dfa88d9a49854cf.exe)
+
+running 37 tests
+test claude_code_approvals ... ok
+test claude_code_unsupported_features ... ok
+test claude_code_cancellation_tree ... ok
+test claude_code_error_result ... ok
+test claude_code_cancel_after_exit ... ok
+test claude_code_crlf_framing ... ok
+test claude_code_cancellation ... ok
+test claude_code_unexpected_eof ... ok
+test claude_code_launch ... ok
+test claude_code_errors ... ok
+test claude_code_framing ... ok
+test claude_code_interruption ... ok
+test codex_approvals ... ok
+test codex_cancel_after_exit ... ok
+test codex_cancellation_tree ... ok
+test codex_cancellation ... ok
+test codex_crlf_framing ... ok
+test codex_unsupported_features ... ok
+test codex_nonterminal_warning ... ok
+test codex_launch ... ok
+test codex_errors ... ok
+test codex_unexpected_eof ... ok
+test codex_interruption ... ok
+test codex_framing ... ok
+test codex_item_outside_turn ... ok
+test pi_rpc_approvals ... ok
+test pi_rpc_cancel_after_exit ... ok
+test pi_rpc_cancellation_tree ... ok
+test pi_rpc_cancellation ... ok
+test pi_rpc_crlf_framing ... ok
+test pi_rpc_unsupported_features ... ok
+test pi_rpc_error_result ... ok
+test pi_rpc_launch ... ok
+test pi_rpc_unexpected_eof ... ok
+test pi_rpc_errors ... ok
+test pi_rpc_framing ... ok
+test pi_rpc_interruption ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.52s
+
+     Running tests\copilot_adapter.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\copilot_adapter-9e10db0b80ad82ea.exe)
+
+running 25 tests
+test copilot_belongs_to_the_github_vendor_family ... ok
+test a_missing_or_unparseable_usage_file_is_not_reported_never_zero ... ok
+test a_task_writes_only_under_its_worktree_and_runs_no_shell ... ok
+test an_exit_zero_without_a_reply_still_fails ... ok
+test a_truncated_stream_never_completes ... ok
+test a_session_error_beside_a_completed_turn_is_a_warning ... ok
+test an_unclassified_failure_is_an_error_with_its_text ... ok
+test a_leading_dash_prompt_stays_one_argument_after_prompt_equals ... ok
+test a_reply_with_a_zero_result_completes ... ok
+test a_nonzero_result_fails_with_the_reported_error_as_detail ... ok
+test copilot_conversation_argv_per_level_is_exact ... ok
+test copilot_only_full_widens_and_no_level_takes_a_hard_limit_flag ... ok
+test every_run_writes_usage_outside_its_working_directory ... ok
+test no_run_ever_passes_a_permission_widening_or_resume_flag ... ok
+test only_the_sign_in_check_names_a_model ... ok
+test provider_text_is_masked_and_capped ... ok
+test the_version_comes_from_the_first_line_only ... ok
+test unknown_event_types_and_non_json_lines_change_nothing ... ok
+test the_conversation_reads_its_directory_and_can_do_nothing_else ... ok
+test usage_keeps_premium_requests_and_credits_in_their_own_units ... ok
+test a_missing_copilot_catalog_is_unavailable_not_empty ... ok
+test windows_is_not_refused_and_a_missing_cli_is_reported_as_missing ... ok
+test a_check_that_cannot_run_records_nothing ... ok
+test the_bogus_model_fixture_fails_with_the_providers_own_words ... ok
+test the_parser_reads_the_captured_hook_error_as_a_warning_on_a_completed_turn ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\copilot_sign_in.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\copilot_sign_in-46ecc5d7ea91312f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\pi_rpc_adapter.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\pi_rpc_adapter-d89fb6b8e5f3a10e.exe)
+
+running 11 tests
+test preserves_failing_command_response ... ok
+test keeps_stderr_separate_from_rpc_records ... ok
+test ignores_unknown_event_types ... ok
+test matches_response_to_request_id ... ok
+test reports_mid_turn_eof_as_transport_exit ... ok
+test reports_assistant_usage_from_message_end_and_nothing_else ... ok
+test ignores_malformed_json_lines ... ok
+test correlates_out_of_order_responses ... ok
+test buffers_events_before_between_and_after_responses ... ok
+test does_not_reuse_previous_completion_after_new_prompt ... ok
+test detects_only_the_rpc_command_it_verified ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.48s
+
+     Running tests\routing.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\routing-1b452011e4bb2b43.exe)
+
+running 10 tests
+test empty_preference_list_fails_closed ... ok
+test empty_requirements_select_first_preference ... ok
+test claude_code_unavailable_capabilities_are_rejected ... ok
+test codex_unavailable_capabilities_are_rejected ... ok
+test identical_inputs_always_select_same_adapter ... ok
+test codex_and_claude_code_route_model_selection ... ok
+test pi_unavailable_capabilities_are_rejected ... ok
+test preference_order_decides_between_equally_capable_adapters ... ok
+test selects_first_adapter_that_supports_every_requirement ... ok
+test no_match_reports_missing_capabilities_for_each_candidate ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\usage_replay.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\usage_replay-7edb0b78bdd6067c.exe)
+
+running 3 tests
+test codex_recorded_stream_reports_tokens_and_no_cost ... ok
+test stream_without_a_usage_record_reports_nothing ... ok
+test claude_recorded_stream_reports_tokens_and_cost ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_cli-1cb534194c75f845.exe)
+
+running 19 tests
+test workflow::tests::delivery_blocks_only_partial_ambiguous_or_confirmed_on_unsucceeded_task ... ok
+test cli::tests::rejects_run_without_repository_or_objective ... ok
+test workflow::tests::canonical_target_resolves_symlinked_ancestors_and_missing_suffixes ... ok
+test workflow::tests::recovery_classification_refuses_reused_lead_with_live_foreign_group ... ok
+test workflow::tests::session_gone_guard_refuses_missing_alive_and_unknown_classifications ... ok
+test cli::tests::parses_every_command_and_global_data_directory ... ok
+test workflow::tests::task_ids_reject_path_syntax_before_store_access ... ok
+test workflow::tests::capture_stream_copies_raw_bytes_to_both_outputs ... ok
+test workflow::tests::a_65000_character_objective_is_refused_before_any_record_on_windows ... ok
+test workflow::tests::an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named ... ok
+test workflow::tests::unresolved_legacy_windows_owner_has_audited_manual_recovery_path ... ok
+{"blocker":"attempt task-unowned/task-unowned-attempt-1 is Pending but has no unfinished session, so no owner or process identity can be proven gone; the task, worktree and history are preserved. Next step: run `agent-orch inspect task-unowned`; no override exists","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-16T18:05:32Z"}
+test workflow::tests::pending_attempt_without_a_session_blocks_but_a_planned_task_does_not ... ok
+test workflow::tests::settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_when_owner_identity_is_unprovable ... ok
+test workflow::tests::cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner ... ok
+test workflow::tests::settled_failed_task_with_unlanded_delivery_and_absent_workspace_does_not_block ... ok
+{"blocker":"task task-confirmed-failed has Confirmed delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-confirmed-failed` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-16T18:05:34Z"}
+test workflow::tests::confirmed_delivery_on_a_failed_task_blocks_and_preserves_everything ... ok
+{"blocker":"task task-ambiguous has Ambiguous delivery evidence while Failed; the delivery journal, review refs, worktree and history are preserved. Next step: run `agent-orch inspect task-ambiguous` and review the recorded delivery steps and `refs/heads/orchestrator/review/` refs by hand. No override exists and nothing here applies or removes a delivery, so scheduling stays blocked until the journal and Git agree","component":"engine","event":"reconcile_blocking_record","level":"warn","ts":"2026-11-16T18:05:34Z"}
+test workflow::tests::ambiguous_delivery_blocks_scheduling_and_is_not_rewritten ... ok
+test workflow::tests::cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.04s
+
+     Running unittests src\main.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_cli-21a50b7917c77532.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cleanup_safety.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\cleanup_safety-51a8927d93676a4f.exe)
+
+running 3 tests
+test cleanup_refuses_clean_worktree_while_run_owner_is_live ... ok
+test cleanup_follows_existing_contract_for_provably_exited_run_owner ... ok
+test cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.53s
+
+     Running tests\cli.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\cli-0c30388073016ead.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\crash_concurrency.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\crash_concurrency-ea07cbdea3119f81.exe)
+
+running 6 tests
+test event_write_failure_rolls_back_one_task_while_parallel_task_stays_live ... ok
+test cancel_targets_one_run_and_leaves_the_parallel_task_untouched ... ok
+test two_concurrent_runs_overlap_and_keep_their_changes ... ok
+test running_task_with_no_live_runs_left_is_reconciled_by_the_next_run ... ok
+test agent_runtime_failure_keeps_changes_and_parallel_task_and_a_new_run_succeeds ... ok
+test killed_run_owner_is_reconciled_while_parallel_task_completes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.95s
+
+     Running tests\delivery_reconciliation_contract.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery_reconciliation_contract-36bf1b9056b77356.exe)
+
+running 12 tests
+test store_row_json_maps_to_the_classifier_record ... ok
+test per_task_evidence_summarises_the_live_rows ... ok
+test each_task_reconciles_only_its_own_steps ... ok
+test snapshot_detects_a_moved_ref ... ok
+test snapshot_detects_a_deleted_ref ... ok
+test snapshot_detects_a_dangling_symref_write_through ... ok
+test snapshot_detects_a_removed_worktree ... ok
+test reconciliation_leaves_live_store_git_and_worktrees_unchanged_including_after_reopen ... ok
+test ambiguous_records_stay_in_the_plan_and_in_the_store ... ok
+test snapshot_detects_a_created_ref ... ok
+test snapshot_detects_a_store_write has been running for over 60 seconds
+test snapshot_detects_changed_worktree_bytes has been running for over 60 seconds
+test snapshot_detects_changed_worktree_bytes ... ok
+test snapshot_detects_a_store_write ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 78.36s
+
+     Running tests\engine_reconciliation_gate.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\engine_reconciliation_gate-dd8a3b6cfe628f11.exe)
+
+running 22 tests
+test confirmed_delivery_on_a_failed_task_is_contradictory_and_refuses_scheduling ... ok
+test interrupted_task_whose_project_cannot_be_inspected_refuses_scheduling ... ok
+test interrupted_foreign_workspace_refuses_scheduling_and_keeps_all_evidence ... ok
+test interrupted_task_without_a_recorded_workspace_refuses_scheduling ... ok
+test interrupted_task_with_partial_delivery_refuses_scheduling_and_keeps_evidence ... ok
+test live_owner_with_partial_delivery_journal_refuses_scheduling ... ok
+test consistent_delivery_journals_do_not_block_scheduling ... ok
+test live_owner_with_confirmed_delivery_while_running_refuses_scheduling ... ok
+test live_owner_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test live_owner_with_consistent_not_applied_journal_does_not_block_scheduling ... ok
+test held_data_directory_lock_refuses_mutating_commands_and_leaves_readers_alone ... ok
+test pending_attempt_without_any_session_refuses_scheduling ... ok
+test running_task_without_an_unfinished_session_refuses_scheduling ... ok
+test run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated ... ok
+test planned_and_admitted_tasks_without_attempts_do_not_block_scheduling ... ok
+test settled_task_with_ambiguous_delivery_journal_refuses_scheduling ... ok
+test live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock ... ok
+test settled_task_with_partial_delivery_journal_refuses_scheduling ... ok
+test unidentified_running_session_refuses_scheduling_and_preserves_records ... ok
+test settled_failed_task_with_dirty_worktree_does_not_block_scheduling ... ok
+test interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evidence ... ok
+test settled_candidate_ready_attempt_does_not_block_scheduling ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 57.66s
+
+     Running tests\multi_task_review.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\multi_task_review-802f6ee4d637dccf.exe)
+
+running 6 tests
+test scheduler_starts_dependencies_before_dependent_task ... ok
+test decomposition_replaces_proposal_ids_and_rewrites_dependencies ... ok
+test verification_blocks_failed_commands_and_names_protected_paths ... ok
+test delivery_requires_exact_approval_and_reapproval_after_candidate_change ... ok
+test workflow_records_survive_reopen_after_each_stage ... ok
+test local_review_writes_only_approved_review_refs_without_merging ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.29s
+
+     Running tests\portable_acceptance.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\portable_acceptance-bbbf78289f1a0830.exe)
+
+running 2 tests
+test cancel_terminates_agent_and_descendant ... ok
+test run_produces_isolated_diff_and_cleanup_preserves_primary ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.83s
+
+     Running tests\recovery.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\recovery-00fb0d4fedf19b87.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_core-9e80a625b14b4680.exe)
+
+running 65 tests
+test authorization::tests::approval_is_not_transferable_between_tasks ... ok
+test authorization::tests::changed_kind_denied ... ok
+test authorization::tests::changed_candidate_commit_denied ... ok
+test authorization::tests::consumed_approval_cannot_be_reused ... ok
+test authorization::tests::voided_approval_cannot_be_reused ... ok
+test authorization::tests::changed_operation_parameter_denied ... ok
+test authorization::tests::delivery_envelope_grants_are_explicit ... ok
+test authorization::tests::changed_destination_denied ... ok
+test authorization::tests::changed_destination_parameters_denied ... ok
+test contract::tests::approval_required_does_not_imply_workspace_writes ... ok
+test authorization::tests::matching_granted_approval_applies ... ok
+test authorization::tests::expired_approval_cannot_be_reused ... ok
+test contract::tests::commands_verification_with_blank_command_rejected ... ok
+test contract::tests::contract_text_with_a_nul_byte_is_rejected ... ok
+test contract::tests::contract_fields_over_their_limit_are_rejected ... ok
+test contract::tests::delivery_and_autonomy_are_orthogonal ... ok
+test contract::tests::duplicate_dependency_rejected ... ok
+test contract::tests::empty_objective_rejected ... ok
+test contract::tests::malformed_proposal_is_invalid_not_denied ... ok
+test contract::tests::model_selection_is_validated_structurally ... ok
+test contract::tests::objective_control_and_bidi_characters_are_rejected_but_layout_is_kept ... ok
+test contract::tests::only_workspace_writes_grants_workspace_writes ... ok
+test contract::tests::model_selection_is_absent_from_legacy_json_and_omitted_when_unset ... ok
+test contract::tests::proposal_cannot_change_autonomy ... ok
+test contract::tests::proposal_cannot_remove_authorized_verification_gate ... ok
+test contract::tests::proposal_within_envelope_accepted ... ok
+test contract::tests::pull_request_delivery_denied_without_explicit_authorization ... ok
+test contract::tests::self_dependency_rejected ... ok
+test contract::tests::valid_contract_passes ... ok
+test identity::tests::exact_owner_identity_ignores_process_group_changes ... ok
+test identity::tests::process_group_without_start_time_does_not_prove_exact_identity ... ok
+test identity::tests::legacy_windows_identity_without_exact_creation_time_is_unresolved ... ok
+test identity::tests::windows_creation_time_difference_is_not_pid_liveness ... ok
+test permission::tests::a_level_is_spelled_the_same_on_the_wire_and_in_the_store ... ok
+test permission::tests::an_absent_level_is_restricted ... ok
+test task::tests::attempt_edges_match_the_table_exactly ... ok
+test permission::tests::parse_accepts_exactly_the_stored_names ... ok
+test task::tests::attempt_terminals_accept_nothing_and_nothing_is_undone ... ok
+test task::tests::failed_attempt_preserved_on_retry ... ok
+test task::tests::every_table_edge_applies_through_transition ... ok
+test task::tests::cancel_requested_is_legal_only_before_agent_start ... ok
+test task::tests::irreversible_states_reject_every_event ... ok
+test task::tests::happy_path_reaches_success ... ok
+test task::tests::quiescent_failures_accept_only_retry ... ok
+test task::tests::retry_starts_from_failure_and_loses_the_old_attempt_path ... ok
+test task::tests::running_task_requires_cancellation_confirmation ... ok
+test task::tests::session_exit_is_terminal_and_scoped_to_attempt ... ok
+test task::tests::session_edges_match_the_table_exactly ... ok
+test task::tests::table_edges_are_unique ... ok
+test task::tests::transition_table_is_total_over_documented_events ... ok
+test task::tests::unlisted_combinations_are_rejected ... ok
+test workstream::tests::archived_workstream_rejects_every_update ... ok
+test workstream::tests::blank_and_oversized_fields_are_rejected ... ok
+test workstream::tests::failed_update_leaves_original_unchanged ... ok
+test workstream::tests::gate_json_rejects_unknown_fields ... ok
+test workstream::tests::gate_state_change_records_and_clears_evidence ... ok
+test workstream::tests::gate_state_rejects_unknown_same_state_and_pending_evidence ... ok
+test workstream::tests::gate_transition_table_is_exhaustive ... ok
+test workstream::tests::new_workstream_is_active_at_initial_revision ... ok
+test workstream::tests::objective_rejects_duplicate_gate_ids_and_overflow ... ok
+test workstream::tests::revision_appends_gates_and_cannot_duplicate_existing ... ok
+test workstream::tests::tags_round_trip ... ok
+test workstream::tests::update_bumps_revision_by_one_and_applies_fields ... ok
+test workstream::tests::workstream_transition_table_is_exhaustive ... ok
+test contract::tests::contract_at_each_limit_is_accepted ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\decomposition.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\decomposition-f4ca3495ece63f60.exe)
+
+running 12 tests
+test rejects_empty_task_list ... ok
+test rejects_duplicate_local_keys ... ok
+test rejects_unknown_dependency_key ... ok
+test rejects_self_dependency_with_named_path ... ok
+test assigns_canonical_ids_and_rewrites_dependencies ... ok
+test rejects_multi_task_cycle_with_named_path ... ok
+test proposal_id_is_only_a_local_key ... ok
+test rejects_missing_required_task_title ... ok
+test reordered_json_keys_produce_same_plan ... ok
+test rejects_unknown_fields_at_proposal_and_contract_levels ... ok
+test rejects_wrong_contract_field_type ... ok
+test reports_every_task_with_an_invalid_contract ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\retry.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\retry-4b7b8ea36a57bdd8.exe)
+
+running 8 tests
+test default_policy_uses_three_retries ... ok
+test rejects_zero_and_unbounded_retry_counts ... ok
+test permanent_failure_classes_never_retry ... ok
+test missing_history_and_attempt_number_overflow_stop ... ok
+test rejects_invalid_backoff_bounds ... ok
+test injected_jitter_changes_delay_and_remains_capped ... ok
+test schedule_doubles_caps_and_is_deterministic ... ok
+test transient_failure_retries_until_limit_then_stops ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\scheduler.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\scheduler-3a8808a5bad3074a.exe)
+
+running 19 tests
+test limit_accessors_report_configured_values_and_defaults ... ok
+test configured_global_limit_counts_running_and_started_tasks ... ok
+test per_project_limit_applies_to_running_and_started_tasks ... ok
+test rejects_second_task_claiming_same_branch_path ... ok
+test default_global_limit_starts_two_tasks ... ok
+test missing_authorization_policy_denies_start ... ok
+test authorization_can_deny_task_while_capacity_is_free ... ok
+test missing_dependency_cannot_start_task ... ok
+test rejects_duplicate_claims_already_owned_by_running_tasks ... ok
+test rejects_long_dependency_cycle_with_named_path ... ok
+test rejects_second_task_claiming_same_worktree ... ok
+test every_rejection_maps_to_one_waiting_reason ... ok
+test rejects_self_dependency_with_named_cycle ... ok
+test rejects_task_when_dependency_has_not_succeeded ... ok
+test rejects_zero_and_unbounded_limits ... ok
+test returned_cursor_fairly_rotates_next_scheduling_pass ... ok
+test same_branch_name_in_different_projects_does_not_conflict ... ok
+test round_robins_projects_before_starting_second_task_from_one_project ... ok
+test scheduling_is_deterministic_under_task_and_dependency_permutations ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_daemon-2fb23822cd5c5c06.exe)
+
+running 144 tests
+test api::conversation_agent::tests::sanitize_drops_characters_that_render_as_nothing ... ok
+test api::conversation_agent::tests::sanitize_keeps_text_layout_and_drops_everything_that_could_forge_it ... ok
+test api::conversation_agent::tests::pins_accept_known_agents_with_a_plain_version_only ... ok
+test api::conversation_agent::tests::running_turns_are_capped_and_released ... ok
+test api::conversation_agent::tests::the_prompt_ends_with_the_current_message_and_carries_history_and_context ... ok
+test api::conversations::tests::a_chosen_permission_is_part_of_the_encoding_the_idempotency_fingerprint_hashes ... ok
+test api::conversation_agent::tests::versions_parse_from_both_cli_formats_and_refuse_junk ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_chosen_agent_that_cannot_launch_fails_the_turn_as_unavailable ... ok
+test api::conversations::tests::a_replayed_send_of_a_cleared_message_returns_the_cleared_reference_and_runs_nothing ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_malformed_choice_is_a_bad_request_and_records_nothing ... ok
+test api::conversations::tests::a_reply_over_the_turn_bound_fails_the_turn_and_stops_the_runtime ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:38Z"}
+{"component":"api","error":"ConversationBusy","event":"rpc_failed","level":"warn","method":"conversations.clear","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_chosen_copilot_is_refused_as_a_failed_turn_without_launching_anything ... ok
+test api::conversations::tests::a_send_without_a_choice_serializes_as_it_did_before_selection_existed ... ok
+test api::conversations::tests::a_new_turn_sees_the_completed_turns_before_it_and_the_workstream_context ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_large_delta_is_split_without_breaking_characters ... ok
+test api::conversations::tests::a_replayed_send_shows_the_turn_as_it_is_now_not_as_it_was_recorded ... ok
+test api::conversations::tests::a_clear_is_idempotent_per_key_and_a_second_clear_has_nothing_to_delete ... ok
+test api::conversations::tests::a_clear_during_a_running_turn_is_refused_as_conversation_busy ... ok
+test api::conversations::tests::a_clear_moves_the_generation_and_a_stale_cursor_is_a_replay_gap ... ok
+test api::conversations::tests::every_refused_choice_has_its_own_stable_code ... ok
+test api::conversations::tests::an_unknown_permission_is_a_bad_request_and_records_nothing ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:38Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:09:38Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_reply_streams_in_order_and_is_correlated_with_its_message ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:09:38Z"}
+test api::conversations::tests::a_retried_send_returns_the_first_result_and_runs_once ... ok
+test api::conversations::tests::a_running_turn_blocks_the_next_message_until_it_ends ... ok
+test api::conversations::tests::an_unused_conversation_reads_as_empty_not_as_an_error ... ok
+test api::conversations::tests::malformed_requests_are_rejected_without_side_effects ... ok
+test api::conversations::tests::conversation_text_and_replies_create_no_task_approval_or_delivery ... ok
+test api::conversations::tests::cancel_is_scoped_to_its_conversation_and_turn ... ok
+test api::conversations::tests::cancel_closes_the_turn_stops_the_runtime_and_discards_late_output ... ok
+test api::conversations::tests::a_cleared_coordinator_message_replays_as_cleared_and_leaves_no_text_on_disk ... ok
+test api::conversations::tests::the_daemon_advertises_the_history_capability_that_gates_the_clear_methods ... ok
+test api::conversations::tests::removing_a_coordinator_hides_it_persists_across_a_restart_and_restores_empty ... ok
+test api::conversations::tests::a_runtime_that_does_not_match_its_pin_never_sees_the_message ... ok
+test api::conversations::tests::clearing_one_conversation_keeps_the_others_and_leaves_no_text_on_disk ... ok
+test api::queue_tests::consistent_reading_gives_up_after_its_attempts_with_the_last_reading ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:39Z"}
+test api::queue_tests::consistent_reading_reads_once_when_the_journal_is_still ... ok
+test api::queue_tests::consistent_reading_retries_a_moving_journal_and_keeps_the_settled_reading ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:39Z"}
+test api::conversations::tests::the_daemon_advertises_the_permission_levels_capability ... ok
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:39Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:09:39Z"}
+test api::conversations::tests::the_daemon_advertises_the_selection_capability_the_desktop_waits_for ... ok
+test api::host::tests::dispatch_returns_a_snapshot_with_every_resource_before_any_sample ... ok
+test api::conversations::tests::restart_keeps_the_transcript_fails_open_turns_and_resumes_replay ... ok
+test api::conversations::tests::without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable ... ok
+test api::host::tests::the_host_capability_is_advertised ... ok
+test api::host::tests::parameters_are_rejected ... ok
+test api::queue_tests::created_tasks_are_not_part_of_the_queue ... ok
+test api::queue_tests::a_retried_task_is_judged_by_its_newest_workspace ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:09:39Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:09:39Z"}
+test api::conversations::tests::replay_pages_are_bounded_and_cursors_are_checked ... ok
+test api::queue_tests::dependency_blocked_task_names_its_dependency_and_has_no_position ... ok
+test api::conversations::tests::workstream_targets_need_a_resolvable_workstream_and_stay_separate ... ok
+test api::queue_tests::empty_daemon_reports_limits_and_nothing_else ... ok
+test api::queue_tests::limits_are_reported_in_their_own_wire_fields ... ok
+test api::queue_tests::queue_snapshot_is_advertised_as_a_capability ... ok
+test api::queue_tests::fairness_cursor_moves_the_up_next_order_past_the_last_started_project ... ok
+test api::queue_tests::global_cap_blocks_queued_tasks_behind_a_full_worker_pool ... ok
+test api::queue_tests::queue_snapshot_rejects_params ... ok
+test api::queue_tests::project_cap_blocks_only_the_full_project ... ok
+test api::queue_tests::restart_gate_marks_startable_tasks_as_blocked ... ok
+test api::queue_tests::up_next_order_round_robins_across_projects ... ok
+test api::queue_tests::snapshot_agrees_with_tasks_list_at_its_sequence ... ok
+test api::queue_tests::running_and_queued_are_sorted_whatever_order_the_records_arrive_in ... ok
+test api::queue_tests::verifying_tasks_are_in_neither_list_and_hold_no_capacity ... ok
+test api::queue_tests::withheld_start_authorization_waits_for_approval ... ok
+test api::conversations::tests::runtime_failures_fail_the_turn_with_a_stable_code_and_keep_the_message ... ok
+test api::review_tests::capabilities_include_coordinator_and_review ... ok
+test api::review_tests::coordinator_enforces_project_existence_and_size_limits ... ok
+test api::review_tests::evidence_for_unknown_task_or_approval_is_not_found ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-16T18:09:49Z"}
+test api::review_tests::coordinator_messages_are_idempotent_ordered_and_user_authored ... ok
+test api::review_tests::coordinator_get_pages_at_one_hundred_entries ... ok
+test api::review_tests::evidence_marks_an_unverified_unknown_candidate_stale ... ok
+test api::review_tests::evidence_without_an_approval_is_missing_and_pinned_to_head ... ok
+test api::review_tests::evidence_marks_a_digest_that_no_longer_matches_its_parameters_stale ... ok
+test api::review_tests::evidence_snapshot_is_size_bounded_and_path_filterable ... ok
+test api::review_tests::invalid_proposals_report_stable_codes ... ok
+test api::review_tests::approval_from_review_request_delivers_end_to_end ... ok
+test api::review_tests::new_methods_reject_malformed_parameters ... ok
+test api::review_tests::proposals_cannot_smuggle_authority_fields ... ok
+test api::tests::agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_character_one ... ok
+test api::review_tests::evidence_is_current_for_a_fresh_approval_and_stale_after_the_workspace_moves ... ok
+test api::tests::approval_resolution_uses_allowlisted_actor_and_is_idempotent ... ok
+test api::tests::every_rpc_method_rejects_malformed_parameters ... ok
+test api::tests::idempotency_fingerprint_normalizes_omitted_optional_fields ... ok
+test api::tests::idempotency_store_failures_report_their_cause_too ... ok
+test api::tests::internal_causes_do_not_leak_into_the_next_request ... ok
+test api::tests::internal_error_causes_reach_the_injected_redacting_sink ... ok
+test api::tests::missing_task_returns_typed_not_found ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:10:01Z"}
+test api::tests::queued_task_cancellation_is_idempotent ... ok
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-16T18:10:01Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-16T18:10:01Z"}
+test api::tests::running_task_cancellation_rejects_owner_without_process_identity ... ok
+test api::tests::running_task_keeps_daemon_alive_without_connected_clients ... ok
+test api::review_tests::request_approval_refuses_unsafe_requests ... ok
+test api::review_tests::request_approval_binds_the_delivery_digest_and_is_replayable ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:10:03Z"}
+test api::tests::project_registration_validates_the_repository_and_is_idempotent ... ok
+test api::tests::safety::workspace_diff_rejects_absolute_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_empty_path_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_option_prefix_before_git ... ok
+test api::tests::safety::workspace_diff_rejects_parent_component_before_git ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:10:07Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:10:07Z"}
+test api::review_tests::request_approval_requires_passed_verification_of_the_current_head ... ok
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-16T18:10:07Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-16T18:10:07Z"}
+test api::tests::session_events_page_and_report_a_cursor_beyond_the_journal ... ok
+test api::tests::session_events_replay_task_and_only_selected_session_events ... ok
+test api::tests::task_submission_accepts_an_existing_parent ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-16T18:10:08Z"}
+test api::tests::task_submission_is_deduplicated_and_hides_project_path ... ok
+test api::tests::task_submission_normalizes_display_agent_names_and_rejects_unknown_agents ... ok
+test api::tests::task_submission_rejects_a_missing_parent_before_creating_a_task ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:10:08Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:10:09Z"}
+test api::review_tests::valid_proposal_is_validated_without_authority_or_side_effects ... ok
+test api::usage::tests::local_midnight_boundaries_follow_the_offset ... ok
+test api::usage::tests::nanos_format_as_trimmed_decimals ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-16T18:10:09Z"}
+test api::review_tests::request_changes_refuses_stale_duplicate_and_unknown_requests ... ok
+test api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update ... ok
+test api::tests::windows_submit_refuses_an_objective_that_cannot_be_passed_to_the_agent ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-16T18:10:09Z"}
+test api::review_tests::request_changes_blocks_approval_but_not_rejection ... ok
+test api::usage_local::tests::window_params_are_validated_before_anything_runs ... ok
+test api::usage::warnings::tests::missing_configuration_is_off_and_bad_configuration_is_disclosed ... ok
+test api::usage_local::tests::the_read_method_reports_off_by_default_without_reading ... ok
+test api::usage_local::tests::the_opt_in_is_persisted_and_turning_it_off_clears_the_snapshot ... ok
+test api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals ... ok
+test api::usage_tests::bad_parameters_are_rejected ... ok
+test api::usage_tests::invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts ... ok
+test api::usage_tests::estimated_figures_stay_apart_from_reported_ones ... ok
+test api::usage_tests::local_midnight_boundary_decides_the_day ... ok
+test api::usage_tests::usage_summary_is_dispatched_by_method_name ... ok
+test api::review_tests::request_changes_refuses_a_decided_approval ... ok
+test api::usage_tests::native_estimate_is_additive_labelled_and_never_reported ... ok
+test api::usage_tests::silent_provider_is_unknown_and_never_zero ... ok
+test api::usage_tests::the_exact_utc_offset_limits_are_accepted ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-16T18:10:10Z"}
+test api::workstreams_tests::archived_is_terminal_and_illegal_transitions_conflict ... ok
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-16T18:10:10Z"}
+test api::usage_tests::token_warning_uses_deduplicated_receipts_and_the_requested_day ... ok
+test api::workstreams_tests::idempotent_replay_returns_the_same_result ... ok
+test api::workstreams_tests::capability_is_advertised ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-16T18:10:10Z"}
+test api::workstreams_tests::create_get_list_and_update_round_trip ... ok
+test api::tests::safety::submit_refuses_read_only_autonomy_because_the_agent_would_write ... ok
+test executor::running_listing_tests::a_failed_listing_is_logged_and_never_reads_as_nothing_running ... ok
+test executor::running_listing_tests::a_readable_empty_listing_is_quiet_and_empty ... ok
+test executor::running_listing_tests::interrupted_tasks_are_unknown_when_either_listing_failed ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-16T18:10:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-16T18:10:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-16T18:10:10Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-16T18:10:10Z"}
+test api::workstreams_tests::invalid_parameters_are_rejected ... ok
+test api::workstreams_tests::objectives_gates_and_evidence_flow ... ok
+test api::workstreams_tests::stale_revision_is_a_conflict_and_writes_nothing ... ok
+test tests::lock_conflict_reports_live_holder_pid ... ok
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-16T18:10:10Z"}
+test api::workstreams_tests::linking_leaves_tasks_untouched_and_spans_projects ... ok
+test api::workstreams_tests::unknown_records_are_not_found ... ok
+test api::workstreams_tests::task_submission_is_unchanged_by_the_workstream_model ... ok
+test api::tests::safety::submit_rejects_oversized_and_nul_contract_fields ... ok
+test api::tests::safety::workspace_diff_accepts_candidate_path_inside_task_worktree ... ok
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-16T18:10:12Z"}
+test api::tests::safety::delivery_refuses_unapproved_local_review_without_changing_refs ... ok
+test api::tests::safety::approved_local_review_delivery_creates_the_review_ref_once ... ok
+test api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files ... ok
+
+test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.91s
+
+     Running tests\conversation_runtime.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\conversation_runtime-75b6638b7b66ef3e.exe)
+
+running 24 tests
+test a_chosen_agent_that_is_not_installed_fails_the_turn_without_another_agent ... ok
+test a_malformed_choice_is_a_bad_request_and_records_no_turn ... ok
+test a_message_without_a_choice_keeps_the_configured_default ... ok
+test a_version_that_is_not_pinned_never_receives_the_message ... ok
+test a_chosen_default_model_replaces_the_configured_one_for_that_message ... ok
+test a_chosen_model_and_effort_reach_the_agent_for_that_message ... ok
+test a_chosen_model_the_catalog_does_not_offer_fails_the_turn_with_its_reason ... ok
+test an_effort_the_model_does_not_offer_fails_the_turn_with_its_reason ... ok
+test agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes ... ok
+test live_codex_answers_a_global_message ... ignored, needs a signed-in codex CLI; set AGENT_ORCH_LIVE_CONVERSATION=1
+test claude_code_launches_with_its_exact_flags_per_level ... ok
+test a_configured_model_the_catalog_does_not_offer_fails_closed ... ok
+test cancel_stops_a_streaming_reply_and_later_output_is_discarded ... ok
+test a_turn_the_daemon_lost_is_failed_on_restart_not_left_running ... ok
+test github_copilot_is_not_offered_to_a_message ... ok
+test extended_is_refused_for_codex_as_a_failed_turn_that_launches_nothing ... ok
+test control_characters_never_reach_the_transcript ... ok
+test each_codex_turn_runs_in_its_own_directory_that_is_removed_after_it ... ok
+test each_codex_level_launches_with_its_exact_flags_and_records_it ... ok
+test the_agent_runs_read_only_in_an_empty_scratch_directory ... ok
+test replies_survive_a_restart_replay_by_sequence_and_stay_idempotent ... ok
+test replies_are_ordered_correlated_and_carry_history_and_workstream_context ... ok
+test a_hung_agent_is_killed_at_the_deadline ... ok
+test a_runtime_whose_version_probe_misbehaves_fails_closed_not_as_a_conflict ... ok
+
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 42.40s
+
+     Running tests\conversations.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\conversations-df664a71271b95f1.exe)
+
+running 2 tests
+test conversation_methods_require_the_coordinator_capability ... ok
+test transcript_fails_closed_survives_restart_and_grants_no_authority ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+
+     Running tests\coordinator_review.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\coordinator_review-af521daf2388ecdd.exe)
+
+running 4 tests
+test coordinator_conversation_survives_daemon_restart_and_grants_no_authority ... ok
+test daemon_gates_the_coordinator_and_review_methods_on_token_and_capability ... ok
+test approval_flow_rejects_and_requests_changes_through_the_real_daemon ... ok
+test approval_flow_approves_and_delivers_through_the_real_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.75s
+
+     Running tests\daemon.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\daemon-4a72e554f4c8b94e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics_log.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\diagnostics_log-2fa7533ea386e173.exe)
+
+running 1 test
+test a_failed_launch_is_explained_in_the_log_without_the_credential ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.79s
+
+     Running tests\host_metrics.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\host_metrics-02e4d9257414badf.exe)
+
+running 2 tests
+test host_metrics_needs_the_host_capability ... ok
+test host_metrics_serves_every_resource_through_the_real_daemon ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.53s
+
+     Running tests\lifecycle.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\lifecycle-94123b77de819343.exe)
+Initialized empty Git repository in %USERPROFILE%/AppData/Local/Temp/.tmpSQlDrb/repo/.git/
+[main (root-commit) 19c89c6] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon with a fake agent binary
+STEP 2 submit a task; the daemon launches the agent process
+STEP 3 open the UI-side relay and subscribe to the event stream
+STEP 4 close the UI client: this must not stop the daemon or the agent
+STEP 5 reopen: authenticate again and resume the stream at the saved cursor and epoch
+STEP 6 cancel through another client; the reopened stream sees the transition with no gap
+STEP 7 a relay on a stopped daemon reports a remote close, then the daemon shuts down cleanly
+STEP 8 the daemon log is structured, records the run's lifecycle and holds no credential
+lifecycle: PASS
+     Running tests\queue_snapshot.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\queue_snapshot-0cabe5de62a52c17.exe)
+Initialized empty Git repository in %USERPROFILE%/AppData/Local/Temp/.tmpwOxM3N/repo/.git/
+[main (root-commit) 33fa0e7] initial
+ 1 file changed, 1 insertion(+)
+ create mode 100644 sample.txt
+STEP 1 start a real daemon (default limits 2/2) with a fake agent binary
+STEP 2 an empty daemon reports its limits and an empty queue
+STEP 3 a client that did not negotiate the queue capability is refused
+STEP 4 submit three tasks: two run at once, the third waits
+STEP 5 the snapshot agrees with tasks.list at the same event sequence
+STEP 6 canceling a running task promotes the queued one
+STEP 7 cancel the rest and shut the daemon down
+queue_snapshot: PASS
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_diagnostics-add3c637878278b4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\diagnostics.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\diagnostics-129f6a8c97464d50.exe)
+
+running 6 tests
+test timestamps_follow_the_civil_calendar ... ok
+test event_lines_are_single_line_json_with_the_fixed_fields ... ok
+test field_values_are_redacted_and_credential_named_fields_are_masked ... ok
+test clones_share_one_memory_sink ... ok
+test long_values_are_truncated ... ok
+test log_tail_is_redacted_bounded_and_starts_on_a_line ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\known_secrets.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\known_secrets-694dc72a1de44d81.exe)
+
+running 7 tests
+test multibyte_secrets_are_masked_without_splitting_characters ... ok
+test a_registered_secret_is_masked_wherever_it_appears ... ok
+test matching_ignores_ascii_case_and_leaves_other_text ... ok
+test short_values_and_empty_values_are_ignored ... ok
+test a_registered_secret_split_across_lines_or_escaped_breaks_is_masked ... ok
+test a_watched_token_file_is_masked_now_and_after_it_changes ... ok
+test registered_secrets_do_not_make_redaction_quadratic ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+     Running tests\redaction.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\redaction-3b2a73c59c373d89.exe)
+
+running 15 tests
+test bearer_tokens_and_known_shapes_are_masked_anywhere ... ok
+test plain_ssh_user_and_scp_style_remote_are_not_credentials ... ok
+test debug_escaped_json_values_are_masked ... ok
+test escaped_values_end_at_their_own_closing_quote ... ok
+test ipc_token_shaped_hex_is_masked_but_git_shas_are_not ... ok
+test ordinary_text_is_unchanged ... ok
+test multibyte_text_does_not_split_characters ... ok
+test url_scheme_check_is_case_insensitive_and_bounds_safe ... ok
+test sensitive_keys_hide_their_values ... ok
+test keys_that_only_mention_a_marker_keep_their_values ... ok
+test url_userinfo_is_masked_but_host_and_path_stay ... ok
+test windows_paths_and_unc_text_survive ... ok
+test url_userinfo_pass_is_linear_on_repeated_schemes ... ok
+test escaped_quote_forms_stay_linear ... ok
+test hostile_multi_megabyte_input_stays_linear ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.53s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_engine-5e2d3760f5ffd4b6.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_git-0eff86802de90f50.exe)
+
+running 58 tests
+test branch_prefix::tests::nested_prefix_is_accepted ... ok
+test branch_prefix::tests::unsafe_values_are_rejected ... ok
+test env_policy::tests::a_wildcard_entry_is_rejected_with_a_clear_reason ... ok
+test env_policy::tests::baseline_keeps_process_start_and_network_names_only ... ok
+test env_policy::tests::credentials_and_agent_sockets_are_not_in_the_baseline ... ok
+test env_policy::tests::locale_names_are_exact_not_a_prefix ... ok
+test env_policy::tests::non_ascii_name_boundaries_do_not_panic ... ok
+test env_policy::tests::non_unicode_names_are_dropped ... ok
+test env_policy::tests::orchestrator_configuration_is_never_forwarded_even_when_listed ... ok
+test env_policy::tests::passthrough_list_splits_and_rejects_bad_entries ... ok
+test env_policy::tests::provider_names_extend_the_baseline ... ok
+test env_policy::tests::unix_names_are_case_sensitive_and_windows_names_are_not ... ok
+test env_policy::tests::rejected_entries_never_report_a_value ... ok
+test git_path::tests::for_git_is_a_no_op_off_windows ... ok
+test git_path::tests::near_reserved_names_are_plain ... ok
+test git_path::tests::verbatim_drive_and_unc_paths_become_plain_paths ... ok
+test git_path::tests::verbatim_paths_with_other_meaning_are_left_alone ... ok
+test branch_prefix::tests::absent_file_reads_default ... ok
+test delivery::tests::identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact ... ok
+test delivery::tests::missing_platform_identity_fails_acquisition_and_keeps_the_artifact ... ok
+test branch_prefix::tests::unreadable_file_reads_default ... ok
+test delivery::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test branch_prefix::tests::blank_file_reads_default ... ok
+test branch_prefix::tests::surrounding_whitespace_is_stripped ... ok
+test branch_prefix::tests::invalid_file_value_is_an_error_not_a_fallback ... ok
+test branch_prefix::tests::file_value_is_read ... ok
+test delivery::tests::verified_identity_lock_is_removed_on_drop ... ok
+test verification::tests::validation_commands_do_not_inherit_unlisted_environment ... ok
+test worktree::tests::a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists ... ok
+test worktree::tests::a_worktree_path_over_the_limit_is_refused_naming_the_limit ... ok
+test verification::tests::rejects_branch_not_derived_from_task_id ... ok
+test verification::tests::rejects_worktree_owned_by_another_task ... ok
+test verification::tests::rejects_mutable_branch_reference_as_attempt_commit ... ok
+test verification::tests::rejects_candidate_after_branch_moves ... ok
+test verification::tests::default_trust_policy_does_not_run_untrusted_command ... ok
+test worktree::tests::checkout_files_longer_than_max_path_are_created ... ok
+test verification::tests::question_mark_matches_one_unicode_path_character ... ok
+test worktree::tests::long_stderr_keeps_the_final_cause_within_the_bound ... ok
+test worktree::tests::name_collision_is_recognized_only_for_gits_own_conflict_lines ... ok
+test verification::tests::fails_and_names_changed_protected_path ... ok
+test verification::tests::trusted_command_does_not_authorize_different_argv ... ok
+test verification::tests::timed_out_command_is_killed_and_recorded ... ok
+test verification::tests::trusted_nonzero_exit_is_recorded_as_failed ... ok
+test worktree::tests::stderr_detail_neutralizes_terminal_control_characters ... ok
+test verification::tests::trusted_command_runs_and_records_output_and_exit_code ... ok
+test worktree::tests::collision_allocates_suffix ... ok
+test worktree::tests::configured_prefix_names_the_branch_and_collision_suffix ... ok
+test worktree::tests::dirty_primary_checkout_preserved ... ok
+test worktree::tests::resolve_base_ref_refuses_option_like_and_control_character_refs ... ok
+test worktree::tests::resolve_base_commit_rejects_invalid_ref ... ok
+test worktree::tests::empty_task_id_rejected ... ok
+test worktree::tests::worktrees_root_inside_repository_rejected ... ok
+test worktree::tests::git_add_failure_reports_git_stderr_cause ... ok
+test worktree::tests::git_add_failure_preserves_repo_state_and_reports_partial_state ... ok
+test worktree::tests::worktree_at_the_longest_accepted_path_is_created ... ok
+test worktree::tests::verbatim_worktrees_root_creates_a_worktree ... ok
+test worktree::tests::preexisting_branch_skipped ... ok
+test worktree::tests::open_accepts_repo_and_isolates_primary ... ok
+
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.46s
+
+     Running tests\delivery.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery-8e7cf5bef084edc3.exe)
+
+running 23 tests
+test local_review_refuses_missing_approval ... ok
+test dirty_worktree_is_unsafe_and_survives_safety_check ... ok
+test local_review_refuses_changed_approved_candidate_sha ... ok
+test local_review_refuses_changed_parameter_digest ... ok
+test dirty_candidate_is_refused_before_verification_or_approval ... ok
+test local_review_refuses_refs_outside_the_review_namespace_before_any_callback ... ok
+test destination_lock_refuses_second_concurrent_holder ... ok
+test local_review_refuses_existing_ref_with_different_commit ... ok
+test local_review_accepts_existing_ref_with_same_candidate ... ok
+test local_review_creates_the_exact_ref_when_only_a_lookalike_exists ... ok
+test local_review_creates_only_review_ref ... ok
+test local_review_refuses_when_worktree_candidate_sha_changed ... ok
+test local_review_refuses_stale_verification_run ... ok
+test stale_destination_lock_is_reported_and_preserved ... ok
+test primary_checkout_is_retained_and_a_clean_landed_worktree_is_safe ... ok
+test persistence_failure_is_reported_and_still_releases_the_destination_lock ... ok
+test unlanded_worktree_is_unsafe_and_survives_safety_check ... ok
+test refused_delivery_persists_refusal_releases_lock_and_leaves_destination_reusable ... ok
+test report_only_preserves_refs_worktrees_and_repository_files ... ok
+test primary_checkout_and_foreign_repository_are_not_deliverable_candidates ... ok
+test verification_is_revalidated_before_approval_and_before_any_write ... ok
+test local_review_refuses_symbolic_review_refs_without_writing_through_them ... ok
+test candidate_changed_by_approval_time_is_refused_without_writing_a_ref ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 43.40s
+
+     Running tests\delivery_acceptance_contract.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery_acceptance_contract-251def04d0747211.exe)
+
+running 6 tests
+test foreign_lock_without_an_owner_pid_blocks_delivery_and_is_preserved ... ok
+test deletion_safety_follows_current_repository_state_and_never_deletes ... ok
+test approval_and_verification_receive_exactly_the_requested_binding_for_each_action ... ok
+test every_callback_runs_under_the_destination_lock_and_a_persistence_failure_keeps_the_written_ref ... ok
+test contender_is_refused_and_recorded_while_owner_lock_and_destination_stay_intact ... ok
+test review_ref_created_by_another_writer_during_approval_is_revalidated_not_overwritten ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.68s
+
+     Running tests\delivery_reconcile.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery_reconcile-73da78b7f4d08634.exe)
+
+running 12 tests
+test report_only_step_has_no_review_ref_to_apply ... ok
+test incomplete_record_is_ambiguous_and_keeps_observed_ref ... ok
+test packed_review_ref_at_candidate_is_confirmed ... ok
+test review_ref_at_candidate_is_confirmed_and_does_not_block_gate ... ok
+test review_ref_at_an_unrecorded_commit_is_ambiguous_and_blocks_gate ... ok
+test dwim_lookalike_ref_is_not_the_review_ref ... ok
+test symbolic_review_ref_is_ambiguous_and_keeps_observed_object ... ok
+test missing_review_ref_is_not_applied ... ok
+test dangling_symbolic_review_ref_is_ambiguous ... ok
+test plan_order_does_not_depend_on_input_order ... ok
+test reconciliation_does_not_change_git_or_supplied_record_snapshot ... ok
+test incomplete_foreign_or_malformed_records_are_ambiguous ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.85s
+
+     Running tests\pinned_diff.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\pinned_diff-0ae69bd0948d5981.exe)
+
+running 4 tests
+test diff_between_treats_the_path_as_a_path_not_an_option_or_revision ... ok
+test pinned_diff_rejects_unsafe_ids_and_paths ... ok
+test pinned_diff_ignores_later_commits_and_work_tree_edits ... ok
+test changed_files_are_literal_unquoted_and_not_pathspecs ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.73s
+
+     Running tests\reconcile.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\reconcile-73861929cd2ed01c.exe)
+
+running 6 tests
+test foreign_workspace_is_reported_and_left_untouched ... ok
+test unrecorded_worktree_is_reported_as_unexpected_and_left_untouched ... ok
+test removed_real_worktree_is_classified_missing ... ok
+test checked_out_branch_mismatch_is_classified_branch_moved ... ok
+test unchanged_worktree_matches_recorded_branch_and_base ... ok
+test committed_worktree_branch_is_classified_branch_moved ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.24s
+
+     Running tests\repository_discovery.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\repository_discovery-fd30328716e0831d.exe)
+
+running 2 tests
+test a_directory_outside_any_repository_is_refused ... ok
+test discovery_agrees_from_root_subdirectory_and_linked_worktree ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+
+     Running tests\scoped_diff.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\scoped_diff-66ce3ef70eab74fb.exe)
+
+running 1 test
+test diff_reads_scoped_changes_and_rejects_external_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.29s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_host_metrics-c56de6b9f223a8dc.exe)
+
+running 25 tests
+test model::tests::clamps_times_before_the_epoch ... ok
+test model::tests::formats_known_instants ... ok
+test probe::tests::cpu_without_a_baseline_is_unavailable_not_zero ... ok
+test probe::tests::cpu_rejects_non_finite_and_clamps_range ... ok
+test probe::tests::gpu_is_unsupported_without_a_vetted_source ... ok
+test probe::tests::gpu_without_utilization_is_unavailable_not_zero ... ok
+test probe::tests::gpu_without_devices_is_one_unavailable_meter ... ok
+test probe::tests::memory_rejects_zero_total_and_inconsistent_usage ... ok
+test probe::tests::memory_reports_used_out_of_total ... ok
+test probe::tests::verbatim_prefixes_are_removed_for_comparison ... ok
+test service::tests::a_missing_meter_drops_any_value_a_probe_left_on_it ... ok
+test probe::tests::disk_with_a_missing_data_directory_is_unavailable ... ok
+test service::tests::invalid_probe_output_is_replaced_by_unavailable_never_a_number ... ok
+test service::tests::missing_resources_are_added_and_order_is_fixed ... ok
+test probe::tests::disk_selects_the_longest_mount_that_contains_the_data_directory ... ok
+test service::tests::the_wire_form_always_includes_every_field ... ok
+test probe::tests::disk_rejects_an_inconsistent_volume ... ok
+test probe::tests::disk_without_a_containing_volume_is_unavailable ... ok
+test service::tests::a_blocked_sampler_never_blocks_readers_and_nothing_is_reported_before_a_sample ... ok
+test service::tests::a_sample_that_is_too_old_is_unavailable_and_keeps_its_scope ... ok
+test service::tests::a_completed_sample_is_served_with_time_unit_and_kind ... ok
+test service::tests::a_clock_that_steps_back_does_not_make_a_sample_stale ... ok
+test service::tests::dropping_the_handle_stops_the_sampler ... ok
+test service::tests::the_interval_has_a_floor_and_the_sampler_repeats ... ok
+test probe::tests::the_live_probe_reports_every_resource_without_inventing_values ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_ipc-ae00bc8d90e6f6c1.exe)
+
+running 59 tests
+test auth::tests::token_encoding_requires_lowercase_hex ... ok
+test coordinator_review_tests::capability_set_names_are_unique_and_round_trip ... ok
+test auth::tests::reports_no_common_version ... ok
+test auth::tests::chooses_highest_common_version_and_rejects_unknown_capability_safely ... ok
+test auth::tests::absent_token_is_authentication_failure ... ok
+test auth::tests::startup_replaces_only_regular_stale_token ... ok
+test coordinator_review_tests::client_wrappers_send_the_documented_methods_and_parameters ... ok
+test coordinator_review_tests::methods_are_unavailable_without_the_negotiated_capability ... ok
+test event_stream_tests::cursor_ahead_of_the_journal_is_a_typed_replay_gap ... ok
+test history_tests::the_history_capability_is_named_and_round_trips ... ok
+test history_tests::the_selection_capability_is_named_and_round_trips ... ok
+test coordinator_review_tests::a_handler_without_review_never_exposes_review_methods ... ok
+test host_tests::the_host_capability_is_named_and_listed ... ok
+test event_stream_tests::failed_resume_keeps_the_cursor_until_a_resume_succeeds ... ok
+test history_tests::every_history_method_is_gated_by_the_negotiated_capability ... ok
+test event_stream_tests::reconnect_still_requires_the_current_token ... ok
+test host_tests::host_metrics_needs_the_host_capability ... ok
+test protocol::tests::frame_round_trip_uses_versioned_big_endian_header ... ok
+test protocol::tests::json_rpc_string_request_ids_are_supported ... ok
+test protocol::tests::non_eof_read_errors_are_not_reported_as_truncated ... ok
+test protocol::tests::oversized_length_is_rejected_before_body_read ... ok
+test protocol::tests::truncated_header_and_body_are_typed ... ok
+test protocol::tests::wrong_version_and_malformed_json_are_typed_without_payload ... ok
+test queue_tests::a_handler_without_queue_never_exposes_it ... ok
+test queue_tests::queue_capability_is_named_and_part_of_the_full_set ... ok
+test coordinator_review_tests::server_gates_each_method_on_its_own_capability ... ok
+test queue_tests::queue_snapshot_needs_the_negotiated_queue_capability ... ok
+test relay::tests::closing_a_relay_is_not_a_daemon_shutdown_and_a_new_relay_resumes_the_stream ... ok
+test relay::tests::no_daemon_is_unavailable_not_an_authentication_failure ... ok
+test relay::tests::the_welcome_reports_only_the_capabilities_the_daemon_grants ... ok
+test windows_transport::tests::a_write_larger_than_the_pipe_buffer_arrives_whole ... ok
+test windows_transport::tests::data_written_before_the_writer_closes_is_still_readable ... ok
+test windows_transport::tests::every_connection_must_complete_the_authenticated_handshake ... ok
+test event_stream_tests::live_lag_is_typed_and_reconnect_catches_up_in_order ... ok
+test event_stream_tests::call_during_a_large_replay_keeps_events_and_the_connection_in_sync ... ok
+test event_stream_tests::resume_in_the_same_epoch_still_works_and_a_wrong_epoch_is_refused_at_subscribe ... ok
+test event_stream_tests::replaced_journal_with_a_longer_history_is_an_epoch_mismatch_not_a_silent_resume ... ok
+test windows_transport::tests::pipe_limits_and_remote_rejection_are_configured ... ok
+test event_stream_tests::replay_larger_than_the_live_buffer_is_paged_across_reconnect ... ok
+test event_stream_tests::reconnect_follows_a_daemon_restart_with_a_new_token ... ok
+test windows_transport::tests::pipe_name_stays_bound_when_a_client_connects_and_leaves ... ok
+test windows_transport::tests::second_listener_for_the_same_data_directory_is_refused ... ok
+test windows_transport::tests::pipe_and_token_dacls_grant_only_the_current_user ... ok
+test windows_transport::tests::write_to_a_closed_peer_fails_promptly ... ok
+test workstreams_tests::a_handler_without_workstreams_never_negotiates_it ... ok
+test windows_transport::tests::read_reports_end_of_file_only_after_the_peer_closes ... ok
+test workstreams_tests::workstreams_capability_is_named_and_round_trips ... ok
+test workstreams_tests::wrapper_sends_workstream_methods_with_the_capability ... ok
+test workstreams_tests::every_workstream_method_is_gated_by_the_negotiated_capability ... ok
+test relay::tests::a_daemon_that_stops_ends_the_relay_with_a_remote_close ... ok
+test windows_transport::tests::read_waits_for_data_instead_of_reporting_end_of_file ... ok
+test windows_transport::tests::handshake_waits_for_a_client_that_writes_after_connecting ... ok
+test windows_transport::tests::stalled_connection_does_not_block_other_clients ... ok
+test idle_subscription_tests::unsubscribed_connection_does_not_keep_the_server_alive ... ok
+test windows_transport::tests::idle_connections_hold_their_instances_until_they_close ... ok
+test idle_subscription_tests::a_call_longer_than_the_idle_timeout_does_not_stop_the_server ... ok
+test windows_transport::tests::instance_limit_is_enforced_and_released ... ok
+test idle_subscription_tests::server_idles_out_after_its_last_subscriber_leaves ... ok
+test idle_subscription_tests::live_subscription_keeps_an_otherwise_idle_server_running ... ok
+
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.25s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_local_usage-475b356273290c7b.exe)
+
+running 27 tests
+test locate::tests::search_order_is_path_then_the_global_folders ... ok
+test parse::tests::a_report_for_another_day_is_wrong_day_not_a_figure ... ok
+test parse::tests::the_period_label_must_carry_a_date ... ok
+test parse::tests::a_recorded_reader_report_parses_to_its_counters ... ok
+test locate::tests::the_environment_is_an_allowlist_with_offline_settings ... ok
+test capture::tests::the_reader_stops_at_the_cap_and_flags_it ... ok
+test parse::tests::nano_amounts_are_exact_decimals ... ok
+test pin::tests::sha256_matches_the_standard_vector ... ok
+test pin::tests::the_bundle_ships_the_upstream_launcher_unchanged ... ok
+test pin::tests::the_pin_names_the_supported_reader ... ok
+test parse::tests::malformed_reports_are_bad_output ... ok
+test capture::tests::output_under_the_cap_is_kept_whole_and_unflagged ... ok
+test pin::tests::versions_parse_with_or_without_a_v_prefix ... ok
+test service::tests::civil_dates_match_known_days ... ok
+test service::tests::local_day_follows_the_offset ... ok
+test service::tests::only_iana_names_are_passed_to_the_reader ... ok
+test service::tests::a_release_build_never_looks_at_path ... ok
+test service::tests::an_incomplete_bundle_is_not_bundled_in_release_and_falls_through_in_dev ... ok
+test service::tests::development_uses_the_override_before_path ... ok
+test locate::tests::the_reader_entry_must_be_an_npm_dist_cli ... ok
+test service::tests::the_macos_resources_bundle_is_found_when_the_executable_folder_has_none ... ok
+test service::tests::a_complete_bundle_wins_over_everything_else ... ok
+test service::tests::the_opt_in_file_defaults_to_off ... ok
+test service::tests::an_npm_install_is_checked_against_the_npm_layout_only ... ok
+test service::tests::a_shebang_rewrite_does_not_change_the_pinned_hash ... ok
+test service::tests::an_installed_reader_must_match_the_pin_exactly ... ok
+test pin::tests::the_shebang_line_is_ignored_only_when_present ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.50s
+
+     Running tests\service.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\service-2caf76f56b2615ea.exe)
+ok - off by default, no read
+ok - opt-in reads and maps estimates honestly
+ok - opt-out stops every read and clears the cache
+ok - opt-out kills a running reader
+ok - a hung reader times out; reads never wait
+ok - a slow read shows its state while refreshing
+ok - crash, bad output, oversized and wrong-day are reported
+ok - a missing binary is failed, not zero
+ok - a later failed read keeps the last figures
+ok - explicit refresh is rate limited
+1..10 all scenarios passed
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_private_fs-221c847f258575f2.exe)
+
+running 11 tests
+test tests::the_dacl_reader_accepts_only_one_owner_allow_ace ... ok
+test windows::tests::the_owner_sid_text_matches_itself ... ok
+test tests::a_missing_path_is_not_an_error_to_restrict ... ok
+test tests::creating_a_file_never_truncates_an_existing_one ... ok
+test windows::tests::a_missing_path_is_not_an_error_and_a_private_path_is_not_rewritten ... ok
+test windows::tests::the_directory_ace_is_inherited_by_files_created_later ... ok
+test tests::a_created_private_file_and_directory_report_owner_only_and_a_missing_path_errors ... ok
+test windows::tests::existing_wide_open_paths_are_tightened_without_losing_content ... ok
+test windows::tests::tightening_a_directory_also_tightens_files_it_already_holds ... ok
+test windows::tests::a_new_directory_tree_and_file_are_owner_only ... ok
+test windows::tests::a_file_with_only_an_inherited_owner_ace_is_not_owner_only_until_restricted ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_runtime-92aaf5edd390e93c.exe)
+
+running 8 tests
+test command_line::tests::a_normal_objective_is_accepted_on_every_platform ... ok
+test command_line::tests::the_windows_count_follows_the_quoting_std_applies ... ok
+test command_line::tests::the_unix_rules_cap_one_argument_and_the_total ... ok
+test command_line::tests::escaping_counts_toward_the_windows_limit ... ok
+test command_line::tests::a_cmd_script_launcher_has_the_smaller_cmd_exe_limit ... ok
+test command_line::tests::a_65000_character_objective_is_refused_on_windows_with_an_actionable_message ... ok
+test command_line::tests::the_windows_limit_is_exact_at_the_boundary ... ok
+test command_line::tests::a_too_long_command_line_is_refused_before_any_process_is_started ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+
+     Running tests\env_isolation.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\env_isolation-16b0fac17b3ac752.exe)
+
+running 1 test
+orchestrator: ignoring AGENT_ORCH_ENV_PASSTHROUGH entry #2 (AGENT_ORCH_DATA_DIR): orchestrator-internal variables are never forwarded
+test children_receive_only_the_allowlisted_environment ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running tests\reconcile.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\reconcile-e49432d2bbd463a7.exe)
+
+running 28 tests
+test forged_windows_creation_time_is_a_mismatch_for_every_100ns_remainder ... ok
+test git_evidence::delivery_steps_summarise_conservatively ... ok
+test scheduling_gate_blocks_unresolved_or_ambiguous_records ... ok
+test git_evidence::missing_workspace_needs_no_safety_inspection ... ok
+test git_evidence::dirty_or_primary_checkout_overrides_a_matching_workspace ... ok
+test git_evidence::unlanded_head_on_a_matching_workspace_is_branch_moved ... ok
+test owner_observation_classifies_alive_and_reused_pid_by_creation_time ... ok
+test owner_observation_requires_a_creation_time ... ok
+test process_plan_order_is_deterministic ... ok
+test changed_start_time_is_an_identity_mismatch ... ok
+test git_evidence::uninspected_or_unrecorded_workspace_fails_closed ... ok
+test task_classification::active_tasks_without_delivery_keep_recovery_semantics ... ok
+test git_evidence::workspace_classification_maps_one_to_one_when_clean ... ok
+test task_classification::candidate_commit_on_moved_branch_is_recoverable_for_verification ... ok
+test task_classification::confirmed_delivery_completes_only_a_succeeded_task_with_a_clean_known_workspace ... ok
+test task_classification::exited_owner_with_matching_workspace_and_no_delivery_is_recoverable ... ok
+test task_classification::exit_without_recorded_success_or_confirmed_delivery_is_never_completed ... ok
+test task_classification::live_owner_blocks_the_task_without_blocking_scheduling ... ok
+test task_classification::missing_workspace_blocks_the_task ... ok
+test task_classification::partial_or_ambiguous_delivery_requires_inspection ... ok
+test task_classification::succeeded_with_a_recorded_unapplied_delivery_is_not_proven_complete ... ok
+test task_classification::succeeded_without_delivery_steps_completes_only_with_a_matching_workspace ... ok
+test task_classification::terminal_failures_without_delivery_stay_blocked ... ok
+test task_classification::uncommitted_or_unlanded_work_is_preserved_for_inspection ... ok
+test task_classification::unproven_owner_requires_inspection_and_blocks_scheduling ... ok
+test windows_identity_compares_creation_time_at_100ns_precision ... ok
+test windows_owner_observation_uses_creation_time_not_only_pid ... ok
+test task_classification::unsafe_workspace_outranks_every_completion_shortcut ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\reconciliation_contract.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\reconciliation_contract-b13400630ec4e683.exe)
+
+running 14 tests
+test forged_start_time_needs_review_and_blocks_the_gate ... ok
+test git_state::named_matrix_anchor_cases_hold ... ok
+test git_state::process_uncertainty_outranks_every_workspace_and_delivery_state ... ok
+test live_process_is_left_running_and_does_not_block_the_gate ... ok
+test git_state::only_git_confirmed_delivery_is_completed_and_unlanded_delivery_is_not ... ok
+test git_state::removed_worktree_blocks_the_task_without_blocking_other_scheduling ... ok
+test git_state::ambiguous_delivery_step_is_never_summarised_as_landed ... ok
+test git_state::partially_landed_delivery_requires_inspection_and_leaves_git_untouched ... ok
+test git_state::uninspected_or_unrecorded_workspace_requires_inspection ... ok
+test git_state::clean_matching_worktree_is_recoverable_and_dirty_work_is_preserved ... ok
+test git_state::committed_unlanded_work_is_never_treated_as_matching_or_discardable ... ok
+test git_state::unsafe_workspace_requires_inspection_even_when_delivery_is_confirmed ... ok
+test git_state::unsafe_workspace_requires_inspection_even_when_task_succeeded ... ok
+test git_state::real_git_evidence_matrix_matches_the_approved_precedence ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.32s
+
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\orchestrator_store-0a310f343f2c5f90.exe)
+
+running 68 tests
+test data_lock::tests::range_lock_does_not_block_other_handles_reading_the_record ... ok
+test data_lock::tests::fresh_creation_without_platform_identity_fails_explicitly_and_keeps_the_artifact ... ok
+test data_lock::tests::fresh_creation_identity_failure_is_an_io_error_and_keeps_the_artifact ... ok
+test data_lock::tests::verified_creation_is_cleaned_up_on_drop ... ok
+test data_lock::tests::identity_matches_hard_links_and_distinguishes_files ... ok
+test sqlite_history::tests::cleared_fingerprint_is_a_well_formed_fingerprint ... ok
+test data_lock::tests::platform_without_identity_still_retries_and_preserves_the_lock ... ok
+test data_lock::tests::identity_lookup_failure_is_an_io_error_not_a_retry_and_preserves_the_lock ... ok
+test data_lock::tests::a_contender_during_a_publish_never_reads_an_empty_lock ... ok
+test data_lock::tests::the_lock_file_is_owner_only_when_created_and_when_taken_over ... ok
+test sqlite_conversations::tests::recording_a_level_for_an_unknown_turn_is_refused ... ok
+test sqlite::tests::foreign_keys_reject_orphan_attempts_on_each_handle ... ok
+test sqlite::tests::new_database_uses_wal_mode ... ok
+test sqlite_conversations::tests::the_database_refuses_a_level_outside_the_four_and_a_blank_profile ... ok
+test sqlite::tests::opening_applies_embedded_migrations_once ... ok
+test sqlite_ops::tests::transition_rolls_back_state_when_event_insert_fails ... ok
+test sqlite_conversations::tests::a_turn_from_before_permission_levels_reads_null_and_a_launched_turn_records_its_level ... ok
+test sqlite_usage::tests::a_null_field_inside_a_receipt_stays_unknown_not_zero ... ok
+test sqlite_usage::tests::a_missing_token_count_leaves_the_estimate_unknown ... ok
+test sqlite_usage::tests::a_session_is_estimated_whole_or_not_at_all ... ok
+test sqlite_ops::tests::separate_handles_serialize_writes_or_return_database_errors ... ok
+test sqlite_ops::tests::task_records_and_event_sequence_survive_reopen ... ok
+test sqlite_usage::tests::an_empty_window_has_no_providers ... ok
+test sqlite_usage::tests::a_stored_estimate_suppresses_the_native_one ... ok
+test sqlite_usage::tests::an_unknown_or_missing_model_is_unknown_not_zero ... ok
+test sqlite_usage::tests::each_model_is_estimated_from_its_own_price_and_kept_out_of_reported ... ok
+test sqlite_usage::tests::invalid_receipts_and_unknown_sessions_are_rejected ... ok
+test sqlite_usage::tests::costs_are_summed_per_provider_and_in_the_grand_total ... ok
+test sqlite_usage::tests::late_receipt_is_attributed_to_its_window_end_day ... ok
+test sqlite_usage::tests::model_text_is_truncated_on_a_character_boundary ... ok
+test sqlite_usage::tests::receipts_are_idempotent_and_only_newer_observations_replace ... ok
+test sqlite_usage::tests::migration_applies_to_an_existing_data_directory_without_losing_data ... ok
+test sqlite_usage::tests::reported_and_estimated_mix_without_double_counting_or_overwriting ... ok
+test tests::concurrent_creates_same_id_exactly_one_wins ... ok
+test sqlite_usage::tests::receipts_survive_reopen ... ok
+test tests::invalid_task_ids_are_rejected_not_panics ... ok
+test tests::create_persists_validated_contract_and_rejects_invalid ... ok
+test sqlite_usage::tests::silent_providers_are_unknown_not_zero_and_sources_stay_apart ... ok
+test tests::attempt_must_match_task_and_sequence ... ok
+test tests::list_ignores_foreign_files ... ok
+test sqlite_usage::tests::session_coverage_follows_start_time_and_receipts ... ok
+test tests::attempt_state_moves_follow_central_table ... ok
+test tests::concurrent_mutations_do_not_lose_a_transition ... ok
+test tests::new_attempt_must_be_pending_with_nonempty_id ... ok
+test tests::malformed_stored_attempt_is_not_linked_to_new_rows ... ok
+test tests::close_and_reopen_preserves_everything ... ok
+test sqlite_usage::tests::summarising_does_not_rewrite_stored_receipts ... ok
+test usage_prices::tests::a_missing_token_count_is_unknown_never_zero ... ok
+test usage_prices::tests::codex_recorded_turn_matches_a_hand_computation ... ok
+test usage_prices::tests::every_model_prices_from_its_own_row ... ok
+test usage_prices::tests::info_names_the_version_basis_and_size ... ok
+test usage_prices::tests::matches_codeburn_synthetic_fixture_and_recorded_claude_cost ... ok
+test usage_prices::tests::model_names_are_normalised_before_lookup ... ok
+test usage_prices::tests::no_cache_write_price_accepts_unknown_or_zero_but_not_positive_counts ... ok
+test usage_prices::tests::overflow_is_unknown_not_a_wrapped_figure ... ok
+test usage_prices::tests::table_rows_are_unique_canonical_and_priced ... ok
+test usage_prices::tests::unknown_or_missing_model_is_unknown_never_zero ... ok
+test sqlite_usage::tests::token_sums_saturate_instead_of_wrapping ... ok
+test tests::session_must_reference_recorded_attempt ... ok
+test tests::new_session_must_start_spawning ... ok
+test tests::invalid_transition_changes_nothing ... ok
+test sqlite_workstreams::tests::existing_data_directory_migrates_without_loss ... ok
+test tests::session_cannot_carry_a_foreign_attempt ... ok
+test tests::new_attempt_requires_queued_task ... ok
+test tests::state_change_and_audit_event_persist_together ... ok
+test tests::session_state_moves_follow_central_table ... ok
+test tests::failed_attempt_preserved_and_retry_appends_new_one ... ok
+test tests::session_exit_does_not_affect_task_state ... ok
+
+test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+     Running tests\approvals.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\approvals-dbe9c63f4c1b360f.exe)
+
+running 9 tests
+test agent_cannot_approve_its_own_request ... ok
+test superseded_approval_cannot_be_reused ... ok
+test rejected_approval_cannot_transition_to_approved ... ok
+test policy_change_requires_approved_policy_approval ... ok
+test request_approve_and_check_round_trip ... ok
+test changed_candidate_commit_fails_check_and_supersedes_old_approval ... ok
+test approvals_and_events_survive_reopen ... ok
+test changed_parameters_fail_check_and_require_reapproval ... ok
+test approval_state_and_event_roll_back_together ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests\attempt_history.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\attempt_history-0b395b698944fa92.exe)
+
+running 2 tests
+test attempt_history_rejects_unknown_task ... ok
+test retry_appends_attempt_and_preserves_failure_after_reopen ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\audit_envelope.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\audit_envelope-1675b62faa76e2cc.exe)
+
+running 7 tests
+test recorded_stream_correlates_task_lineage_in_one_query ... ok
+test projection_refuses_unresolved_identity_and_malformed_inputs ... ok
+test unknown_payload_keys_do_not_change_the_projection ... ok
+test unmapped_kind_and_empty_session_refuse_without_a_partial_event ... ok
+test only_session_rows_project_and_the_rest_refuse_with_their_kind ... ok
+test released_cancellation_row_matches_golden_fixture ... ok
+test recorded_session_rows_match_released_golden_fixtures ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests\cancellation_owner.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\cancellation_owner-44ecc2c5082d0db1.exe)
+
+running 13 tests
+test stale_owner_without_process_identity_is_not_retired ... ok
+test manual_owner_recovery_requires_terminal_target_lifecycle ... ok
+test crashed_owner_leaves_durable_request_pending_not_cancelled ... ok
+test stale_generation_is_retired_before_retry_owner_can_register ... ok
+test absent_or_stale_owner_cannot_acknowledge_cancellation ... ok
+test non_cancelled_owner_exit_resolves_request_without_cancelling_task ... ok
+test manual_owner_recovery_is_auditable_and_preserves_lifecycle ... ok
+test stale_owner_recovery_requires_the_recorded_process_identity ... ok
+test request_stays_pending_until_owner_confirms_reaped_handle ... ok
+test stale_owner_recovery_resolves_request_without_changing_lifecycle ... ok
+test manual_recovery_releases_only_stale_generation_before_successor ... ok
+test windows_owner_creation_time_precision_survives_reopen ... ok
+test duplicate_concurrent_requests_share_one_pending_result ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+     Running tests\concurrent_open.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\concurrent_open-9ce75559aa4bf285.exe)
+
+running 1 test
+test concurrent_first_opens_all_succeed_and_record_each_migration_once ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.93s
+
+     Running tests\conversation_history.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\conversation_history-cc53087d0a62ed92.exe)
+
+running 10 tests
+test a_clear_with_nothing_to_delete_changes_nothing_and_is_not_audited ... ok
+test a_coordinator_clear_keeps_the_project_and_is_refused_once_removed ... ok
+test a_running_turn_refuses_the_clear_and_nothing_is_deleted ... ok
+test a_clear_deletes_only_its_conversation_and_records_counts_without_content ... ok
+test a_cleared_send_keeps_its_key_spent_with_a_tombstone_fingerprint ... ok
+test a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty ... ok
+test history_rows_are_only_deleted_by_a_clear_and_audit_rows_never ... ok
+test a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows ... ok
+test a_cleared_conversation_leaves_its_text_in_no_file_of_the_data_directory ... ok
+test a_database_from_before_the_clear_migrations_is_migrated_and_its_replies_scrubbed ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests\conversations.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\conversations-f367755855c39b2a.exe)
+
+running 11 tests
+test failures_carry_a_bounded_code_and_a_new_message_can_follow ... ok
+test an_unused_target_reads_as_an_empty_transcript ... ok
+test messages_and_replies_are_ordered_and_correlated_by_turn ... ok
+test the_first_terminal_state_wins_and_late_output_is_refused ... ok
+test a_second_message_is_refused_while_a_turn_runs ... ok
+test replay_returns_only_entries_after_the_cursor_and_survives_reopen ... ok
+test repeating_a_turn_id_returns_the_stored_turn_without_new_entries ... ok
+test the_transcript_is_append_only_at_the_database_level ... ok
+test targets_are_independent_conversations ... ok
+test restart_fails_open_turns_and_keeps_the_transcript ... ok
+test input_and_reply_bounds_are_enforced ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests\data_lock.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\data_lock-4bc4896f2fe25deb.exe)
+
+running 9 tests
+test lock_child_process_helper ... ignored, invoked as a child by separate_process_cannot_acquire_a_live_lock
+test live_legacy_lock_is_refused_with_clear_error ... ok
+test foreign_non_lock_file_is_never_removed ... ok
+test live_holder_is_refused_with_pid_and_drop_releases_lock ... ok
+test live_pid_with_different_start_identity_is_taken_over ... ok
+test dead_pid_lock_is_taken_over_and_new_holder_is_recorded ... ok
+test concurrent_takeovers_have_one_holder_and_one_named_conflict ... ok
+test separate_process_cannot_acquire_a_live_lock ... ok
+test racing_acquires_have_one_holder_and_named_conflicts_over_many_rounds ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.48s
+
+     Running tests\delivery.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery-cab7a6c63e03b5f5.exe)
+
+running 11 tests
+test verification_revalidation_rejects_nonpassed_run ... ok
+test refused_delivery_step_and_audit_event_are_retained ... ok
+test delivery_refuses_changed_action_kind ... ok
+test delivery_refuses_changed_candidate_sha ... ok
+test delivery_refuses_missing_approval ... ok
+test verification_revalidation_requires_exact_candidate_and_passed_run ... ok
+test delivery_step_and_audit_event_roll_back_together ... ok
+test delivery_refuses_changed_parameter_digest ... ok
+test report_only_step_persists_report_and_audit_event ... ok
+test all_delivery_steps_survive_reopen ... ok
+test delivery_step_and_audit_event_survive_reopen ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests\delivery_acceptance_contract.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\delivery_acceptance_contract-2467af8bab0bcd0b.exe)
+
+running 3 tests
+test outcome_that_does_not_match_a_delivery_action_persists_nothing ... ok
+test delivery_step_is_append_only_and_a_reused_id_changes_nothing ... ok
+test only_an_approved_current_exact_approval_authorizes_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests\lock_identity_contract.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\lock_identity_contract-c0cbadd898a97d84.exe)
+
+running 3 tests
+test directory_at_the_lock_path_is_never_removed ... ok
+test stale_record_without_a_token_is_reported_and_preserved ... ok
+test malformed_records_are_never_taken_over ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests\reconnectable_events.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\reconnectable_events-97a511f33e5420f7.exe)
+
+running 3 tests
+test idempotency_result_and_parameter_binding_survive_reopen ... ok
+test session_replay_is_global_sequence_ordered_and_reconnectable ... ok
+test store_epoch_is_stable_across_reopen_and_unique_per_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\review.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\review-0df5272fa7f0222a.exe)
+
+running 11 tests
+test coordinator_entries_are_ordered_paged_and_project_scoped ... ok
+test approval_is_blocked_by_a_change_request_but_rejection_is_not ... ok
+test request_changes_is_single_use_and_needs_a_pending_approval ... ok
+test reviewed_approval_authorizes_before_looking_at_the_approval ... ok
+test reviewed_approval_matches_plain_approval_without_changes ... ok
+test approval_parameters_commit_with_the_approval ... ok
+test request_changes_refuses_invalid_input_and_unauthorized_actors ... ok
+test plain_approve_approval_cannot_bypass_a_change_request ... ok
+test request_changes_records_feedback_without_deciding_the_approval ... ok
+test coordinator_entries_enforce_schema_invariants_and_survive_reopen ... ok
+test concurrent_approve_and_request_changes_never_both_succeed ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+     Running tests\sqlite_reconcile.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\sqlite_reconcile-aca6cab5704d537d.exe)
+
+running 4 tests
+test identity_for_unknown_session_is_rejected ... ok
+test conflicting_identity_does_not_replace_first_record ... ok
+test list_workspaces_returns_all_rows_in_stable_order ... ok
+test session_identity_round_trips_after_reopen ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\verification.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\verification-eba256f487d2eedd.exe)
+
+running 1 test
+test appends_and_reopens_results_without_overwriting_failed_runs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\workstreams.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\target-ws\debug\deps\workstreams-6eddf585f1646bc5.exe)
+
+running 12 tests
+test linking_derives_projects_and_leaves_the_task_untouched ... ok
+test objectives_revise_append_only_with_stale_rejection ... ok
+test rule_violations_are_rejected_without_a_revision ... ok
+test duplicate_and_missing_workstreams_are_typed_errors ... ok
+test link_is_idempotent_exclusive_and_validated ... ok
+test gate_state_requires_a_task_linked_to_the_same_workstream ... ok
+test update_rejects_stale_revision_and_writes_nothing ... ok
+test create_get_and_list_round_trip_in_creation_order ... ok
+test every_accepted_change_appends_an_immutable_revision ... ok
+test archived_workstream_is_terminal_and_refuses_new_work ... ok
+test state_survives_reopening_the_database ... ok
+test concurrent_writers_cannot_both_win_the_same_revision ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+   Doc-tests orchestrator_agents
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_diagnostics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_git
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_host_metrics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_local_usage
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_private_fs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orchestrator_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

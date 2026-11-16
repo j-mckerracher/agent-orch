@@ -1,0 +1,11 @@
+{
+  "name": "cargo-workspace-clippy",
+  "command": "cargo clippy --locked --workspace --all-targets",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src",
+  "exit_code": 0,
+  "duration_seconds": 103.671,
+  "test_result_lines": [],
+  "test_counts": [],
+  "warning_lines": 12,
+  "error_lines": 0
+}

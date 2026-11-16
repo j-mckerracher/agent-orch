@@ -1,0 +1,14 @@
+{
+  "name": "accept-desktop-sequence",
+  "command": "cmd /c \"cd /d apps\\desktop && npm ci && npm test && npm run build\"",
+  "cwd": "source root",
+  "exit_code": 0,
+  "duration_seconds": 117.828,
+  "summary_lines": [
+    "added 158 packages, and audited 159 packages in 10s",
+    " Test Files  79 passed (79)",
+    "      Tests  1662 passed (1662)",
+    "   Duration  99.53s (environment 60%, tests 18%, setup 16%, import 4%, transform 3%)",
+    "✓ built in 565ms"
+  ]
+}

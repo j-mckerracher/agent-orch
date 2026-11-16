@@ -1,0 +1,11 @@
+{
+  "name": "desktop-playwright",
+  "command": "npx playwright test",
+  "cwd": "apps/desktop",
+  "exit_code": 0,
+  "duration_seconds": 182.386,
+  "summary_lines": [
+    "Running 37 tests using 2 workers",
+    "  37 passed (3.0m)"
+  ]
+}

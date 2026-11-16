@@ -1,0 +1,8 @@
+{
+  "name": "desktop-tsc",
+  "command": "npx.cmd tsc -b",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 0,
+  "duration_seconds": 17.161,
+  "summary_lines": []
+}

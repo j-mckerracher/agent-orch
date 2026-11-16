@@ -1,0 +1,50 @@
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-daemon v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-daemon)
+    Finished `test` profile [unoptimized] target(s) in 10.72s
+     Running unittests src\main.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\orchestrator_daemon-402dc37d9ee0c021.exe)
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:23Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:23Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:23Z"}
+{"component":"api","error":"ConversationBusy","event":"rpc_failed","level":"warn","method":"conversations.clear","ts":"2026-11-16T18:32:24Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:32:24Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:32:24Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:32:24Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:24Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"conversations.send","ts":"2026-11-16T18:32:24Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:24Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:24Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:24Z"}
+{"component":"executor","event":"recovery_gate_open","interrupted_task_ids":"","level":"info","still_running_task_ids":"","ts":"2026-11-16T18:32:24Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:32:25Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"conversations.get","ts":"2026-11-16T18:32:25Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"coordinator.send_message","ts":"2026-11-16T18:32:35Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:32:46Z"}
+{"classification":"None","component":"api","event":"cancellation_owner_not_provably_alive","generation":"0123456789abcdef0123456789abcdef","level":"warn","recovery":"no cancellation was requested. Stop the daemon, confirm the owner and agent processes have exited, then run `agent-orch recover-owner running-with-owner-no-identity --attempt-id attempt-1 --session-id session-1 --generation 0123456789abcdef0123456789abcdef --confirm-processes-exited --reason \"<reason>\"`. This Conflict is cached for the idempotency key, so retry cancellation with a new key after recovery","task_id":"running-with-owner-no-identity","ts":"2026-11-16T18:32:46Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-16T18:32:46Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:32:48Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:32:52Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_approval","ts":"2026-11-16T18:32:52Z"}
+{"component":"api","error":"ReplayGap","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-16T18:32:53Z"}
+{"component":"api","error":"EpochMismatch","event":"rpc_failed","level":"warn","method":"sessions.events","ts":"2026-11-16T18:32:53Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-16T18:32:53Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"tasks.cancel","ts":"2026-11-16T18:32:54Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"approvals.resolve","ts":"2026-11-16T18:32:54Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:32:55Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"review.request_changes","ts":"2026-11-16T18:32:55Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"tasks.submit","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"IdempotencyConflict","event":"rpc_failed","level":"warn","method":"workstreams.create","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.revise_objective","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.set_gate","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.update","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.unlink_task","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Conflict","event":"rpc_failed","level":"warn","method":"workstreams.link_task","ts":"2026-11-16T18:32:56Z"}
+{"component":"api","error":"Forbidden","event":"rpc_failed","level":"warn","method":"delivery.request","ts":"2026-11-16T18:32:58Z"}
+     Running tests\conversation_runtime.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\conversation_runtime-4acf4665dc54d6f0.exe)
+     Running tests\conversations.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\conversations-5f595616073ee1e0.exe)
+     Running tests\coordinator_review.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\coordinator_review-191923752bcde994.exe)
+     Running tests\daemon.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\daemon-396fce19dde2a2e0.exe)
+     Running tests\diagnostics_log.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\diagnostics_log-dda957332a1e3540.exe)
+     Running tests\host_metrics.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\host_metrics-25cde3f5528502b0.exe)
+     Running tests\lifecycle.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\lifecycle-4c0d7a15c9cce25f.exe)
+     Running tests\queue_snapshot.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\queue_snapshot-bcedf7cb297b5eae.exe)

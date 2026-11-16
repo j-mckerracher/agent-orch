@@ -1,0 +1,8 @@
+{
+  "name": "preflight",
+  "command": "node scripts/ci/run-gates.mjs --preflight --evidence-dir <pf-evidence> --target-dir <pf-target> --test-tmp <pf-tt>",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src",
+  "exit_code": 0,
+  "duration_seconds": 0.104,
+  "output": "PREFLIGHT PASSED (win32): source, working directory, evidence directory, target directory, test temp directory"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "desktop-package-win",
+  "command": "npm run package:win",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 1,
+  "duration_seconds": 242.76,
+  "summary_lines": [
+    "> node scripts/package.mjs nsis",
+    "   Compiling thiserror v2.0.21",
+    "   Compiling thiserror-impl v2.0.21",
+    "    Finished `release` profile [optimized] target(s) in 3m 15s",
+    "  throw new Error(`prepare-codeburn-sidecar: ${message}`);",
+    "Error: prepare-codeburn-sidecar: bundled node.exe Authenticode status is , expected Valid"
+  ]
+}

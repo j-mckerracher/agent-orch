@@ -1,0 +1,31 @@
+{
+  "schema": "agent-bus/task/v1",
+  "id": "20261116-0002-win-mcao-tests-400d542f",
+  "created_at": "2026-11-16T17:45:54Z",
+  "from": "dispatcher-a",
+  "to": "worker-c",
+  "type": "command",
+  "priority": "normal",
+  "timeout_minutes": 360,
+  "max_attempts": 2,
+  "depends_on": [],
+  "base": {
+    "branch": "snap/win-mcao-400d542f",
+    "sha": "ea5b5abca917ff9bf8799a486b2e425afa755a87"
+  },
+  "output": {
+    "branch": "task/20261116-0002-win-mcao-tests-400d542f",
+    "allowed_paths": [],
+    "forbidden_paths": []
+  },
+  "acceptance": {
+    "commands": [
+      "node --test scripts/ci/*.test.mjs",
+      "cargo test --locked --workspace",
+      "cargo clippy --locked --workspace --all-targets",
+      "cmd /c \"cd /d apps\\desktop && npm ci && npm test && npm run build\"",
+      "cmd /c \"cd /d apps\\desktop && npm run package:win\""
+    ],
+    "criteria": []
+  }
+}

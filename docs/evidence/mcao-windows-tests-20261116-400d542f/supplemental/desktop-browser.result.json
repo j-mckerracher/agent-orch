@@ -1,0 +1,11 @@
+{
+  "name": "desktop-browser",
+  "command": "npm run test:browser",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 0,
+  "duration_seconds": 182.527,
+  "summary_lines": [
+    "Running 37 tests using 2 workers",
+    "  37 passed (3.0m)"
+  ]
+}

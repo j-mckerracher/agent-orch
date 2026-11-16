@@ -1,0 +1,7 @@
+{
+  "name": "node-self-tests",
+  "command": "node --test scripts/**/*.test.mjs",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src",
+  "exit_code": 1,
+  "duration_seconds": 4.696
+}

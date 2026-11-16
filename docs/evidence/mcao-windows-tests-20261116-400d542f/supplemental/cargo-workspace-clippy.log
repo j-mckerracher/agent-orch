@@ -1,0 +1,209 @@
+    Checking windows-link v0.2.1
+    Checking cfg-if v1.0.5
+    Checking memchr v2.8.3
+    Checking once_cell v1.21.4
+    Checking itoa v1.0.18
+    Checking windows-sys v0.61.2
+    Checking serde_core v1.0.229
+    Checking zmij v1.0.23
+    Checking fastrand v2.5.0
+    Checking pin-project-lite v0.2.17
+    Checking bytes v1.12.1
+    Checking getrandom v0.4.3
+    Checking thiserror v2.0.21
+   Compiling zerofrom v0.1.8
+   Compiling stable_deref_trait v1.2.1
+   Compiling utf_types v1.0.0
+   Compiling yoke v0.8.4
+   Compiling litemap v0.8.3
+   Compiling smallvec v1.16.5
+   Compiling writeable v0.6.4
+    Checking typenum v1.20.1
+   Compiling futures-core v0.3.34
+   Compiling utf8_iter v1.1.0
+   Compiling scopeguard v1.2.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling lock_api v0.4.14
+   Compiling icu_normalizer_data v2.4.0
+    Checking generic-array v0.14.9
+   Compiling icu_properties_data v2.4.0
+   Compiling futures-sink v0.3.34
+    Checking serde v1.0.229
+    Checking serde_json v1.0.154
+   Compiling equivalent v1.0.3
+    Checking tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+    Checking icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+    Checking crypto-common v0.1.6
+    Checking block-buffer v0.10.4
+    Checking digest v0.10.7
+    Checking orchestrator-core v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-core)
+   Compiling parking_lot_core v0.9.12
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling foldhash v0.2.0
+   Compiling slab v0.4.12
+    Checking icu_provider v2.4.0
+   Compiling percent-encoding v2.3.2
+    Checking tempfile v3.27.0
+   Compiling allocator-api2 v0.2.21
+    Checking cpufeatures v0.2.17
+   Compiling futures-task v0.3.34
+   Compiling futures-io v0.3.34
+    Checking tokio v1.54.1
+    Checking sha2 v0.10.9
+    Checking icu_normalizer v2.4.0
+   Compiling tracing-core v0.1.36
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.16.1
+   Compiling parking_lot v0.12.5
+   Compiling crossbeam-utils v0.8.23
+   Compiling icu_properties v2.4.0
+   Compiling crc-catalog v2.5.0
+   Compiling log v0.4.35
+   Compiling parking v2.2.1
+   Compiling hashbrown v0.17.1
+   Compiling event-listener v5.4.2
+   Compiling tracing v0.1.44
+   Compiling crc v3.4.0
+   Compiling crossbeam-queue v0.3.14
+   Compiling hashlink v0.11.1
+   Compiling futures-intrusive v0.5.0
+   Compiling either v1.19.0
+   Compiling spin v0.9.9
+   Compiling num-traits v0.2.19
+   Compiling indexmap v2.14.2
+    Checking idna_adapter v1.2.2
+   Compiling base64 v0.22.1
+    Checking idna v1.1.0
+   Compiling atoi v2.0.0
+   Compiling flume v0.12.0
+    Checking orchestrator-git v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-git)
+   Compiling futures-channel v0.3.34
+   Compiling url v2.5.8
+    Checking libsqlite3-sys v0.37.0
+    Checking jiff-tzdb v0.1.10
+    Checking jiff-core v0.1.8
+    Checking orchestrator-private-fs v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-private-fs)
+    Checking orchestrator-diagnostics v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-diagnostics)
+    Checking getrandom v0.3.4
+    Checking windows-result v0.4.1
+    Checking jiff-tzdb-platform v0.1.3
+    Checking windows-strings v0.5.1
+    Checking uuid v1.18.1
+    Checking windows-threading v0.2.1
+   Compiling futures-executor v0.3.34
+    Checking winapi v0.3.9
+    Checking libc v0.2.191
+    Checking utf8parse v0.2.2
+    Checking once_cell_polyfill v1.70.2
+    Checking windows-core v0.62.2
+    Checking anstyle v1.0.14
+    Checking anstyle-query v1.1.5
+    Checking anstyle-parse v1.0.0
+    Checking is_terminal_polyfill v1.70.2
+    Checking subtle v2.6.1
+    Checking jiff v0.2.39
+    Checking colorchoice v1.0.5
+    Checking orchestrator-local-usage v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-local-usage)
+    Checking clap_lex v1.1.1
+    Checking strsim v0.11.1
+    Checking anstyle-wincon v3.0.11
+    Checking orchestrator-ipc v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-ipc)
+    Checking anstream v1.0.0
+    Checking windows-numerics v0.3.1
+    Checking windows-future v0.3.2
+    Checking windows-collections v0.3.2
+    Checking clap_builder v4.6.7
+    Checking tokio-stream v0.1.19
+    Checking orchestrator-runtime v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-runtime)
+    Checking ntapi v0.4.3
+    Checking windows v0.62.2
+    Checking orchestrator-agents v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-agents)
+    Checking sqlx-core v0.9.0
+    Checking clap v4.6.7
+warning: unused imports: `AtomicUsize` and `Ordering`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:7:25
+  |
+7 | use std::sync::atomic::{AtomicUsize, Ordering};
+  |                         ^^^^^^^^^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused import: `std::sync::Arc`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:8:5
+  |
+8 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `Instant`
+ --> crates\orchestrator-agents\tests\copilot_adapter.rs:9:27
+  |
+9 | use std::time::{Duration, Instant};
+  |                           ^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `CopilotSignIn`
+  --> crates\orchestrator-agents\tests\copilot_adapter.rs:13:62
+   |
+13 | use orchestrator_agents::copilot_sign_in::{classify_failure, CopilotSignIn};
+   |                                                              ^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `AgentAdapter`, `AgentError`, `AgentExit`, `AgentLaunchRequest`, `CopilotRun`, and `RoutableAdapter`
+  --> crates\orchestrator-agents\tests\copilot_adapter.rs:16:18
+   |
+16 |     provider_of, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentLaunchRequest,
+   |                  ^^^^^^^^^^^^                ^^^^^^^^^^              ^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+17 |     CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SignInRecord, SignInState,
+   |                                   ^^^^^^^^^^  ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: function `futures_block` is never used
+   --> crates\orchestrator-agents\tests\copilot_adapter.rs:974:4
+    |
+974 | fn futures_block<F: std::future::Future>(future: F) -> F::Output {
+    |    ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `orchestrator-agents` (test "copilot_adapter") generated 6 warnings (run `cargo clippy --fix --test "copilot_adapter" -p orchestrator-agents -- ` to apply 5 suggestions)
+    Checking sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking sqlx v0.9.0
+    Checking orchestrator-store v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-store)
+    Checking sysinfo v0.40.1
+    Checking orchestrator-engine v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-engine)
+    Checking orchestrator-cli v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-cli)
+warning: unused imports: `ProcessAction`, `ProcessClassification`, `ProcessObservation`, and `plan_process_reconciliation`
+ --> crates\orchestrator-store\tests\sqlite_reconcile.rs:5:5
+  |
+5 |     plan_process_reconciliation, ProcessAction, ProcessClassification, ProcessIdentity,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+6 |     ProcessObservation, ProcessPlatform,
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: function `current_platform` is never used
+  --> crates\orchestrator-store\tests\sqlite_reconcile.rs:94:4
+   |
+94 | fn current_platform() -> ProcessPlatform {
+   |    ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `orchestrator-store` (test "sqlite_reconcile") generated 2 warnings (run `cargo clippy --fix --test "sqlite_reconcile" -p orchestrator-store -- ` to apply 1 suggestion)
+    Checking orchestrator-host-metrics v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-host-metrics)
+warning: unused import: `orchestrator_engine::reconcile::reconcile_before_scheduling_with`
+  --> crates\orchestrator-cli\src\workflow.rs:38:5
+   |
+38 | use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+    Checking orchestrator-daemon v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-daemon)
+warning: `orchestrator-cli` (lib test) generated 1 warning (run `cargo clippy --fix --lib -p orchestrator-cli --tests -- ` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 42s

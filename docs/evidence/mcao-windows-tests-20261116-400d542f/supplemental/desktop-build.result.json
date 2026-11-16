@@ -1,0 +1,12 @@
+{
+  "name": "desktop-build",
+  "command": "npm.cmd run build",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 0,
+  "duration_seconds": 3.451,
+  "summary_lines": [
+    "vite v8.3.6 building client environment for production...",
+    "- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.",
+    "✓ built in 654ms"
+  ]
+}

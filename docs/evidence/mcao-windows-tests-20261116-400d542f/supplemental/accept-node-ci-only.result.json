@@ -1,0 +1,15 @@
+{
+  "name": "accept-node-ci-only",
+  "command": "node --test scripts/ci/*.test.mjs",
+  "cwd": "source root",
+  "exit_code": 1,
+  "duration_seconds": 1.935,
+  "summary_lines": [
+    "not ok 67 - the workflow has a job for each table entry and an aggregator that waits for all of them",
+    "  error: \"ENOENT: no such file or directory, open 'C:\\\\Users\\\\%USER%\\\\AppData\\\\Local\\\\Temp\\\\23340e8b\\\\src\\\\.github\\\\workflows\\\\ci.yml'\"",
+    "  code: 'ENOENT'",
+    "# tests 72",
+    "# pass 71",
+    "# fail 1"
+  ]
+}

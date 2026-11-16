@@ -1,0 +1,455 @@
+TAP version 13
+# Subtest: captures stdout, stderr and the exit code, and also the file bytes
+ok 1 - captures stdout, stderr and the exit code, and also the file bytes
+  ---
+  duration_ms: 219.9024
+  type: 'test'
+  ...
+# Subtest: a descendant holding the output pipes cannot stall the run after the process exits
+ok 2 - a descendant holding the output pipes cannot stall the run after the process exits
+  ---
+  duration_ms: 439.5918
+  type: 'test'
+  ...
+# Subtest: a timeout kills the process and ends the run promptly
+ok 3 - a timeout kills the process and ends the run promptly
+  ---
+  duration_ms: 1022.7987
+  type: 'test'
+  ...
+# Subtest: a command that cannot start reports the error
+ok 4 - a command that cannot start reports the error
+  ---
+  duration_ms: 5.0488
+  type: 'test'
+  ...
+# Subtest: each running-sequence sum equals passed plus ignored (filtered tests excluded)
+ok 5 - each running-sequence sum equals passed plus ignored (filtered tests excluded)
+  ---
+  duration_ms: 1.6678
+  type: 'test'
+  ...
+# Subtest: each expected total equals the length of its name list, so a merge updates both
+ok 6 - each expected total equals the length of its name list, so a merge updates both
+  ---
+  duration_ms: 64.2805
+  type: 'test'
+  ...
+# Subtest: gates take their counts from expected.mjs
+ok 7 - gates take their counts from expected.mjs
+  ---
+  duration_ms: 64.7669
+  type: 'test'
+  ...
+# Subtest: the Windows-only p12 gate needs both binaries and takes its paths from the harness
+ok 8 - the Windows-only p12 gate needs both binaries and takes its paths from the harness
+  ---
+  duration_ms: 7.9124
+  type: 'test'
+  ...
+# Subtest: the clippy baseline pattern matches only the listed lines, under either separator
+ok 9 - the clippy baseline pattern matches only the listed lines, under either separator
+  ---
+  duration_ms: 0.4819
+  type: 'test'
+  ...
+# Subtest: both the TAP and the spec summary are read, with CRLF as well
+ok 10 - both the TAP and the spec summary are read, with CRLF as well
+  ---
+  duration_ms: 6.069
+  type: 'test'
+  ...
+# Subtest: a wrong count, a failure, a cancellation, a skip or a todo is a problem
+ok 11 - a wrong count, a failure, a cancellation, a skip or a todo is a problem
+  ---
+  duration_ms: 0.7818
+  type: 'test'
+  ...
+# Subtest: output without a summary proves nothing
+ok 12 - output without a summary proves nothing
+  ---
+  duration_ms: 0.3443
+  type: 'test'
+  ...
+# Subtest: a counter in the middle of a line is not a summary line
+ok 13 - a counter in the middle of a line is not a summary line
+  ---
+  duration_ms: 0.2608
+  type: 'test'
+  ...
+# Subtest: the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+ok 14 - the real Windows output is read as FAIL, not as an empty verdict: the banner lines are not verdicts
+  ---
+  duration_ms: 3.1915
+  type: 'test'
+  ...
+# Subtest: the verdict is case-sensitive, taken from a line start, and must be unique and known
+ok 15 - the verdict is case-sensitive, taken from a line start, and must be unique and known
+  ---
+  duration_ms: 0.5686
+  type: 'test'
+  ...
+# Subtest: a PASS verdict that contradicts its CHECK lines is a problem
+ok 16 - a PASS verdict that contradicts its CHECK lines is a problem
+  ---
+  duration_ms: 0.2697
+  type: 'test'
+  ...
+# Subtest: sequence and totals are read across binaries, with CRLF output
+ok 17 - sequence and totals are read across binaries, with CRLF output
+  ---
+  duration_ms: 1.2494
+  type: 'test'
+  ...
+# Subtest: a wrong count, sequence or missing name is a problem in either direction
+ok 18 - a wrong count, sequence or missing name is a problem in either direction
+  ---
+  duration_ms: 0.4953
+  type: 'test'
+  ...
+# Subtest: a failed or ignored test is not ok
+ok 19 - a failed or ignored test is not ok
+  ---
+  duration_ms: 0.4373
+  type: 'test'
+  ...
+# Subtest: name matching is by whole path segment, not substring
+ok 20 - name matching is by whole path segment, not substring
+  ---
+  duration_ms: 0.3726
+  type: 'test'
+  ...
+# Subtest: lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+ok 21 - lifecycle needs its eight ordered STEP lines, one PASS and no libtest shape
+  ---
+  duration_ms: 0.8106
+  type: 'test'
+  ...
+# Subtest: build and lint outputs must show real work and a Finished line
+ok 22 - build and lint outputs must show real work and a Finished line
+  ---
+  duration_ms: 1.117
+  type: 'test'
+  ...
+# Subtest: diagnostics keep the message and location
+ok 23 - diagnostics keep the message and location
+  ---
+  duration_ms: 0.945
+  type: 'test'
+  ...
+# Subtest: vitest summary lines
+ok 24 - vitest summary lines
+  ---
+  duration_ms: 6.4434
+  type: 'test'
+  ...
+# Subtest: a real short directory passes, existing or not yet created
+ok 25 - a real short directory passes, existing or not yet created
+  ---
+  duration_ms: 3.8587
+  type: 'test'
+  ...
+# Subtest: a SUBST or mapped drive fails: the drive letter differs from the real path
+ok 26 - a SUBST or mapped drive fails: the drive letter differs from the real path
+  ---
+  duration_ms: 0.7215
+  type: 'test'
+  ...
+# Subtest: a junction fails: the same drive, a different path
+ok 27 - a junction fails: the same drive, a different path
+  ---
+  duration_ms: 0.4299
+  type: 'test'
+  ...
+# Subtest: a junction in the nearest existing ancestor is found for a path that does not exist yet
+ok 28 - a junction in the nearest existing ancestor is found for a path that does not exist yet
+  ---
+  duration_ms: 0.7103
+  type: 'test'
+  ...
+# Subtest: letter case and an 8.3 short name are the same directory, not an alias
+ok 29 - letter case and an 8.3 short name are the same directory, not an alias
+  ---
+  duration_ms: 0.5446
+  type: 'test'
+  ...
+# Subtest: a network or device path fails
+ok 30 - a network or device path fails
+  ---
+  duration_ms: 0.2376
+  type: 'test'
+  ...
+# Subtest: a path longer than the limit fails, one at the limit does not
+ok 31 - a path longer than the limit fails, one at the limit does not
+  ---
+  duration_ms: 0.8524
+  type: 'test'
+  ...
+# Subtest: every bad root is reported, each once per problem
+ok 32 - every bad root is reported, each once per problem
+  ---
+  duration_ms: 0.385
+  type: 'test'
+  ...
+# Subtest: nothing is checked off Windows
+ok 33 - nothing is checked off Windows
+  ---
+  duration_ms: 0.5741
+  type: 'test'
+  ...
+# Subtest: a path that cannot be resolved is reported
+ok 34 - a path that cannot be resolved is reported
+  ---
+  duration_ms: 0.878
+  type: 'test'
+  ...
+# Subtest: only local packages are pruned, each name once, sorted
+ok 35 - only local packages are pruned, each name once, sorted
+  ---
+  duration_ms: 2.2248
+  type: 'test'
+  ...
+# Subtest: a graph with no local package prunes nothing
+ok 36 - a graph with no local package prunes nothing
+  ---
+  duration_ms: 0.2734
+  type: 'test'
+  ...
+# Subtest: the domain account, profile, host, DNS domain, user and e-mail are all replaced
+ok 37 - the domain account, profile, host, DNS domain, user and e-mail are all replaced
+  ---
+  duration_ms: 3.7547
+  type: 'test'
+  ...
+# Subtest: a domain in front of an account is removed even when the environment does not name it
+ok 38 - a domain in front of an account is removed even when the environment does not name it
+  ---
+  duration_ms: 1.3768
+  type: 'test'
+  ...
+# Subtest: names are matched whole-word, and short names are left alone
+ok 39 - names are matched whole-word, and short names are left alone
+  ---
+  duration_ms: 0.5109
+  type: 'test'
+  ...
+# Subtest: findPrivate reports the line and kind, never the value
+ok 40 - findPrivate reports the line and kind, never the value
+  ---
+  duration_ms: 0.8728
+  type: 'test'
+  ...
+# Subtest: raw tool output may name the profile but not the rest of the identity
+ok 41 - raw tool output may name the profile but not the rest of the identity
+  ---
+  duration_ms: 0.3404
+  type: 'test'
+  ...
+# Subtest: a busy directory is retried until it can be removed
+ok 42 - a busy directory is retried until it can be removed
+  ---
+  duration_ms: 3.5309
+  type: 'test'
+  ...
+# Subtest: the last busy error is thrown once the attempts are used up
+ok 43 - the last busy error is thrown once the attempts are used up
+  ---
+  duration_ms: 2.1522
+  type: 'test'
+  ...
+# Subtest: an error that is not a busy directory is thrown at once
+ok 44 - an error that is not a busy directory is thrown at once
+  ---
+  duration_ms: 0.4026
+  type: 'test'
+  ...
+# Subtest: a real directory tree is removed on the first attempt and a missing one is not an error
+ok 45 - a real directory tree is removed on the first attempt and a missing one is not an error
+  ---
+  duration_ms: 18.7296
+  type: 'test'
+  ...
+# Subtest: parsePs reads pid, ppid and the whole command line, spaces included
+ok 46 - parsePs reads pid, ppid and the whole command line, spaces included
+  ---
+  duration_ms: 4.6278
+  type: 'test'
+  ...
+# Subtest: survivors are processes under this run's directories; the harness and its ancestors are not
+ok 47 - survivors are processes under this run's directories; the harness and its ancestors are not
+  ---
+  duration_ms: 1.2585
+  type: 'test'
+  ...
+# Subtest: Windows listing: path separators and case do not matter, a single object is accepted
+ok 48 - Windows listing: path separators and case do not matter, a single object is accepted
+  ---
+  duration_ms: 0.6379
+  type: 'test'
+  ...
+# Subtest: with a launched child, the operator's monitor that names the run directory is not a survivor
+ok 49 - with a launched child, the operator's monitor that names the run directory is not a survivor
+  ---
+  duration_ms: 1.0298
+  type: 'test'
+  ...
+# Subtest: a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+ok 50 - a descendant of the launched child and an orphan of it are survivors; a live unrelated parent is not
+  ---
+  duration_ms: 0.3771
+  type: 'test'
+  ...
+# Subtest: scanSurvivors passes the launched pids to the scan
+ok 51 - scanSurvivors passes the launched pids to the scan
+  ---
+  duration_ms: 0.5473
+  type: 'test'
+  ...
+# Subtest: scanSurvivors retries while a process is still listed, then reports what remains
+ok 52 - scanSurvivors retries while a process is still listed, then reports what remains
+  ---
+  duration_ms: 53.3026
+  type: 'test'
+  ...
+# Subtest: a listing failure is an error, not an empty result
+ok 53 - a listing failure is an error, not an empty result
+  ---
+  duration_ms: 0.6219
+  type: 'test'
+  ...
+# Subtest: the real listing finds a live process by a path unique to it, and not this harness
+ok 54 - the real listing finds a live process by a path unique to it, and not this harness
+  ---
+  duration_ms: 1324.4169
+  type: 'test'
+  ...
+# Subtest: all PASS is PASS, and only that exits 0
+ok 55 - all PASS is PASS, and only that exits 0
+  ---
+  duration_ms: 1.1275
+  type: 'test'
+  ...
+# Subtest: a SKIPPED gate can never look like a pass: the verdict is INCONCLUSIVE and the exit is not 0
+ok 56 - a SKIPPED gate can never look like a pass: the verdict is INCONCLUSIVE and the exit is not 0
+  ---
+  duration_ms: 0.2126
+  type: 'test'
+  ...
+# Subtest: a failure wins over a skip, in a gate or in a harness check
+ok 57 - a failure wins over a skip, in a gate or in a harness check
+  ---
+  duration_ms: 0.914
+  type: 'test'
+  ...
+# Subtest: no gates is INCONCLUSIVE, and an unknown verdict is a FAIL
+ok 58 - no gates is INCONCLUSIVE, and an unknown verdict is a FAIL
+  ---
+  duration_ms: 0.3328
+  type: 'test'
+  ...
+# Subtest: verdicts are counted
+ok 59 - verdicts are counted
+  ---
+  duration_ms: 1.0061
+  type: 'test'
+  ...
+# Subtest: an event other than a pull request runs every Windows gate
+ok 60 - an event other than a pull request runs every Windows gate
+  ---
+  duration_ms: 1.5905
+  type: 'test'
+  ...
+# Subtest: a pull request that changes only documentation runs no group
+ok 61 - a pull request that changes only documentation runs no group
+  ---
+  duration_ms: 0.2508
+  type: 'test'
+  ...
+# Subtest: each area runs the groups that consume it
+ok 62 - each area runs the groups that consume it
+  ---
+  duration_ms: 0.8644
+  type: 'test'
+  ...
+# Subtest: a harness, manifest, lockfile, toolchain or Node tooling change runs every gate
+ok 63 - a harness, manifest, lockfile, toolchain or Node tooling change runs every gate
+  ---
+  duration_ms: 0.4127
+  type: 'test'
+  ...
+# Subtest: an input the table does not know runs every gate, even beside documentation
+ok 64 - an input the table does not know runs every gate, even beside documentation
+  ---
+  duration_ms: 0.3057
+  type: 'test'
+  ...
+# Subtest: an unreadable change set runs every gate
+ok 65 - an unreadable change set runs every gate
+  ---
+  duration_ms: 0.1912
+  type: 'test'
+  ...
+# Subtest: the jobs cover every Windows gate once, each with its prerequisites
+ok 66 - the jobs cover every Windows gate once, each with its prerequisites
+  ---
+  duration_ms: 4.3206
+  type: 'test'
+  ...
+# Subtest: the workflow has a job for each table entry and an aggregator that waits for all of them
+not ok 67 - the workflow has a job for each table entry and an aggregator that waits for all of them
+  ---
+  duration_ms: 0.6101
+  type: 'test'
+  location: '%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\scripts\\ci\\windows-jobs.test.mjs:101:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\.github\\workflows\\ci.yml'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:441:20)
+    TestContext.<anonymous> (file:///%USERPROFILE%/AppData/Local/Temp/23340e8b/src/scripts/ci/windows-jobs.test.mjs:102:15)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the verdict passes when every selected job succeeded and every other job was skipped
+ok 68 - the verdict passes when every selected job succeeded and every other job was skipped
+  ---
+  duration_ms: 0.5414
+  type: 'test'
+  ...
+# Subtest: a selected job that fails, is canceled or is skipped fails the verdict
+ok 69 - a selected job that fails, is canceled or is skipped fails the verdict
+  ---
+  duration_ms: 0.5073
+  type: 'test'
+  ...
+# Subtest: an unselected job that ran and succeeded is accepted; one that failed is not
+ok 70 - an unselected job that ran and succeeded is accepted; one that failed is not
+  ---
+  duration_ms: 0.2432
+  type: 'test'
+  ...
+# Subtest: the harness always runs, so a failed harness fails the verdict even with nothing selected
+ok 71 - the harness always runs, so a failed harness fails the verdict even with nothing selected
+  ---
+  duration_ms: 0.0891
+  type: 'test'
+  ...
+# Subtest: a failed change selection or a missing job fails the verdict
+ok 72 - a failed change selection or a missing job fails the verdict
+  ---
+  duration_ms: 0.0742
+  type: 'test'
+  ...
+1..72
+# tests 72
+# suites 0
+# pass 71
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1791.8468

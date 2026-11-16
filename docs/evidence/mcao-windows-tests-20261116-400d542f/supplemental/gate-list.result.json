@@ -1,0 +1,7 @@
+{
+  "name": "gate-list",
+  "command": "node scripts/ci/run-gates.mjs --list",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src",
+  "exit_code": 0,
+  "duration_seconds": 0.142
+}

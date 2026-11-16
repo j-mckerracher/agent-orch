@@ -1,0 +1,5 @@
+   Compiling windows-sys v0.61.2
+   Compiling tempfile v3.27.0
+   Compiling orchestrator-git v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\crates\orchestrator-git)
+    Finished `test` profile [unoptimized] target(s) in 4.91s
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\orchestrator_git-3d88531a82499b58.exe)

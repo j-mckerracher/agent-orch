@@ -1,0 +1,6 @@
+{
+  "name": "full-harness-preflight",
+  "command": "node scripts/ci/run-gates.mjs --source <pinned-source> --preflight --evidence-dir <fresh> --target-dir <fresh> --test-tmp <fresh>",
+  "exit_code": 0,
+  "output": "PREFLIGHT PASSED (win32): source, working directory, evidence directory, target directory, test temp directory"
+}

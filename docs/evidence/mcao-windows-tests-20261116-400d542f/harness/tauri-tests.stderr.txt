@@ -1,0 +1,6 @@
+   Compiling tempfile v3.27.0
+   Compiling agent-orch-desktop v0.1.0 (%USERPROFILE%\AppData\Local\Temp\23340e8b\src\apps\desktop\src-tauri)
+    Finished `test` profile [unoptimized] target(s) in 3.64s
+     Running unittests src\lib.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\agent_orch_desktop_lib-b2f5ccfd573ea455.exe)
+     Running unittests src\main.rs (%USERPROFILE%\AppData\Local\Temp\23340e8b\full\target\debug\deps\MCAO-e41f12b5cc60d74c.exe)
+   Doc-tests agent_orch_desktop_lib

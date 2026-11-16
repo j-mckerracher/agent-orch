@@ -1,0 +1,12 @@
+{
+  "name": "desktop-vitest",
+  "command": "npx.cmd vitest run",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 0,
+  "duration_seconds": 124.626,
+  "summary_lines": [
+    " Test Files  79 passed (79)",
+    "      Tests  1662 passed (1662)",
+    "   Duration  120.22s (environment 62%, setup 17%, tests 15%, import 3%, transform 2%)"
+  ]
+}

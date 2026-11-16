@@ -1,0 +1,9 @@
+
+> agent-orch-desktop@0.1.0 package:win
+> node scripts/package.mjs nsis
+
+staged %USERPROFILE%\AppData\Local\Temp\23340e8b\src\apps\desktop\src-tauri\binaries\orchestrator-daemon-x86_64-pc-windows-msvc.exe
+
+added 166 packages in 30s
+
+added 27 packages in 2s

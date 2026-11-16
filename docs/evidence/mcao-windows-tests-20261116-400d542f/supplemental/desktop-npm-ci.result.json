@@ -1,0 +1,8 @@
+{
+  "name": "desktop-npm-ci",
+  "command": "npm.cmd ci",
+  "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\23340e8b\\src\\apps\\desktop",
+  "exit_code": 0,
+  "duration_seconds": 17.162,
+  "summary_lines": []
+}
