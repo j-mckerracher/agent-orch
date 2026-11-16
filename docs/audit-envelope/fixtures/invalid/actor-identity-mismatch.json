@@ -1,0 +1,22 @@
+{
+  "schema": "mcao.audit-envelope.v1",
+  "ts": "2026-01-03T04:05:08.000Z",
+  "event_id": "0190a6f0-7c1d-7e2a-9b3c-0a1b2c3d4e61",
+  "home_id": "6f1c2a4e-9b3d-4c5e-8f60-718293a4b5c6",
+  "seq": 2,
+  "prev_hash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+  "timezone": "America/Chicago",
+  "day_key": "2026-01-02",
+  "event": "cancellation.owner_manually_released",
+  "category": "supervision",
+  "outcome": "not_applicable",
+  "platform": "mcao",
+  "session_id": "session-1",
+  "task_id": "task-1",
+  "agent": {"role": "firstmate", "harness": "codex", "model": null},
+  "actor": {"type": "user", "id": "hmac-sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"},
+  "repo": null,
+  "pr": null,
+  "commit": null,
+  "user": {"id": "hmac-sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0", "identity_source": "github_login"}
+}

@@ -533,7 +533,14 @@
    "a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows",
    "sqlite_conversations::tests::a_turn_from_before_permission_levels_reads_null_and_a_launched_turn_records_its_level",
    "sqlite_conversations::tests::recording_a_level_for_an_unknown_turn_is_refused",
-   "sqlite_conversations::tests::the_database_refuses_a_level_outside_the_four_and_a_blank_profile"
+   "sqlite_conversations::tests::the_database_refuses_a_level_outside_the_four_and_a_blank_profile",
+   "only_session_rows_project_and_the_rest_refuse_with_their_kind",
+   "projection_refuses_unresolved_identity_and_malformed_inputs",
+   "recorded_session_rows_match_released_golden_fixtures",
+   "recorded_stream_correlates_task_lineage_in_one_query",
+   "released_cancellation_row_matches_golden_fixture",
+   "unknown_payload_keys_do_not_change_the_projection",
+   "unmapped_kind_and_empty_session_refuse_without_a_partial_event"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
