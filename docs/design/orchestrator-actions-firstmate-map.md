@@ -25,8 +25,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | HAVE | 17 |
 | PARTIAL | 19 |
 | GAP | 31 |
-| NEEDS USER DECISION | 4 |
-| Total | 71 |
+| NEEDS USER DECISION | 1 |
+| Total | 68 |
 
 ## Dispatch and supervision
 
@@ -45,7 +45,6 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | D11 | Steer a running worker with text | GAP | Phase 4: headless `exec` and `-p` runs take no input mid-run, and contracts are immutable. Steering becomes a `task.revise` proposal: cancel plus a new contract with the added intent. Cost: in-flight progress is lost unless the worktree is reused (unverified). |
 | D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry`. Phase 2 lets the orchestrator propose them. |
 | D13 | Busy state is semantic, per adapter | HAVE | Adapter parsers (`codex_parser.rs`, `copilot_parser.rs`, Claude stream JSON) feed `sessions.events`. |
-| D14 | Visible worker sessions in a terminal multiplexer (tmux, Herdr, Zellij and others) | NEEDS USER DECISION | The outcome (see and step in) is delivered by D15 and D12. A real terminal per worker is decision N5. |
 | D15 | Watch live worker output | HAVE | Agents and Sessions view over `sessions.list`, `sessions.events` with replay. |
 
 ## Task shapes
@@ -139,10 +138,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| I1 | Relay: answer public mentions on X and Discord | NEEDS USER DECISION | External side effect under the user's public identity. Decision N6. |
 | I2 | Watch pull request checks and merge | GAP | Phase 4: a PR state poller and a merge action bound to the head commit. |
 | I3 | External process-event sources | GAP | Phase 6: a daemon-owned source with a fixed adapter contract. |
-| I4 | Voice relay | GAP | Phase 6 or later. |
 | I5 | Many harness adapters | HAVE | Codex, Claude Code, GitHub Copilot and Pi adapters (`orchestrator-agents`). |
 
 ## Self-maintenance
@@ -150,7 +147,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
-| M2 | Patch its own code and publish upstream only with consent | NEEDS USER DECISION | Decision N7. |
+| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7, approved: the MCAO repository is registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) is a per-action approval, never grantable. |
 | M3 | Curate durable operational memory (stow) | GAP | Phase 5: user-visible orchestrator notes the snapshot includes, editable and deletable. |
 | M4 | Unattended push to a protected branch | NEEDS USER DECISION | Decision N8: a scoped standing approval, not a hard no. |
 

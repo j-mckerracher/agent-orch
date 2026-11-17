@@ -36,14 +36,14 @@ These findings correct or sharpen the brief. Each is from a file on `main`.
 
 ## Capability counts
 
-71 firstmate capabilities in 11 groups. Detail and per-item design: [the map](orchestrator-actions-firstmate-map.md).
+68 firstmate capabilities in 11 groups. Detail and per-item design: [the map](orchestrator-actions-firstmate-map.md).
 
 | Status | Count |
 | --- | --- |
 | HAVE | 17 |
 | PARTIAL | 19 |
 | GAP | 31 |
-| NEEDS USER DECISION | 4 |
+| NEEDS USER DECISION | 1 |
 
 The engine already has most of the crew: contracts, worktrees, scheduling, verification, delivery approvals, restart safety. The gaps sit in the liaison layer: context, actions, the wake-up loop, standing authority, and landing.
 
