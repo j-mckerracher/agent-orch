@@ -86,6 +86,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "conversations.send": "coordinator",
   "conversations.get": "coordinator",
   "conversations.cancel": "coordinator",
+  "actions.resolve": "orchestrator_actions",
 };
 
 interface Pending {

@@ -41,6 +41,14 @@ describe("global routes", () => {
     expect(parseRoute("#/project/p/review/t1")).toEqual({ name: "review", projectId: "p", taskId: "t1" });
     expect(parseRoute("#/project/p/review")).toEqual({ name: "review", projectId: "p", taskId: null });
   });
+
+  it("formats and parses a selected workstream on the workstreams view", () => {
+    const route: Route = { name: "global", view: "workstreams", workstreamId: "ws-1 a" };
+    expect(formatRoute(route)).toBe("#/workstreams?workstream=ws-1%20a");
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+    expect(parseRoute("#/workstreams")).toEqual({ name: "global", view: "workstreams" });
+    expect(formatRoute({ name: "global", view: "workspace", workstreamId: "ws-1" })).toBe("#/workspace");
+  });
 });
 
 describe("legacy routes are unchanged", () => {

@@ -1,6 +1,6 @@
 /**
  * Live D10 conversation for Global and workstream targets (M7-24), bound to
- * `conversations.send`, `conversations.get` and `conversations.cancel`.
+ * `conversations.send`, `conversations.get`, `conversations.cancel` and `actions.resolve` (DPES-1105).
  *
  * What this shows, and what it does not:
  * - The daemon records the user message and starts a turn. A turn ends as
@@ -20,13 +20,16 @@ import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type {
+  ActionProposalWire,
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
 } from "../../daemon/types";
+import { RESOLVE_METHOD, createLiveResolve, mapProposal } from "./actionProposals";
 import { liveRead } from "./liveSupport";
 import { notOk, observation } from "./result";
 import type {
+  ActionBlock,
   ClearReceipt,
   ConversationEntry,
   ConversationSource,
@@ -80,6 +83,7 @@ export const LIVE_METHODS = [
   "conversations.send",
   "conversations.cancel",
   "conversations.clear",
+  RESOLVE_METHOD,
 ] as const;
 
 const FAILURE_TEXT: Record<string, string> = {
@@ -140,15 +144,31 @@ export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
     permissionLevel: turn.permission_level ?? null,
     // A daemon from before the verified field (DPES-1106) is not warned about.
     verified: turn.verified ?? true,
+    actionBlock: turn.action_block ?? null,
   };
+}
+
+/**
+ * The action block of each turn in the window (DPES-1105). A turn's `turn_completed` entry carries it, so older turns
+ * keep their notice; the latest turn's field covers a daemon that sent it only there.
+ */
+function actionBlocksOf(entries: readonly ConversationWireEntry[], latest: ConversationWireTurn | null): Record<string, ActionBlock> {
+  const blocks: Record<string, ActionBlock> = {};
+  for (const entry of entries) {
+    if (entry.kind === "turn_completed" && entry.action_block) blocks[entry.turn_id] = entry.action_block;
+  }
+  if (latest?.action_block && !(latest.id in blocks)) blocks[latest.id] = latest.action_block;
+  return blocks;
 }
 
 /**
  * Maps wire entries to view entries. Reply chunks of one turn become a single
  * reply that stays `streaming` until the daemon records the end of the turn;
  * a failed, canceled or empty turn becomes a `status` line, never a reply.
+ * `withProposals` holds the turns that proposed actions (DPES-1105); one of
+ * those with no reply says so instead.
  */
-export function mapEntries(wire: readonly ConversationWireEntry[]): ConversationEntry[] {
+export function mapEntries(wire: readonly ConversationWireEntry[], withProposals?: ReadonlySet<string>): ConversationEntry[] {
   const out: ConversationEntry[] = [];
   const replies = new Map<string, ConversationEntry>();
   const status = (entry: ConversationWireEntry, text: string): ConversationEntry => ({
@@ -185,6 +205,7 @@ export function mapEntries(wire: readonly ConversationWireEntry[]): Conversation
         break;
       case "turn_completed":
         if (reply) reply.streaming = false;
+        else if (withProposals?.has(entry.turn_id)) out.push(status(entry, "The orchestrator proposed actions without a written reply."));
         else out.push(status(entry, "The orchestrator finished this turn without a reply."));
         break;
       case "turn_failed":
@@ -236,7 +257,7 @@ export function createLiveConversation(
   provenance: Provenance,
   keys: IdempotencyTracker,
   now: () => number,
-): Required<Pick<ConversationSource, "cancel" | "clear">> & {
+): Required<Pick<ConversationSource, "cancel" | "clear" | "resolve">> & {
   transcript: (target: LiveTarget) => ReturnType<ConversationSource["transcript"]>;
   send: (target: LiveTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
 } {
@@ -258,6 +279,9 @@ export function createLiveConversation(
           let generation: number | undefined;
           let more = false;
           let turn: ConversationWireTurn | null = null;
+          // Every page carries the scope's proposals; the last page read is the newest (DPES-1105).
+          let proposals: ActionProposalWire[] | undefined;
+          let proposalsMore: boolean | undefined;
           let jumpedTo: number | null = null;
           // The first read starts at the beginning and learns `latest_sequence`. A long log is then
           // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
@@ -271,6 +295,8 @@ export function createLiveConversation(
             if (result.clear_generation !== generation) throw new HistoryChanged();
             entries.push(...result.entries);
             turn = result.turn;
+            proposals = result.proposals;
+            proposalsMore = result.proposals_more;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
@@ -283,12 +309,16 @@ export function createLiveConversation(
           // A jump discards entries already read, so it always means older entries are not shown.
           const truncated = more || jumpedTo !== null;
           if (truncated) entries = dropPartialLeadingTurn(entries);
+          const mapped = (proposals ?? []).map(mapProposal);
           return {
             target,
-            entries: mapEntries(entries),
+            entries: mapEntries(entries, new Set(mapped.map((proposal) => proposal.turnId))),
             repliesExpected: true,
             truncated,
             turn: turn === null ? null : turnInfo(turn),
+            proposals: mapped,
+            proposalsMore: proposalsMore ?? false,
+            actionBlocks: actionBlocksOf(entries, turn),
           };
       };
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));
@@ -356,6 +386,8 @@ export function createLiveConversation(
         throw error;
       }
     },
+
+    resolve: createLiveResolve(connection, provenance, keys),
 
     async cancel(target, turnId) {
       if (!isLiveTarget(target)) throw new DaemonError("method-unavailable", "Only Global and workstream turns can be canceled.");

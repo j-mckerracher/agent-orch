@@ -133,7 +133,7 @@ describe("derived D10 conversation", () => {
     const fake = populate(new FakeDaemon());
     stubConversation(fake);
     const result = await (await live(fake)).conversation.transcript({ kind: "global" });
-    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null }, provenance: { methods: ["conversations.get", "conversations.send", "conversations.cancel", "conversations.clear"] } });
+    expect(result).toMatchObject({ status: "ok", data: { entries: [], turn: null }, provenance: { methods: ["conversations.get", "conversations.send", "conversations.cancel", "conversations.clear", "actions.resolve"] } });
     expect(fake.callsTo("conversations.get")).toHaveLength(1);
     expect(fake.callsTo("coordinator.get")).toHaveLength(0);
   });

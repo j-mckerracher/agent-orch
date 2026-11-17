@@ -1,10 +1,12 @@
 import type {
+  ActionProposalWire,
+  ActionsResolveWire,
   AgentCatalogEntry,
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
 } from "../daemon/types";
-import type { FakeDaemon } from "./fakeDaemon";
+import { StubRpcError, type FakeDaemon } from "./fakeDaemon";
 
 /** Test doubles for the M7-24 daemon methods. The shared `testkit.ts` is left alone on purpose. */
 
@@ -12,11 +14,17 @@ type Outcome = "runtime_unavailable" | "running" | "completed";
 
 const at = "2026-11-10T21:00:00Z";
 const GLOBAL: ConversationWireTarget = { kind: "global" };
+const PROPOSAL_NOT_FOUND = -32021;
+const PROPOSAL_NOT_PENDING = -32022;
+const PROPOSAL_INVALID = -32023;
+const INVALID_PARAMS = -32602;
 
 export interface ConversationStub {
   entries: ConversationWireEntry[];
   turn: ConversationWireTurn | null;
   outcome: Outcome;
+  /** Set by a test to send `proposals` on `conversations.get`; left out by default, like an older daemon. */
+  proposals?: ActionProposalWire[];
   finishRunning(code?: string | null, reply?: string): void;
 }
 
@@ -91,9 +99,10 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
       latest_sequence: seq,
       turn: state.turn,
       epoch: "epoch-1",
+      ...(state.proposals ? { proposals: state.proposals } : {}),
     };
   });
-  fake.stub("conversations.cancel", (params: Record<string, unknown>) => {
+  fake.stub("conversations.cancel",(params: Record<string, unknown>) => {
     const running = state.turn?.state === "running";
     if (state.turn && running) {
       state.entries.push(entry(state.turn.id, "turn_cancelled", "system", "", null, "end"));
@@ -108,6 +117,55 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
     };
   });
   return state;
+}
+
+/** The result a daemon gives an executed proposal; the prefix follows the kind (`objective-` for objectives). */
+const resultRefOf = (proposal: ActionProposalWire): string =>
+  `${proposal.kind.startsWith("objective") ? "objective" : "workstream"}-${proposal.id}`;
+
+/** Fails every pending proposal that depends on `parentId`, and the ones that depend on those, as the daemon does. */
+function failDependents(list: ActionProposalWire[], parentId: string): ActionProposalWire[] {
+  const dependents = list.filter((item) => item.depends_on === parentId && item.state === "pending");
+  return dependents.reduce(
+    (acc, dependent) =>
+      failDependents(
+        acc.map((item): ActionProposalWire => (item.id === dependent.id ? { ...item, state: "failed", error_code: "dependency_not_executed", updated_at: at } : item)),
+        dependent.id,
+      ),
+    list,
+  );
+}
+
+/**
+ * Answers `actions.resolve` for the cases tests need, against `state.proposals`. The decision must carry the proposal's
+ * digest. Approve executes the proposal and sets its `result_ref`. Reject ends it and fails its pending dependents. A dependent needs an executed parent first, and only
+ * a pending proposal can be decided.
+ */
+export function stubActionsResolve(fake: FakeDaemon, state: ConversationStub): void {
+  fake.stub("actions.resolve", (params: Record<string, unknown>): ActionsResolveWire => {
+    const proposals = state.proposals ?? [];
+    const target = proposals.find((item) => item.id === params.proposal_id);
+    if (!target) throw new StubRpcError(PROPOSAL_NOT_FOUND, "action proposal was not found");
+    // A missing digest is refused as invalid params; a stale one is a proposal the daemon cannot approve (-32023).
+    if (params.digest === undefined) throw new StubRpcError(INVALID_PARAMS, "digest is required");
+    if (params.digest !== target.digest) throw new StubRpcError(PROPOSAL_INVALID, "digest does not match the proposal");
+    if (target.state !== "pending") throw new StubRpcError(PROPOSAL_NOT_PENDING, "action proposal is no longer pending");
+    if (params.decision === "approve") {
+      const parent = proposals.find((item) => item.id === target.depends_on);
+      if (target.depends_on !== null && parent?.state !== "executed") {
+        throw new StubRpcError(PROPOSAL_INVALID, "action proposal cannot be approved now");
+      }
+      const executed: ActionProposalWire = { ...target, state: "executed", result_ref: resultRefOf(target), updated_at: at };
+      state.proposals = proposals.map((item) => (item.id === target.id ? executed : item));
+      return { proposal: executed };
+    }
+    const rejected: ActionProposalWire = { ...target, state: "rejected", updated_at: at };
+    state.proposals = failDependents(
+      proposals.map((item) => (item.id === target.id ? rejected : item)),
+      target.id,
+    );
+    return { proposal: rejected };
+  });
 }
 
 function conversationTarget(params: Record<string, unknown>): ConversationWireTarget {

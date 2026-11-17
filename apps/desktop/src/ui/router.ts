@@ -24,7 +24,7 @@ const isGlobalView = (segment: string | undefined): segment is GlobalView =>
   GLOBAL_VIEWS.includes(segment as GlobalView);
 
 export type Route =
-  | { name: "global"; view: GlobalView }
+  | { name: "global"; view: GlobalView; workstreamId?: string }
   | { name: "projects" }
   | { name: "project"; projectId: string }
   | { name: "tasks"; projectId: string; filter: TaskFilter }
@@ -41,7 +41,10 @@ export const DEFAULT_ROUTE: Route = { name: "global", view: "workspace" };
 export function formatRoute(route: Route): string {
   switch (route.name) {
     case "global":
-      return `#/${route.view}`;
+      // The selected workstream is only meaningful on the workstreams view (DPES-1105).
+      return route.workstreamId !== undefined && route.view === "workstreams"
+        ? `#/workstreams?workstream=${enc(route.workstreamId)}`
+        : `#/${route.view}`;
     case "projects":
       return "#/projects";
     case "project":
@@ -69,7 +72,10 @@ export function parseRoute(hash: string): Route {
     return { name: "projects" };
   }
   if (parts[0] === "projects") return { name: "projects" };
-  if (isGlobalView(parts[0])) return { name: "global", view: parts[0] };
+  if (isGlobalView(parts[0])) {
+    const workstreamId = parts[0] === "workstreams" ? new URLSearchParams(query).get("workstream") : null;
+    return workstreamId ? { name: "global", view: parts[0], workstreamId } : { name: "global", view: parts[0] };
+  }
   if (parts[0] !== "project") return DEFAULT_ROUTE;
   if (!parts[1]) return { name: "projects" };
   const projectId = parts[1];

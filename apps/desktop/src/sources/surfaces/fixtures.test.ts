@@ -77,6 +77,16 @@ describe("fixture surfaces (D9-D16)", () => {
     expect(project.status === "ok" && project.data.entries.map((e) => e.kind)).toEqual(["message", "proposal"]);
   });
 
+  it("simulates a proposal decision without changing the fixture card", async () => {
+    const s = createFixtureSurfaces({ now: clock });
+    const approve = await s.conversation.resolve("fixture:proposal-1", "approve", "0".repeat(64));
+    expect(approve).toMatchObject({ simulated: true, proposal: null, notice: "Fixture data: nothing was created.", provenance: { kind: "fixture" } });
+    const reject = await s.conversation.resolve("fixture:proposal-1", "reject", "0".repeat(64));
+    expect(reject).toMatchObject({ simulated: true, proposal: null, notice: "Fixture data: nothing was changed." });
+    const global = await s.conversation.transcript({ kind: "global" });
+    expect(global.status === "ok" && global.data.proposals?.map((item) => item.state)).toEqual(["pending", "pending"]);
+  });
+
   it("keeps workstream transcripts unknown instead of showing project notes", async () => {
     const target = { kind: "workstream", workstreamId: "fixture:ws-infra" } as const;
     const s = createFixtureSurfaces({ now: clock });

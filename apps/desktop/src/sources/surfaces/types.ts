@@ -179,6 +179,41 @@ export interface ConversationEntry {
 /** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
 export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
 
+/** The decision a person makes on a proposed action (DPES-1105). */
+export type Decision = "approve" | "reject";
+
+/** What the orchestrator's action block in one reply became (DPES-1105). */
+export type ActionBlock = "accepted" | "rejected" | "stripped";
+
+/**
+ * One proposed action (DPES-1105). `kind` and `state` stay strings so an unknown value renders as unknown, never coerced.
+ * `params` is the daemon's canonical parameters with the `kind` key removed.
+ */
+export interface ActionProposal {
+  id: string;
+  turnId: string;
+  index: number;
+  kind: string;
+  params: Readonly<Record<string, unknown>>;
+  /** The daemon's digest of the proposal's canonical parameters. A decision must send it back (DPES-1105). */
+  digest: string;
+  /** The parent proposal this one needs executed first; null when it stands alone. */
+  dependsOn: string | null;
+  state: string;
+  /** The record the executed action created or changed; null until it runs. */
+  resultRef: string | null;
+  errorCode: string | null;
+  updatedAt: string;
+}
+
+/** Outcome of approve or reject. `simulated` receipts changed nothing; `proposal` is what the daemon confirmed. */
+export interface ResolveReceipt {
+  simulated: boolean;
+  provenance: Provenance;
+  notice: string | null;
+  proposal: ActionProposal | null;
+}
+
 /** The latest turn the daemon recorded for a live target. */
 export interface ConversationTurnInfo {
   id: string;
@@ -189,6 +224,8 @@ export interface ConversationTurnInfo {
   permissionLevel?: PermissionLevel | null;
   /** False when the turn ran a version the daemon has not verified (DPES-1106). */
   verified: boolean;
+  /** The action block outcome of this turn's reply (DPES-1105). Absent when the daemon did not send it. */
+  actionBlock?: ActionBlock | null;
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -199,6 +236,15 @@ export interface ConversationTranscript {
   truncated: boolean;
   /** Live Global and workstream targets only; null when nothing was sent yet. */
   turn?: ConversationTurnInfo | null;
+  /** The scope's proposed actions, newest first (DPES-1105). Absent when the daemon did not send them. */
+  proposals?: ActionProposal[];
+  /** The action block outcome of each turn in the window, by turn id (DPES-1105). Absent when the daemon did not send it. */
+  actionBlocks?: Readonly<Record<string, ActionBlock>>;
+  /**
+   * True when the daemon held more decided proposals than it sent. Every pending proposal is always sent, so no
+   * pending card is missing; only older executed, rejected or failed ones may be (DPES-1105).
+   */
+  proposalsMore: boolean;
 }
 export interface SendReceipt {
   /** True for fixture receipts: nothing was recorded anywhere. */
@@ -229,6 +275,12 @@ export interface ConversationSource {
   send(target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel): Promise<SendReceipt>;
   /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
+  /**
+   * DPES-1105. Approves or rejects one proposed action through `actions.resolve`. `digest` is the proposal's
+   * `digest` from the transcript. Fixture: simulated, nothing sent. The receipt's `proposal` is the state the
+   * daemon confirmed; the caller reloads before showing a decided card.
+   */
+  resolve(proposalId: string, decision: Decision, digest: string): Promise<ResolveReceipt>;
   /**
    * DPES-1105. Permanently deletes one conversation's history: Global, workstream, or a project
    * coordinator's log. Fixture targets are simulated. Refused while a reply runs (`conversation-busy`).
