@@ -288,20 +288,23 @@ fn conversations_get_adds_routed_in_for_a_workstream_only_with_the_actions_capab
 }
 
 #[test]
-fn routed_in_rows_hold_no_path_token_or_session_output() {
+fn routed_in_row_and_snapshot_line_hold_no_path_from_the_objective() {
     const TAIL: &str = "TAIL-SECRET-4471";
     let (_directory, api) = new_api();
     register_project(&api, ALPHA);
     let own = create_workstream(&api, "Own", "w-1");
-    let objective = format!("/Users/canary-9931/{}{TAIL}", "deep/".repeat(40));
+    // The path sits well inside the first 80 bytes; the tail is cut off.
+    let objective = format!(
+        "Fix /Users/canary-9931/deep/file.rs now {} {TAIL}",
+        "and so on ".repeat(10)
+    );
     let task_id = route(&api, "t1", &own, &objective);
 
     let page = get_with_actions(&api, Some(&own), true);
     let row = &page["routed_in"][0];
-    // The title is cut to 80 bytes and a one-character marker; the tail never arrives.
     let title = row["title"].as_str().unwrap();
+    assert!(title.starts_with("Fix [path] now"), "{title}");
     assert!(title.len() <= 80 + '…'.len_utf8(), "{title}");
-    assert!(title.ends_with('…'), "{title}");
     let mut keys: Vec<&str> = row
         .as_object()
         .unwrap()
@@ -315,11 +318,13 @@ fn routed_in_rows_hold_no_path_token_or_session_output() {
     for seen in [page.to_string(), text.clone()] {
         assert!(!seen.contains(TAIL), "{seen}");
         assert!(!seen.contains(ALPHA), "{seen}");
-        assert!(!seen.contains("canary-root"), "{seen}");
+        assert!(!seen.contains("canary-9931"), "{seen}");
+        assert!(!seen.contains("/Users/"), "{seen}");
     }
     let block = between(&text, "Tasks of this workstream", "Projects (");
     let line = block.lines().find(|line| line.contains(&task_id)).unwrap();
     assert!(line.contains("project alpha ("), "{line}");
+    assert!(line.contains("Fix [path] now"), "{line}");
 }
 
 #[test]

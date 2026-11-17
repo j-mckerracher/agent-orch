@@ -558,7 +558,7 @@ impl Turn<'_> {
             "state": tag(&record.state),
             "project": project_label(&record.contract.project_id),
             "workstream_id": workstream,
-            "objective": redact(&field(&record.contract.objective, OBJECTIVE_BYTES)),
+            "objective": field(&redact_text(&record.contract.objective), OBJECTIVE_BYTES),
             "delivery": tag(&record.contract.delivery),
             "attempts": {
                 "total": record.attempts.len(),
@@ -595,12 +595,20 @@ impl Turn<'_> {
                 json!({"task_id": task_id, "available": false, "text": null, "truncated": false})
             }
             Some(report) => {
-                let (text, cut) = cut(redact(&sanitize(&report.body)), MAX_REPORT_TEXT);
+                // Redact first, then cut. The text is escaped twice on the wire (inside the
+                // body, then as the content string), so cut until that fits one response.
+                let clean = redact_text(&sanitize(&report.body));
+                let mut limit = MAX_REPORT_TEXT;
+                let (mut text, mut was_cut) = cut(clean.clone(), limit);
+                while limit > 0 && wire_len(&text) + REPLY_OVERHEAD > self.limits.max_response {
+                    limit /= 2;
+                    (text, was_cut) = (cut(clean.clone(), limit).0, true);
+                }
                 json!({
                     "task_id": task_id,
                     "available": true,
                     "text": text,
-                    "truncated": report.truncated || cut,
+                    "truncated": report.truncated || was_cut,
                 })
             }
         })
@@ -765,6 +773,21 @@ fn project_label(project_id: &str) -> String {
     let hash = Sha256::digest(project_id.as_bytes());
     let code: String = hash[..4].iter().map(|byte| format!("{byte:02x}")).collect();
     format!("{} (p-{code})", field(name, 120))
+}
+
+/// Slack for the reply envelope around a report text: the keys, the id and the flags.
+const REPLY_OVERHEAD: usize = 512;
+
+/// Strips credentials, then paths and token-like words, so a cut cannot split a secret.
+fn redact_text(text: &str) -> String {
+    crate::api::wake_events::redact(&redact(text))
+}
+
+/// The bytes `text` takes after the two JSON escapings of a tool reply.
+fn wire_len(text: &str) -> usize {
+    serde_json::to_string(text)
+        .and_then(|once| serde_json::to_string(&once))
+        .map_or(usize::MAX, |twice| twice.len())
 }
 
 /// Flattens free text to one bounded line, as the conversation snapshot does.

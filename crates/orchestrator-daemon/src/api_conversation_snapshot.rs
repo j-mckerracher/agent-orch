@@ -582,7 +582,8 @@ fn objective_block(objective: &Objective, actions: bool) -> String {
 
 /// A task objective as a bounded, sanitized single line.
 pub(super) fn task_title(objective: &str) -> String {
-    field(objective, TASK_OBJECTIVE_BYTES)
+    // Redact first, then cut, so a path or token at the cut point is still caught.
+    field(&super::wake_events::redact(objective), TASK_OBJECTIVE_BYTES)
 }
 
 fn task_line(task: &OpenTask) -> String {
@@ -595,7 +596,7 @@ fn task_line(task: &OpenTask) -> String {
         field(&task.id, TEXT_BYTES),
         state_tag(task.state),
         project_label(&task.project_id),
-        field(&task.objective, TASK_OBJECTIVE_BYTES),
+        task_title(&task.objective),
     )
 }
 

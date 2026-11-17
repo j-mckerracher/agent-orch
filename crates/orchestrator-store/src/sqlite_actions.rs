@@ -257,11 +257,12 @@ impl SqliteStore {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         self.call(move |pool| async move {
             let rows = sqlx::query(
-                "SELECT result_ref, updated_at FROM action_proposals \
-                 WHERE scope = 'conversation:global' AND kind = 'task.propose' \
-                 AND state = 'executed' AND result_ref IS NOT NULL \
-                 AND json_extract(params_json, '$.workstream_id') = ? \
-                 ORDER BY updated_at DESC, rowid DESC LIMIT ?",
+                "SELECT p.result_ref, p.updated_at FROM action_proposals p \
+                 JOIN workstream_tasks w ON w.task_id = p.result_ref AND w.workstream_id = ? \
+                 WHERE p.scope = 'conversation:global' AND p.kind = 'task.propose' \
+                 AND p.state = 'executed' AND p.result_ref IS NOT NULL \
+                 AND json_extract(p.params_json, '$.workstream_id') = w.workstream_id \
+                 ORDER BY p.updated_at DESC, p.rowid DESC LIMIT ?",
             )
             .bind(workstream_id)
             .bind(limit)

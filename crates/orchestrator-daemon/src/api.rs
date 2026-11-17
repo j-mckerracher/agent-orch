@@ -1649,7 +1649,7 @@ mod usage_local;
 #[path = "wake.rs"]
 pub(crate) mod wake;
 #[path = "wake_events.rs"]
-mod wake_events;
+pub(crate) mod wake_events;
 
 #[cfg(test)]
 #[path = "api_usage_tests.rs"]

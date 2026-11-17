@@ -62,6 +62,7 @@ const CLAUDE_FLAGS: &[&str] = &[
     "--permission-prompts",
     "--restricted",
     "--strict-mcp-config",
+    "--mcp-config",
     "--no-session-persistence",
     "--tools",
     "--allowedTools",

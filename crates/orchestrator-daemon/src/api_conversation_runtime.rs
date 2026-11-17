@@ -40,6 +40,7 @@ use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
 use crate::executor::unix_now_ms;
+use crate::mcp_server::McpView;
 
 /// A wake turn that has nothing for the user replies with exactly this (DPES-1105).
 pub(crate) const QUIET_TOKEN: &str = "MCAO_QUIET";
@@ -116,6 +117,10 @@ pub(crate) struct TurnRequest {
     /// Set only for a wake turn (DPES-1105): the prompt then says the message is an
     /// automatic update.
     pub wake: Option<WakeBrief>,
+    /// Set only when the read-only tools may be offered to this turn (see [`turn_mcp`]).
+    /// The runtime starts the server only for Claude when its CLI offers the flag, and
+    /// clears the field when it did not start one. The view has no write method.
+    pub mcp: Option<Arc<McpView>>,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -309,6 +314,13 @@ impl Shared {
 /// store or replace the daemon, and no credential stops that.
 pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
     negotiated && level == PermissionLevel::Restricted
+}
+
+/// Whether a turn is offered the read-only MCP server (DPES-1105 phase 6b): the setting is
+/// on, the turn is at Restricted and it is not a wake turn. Auto, Full and task runs never
+/// get it, whatever the setting says.
+pub(crate) fn turn_mcp(enabled: bool, level: PermissionLevel, wake: bool) -> bool {
+    enabled && level == PermissionLevel::Restricted && !wake
 }
 
 /// The reply channel for one turn. Cloneable and safe to use from any thread.
@@ -792,6 +804,7 @@ impl ConversationService {
             wake: wake.map(|brief| WakeBrief {
                 events: brief.events.clone(),
             }),
+            mcp: self.mcp_view(level, wake.is_some(), relay.is_some()),
         };
         let sink = ReplySink {
             shared: self.shared.clone(),
@@ -808,6 +821,20 @@ impl ConversationService {
                 .map(|_| RuntimeFailure::Failed),
             Err(failure) => Some(failure),
         }
+    }
+
+    /// The read-only view for a turn that may be offered the MCP server. One read of the
+    /// settings; a read error means off. A turn that relays a scout report is never
+    /// offered it: it already runs at the least authority.
+    fn mcp_view(&self, level: PermissionLevel, wake: bool, relay: bool) -> Option<Arc<McpView>> {
+        let enabled = !relay
+            && self
+                .shared
+                .store
+                .orchestrator_settings()
+                .map(|settings| settings.mcp.enabled)
+                .unwrap_or(false);
+        turn_mcp(enabled, level, wake).then(|| Arc::new(McpView::new(self.shared.store.clone())))
     }
 
     /// Refuses a selected agent only when the daemon has no pins at all. A
@@ -954,5 +981,31 @@ impl ConversationService {
             .conversation_turn(turn_id)?
             .ok_or(ConversationError::TurnNotFound)?;
         Ok((turn, applied))
+    }
+}
+
+#[cfg(test)]
+mod mcp_gate_tests {
+    use super::*;
+
+    #[test]
+    fn turn_mcp_is_true_only_for_a_user_turn_at_restricted_with_the_setting_on() {
+        for level in [
+            PermissionLevel::Restricted,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+            PermissionLevel::Extended,
+        ] {
+            for wake in [false, true] {
+                for enabled in [false, true] {
+                    let expected = enabled && !wake && level == PermissionLevel::Restricted;
+                    assert_eq!(
+                        turn_mcp(enabled, level, wake),
+                        expected,
+                        "{level:?} wake={wake} enabled={enabled}"
+                    );
+                }
+            }
+        }
     }
 }

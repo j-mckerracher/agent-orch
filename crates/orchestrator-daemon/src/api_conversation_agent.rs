@@ -40,7 +40,7 @@ use orchestrator_agents::permission::chat_profile;
 use orchestrator_agents::{
     AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
-    SelectionReason, SignInState, COPILOT_PINNED_VERSION,
+    McpWiring, SelectionReason, SignInState, COPILOT_PINNED_VERSION, MCP_TOOLS,
 };
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_ipc::RpcError;
@@ -56,6 +56,10 @@ use super::conversation_runtime::{
 };
 use super::models::CatalogCache;
 use crate::executor::{log_safe, ExecutorConfig, COPILOT_RUNS_DIR};
+use crate::mcp_server::McpTurnServer;
+
+/// The Claude flag the read-only MCP wiring needs; the server starts only when the help lists it.
+const MCP_CONFIG_FLAG: &str = "--mcp-config";
 
 pub(crate) const CODEX: &str = "codex";
 pub(crate) const CLAUDE: &str = "claude-code";
@@ -622,6 +626,12 @@ impl ConversationRuntime for AgentRuntime {
         }
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
+        // Before the prompt, so its data line names the tools only when a server runs.
+        let mut request = request;
+        let mcp = self.start_mcp(&request, &selected);
+        if mcp.is_none() {
+            request.mcp = None;
+        }
         let prompt = build_prompt(&request);
         let (launch, run, turn_dir) = if selected.agent == GITHUB_COPILOT {
             // A private directory per turn: the CLI's working directory is
@@ -647,8 +657,13 @@ impl ConversationRuntime for AgentRuntime {
             // the next. It is removed when the turn ends.
             let turn_dir =
                 TurnDir::create(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
-            let args = conversation_args(&selected, request.level, &prompt)
-                .ok_or(RuntimeFailure::LevelUnsupported)?;
+            let args = conversation_args(
+                &selected,
+                request.level,
+                &prompt,
+                mcp.as_ref().map(|(_, wiring)| wiring),
+            )
+            .ok_or(RuntimeFailure::LevelUnsupported)?;
             let launch = AgentLaunchRequest {
                 program: selected.program.clone(),
                 args,
@@ -665,6 +680,7 @@ impl ConversationRuntime for AgentRuntime {
             agents: self.config.agents.clone(),
             run,
             _turn_dir: turn_dir,
+            _mcp: mcp.map(|(server, _)| server),
             sign_in: self.exec.copilot_sign_in.clone(),
             unverified: !self.verified(&request.identity),
         };
@@ -682,6 +698,51 @@ impl ConversationRuntime for AgentRuntime {
             })
             .map_err(|_| RuntimeFailure::Failed)?;
         Ok(Box::new(Control(cancelled)))
+    }
+}
+
+impl AgentRuntime {
+    /// The per-turn read-only MCP server and how Claude reaches it. `None` means the turn
+    /// runs without tools and is never refused: the request asked for none, the agent is
+    /// not Claude, its help does not list `--mcp-config` (or could not be read), the
+    /// daemon's own path is unknown, or the listener could not bind. A verified version
+    /// carries no help read, so it is read here once per version and cached.
+    fn start_mcp(
+        &self,
+        request: &TurnRequest,
+        selected: &Selected,
+    ) -> Option<(McpTurnServer, McpWiring)> {
+        let view = request.mcp.clone()?;
+        if selected.agent != CLAUDE {
+            return None;
+        }
+        let help = selected.help.clone().unwrap_or_else(|| {
+            self.helps.get_or_read(
+                &selected.program,
+                selected.agent,
+                &selected.identity.version,
+            )
+        });
+        if !help::offered_flag(&help, MCP_CONFIG_FLAG) {
+            return None;
+        }
+        let command = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.to_str().map(str::to_owned));
+        let server = command
+            .as_ref()
+            .and_then(|_| McpTurnServer::start(view, request.target.clone()).ok());
+        let (Some(command), Some(server)) = (command, server) else {
+            eprintln!("orchestrator-daemon: read-only tools unavailable for this turn");
+            return None;
+        };
+        let launch = server.relay_launch();
+        let wiring = McpWiring {
+            command,
+            args: launch.args,
+            env: launch.env,
+        };
+        Some((server, wiring))
     }
 }
 
@@ -742,17 +803,19 @@ fn conversation_args(
     selected: &Selected,
     level: PermissionLevel,
     prompt: &Prompt,
+    mcp: Option<&McpWiring>,
 ) -> Option<Vec<String>> {
     let (model, effort) = (selected.model.as_deref(), selected.effort.as_deref());
     if selected.agent == CODEX {
         CodexAdapter::args_for_conversation(level, &prompt.joined(), model, effort)
     } else {
-        ClaudeCodeAdapter::args_for_conversation(
+        ClaudeCodeAdapter::args_for_conversation_mcp(
             level,
             &prompt.content,
             Some(prompt.instructions),
             model,
             effort,
+            mcp,
         )
     }
 }
@@ -1044,6 +1107,12 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
             content.push('\n');
         }
     }
+    if request.mcp.is_some() {
+        content.push_str(&format!(
+            "\nRead-only tools available: {}.\n",
+            MCP_TOOLS.join(", ")
+        ));
+    }
     if request.wake.is_some() {
         content.push('\n');
         content.push_str(WAKE_BLOCK);
@@ -1066,6 +1135,9 @@ struct Turn {
     run: Option<CopilotRun>,
     /// The Codex or Claude Code turn directory, held until the turn's handle drops.
     _turn_dir: Option<TurnDir>,
+    /// The read-only MCP server of this turn. Dropping it closes the port and drops the
+    /// secret, whether the turn ends, is cancelled, times out or panics.
+    _mcp: Option<McpTurnServer>,
     sign_in: Arc<CopilotSignIn>,
     /// An unverified version whose output ends with no text fails the turn: a
     /// clean exit with no reply is not something the runtime can tell apart from
@@ -1264,7 +1336,117 @@ mod tests {
             context: None,
             actions: false,
             wake: None,
+            mcp: None,
         }
+    }
+
+    fn mcp_view(dir: &Path) -> Arc<crate::mcp_server::McpView> {
+        let store = SqliteStore::new(&dir.join("store.sqlite")).unwrap();
+        Arc::new(crate::mcp_server::McpView::new(Arc::new(store)))
+    }
+
+    fn claude_selected(dir: &Path, agent: &'static str, help: Option<Help>) -> Selected {
+        Selected {
+            agent,
+            program: dir.join("no-such-program"),
+            identity: RuntimeIdentity {
+                name: agent.into(),
+                version: "0.0.0".into(),
+            },
+            model: None,
+            effort: None,
+            help: help.map(Arc::new),
+        }
+    }
+
+    fn listing(flags: &[&str]) -> Help {
+        Help::Listed(flags.iter().map(|flag| (*flag).to_owned()).collect())
+    }
+
+    fn mcp_runtime(dir: &Path) -> AgentRuntime {
+        AgentRuntime::new(
+            ExecutorConfig::for_data_dir(dir),
+            Arc::default(),
+            ConversationConfig::for_data_dir(dir),
+        )
+    }
+
+    #[test]
+    fn the_prompt_names_the_mcp_tools_only_when_a_server_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let line = "Read-only tools available: task_detail, session_events, task_report.";
+        let mut asked = request("hello", Vec::new());
+        assert!(!build_prompt(&asked).joined().contains(line));
+        asked.mcp = Some(mcp_view(dir.path()));
+        let prompt = build_prompt(&asked);
+        assert!(prompt.content.contains(line), "{}", prompt.content);
+        assert!(!prompt.instructions.contains(line));
+    }
+
+    #[test]
+    fn the_mcp_server_starts_only_for_claude_whose_help_lists_the_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = mcp_runtime(dir.path());
+        let mut asked = request("hello", Vec::new());
+        let offered = || Some(listing(&["--mcp-config", "--tools"]));
+        // Not asked for: nothing starts.
+        assert!(runtime
+            .start_mcp(&asked, &claude_selected(dir.path(), CLAUDE, offered()))
+            .is_none());
+        asked.mcp = Some(mcp_view(dir.path()));
+        for (agent, help) in [
+            (CODEX, offered()),
+            (GITHUB_COPILOT, offered()),
+            (CLAUDE, Some(listing(&["--tools"]))),
+            (CLAUDE, Some(Help::Unreadable)),
+        ] {
+            let selected = claude_selected(dir.path(), agent, help);
+            assert!(runtime.start_mcp(&asked, &selected).is_none(), "{agent}");
+        }
+        let selected = claude_selected(dir.path(), CLAUDE, offered());
+        let (server, wiring) = runtime.start_mcp(&asked, &selected).expect("a server");
+        assert_eq!(wiring.args[..2], ["--mcp-relay", "--port"]);
+        let port: u16 = wiring.args[2].parse().unwrap();
+        assert_eq!(port, server.port());
+        drop(server);
+        assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
+    }
+
+    #[test]
+    fn two_mcp_turns_have_different_ports_and_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = mcp_runtime(dir.path());
+        let mut asked = request("hello", Vec::new());
+        asked.mcp = Some(mcp_view(dir.path()));
+        let selected = claude_selected(dir.path(), CLAUDE, Some(listing(&["--mcp-config"])));
+        let (first, one) = runtime.start_mcp(&asked, &selected).unwrap();
+        let (second, two) = runtime.start_mcp(&asked, &selected).unwrap();
+        assert_ne!(first.port(), second.port());
+        assert_ne!(one.env, two.env);
+        assert_ne!(one.args, two.args);
+    }
+
+    #[test]
+    fn claude_argv_carries_the_mcp_flags_only_with_a_wiring() {
+        let dir = tempfile::tempdir().unwrap();
+        let selected = claude_selected(dir.path(), CLAUDE, None);
+        let prompt = build_prompt(&request("hello", Vec::new()));
+        let level = PermissionLevel::Restricted;
+        let plain = conversation_args(&selected, level, &prompt, None).unwrap();
+        assert!(!plain.iter().any(|arg| arg == "--mcp-config"));
+        let wiring = McpWiring {
+            command: "/bin/daemon".into(),
+            args: vec!["--mcp-relay".into()],
+            env: vec![("MCAO_MCP_SECRET".into(), "x".into())],
+        };
+        let with = conversation_args(&selected, level, &prompt, Some(&wiring)).unwrap();
+        assert!(with.iter().any(|arg| arg == "--mcp-config"));
+        // Codex never takes the wiring.
+        let codex = claude_selected(dir.path(), CODEX, None);
+        assert_eq!(
+            conversation_args(&codex, level, &prompt, Some(&wiring)),
+            conversation_args(&codex, level, &prompt, None)
+        );
     }
 
     #[test]

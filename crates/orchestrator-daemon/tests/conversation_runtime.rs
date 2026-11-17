@@ -94,7 +94,8 @@ fn start(layout: &Layout, extra: &[(&str, &str)]) -> Daemon {
 }
 
 /// What the desktop negotiates for the workspace chat.
-const ACTION_CAPABILITIES: [Capability; 5] = [
+const ACTION_CAPABILITIES: [Capability; 6] = [
+    Capability::Settings,
     Capability::Coordinator,
     Capability::Tasks,
     Capability::Approvals,
@@ -3311,4 +3312,305 @@ fn an_auto_turn_cannot_propose_a_revise_hold_or_remove() {
     assert!(proposal_rows(&store).is_empty());
     assert!(store.active_decision_holds().unwrap().is_empty());
     assert!(store.archived_project_ids().unwrap().is_empty());
+}
+
+// Phase 6b: the read-only MCP server of a Restricted Claude chat turn. The fake agent logs its
+// argv (`FAKE_AGENT_LOG`), so each test reads the exact flags the daemon passed. No real CLI.
+
+const MCP_LINE: &str = "Read-only tools available: task_detail, session_events, task_report.";
+
+/// A daemon whose Claude program is the fake, with `extra` environment on top.
+fn mcp_daemon(layout: &Layout, log: &Path, extra: &[(&str, &str)]) -> Daemon {
+    let fake = text(&fake_agent());
+    let mut env = vec![
+        ("AGENT_ORCH_CLAUDE_PROGRAM", fake.as_str()),
+        (
+            "AGENT_ORCH_CONVERSATION_PINS",
+            "codex@0.0.0-fake,claude-code@0.0.0-fake",
+        ),
+        ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+    ];
+    env.extend_from_slice(extra);
+    start(layout, &env)
+}
+
+/// The user turns the setting on, as the desktop does.
+fn mcp_enable(chat: &mut Chat) {
+    let response = chat.call(
+        "settings.set",
+        json!({"idempotency_key": "mcp-on", "mcp": {"enabled": true}}),
+    );
+    assert!(response.get("error").is_none(), "{response}");
+}
+
+/// Sends one Claude message and waits for the turn to settle.
+fn mcp_turn(chat: &mut Chat, message: &str, key: &str, level: Option<&str>) -> Value {
+    let mut params = json!({
+        "target": global(),
+        "text": message,
+        "idempotency_key": key,
+        "selection": {"agent": "claude-code"},
+    });
+    if let Some(level) = level {
+        params["permission"] = json!(level);
+    }
+    chat.send_params(params);
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    page
+}
+
+fn mcp_between(line: &str, start: &str, end: &str) -> String {
+    let rest = line.split(start).nth(1).expect("start marker in the line");
+    rest.split(end).next().unwrap().to_owned()
+}
+
+/// The prompt argument of a launch line.
+fn mcp_prompt(line: &str) -> String {
+    mcp_between(line, "args=[\"-p\", \"", "\", \"--verbose\"")
+}
+
+fn mcp_secret(line: &str) -> String {
+    mcp_between(line, "MCAO_MCP_SECRET\\\":\\\"", "\\\"")
+}
+
+fn mcp_port(line: &str) -> u16 {
+    mcp_between(line, "--port\\\",\\\"", "\\\"")
+        .parse()
+        .unwrap()
+}
+
+fn mcp_wait_port_closed(port: u16) {
+    let deadline = Instant::now() + WAIT;
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        assert!(Instant::now() < deadline, "port {port} is still open");
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn mcp_wait_for_launch(log: &Path) -> String {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Some(line) = launch_lines(log).first() {
+            return line.clone();
+        }
+        assert!(Instant::now() < deadline, "the agent never launched");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn mcp_has_no_mcp_flag(line: &str) {
+    for needle in [
+        // Not `--allowedTools`: Auto and Full already carry their own allow list.
+        "--mcp-config",
+        "mcp__mcao",
+        "MCAO_MCP_SECRET",
+    ] {
+        assert!(!line.contains(needle), "{needle} in {line}");
+    }
+    assert!(!mcp_prompt(line).contains(MCP_LINE), "{line}");
+}
+
+#[test]
+fn with_the_setting_off_no_mcp_flag_reaches_any_agent() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_turn(&mut chat, "hi", "m-1", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    mcp_has_no_mcp_flag(&lines[0]);
+    assert!(
+        lines[0].contains(r#""--strict-mcp-config""#),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[0].contains(r#""--tools", """#), "{}", lines[0]);
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn with_the_setting_on_a_restricted_claude_turn_gets_the_mcp_config_and_allow_list() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "hi", "m-1", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let line = &lines[0];
+    for needle in [
+        r#""--mcp-config""#,
+        r#""--allowedTools", "mcp__mcao__task_detail", "mcp__mcao__session_events", "mcp__mcao__task_report""#,
+        r#""--strict-mcp-config""#,
+        r#""--tools", """#,
+        "mcpServers",
+        "--mcp-relay",
+    ] {
+        assert!(line.contains(needle), "{needle} missing in {line}");
+    }
+    assert!(mcp_prompt(line).contains(MCP_LINE), "{line}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn auto_and_full_turns_never_get_mcp_flags_even_with_the_setting_on() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "hi", "m-1", Some("auto"));
+    mcp_turn(&mut chat, "hi", "m-2", Some("full"));
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    for line in &lines {
+        mcp_has_no_mcp_flag(line);
+    }
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_help_that_does_not_list_mcp_config_runs_the_turn_without_mcp() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(
+        &layout,
+        &log,
+        &[("AGENT_ORCH_FAKE_HELP_MODE", "missing:--mcp-config")],
+    );
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "hi", "m-1", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    mcp_has_no_mcp_flag(&lines[0]);
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_unreadable_help_runs_the_turn_without_mcp() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(
+        &layout,
+        &log,
+        &[("AGENT_ORCH_FAKE_HELP_MODE", "unreadable")],
+    );
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "hi", "m-1", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    mcp_has_no_mcp_flag(&lines[0]);
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn the_mcp_port_is_closed_after_the_turn_and_after_a_cancel() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+
+    mcp_turn(&mut chat, "hi", "m-1", None);
+    let finished = mcp_wait_for_launch(&log);
+    mcp_wait_port_closed(mcp_port(&finished));
+
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "[fake:hang]",
+        "idempotency_key": "m-2",
+        "selection": {"agent": "claude-code"},
+    }));
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let deadline = Instant::now() + WAIT;
+    let hung = loop {
+        if let Some(line) = launch_lines(&log).get(1) {
+            break line.clone();
+        }
+        assert!(Instant::now() < deadline, "the second launch never came");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let port = mcp_port(&hung);
+    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_ok());
+    let cancelled = chat.call(
+        "conversations.cancel",
+        json!({"target": global(), "turn_id": turn_id, "idempotency_key": "c-1"}),
+    );
+    assert_eq!(
+        cancelled["result"]["turn"]["state"], "cancelled",
+        "{cancelled}"
+    );
+    mcp_wait_port_closed(port);
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn two_mcp_turns_have_different_ports_and_secrets() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "one", "m-1", None);
+    mcp_turn(&mut chat, "two", "m-2", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_ne!(mcp_secret(&lines[0]), mcp_secret(&lines[1]));
+    assert_eq!(mcp_secret(&lines[0]).len(), 64);
+    // The first port is closed before the second turn, so the OS may hand it out again:
+    // the secrets are what must differ.
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn the_mcp_secret_is_not_in_the_prompt_the_transcript_the_diagnostics_or_the_store() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_enable(&mut chat);
+    let page = mcp_turn(&mut chat, "[fake:echo]", "m-1", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let secret = mcp_secret(&lines[0]);
+    assert_eq!(secret.len(), 64, "{}", lines[0]);
+    assert!(!mcp_prompt(&lines[0]).contains(&secret));
+    assert!(!page.to_string().contains(&secret), "{page}");
+    stop(&layout, daemon, chat);
+    let diagnostics = std::fs::read_to_string(&layout.log).unwrap_or_default();
+    assert!(
+        !diagnostics.contains(&secret),
+        "the secret reached daemon.log"
+    );
+    for entry in std::fs::read_dir(&layout.data).unwrap().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("store.sqlite") {
+            let bytes = std::fs::read(entry.path()).unwrap();
+            assert!(
+                !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
+                "the secret reached {name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_mcp_data_line_follows_the_server_in_the_launch_prompt() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = mcp_daemon(&layout, &log, &[]);
+    let mut chat = Chat::open(&layout);
+    mcp_turn(&mut chat, "off", "m-1", None);
+    mcp_enable(&mut chat);
+    mcp_turn(&mut chat, "on", "m-2", None);
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(!mcp_prompt(&lines[0]).contains(MCP_LINE));
+    assert!(mcp_prompt(&lines[1]).contains(MCP_LINE));
+    stop(&layout, daemon, chat);
 }

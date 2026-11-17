@@ -17,6 +17,7 @@ pub mod copilot_parser;
 pub mod copilot_sign_in;
 pub mod copilot_usage;
 mod locate;
+pub mod mcp_wiring;
 pub mod permission;
 pub mod pi_rpc_adapter;
 pub mod routing;
@@ -37,6 +38,7 @@ pub use copilot_adapter::{
     CopilotAdapter, CopilotRun, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
 };
 pub use copilot_sign_in::{CopilotSignIn, SignInRecord, SignInState};
+pub use mcp_wiring::{McpWiring, MCP_SERVER_NAME, MCP_TOOLS};
 pub use pi_rpc_adapter::PiRpcAdapter;
 pub use routing::{
     select_adapter, AdapterCapabilityGap, Capability, RoutableAdapter, RoutingError,

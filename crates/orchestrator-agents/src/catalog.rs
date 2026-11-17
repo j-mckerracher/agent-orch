@@ -38,6 +38,7 @@ use crate::copilot_adapter::{
 use crate::copilot_sign_in::{
     SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
 };
+use crate::mcp_wiring::McpWiring;
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -1068,6 +1069,21 @@ impl ClaudeCodeAdapter {
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<Vec<String>> {
+        Self::args_for_conversation_mcp(level, prompt, instructions, model, effort, None)
+    }
+
+    /// [`Self::args_for_conversation`] plus, at Restricted only and only when `mcp` is
+    /// given, the per-turn read-only MCP server (DPES-1105 phase 6b). `--strict-mcp-config`
+    /// and `--tools ""` stay, so that server is the only one loaded; `--allowedTools` is
+    /// the allow list `dontAsk` needs for its three tools. Auto and Full ignore `mcp`.
+    pub fn args_for_conversation_mcp(
+        level: PermissionLevel,
+        prompt: &str,
+        instructions: Option<&str>,
+        model: Option<&str>,
+        effort: Option<&str>,
+        mcp: Option<&McpWiring>,
+    ) -> Option<Vec<String>> {
         let mut args: Vec<String> = match level {
             PermissionLevel::Restricted => [
                 "-p",
@@ -1130,6 +1146,12 @@ impl ClaudeCodeAdapter {
             .collect(),
             PermissionLevel::Extended => return None,
         };
+        if let (PermissionLevel::Restricted, Some(mcp)) = (level, mcp) {
+            args.push("--mcp-config".into());
+            args.push(mcp.claude_config_json());
+            args.push("--allowedTools".into());
+            args.extend(McpWiring::claude_allowed_tools());
+        }
         if let Some(instructions) = instructions {
             args.push("--append-system-prompt".into());
             args.push(instructions.into());
@@ -1703,6 +1725,95 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn claude_args_without_mcp_are_unchanged() {
+        for level in [
+            PermissionLevel::Restricted,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+        ] {
+            assert_eq!(
+                ClaudeCodeAdapter::args_for_conversation_mcp(
+                    level,
+                    "hi",
+                    Some("rules"),
+                    Some("m"),
+                    Some("low"),
+                    None
+                ),
+                ClaudeCodeAdapter::args_for_conversation(
+                    level,
+                    "hi",
+                    Some("rules"),
+                    Some("m"),
+                    Some("low")
+                ),
+                "{level:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_args_with_mcp_keep_strict_config_and_the_empty_tool_list() {
+        let wiring = McpWiring {
+            command: "/bin/daemon".into(),
+            args: vec!["--mcp-relay".into()],
+            env: vec![("MCAO_MCP_SECRET".into(), "abc".into())],
+        };
+        let plain = ClaudeCodeAdapter::args_for_conversation(
+            PermissionLevel::Restricted,
+            "hi",
+            Some("rules"),
+            None,
+            None,
+        )
+        .unwrap();
+        let with = ClaudeCodeAdapter::args_for_conversation_mcp(
+            PermissionLevel::Restricted,
+            "hi",
+            Some("rules"),
+            None,
+            None,
+            Some(&wiring),
+        )
+        .unwrap();
+        for flag in ["--strict-mcp-config", "--tools"] {
+            assert!(with.iter().any(|arg| arg == flag), "{flag}");
+        }
+        let tools = with.iter().position(|arg| arg == "--tools").unwrap();
+        assert_eq!(with[tools + 1], "");
+        let config = with.iter().position(|arg| arg == "--mcp-config").unwrap();
+        assert_eq!(with[config + 1], wiring.claude_config_json());
+        let allowed = with.iter().position(|arg| arg == "--allowedTools").unwrap();
+        assert_eq!(
+            with[allowed + 1..allowed + 4],
+            [
+                "mcp__mcao__task_detail",
+                "mcp__mcao__session_events",
+                "mcp__mcao__task_report"
+            ]
+        );
+        // Removing the four added entries gives today's argv.
+        let mut stripped = with.clone();
+        stripped.drain(config..allowed + 4);
+        assert_eq!(stripped, plain);
+        // Auto and Full never take it.
+        for level in [PermissionLevel::Auto, PermissionLevel::Full] {
+            assert_eq!(
+                ClaudeCodeAdapter::args_for_conversation_mcp(
+                    level,
+                    "hi",
+                    None,
+                    None,
+                    None,
+                    Some(&wiring)
+                ),
+                ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None, None),
+                "{level:?}"
+            );
+        }
     }
 
     #[test]

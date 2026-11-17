@@ -6,13 +6,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use orchestrator_core::contract::{
+    AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+};
 use orchestrator_core::orchestrator_action::{
     parse_block, proposal_id, ActionBlock, ActionKind, BlockScope,
 };
+use orchestrator_core::records::Project;
 use orchestrator_core::task_envelope::{chat_task_envelope, ACTION_DENIED};
+use orchestrator_core::workstream::Workstream;
 use orchestrator_store::{
     ActionBlockOutcome, ActionOutcome, ConversationTarget, ProposalState, ResolveError,
-    SqliteStore, TurnBlock, TurnOutcome, TurnState, DEPENDENCY_NOT_EXECUTED,
+    SqliteStore, Store, TurnBlock, TurnOutcome, TurnState, DEPENDENCY_NOT_EXECUTED,
 };
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -1819,6 +1824,63 @@ fn executed_route(
         .unwrap();
 }
 
+/// Creates the task `task_id` and links it to `workstream_id`, which is created on first use,
+/// so a routed task is one the workstream still holds.
+fn link(store: &SqliteStore, workstream_id: &str, task_id: &str) {
+    // The project and the workstream exist after the first call; a repeat is refused.
+    let _ = store.register_project(&Project {
+        id: "p-route".into(),
+        root_path: "/work/p-route".into(),
+        settings: serde_json::json!({}),
+    });
+    let _ = store.create_workstream(
+        &Workstream::new(workstream_id, "Title", "").unwrap(),
+        "user",
+    );
+    store
+        .create(&TaskContract {
+            id: task_id.into(),
+            project_id: "p-route".into(),
+            parent_id: None,
+            objective: format!("work for {task_id}"),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: Default::default(),
+        })
+        .unwrap();
+    store.link_task(workstream_id, task_id, None).unwrap();
+}
+
+#[test]
+fn a_task_relinked_away_from_the_workstream_is_not_routed_in() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    executed_route(
+        &store,
+        &ConversationTarget::Global,
+        BlockScope::Global,
+        "t1",
+        &route_request("ws-1", 1),
+        "task-r1",
+    );
+    link(&store, "ws-1", "task-r1");
+    assert_eq!(store.routed_in("ws-1", 10).unwrap().len(), 1);
+
+    store.unlink_task("ws-1", "task-r1").unwrap();
+    assert!(store.routed_in("ws-1", 10).unwrap().is_empty());
+
+    let _ = store.create_workstream(&Workstream::new("ws-2", "Other", "").unwrap(), "user");
+    store.link_task("ws-2", "task-r1", None).unwrap();
+    assert!(store.routed_in("ws-1", 10).unwrap().is_empty());
+}
+
 #[test]
 fn routed_in_returns_only_executed_global_task_proposals_for_that_workstream() {
     let directory = tempfile::tempdir().unwrap();
@@ -1837,6 +1899,7 @@ fn routed_in_returns_only_executed_global_task_proposals_for_that_workstream() {
             &route_request(workstream, 1),
             task,
         );
+        link(&store, workstream, task);
     }
     let routed = store.routed_in("ws-1", 10).unwrap();
     let ids: Vec<&str> = routed.iter().map(|r| r.task_id.as_str()).collect();
@@ -1911,6 +1974,7 @@ fn routed_in_is_empty_after_the_global_history_is_cleared() {
         &route_request("ws-1", 1),
         "task-r1",
     );
+    link(&store, "ws-1", "task-r1");
     assert_eq!(store.routed_in("ws-1", 10).unwrap().len(), 1);
 
     assert!(store.clear_conversation_history(&global).unwrap().cleared);

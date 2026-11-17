@@ -312,7 +312,7 @@ fn five_bad_hellos_stop_the_listener() {
 }
 
 #[test]
-fn a_second_concurrent_connection_is_refused() {
+fn a_second_connection_waits_until_the_first_closes() {
     let (_directory, store) = seeded();
     let server = start(&store, ConversationTarget::Global);
     let mut first = authed(&server);
@@ -332,7 +332,7 @@ fn a_second_concurrent_connection_is_refused() {
 }
 
 #[test]
-fn a_non_loopback_peer_is_refused() {
+fn the_loopback_check_rejects_a_non_loopback_address() {
     for peer in [
         "10.0.0.5:80",
         "192.168.1.9:4000",
@@ -675,6 +675,72 @@ fn task_report_cuts_at_16_kib_on_a_character_boundary_and_reports_truncated() {
         none,
         json!({"task_id": "t2", "available": false, "text": null, "truncated": false})
     );
+}
+
+#[test]
+fn task_report_text_with_a_path_is_redacted_in_the_tool_result() {
+    let (_directory, store) = seeded();
+    store
+        .capture_task_report(
+            "t3",
+            "a1",
+            "Edited /Users/someone/repo/src/lib.rs and C:\\work\\x.rs today",
+            false,
+            REPORT_TIME,
+        )
+        .unwrap();
+    let server = start(&store, ConversationTarget::Global);
+    let mut client = authed(&server);
+
+    let reply = client.body("task_report", json!({"task_id": "t3"}));
+
+    let text = reply["text"].as_str().unwrap();
+    assert!(!text.contains("/Users/someone"), "{text}");
+    assert!(!text.contains("lib.rs") && !text.contains("work"), "{text}");
+    assert!(text.contains("[path]"), "{text}");
+}
+
+#[test]
+fn a_credential_at_the_cut_point_of_an_objective_is_masked() {
+    let (_directory, store) = seeded();
+    // The 40-character secret starts at byte 60 and so straddles the 80-byte cut.
+    let secret = "Zq9".repeat(13) + "x";
+    let objective = format!("{}{secret} tail words", "ab ".repeat(20));
+    store.create(&contract("t4", &objective)).unwrap();
+    let server = start(&store, ConversationTarget::Global);
+    let mut client = authed(&server);
+
+    let reply = client.body("task_detail", json!({"task_id": "t4"}));
+
+    let text = reply["objective"].as_str().unwrap();
+    assert!(!text.contains("Zq9"), "{text}");
+    assert!(text.contains("[redacted]"), "{text}");
+}
+
+#[test]
+fn a_quote_heavy_report_fits_the_response_cap() {
+    let (_directory, store) = seeded();
+    let body = "\"\n".repeat(8 * 1024);
+    store
+        .capture_task_report("t3", "a1", &body, false, REPORT_TIME)
+        .unwrap();
+    let server = start(&store, ConversationTarget::Global);
+    let mut client = authed(&server);
+
+    client.send_raw(
+        &json!({"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "params": {"name": "task_report", "arguments": {"task_id": "t3"}}})
+        .to_string(),
+    );
+    let mut line = String::new();
+    client.reader.read_line(&mut line).unwrap();
+
+    assert!(line.len() <= Limits::DEFAULT.max_response, "{}", line.len());
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["result"]["isError"], json!(false), "{reply}");
+    let inner: Value =
+        serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(inner["truncated"], json!(true));
 }
 
 #[test]

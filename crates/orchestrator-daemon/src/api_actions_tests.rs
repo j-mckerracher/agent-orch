@@ -559,6 +559,7 @@ fn a_turn_above_restricted_never_gets_the_block_format() {
             context: None,
             actions,
             wake: None,
+            mcp: None,
         };
         let prompt = build_prompt(&request);
         assert!(!prompt.instructions.contains("mcao-actions"), "{level:?}");
