@@ -125,7 +125,7 @@ Decided by the user (N12): the orchestrator and every sub-orchestrator respect t
 
 A firstmate secondmate is a persistent mate with a written scope, its own backlog, and a parent channel. The MCAO analogue is a workstream: a cross-project initiative with a summary, objectives, gates, and its own conversation target. The user's "create a sub-orchestrator for post-MVP work" is a `workstream.create` proposal. Phase 1 delivers it.
 
-Missing for full parity, by phase: workstream conversations propose tasks inside their scope (2); the workstream reports up to Global when a gate or task changes (3); the Global orchestrator routes work by scope (6). Depth stays flat: a workstream conversation cannot create workstreams. Remote hosts are phase 6 and design only. The IPC is a local socket with a token handshake, so a remote daemon needs an authenticated network transport and a new threat model. No date is promised.
+Phase 2 delivers proposals inside a workstream's scope. Phase 3 reports task events up to Global with a deterministic copy. Phase 6a routes work by scope: the Global orchestrator proposes `task.propose` with a workstream id, the user approves it, and the workstream conversation sees it as routed here and gets a task list scoped to it. Gate changes are not pushed to Global: its snapshot shows gate counts every turn. Depth stays flat: a workstream conversation cannot create workstreams or propose into another workstream. Remote hosts are phase 6 and design only. The IPC is a local socket with a token handshake, so a remote daemon needs an authenticated network transport and a new threat model. No date is promised.
 
 ### Shapes, modes, landing, backlog, recovery
 
@@ -141,11 +141,11 @@ Missing for full parity, by phase: workstream conversations propose tasks inside
 
 | Option | Claude | Codex | Copilot | Fit with daemon authority |
 | --- | --- | --- | --- | --- |
-| 1. Daemon MCP server per turn | `--mcp-config` with `--strict-mcp-config`. `--tools ""` at Restricted; whether it also hides MCP tools is unverified, and `dontAsk` would deny unlisted tools | `-c mcp_servers.NAME...` (generic `-c` in help). Chat does not pass `--ignore-user-config`, so user servers load too. MCP approval under `exec` is unverified | `--additional-mcp-config`, tool named `NAME(tool)` in `--allow-tool`. `-p` denies tools no rule allows | Tools would call the daemon. Mutating tools must still become proposals. Changes the "no MCP below Full" hard limit |
+| 1. Daemon MCP server per turn | `--mcp-config` with `--strict-mcp-config`. `--tools ""` at Restricted; whether it also hides MCP tools is unverified, and `dontAsk` would deny unlisted tools | `-c mcp_servers.NAME...` (generic `-c` in help). Chat does not pass `--ignore-user-config`, so user servers load too. MCP approval under `exec` is unverified | `--additional-mcp-config`, tool named `NAME(tool)` in `--allow-tool`. `-p` denies tools no rule allows | Tools would call the daemon. Mutating tools must still become proposals. Phase 6b adds only read-only tools, off by default behind a user setting, Restricted chats only. Mutations stay action blocks. Records one exception to the "no MCP below Full" hard limit |
 | 2. Action block parsed by the daemon | Works at every level, no tool | Same | Same | Proposals by construction. Fits coordinator proposals and approval integrity |
 | 3. Shell to `agent-orch` | Needs Bash: not at Restricted | Needs a sandbox that allows the socket | Shell denied at Restricted | Shell can do anything else. Rejected |
 
-Recommendation: option 2 for phases 1 to 5. The prior holds; nothing in the code or the help text argues against it. Two help-text facts help later: Claude has `--json-schema` and Codex `exec` has `--output-schema` for a structured final response. They could enforce the block shape on two of three CLIs, but they make the whole reply JSON, which breaks streaming of the visible text. Evaluate them after the live check. Option 1 follows in phase 6 for read-only tools (task detail, session events, a report), so the agent can read more than the snapshot holds.
+Recommendation: option 2 for phases 1 to 5. The prior holds; nothing in the code or the help text argues against it. Two help-text facts help later: Claude has `--json-schema` and Codex `exec` has `--output-schema` for a structured final response. They could enforce the block shape on two of three CLIs, but they make the whole reply JSON, which breaks streaming of the visible text. Evaluate them after the live check. Option 1 follows in phase 6b as three read-only tools (task detail, a state-only session timeline, the stored report), off by default behind a user setting, offered only to Restricted user chats. The tools return ids, short titles, states, counts and stored report text; never paths, secrets, diffs or session output.
 
 ### Machinery to add
 
@@ -291,6 +291,8 @@ Daemon tests with the fake CLI harness in `crates/orchestrator-daemon/tests/conv
 - Load gate: a meter's 60 second mean at its threshold closes the gate and it opens only when every gated mean is 10 points under its threshold; one CPU spike inside the window does not close it; an `unavailable` meter is ignored and shown as unknown; a closed gate leaves tasks `Queued`, defers wake turns and does not block chat turns; opening triggers a scheduler pass; a threshold of 100 turns that meter off; a task proposal card made while the gate is closed says the task will queue.
 - Store: migrations apply on a copy of the previous schema; event tables refuse update and delete.
 - Phase 2: an envelope denial disables approval and records the reason.
+- 6a: a task routed to a workstream shows in its snapshot and conversation view; a workstream conversation cannot create a workstream or route a task elsewhere.
+- 6b: with the setting off, no flag or server exists; on, only Restricted user chats get the server; the tools return no path, token, diff or session output (fake agent only).
 
 Vitest: the card renders the exact parameters; Approve calls `actions.resolve` with a stable key and disables while in flight; each state renders; fixture mode labels and creates nothing; accessible names and live-region announcements; no cards without the capability.
 
@@ -302,11 +304,30 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 
 ## Conflicts with other designs
 
-- `agent-permission-levels.md`, hard limit 2 ("No web, memory, MCP servers or repository instructions" below Full). Option 1 in phase 6 needs an exception for a daemon-owned read-only server.
+- `agent-permission-levels.md`, hard limit 2 ("No web, memory, MCP servers or repository instructions" below Full). Resolved in phase 6b by one named exception for the daemon-owned read-only server, off by default and Restricted chats only; that document records it.
 - `agent-permission-levels.md` says Codex chat runs with `--ignore-user-config` at Restricted and Auto. The code does not pass it for chat (finding 8). One of them must change.
 - `agent-permission-levels.md` makes Auto the chat default. This design runs wake turns at Restricted. Not a contradiction, but a second rule.
 - `agent-permission-levels.md` (O4) resets Auto, Extended and Full to Auto on restart. N3 adds a user-set default chat level that persists. Full never persists, so Full cannot be the default.
 - `m7-08-conversation-service.md` says reply text "is never parsed into methods". This design parses it into proposals. Proposals still carry no authority until approval, so the safety intent holds, but the sentence must change in the same PR as 1b.
+
+## Residual risks, stated honestly
+
+- **Report relay redaction is word-based.** Emails, IP addresses, short secrets and secrets split by spaces can survive it. The relay turn is Restricted and can only propose, and every proposal needs a user approval. A proposal made after a relay is labelled "Made after reading a report".
+- **`projects.register` restores an archived project.** It clears the archive marker, so a token-only session that knows the root path can un-archive it. The archive is soft and no row is lost. Such a session can already register any path and submit tasks, so it gains no authority.
+- **A workstream grant covers a task on any member project,** even when the task is not linked to the workstream.
+- **The workstream snapshot keeps the global `Open tasks` block.** The MCP server hides tasks of other workstreams, so the two views differ.
+- **Five connections without a valid hello disable the optional tools for a turn.** The MCP listener closes for that turn. An unauthenticated local process can cause this. It fails closed.
+- **The approver token opens direct `tasks.*` and `workstreams.*` calls.** It is not a sandbox against a same-user process, which can still edit the store or replace the daemon.
+- **`monitoring.brief_ack` is open to a token-only session.** It only marks a brief as seen and grants no authority.
+
+## Not built
+
+- **Phase 4c, the PR poller and the merge worker.** `delivery.merge` is not parsed, so no merge kind exists. Migration `0046` is reserved and unused.
+- **N8, the unattended merge grant.** It needs the merge worker, so it is not built.
+- **Orchestrator notes.** Migration `0048` covers away mode and the return brief only.
+- **Codex and Copilot MCP wiring.** Only Claude is wired. The other two forms stay design text in `agent-permission-levels.md`.
+- **Automatic scout report relay** (`report_relay_auto`), and the wake events `scout_report_ready` and `pr_changed`. Relay is user-triggered only.
+- **`delivery.request` and `project.register` actions.** Deferred.
 
 ## Not verified
 
@@ -315,3 +336,4 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 - Whether the Auto sandbox or classifier blocks reading the IPC token or connecting to the socket.
 - The worktree cleanup rule for unlanded work.
 - Whether real models follow the block format.
+- The phase 6b wiring forms for each CLI (see `agent-permission-levels.md`).

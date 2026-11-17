@@ -635,8 +635,10 @@ approver. The list is `actions.resolve` and `approvals.resolve`. The refusal is
 `Forbidden` (-32012). It comes before any handler runs and before the idempotency
 lookup, so a non-approver cannot replay a key to read a cached approval. A session
 that did not negotiate the capability still gets `-32004` first. Later phases add
-`settings.set` (phase 2), `monitoring.set` (phase 3), and `grants.create` and
-`grants.revoke` (phase 5), each in the same change that routes the method.
+`settings.set` (phase 2), `monitoring.set` (phase 3), `projects.set_defaults`,
+`holds.set`, `holds.release`, `reports.get` and `reports.relay` (phase 4), and
+`grants.create` and `grants.revoke` (phase 5), each in the same change that routes
+the method.
 
 The Restricted-only rule is unchanged. The credential does not enable actions at
 Auto or Full.
@@ -808,6 +810,93 @@ that cannot be approved, an Auto or Full turn that gets no card, a double approv
 that creates one task, a restart between approve and execute, a repeated request,
 a cancel of a foreign task in a workstream conversation, and `actions.pending` for a
 session that holds only the token.
+
+## Project defaults, reports and holds (DPES-1105, phase 4)
+
+Phase 4 adds per-project defaults, scout reports, promotion, holds, task lineage,
+a soft archive, and the action kinds `task.revise`, `decision.hold` and
+`project.remove`. Actions still run only at Restricted, and every mutation still
+needs a per-action approval.
+
+- **Project modes.** A project's mode is `LocalOnly` (the default), `DirectPr` or
+  `NoMistakes`. Pull request delivery needs a mode that allows it and the chat
+  setting `chat_pr_delivery`. That setting is off by default and is set only by the
+  user through `settings.set`. The project defaults are set only by the user through
+  `projects.set_defaults`. Approval checks the proposal against the project's
+  current defaults, so a change made after the proposal was made applies.
+- **Scout reports.** A scout's report is stored after its run, capped at 16 KiB and
+  marked when cut. Credential shapes are masked. Paths are kept in the stored copy.
+  A report is never deleted in this phase.
+- **Relay.** A relay is started only by the user, from a button on the notice. It
+  runs as a Restricted chat turn. The copy handed to the model goes through the same
+  word-level redactor as the wake service: paths become `[path]`, and token-like
+  words become `[redacted]`. The model receives it as labelled data. Automatic relay
+  is not built.
+- **Methods.** `reports.get` and `reports.relay` are user-only. `reports.list` returns
+  metadata only and is open.
+- **Promotion.** A scout promotes to a ship only after its report has been relayed,
+  which sets `relayed_at`.
+- **Holds.** `decision.hold` puts a hold on a decision. `holds.set` and `holds.release` are
+  user-only. The hold date is from today to 60 days ahead by the daemon clock, and
+  the hold lasts until the end of that day in UTC.
+- **Lineage.** A task created by `task.revise` or by promotion links to the task it
+  came from. A link is written once, never changed, and never deleted. The store
+  refuses a link that would close a cycle.
+- **`task.revise`.** Asks the old task to stop and admits a new task with the
+  instruction added to the objective. The load gate and the worker limits still
+  apply. Never grantable.
+- **Soft archive.** `project.remove` sets `projects.archived_at`. No row is deleted.
+  `projects.register` for the same root clears the marker. Never grantable.
+
+## Standing approvals (DPES-1105, phase 5)
+
+A standing approval, or grant, lets the daemon run a matching proposal without a
+per-action card. Only the user creates one. An agent never creates, changes or
+revokes a grant.
+
+- **Creation and revoke.** `grants.create` takes one scope, a set of kinds, an expiry,
+  a use count and a token budget. `grants.revoke` takes effect at once. Both are
+  user-only. `grants.list` is open. A grant is never edited: to change its terms,
+  revoke it and create another.
+- **Scope.** One project or one workstream, never all projects. A workstream grant
+  covers a task on any of its member projects, even one not linked to the workstream.
+- **Grantable kinds.** The code's `GRANTABLE_KINDS` list has six kinds:
+  `workstream.update` (title and summary only, never a change of `state`),
+  `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
+  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold` and
+  `workstream.create` are not grantable in this build.
+- **Never grantable.** The code's `NEVER_GRANTABLE` list has four entries:
+  `project.remove`, `delivery.merge`, `task.cancel` and `task.revise`.
+- **Expiry.** Required. Default 8 hours, maximum 7 days, minimum 60 seconds.
+- **Uses.** Default 20, maximum 200.
+- **Token budget.** Required, from 1 to 1,000,000,000 tokens. It counts the tokens
+  that usage receipts report for tasks the grant started, from the grant's creation.
+  A figure that was never reported counts as 0. A reached budget or use limit blocks
+  new uses only. It never cancels a running task.
+- **Matching.** The matcher checks for new proposals every 2 seconds. A grant never
+  matches a proposal made before the grant was created.
+- **Use.** A match is approved with the actor `grant:<id>`. The use is consumed in
+  the same transaction as the approval. Each use writes an audit event with the grant
+  id and the proposal digest. The approval runs the same re-check against the current
+  defaults and the same execution as a user approval.
+- **Revoke and expiry.** A revoke is immediate. An execution under a grant stops before
+  it starts if the grant is revoked, expired, out of uses or out of budget at that
+  moment. A use already spent is not refunded.
+- **Not built: the N8 merge grant.** The unattended merge grant needs the merge
+  worker (phase 4c), which is not built. No merge kind exists, so no grant can cover
+  one. `delivery.merge` stays never grantable.
+
+### Away mode and the return brief
+
+- Away is a monitoring mode, set by the user through `monitoring.set`. It adds no
+  authority. Grants apply in every monitoring mode, and proposals still need a card
+  unless a grant matches.
+- The return brief covers the window from the moment away mode started to now. It
+  holds counts, ids, short titles, states and project codes. It never holds free text
+  from an agent, and it is never put in a prompt.
+- The brief is kept until the user acknowledges it with `monitoring.brief_ack`. That
+  method is open to any session and only marks the brief as seen.
+- Orchestrator notes are not built.
 
 ## Not covered here
 
