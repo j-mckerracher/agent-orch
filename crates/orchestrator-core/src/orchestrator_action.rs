@@ -12,6 +12,7 @@
 use crate::approval::ParameterDigest;
 use crate::authorization::Authorization;
 use crate::contract::{DeliveryPolicy, TaskKind};
+use crate::project_mode::MergeMethod;
 use crate::task_envelope::{check_task, Denial};
 use crate::workstream::{
     validate_id, validate_text, validate_title, WorkstreamRuleError, WorkstreamState,
@@ -36,12 +37,14 @@ pub const MAX_REF_CHARS: usize = 32;
 pub const MAX_TASK_OBJECTIVE_BYTES: usize = 8 * 1024;
 /// Longest instruction a `task.revise` adds, in bytes.
 pub const MAX_ADDED_INTENT_BYTES: usize = 2 * 1024;
+/// Largest pull request number the merge ledger holds.
+pub const MAX_PULL_REQUEST_NUMBER: u64 = 999_999;
 /// Agents a chat proposal may name. Mirrors `canonicalAgentId` in
 /// `apps/desktop/src/ui/submission.ts`.
 pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// Wire names of the kinds no grant may ever cover. Names, not [`ActionKind`]
-/// values, so a kind that is planned but not parsed yet (`delivery.merge`, added
-/// with its merge worker) is already refused.
+/// values, so a kind that is planned but not parsed yet is already refused.
+/// `delivery.merge` is parsed now and stays here: each merge needs its own approval.
 pub const NEVER_GRANTABLE: [&str; 4] = [
     "project.remove",
     "delivery.merge",
@@ -64,13 +67,14 @@ pub enum ActionKind {
     TaskRetry,
     WorkstreamLinkTask,
     TaskRevise,
+    DeliveryMerge,
     ProjectRemove,
     DecisionHold,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -80,6 +84,7 @@ impl ActionKind {
         Self::TaskRetry,
         Self::WorkstreamLinkTask,
         Self::TaskRevise,
+        Self::DeliveryMerge,
         Self::ProjectRemove,
         Self::DecisionHold,
     ];
@@ -96,6 +101,7 @@ impl ActionKind {
             Self::TaskRetry => "task.retry",
             Self::WorkstreamLinkTask => "workstream.link_task",
             Self::TaskRevise => "task.revise",
+            Self::DeliveryMerge => "delivery.merge",
             Self::ProjectRemove => "project.remove",
             Self::DecisionHold => "decision.hold",
         }
@@ -134,6 +140,8 @@ pub enum Action {
     WorkstreamLinkTask(LinkTask),
     #[serde(rename = "task.revise")]
     TaskRevise(ReviseTask),
+    #[serde(rename = "delivery.merge")]
+    DeliveryMerge(MergePullRequest),
     #[serde(rename = "project.remove")]
     ProjectRemove(RemoveProject),
     #[serde(rename = "decision.hold")]
@@ -264,6 +272,23 @@ pub struct ReviseTask {
     pub task_id: String,
     /// Appended to the old objective. 1 to [`MAX_ADDED_INTENT_BYTES`] bytes.
     pub added_intent: String,
+}
+
+/// `delivery.merge`. Merges the pull request of a task, at one commit. Never grantable: the
+/// digest binds the task, the number and the head commit the user was shown, so a pull request
+/// that moved is another proposal. The host enforces the same commit at merge time.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergePullRequest {
+    pub task_id: String,
+    /// 1 to [`MAX_PULL_REQUEST_NUMBER`].
+    pub pr_number: u64,
+    /// The head commit: exactly 40 lowercase hex digits, never abbreviated.
+    pub head_sha: String,
+    /// `merge`, `squash` or `rebase`. Absent means the project's method. A method the
+    /// project does not allow is refused when the merge runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
 }
 
 /// `project.remove`. Stops using a project. Never grantable.
@@ -562,6 +587,21 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             }
             Ok(())
         }
+        Action::DeliveryMerge(merge) => {
+            check(validate_id("task_id", &merge.task_id), "task_id")?;
+            if !(1..=MAX_PULL_REQUEST_NUMBER).contains(&merge.pr_number) {
+                return Err(BlockError::InvalidField("pr_number"));
+            }
+            if !is_commit_sha(&merge.head_sha) {
+                return Err(BlockError::InvalidField("head_sha"));
+            }
+            match merge.method.as_deref() {
+                Some(method) if MergeMethod::parse(method).is_none() => {
+                    Err(BlockError::InvalidField("method"))
+                }
+                _ => Ok(()),
+            }
+        }
         Action::ProjectRemove(remove) => {
             if is_project_code(&remove.project) {
                 Ok(())
@@ -619,6 +659,11 @@ fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
         check(validate_id("promote_from", source), "promote_from")?;
     }
     Ok(())
+}
+
+/// Whether `text` is a full commit id: 40 lowercase hex digits.
+fn is_commit_sha(text: &str) -> bool {
+    text.len() == 40 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Whether `text` is `YYYY-MM-DD`: four digits, a dash, two digits, a dash, two digits.
@@ -711,8 +756,8 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             // The workstream that owns a cancelled or retried task is checked against the store.
             Action::TaskCancel(_) | Action::TaskRetry(_) => true,
             Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
-            // The owning workstream of a revised or held task is checked against the store.
-            Action::TaskRevise(_) | Action::DecisionHold(_) => true,
+            // The owning workstream of a revised, held or merged task is checked against the store.
+            Action::TaskRevise(_) | Action::DeliveryMerge(_) | Action::DecisionHold(_) => true,
             // A workstream conversation never removes a project.
             Action::ProjectRemove(_) => false,
         };
@@ -744,6 +789,7 @@ impl Action {
             Self::TaskRetry(_) => ActionKind::TaskRetry,
             Self::WorkstreamLinkTask(_) => ActionKind::WorkstreamLinkTask,
             Self::TaskRevise(_) => ActionKind::TaskRevise,
+            Self::DeliveryMerge(_) => ActionKind::DeliveryMerge,
             Self::ProjectRemove(_) => ActionKind::ProjectRemove,
             Self::DecisionHold(_) => ActionKind::DecisionHold,
         }
@@ -777,7 +823,7 @@ impl Action {
         }
     }
 
-    /// The task a `task.cancel`, `task.retry`, `task.revise` or `decision.hold` names, which must already
+    /// The task a `task.cancel`, `task.retry`, `task.revise`, `delivery.merge` or `decision.hold` names, which must already
     /// belong to the conversation's workstream: the daemon's workstream-scope
     /// check. A `workstream.link_task` is not listed, because the task it
     /// names is not linked yet.
@@ -786,6 +832,7 @@ impl Action {
             Self::TaskCancel(cancel) => Some(cancel.task_id.as_str()),
             Self::TaskRetry(retry) => Some(retry.task_id.as_str()),
             Self::TaskRevise(revise) => Some(revise.task_id.as_str()),
+            Self::DeliveryMerge(merge) => Some(merge.task_id.as_str()),
             Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
             _ => None,
         }
@@ -842,6 +889,9 @@ impl Action {
             Self::TaskRetry(retry) => retry.task_id.clone(),
             Self::WorkstreamLinkTask(link) => link.task_id.clone(),
             Self::TaskRevise(revise) => format!("task.revise:{}", revise.task_id),
+            Self::DeliveryMerge(merge) => {
+                format!("delivery.merge:{}:{}", merge.task_id, merge.pr_number)
+            }
             Self::ProjectRemove(remove) => format!("project.remove:{}", remove.project),
             Self::DecisionHold(hold) => format!("decision.hold:{}", hold.task_id),
         }
@@ -1304,7 +1354,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_eleven_kinds() {
+    fn the_action_kind_list_names_all_twelve_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1318,6 +1368,7 @@ mod tests {
                 "task.retry",
                 "workstream.link_task",
                 "task.revise",
+                "delivery.merge",
                 "project.remove",
                 "decision.hold",
             ]
@@ -1864,6 +1915,12 @@ mod tests {
         assert!(!ActionKind::ProjectRemove.is_grantable());
         assert!(!ActionKind::TaskCancel.is_grantable());
         assert!(!ActionKind::TaskRevise.is_grantable());
+        // `delivery.merge` parses and is never grantable: only a per-action approval merges.
+        assert_eq!(
+            ActionKind::parse("delivery.merge"),
+            Some(ActionKind::DeliveryMerge)
+        );
+        assert!(!ActionKind::DeliveryMerge.is_grantable());
     }
 
     #[test]
@@ -1876,7 +1933,7 @@ mod tests {
             );
         }
         for name in NEVER_GRANTABLE {
-            // A listed kind that parses is never grantable; `delivery.merge` has no kind yet.
+            // A listed kind that parses is never grantable.
             if let Some(kind) = ActionKind::parse(name) {
                 assert!(!kind.is_grantable(), "{name}");
             }
@@ -1949,6 +2006,126 @@ mod tests {
                 .canonical(None)
                 .digest
         );
+    }
+
+    const MERGE_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn merge_text(extra: &[(&str, Value)]) -> String {
+        let mut value = json!({
+            "kind": "delivery.merge",
+            "task_id": "task-1",
+            "pr_number": 42,
+            "head_sha": MERGE_HEAD,
+        });
+        for (name, field) in extra {
+            value[*name] = field.clone();
+        }
+        value.to_string()
+    }
+
+    #[test]
+    fn a_delivery_merge_parses_with_canonical_json_a_subject_and_a_bound_digest() {
+        let parsed = parse(&block(&merge_text(&[]))).expect("valid block");
+        let merge = &parsed.actions()[0];
+        assert_eq!(merge.kind(), ActionKind::DeliveryMerge);
+        assert_eq!(
+            merge.canonical(None).json,
+            format!(
+                r#"{{"head_sha":"{MERGE_HEAD}","kind":"delivery.merge","pr_number":42,"task_id":"task-1"}}"#
+            )
+        );
+        assert_eq!(merge.canonical(None).subject, "delivery.merge:task-1:42");
+        assert_eq!(merge.target_task(), Some("task-1"));
+        // The head commit, the number, the task and the method each change the digest.
+        let digest = |extra: &[(&str, Value)]| {
+            parse(&block(&merge_text(extra)))
+                .expect("valid block")
+                .actions()[0]
+                .canonical(None)
+                .digest
+        };
+        let base = digest(&[]);
+        let moved = "f".repeat(40);
+        for other in [
+            digest(&[("head_sha", json!(moved))]),
+            digest(&[("pr_number", json!(43))]),
+            digest(&[("task_id", json!("task-2"))]),
+            digest(&[("method", json!("rebase"))]),
+        ] {
+            assert_ne!(base, other);
+        }
+        assert_eq!(base, digest(&[]));
+    }
+
+    #[test]
+    fn a_delivery_merge_refuses_a_bad_head_number_task_or_method() {
+        let upper = MERGE_HEAD.to_uppercase();
+        let short = &MERGE_HEAD[..39];
+        let long = format!("{MERGE_HEAD}0");
+        let bad_sha = [
+            upper.as_str(),
+            short,
+            long.as_str(),
+            "",
+            "abc1234",
+            "g".repeat(40).as_str(),
+        ]
+        .map(str::to_owned);
+        for sha in bad_sha {
+            let text = merge_text(&[("head_sha", json!(sha))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("head_sha")),
+                "{sha}"
+            );
+        }
+        for number in [0_u64, 1_000_000, u64::MAX] {
+            let text = merge_text(&[("pr_number", json!(number))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("pr_number")),
+                "{number}"
+            );
+        }
+        for number in [1_u64, 999_999] {
+            assert!(parse(&block(&merge_text(&[("pr_number", json!(number))]))).is_ok());
+        }
+        for task in ["", "task 1"] {
+            let text = merge_text(&[("task_id", json!(task))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("task_id")),
+                "{task}"
+            );
+        }
+        for method in ["", "Squash", "fast-forward", "admin"] {
+            let text = merge_text(&[("method", json!(method))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("method")),
+                "{method}"
+            );
+        }
+        for method in ["merge", "squash", "rebase"] {
+            assert!(parse(&block(&merge_text(&[("method", json!(method))]))).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_delivery_merge_rejects_unknown_and_missing_fields_and_stays_in_a_workstream_scope() {
+        for text in [
+            merge_text(&[("force", json!(true))]),
+            merge_text(&[("admin", json!(true))]),
+            merge_text(&[("auto", json!(true))]),
+            r#"{"kind":"delivery.merge","task_id":"task-1","pr_number":42}"#.to_owned(),
+            format!(r#"{{"kind":"delivery.merge","pr_number":42,"head_sha":"{MERGE_HEAD}"}}"#),
+            format!(r#"{{"kind":"delivery.merge","task_id":"task-1","head_sha":"{MERGE_HEAD}"}}"#),
+        ] {
+            assert_eq!(parse(&block(&text)), Err(BlockError::Malformed), "{text}");
+        }
+        // The owning workstream of the task is checked against the store, so the parser passes it.
+        let scope = BlockScope::Workstream("ws-1");
+        assert!(parse_block(&block(&merge_text(&[])), scope).is_ok());
     }
 
     #[test]

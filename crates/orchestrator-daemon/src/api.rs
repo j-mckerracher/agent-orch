@@ -28,6 +28,7 @@ use orchestrator_git::delivery::{
     self, ApprovalCheck, CallbackError, DeliveryAction, DeliveryCallbacks, DeliveryOutcome,
     DeliveryRequest, DeliveryStep, VerificationCheck,
 };
+use orchestrator_git::github::GitHub;
 use orchestrator_git::Repository;
 use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
@@ -81,6 +82,12 @@ pub(crate) struct DaemonApi {
     /// in an `Arc`; stopped by `shutdown`.
     grant_matcher: Mutex<Option<grant_matcher::GrantMatcherHandle>>,
     grant_try_state: Mutex<grant_matcher::TryState>,
+    /// The only door to a remote forge (DPES-1105 phase 4c). `GhCli` in the daemon; every test
+    /// passes a `FakeGitHub`.
+    github: Arc<dyn GitHub>,
+    /// The pull request poller and merge worker: its thread, its signal and its in-memory
+    /// schedule. Started by `main`; stopped by `shutdown`.
+    landing: landing::LandingState,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -204,10 +211,23 @@ impl DaemonApi {
     /// Opens the store without launching anything.
     #[cfg(test)]
     pub(crate) fn new(data_dir: &Path) -> Result<Self, String> {
-        Self::with_config(data_dir, ExecutorConfig::for_data_dir(data_dir))
+        Self::with_github(
+            data_dir,
+            Arc::new(orchestrator_git::github_fake::FakeGitHub::new()),
+        )
     }
 
-    fn with_config(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
+    /// [`Self::new`] with the GitHub double a test scripts. No test builds a real `GhCli`.
+    #[cfg(test)]
+    pub(crate) fn with_github(data_dir: &Path, github: Arc<dyn GitHub>) -> Result<Self, String> {
+        Self::with_config(data_dir, ExecutorConfig::for_data_dir(data_dir), github)
+    }
+
+    fn with_config(
+        data_dir: &Path,
+        config: ExecutorConfig,
+        github: Arc<dyn GitHub>,
+    ) -> Result<Self, String> {
         let store = Arc::new(
             SqliteStore::new(&data_dir.join("store.sqlite"))
                 .map_err(|_| "cannot open daemon store".to_owned())?,
@@ -252,6 +272,8 @@ impl DaemonApi {
             wake: None,
             grant_matcher: Mutex::new(None),
             grant_try_state: Mutex::new(grant_matcher::TryState::default()),
+            github,
+            landing: landing::LandingState::default(),
         };
         api.reconcile_actions();
         Ok(api)
@@ -265,7 +287,8 @@ impl DaemonApi {
         conversation_orphans::reap(
             &conversation_agent::ConversationConfig::for_data_dir(data_dir).agents,
         );
-        let mut api = Self::with_config(data_dir, config.clone())?;
+        let github: Arc<dyn GitHub> = Arc::new(orchestrator_git::github::GhCli::from_env());
+        let mut api = Self::with_config(data_dir, config.clone(), github)?;
         let executor = Executor::start(api.store.clone(), config)?;
         // Recovery settles the batches a crash left running before the loop starts, so a
         // restart never makes a second turn for one record.
@@ -287,6 +310,7 @@ impl DaemonApi {
     }
 
     pub(crate) fn shutdown(&self) {
+        self.stop_landing();
         self.stop_grant_matcher();
         if let Some(wake) = &self.wake {
             wake.stop();
@@ -343,6 +367,7 @@ impl RpcHandler for DaemonApi {
             Capability::Monitoring,
             Capability::Holds,
             Capability::StandingApprovals,
+            Capability::Landing,
         ]
     }
 
@@ -431,6 +456,8 @@ impl RpcHandler for DaemonApi {
             "reports.relay" => {
                 self.reports_relay(params, context.negotiated(Capability::OrchestratorActions))
             }
+            "pulls.list" => self.pulls_list(params),
+            "pulls.refresh" => self.pulls_refresh(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -1625,6 +1652,10 @@ mod grants;
 mod holds;
 #[path = "api_host.rs"]
 mod host;
+#[path = "landing.rs"]
+mod landing;
+#[path = "api_landing.rs"]
+mod landing_api;
 #[path = "api_load.rs"]
 pub(crate) mod load;
 #[path = "api_models.rs"]
@@ -1688,6 +1719,12 @@ mod grant_matcher_tests;
 #[cfg(test)]
 #[path = "api_grants_tests.rs"]
 mod grants_tests;
+#[cfg(test)]
+#[path = "api_landing_merge_tests.rs"]
+mod landing_merge_tests;
+#[cfg(test)]
+#[path = "api_landing_tests.rs"]
+mod landing_tests;
 #[cfg(test)]
 #[path = "api_notes_tests.rs"]
 mod notes_tests;

@@ -76,6 +76,7 @@ fn run() -> Result<(), String> {
     let config = ExecutorConfig::for_data_dir(&data_dir);
     let handler = Arc::new(DaemonApi::with_executor(&data_dir, config)?);
     handler.start_grant_matcher();
+    handler.start_landing();
     let mut server = ServerConfig::new(data_dir, env!("CARGO_PKG_VERSION"));
     if let Some(secret) = approver {
         server = server.with_approver(secret);

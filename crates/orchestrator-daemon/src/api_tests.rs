@@ -1047,7 +1047,12 @@ fn api_with_memory_sink() -> (
     let diagnostics = orchestrator_diagnostics::Diagnostics::memory();
     let mut config = ExecutorConfig::for_data_dir(directory.path());
     config.diagnostics = diagnostics.clone();
-    let api = DaemonApi::with_config(directory.path(), config).unwrap();
+    let api = DaemonApi::with_config(
+        directory.path(),
+        config,
+        Arc::new(orchestrator_git::github_fake::FakeGitHub::new()),
+    )
+    .unwrap();
     (directory, api, diagnostics)
 }
 

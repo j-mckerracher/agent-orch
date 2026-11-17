@@ -16,6 +16,7 @@ use crate::contract::{
     validate_proposal, AutonomyPolicy, DeliveryPolicy, TaskKind, TaskProposal, Validation,
     VerificationPolicy,
 };
+use crate::landing::MergeRefusal;
 use crate::orchestrator_action::ProposeTask;
 use crate::project_mode::ProjectDefaults;
 
@@ -108,6 +109,9 @@ pub enum Denial {
     Verification,
     Delivery,
     Contract,
+    /// A `delivery.merge` that would be refused now. The key is the refusal's code, such as
+    /// `checks_red`.
+    Merge(MergeRefusal),
 }
 
 impl Denial {
@@ -118,6 +122,7 @@ impl Denial {
             Self::Verification => "verification_not_authorized",
             Self::Delivery => "delivery_not_authorized",
             Self::Contract => "contract_invalid",
+            Self::Merge(refusal) => refusal.code(),
         }
     }
 }
@@ -149,6 +154,15 @@ fn refuse(proposal: &TaskProposal, envelope: &Authorization) -> Result<(), Denia
 mod tests {
     use super::*;
     use crate::project_mode::ProjectMode;
+
+    #[test]
+    fn a_merge_denial_key_is_the_refusal_code_and_fits_the_stored_limit() {
+        for refusal in MergeRefusal::ALL {
+            let key = Denial::Merge(refusal).as_str();
+            assert_eq!(key, refusal.code());
+            assert!((1..=64).contains(&key.len()), "{key}");
+        }
+    }
 
     fn propose(delivery: DeliveryPolicy) -> ProposeTask {
         ProposeTask {

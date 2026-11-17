@@ -3675,3 +3675,119 @@ fn the_mcp_data_line_follows_the_server_in_the_launch_prompt() {
     assert!(mcp_prompt(&lines[1]).contains(MCP_LINE));
     stop(&layout, daemon, chat);
 }
+
+// Phase 4c: a merge card (DPES-1105). No process test can script GitHub, so the merge itself is
+// proven in-process with `FakeGitHub`; here the gate that guards it is proven over the socket.
+
+const MERGE_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// Seeds a task whose pull request the app has already read: open, mergeable, one required check
+/// passed, in a project that is in a pull request mode. The task stays `Created`, so the poller
+/// never reads it.
+fn seed_merge_target(layout: &Layout) {
+    seed_idle_task(layout, SEEDED_TASK);
+    let store = store_after_stop(layout);
+    store
+        .set_project_defaults(&orchestrator_store::ProjectDefaultsRow {
+            project_id: "seed-project".to_owned(),
+            mode: "no-mistakes".to_owned(),
+            base_branch: None,
+            branch_prefix: None,
+            checks: vec![vec!["cargo".to_owned(), "test".to_owned()]],
+            merge_method: "squash".to_owned(),
+            updated_at: String::new(),
+        })
+        .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    store
+        .observe_pull_request(
+            &orchestrator_store::PullRequestSeen {
+                task_id: SEEDED_TASK.to_owned(),
+                project_id: "seed-project".to_owned(),
+                number: 7,
+                branch: "moa/seeded".to_owned(),
+                base_branch: "main".to_owned(),
+                state: orchestrator_core::landing::PrState::Open,
+                head_sha: MERGE_HEAD.to_owned(),
+                mergeable: Some(true),
+                checks: vec![orchestrator_store::StoredCheck {
+                    name: "ci".to_owned(),
+                    state: orchestrator_core::landing::CheckState::Passed,
+                }],
+                title: "Seeded".to_owned(),
+            },
+            i64::try_from(now).unwrap(),
+        )
+        .unwrap();
+}
+
+/// A reply with one `delivery.merge` for the seeded pull request.
+fn merge_block() -> String {
+    let block = json!({
+        "mcao_actions": 1,
+        "actions": [
+            {"kind": "delivery.merge", "task_id": SEEDED_TASK, "pr_number": 7, "head_sha": MERGE_HEAD},
+        ],
+    });
+    format!("Merge below.\n```mcao-actions\n{block}\n```\n")
+}
+
+#[test]
+fn a_token_only_session_cannot_approve_a_merge_card() {
+    let layout = Layout::new();
+    seed_merge_target(&layout);
+    let reply_file = script(&layout, &merge_block());
+    // No `gh` can run: the daemon is pointed at a program that does not exist.
+    let gh = text(&absent(&layout));
+    let daemon = start(
+        &layout,
+        &[
+            ("FAKE_AGENT_REPLY", reply_file.as_str()),
+            ("AGENT_ORCH_GH_PROGRAM", gh.as_str()),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    assert!(chat.is_approver(), "{}", chat.welcome);
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+    // The card is pending, with the facts the app read, and no path.
+    assert_eq!(state_in(&page, &ids[0]), "pending", "{page}");
+    let card = &page["proposals"][0];
+    assert_eq!(card["kind"], "delivery.merge", "{page}");
+    assert_eq!(card["target"]["pull"]["required_total"], 1, "{page}");
+    assert_eq!(card["target"]["pull"]["merge_method"], "squash", "{page}");
+    assert!(!page.to_string().contains(&text(&layout.repo)), "{page}");
+
+    let digest = digest_of(&mut chat, &ids[0]);
+    let params = json!({
+        "proposal_id": ids[0],
+        "decision": "approve",
+        "digest": digest,
+        "idempotency_key": "r-1",
+    });
+    let mut bare = Chat::open_without_approver(&layout);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("actions.resolve", params);
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    bare.relay.close();
+
+    // Nothing moved: the card is still pending and no merge was claimed.
+    let page = chat.get(&global(), 0);
+    assert_eq!(state_in(&page, &ids[0]), "pending", "{page}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(proposal_rows(&store), ["delivery.merge pending"]);
+    assert!(store
+        .latest_pull_request_merge(SEEDED_TASK)
+        .unwrap()
+        .is_none());
+}

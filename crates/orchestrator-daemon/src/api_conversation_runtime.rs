@@ -36,6 +36,7 @@ use orchestrator_store::{
 
 use super::actions::promotion_denial;
 use super::conversation_snapshot::build_snapshot_with_notes;
+use super::landing_api::merge_denial;
 use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
@@ -445,6 +446,13 @@ impl ReplySink {
                         denial_of(store, propose).or_else(|| promotion_denial(store, propose))
                     }
                     Action::TaskRevise(revise) => revise_denial(store, revise),
+                    // A merge for a pull request the app has not read, at another head, or that
+                    // would be refused now is stored already `failed`, never approvable.
+                    Action::DeliveryMerge(merge) => merge_denial(
+                        store,
+                        merge,
+                        i64::try_from(crate::executor::unix_now_ms()).unwrap_or(i64::MAX),
+                    ),
                     _ => None,
                 }))
             }

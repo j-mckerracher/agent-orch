@@ -53,6 +53,10 @@ const RANK_OPEN_TASKS: u8 = 4;
 const RANK_PROPOSALS: u8 = 5;
 /// Scout reports not yet relayed, cut after every list above.
 const RANK_REPORTS: u8 = 6;
+/// Pull requests listed in the snapshot (DPES-1105 phase 4c), cut with the reports.
+const RANK_PULLS: u8 = 6;
+/// Newest pull requests read for the snapshot, so the line count stays bounded.
+const PULL_LINES: usize = 20;
 /// Newest reports read for the snapshot, so the line count stays bounded.
 const REPORT_LINES: usize = 50;
 /// Newest proposals of this conversation listed (DPES-1105).
@@ -145,6 +149,7 @@ pub(crate) fn build_snapshot_with_notes(
             .collect();
         blocks.push(Block::text(format!("Action kinds: {}", kinds.join(", "))));
         blocks.push(proposals(store, target));
+        blocks.extend(pull_requests(store));
     } else {
         blocks.push(Block::text("Actions: none yet"));
     }
@@ -578,6 +583,53 @@ fn reports(store: &SqliteStore) -> Block {
     }
 }
 
+/// The pull requests the app watches, for a turn that can propose a merge: ids, states and
+/// counts only, and the full head commit the proposal must bind. Never a title, a branch, a
+/// check name or a URL: those are remote text. A project that is back in `local-only` mode is
+/// left out. Nothing when there are none, or when they cannot be read.
+fn pull_requests(store: &SqliteStore) -> Option<Block> {
+    let rows = store.list_pull_requests(None, PULL_LINES).ok()?;
+    let mut aimed: HashMap<String, bool> = HashMap::new();
+    let items: Vec<String> = rows
+        .iter()
+        .filter(|row| {
+            *aimed.entry(row.project_id.clone()).or_insert_with(|| {
+                store
+                    .project_defaults(&row.project_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|defaults| defaults.mode != "local-only")
+            })
+        })
+        .map(|row| {
+            format!(
+                "- task {} pull request {} {} head {} required checks {} of {} passed, {} failed, mergeable {}",
+                field(&row.task_id, TEXT_BYTES),
+                row.number,
+                row.state.as_str(),
+                row.head_sha,
+                row.required_passed,
+                row.required_total,
+                row.required_failed,
+                match row.mergeable {
+                    Some(true) => "yes",
+                    Some(false) => "no",
+                    None => "unknown",
+                },
+            )
+        })
+        .collect();
+    if items.is_empty() {
+        return None;
+    }
+    Some(Block {
+        head: format!("Pull requests: {}", items.len()),
+        total: items.len(),
+        items,
+        rank: RANK_PULLS,
+    })
+}
+
 /// One workstream and its objective.
 fn load_one(
     store: &SqliteStore,
@@ -792,7 +844,7 @@ mod tests {
             actions.contains(concat!(
                 "Action kinds: workstream.create, workstream.update, objective.add, ",
                 "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task, ",
-                "task.revise, project.remove, decision.hold\n"
+                "task.revise, delivery.merge, project.remove, decision.hold\n"
             )),
             "{actions}"
         );

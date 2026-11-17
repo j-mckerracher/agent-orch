@@ -429,6 +429,36 @@ impl SqliteStore {
         })
     }
 
+    /// Moves one pending proposal to `superseded` and records the event, as a newer card of
+    /// the same subject does. Returns whether it moved: a proposal that is not pending, or not
+    /// stored, is left alone. The pull request poller uses it when the head a merge card was
+    /// bound to is no longer the head.
+    pub fn supersede_pending_action_proposal(&self, id: &str) -> Result<bool, StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let moved = match load_proposal(&mut transaction, &id).await? {
+                Some(proposal) if proposal.state == ProposalState::Pending => {
+                    supersede(
+                        &mut transaction,
+                        &proposal.scope,
+                        &proposal.id,
+                        &proposal.digest,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        ConversationError::Store(error) => error,
+                        other => corrupt(other.to_string()),
+                    })?;
+                    true
+                }
+                _ => false,
+            };
+            transaction.commit().await?;
+            Ok(moved)
+        })
+    }
+
     /// Moves a pending proposal to `approved`. A parent it depends on must already be
     /// `executed`.
     pub fn approve_action_proposal(

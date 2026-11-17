@@ -650,7 +650,12 @@ impl DaemonApi {
                 if matches!(request.decision, Decision::Approve) {
                     let denial = match self.recheck_task_denial(&current)? {
                         Some(denial) => Some(denial),
-                        None => self.recheck_promotion(&current)?,
+                        None => match self.recheck_promotion(&current)? {
+                            Some(denial) => Some(denial),
+                            // A merge card re-reads the stored pull request: a head that moved, a
+                            // check that went red or a project that went local-only denies it.
+                            None => self.recheck_merge(&current)?,
+                        },
                     };
                     if let Some(denial) = denial {
                         let denied = self
@@ -809,6 +814,12 @@ impl DaemonApi {
         proposal: &ActionProposal,
         now_ms: u64,
     ) -> Result<(), RpcError> {
+        // A merge is not run here: it calls the host, which must never happen under the gate.
+        // The proposal stays `approved` and the landing thread runs it (DPES-1105 phase 4c).
+        if proposal.kind == orchestrator_core::orchestrator_action::ActionKind::DeliveryMerge {
+            self.poke_landing();
+            return Ok(());
+        }
         let approver = self
             .store
             .proposal_approver(&proposal.id)
@@ -1100,6 +1111,8 @@ impl DaemonApi {
             Action::TaskRevise(revise) => {
                 Execution::ReviseTask(Box::new(self.revise_execution(revise, key)?))
             }
+            // Never built here: a merge runs on the landing thread, outside the gate.
+            Action::DeliveryMerge(_) => return Err(INVALID),
             Action::ProjectRemove(remove) => Execution::RemoveProject(RemoveParams {
                 project_id: self.resolve_project(&remove.project)?,
             }),
@@ -1389,6 +1402,7 @@ impl DaemonApi {
                 return target;
             }
             Action::ProjectRemove(remove) => return self.remove_target(&remove.project),
+            Action::DeliveryMerge(merge) => return self.merge_target(merge),
             Action::TaskCancel(cancel) => &cancel.task_id,
             Action::TaskRetry(retry) => &retry.task_id,
             Action::TaskRevise(revise) => &revise.task_id,
@@ -1496,7 +1510,7 @@ fn rpc_error_code(error: &RpcError) -> &'static str {
     }
 }
 
-fn map_resolve_error(error: ResolveError) -> RpcError {
+pub(super) fn map_resolve_error(error: ResolveError) -> RpcError {
     match error {
         ResolveError::NotFound => RpcError::ProposalNotFound,
         ResolveError::NotPending(_) => RpcError::ProposalNotPending,

@@ -398,6 +398,7 @@ impl DaemonApi {
             Action::WorkstreamCreate(_)
             | Action::TaskCancel(_)
             | Action::TaskRevise(_)
+            | Action::DeliveryMerge(_)
             | Action::ProjectRemove(_)
             | Action::DecisionHold(_) => return Ok(None),
         }

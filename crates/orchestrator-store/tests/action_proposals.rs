@@ -1074,8 +1074,8 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         ]
     );
 
-    // The database takes exactly these eleven kinds and core knows the same eleven.
-    const KINDS: [&str; 11] = [
+    // The database takes exactly these twelve kinds and core knows the same twelve.
+    const KINDS: [&str; 12] = [
         "workstream.create",
         "workstream.update",
         "objective.add",
@@ -1085,6 +1085,7 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         "task.retry",
         "workstream.link_task",
         "task.revise",
+        "delivery.merge",
         "project.remove",
         "decision.hold",
     ];

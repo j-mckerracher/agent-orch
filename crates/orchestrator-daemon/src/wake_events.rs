@@ -85,7 +85,8 @@ fn redact_word(word: &str, tokens: bool) -> String {
     let drive =
         core.len() > 2 && core.as_bytes()[1] == b':' && core.as_bytes()[0].is_ascii_alphabetic();
     // A word with one slash, such as a fraction, is not a path.
-    let pathlike = core.starts_with(['/', '~'])
+    // A lone slash, as in the check name `ci / build`, is a separator, not a path.
+    let pathlike = (core.starts_with(['/', '~']) && core != "/")
         || core.contains('\\')
         || core.matches('/').count() >= 2
         || drive;
