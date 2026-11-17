@@ -13,7 +13,8 @@ use serde_json::Value;
 const ID_BYTES: usize = 64;
 /// A run of this many id characters looks like a token and is not shown.
 const TOKEN_LIKE_CHARS: usize = 32;
-/// Stable failure code an attempt may carry when the agent needs a sign-in.
+/// Stable failure code an attempt may carry when the agent needs a sign-in. Deferred: the
+/// store records no stable failure code yet, so the sign-in event never fires in production.
 pub(crate) const SIGN_IN_FAILURE_CODE: &str = "sign_in_required";
 
 /// One event worth a notice. The scope comes from the task's facts, so it is not stored here.
@@ -48,10 +49,25 @@ pub(crate) fn redact(text: &str) -> String {
     redact_with(text, true)
 }
 
-/// Like [`redact`] but only for paths. The snapshot a wake turn is shown names tasks by id,
-/// and an id is as long as a token, so it must stay.
-pub(crate) fn redact_paths(text: &str) -> String {
-    redact_with(text, false)
+/// Redacts the snapshot a wake turn is shown. Titles get the full [`redact`] treatment, so a
+/// token typed into another task's or a workstream's title does not reach the agent. An id is
+/// as long as a token and must stay, so a word in an id position is checked for paths only:
+/// after `[id ` or `workstream `, or the id that opens an open-task line.
+pub(crate) fn redact_snapshot(text: &str) -> String {
+    text.split('\n')
+        .map(|line| {
+            let words: Vec<&str> = line.split(' ').collect();
+            let task_line = words.first() == Some(&"-") && words.get(3) == Some(&"project");
+            let mut out = Vec::with_capacity(words.len());
+            for (index, word) in words.iter().enumerate() {
+                let after_marker = index > 0 && matches!(words[index - 1], "[id" | "workstream");
+                let is_id = after_marker || (task_line && index == 1);
+                out.push(redact_word(word, !is_id));
+            }
+            out.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn redact_with(text: &str, tokens: bool) -> String {
@@ -67,7 +83,11 @@ fn redact_with(text: &str, tokens: bool) -> String {
 fn redact_word(word: &str, tokens: bool) -> String {
     let core = word.trim_matches(|c: char| !(c.is_alphanumeric() || matches!(c, '/' | '\\' | '~')));
     let drive = core.len() > 2 && core.as_bytes()[1] == b':' && core.as_bytes()[0].is_ascii_alphabetic();
-    let pathlike = core.contains('/') || core.contains('\\') || core.starts_with('~') || drive;
+    // A word with one slash, such as a fraction, is not a path.
+    let pathlike = core.starts_with(['/', '~'])
+        || core.contains('\\')
+        || core.matches('/').count() >= 2
+        || drive;
     let tokenlike = tokens
         && core.len() >= TOKEN_LIKE_CHARS
         && core
@@ -124,7 +144,9 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
             })
         }
         "attempt.state_changed" => {
-            // Only a stable code counts. No session output is read or parsed.
+            // Deferred: the store records no stable failure code yet (decisions-3 Q13), so this
+            // arm only matches a payload that carries one. Only a stable code counts, and no
+            // session output is read or parsed.
             if event.payload.get("state")?.as_str()? != "Failed"
                 || event.payload.get("failure_code").and_then(Value::as_str)
                     != Some(SIGN_IN_FAILURE_CODE)
@@ -297,6 +319,39 @@ mod tests {
             json!({"state": "Failed", "output": "/tmp/leak"}),
         );
         assert_eq!(classify(&session, Some(&facts)), None);
+    }
+
+    #[test]
+    fn the_sign_in_event_is_deferred_until_the_store_records_a_failure_code() {
+        // What the store writes today for a failed attempt: a flag, never a code.
+        let candidate = classify(
+            &event(
+                "attempt.state_changed",
+                json!({"state": "Failed", "failure_reason_available": true}),
+            ),
+            None,
+        );
+        assert_eq!(candidate, None);
+        // The ordinary failed event is the one a real failure raises.
+        let failed = classify(&event("task.transition", json!({"state": "Failed"})), None).unwrap();
+        assert_eq!(failed.kind, WakeKind::TaskFailed);
+        assert_ne!(failed.kind, WakeKind::SignInNeeded);
+    }
+
+    #[test]
+    fn a_fraction_in_the_snapshot_is_not_redacted_as_a_path() {
+        let line = "Tasks: gates 3/5 verified, 80/100 done; see /tmp/x and a/b/c";
+        assert_eq!(
+            redact_snapshot(line),
+            "Tasks: gates 3/5 verified, 80/100 done; see [path] and [path]"
+        );
+        // A long id stays, a long secret-like word in a title does not.
+        let id = "w".repeat(40);
+        let token = "k".repeat(40);
+        assert_eq!(
+            redact_snapshot(&format!("- Ship {token} [id {id}] state open")),
+            format!("- Ship [redacted] [id {id}] state open")
+        );
     }
 
     #[test]

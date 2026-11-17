@@ -465,6 +465,29 @@ fn a_user_message_cancels_a_running_wake_turn() {
 }
 
 #[test]
+fn a_wake_turn_cancelled_by_a_user_message_runs_again_after_the_user_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    let first = records_of(&f, WakeKind::TaskFailed)[0].turn_id.clone();
+    user_send(&f, "u-1").unwrap();
+    tick(&f);
+    f.probe.finish(1, "hi");
+    f.probe.replying(Some("Task one failed."));
+
+    start_batch(&f);
+    tick(&f);
+
+    assert_eq!(f.probe.started(), 3, "wake, user, then a second wake turn");
+    assert!(f.probe.last().wake);
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Handled);
+    assert_ne!(record.turn_id, first, "the retry is a new turn");
+    assert_eq!(ledger_rows(&f), 2, "one ledger row per started turn");
+}
+
+#[test]
 fn a_user_message_over_a_running_user_turn_is_still_refused() {
     let f = fixture();
     user_send(&f, "u-1").unwrap();
@@ -537,6 +560,24 @@ fn a_wake_turn_gets_the_snapshot_and_no_paths() {
         assert!(!seen.prompt.contains(needle), "{needle} in {}", seen.prompt);
     }
     assert!(!seen.prompt.contains("daemon.token"));
+}
+
+#[test]
+fn a_long_secret_like_word_in_another_tasks_title_never_reaches_the_wake_prompt() {
+    let f = fixture();
+    let secret = "sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD";
+    queue_task(&f, "t-2", &format!("Rotate {secret} soon"));
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+
+    start_batch(&f);
+
+    let seen = f.probe.last();
+    assert!(!seen.context.contains(secret), "{}", seen.context);
+    assert!(!seen.prompt.contains(secret), "{}", seen.prompt);
+    assert!(seen.context.contains("[redacted]"), "{}", seen.context);
+    // Ids stay.
+    assert!(seen.context.contains("t-2"), "{}", seen.context);
 }
 
 #[test]
@@ -667,6 +708,52 @@ fn mode_off_gives_notices_only() {
     assert_eq!(f.probe.started(), 0);
     assert_eq!(ledger_rows(&f), 0);
     assert_eq!(monitoring(&f)["unseen"][0]["count"], 1);
+}
+
+#[test]
+fn a_mode_set_to_off_between_the_settings_read_and_the_claim_starts_no_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, DEBOUNCE_MS);
+    // The mode changes without `mode_changed`, as when the user sets Off right after a pass
+    // read the settings: the record is still pending and its window is due.
+    f.api
+        .store
+        .update_orchestrator_settings(&orchestrator_store::SettingsPatch {
+            mode: Some(MonitoringMode::Off),
+            ..orchestrator_store::SettingsPatch::default()
+        })
+        .unwrap();
+
+    let mut report = TickReport::default();
+    f.wake.start_ready(f.clock.now_ms(), &mut report).unwrap();
+
+    assert_eq!(report.started, 0);
+    assert_eq!(f.probe.started(), 0);
+    assert_eq!(ledger_rows(&f), 0);
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Skipped);
+    assert_eq!(record.skip_reason, Some(SkipReason::ModeOff));
+}
+
+#[test]
+fn a_store_error_while_claiming_re_offers_the_records() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, DEBOUNCE_MS);
+    let ids: Vec<String> = f.wake.state().debounce.take(GLOBAL_SCOPE);
+    assert!(!ids.is_empty());
+    assert!(f.wake.state().debounce.due(f.clock.now_ms()).is_empty());
+
+    // The path every error after `take` goes through.
+    let result: Result<(), String> =
+        f.wake
+            .or_offer(Err("cannot claim wake batch".into()), GLOBAL_SCOPE, &ids, f.clock.now_ms());
+
+    assert!(result.is_err());
+    assert_eq!(start_batch(&f).started, 1, "the records were not stranded");
 }
 
 #[test]
@@ -986,8 +1073,38 @@ fn a_stalled_task_raises_a_notice_without_a_model_turn() {
     let stalled = records_of(&f, WakeKind::TaskStalled);
     assert_eq!(stalled.len(), 1);
     assert!(stalled[0].notice.contains("silent"), "{}", stalled[0].notice);
+    assert_eq!(stalled[0].state, WakeState::Noticed, "a stall is a notice only");
     assert_eq!(f.probe.started(), 0, "the scan starts no turn");
     assert_eq!(ledger_rows(&f), 0, "and writes no ledger row");
+
+    // Past the debounce a stall still starts nothing.
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 0, "no model turn after the debounce");
+    assert_eq!(ledger_rows(&f), 0, "and the ledger stays empty");
+}
+
+#[test]
+fn a_stall_never_costs_a_wake_turn_or_a_cap() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 10 * MINUTE + SLACK);
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 1);
+
+    // Many debounce windows later: no turn, no ledger row, no pause.
+    for _ in 0..8 {
+        start_batch(&f);
+    }
+
+    assert_eq!(f.probe.started(), 0);
+    assert_eq!(ledger_rows(&f), 0);
+    assert_eq!(monitoring(&f)["paused"], json!([]));
+    // The caps are all still there for a real failure.
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    assert_eq!(start_batch(&f).started, 1);
+    assert_eq!(ledger_rows(&f), 1);
 }
 
 #[test]
@@ -1113,7 +1230,7 @@ fn a_finding_never_cancels_or_revises_a_task() {
     advance(&f, 10 * MINUTE + SLACK);
     tick(&f);
     start_batch(&f);
-    assert_eq!(f.probe.started(), 1);
+    assert_eq!(f.probe.started(), 0, "a stall starts no turn");
 
     let task = f.api.store.get("t-1").unwrap();
     assert_eq!(task.state, orchestrator_core::task::TaskState::Running);
@@ -1126,6 +1243,26 @@ fn a_finding_never_cancels_or_revises_a_task() {
 }
 
 // ---- restart -----------------------------------------------------------------------------
+
+#[test]
+fn a_recover_error_is_logged_and_does_not_stop_startup() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    let ids = f.wake.state().debounce.take(GLOBAL_SCOPE);
+    assert!(!ids.is_empty());
+
+    let result = f.wake.after_recover(Err("cannot read wake records".into()));
+
+    assert_eq!(result, Ok(()));
+    let lines = f.wake.diagnostics.lines();
+    assert_eq!(
+        lines.iter().filter(|line| line.contains("wake_recover_failed")).count(),
+        1,
+        "{lines:?}"
+    );
+    assert_eq!(start_batch(&f).started, 1, "the pending records were re-offered");
+}
 
 #[test]
 fn restart_requeues_a_claimed_batch_without_a_second_live_turn() {

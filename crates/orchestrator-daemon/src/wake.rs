@@ -168,6 +168,33 @@ impl WakeService {
     /// records join the debounce, and the first observation pass runs here so a catch-up
     /// notice belongs to the same batch.
     pub(crate) fn recover(&self) -> Result<(), String> {
+        let recovered = self.recover_once();
+        self.after_recover(recovered)
+    }
+
+    /// A store that cannot be read right now must not stop the daemon: one diagnostics line,
+    /// then the pending records join the debounce and the loop observes again on its first
+    /// pass.
+    fn after_recover(&self, recovered: Result<(), String>) -> Result<(), String> {
+        if recovered.is_err() {
+            self.diagnostics.warn(LOG, "wake_recover_failed", &[]);
+            self.reoffer_pending();
+        }
+        Ok(())
+    }
+
+    /// Offers every pending record to the debounce. A read error leaves them to a later pass.
+    fn reoffer_pending(&self) {
+        let now = self.boot_ms;
+        if let Ok(pending) = self.store.pending_wake_records() {
+            let mut state = self.state();
+            for record in &pending {
+                state.debounce.offer(&record.scope, &record.id, now);
+            }
+        }
+    }
+
+    fn recover_once(&self) -> Result<(), String> {
         let now = self.boot_ms;
         let running = self
             .store
@@ -218,7 +245,7 @@ impl WakeService {
         report.recorded += self.observe(&settings, now)?;
         report.recorded += self.stall_scan(&settings, now)?;
         report.recorded += self.proposal_scan(&settings, now)?;
-        self.start_ready(&settings, now, &mut report)?;
+        self.start_ready(now, &mut report)?;
         self.prune(now);
         Ok(report)
     }
@@ -418,7 +445,9 @@ impl WakeService {
             subject: candidate.subject.clone(),
             dedupe_key: candidate.dedupe_key.clone(),
             notice: candidate.notice.clone(),
-            needs_model: candidate.kind.needs_model(),
+            // A stall is a notice and never a model turn (decisions-3), whatever the store says
+            // of the kind.
+            needs_model: candidate.kind.needs_model() && candidate.kind != WakeKind::TaskStalled,
         });
         if scope != GLOBAL_SCOPE {
             out.push(NewWakeRecord {
@@ -589,13 +618,10 @@ impl WakeService {
         self.record(settings, &records, now)
     }
 
-    /// Step 5: start the batches whose window is due.
-    fn start_ready(
-        &self,
-        settings: &OrchestratorSettings,
-        now: u64,
-        report: &mut TickReport,
-    ) -> Result<(), String> {
+    /// Step 5: start the batches whose window is due. The settings are read again for each
+    /// batch, just before the claim, so a mode set to Off or a lowered cap after the top of the
+    /// pass is honored.
+    fn start_ready(&self, now: u64, report: &mut TickReport) -> Result<(), String> {
         let due = self.state().debounce.due(now);
         if due.is_empty() {
             return Ok(());
@@ -630,24 +656,40 @@ impl WakeService {
                 continue;
             };
             let ids: Vec<String> = records.iter().map(|record| record.id.clone()).collect();
+            // From here to the claim, an error puts the records back in a window.
+            let settings = self.or_offer(self.settings(), &scope, &ids, now)?;
             if !settings.mode.runs_wake_turns() {
-                report.skipped += self.skip(&ids, SkipReason::ModeOff)?;
+                report.skipped += self.or_offer(self.skip(&ids, SkipReason::ModeOff), &scope, &ids, now)?;
                 continue;
             }
-            let usage = self
-                .store
-                .wake_usage(&scope, now)
-                .map_err(|_| "cannot read wake usage".to_owned())?;
+            let usage = self.or_offer(
+                self.store
+                    .wake_usage(&scope, now)
+                    .map_err(|_| "cannot read wake usage".to_owned()),
+                &scope,
+                &ids,
+                now,
+            )?;
             if let Admission::Paused { reason, .. } = admit(&settings.wake_limits, &usage) {
-                report.skipped += self.skip(&ids, skip_reason(reason))?;
+                report.skipped += self.or_offer(self.skip(&ids, skip_reason(reason)), &scope, &ids, now)?;
                 continue;
             }
-            let batch_id = stable_id("wake-batch", &format!("{}:{}", first.id, first.attempts));
+            // The turn count in the ledger joins the seed, so a batch that a user message
+            // cancelled and that is requeued unchanged still gets a new turn id. A replayed
+            // claim sees the same count, so a restart never makes a second turn for a record.
+            let batch_id = stable_id(
+                "wake-batch",
+                &format!("{}:{}:{}", first.id, first.attempts, usage.day_count),
+            );
             let turn_id = stable_id("wake-turn", &batch_id);
-            let claimed = self
-                .store
-                .claim_wake_batch(&scope, &ids, &batch_id, &turn_id, settings.mode.notifies(), now)
-                .map_err(|_| "cannot claim wake batch".to_owned())?;
+            let claimed = self.or_offer(
+                self.store
+                    .claim_wake_batch(&scope, &ids, &batch_id, &turn_id, settings.mode.notifies(), now)
+                    .map_err(|_| "cannot claim wake batch".to_owned()),
+                &scope,
+                &ids,
+                now,
+            )?;
             if claimed.is_empty() {
                 self.offer_again(&scope, &ids, now);
                 continue;
@@ -669,6 +711,21 @@ impl WakeService {
             }
         }
         Ok(())
+    }
+
+    /// Passes `result` through, and on an error offers the records to the debounce again so
+    /// they are not stranded until a restart.
+    fn or_offer<T>(
+        &self,
+        result: Result<T, String>,
+        scope: &str,
+        ids: &[String],
+        now: u64,
+    ) -> Result<T, String> {
+        if result.is_err() {
+            self.offer_again(scope, ids, now);
+        }
+        result
     }
 
     fn skip(&self, ids: &[String], reason: SkipReason) -> Result<usize, String> {

@@ -66,8 +66,10 @@ impl WakeKind {
     }
 
     /// Whether this kind of event is interpreted by a wake turn. Every other kind is a notice.
+    /// A stall is a notice only: the stall check never starts a model turn and never counts
+    /// against the wake caps (decisions-3).
     pub const fn needs_model(self) -> bool {
-        matches!(self, Self::TaskFailed | Self::TaskStalled | Self::DaemonStart)
+        matches!(self, Self::TaskFailed | Self::DaemonStart)
     }
 }
 
@@ -816,7 +818,7 @@ mod tests {
     fn initial_state_follows_needs_model_and_mode() {
         let (_directory, store) = open();
         let notice = new_record(GLOBAL, WakeKind::DeliveryWaiting, "approval:a1");
-        let model = new_record(GLOBAL, WakeKind::TaskStalled, "stall:a1:no_events");
+        let model = new_record(GLOBAL, WakeKind::TaskFailed, "failed:a1:7");
         let mut copy = new_record(GLOBAL, WakeKind::TaskFailed, "up:failed:t1:5");
         copy.needs_model = false;
         let on = store
@@ -830,7 +832,7 @@ mod tests {
         assert!(!on[0].needs_model && on[1].needs_model);
 
         let mut off_record = model;
-        off_record.dedupe_key = "stall:a2:no_events".to_owned();
+        off_record.dedupe_key = "failed:a2:8".to_owned();
         let off = store
             .record_wake_events(&[off_record], MonitoringMode::Off, 2)
             .unwrap();
