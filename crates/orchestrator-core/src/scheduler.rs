@@ -38,7 +38,7 @@ pub struct SchedulerSnapshot<'a> {
 }
 
 /// Finite worker limits. `None` in [`SchedulerLimits::new`] means unbounded
-/// and is rejected. Defaults allow two global workers and two per project.
+/// and is rejected. Defaults allow ten global workers and ten per project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchedulerLimits {
     max_concurrent_workers: NonZeroUsize,
@@ -80,8 +80,8 @@ impl SchedulerLimits {
 impl Default for SchedulerLimits {
     fn default() -> Self {
         Self {
-            max_concurrent_workers: NonZeroUsize::new(2).expect("two is nonzero"),
-            max_workers_per_project: NonZeroUsize::new(2).expect("two is nonzero"),
+            max_concurrent_workers: NonZeroUsize::new(10).expect("ten is nonzero"),
+            max_workers_per_project: NonZeroUsize::new(10).expect("ten is nonzero"),
         }
     }
 }
@@ -834,12 +834,13 @@ mod tests {
             (contract("c", "project-a", &[]), TaskState::Queued),
         ];
 
-        let open = pass(&tasks, SchedulerLimits::default(), None, None, &allow_all);
+        let two = SchedulerLimits::new(Some(2), Some(2)).unwrap();
+        let open = pass(&tasks, two, None, None, &allow_all);
         assert_eq!(open.started, ["a", "b"]);
 
         let closed = pass(
             &tasks,
-            SchedulerLimits::default(),
+            two,
             Some(CLOSED),
             None,
             &allow_all,
@@ -861,7 +862,7 @@ mod tests {
             (contract("a", "project-a", &[]), TaskState::Queued),
             (contract("b", "project-b", &[]), TaskState::Queued),
         ];
-        let limits = SchedulerLimits::default();
+        let limits = SchedulerLimits::new(Some(2), Some(2)).unwrap();
 
         // Open, the cursor moves on to project-b and one task starts.
         let open = pass(&tasks, limits, None, Some("project-a"), &allow_all);

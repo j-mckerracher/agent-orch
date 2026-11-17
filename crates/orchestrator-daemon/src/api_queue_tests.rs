@@ -96,8 +96,8 @@ fn empty_daemon_reports_limits_and_nothing_else() {
 
     let result = snapshot(&api);
 
-    assert_eq!(result["limits"]["max_concurrent_workers"], 2);
-    assert_eq!(result["limits"]["max_workers_per_project"], 2);
+    assert_eq!(result["limits"]["max_concurrent_workers"], 10);
+    assert_eq!(result["limits"]["max_workers_per_project"], 10);
     assert_eq!(result["running"], json!([]));
     assert_eq!(result["queued"], json!([]));
     assert_eq!(result["dispatch_blocked"], false);

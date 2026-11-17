@@ -1,5 +1,5 @@
-//! Native proof of `queue.snapshot`: a real daemon at the default 2/2 limits
-//! runs two fake agent processes at once, queues a third task, and reports
+//! Native proof of `queue.snapshot`: a real daemon at the default 10/10 limits
+//! runs ten fake agent processes at once, queues an eleventh task, and reports
 //! both over the platform transport (Unix socket, Windows named pipe).
 //!
 //! Run with `cargo test -p orchestrator-daemon --test queue_snapshot -- --nocapture`.
@@ -9,7 +9,7 @@
 //! `queue_snapshot: PASS`.
 //!
 //! Proof of simultaneous execution: each agent process wrote its own pid file
-//! and the OS reports both pids alive while the snapshot lists two running
+//! and the OS reports every pid alive while the snapshot lists ten running
 //! tasks, one queued task waiting on the global cap, and the same task states
 //! `tasks.list` reports at the same event sequence.
 
@@ -21,6 +21,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// The default worker limit, global and per project.
+const WORKERS: usize = 10;
 
 const WAIT: Duration = Duration::from_secs(30);
 /// Retry loops swallow errors, so a short call bound would turn one slow call
@@ -241,7 +244,7 @@ fn scenario(base: &Path) {
     git(&repo, &["add", "sample.txt"]);
     git(&repo, &["commit", "-m", "initial"]);
 
-    step("1 start a real daemon (default limits 2/2) with a fake agent binary");
+    step("1 start a real daemon (default limits 10/10) with a fake agent binary");
     let agent: PathBuf = std::env::current_exe().unwrap();
     let nonexistent: PathBuf = base.join("no-such-agent");
     let daemon_log = base.join("daemon.log");
@@ -275,8 +278,14 @@ fn scenario(base: &Path) {
     let empty = call(&data, "queue.snapshot", |client| {
         client.queue_snapshot().ok()
     });
-    assert_eq!(empty["limits"]["max_concurrent_workers"], 2, "{empty}");
-    assert_eq!(empty["limits"]["max_workers_per_project"], 2, "{empty}");
+    assert_eq!(
+        empty["limits"]["max_concurrent_workers"], WORKERS,
+        "{empty}"
+    );
+    assert_eq!(
+        empty["limits"]["max_workers_per_project"], WORKERS,
+        "{empty}"
+    );
     assert_eq!(empty["running"], json!([]), "{empty}");
     assert_eq!(empty["queued"], json!([]), "{empty}");
 
@@ -289,23 +298,25 @@ fn scenario(base: &Path) {
     ));
     drop(narrow);
 
-    step("4 submit three tasks: two run at once, the third waits");
-    let tasks: Vec<String> = (1..=3).map(|n| submit(&data, &project_id, n)).collect();
-    let pids = until("both agents wrote their pids", || {
+    step("4 submit one task more than the limit: ten run at once, the last waits");
+    let tasks: Vec<String> = (1..=WORKERS + 1)
+        .map(|n| submit(&data, &project_id, n))
+        .collect();
+    let pids = until("every agent wrote its pid", || {
         if let Some(status) = daemon.0.try_wait().unwrap() {
             fail(&format!("daemon exited: {status}"));
         }
         let pids = agent_pids(&agents);
-        (pids.len() == 2).then_some(pids)
+        (pids.len() == WORKERS).then_some(pids)
     });
     for pid in &pids {
         assert!(orchestrator_runtime::is_process_running(*pid), "pid {pid}");
     }
-    let (snapshot, listed) = until("two running, one queued", || {
+    let (snapshot, listed) = until("ten running, one queued", || {
         let (snapshot, listed) = consistent_views(&data);
-        (snapshot["running"].as_array()?.len() == 2).then_some((snapshot, listed))
+        (snapshot["running"].as_array()?.len() == WORKERS).then_some((snapshot, listed))
     });
-    assert_eq!(ids(&snapshot["running"]).len(), 2, "{snapshot}");
+    assert_eq!(ids(&snapshot["running"]).len(), WORKERS, "{snapshot}");
     let queued = snapshot["queued"].as_array().unwrap();
     assert_eq!(queued.len(), 1, "{snapshot}");
     assert_eq!(queued[0]["waiting_reason"], "global_cap", "{snapshot}");
@@ -342,7 +353,7 @@ fn scenario(base: &Path) {
     });
     assert_eq!(
         promoted["running"].as_array().unwrap().len(),
-        2,
+        WORKERS,
         "{promoted}"
     );
 

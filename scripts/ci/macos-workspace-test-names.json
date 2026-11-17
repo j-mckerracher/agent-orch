@@ -332,7 +332,7 @@
   "configured_global_limit_counts_running_and_started_tasks",
   "rejects_duplicate_claims_already_owned_by_running_tasks",
   "rejects_second_task_claiming_same_branch_path",
-  "default_global_limit_starts_two_tasks",
+  "default_global_limit_starts_ten_tasks",
   "per_project_limit_applies_to_running_and_started_tasks",
   "rejects_second_task_claiming_same_worktree",
   "rejects_self_dependency_with_named_cycle",
