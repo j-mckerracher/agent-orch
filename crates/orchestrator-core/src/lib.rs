@@ -27,6 +27,7 @@ pub mod project_mode;
 pub mod records;
 pub mod retry;
 pub mod scheduler;
+pub mod standing_grant;
 pub mod supervision;
 pub mod task;
 pub mod task_envelope;

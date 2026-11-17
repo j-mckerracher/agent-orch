@@ -60,6 +60,7 @@ mod sqlite_conversation_usage;
 mod sqlite_conversations;
 mod sqlite_delivery;
 mod sqlite_history;
+mod sqlite_grants;
 mod sqlite_holds;
 mod sqlite_lineage;
 mod sqlite_ops;
@@ -91,6 +92,7 @@ pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
 pub use sqlite_project_defaults::{
     ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow,
 };
+pub use sqlite_grants::{GrantError, GrantEvent, GrantEventKind, GrantOutcome};
 pub use sqlite_reports::{
     ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
 };

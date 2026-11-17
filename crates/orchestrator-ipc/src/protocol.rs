@@ -63,10 +63,13 @@ pub enum Capability {
     Monitoring,
     /// `holds.list` (open) and the user-only `holds.set` and `holds.release` (DPES-1105).
     Holds,
+    /// `grants.list` (open) and the user-only `grants.create` and `grants.revoke`: standing
+    /// approvals (DPES-1105). Not advertised by an older daemon.
+    StandingApprovals,
 }
 
 impl Capability {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -88,6 +91,7 @@ impl Capability {
         Self::Settings,
         Self::Monitoring,
         Self::Holds,
+        Self::StandingApprovals,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -113,6 +117,7 @@ impl Capability {
             Self::Settings => "settings",
             Self::Monitoring => "monitoring",
             Self::Holds => "holds",
+            Self::StandingApprovals => "standing_approvals",
         }
     }
 

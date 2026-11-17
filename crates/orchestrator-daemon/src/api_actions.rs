@@ -56,17 +56,20 @@ enum Decision {
 /// Why one step of an execution failed: the typed workstream store error, or the
 /// `RpcError` the matching task method would have answered with.
 #[derive(Debug)]
-enum ActionError {
+pub(super) enum ActionError {
     Store(WorkstreamStoreError),
     Rpc(RpcError),
+    /// A write failed that the next start can repeat. The proposal stays `approved`.
+    Retry,
 }
 
 impl ActionError {
     /// The stable code a failed execution records.
-    fn code(&self) -> &'static str {
+    pub(super) fn code(&self) -> &'static str {
         match self {
             Self::Store(error) => error_code(error),
             Self::Rpc(error) => rpc_error_code(error),
+            Self::Retry => "internal",
         }
     }
 }
@@ -389,7 +392,14 @@ impl ReviseTaskExec {
             self.preflight(api)?;
         }
         let new_task_id = self.task.run(api)?;
-        self.stop_old(api)?;
+        if let Err(error) = self.stop_old(api) {
+            // The proposal fails, so the new task must not be left queued beside a running
+            // old one. A cancel that fails too leaves the proposal approved to try again.
+            return match api.cancel_task_inner(&new_task_id) {
+                Ok(_) => Err(error),
+                Err(_) => Err(ActionError::Retry),
+            };
+        }
         api.store
             .add_task_lineage(
                 &new_task_id,
@@ -397,7 +407,7 @@ impl ReviseTaskExec {
                 LineageRelation::RevisedFrom,
                 Some(&self.added_intent),
             )
-            .map_err(lineage_error)?;
+            .map_err(lineage_write_error)?;
         Ok(new_task_id)
     }
 
@@ -497,6 +507,22 @@ fn lineage_error(error: StoreError) -> ActionError {
     match LineageError::of(&error) {
         Some(_) => RpcError::Conflict.into(),
         None => error.into(),
+    }
+}
+
+/// The objective of the task a `task.revise` makes: the old one, a fixed heading and the
+/// added instruction.
+pub(super) fn revised_objective(old: &str, added_intent: &str) -> String {
+    format!("{old}\n\nAdded instruction from the user:\n{added_intent}")
+}
+
+/// A refused lineage link is a conflict. Any other failure to write the link of a revise
+/// is retried: the old task is already stopped, and a rerun finds the new task by its id
+/// and writes the same link.
+pub(super) fn lineage_write_error(error: StoreError) -> ActionError {
+    match LineageError::of(&error) {
+        Some(_) => RpcError::Conflict.into(),
+        None => ActionError::Retry,
     }
 }
 
@@ -844,6 +870,16 @@ impl DaemonApi {
         key: &str,
         actor: &str,
     ) -> Result<Value, RpcError> {
+        if let Execution::ReviseTask(exec) = execution {
+            // Every step of a revise is safe to repeat, so it runs outside the idempotency
+            // record, which would keep a retryable failure for good. The proposal outcome
+            // is the record: only an approved proposal runs.
+            return match exec.run(self) {
+                Ok(result_ref) => Ok(json!({"result_ref": result_ref})),
+                Err(ActionError::Retry) => Err(RpcError::Internal),
+                Err(error) => Ok(json!({"error_code": error.code()})),
+            };
+        }
         let method = execution.method();
         let params = execution.params()?;
         match idempotency::run_locked(held, &self.store, method, key, &params, || {
@@ -999,10 +1035,7 @@ impl DaemonApi {
         if !envelope.delivery_grants(old.contract.delivery) {
             return Err("action_denied");
         }
-        let objective = format!(
-            "{}\n\nAdded instruction from the user:\n{}",
-            old.contract.objective, revise.added_intent
-        );
+        let objective = revised_objective(&old.contract.objective, &revise.added_intent);
         if objective.len() > orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES {
             return Err(INVALID);
         }

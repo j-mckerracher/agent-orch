@@ -512,6 +512,24 @@ impl Client {
         )
     }
 
+    /// `grants.create`: creates one standing grant from `params` (scope, kinds, expiry, use
+    /// limit, token budget and an idempotency key). The daemon refuses a session that did
+    /// not prove the approver secret.
+    pub fn grants_create(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.create", params)
+    }
+
+    /// `grants.revoke`: revokes one standing grant, taking `grant_id` and an idempotency key
+    /// from `params`. The daemon refuses a session that did not prove the approver secret.
+    pub fn grants_revoke(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.revoke", params)
+    }
+
+    /// `grants.list`: the standing grants and the policy limits.
+    pub fn grants_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.list", params)
+    }
+
     /// `holds.list`: the holds in place.
     pub fn holds_list(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Holds, "holds.list", json!({}))
@@ -861,6 +879,8 @@ pub(crate) fn map_remote(code: i32) -> IpcError {
         -32021 => IpcError::ProposalNotFound,
         -32022 => IpcError::ProposalNotPending,
         -32023 => IpcError::ProposalInvalid,
+        -32024 => IpcError::GrantNotFound,
+        -32025 => IpcError::GrantInvalid,
         _ => IpcError::Operation,
     }
 }

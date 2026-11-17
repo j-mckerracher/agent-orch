@@ -446,6 +446,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "settings.get" | "settings.set" => Some(Capability::Settings),
         "monitoring.get" | "monitoring.set" | "monitoring.ack" => Some(Capability::Monitoring),
         "holds.set" | "holds.release" | "holds.list" => Some(Capability::Holds),
+        "grants.create" | "grants.revoke" | "grants.list" => Some(Capability::StandingApprovals),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

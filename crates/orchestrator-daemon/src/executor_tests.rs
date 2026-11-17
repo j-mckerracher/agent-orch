@@ -1428,6 +1428,59 @@ fn a_missing_base_branch_fails_the_attempt_with_a_stable_reason() {
 }
 
 #[test]
+fn a_tag_with_the_base_branchs_name_never_decides_the_base() {
+    let fixture = Fixture::new();
+    run_git(&fixture.repo, &["checkout", "-q", "-b", "release-1"]);
+    fs::write(fixture.repo.join("release.txt"), "release\n").unwrap();
+    run_git(&fixture.repo, &["add", "release.txt"]);
+    run_git(&fixture.repo, &["commit", "-q", "-m", "release"]);
+    run_git(&fixture.repo, &["checkout", "-q", "main"]);
+    // The tag has the branch's name but points at the older commit on `main`.
+    run_git(&fixture.repo, &["tag", "release-1", "main"]);
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "release-1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-3", 0);
+
+    wait_state(&api, &task_id, "Verifying");
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    let tip = Command::new("git")
+        .arg("-C")
+        .arg(&fixture.repo)
+        .args(["rev-parse", "refs/heads/release-1"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        workspace.base_commit,
+        String::from_utf8(tip.stdout).unwrap().trim()
+    );
+    api.shutdown();
+}
+
+#[test]
+fn an_unsafe_stored_base_branch_fails_the_attempt_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&fixture.root.path().join("missing-codex"));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "main~1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-4", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["failure_reason"], BASE_BRANCH_MISSING);
+    assert_eq!(failed["sessions"], json!([]));
+    api.shutdown();
+}
+
+#[test]
 fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
     let fixture = Fixture::new();
     let diag = Diagnostics::memory();

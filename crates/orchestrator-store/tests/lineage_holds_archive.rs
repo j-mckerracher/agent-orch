@@ -577,6 +577,17 @@ fn a_project_with_a_running_task_cannot_be_archived() {
 }
 
 #[test]
+fn a_project_with_a_created_task_cannot_be_archived() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, path) = store_with_project(directory.path());
+    add_task(&path, "t-new", "p1", "Created");
+
+    let error = store.archive_project("p1").unwrap_err();
+    assert_eq!(ArchiveError::of(&error), Some(ArchiveError::ActiveTasks));
+    assert!(!store.project_is_archived("p1").unwrap());
+}
+
+#[test]
 fn archiving_keeps_every_task_and_history_row() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_with_project(directory.path());

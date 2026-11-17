@@ -42,7 +42,8 @@ pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// Wire names of the kinds no grant may ever cover. Names, not [`ActionKind`]
 /// values, so a kind that is planned but not parsed yet (`delivery.merge`, added
 /// with its merge worker) is already refused.
-pub const NEVER_GRANTABLE: [&str; 2] = ["project.remove", "delivery.merge"];
+pub const NEVER_GRANTABLE: [&str; 4] =
+    ["project.remove", "delivery.merge", "task.cancel", "task.revise"];
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -1839,9 +1840,16 @@ mod tests {
     const HOLD: &str = r#"{"kind":"decision.hold","task_id":"task-1","until":"2026-12-01"}"#;
 
     #[test]
-    fn the_never_grantable_list_names_project_remove_and_delivery_merge() {
-        assert_eq!(NEVER_GRANTABLE, ["project.remove", "delivery.merge"]);
+    fn the_never_grantable_list_is_exactly_the_reviewed_set() {
+        // Changing this list changes what runs without a per-action approval. A change to the
+        // constant fails here until a person edits this pin in the same diff.
+        assert_eq!(
+            NEVER_GRANTABLE,
+            ["project.remove", "delivery.merge", "task.cancel", "task.revise"]
+        );
         assert!(!ActionKind::ProjectRemove.is_grantable());
+        assert!(!ActionKind::TaskCancel.is_grantable());
+        assert!(!ActionKind::TaskRevise.is_grantable());
     }
 
     #[test]
@@ -1859,7 +1867,6 @@ mod tests {
                 assert!(!kind.is_grantable(), "{name}");
             }
         }
-        assert!(ActionKind::TaskRevise.is_grantable());
         assert!(ActionKind::DecisionHold.is_grantable());
     }
 

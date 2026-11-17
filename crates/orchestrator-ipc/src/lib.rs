@@ -133,6 +133,9 @@ mod monitoring_tests;
 #[path = "holds_tests.rs"]
 mod holds_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "grants_tests.rs"]
+mod grants_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "reports_tests.rs"]
 mod reports_tests;
 
@@ -176,6 +179,10 @@ pub enum RpcError {
     ProposalNotPending,
     /// The action proposal cannot run now, such as before its parent executed (DPES-1105).
     ProposalInvalid,
+    /// No standing grant has this id (DPES-1105).
+    GrantNotFound,
+    /// The standing grant's terms are refused, such as a kind no grant may cover (DPES-1105).
+    GrantInvalid,
     Internal,
 }
 
@@ -197,6 +204,8 @@ impl RpcError {
             Self::ProposalNotFound => -32021,
             Self::ProposalNotPending => -32022,
             Self::ProposalInvalid => -32023,
+            Self::GrantNotFound => -32024,
+            Self::GrantInvalid => -32025,
             Self::Internal => -32603,
         }
     }
@@ -220,6 +229,8 @@ impl RpcError {
             Self::ProposalNotFound => "action proposal was not found",
             Self::ProposalNotPending => "action proposal is no longer pending",
             Self::ProposalInvalid => "action proposal cannot be approved now",
+            Self::GrantNotFound => "standing grant was not found",
+            Self::GrantInvalid => "standing grant terms are not allowed",
             Self::Internal => "internal operation failed",
         }
     }
@@ -337,6 +348,10 @@ pub enum IpcError {
     ProposalNotPending,
     #[error("RPC action proposal cannot be approved now")]
     ProposalInvalid,
+    #[error("RPC standing grant was not found")]
+    GrantNotFound,
+    #[error("RPC standing grant terms are not allowed")]
+    GrantInvalid,
     #[error("event subscription is not active")]
     NoSubscription,
     #[error("local IPC operation failed")]

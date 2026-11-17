@@ -5,7 +5,7 @@
 
 use orchestrator_core::task::Attempt;
 use orchestrator_diagnostics::Diagnostics;
-use orchestrator_store::{ConversationTarget, LineageRelation, ProposalState};
+use orchestrator_store::{ConversationTarget, LineageRelation, ProposalState, TurnOutcome};
 
 use super::actions::project_code;
 use super::actions_task_tests::{
@@ -435,6 +435,38 @@ fn a_proposal_made_after_a_relay_says_so() {
     assert!(listed
         .iter()
         .any(|p| p["turn_id"] == chat_turn.as_str() && p["after_report"] == false));
+}
+
+#[test]
+fn a_relay_refused_with_conflict_leaves_the_report_unrelayed_and_promotion_locked() {
+    let runtime = RelayRuntime::new("ok");
+    let (_directory, api) = api_with(runtime.clone());
+    let code = project_code(ALPHA);
+    let scout = finished_scout(&api, "scout-1", ALPHA);
+    capture(&api, &scout, "Finding: fix the loader.");
+    api.store
+        .begin_conversation_turn(
+            &ConversationTarget::Global,
+            "t-running",
+            "hi",
+            "test-runtime",
+            "1.0.0",
+        )
+        .unwrap();
+
+    assert_eq!(relay(&api, &scout, "k-1"), Err(RpcError::Conflict));
+    assert_eq!(runtime.seen_count(), 0);
+    assert_eq!(api.store.task_report(&scout).unwrap().unwrap().relayed_at, None);
+
+    api.store
+        .finish_conversation_turn("t-running", &TurnOutcome::Completed)
+        .unwrap();
+    let ids = propose(&api, "t1", &task_block(&code, "Fix the loader query", &scout));
+    let tasks_before = task_count(&api);
+    let result = resolve(&api, &ids[0], "approve", "k-2").unwrap();
+    assert_eq!(result["proposal"]["state"], "failed", "{result}");
+    assert_eq!(result["proposal"]["denial"], "contract_invalid", "{result}");
+    assert_eq!(task_count(&api), tasks_before);
 }
 
 #[test]

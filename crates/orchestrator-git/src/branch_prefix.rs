@@ -61,9 +61,9 @@ impl BranchPrefix {
     /// Accepts ASCII letters, digits, `.`, `_`, `-`, and `/` only. The value
     /// must end in `/`, every component must be non-empty, and no component may
     /// start with `-` or `.` or end in `.lock`, so the result is always a valid
-    /// ref prefix and never reads as a Git option. At most
-    /// [`MAX_BRANCH_PREFIX_LEN`] bytes, and never inside the machine-wide
-    /// `orchestrator/` namespace, which holds MCAO's review refs.
+    /// ref prefix and never reads as a Git option. This is the rule the
+    /// machine-wide prefix file has always followed; a project's prefix goes
+    /// through [`BranchPrefix::parse_for_project`], which is stricter.
     pub fn parse(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         let invalid = |reason: &'static str| Error::InvalidBranchPrefix {
@@ -73,12 +73,6 @@ impl BranchPrefix {
         let Some(components) = value.strip_suffix('/') else {
             return Err(invalid("must end with `/`"));
         };
-        if value.len() > MAX_BRANCH_PREFIX_LEN {
-            return Err(invalid("is too long"));
-        }
-        if value.starts_with(RESERVED_NAMESPACE) {
-            return Err(invalid("must not use the reserved `orchestrator/` namespace"));
-        }
         for component in components.split('/') {
             if component.is_empty() {
                 return Err(invalid("must not start with `/` or contain `//`"));
@@ -96,11 +90,29 @@ impl BranchPrefix {
                     "components must not start with `-` or `.` or end with `.lock`",
                 ));
             }
-            if component.contains("..") {
-                return Err(invalid("must not contain `..`"));
-            }
         }
         Ok(Self(value.to_owned()))
+    }
+
+    /// [`BranchPrefix::parse`] plus the rules for a project's own prefix: at most
+    /// [`MAX_BRANCH_PREFIX_LEN`] bytes, no `..`, and never inside the
+    /// `orchestrator/` namespace, which holds MCAO's review refs.
+    pub fn parse_for_project(value: &str) -> Result<Self, Error> {
+        let prefix = Self::parse(value)?;
+        let invalid = |reason: &'static str| Error::InvalidBranchPrefix {
+            value: prefix.0.clone(),
+            reason,
+        };
+        if prefix.0.len() > MAX_BRANCH_PREFIX_LEN {
+            return Err(invalid("is too long"));
+        }
+        if prefix.0.starts_with(RESERVED_NAMESPACE) {
+            return Err(invalid("must not use the reserved `orchestrator/` namespace"));
+        }
+        if prefix.0.contains("..") {
+            return Err(invalid("must not contain `..`"));
+        }
+        Ok(prefix)
     }
 
     /// Read `<data_dir>/config/branch-prefix`.
@@ -195,7 +207,6 @@ mod tests {
             "a//b/",
             "../",
             "a/../b/",
-            "a..b/",
             "-x/",
             ".hidden/",
             "a.lock/",
@@ -218,26 +229,39 @@ mod tests {
     }
 
     #[test]
-    fn the_reserved_review_namespace_is_refused_as_a_prefix() {
+    fn a_project_prefix_in_the_orchestrator_namespace_is_refused() {
         for value in ["orchestrator/", "orchestrator/review/", "orchestrator/x/"] {
             assert!(
                 matches!(
-                    BranchPrefix::parse(value),
+                    BranchPrefix::parse_for_project(value),
                     Err(Error::InvalidBranchPrefix { .. })
                 ),
                 "{value:?} should be rejected"
             );
         }
-        assert!(BranchPrefix::parse("orchestrator-x/").is_ok());
-        assert!(BranchPrefix::parse("team/orchestrator/").is_ok());
+        assert!(BranchPrefix::parse_for_project("orchestrator-x/").is_ok());
+        assert!(BranchPrefix::parse_for_project("team/orchestrator/").is_ok());
     }
 
     #[test]
-    fn a_prefix_over_the_length_bound_is_refused() {
+    fn the_machine_wide_prefix_file_still_accepts_what_it_always_did() {
+        let dir = data_dir_with(Some(b"orchestrator/\n"));
+        assert_eq!(
+            BranchPrefix::read(dir.path()).unwrap().as_str(),
+            "orchestrator/"
+        );
+        assert!(BranchPrefix::parse("a..b/").is_ok());
+        let long = format!("{}/", "a".repeat(MAX_BRANCH_PREFIX_LEN));
+        assert!(BranchPrefix::parse(&long).is_ok());
+    }
+
+    #[test]
+    fn a_project_prefix_over_the_length_bound_or_with_dots_is_refused() {
         let longest = format!("{}/", "a".repeat(MAX_BRANCH_PREFIX_LEN - 1));
-        assert!(BranchPrefix::parse(&longest).is_ok());
+        assert!(BranchPrefix::parse_for_project(&longest).is_ok());
         let too_long = format!("{}/", "a".repeat(MAX_BRANCH_PREFIX_LEN));
-        assert!(BranchPrefix::parse(&too_long).is_err());
+        assert!(BranchPrefix::parse_for_project(&too_long).is_err());
+        assert!(BranchPrefix::parse_for_project("a..b/").is_err());
     }
 
     #[test]

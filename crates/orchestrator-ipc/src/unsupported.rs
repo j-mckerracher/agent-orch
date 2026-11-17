@@ -180,6 +180,15 @@ impl Client {
     pub fn holds_list(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn grants_create(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn grants_revoke(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn grants_list(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn reports_list(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }

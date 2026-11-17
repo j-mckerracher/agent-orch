@@ -9,7 +9,7 @@
 //! text it reads here was redacted before it was stored.
 
 use orchestrator_store::{
-    ConversationTarget, ReportScope, SqliteStore, TaskReport, TaskReportSummary,
+    ConversationTarget, ReportScope, SqliteStore, TaskReport, TaskReportSummary, TurnTrigger,
 };
 
 use super::conversation_agent::sanitize;
@@ -136,6 +136,17 @@ impl DaemonApi {
                     "Relay the report of task {short} and list the decisions I must make."
                 );
                 let block = relay_block(&report.task_id, &report.body, report.truncated);
+                // A running user turn refuses the relay (`start_relay`), so that is known
+                // before anything is marked: a refused relay leaves the report unrelayed, and
+                // a promotion stays locked. A running wake turn is cancelled by the relay.
+                if self
+                    .store
+                    .running_conversation_turn(&target)
+                    .map_err(map_conversation_error)?
+                    .is_some_and(|running| running.trigger != TurnTrigger::Wake)
+                {
+                    return Err(RpcError::Conflict);
+                }
                 // Marked before the turn starts, so a proposal the turn makes is checked
                 // against a report that counts as relayed. Marking is safe to repeat, which
                 // also finishes a relay a stop interrupted, and it never changes the time.

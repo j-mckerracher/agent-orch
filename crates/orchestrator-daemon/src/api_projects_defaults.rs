@@ -108,7 +108,7 @@ pub(super) fn denial_of(store: &SqliteStore, propose: &ProposeTask) -> Option<De
 /// The envelope's refusal of a `task.revise`, as the reply sink checks it when it stores the
 /// block: the old task's delivery must still be granted for its own project. A task that is
 /// gone is not refused here (execution fails it with `not_found`); an unreadable store
-/// refuses, so nothing passes on a guess.
+/// refuses, so nothing passes on a guess. The combined objective must fit its bound.
 pub(super) fn revise_denial(
     store: &SqliteStore,
     revise: &orchestrator_core::orchestrator_action::ReviseTask,
@@ -118,6 +118,11 @@ pub(super) fn revise_denial(
         Err(StoreError::NotFound(_)) => return None,
         Err(_) => return Some(Denial::Delivery),
     };
+    // An over-long objective is refused at the card, not after the user approves.
+    let objective = super::actions::revised_objective(&old.contract.objective, &revise.added_intent);
+    if objective.len() > orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES {
+        return Some(Denial::Contract);
+    }
     match envelope_for(store, Some(&old.contract.project_id), old.contract.kind) {
         Ok(envelope) => {
             (!envelope.delivery_grants(old.contract.delivery)).then_some(Denial::Delivery)
@@ -176,10 +181,10 @@ impl DaemonApi {
             merge_method,
         };
         defaults.validate().map_err(|_| RpcError::InvalidParams)?;
-        // The prefix is stored as `BranchPrefix::parse` reads it, and never as `orchestrator/`.
+        // The prefix is stored as `BranchPrefix::parse_for_project` reads it, and never as `orchestrator/`.
         let branch_prefix = match &request.branch_prefix {
             Some(value) => Some(
-                BranchPrefix::parse(value)
+                BranchPrefix::parse_for_project(value)
                     .map_err(|_| RpcError::InvalidParams)?
                     .as_str()
                     .to_owned(),

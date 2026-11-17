@@ -876,6 +876,8 @@ fn migration_0038_applies_to_a_0037_database_with_proposals_and_keeps_them() {
         ),
         vec![
             "action_proposals_by_scope",
+            // Added by 0047, which this database also ends with.
+            "action_proposals_grant_untried",
             "action_proposals_one_pending_digest",
             "action_proposals_pending_subject",
         ]

@@ -9,10 +9,12 @@ use orchestrator_core::approval::{
     Actor, ApprovalAction, ApprovalActionKind, ApprovalState, ApproverAllowlist, ParameterDigest,
 };
 use orchestrator_core::authorization::ActionKind as ApprovalKind;
-use orchestrator_core::orchestrator_action::{parse_block, BlockScope};
-use orchestrator_store::{ConversationTarget, HoldSubject, LineageRelation, ProposalState};
+use orchestrator_core::orchestrator_action::{parse_block, BlockScope, ReviseTask};
+use orchestrator_store::{
+    ConversationTarget, HoldSubject, LineageError, LineageRelation, ProposalState, StoreError,
+};
 
-use super::actions::project_code;
+use super::actions::{lineage_write_error, project_code, ActionError};
 use super::actions_task_tests::{
     assert_executed, assert_failed, chat_submit, failed_task, proposed_task_id, register_project,
     running_task, submit_queued, task_count, ALPHA,
@@ -264,6 +266,67 @@ fn a_revise_rerun_after_the_new_task_exists_stops_and_links_once() {
     );
 }
 
+/// The old task cannot be asked to stop (it runs with no owner to take the request), after
+/// the new task was made. The new task is cancelled and the proposal fails, so no state has
+/// both tasks live beside a failed proposal.
+#[test]
+fn a_failed_stop_of_the_old_task_cancels_the_new_one_and_fails_the_revise() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let old = running_task(&api, "s-1");
+    let ids = propose(&api, "t1", &revise_action(&old, INTENT));
+    // The new task exists already, as after a stop between its making and the old task's stop,
+    // so the preflight that would refuse this revise is not run.
+    let key = idempotency::stable_id("action", &ids[0]);
+    {
+        let _held = api.idempotency_gate.lock().unwrap();
+        api.submit_task_inner(&chat_submit(&key, "Old objective plus the instruction"), &key, None)
+            .unwrap();
+    }
+    let new = proposed_task_id(&ids[0]);
+    assert_eq!(api.store.get(&new).unwrap().state, TaskState::Queued);
+
+    let result = resolve(&api, &ids[0], "approve", "k-1").unwrap();
+
+    assert_failed(&result, "conflict");
+    assert_eq!(api.store.get(&new).unwrap().state, TaskState::Cancelled);
+    assert_eq!(api.store.get(&old).unwrap().state, TaskState::Running);
+    assert_eq!(api.store.task_lineage(&new).unwrap(), None);
+}
+
+/// A lineage write that failed for any reason but a refusal is retried by the next start: the
+/// old task is already stopped, and the rerun finds the new task by its id.
+#[test]
+fn a_failed_lineage_write_after_the_stop_leaves_the_revise_for_a_retry() {
+    let failed = lineage_write_error(StoreError::Io(std::io::Error::other("disk")));
+    assert!(matches!(failed, ActionError::Retry), "{failed:?}");
+    let refused = lineage_write_error(LineageError::SelfParent.into());
+    assert!(matches!(refused, ActionError::Rpc(RpcError::Conflict)), "{refused:?}");
+}
+
+/// The combined objective is checked when the block is stored, so the user is never asked to
+/// approve a revise that cannot run.
+#[test]
+fn a_revise_whose_combined_objective_is_too_long_is_denied_at_the_card() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let nearly_full = "x".repeat(orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES - 8);
+    let old = submit_queued(&api, "s-1", &nearly_full);
+    let revise = |added_intent: &str| ReviseTask {
+        task_id: old.clone(),
+        added_intent: added_intent.to_owned(),
+    };
+
+    assert_eq!(
+        super::projects_defaults::revise_denial(&api.store, &revise(INTENT)),
+        Some(orchestrator_core::task_envelope::Denial::Contract)
+    );
+    // The same task with an instruction that still fits is not refused.
+    let short = submit_queued(&api, "s-2", OLD_OBJECTIVE);
+    let fits = ReviseTask { task_id: short, added_intent: INTENT.to_owned() };
+    assert_eq!(super::projects_defaults::revise_denial(&api.store, &fits), None);
+}
+
 #[test]
 fn approving_a_hold_hides_the_decision_until_its_date() {
     let (_directory, api) = new_api();
@@ -377,6 +440,24 @@ fn a_hold_never_approves_or_rejects_anything() {
         api.store.get_approval("approval-2").unwrap().state,
         ApprovalState::Rejected
     );
+}
+
+/// A removed project takes no new work, and a retry is new work.
+#[test]
+fn retrying_a_task_of_an_archived_project_is_refused() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let failed = failed_task(&api, "s-1");
+    assert!(api.store.archive_project(ALPHA).unwrap());
+
+    let result = call(
+        &api,
+        "tasks.retry",
+        json!({"task_id": failed, "idempotency_key": "r-1"}),
+    );
+
+    assert_eq!(result, Err(RpcError::Conflict));
+    assert_eq!(api.store.get(&failed).unwrap().state, TaskState::Failed);
 }
 
 #[test]

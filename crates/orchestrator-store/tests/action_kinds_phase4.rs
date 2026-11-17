@@ -268,6 +268,7 @@ fn migration_0042_applies_to_a_0041_database_and_keeps_every_proposal_event_and_
         ),
         vec![
             "action_proposals_by_scope",
+            "action_proposals_grant_untried",
             "action_proposals_one_pending_digest",
             "action_proposals_pending_subject",
         ]

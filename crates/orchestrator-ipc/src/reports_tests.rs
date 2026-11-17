@@ -117,7 +117,7 @@ fn report_methods_need_the_coordinator_capability() {
 }
 
 #[test]
-fn a_token_only_session_with_the_capability_reaches_every_report_method() {
+fn a_token_only_session_lists_reports_but_cannot_read_or_relay_one() {
     let dir = TempDir::new().unwrap();
     let recorder = Arc::new(Recorder::default());
     let approver = Arc::new(ApproverSecret::generate().unwrap());
@@ -125,6 +125,33 @@ fn a_token_only_session_with_the_capability_reaches_every_report_method() {
 
     let mut client = connect(dir.path(), &[Capability::Health, Capability::Coordinator], None);
     assert!(!client.is_approver());
+    assert!(client.reports_list(json!({})).is_ok());
+    assert!(matches!(
+        client.reports_get(json!({"task_id": "task-1"})),
+        Err(IpcError::Forbidden)
+    ));
+    assert!(matches!(
+        client.reports_relay(json!({"task_id": "task-1", "idempotency_key": "key-1"})),
+        Err(IpcError::Forbidden)
+    ));
+    assert_eq!(recorder.calls(), ["reports.list"]);
+    drop(client);
+    stop(dir.path(), daemon);
+}
+
+#[test]
+fn an_approver_session_reaches_every_report_method() {
+    let dir = TempDir::new().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let approver = Arc::new(ApproverSecret::generate().unwrap());
+    let daemon = serve(dir.path(), &recorder, &approver);
+
+    let mut client = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Coordinator],
+        Some(&approver),
+    );
+    assert!(client.is_approver());
     assert!(client.reports_list(json!({})).is_ok());
     assert!(client.reports_get(json!({"task_id": "task-1"})).is_ok());
     assert!(client
@@ -136,11 +163,12 @@ fn a_token_only_session_with_the_capability_reaches_every_report_method() {
 }
 
 #[test]
-fn no_report_method_is_user_only() {
+fn only_reading_and_relaying_a_report_are_user_only() {
     for method in METHODS {
-        assert!(
-            !USER_ONLY_METHODS.contains(&method),
-            "{method} must stay open to a token-only session"
+        assert_eq!(
+            USER_ONLY_METHODS.contains(&method),
+            method != "reports.list",
+            "{method} has the wrong user-only status"
         );
     }
 }

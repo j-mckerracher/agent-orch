@@ -686,6 +686,14 @@ impl DaemonApi {
     /// The retry write, shared with action execution. The caller holds the idempotency gate.
     pub(super) fn retry_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         let task = self.store.get(task_id).map_err(map_store_error)?;
+        // A removed project takes no new work, as `tasks.submit` refuses.
+        if self
+            .store
+            .project_is_archived(&task.contract.project_id)
+            .map_err(map_store_error)?
+        {
+            return Err(RpcError::Conflict);
+        }
         let bound = match task.state {
             TaskState::Failed => task.contract.max_retries,
             TaskState::VerificationFailed => task.contract.max_repairs,

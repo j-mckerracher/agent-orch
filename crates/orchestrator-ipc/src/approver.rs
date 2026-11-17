@@ -100,6 +100,10 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "holds.set",
     "holds.release",
     "projects.set_defaults",
+    "grants.create",
+    "grants.revoke",
+    "reports.get",
+    "reports.relay",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session

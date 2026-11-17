@@ -54,7 +54,7 @@ impl ArchiveError {
 
 impl SqliteStore {
     /// Archives a project, in one transaction: refuses with [`ArchiveError`] while any of its
-    /// tasks is queued, running or verifying or any approval of its tasks is requested; else
+    /// tasks is created, queued, running or verifying or any approval of its tasks is requested; else
     /// sets `archived_at`. Returns `true` when this call archived it and `false` when it was
     /// already archived (nothing written, and no refusal: the call is idempotent). An unknown
     /// project fails with `RecordNotFound`. Rows of tasks, approvals and history stay.
@@ -78,7 +78,7 @@ impl SqliteStore {
             // Task state is stored as its JSON text, so the names carry quotes.
             let active = sqlx::query_scalar::<_, i64>(
                 "SELECT 1 FROM tasks WHERE project_id = ? \
-                 AND state IN ('\"Queued\"', '\"Running\"', '\"Verifying\"') LIMIT 1",
+                 AND state IN ('\"Created\"', '\"Queued\"', '\"Running\"', '\"Verifying\"') LIMIT 1",
             )
             .bind(&project_id)
             .fetch_optional(&mut *transaction)

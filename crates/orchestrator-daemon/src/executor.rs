@@ -44,7 +44,7 @@ use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
-use orchestrator_git::{create_task_worktree, BranchPrefix, Error as GitError, Repository};
+use orchestrator_git::{create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
@@ -566,14 +566,22 @@ impl Inner {
                 .project_defaults(&task.contract.project_id)
                 .map_err(|error| GitError::Io(std::io::Error::other(error.to_string())))?;
             let prefix = match defaults.as_ref().and_then(|row| row.branch_prefix.as_deref()) {
-                Some(value) => BranchPrefix::parse(value)?,
+                Some(value) => BranchPrefix::parse_for_project(value)?,
                 None => BranchPrefix::read(&self.config.data_dir)?,
             };
-            let base_ref = defaults
-                .as_ref()
-                .and_then(|row| row.base_branch.as_deref())
-                .unwrap_or("HEAD");
-            create_task_worktree(&repository, &task_id, base_ref, &root, &prefix)
+            // The stored value passed a looser database check, so it is re-checked here, and
+            // named under `refs/heads/` so a tag of the same name cannot decide the base.
+            let base_ref = match defaults.as_ref().and_then(|row| row.base_branch.as_deref()) {
+                Some(branch) if is_safe_branch_name(branch) => format!("refs/heads/{branch}"),
+                Some(branch) => {
+                    return Err(GitError::InvalidBaseRef {
+                        refspec: branch.to_owned(),
+                        detail: "not a safe branch name".to_owned(),
+                    })
+                }
+                None => "HEAD".to_owned(),
+            };
+            create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)
         });
         store
             .add_attempt(
