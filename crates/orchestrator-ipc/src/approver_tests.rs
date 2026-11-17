@@ -24,12 +24,13 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 5] = [
+const NEGOTIATED: [Capability; 6] = [
     Capability::Health,
     Capability::OrchestratorActions,
     Capability::Approvals,
     Capability::Review,
     Capability::Settings,
+    Capability::Monitoring,
 ];
 
 /// Answers with the method name and records every call that reaches it, so a
@@ -539,6 +540,7 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "review.request_approval",
             "review.request_changes",
             "settings.set",
+            "monitoring.set",
         ]
     );
     assert_eq!(

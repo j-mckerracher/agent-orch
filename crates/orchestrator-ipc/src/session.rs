@@ -441,6 +441,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         }
         "host.metrics" => Some(Capability::Host),
         "settings.get" | "settings.set" => Some(Capability::Settings),
+        "monitoring.get" | "monitoring.set" | "monitoring.ack" => Some(Capability::Monitoring),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

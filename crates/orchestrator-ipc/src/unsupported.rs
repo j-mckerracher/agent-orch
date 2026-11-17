@@ -156,6 +156,15 @@ impl Client {
     pub fn settings_set(&mut self, _: Value, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn monitoring_get(&mut self) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn monitoring_set(&mut self, _: &str, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn monitoring_ack(&mut self, _: Value, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn review_evidence(
         &mut self,
         _: &str,

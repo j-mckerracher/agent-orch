@@ -96,6 +96,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "review.request_approval",
     "review.request_changes",
     "settings.set",
+    "monitoring.set",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session

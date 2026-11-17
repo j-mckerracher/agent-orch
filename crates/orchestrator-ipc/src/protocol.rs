@@ -58,10 +58,13 @@ pub enum Capability {
     /// `settings.get` and the user-only `settings.set`: the machine load limits and the
     /// live state of the load gate (DPES-1105).
     Settings,
+    /// `monitoring.get` and `monitoring.ack` (open) and the user-only `monitoring.set`: the
+    /// wake-up mode and the paused and unseen state of each scope (DPES-1105).
+    Monitoring,
 }
 
 impl Capability {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -81,6 +84,7 @@ impl Capability {
         Self::PermissionLevels,
         Self::OrchestratorActions,
         Self::Settings,
+        Self::Monitoring,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -104,6 +108,7 @@ impl Capability {
             Self::PermissionLevels => "permission_levels",
             Self::OrchestratorActions => "orchestrator_actions",
             Self::Settings => "settings",
+            Self::Monitoring => "monitoring",
         }
     }
 

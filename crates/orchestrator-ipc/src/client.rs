@@ -417,6 +417,39 @@ impl Client {
         )
     }
 
+    /// `monitoring.get`: the wake-up mode, the paused scopes and the unseen counts.
+    pub fn monitoring_get(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Monitoring, "monitoring.get", json!({}))
+    }
+
+    /// `monitoring.set`: changes the wake-up mode only (`on`, `quiet` or `off`). The
+    /// daemon refuses a session that did not prove the approver secret.
+    pub fn monitoring_set(
+        &mut self,
+        mode: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Monitoring,
+            "monitoring.set",
+            json!({"idempotency_key": idempotency_key, "mode": mode}),
+        )
+    }
+
+    /// `monitoring.ack`: marks the records of one scope seen. `target` is the
+    /// `conversations.get` target shape.
+    pub fn monitoring_ack(
+        &mut self,
+        target: Value,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Monitoring,
+            "monitoring.ack",
+            json!({"idempotency_key": idempotency_key, "target": target}),
+        )
+    }
+
     pub fn review_evidence(
         &mut self,
         task_id: &str,
