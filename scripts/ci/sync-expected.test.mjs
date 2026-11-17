@@ -103,6 +103,44 @@ test("the same test path in two binaries of one gate gets two entries, and a sec
   }
 });
 
+test("a sync that changes no name leaves both name files byte for byte as committed", () => {
+  const { root, scriptsDir } = sandbox();
+  try {
+    const names = JSON.parse(readFileSync(join(scriptsDir, "macos-test-names.json"), "utf8")).macos["coordinator-review"];
+    const before = ["windows-test-names.json", "macos-test-names.json"].map((f) => readFileSync(join(scriptsDir, f), "utf8"));
+    syncExpected({ evidenceDirs: [evidence(root, { "coordinator-review-tests": { stdout: libtest(names) } })], scriptsDir });
+    assert.deepEqual(["windows-test-names.json", "macos-test-names.json"].map((f) => readFileSync(join(scriptsDir, f), "utf8")), before);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a renamed test (same count) is synced and reported, not refused", () => {
+  const { root, scriptsDir } = sandbox();
+  try {
+    const names = JSON.parse(readFileSync(join(scriptsDir, "macos-test-names.json"), "utf8")).macos["coordinator-review"];
+    const report = syncExpected({ evidenceDirs: [evidence(root, { "coordinator-review-tests": { stdout: libtest([...names.slice(1), "api::renamed"]) } })], scriptsDir });
+    assert.match(report.changes[0], new RegExp(`names removed: ${names[0]}`));
+    const after = JSON.parse(readFileSync(join(scriptsDir, "macos-test-names.json"), "utf8")).macos["coordinator-review"];
+    assert.deepEqual(after, [...names.slice(1), "api::renamed"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a node self-test count below the pin is refused unless removals are allowed", () => {
+  const { root, scriptsDir } = sandbox();
+  try {
+    const tap = "# tests 3\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n";
+    const dir = evidence(root, { "node-self-tests": { stdout: tap } });
+    assert.throws(() => syncExpected({ evidenceDirs: [dir], scriptsDir }), /fewer than the pins/);
+    syncExpected({ evidenceDirs: [dir], scriptsDir, allowRemovals: true });
+    assert.match(readFileSync(join(scriptsDir, "expected.mjs"), "utf8"), /NODE_SELF_TESTS = \{ passed: 3 \};/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("every counted cargo gate has a row, so a new gate cannot be left out of the sync", () => {
   for (const platform of ["win32", "darwin"]) {
     for (const gate of gatesFor(platform)) {

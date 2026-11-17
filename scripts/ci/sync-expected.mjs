@@ -123,16 +123,22 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
       if (gate === "node-self-tests" || gate === "desktop-vitest" || gate === "desktop-e2e") {
         const before = src;
         let measured;
+        let shrank = false;
         if (gate === "node-self-tests") {
           const { pass } = nodeTestSummary(stdout);
           if (pass === null) { report.skipped.push(`${gate}: no summary line`); continue; }
           measured = `${pass} tests`;
-          setShared(gate, pass, () => { src = rewriteConst(src, /export const NODE_SELF_TESTS = \{ passed: \d+ \};/, `export const NODE_SELF_TESTS = { passed: ${pass} };`); });
+          shrank = pass < Number(/export const NODE_SELF_TESTS = \{ passed: (\d+) \};/.exec(src)?.[1]);
+          if (!shrank || allowRemovals) setShared(gate, pass, () => { src = rewriteConst(src, /export const NODE_SELF_TESTS = \{ passed: \d+ \};/, `export const NODE_SELF_TESTS = { passed: ${pass} };`); });
         } else {
           const totals = vitestTotals(stdout);
           if (!totals) { report.skipped.push(`${gate}: no passing vitest summary`); continue; }
           measured = `${totals.files} files, ${totals.tests} tests`;
-          setShared(gate, `${totals.files}/${totals.tests}`, () => {
+          const old = gate === "desktop-vitest"
+            ? /export const VITEST = \{ files: (\d+), tests: (\d+) \};/.exec(src)
+            : [null, /^  e2eFiles: (\d+),$/m.exec(src)?.[1], /export const E2E_TESTS = (\d+);/.exec(src)?.[1]];
+          shrank = totals.files < Number(old?.[1]) || totals.tests < Number(old?.[2]);
+          if (!shrank || allowRemovals) setShared(gate, `${totals.files}/${totals.tests}`, () => {
             if (gate === "desktop-vitest") {
               src = rewriteConst(src, /export const VITEST = \{ files: \d+, tests: \d+ \};/, `export const VITEST = { files: ${totals.files}, tests: ${totals.tests} };`);
             } else {
@@ -141,6 +147,7 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
             }
           });
         }
+        if (shrank && !allowRemovals) throw new Error(`${gate} measured ${measured}, fewer than the pins; pass --allow-removals if that is intended`);
         if (src !== before) report.changes.push(`${gate}: ${measured}`);
         continue;
       }
@@ -153,6 +160,7 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
       const observed = { passed: totals.passed, ignored: totals.ignored, sequence: runningSequence(stdout), filteredOut: totals.filteredOut };
       const key = gate === "workspace-tests" ? "workspace" : TEST_GATES[gate][0];
       const rewritten = rewriteEntry(src, table, key, observed);
+      // Only a lower count is a shrink: a renamed test (same count, one name out, one in) is reported, not refused.
       const shrinks = [];
       if (observed.passed < rewritten.oldPassed) shrinks.push(`passed ${rewritten.oldPassed} -> ${observed.passed}`);
 
@@ -164,7 +172,7 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
           throw new Error(`${gate}: ${passing.length} passing test lines for ${observed.passed} passed in the summary; the output is not the expected libtest shape`);
         }
         names = syncNames(loaded[result.platform][rootKey][TEST_GATES[gate][1]], passing);
-        if (names.removed.length) shrinks.push(`removed: ${names.removed.join(", ")}`);
+        if (names.removed.length && observed.passed < rewritten.oldPassed) shrinks.push(`removed: ${names.removed.join(", ")}`);
       }
       if (shrinks.length && !allowRemovals) {
         throw new Error(`${gate} (${result.platform}) has fewer tests than the pins (${shrinks.join("; ")}); pass --allow-removals if that is intended`);
@@ -172,14 +180,17 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
       src = rewritten.src;
       if (names) loaded[result.platform][nameFiles[result.platform][1]][TEST_GATES[gate][1]] = names.list;
       if (rewritten.changed || names?.added.length || names?.removed.length) {
-        report.changes.push(`${table}.${key}: ${rewritten.old} -> ${rewritten.next}${names ? ` (+${names.added.length} -${names.removed.length} names)` : ""}`);
+        const gone = names?.removed.length ? `; names removed: ${names.removed.join(", ")}` : "";
+        report.changes.push(`${table}.${key}: ${rewritten.old} -> ${rewritten.next}${names ? ` (+${names.added.length} -${names.removed.length} names)` : ""}${gone}`);
       }
     }
   }
 
   if (write) {
-    writeFileSync(join(scriptsDir, "expected.mjs"), src);
-    for (const [platform, [file]] of Object.entries(nameFiles)) writeFileSync(join(scriptsDir, file), `${JSON.stringify(loaded[platform], null, 2)}\n`);
+    const put = (path, text) => { if (!existsSync(path) || readFileSync(path, "utf8") !== text) writeFileSync(path, text); };
+    put(join(scriptsDir, "expected.mjs"), src);
+    // One-space indent: the files are committed that way, so an unchanged list writes no diff.
+    for (const [platform, [file]] of Object.entries(nameFiles)) put(join(scriptsDir, file), `${JSON.stringify(loaded[platform], null, 1)}\n`);
   }
   return report;
 };
