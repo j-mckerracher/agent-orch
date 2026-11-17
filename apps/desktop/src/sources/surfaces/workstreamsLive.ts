@@ -14,9 +14,17 @@ import type { ConnectionManager } from "../../daemon/connection";
 import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
-import type { ObjectiveWire, TaskRecord, WorkstreamDetailWire, WorkstreamWire } from "../../daemon/types";
+import type { ObjectiveWire, TaskRecord, WorkstreamDetailWire, WorkstreamPlanEditWire, WorkstreamWire } from "../../daemon/types";
 import { countStates, measured, observation } from "./result";
-import type { Provenance, SurfaceResult, Workstream, WorkstreamMutation, WorkstreamObjective, WorkstreamSource } from "./types";
+import type {
+  Provenance,
+  SurfaceResult,
+  Workstream,
+  WorkstreamMutation,
+  WorkstreamObjective,
+  WorkstreamPlanEdit,
+  WorkstreamSource,
+} from "./types";
 
 type Guarded = <T>(provenance: Provenance, now: () => number, read: () => Promise<T>) => Promise<SurfaceResult<T>>;
 
@@ -93,12 +101,30 @@ export function createLiveWorkstreams(
   provenance: Provenance,
 ): Pick<
   WorkstreamSource,
-  "workstreams" | "create" | "update" | "addObjective" | "reviseObjective" | "setGate" | "linkTask" | "unlinkTask"
+  | "workstreams"
+  | "create"
+  | "update"
+  | "addObjective"
+  | "reviseObjective"
+  | "setGate"
+  | "linkTask"
+  | "unlinkTask"
+  | "addTask"
+  | "splitTask"
+  | "combineTasks"
+  | "removeTask"
+  | "reassignTask"
+  | "setTaskPolicy"
 > {
   const receipt = (id: string, revision: number | null): WorkstreamMutation => ({
     id,
     revision,
     at: new Date(now()).toISOString(),
+  });
+  const planEdit = (edit: WorkstreamPlanEditWire): WorkstreamPlanEdit => ({
+    ...receipt(edit.created[0] ?? "", null),
+    created: edit.created,
+    replaced: edit.replaced,
   });
 
   async function mutate<T>(
@@ -222,5 +248,69 @@ export function createLiveWorkstreams(
         if (!unlinked.removed) throw new DaemonError("not-found", "The task is not linked to this workstream.");
         return receipt(taskId, null);
       }),
+
+    addTask: (workstreamId, task) =>
+      mutate(`ws:add-task:${workstreamId}`, task, [workstreamId, task.projectId, task.objectiveId], async (key) =>
+        planEdit(
+          await connection.api().workstreamsAddTask(
+            workstreamId,
+            task.objectiveId,
+            {
+              project_id: task.projectId,
+              parent_id: null,
+              objective: task.objective,
+              kind: task.kind,
+              agent: task.agent,
+              dependencies: [],
+              verification: "None",
+              delivery: "LocalReview",
+              autonomy: "ApprovalRequired",
+              max_retries: 1,
+              max_repairs: 1,
+            },
+            key,
+          ),
+        ),
+      ),
+
+    splitTask: (workstreamId, taskId, objectives) =>
+      mutate(`ws:split:${workstreamId}:${taskId}`, objectives, [workstreamId, taskId], async (key) =>
+        planEdit(await connection.api().workstreamsSplitTask(workstreamId, taskId, objectives, key)),
+      ),
+
+    combineTasks: (workstreamId, taskIds, objective) =>
+      mutate(`ws:combine:${workstreamId}`, [taskIds, objective], [workstreamId, ...taskIds], async (key) =>
+        planEdit(await connection.api().workstreamsCombineTasks(workstreamId, taskIds, objective, key)),
+      ),
+
+    removeTask: (workstreamId, taskId) =>
+      mutate(`ws:remove:${workstreamId}:${taskId}`, null, [workstreamId, taskId], async (key) => {
+        const removed = await connection.api().workstreamsRemoveTask(workstreamId, taskId, key);
+        if (!removed.removed) throw new DaemonError("not-found", "The task is not linked to this workstream.");
+        return { ...receipt(removed.task_id, null), cancelled: removed.cancelled };
+      }),
+
+    reassignTask: (workstreamId, taskId, agent) =>
+      mutate(`ws:reassign:${workstreamId}:${taskId}`, agent, [workstreamId, taskId], async (key) =>
+        planEdit(await connection.api().workstreamsReassignTask(workstreamId, taskId, agent, undefined, key)),
+      ),
+
+    setTaskPolicy: (workstreamId, taskId, policy) =>
+      mutate(`ws:policy:${workstreamId}:${taskId}`, policy, [workstreamId, taskId], async (key) =>
+        planEdit(
+          await connection.api().workstreamsSetTaskPolicy(
+            workstreamId,
+            taskId,
+            {
+              permission: policy.permission,
+              autonomy: policy.autonomy,
+              delivery: policy.delivery,
+              max_retries: policy.maxRetries,
+              max_repairs: policy.maxRepairs,
+            },
+            key,
+          ),
+        ),
+      ),
   };
 }

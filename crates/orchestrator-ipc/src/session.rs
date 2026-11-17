@@ -469,7 +469,13 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "workstreams.revise_objective"
         | "workstreams.set_gate"
         | "workstreams.link_task"
-        | "workstreams.unlink_task" => Some(Capability::Workstreams),
+        | "workstreams.unlink_task"
+        | "workstreams.add_task"
+        | "workstreams.split_task"
+        | "workstreams.combine_tasks"
+        | "workstreams.remove_task"
+        | "workstreams.reassign_task"
+        | "workstreams.set_task_policy" => Some(Capability::Workstreams),
         // M7-08 (proposed names): conversations share the coordinator capability.
         "conversations.send" | "conversations.get" | "conversations.cancel" => {
             Some(Capability::Coordinator)

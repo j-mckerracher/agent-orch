@@ -214,6 +214,12 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
     setGate: () => notMutable(),
     linkTask: () => notMutable(),
     unlinkTask: () => notMutable(),
+    addTask: () => notMutable(),
+    splitTask: () => notMutable(),
+    combineTasks: () => notMutable(),
+    removeTask: () => notMutable(),
+    reassignTask: () => notMutable(),
+    setTaskPolicy: () => notMutable(),
   };
 }
 

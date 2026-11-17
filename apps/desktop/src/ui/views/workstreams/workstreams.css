@@ -56,7 +56,8 @@
 }
 
 .ws-view input[type="text"],
-.ws-view input[type="search"] {
+.ws-view input[type="search"],
+.ws-view input[type="number"] {
   min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--control-border);
@@ -492,6 +493,32 @@
 .ws-view select:disabled,
 .ws-view textarea:disabled {
   opacity: 0.7;
+}
+
+/* Plan editing (OX-W9): one inline form under the six entry points. */
+.ws-plan-panel {
+  padding: 10px 0;
+  border-top: 1px solid var(--control-border);
+}
+
+.ws-checks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+}
+
+.ws-checks legend {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-form .ws-checks label {
+  display: block;
+  font-weight: 400;
 }
 
 .ws-tabs {

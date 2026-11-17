@@ -396,7 +396,7 @@ fn to_json<T: Serialize>(value: &T) -> Result<Value, RpcError> {
     serde_json::to_value(value).map_err(|_| RpcError::Internal)
 }
 
-fn map_workstream_error(error: WorkstreamStoreError) -> RpcError {
+pub(super) fn map_workstream_error(error: WorkstreamStoreError) -> RpcError {
     match error {
         WorkstreamStoreError::Rule(rule) => match rule {
             WorkstreamRuleError::IllegalWorkstreamTransition { .. }

@@ -4,13 +4,25 @@
  * with legal transitions, one workstream per task link, archived is terminal, and a replayed
  * idempotency key returns the first result. It is test-only and never imported by app code.
  */
-import type { ObjectiveWire, WorkstreamStateWire, WorkstreamTaskLinkWire, WorkstreamWire } from "../daemon/types";
-import { StubRpcError, type FakeDaemon } from "./fakeDaemon";
+import type {
+  ObjectiveWire,
+  TaskContract,
+  TaskRecord,
+  WorkstreamStateWire,
+  WorkstreamTaskLinkWire,
+  WorkstreamWire,
+} from "../daemon/types";
+import { StubRpcError, mkTask, type FakeDaemon } from "./fakeDaemon";
 
 const CONFLICT = -32011;
 const NOT_FOUND = -32010;
 const INVALID = -32602;
 const IDEMPOTENCY_CONFLICT = -32013;
+
+/** States a plan edit may replace; Remove refuses only these two. */
+const REPLACEABLE = new Set(["Created", "Queued", "Failed", "VerificationFailed"]);
+const IN_FLIGHT = new Set(["Running", "Verifying"]);
+const PLAN_AGENTS = new Set(["codex", "claude-code", "github-copilot", "pi"]);
 
 const GATE_MOVES: Record<string, string[]> = {
   pending: ["verified", "failed"],
@@ -211,6 +223,124 @@ export function installFakeWorkstreams(
     const before = state.links.length;
     state.links = state.links.filter((link) => !(link.task_id === params.task_id && link.workstream_id === ws.id));
     return { removed: state.links.length < before };
+  });
+
+  // Plan edits (crates/orchestrator-daemon/src/api_workstream_plan.rs): new tasks are queued and linked under the
+  // replaced task's objective; a replaced task that had not started is cancelled and stays linked as history.
+  const replaced = new Set<string>();
+  const citedIn = (ws: WorkstreamWire, taskId: unknown) =>
+    state.objectives.some((item) => item.workstream_id === ws.id && item.gates.some((gate) => gate.evidence_task_id === taskId));
+  const linked = (ws: WorkstreamWire, taskId: unknown) => {
+    const link = state.links.find((item) => item.task_id === taskId && item.workstream_id === ws.id);
+    const record = fake.tasks.find((task) => task.contract.id === taskId);
+    if (!link || !record) throw new StubRpcError(NOT_FOUND, "task is not linked to this workstream");
+    return { link, record };
+  };
+  const replaceable = (ws: WorkstreamWire, taskId: unknown) => {
+    const found = linked(ws, taskId);
+    if (!REPLACEABLE.has(found.record.state)) throw new StubRpcError(CONFLICT, `task is ${found.record.state}`);
+    if (replaced.has(found.record.contract.id)) throw new StubRpcError(CONFLICT, "task was already replaced");
+    if (citedIn(ws, taskId)) throw new StubRpcError(CONFLICT, "task is cited as gate evidence");
+    return found;
+  };
+  const queue = (ws: WorkstreamWire, objectiveId: string | null, contract: Partial<TaskContract> & { project_id: string }) => {
+    const id = `ws-task-${counter++}`;
+    fake.tasks.push(mkTask(id, contract.project_id, { state: "Queued", contract: { ...contract, id } }));
+    state.links.push({ task_id: id, workstream_id: ws.id, objective_id: objectiveId });
+    return id;
+  };
+  const retire = (records: TaskRecord[]) => {
+    for (const record of records) {
+      replaced.add(record.contract.id);
+      if (record.state === "Created" || record.state === "Queued") {
+        record.state = "Cancelled";
+        record.version += 1;
+      }
+    }
+    return records.map((record) => record.contract.id);
+  };
+  const text = (value: unknown, what: string) => {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (trimmed === "") throw new StubRpcError(INVALID, `${what} must not be empty`);
+    return trimmed;
+  };
+
+  mutation("workstreams.add_task", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const objectiveId = typeof params.objective_id === "string" ? params.objective_id : null;
+    if (objectiveId !== null && objective(objectiveId).workstream_id !== ws.id) {
+      throw new StubRpcError(INVALID, "objective belongs to another workstream");
+    }
+    const contract = params.contract as TaskContract;
+    if (!PLAN_AGENTS.has(contract.agent)) throw new StubRpcError(INVALID, "unknown agent");
+    const created = queue(ws, objectiveId, { ...contract, objective: text(contract.objective, "objective") });
+    return { created: [created], replaced: [] };
+  });
+
+  mutation("workstreams.split_task", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const parts = (params.objectives as unknown[]).map((part) => text(part, "objective"));
+    if (parts.length < 2 || parts.length > 8) throw new StubRpcError(INVALID, "a split needs 2 to 8 objectives");
+    const { link, record } = replaceable(ws, params.task_id);
+    const created = parts.map((part) => queue(ws, link.objective_id, { ...record.contract, objective: part }));
+    return { created, replaced: retire([record]) };
+  });
+
+  mutation("workstreams.combine_tasks", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const ids = params.task_ids as string[];
+    if (ids.length < 2 || ids.length > 8 || new Set(ids).size !== ids.length) {
+      throw new StubRpcError(INVALID, "combine needs 2 to 8 distinct tasks");
+    }
+    const sources = ids.map((id) => replaceable(ws, id));
+    const first = sources[0]!;
+    if (sources.some(({ record }) => record.contract.project_id !== first.record.contract.project_id || record.contract.kind !== first.record.contract.kind)) {
+      throw new StubRpcError(INVALID, "combined tasks must share one project and kind");
+    }
+    const objectiveId = sources.every(({ link }) => link.objective_id === first.link.objective_id) ? first.link.objective_id : null;
+    const created = queue(ws, objectiveId, { ...first.record.contract, objective: text(params.objective, "objective") });
+    return { created: [created], replaced: retire(sources.map(({ record }) => record)) };
+  });
+
+  mutation("workstreams.remove_task", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const { record } = linked(ws, params.task_id);
+    if (IN_FLIGHT.has(record.state)) throw new StubRpcError(CONFLICT, `task is ${record.state}`);
+    if (citedIn(ws, params.task_id)) throw new StubRpcError(CONFLICT, "task is cited as gate evidence");
+    const cancelled = record.state === "Created" || record.state === "Queued";
+    if (cancelled) {
+      record.state = "Cancelled";
+      record.version += 1;
+    }
+    state.links = state.links.filter((link) => !(link.task_id === params.task_id && link.workstream_id === ws.id));
+    return { task_id: record.contract.id, cancelled, removed: true };
+  });
+
+  mutation("workstreams.reassign_task", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const agent = String(params.agent);
+    if (!PLAN_AGENTS.has(agent)) throw new StubRpcError(INVALID, "unknown agent");
+    const { link, record } = replaceable(ws, params.task_id);
+    if (record.contract.agent === agent) throw new StubRpcError(INVALID, `task already runs on ${agent}`);
+    const created = queue(ws, link.objective_id, { ...record.contract, agent });
+    return { created: [created], replaced: retire([record]) };
+  });
+
+  mutation("workstreams.set_task_policy", (params) => {
+    const ws = workstream(params.workstream_id);
+    writable(ws);
+    const { workstream_id: _ws, task_id: _task, ...patch } = params;
+    if (Object.keys(patch).length === 0) throw new StubRpcError(INVALID, "the policy change is empty");
+    const { link, record } = replaceable(ws, params.task_id);
+    const { permission, ...rest } = { ...record.contract, ...(patch as Partial<TaskContract>) };
+    const contract = permission === undefined || permission === "restricted" ? rest : { ...rest, permission };
+    const created = queue(ws, link.objective_id, contract);
+    return { created: [created], replaced: retire([record]) };
   });
 
   return state;

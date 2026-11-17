@@ -128,6 +128,8 @@ export interface TaskContract {
   autonomy: AutonomyPolicy;
   max_retries: number;
   max_repairs: number;
+  /** DPES-1105. Present only when the level is not Restricted; absent from older daemons. */
+  permission?: PermissionLevelWire;
   /** DPES-673. The confirmed intake record; absent on tasks submitted without one. */
   work_item?: WorkItemWire;
 }
@@ -536,6 +538,31 @@ export interface WorkstreamSetGateRequest {
   gate_id: string;
   state: GateStateWire;
   evidence_task_id?: string;
+}
+
+/**
+ * Result of the plan edits that add or replace tasks (`workstreams.add_task`, `split_task`, `combine_tasks`,
+ * `reassign_task`, `set_task_policy`): the queued tasks and the tasks they replace.
+ */
+export interface WorkstreamPlanEditWire {
+  created: string[];
+  replaced: string[];
+}
+
+/** Result of `workstreams.remove_task`: a not-yet-started task is cancelled before it is unlinked. */
+export interface WorkstreamRemoveTaskWire {
+  task_id: string;
+  cancelled: boolean;
+  removed: boolean;
+}
+
+/** The policy fields `workstreams.set_task_policy` can change; at least one. ReadOnly autonomy is refused. */
+export interface WorkstreamTaskPolicyPatch {
+  permission?: PermissionLevelWire;
+  autonomy?: Exclude<AutonomyPolicy, "ReadOnly">;
+  delivery?: DeliveryPolicy;
+  max_retries?: number;
+  max_repairs?: number;
 }
 
 /** Body of `tasks.submit` `contract`; the daemon assigns the task id. */
