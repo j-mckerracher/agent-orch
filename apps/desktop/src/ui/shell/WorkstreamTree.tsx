@@ -72,8 +72,8 @@ function WorkerRows({ task }: { task: WsTask }) {
  * (M7-23); leaves are their linked tasks with one worker row
  * ("adapter · state") per recorded session. It follows the ARIA tree pattern: one tab stop
  * (roving tabindex), arrows move, Right/Left expand and collapse, Home/End jump, Space toggles a
- * group, and Enter or a click opens a group's workstream view (the same place the chat's "Open
- * workstream" goes) or a task's detail page. Expanded state lives here, so groups the
+ * group, and Enter or a click on a group or task opens the containing workstream's view
+ * (the same place the chat's "Open workstream" goes). Expanded state lives here, so groups the
  * operator collapsed or opened stay that way across data refreshes. The shell's tree body
  * scrolls independently of the page.
  */
@@ -118,14 +118,9 @@ export function WorkstreamTree() {
   const setOpen = (group: WsGroup, open: boolean) => setExpanded((current) => ({ ...current, [group.id]: open }));
   const isCurrentWorkstream = (group: WsGroup) =>
     route.name === "global" && route.view === "workstreams" && route.workstreamId === group.id;
-  // Opens the workstream's view (the same place the chat's "Open workstream" goes) and expands it;
-  // activating the workstream already shown toggles its tasks instead.
+  // Repeated activation toggles tasks, but still navigates to restore any locally changed selection.
   const openWorkstream = (group: WsGroup, index: number) => {
-    if (isCurrentWorkstream(group)) {
-      setOpen(group, !isOpen(group, index));
-      return;
-    }
-    setOpen(group, true);
+    setOpen(group, isCurrentWorkstream(group) ? !isOpen(group, index) : true);
     router.navigate({ name: "global", view: "workstreams", workstreamId: group.id });
   };
 
@@ -185,10 +180,10 @@ export function WorkstreamTree() {
     }
   };
 
-  const open = (event: MouseEvent<HTMLAnchorElement>, task: WsTask) => {
+  const open = (event: MouseEvent<HTMLAnchorElement>, group: WsGroup) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    router.navigate({ name: "task", projectId: task.projectId, taskId: task.id });
+    router.navigate({ name: "global", view: "workstreams", workstreamId: group.id });
   };
 
   return (
@@ -268,16 +263,13 @@ export function WorkstreamTree() {
                         <WorkerRows task={task} />
                       </>
                     );
-                    const current =
-                      route.name === "task" && route.taskId === task.id && route.projectId === task.projectId;
                     return (
                       <li role="none" key={leafKey}>
                         {task.openable ? (
                           <a
                             {...common}
-                            href={formatRoute({ name: "task", projectId: task.projectId, taskId: task.id })}
-                            aria-current={current ? "page" : undefined}
-                            onClick={(event) => open(event, task)}
+                            href={formatRoute({ name: "global", view: "workstreams", workstreamId: group.id })}
+                            onClick={(event) => open(event, group)}
                           >
                             {body}
                           </a>
