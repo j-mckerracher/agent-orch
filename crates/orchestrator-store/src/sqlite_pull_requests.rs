@@ -573,7 +573,7 @@ impl SqliteStore {
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let stored = read_pull_request(&mut transaction, &task_id).await?;
-            if !stored.is_some_and(|row| row.number == number) {
+            if stored.is_none_or(|row| row.number != number) {
                 return Err(StoreError::RecordNotFound {
                     entity: "pull request",
                     id: task_id,
