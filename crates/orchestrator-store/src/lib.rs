@@ -60,6 +60,7 @@ mod sqlite_delivery;
 mod sqlite_history;
 mod sqlite_ops;
 mod sqlite_review;
+mod sqlite_settings;
 mod sqlite_verification;
 mod sqlite_workstreams;
 pub use sqlite_conversations::{
@@ -75,6 +76,7 @@ pub use sqlite_actions::{
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
+pub use sqlite_settings::{LoadPatch, OrchestratorSettings, SettingsPatch};
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
 pub mod audit_envelope;
 mod sqlite_events;

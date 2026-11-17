@@ -68,6 +68,21 @@ older than 5 intervals is reported `unavailable` ("stale") so a wedged probe is
 visible rather than silently serving old numbers. Dropping the service stops
 the thread without joining it.
 
+A caller in the same process that needs every sample, not only the latest (the
+daemon's machine load gate averages over a window), starts the sampler with
+`HostMetrics::start_observed(probe, interval, observer)`. `start` is the same
+call with an observer that does nothing, so `host.metrics` behaves as above
+either way. The observer is called once per sample, on the `host-metrics`
+thread, after the cache holds the sample and with no lock held. It sees the
+meters the cache holds, in the order cpu, memory, disk, gpu. A meter that is
+`unavailable` or `unsupported` has its `state` and `reason` and no `value` or
+`total`, so an observer leaves it out instead of reading it as zero.
+`observed_at` is `null` and `sample_interval_ms` is `0` in what the observer
+sees (a snapshot fills them in), so an observer that needs a time takes its
+own. The observer must return quickly, because the next sample waits for it. A
+panic inside it is caught and the sampler goes on, and a slow observer never
+delays `host.metrics` or dropping the service.
+
 ## Library choice: sysinfo 0.40.1
 
 - License MIT. MSRV 1.95 (workspace toolchain 1.95+).
