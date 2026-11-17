@@ -24,13 +24,15 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 6] = [
+const NEGOTIATED: [Capability; 8] = [
     Capability::Health,
     Capability::OrchestratorActions,
     Capability::Approvals,
     Capability::Review,
     Capability::Settings,
     Capability::Monitoring,
+    Capability::Projects,
+    Capability::Holds,
 ];
 
 /// Answers with the method name and records every call that reaches it, so a
@@ -541,6 +543,9 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "review.request_changes",
             "settings.set",
             "monitoring.set",
+            "holds.set",
+            "holds.release",
+            "projects.set_defaults",
         ]
     );
     assert_eq!(
@@ -690,6 +695,31 @@ fn a_reconnect_keeps_the_approver_role() {
     ));
     assert_eq!(recorder.calls().len(), 1);
     drop(client);
+    drop(token_only);
+    stop(dir.path(), daemon);
+}
+
+#[test]
+fn a_token_only_session_with_projects_cannot_set_defaults_but_reads_them() {
+    let dir = TempDir::new().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let approver = new_secret();
+    let daemon = serve(dir.path(), &recorder, Some(&approver));
+
+    // Both methods share the `projects` capability; only the write is user-only.
+    let mut token_only = connect(dir.path(), &[Capability::Health, Capability::Projects], None);
+    assert!(token_only
+        .projects_get_defaults(json!({"project_id": "project-1"}))
+        .is_ok());
+    assert!(matches!(
+        token_only.projects_set_defaults(json!({
+            "project_id": "project-1",
+            "mode": "restricted",
+            "idempotency_key": "key-1"
+        })),
+        Err(IpcError::Forbidden)
+    ));
+    assert_eq!(recorder.calls(), ["projects.get_defaults"]);
     drop(token_only);
     stop(dir.path(), daemon);
 }

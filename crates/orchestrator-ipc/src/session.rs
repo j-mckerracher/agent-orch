@@ -417,7 +417,10 @@ fn empty_control_params(params: &Value) -> bool {
 
 pub(crate) fn method_capability(method: &str) -> Option<Capability> {
     match method {
-        "projects.list" | "projects.register" => Some(Capability::Projects),
+        "projects.list"
+        | "projects.register"
+        | "projects.get_defaults"
+        | "projects.set_defaults" => Some(Capability::Projects),
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
             Some(Capability::Tasks)
         }
@@ -442,6 +445,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "host.metrics" => Some(Capability::Host),
         "settings.get" | "settings.set" => Some(Capability::Settings),
         "monitoring.get" | "monitoring.set" | "monitoring.ack" => Some(Capability::Monitoring),
+        "holds.set" | "holds.release" | "holds.list" => Some(Capability::Holds),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

@@ -61,10 +61,12 @@ pub enum Capability {
     /// `monitoring.get` and `monitoring.ack` (open) and the user-only `monitoring.set`: the
     /// wake-up mode and the paused and unseen state of each scope (DPES-1105).
     Monitoring,
+    /// `holds.list` (open) and the user-only `holds.set` and `holds.release` (DPES-1105).
+    Holds,
 }
 
 impl Capability {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -85,6 +87,7 @@ impl Capability {
         Self::OrchestratorActions,
         Self::Settings,
         Self::Monitoring,
+        Self::Holds,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -109,6 +112,7 @@ impl Capability {
             Self::OrchestratorActions => "orchestrator_actions",
             Self::Settings => "settings",
             Self::Monitoring => "monitoring",
+            Self::Holds => "holds",
         }
     }
 

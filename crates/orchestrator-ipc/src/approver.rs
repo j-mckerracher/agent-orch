@@ -97,6 +97,9 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "review.request_changes",
     "settings.set",
     "monitoring.set",
+    "holds.set",
+    "holds.release",
+    "projects.set_defaults",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session

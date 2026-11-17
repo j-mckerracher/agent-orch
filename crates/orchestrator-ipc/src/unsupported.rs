@@ -77,6 +77,12 @@ impl Client {
     pub fn projects_register(&mut self, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn projects_get_defaults(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn projects_set_defaults(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn tasks_submit(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
@@ -163,6 +169,15 @@ impl Client {
         Err(IpcError::Unsupported)
     }
     pub fn monitoring_ack(&mut self, _: Value, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn holds_set(&mut self, _: &str, _: &str, _: &str, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn holds_release(&mut self, _: &str, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn holds_list(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
     pub fn review_evidence(

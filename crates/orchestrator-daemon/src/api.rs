@@ -334,6 +334,7 @@ impl RpcHandler for DaemonApi {
             Capability::OrchestratorActions,
             Capability::Settings,
             Capability::Monitoring,
+            Capability::Holds,
         ]
     }
 

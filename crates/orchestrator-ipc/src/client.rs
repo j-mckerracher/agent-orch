@@ -172,6 +172,17 @@ impl Client {
         )
     }
 
+    /// `projects.get_defaults`: the defaults of one project (open to every session).
+    pub fn projects_get_defaults(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Projects, "projects.get_defaults", params)
+    }
+
+    /// `projects.set_defaults`: changes one project's defaults. The daemon refuses a
+    /// session that did not prove the approver secret.
+    pub fn projects_set_defaults(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Projects, "projects.set_defaults", params)
+    }
+
     pub fn tasks_submit(&mut self, params: Value) -> Result<Value, IpcError> {
         self.call_feature(Capability::Tasks, "tasks.submit", params)
     }
@@ -448,6 +459,46 @@ impl Client {
             "monitoring.ack",
             json!({"idempotency_key": idempotency_key, "target": target}),
         )
+    }
+
+    /// `holds.set`: places a hold on one subject until the given day. The daemon
+    /// refuses a session that did not prove the approver secret.
+    pub fn holds_set(
+        &mut self,
+        subject_kind: &str,
+        subject_id: &str,
+        until: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Holds,
+            "holds.set",
+            json!({
+                "subject_kind": subject_kind,
+                "subject_id": subject_id,
+                "until": until,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
+    /// `holds.release`: removes one hold. The daemon refuses a session that did not
+    /// prove the approver secret.
+    pub fn holds_release(
+        &mut self,
+        hold_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Holds,
+            "holds.release",
+            json!({"hold_id": hold_id, "idempotency_key": idempotency_key}),
+        )
+    }
+
+    /// `holds.list`: the holds in place.
+    pub fn holds_list(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Holds, "holds.list", json!({}))
     }
 
     pub fn review_evidence(
