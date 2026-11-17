@@ -1021,6 +1021,8 @@ dependencies = [
 name = "orchestrator-git"
 version = "0.1.1"
 dependencies = [
+ "orchestrator-core",
+ "serde_json",
  "tempfile",
  "thiserror",
  "windows-sys",
