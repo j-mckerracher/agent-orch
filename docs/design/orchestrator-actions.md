@@ -19,6 +19,7 @@ Decided by the user. IDs are stable; other documents cite them.
 - **N7. The app patching itself.** Not now. Nothing is built for the orchestrator to patch or publish to MCAO's own repository. Publishing to MCAO's own upstream is never grantable.
 - **N8. Unattended pushes to protected branches.** Decided: the user can set it, per project, as a phase 5 standing approval of the merge kind. Green required checks only, the head commit bound to the approval, an audit entry per use. Off until the user sets it. Cost: a wrong grant lands code unattended.
 - **N9. Wake-turn budget.** Decided: unlimited by default. The user can set hourly and daily wake-turn caps per target and a daily wake token budget. Wake turns always run at Restricted. Cost: with no limit, a busy fleet can spend tokens on wake turns without a cap until the user sets one.
+- **N10. Supervision checks.** Decided: while agents work for the orchestrator, it checks them for stuck work and for scope creep. How often is a user setting, default 10 minutes, on a new Settings page, because the app has none. Findings become notices and proposals. The orchestrator never cancels or revises work by itself. Cost: each scope check that has something to judge is a wake turn, and with N9 unlimited it spends tokens until the user sets a limit.
 
 ## What the code says today
 
@@ -58,7 +59,8 @@ Events the daemon records as wake candidates:
 | --- | --- | --- |
 | Task succeeded with a delivery waiting for approval | Task state, approvals | Deterministic notice and a link to the approval. No model turn. |
 | Task failed, verification failed, retries exhausted | Task state | Model turn: explain and propose retry, revise or cancel. |
-| Task stalled | New stall detector: no session event for N minutes, or attempt over its wall-time bound | Model turn: propose recovery. |
+| Task stalled | Supervision check: no session event and no worktree change for one supervision interval, or attempt over its wall-time bound | Deterministic notice, then a model turn: propose recovery. |
+| Scope creep suspected | Supervision check: change set grew since the last check and the model judges it outside the task objective | Model turn: explain the drift and propose cancel or revise. |
 | Scout report ready | Report publish | Model turn: relay findings, list decisions. |
 | Proposal waiting past a threshold | Proposals table | Deterministic reminder, at most once per threshold. |
 | Credential or sign-in needed | Catalog and runtime failures | Deterministic notice. |
@@ -74,6 +76,16 @@ Rules:
 - **Records.** `wake_records` hold the event, the coalesced set, and the turn that handled it. A record closes when its turn completes, or when the user dismisses it.
 - **Modes.** `on`: wake replies notify. `quiet`: wake replies are stored and do not notify. `away` (phase 5): quiet plus standing approvals plus a return brief. `off`: deterministic notices only.
 - **What the user sees.** A badge on the Global target, a "Monitoring: on" chip in the header with the mode menu, and each wake message labeled "Update, not a reply to you" with the triggering events.
+
+### Supervision checks: stuck work and scope creep
+
+Decided by the user (N10): while agents work for the orchestrator, it checks on them for two things, work that is stuck and work that has drifted outside its task. The daemon runs one check per running task in the target's scope, every supervision interval. The interval is a user setting, default 10 minutes, from 1 to 240 minutes.
+
+- **Stuck.** Deterministic, no model call. A task is stuck when it has had no session event and no worktree change since the previous check, or when its attempt is over its wall-time bound. The result is the "Task stalled" wake event. Its model turn proposes recovery: cancel and retry (phase 2), revise (phase 4).
+- **Scope creep.** The daemon gathers facts in code: the task objective and, when linked, its workstream objective; the changed file names and the diff stat against the base commit, capped at 4 KiB; the file count and line count at the previous check. A task contract has no path scope today, so the judgment of "does this change match the objective" needs a model turn. That turn runs only when the change set grew since the last check, so a quiet task costs no tokens. Contents of diffs and session output are never sent.
+- **Outcome.** A finding is a notice with the evidence (the files and the objective) and a proposal: cancel, or in phase 4 revise with a narrower objective. The check never cancels, revises or edits anything itself. The user approves the card.
+- **Level and limits.** Scope-check turns are wake turns: Restricted, counted against the N9 limits if the user set any. In monitoring mode `off`, the stuck check still runs as a deterministic notice and the scope-check turn does not.
+- **Interval change.** The new interval applies at the next check without a daemon restart. A manual "Check now" is not part of this design.
 
 ### Visible crew
 
@@ -173,7 +185,7 @@ The block is fenced with the info string `mcao-actions`. Parser rules: only the 
 
 ### Snapshot content
 
-Target and its scope; projects by id and display name; workstreams with title, state and objective and gate counts; for a workstream target, its objectives and gates; task counts by state and up to 20 non-terminal tasks (id, short title, state, project, workstream); pending delivery approvals count; this conversation's recent proposals and their states; monitoring mode; the action kinds this client can show. Never included: paths, tokens, environment, credentials, diffs, session output, or anything outside this daemon's store.
+Target and its scope; projects by id and display name; workstreams with title, state and objective and gate counts; for a workstream target, its objectives and gates; task counts by state and up to 20 non-terminal tasks (id, short title, state, project, workstream); pending delivery approvals count; this conversation's recent proposals and their states; monitoring mode; the action kinds this client can show. Never included: paths, tokens, environment, credentials, diffs, session output, or anything outside this daemon's store. The one exception is a supervision check turn, which also gets the facts listed under "Supervision checks" for the task being checked.
 
 The snapshot is built by the conversation service, which already builds workstream context for the runtime through `TurnRequest.context`. The runtime keeps no store handle.
 
@@ -216,16 +228,16 @@ Never grantable: grant creation or change (only the user, in the UI, never by pr
 - **Failures.** A failed execution shows the reason in plain words, for example "A newer change to this workstream exists. Ask the orchestrator to propose again."
 - **Fixture mode.** Cards render from fixtures. Approve shows "Fixture data: nothing was created", matching how conversation actions label fixture mode today.
 - **Accessibility.** The card is an article with a heading. Buttons name the action ("Approve: create workstream Post-MVP work"). State changes are announced through a polite live region. State is never shown by color alone. Focus stays on the card after a decision.
-- **Settings.** The user sets three defaults: the chat permission level (N3), the optional wake-turn and token limits (N9), and, in phase 5, a project's unattended merge standing approval (N8). Nothing is limited or unattended until the user sets it, except that chat starts at Auto.
+- **Settings.** The app has no settings page today, and the only stored preferences are desktop-local (background, sidebar layout). Phase 3 adds a Settings page: a new route and navigation entry. The daemon runs the checks, so these values live in the daemon store (`orchestrator_settings`), not desktop storage. The first control is the supervision interval (N10). The same page later hosts the default chat permission level (N3), the optional wake-turn and token limits (N9), and, in phase 5, a project's unattended merge standing approval (N8). Nothing is limited or unattended until the user sets it, except that chat starts at Auto and supervision runs every 10 minutes.
 - **Wireframe.** OX-B2 (transcript) and OX-B3 (composer) host the cards. OX-A2 carries the decision count. The wireframe's Global orchestrator says it "can propose a revised plan" but shows no inline approval card in the conversation; decisions live in Review and Decisions (S2, S3). This design adds the inline card and keeps the queue entry.
 
 ## Wire contract and compatibility
 
 - **Capability.** New `orchestrator_actions`. The daemon puts the block instructions in the preamble only when the sending session negotiated it. Without it, the preamble gives context but no block format, and a block that appears anyway is stripped with a notice.
-- **Methods.** `conversations.get` adds an additive `proposals` array. New `actions.resolve` with `proposal_id`, `decision`, `idempotency_key`. Phase 5 adds `grants.create`, `grants.list`, `grants.revoke`. Phase 3 adds `monitoring.get` and `monitoring.set`, which carry the mode and the optional wake limits (N9).
+- **Methods.** `conversations.get` adds an additive `proposals` array. New `actions.resolve` with `proposal_id`, `decision`, `idempotency_key`. Phase 5 adds `grants.create`, `grants.list`, `grants.revoke`. Phase 3 adds `monitoring.get` and `monitoring.set`, which carry the mode, the optional wake limits (N9) and the supervision interval (N10).
 - **Failure codes.** `proposal_not_found`, `proposal_not_pending`, `proposal_expired`, `proposal_invalid`, `action_denied` (envelope), and the underlying codes passed through (`stale_revision`, `not_found`). An older desktop shows an unknown code as a generic failure.
 - **Older daemon, newer desktop.** No capability, no cards. Chat works as today.
-- **Migrations.** Additive: `action_proposals`, `action_proposal_events`, `wake_records`, `standing_grants`, and a `trigger` column on conversation turns (`user` default, `wake`) with `ALTER TABLE ADD COLUMN`. No table rebuild: proposals and results live in their own tables, so the `conversation_entries` kind checks stay unchanged. Clear history extends to the new tables in the same transaction.
+- **Migrations.** Additive: `action_proposals`, `action_proposal_events`, `wake_records`, `standing_grants`, `orchestrator_settings` (one row: supervision interval, wake limits, and later settings), and a `trigger` column on conversation turns (`user` default, `wake`) with `ALTER TABLE ADD COLUMN`. No table rebuild: proposals and results live in their own tables, so the `conversation_entries` kind checks stay unchanged. Clear history extends to the new tables in the same transaction.
 
 ## Phases
 
@@ -233,7 +245,7 @@ Never grantable: grant creation or change (only the user, in the UI, never by pr
 | --- | --- | --- | --- | --- | --- |
 | 1 | The orchestrator knows the app and current state, answers "what is running", and proposes workstreams and objectives the user approves in chat | M | None | 1a alone. 1b and 1c together, then 1d | 1a preamble and snapshot (quick win). 1b store and parser. 1c `actions.resolve` and execution. 1d desktop card |
 | 2 | The orchestrator proposes, starts, cancels and retries tasks, inside the user's envelope | M | 1 | 2a and 2b together | 2a task kinds with envelope check. 2b card for a task contract and Review and Decisions entry |
-| 3 | The orchestrator notices finished, failed and stalled work and speaks up without being asked, within limits | L | 2 | 3a first, then 3b and 3c, then 3d | 3a chat usage receipts. 3b stall detector and wake records. 3c wake scheduler, limits and modes. 3d desktop monitoring chip and labels |
+| 3 | The orchestrator notices finished, failed and stalled work, checks running work for scope creep, and speaks up without being asked, within limits | L | 2 | 3a first, then 3b and 3c, then 3d and 3e | 3a chat usage receipts. 3b stall detector, scope-check facts and wake records. 3c wake scheduler, limits and modes. 3d desktop monitoring chip and labels. 3e settings store, new Settings page and the supervision interval |
 | 4 | Scout reports are relayed, scouts promote to ships, projects have a default mode, work lands on approval | L | 2, parts of 3 | 4a to 4d mostly independent | 4a scout relay and promotion. 4b project defaults, base branch, per-project prefix. 4c PR poller and merge action. 4d `task.revise`, holds, project remove |
 | 5 | The user grants scoped standing approvals, leaves in away mode, and gets a brief on return | M | 3, 4c | 5a then 5b | 5a grants with audit and revoke. 5b away mode, return brief, orchestrator notes |
 | 6 | Workstreams that act as secondmates, read-only MCP tools, remote design | L | 5 | Independent | 6a routing by scope. 6b read-only MCP server. 6c remote threat model, design only |
@@ -248,6 +260,7 @@ Daemon tests with the fake CLI harness in `crates/orchestrator-daemon/tests/conv
 - Duplicates: the same request twice gives one pending card.
 - Levels: the outcome is the same at Restricted, Auto and Full.
 - Settings: with no default level set, a new chat starts at Auto; a saved default survives a daemon restart (never Full); with no wake limits set, no cap applies and a set limit pauses wake turns with "Monitoring paused: limit reached".
+- Supervision: a task with no session event and no worktree change for one interval raises a stall notice with no model turn; a task whose change set did not grow since the last check costs no scope-check turn; a changed interval takes effect at the next check without a restart; a finding never cancels or revises a task without an approved proposal.
 - Store: migrations apply on a copy of the previous schema; event tables refuse update and delete.
 - Phase 2: an envelope denial disables approval and records the reason.
 
