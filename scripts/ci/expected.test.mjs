@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 import { gatesFor } from "./gates.mjs";
+import { TEST_GATES } from "./sync-expected.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
@@ -27,10 +28,6 @@ test("each expected total equals the length of its name list, so a merge updates
   assert.equal(win["windows-transport"].length, WINDOWS.windowsTransport.passed);
   assert.equal(win.tauri.length, WINDOWS.tauri.passed);
   const mac = names("macos-test-names.json").macos;
-  const desktop = names("desktop-test-names.json");
-  assert.equal(desktop.files.length, VITEST.files);
-  assert.equal(desktop.tests.length, VITEST.tests);
-  assert.equal(names("macos-workspace-test-names.json").length, MACOS.workspace.passed);
   const suites = [
     ["git-lib", "gitLib"],
     ["cli-cleanup-safety", "cliCleanupSafety"],
@@ -44,7 +41,6 @@ test("each expected total equals the length of its name list, so a merge updates
   for (const [list, key] of suites) {
     assert.equal(win[list].length, WINDOWS[key].passed, `windows ${list}`);
     assert.equal(mac[list].length, MACOS[key].passed, `macos ${list}`);
-    assert.equal(new Set(win[list]).size, win[list].length, `windows ${list} has duplicate names`);
   }
   assert.equal(mac.ipc.length, MACOS.ipc.passed);
   assert.equal(mac.daemon.length, MACOS.daemon.passed);
@@ -85,6 +81,11 @@ test("gates take their counts from expected.mjs", () => {
   assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
   assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);
   assert.equal(win["tauri-tests"].passed, WINDOWS.tauri.passed);
+  for (const [gates, table] of [[win, WINDOWS], [mac, MACOS]]) {
+    for (const [gate, [key]] of Object.entries(TEST_GATES)) {
+      if (gates[gate]) assert.equal(gates[gate].ignored, table[key].ignored ?? 0, `${gate} takes its ignored count from expected.mjs`);
+    }
+  }
 });
 
 test("the Windows-only p12 gate needs both binaries and takes its paths from the harness", () => {

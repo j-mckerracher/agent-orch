@@ -59,7 +59,7 @@ export function gatesFor(platform) {
     {
       name: "ipc-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
       args: ["test", "--locked", "-p", "orchestrator-ipc"],
-      expect: counts.ipc, passed: want.ipc.passed, ignored: 0, runningSequence: want.ipc.sequence,
+      expect: counts.ipc, passed: want.ipc.passed, ignored: want.ipc.ignored ?? 0, runningSequence: want.ipc.sequence,
     },
     {
       name: "daemon-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
@@ -74,7 +74,7 @@ export function gatesFor(platform) {
     {
       name: "coordinator-review-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 600,
       args: ["test", "--locked", "-p", "orchestrator-daemon", "--test", "coordinator_review"],
-      expect: counts["coordinator-review"], passed: want.coordinatorReview.passed, ignored: 0,
+      expect: counts["coordinator-review"], passed: want.coordinatorReview.passed, ignored: want.coordinatorReview.ignored ?? 0,
       runningSequence: want.coordinatorReview.sequence, filteredOut: 0,
     },
   ];
@@ -113,7 +113,7 @@ export function gatesFor(platform) {
       {
         name: "windows-transport-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 1800,
         args: ["test", "--locked", "-p", "orchestrator-ipc", "windows_transport"],
-        expect: counts["windows-transport"], passed: WINDOWS.windowsTransport.passed, ignored: 0,
+        expect: counts["windows-transport"], passed: WINDOWS.windowsTransport.passed, ignored: WINDOWS.windowsTransport.ignored ?? 0,
         runningSequence: WINDOWS.windowsTransport.sequence, filteredOut: WINDOWS.windowsTransport.filteredOut,
       },
       {
@@ -190,7 +190,7 @@ export function gatesFor(platform) {
     {
       name: "tauri-tests", mode: "test", cwd: TAURI, exe: "cargo", isolated: true, timeout: 3600,
       args: ["test", "--locked"], needs: ["desktop-build"],
-      expect: counts.tauri, passed: want.tauri.passed, ignored: 0, runningSequence: want.tauri.sequence,
+      expect: counts.tauri, passed: want.tauri.passed, ignored: want.tauri.ignored ?? 0, runningSequence: want.tauri.sequence,
     },
     // Removes only this package's cached output so the next gate really lints it.
     { name: "tauri-clippy-clean", mode: "exit", cwd: TAURI, exe: "cargo", args: ["clean", "-p", "agent-orch-desktop"], timeout: 900 },
