@@ -75,7 +75,7 @@ mod sqlite_wake;
 mod sqlite_workstreams;
 pub use sqlite_actions::{
     ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
-    TurnBlock, DEPENDENCY_NOT_EXECUTED,
+    RoutedTask, TurnBlock, DEPENDENCY_NOT_EXECUTED,
 };
 pub use sqlite_archive::ArchiveError;
 pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
@@ -104,7 +104,9 @@ pub use sqlite_wake::{
     NewWakeRecord, Settle, SkipReason, StaleProposal, WakeKind, WakeOutcome, WakeRecord, WakeState,
     WAKE_PAGE_SIZE,
 };
-pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
+pub use sqlite_workstreams::{
+    WorkstreamRevision, WorkstreamStoreError, WorkstreamTask, WorkstreamTasks,
+};
 pub mod audit_envelope;
 mod sqlite_events;
 pub use sqlite_events::{DeliveryLineage, IdempotencyStart, StreamEvent, TaskDurableEvent};

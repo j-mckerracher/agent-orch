@@ -26,6 +26,12 @@ use super::reports::{newest_reports, report_title};
 const SNAPSHOT_MAX_BYTES: usize = 6 * 1024;
 /// Open tasks listed, newest first.
 const OPEN_TASK_LINES: usize = 20;
+/// Tasks of the target workstream listed, newest first, in any state.
+const WORKSTREAM_TASK_LINES: usize = 10;
+/// Routed-in rows read to mark tasks in the workstream list.
+const ROUTED_READ: usize = 20;
+/// Fixed marker on a task the global orchestrator routed to this workstream.
+const ROUTED_MARKER: &str = " (routed by the global orchestrator)";
 /// Gate lines listed under one objective.
 const GATE_LINES: usize = 20;
 /// Bytes kept from a title, summary, id or gate description.
@@ -37,13 +43,15 @@ const UNAVAILABLE: &str = "- unavailable";
 /// Keep rank for the target workstream's objectives. They are fitted first,
 /// so unrelated global lists cannot crowd them out.
 const RANK_THIS_WORKSTREAM: u8 = 0;
-const RANK_PROJECTS: u8 = 1;
-const RANK_WORKSTREAMS: u8 = 2;
-const RANK_OPEN_TASKS: u8 = 3;
+/// The target workstream's own tasks, kept ahead of every global list.
+const RANK_THIS_WORKSTREAM_TASKS: u8 = 1;
+const RANK_PROJECTS: u8 = 2;
+const RANK_WORKSTREAMS: u8 = 3;
+const RANK_OPEN_TASKS: u8 = 4;
 /// Proposals of this conversation, cut first when the snapshot is full.
-const RANK_PROPOSALS: u8 = 4;
+const RANK_PROPOSALS: u8 = 5;
 /// Scout reports not yet relayed, cut after every list above.
-const RANK_REPORTS: u8 = 5;
+const RANK_REPORTS: u8 = 6;
 /// Newest reports read for the snapshot, so the line count stays bounded.
 const REPORT_LINES: usize = 50;
 /// Newest proposals of this conversation listed (DPES-1105).
@@ -100,6 +108,7 @@ pub(crate) fn build_snapshot(
     ];
     if let ConversationTarget::Workstream(id) = target {
         blocks.push(this_workstream(store, id, actions));
+        blocks.push(this_workstream_tasks(store, id, actions));
     }
     blocks.push(projects(store));
     blocks.push(workstreams(store, actions));
@@ -107,7 +116,13 @@ pub(crate) fn build_snapshot(
     blocks.push(approvals(store));
     blocks.push(reports(store));
     if actions {
-        let kinds: Vec<&str> = ActionKind::ALL.map(ActionKind::as_str).into();
+        // A workstream conversation cannot create a workstream, so it is not offered the kind.
+        let in_workstream = matches!(target, ConversationTarget::Workstream(_));
+        let kinds: Vec<&str> = ActionKind::ALL
+            .into_iter()
+            .filter(|kind| !(in_workstream && *kind == ActionKind::WorkstreamCreate))
+            .map(ActionKind::as_str)
+            .collect();
         blocks.push(Block::text(format!("Action kinds: {}", kinds.join(", "))));
         blocks.push(proposals(store, target));
     } else {
@@ -244,6 +259,48 @@ fn this_workstream(store: &SqliteStore, workstream_id: &str, actions: bool) -> B
             }
         }
         Err(_) => Block::unavailable("This workstream"),
+    }
+}
+
+/// The target workstream's own tasks in any state, newest first. A task the global
+/// orchestrator routed here carries a fixed marker. Ids, state tags, the project label
+/// and the objective cut to 80 bytes only.
+fn this_workstream_tasks(store: &SqliteStore, workstream_id: &str, actions: bool) -> Block {
+    const HEAD: &str = "Tasks of this workstream";
+    let Ok(overview) = store.workstream_task_overview(workstream_id, WORKSTREAM_TASK_LINES) else {
+        return Block::unavailable(HEAD);
+    };
+    let total: usize = overview.counts.iter().map(|(_, count)| count).sum();
+    if total == 0 {
+        return Block::text(format!("{HEAD}:\n- none"));
+    }
+    let routed: Vec<String> = if actions {
+        store
+            .routed_in(workstream_id, ROUTED_READ)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| row.task_id)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let items = overview
+        .newest
+        .iter()
+        .map(|task| {
+            let marker = if routed.contains(&task.id) {
+                ROUTED_MARKER
+            } else {
+                ""
+            };
+            format!("{}{marker}", task_line(task))
+        })
+        .collect();
+    Block {
+        head: format!("{HEAD} (up to {WORKSTREAM_TASK_LINES}, newest first):"),
+        items,
+        total,
+        rank: RANK_THIS_WORKSTREAM_TASKS,
     }
 }
 
@@ -523,6 +580,11 @@ fn objective_block(objective: &Objective, actions: bool) -> String {
     lines.join("\n")
 }
 
+/// A task objective as a bounded, sanitized single line.
+pub(super) fn task_title(objective: &str) -> String {
+    field(objective, TASK_OBJECTIVE_BYTES)
+}
+
 fn task_line(task: &OpenTask) -> String {
     let workstream = task
         .workstream_id
@@ -582,7 +644,7 @@ fn gate_counts<'a>(gates: impl IntoIterator<Item = &'a AcceptanceGate>) -> Strin
 }
 
 /// Snake-case name of a task state, such as `verification_failed`.
-fn state_tag(state: TaskState) -> String {
+pub(super) fn state_tag(state: TaskState) -> String {
     let mut tag = String::new();
     for (index, c) in format!("{state:?}").chars().enumerate() {
         if c.is_ascii_uppercase() {

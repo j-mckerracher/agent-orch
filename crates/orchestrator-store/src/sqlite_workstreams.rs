@@ -22,7 +22,7 @@ use orchestrator_core::workstream::{
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
-use crate::{SqliteStore, StoreError};
+use crate::{OpenTask, SqliteStore, StoreError};
 
 /// A workstream mutation failed.
 #[derive(Debug)]
@@ -146,6 +146,14 @@ pub struct WorkstreamTask {
     pub project_id: String,
     /// Current task state, read from the task.
     pub task_state: TaskState,
+}
+
+/// Tasks linked to one workstream: counts per state, then the newest tasks in any
+/// state, newest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkstreamTasks {
+    pub counts: Vec<(TaskState, usize)>,
+    pub newest: Vec<OpenTask>,
 }
 
 /// One audited revision snapshot.
@@ -527,6 +535,55 @@ impl SqliteStore {
                 .fetch_all(&mut *connection)
                 .await?;
             rows.iter().map(decode_link).collect()
+        })
+    }
+
+    /// Counts a workstream's linked tasks by state and reads its `limit` newest tasks in
+    /// any state, newest first. Terminal tasks are included, so a finished task still
+    /// shows in its workstream. Reads task rows only; an unknown workstream is empty.
+    pub fn workstream_task_overview(
+        &self,
+        workstream_id: &str,
+        limit: usize,
+    ) -> WResult<WorkstreamTasks> {
+        let workstream_id = workstream_id.to_owned();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.wcall(move |pool| async move {
+            let mut counts = Vec::new();
+            for row in sqlx::query(
+                "SELECT t.state AS state, COUNT(*) AS n FROM workstream_tasks l \
+                 JOIN tasks t ON t.id = l.task_id WHERE l.workstream_id = ? GROUP BY t.state",
+            )
+            .bind(&workstream_id)
+            .fetch_all(&pool)
+            .await?
+            {
+                let state: TaskState = serde_json::from_str(&row.try_get::<String, _>("state")?)?;
+                let n: i64 = row.try_get("n")?;
+                counts.push((state, usize::try_from(n).unwrap_or(0)));
+            }
+            counts.sort_by_key(|(state, _)| *state);
+            let mut newest = Vec::new();
+            for row in sqlx::query(
+                "SELECT t.id, t.project_id, t.state, \
+                 COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective \
+                 FROM workstream_tasks l JOIN tasks t ON t.id = l.task_id \
+                 WHERE l.workstream_id = ? ORDER BY t.rowid DESC LIMIT ?",
+            )
+            .bind(&workstream_id)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?
+            {
+                newest.push(OpenTask {
+                    id: row.try_get("id")?,
+                    project_id: row.try_get("project_id")?,
+                    state: serde_json::from_str(&row.try_get::<String, _>("state")?)?,
+                    objective: row.try_get("objective")?,
+                    workstream_id: Some(workstream_id.clone()),
+                });
+            }
+            Ok(WorkstreamTasks { counts, newest })
         })
     }
 

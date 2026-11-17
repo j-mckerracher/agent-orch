@@ -28,11 +28,14 @@ use orchestrator_store::{
 };
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
+use super::conversation_snapshot::{state_tag, task_title};
 use super::monitoring::{quiet_turn_ids, wake_record_wire};
 use super::*;
 
 const CONVERSATION_PAGE_SIZE: usize = 100;
 const MAX_CHOICE_AGENT_BYTES: usize = 64;
+/// Tasks the global orchestrator routed to a workstream, listed on `conversations.get`.
+const ROUTED_IN_ROWS: usize = 5;
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -245,7 +248,13 @@ impl DaemonApi {
         )
     }
 
-    pub(super) fn conversations_get(&self, params: Value) -> Result<Value, RpcError> {
+    /// `actions` is the session's negotiated `orchestrator_actions`: only then does a
+    /// workstream target carry `routed_in`, because only then can the user act on it.
+    pub(super) fn conversations_get(
+        &self,
+        params: Value,
+        actions: bool,
+    ) -> Result<Value, RpcError> {
         let request: ConversationGetParams = parse_params(params)?;
         let epoch = self.store.store_epoch().map_err(map_store_error)?;
         if request.epoch.as_ref().is_some_and(|given| *given != epoch) {
@@ -281,7 +290,7 @@ impl DaemonApi {
             })
             .map(|entry| entry_wire(&self.store, entry))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({
+        let mut result = json!({
             "authority": "none",
             "target": request.target,
             "entries": entries,
@@ -295,7 +304,37 @@ impl DaemonApi {
             "wake_records": wake_records,
             "wake_records_more": wake_records_more,
             "epoch": epoch
-        }))
+        });
+        if let (true, ConversationTarget::Workstream(workstream_id)) = (actions, &target) {
+            let routed = self.routed_in_wire(workstream_id)?;
+            if !routed.is_empty() {
+                result["routed_in"] = Value::Array(routed);
+            }
+        }
+        Ok(result)
+    }
+
+    /// The newest tasks the global orchestrator routed to a workstream, as ids, a bounded
+    /// title, the execute time and the task state. Never a path, token or session output.
+    fn routed_in_wire(&self, workstream_id: &str) -> Result<Vec<Value>, RpcError> {
+        let routed = self
+            .store
+            .routed_in(workstream_id, ROUTED_IN_ROWS)
+            .map_err(map_store_error)?;
+        let mut rows = Vec::new();
+        for row in routed {
+            // A routed task that is gone from the store is not listed.
+            let Ok(task) = self.store.get(&row.task_id) else {
+                continue;
+            };
+            rows.push(json!({
+                "task_id": row.task_id,
+                "title": task_title(&task.contract.objective),
+                "routed_at": row.routed_at,
+                "state": state_tag(task.state),
+            }));
+        }
+        Ok(rows)
     }
 
     pub(super) fn conversations_cancel(&self, params: Value) -> Result<Value, RpcError> {

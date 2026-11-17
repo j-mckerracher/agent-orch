@@ -386,7 +386,9 @@ impl RpcHandler for DaemonApi {
             "conversations.send" => {
                 self.conversations_send(params, context.negotiated(Capability::OrchestratorActions))
             }
-            "conversations.get" => self.conversations_get(params),
+            "conversations.get" => {
+                self.conversations_get(params, context.negotiated(Capability::OrchestratorActions))
+            }
             "conversations.cancel" => self.conversations_cancel(params),
             "conversations.clear" => self.conversations_clear(params),
             "review.request_approval" => self.review_request_approval(params),
@@ -1688,6 +1690,9 @@ mod projects_defaults_tests;
 #[cfg(test)]
 #[path = "api_reports_tests.rs"]
 mod reports_tests;
+#[cfg(test)]
+#[path = "api_routing_tests.rs"]
+mod routing_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

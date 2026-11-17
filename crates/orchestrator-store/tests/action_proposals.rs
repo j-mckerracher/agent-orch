@@ -1791,3 +1791,128 @@ fn a_clear_scrubs_task_proposal_parameters_and_leaves_only_digests_in_events() {
     }
     assert!(files_containing(directory.path(), MARKER).is_empty());
 }
+
+fn route_request(workstream: &str, number: usize) -> String {
+    format!(
+        r#"{{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Routed task number {number}.", "agent": "codex", "workstream_id": "{workstream}"}}"#
+    )
+}
+
+/// One approved proposal in `target`'s turn, recorded as executed with `result_ref`.
+fn executed_route(
+    store: &SqliteStore,
+    target: &ConversationTarget,
+    scope: BlockScope<'_>,
+    turn: &str,
+    request: &str,
+    result_ref: &str,
+) {
+    begin(store, target, turn);
+    let id = store
+        .complete_conversation_turn(turn, checked(scope, request))
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    store.approve_action_proposal(&id, "user").unwrap();
+    store
+        .record_action_outcome(&id, ActionOutcome::Executed { result_ref }, "user")
+        .unwrap();
+}
+
+#[test]
+fn routed_in_returns_only_executed_global_task_proposals_for_that_workstream() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    for (turn, workstream, task) in [
+        ("t1", "ws-1", "task-r1"),
+        ("t2", "ws-2", "task-r2"),
+        ("t3", "ws-1", "task-r3"),
+    ] {
+        executed_route(
+            &store,
+            &global,
+            BlockScope::Global,
+            turn,
+            &route_request(workstream, 1),
+            task,
+        );
+    }
+    let routed = store.routed_in("ws-1", 10).unwrap();
+    let ids: Vec<&str> = routed.iter().map(|r| r.task_id.as_str()).collect();
+    assert_eq!(ids, ["task-r3", "task-r1"]);
+    assert!(!routed[0].routed_at.is_empty());
+    assert_eq!(store.routed_in("ws-1", 1).unwrap().len(), 1);
+    assert_eq!(store.routed_in("ws-2", 10).unwrap().len(), 1);
+    assert!(store.routed_in("ws-3", 10).unwrap().is_empty());
+}
+
+#[test]
+fn routed_in_ignores_pending_failed_and_other_workstream_proposals() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+
+    // Pending: proposed, never approved.
+    begin(&store, &global, "t1");
+    store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, &route_request("ws-1", 1)))
+        .unwrap();
+    // Failed: approved, then the run failed.
+    begin(&store, &global, "t2");
+    let failed = store
+        .complete_conversation_turn("t2", checked(BlockScope::Global, &route_request("ws-1", 2)))
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    store.approve_action_proposal(&failed, "user").unwrap();
+    store
+        .record_action_outcome(
+            &failed,
+            ActionOutcome::Failed {
+                error_code: "execution_failed",
+            },
+            "user",
+        )
+        .unwrap();
+    // Executed, but proposed by the workstream conversation itself, not by Global.
+    let workstream = ConversationTarget::Workstream("ws-1".to_owned());
+    executed_route(
+        &store,
+        &workstream,
+        BlockScope::Workstream("ws-1"),
+        "t3",
+        &route_request("ws-1", 3),
+        "task-own",
+    );
+    // Executed in Global, but for another workstream.
+    executed_route(
+        &store,
+        &global,
+        BlockScope::Global,
+        "t4",
+        &route_request("ws-9", 4),
+        "task-other",
+    );
+
+    assert!(store.routed_in("ws-1", 10).unwrap().is_empty());
+}
+
+#[test]
+fn routed_in_is_empty_after_the_global_history_is_cleared() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    executed_route(
+        &store,
+        &global,
+        BlockScope::Global,
+        "t1",
+        &route_request("ws-1", 1),
+        "task-r1",
+    );
+    assert_eq!(store.routed_in("ws-1", 10).unwrap().len(), 1);
+
+    assert!(store.clear_conversation_history(&global).unwrap().cleared);
+    assert!(store.routed_in("ws-1", 10).unwrap().is_empty());
+}

@@ -205,6 +205,14 @@ pub enum ActionOutcome<'a> {
     Failed { error_code: &'a str },
 }
 
+/// A task the global conversation routed to a workstream, read from the proposal ledger.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutedTask {
+    pub task_id: String,
+    /// When the proposal executed (`updated_at`).
+    pub routed_at: String,
+}
+
 impl ActionProposal {
     /// The workstream id of a workstream-scoped proposal.
     pub fn scope_workstream(&self) -> Option<&str> {
@@ -234,6 +242,39 @@ impl SqliteStore {
             rows.into_iter()
                 .map(decode_proposal)
                 .collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Tasks the GLOBAL conversation proposed against `workstream_id` that have executed,
+    /// newest first, at most `limit`. Derived from the proposal ledger: nothing is stored.
+    /// A history clear of the global conversation deletes these rows.
+    pub fn routed_in(
+        &self,
+        workstream_id: &str,
+        limit: usize,
+    ) -> Result<Vec<RoutedTask>, StoreError> {
+        let workstream_id = workstream_id.to_owned();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT result_ref, updated_at FROM action_proposals \
+                 WHERE scope = 'conversation:global' AND kind = 'task.propose' \
+                 AND state = 'executed' AND result_ref IS NOT NULL \
+                 AND json_extract(params_json, '$.workstream_id') = ? \
+                 ORDER BY updated_at DESC, rowid DESC LIMIT ?",
+            )
+            .bind(workstream_id)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| -> Result<RoutedTask, StoreError> {
+                    Ok(RoutedTask {
+                        task_id: row.try_get("result_ref")?,
+                        routed_at: row.try_get("updated_at")?,
+                    })
+                })
+                .collect()
         })
     }
 
