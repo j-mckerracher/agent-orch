@@ -2598,6 +2598,25 @@ fn an_auto_turn_cannot_propose_a_task() {
     assert!(proposal_rows(&store).is_empty());
 }
 
+/// Waits until the task's agent has exited, so that stopping the daemon leaves no agent behind.
+/// Approving a `task.propose` card queues a task and the daemon starts the fake agent for it. A
+/// daemon that stops first does not kill that agent, and on Windows the gate then finds it alive.
+/// `Verifying` counts as settled: the daemon leaves a task there once the agent has exited and its
+/// candidate commit is recorded.
+fn wait_for_task_to_settle(layout: &Layout, task_id: &str) {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut client = connect(&layout.data);
+    loop {
+        let task = client.tasks_get(task_id).unwrap();
+        let state = task["state"].as_str().unwrap_or_default().to_owned();
+        if !matches!(state.as_str(), "Created" | "Queued" | "Running") {
+            return;
+        }
+        assert!(Instant::now() < deadline, "task {task_id} still {state}");
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[test]
 fn approving_a_task_proposal_twice_with_two_keys_creates_one_task() {
     let layout = Layout::new();
@@ -2627,6 +2646,7 @@ fn approving_a_task_proposal_twice_with_two_keys_creates_one_task() {
     assert_eq!(listed.len(), 1, "{tasks}");
     assert_eq!(listed[0]["contract"]["id"], task_id.as_str(), "{tasks}");
     assert_eq!(listed[0]["contract"]["agent"], "codex", "{tasks}");
+    wait_for_task_to_settle(&layout, &task_id);
     stop(&layout, daemon, chat);
 
     let store = store_after_stop(&layout);
@@ -2658,6 +2678,8 @@ fn a_restart_between_approve_and_execute_creates_the_task_once() {
     let mut chat = Chat::open(&layout);
     let tasks = chat.call("tasks.list", Value::Null);
     assert_eq!(tasks["result"].as_array().unwrap().len(), 1, "{tasks}");
+    let task_id = tasks["result"][0]["contract"]["id"].as_str().unwrap().to_owned();
+    wait_for_task_to_settle(&layout, &task_id);
     stop(&layout, daemon, chat);
 
     let store = store_after_stop(&layout);

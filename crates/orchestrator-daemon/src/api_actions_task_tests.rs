@@ -1,6 +1,10 @@
 //! Execution of the four task action kinds (DPES-1105): `task.propose`, `task.cancel`,
 //! `task.retry` and `workstream.link_task`. Every test drives an in-process `DaemonApi`
-//! over a real store; none starts an executor or an agent CLI.
+//! over a real store. `DaemonApi::new` starts the executor thread, so a task admitted here
+//! is picked up by it. These tests never launch an agent CLI because every project root they
+//! register is a path that does not exist (`ALPHA` and the like): the launch fails while it
+//! prepares the worktree, before any agent process starts. Keep it that way: a test that needs
+//! a real repository belongs in `tests/conversation_runtime.rs`, which runs the fake agent.
 
 use orchestrator_core::task::{Attempt, AuditEvent};
 use orchestrator_store::{ConversationTarget, ProposalState};
