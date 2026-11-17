@@ -1,10 +1,10 @@
 /**
- * Daemon-derived D9-D16 adapters. D9 uses workstreams.list/get and tasks.list;
+ * Daemon-derived D9-D17 adapters. D9 uses workstreams.list/get and tasks.list;
  * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
  * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
  * approvals.list. D12 uses usage.summary and the usage.localTools methods; D13 uses host.metrics; D14 uses
- * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list and adds actions.pending.
- * D15 indexes D9 and D16 locally. No daemon method is added here.
+ * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list and adds actions.pending;
+ * D17 uses settings.get and settings.set. D15 indexes D9 and D16 locally. No daemon method is added here.
  *
  * Failed reads retain daemon provenance and never fall back to fixtures. Missing
  * methods are unsupported; other failures are unavailable. Unobserved metadata
@@ -29,6 +29,7 @@ import { createLiveMetrics } from "./liveMetrics";
 import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
+import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
 import { createLiveLocalToolsSource } from "./localToolsLive";
 import { createLiveUsageSource } from "./usageLive";
 import { createLiveWorkstreams } from "./workstreamsLive";
@@ -288,6 +289,8 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     simulateDismiss: () => Promise.reject(fixtureOnly("dismissal")),
   };
 
+  const settings = createLiveSettings(connection, prov("D17", SETTINGS_METHODS), keys, now);
+
   return {
     workstreams,
     conversation,
@@ -298,5 +301,6 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     models,
     search: createSearchSource(workstreams, decisions, now),
     decisions,
+    settings,
   };
 }

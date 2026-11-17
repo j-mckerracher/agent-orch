@@ -108,6 +108,8 @@ const NO_ID_METHODS = new Set<string>([
   "agentsCatalog",
   "agentsCopilotSignInCheck",
   "actionsPending",
+  "settingsGet",
+  "settingsSet",
 ]);
 
 async function api(fake: FakeDaemon) {

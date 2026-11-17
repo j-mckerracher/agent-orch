@@ -1,0 +1,128 @@
+/* Settings (DPES-1105). Reads theme tokens only; no hard-coded colors. */
+
+.settings-view {
+  max-width: 720px;
+}
+
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-section {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.settings-intro {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.settings-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+}
+
+.settings-means {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.settings-row {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+}
+
+.settings-row label {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.settings-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.settings-row input {
+  width: 6rem;
+  min-width: 0;
+}
+
+/* The error text carries the meaning; the border only reinforces it. */
+.settings-row input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.settings-hint,
+.settings-error,
+.settings-off,
+.settings-reason {
+  margin: 0;
+  font-size: 12px;
+}
+
+.settings-hint {
+  color: var(--muted);
+}
+
+.settings-hint-note {
+  display: block;
+}
+
+.settings-off {
+  font-weight: 600;
+}
+
+.settings-error {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.settings-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.settings-reason {
+  color: var(--muted);
+}
+
+.settings-result:empty {
+  display: none;
+}
+
+.settings-result p {
+  margin: 0;
+}
+
+.settings-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

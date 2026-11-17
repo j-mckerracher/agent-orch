@@ -254,7 +254,8 @@ async function launch(
   const secret = randomBytes(32).toString("hex");
   const child = spawn(daemonBinary(), ["--data-dir", dataDir, "--approver-stdin"], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...env },
+    // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+    env: { ...process.env, ...env, AGENT_ORCH_LOAD_GATE: env.AGENT_ORCH_LOAD_GATE ?? "off" },
   });
   // A daemon that exits before it reads its stdin must surface through the early-exit check below, not as EPIPE.
   child.stdin?.on("error", () => undefined);

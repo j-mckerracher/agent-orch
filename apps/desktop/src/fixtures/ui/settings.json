@@ -1,0 +1,76 @@
+{
+  "fixture": "settings",
+  "scenarios": {
+    "success": {
+      "ageMs": 0,
+      "data": {
+        "open": {
+          "limits": {
+            "cpu": 80,
+            "memory": 85,
+            "disk": 90
+          },
+          "gate": {
+            "state": "open",
+            "hold": null,
+            "readings": {
+              "cpu": {
+                "state": "mean",
+                "meanPercent": 42
+              },
+              "memory": {
+                "state": "mean",
+                "meanPercent": 61
+              },
+              "disk": {
+                "state": "mean",
+                "meanPercent": 40
+              }
+            }
+          },
+          "feed": "sampler"
+        },
+        "closed": {
+          "limits": {
+            "cpu": 80,
+            "memory": 85,
+            "disk": 90
+          },
+          "gate": {
+            "state": "closed",
+            "hold": {
+              "meter": "cpu",
+              "meanPercent": 91,
+              "limitPercent": 80,
+              "reopenPercent": 70
+            },
+            "readings": {
+              "cpu": {
+                "state": "mean",
+                "meanPercent": 91
+              },
+              "memory": {
+                "state": "mean",
+                "meanPercent": 62
+              },
+              "disk": {
+                "state": "unknown",
+                "reason": "warming_up"
+              }
+            }
+          },
+          "feed": "sampler"
+        }
+      }
+    },
+    "unavailable": {
+      "reason": "Fixture scenario: the settings source is unavailable."
+    },
+    "unsupported": {
+      "reason": "Fixture scenario: settings are not supported."
+    },
+    "unknown": {
+      "reason": "Fixture scenario: settings are unknown."
+    }
+  }
+}

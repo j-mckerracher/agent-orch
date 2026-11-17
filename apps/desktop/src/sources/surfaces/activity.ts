@@ -136,6 +136,8 @@ async function read(connection: ConnectionManager): Promise<ReadResult> {
   return reading!;
 }
 
+const LOAD_METER_NAME: Record<string, string> = { cpu: "CPU", memory: "memory", disk: "disk" };
+
 function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNullable<QueueEntry["waiting"]> {
   const on = entry.waiting_on;
   const wait = (reason: WaitingReason, detail: string) => ({ reason, detail });
@@ -146,6 +148,13 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNul
       return wait("capacity", `All ${snapshot.limits.max_concurrent_workers} worker slots are in use.`);
     case "project_cap":
       return wait("capacity", `This project already runs ${snapshot.limits.max_workers_per_project} workers, its per-project limit.`);
+    case "load": {
+      const { load } = entry;
+      if (!load) return wait("capacity", "Waiting for machine capacity.");
+      const held = `Waiting for machine capacity: ${LOAD_METER_NAME[load.meter] ?? load.meter} ${load.mean_percent} percent, limit ${load.limit_percent}.`;
+      // A mean under the limit is the gate's reopen band: tasks start again once the mean is under the reopen level.
+      return wait("capacity", load.mean_percent >= load.limit_percent ? held : `${held} It resumes at ${load.reopen_percent} percent.`);
+    }
     case "approval":
       return wait("approval", entry.waiting_detail === "project_not_registered" ? "The project is not registered." : "Start authorization is withheld.");
     case "other":

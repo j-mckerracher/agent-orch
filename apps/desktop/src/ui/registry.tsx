@@ -12,6 +12,7 @@ import { topBarSlots } from "./shell/TopBar";
 import { ThemeToggle } from "./theme";
 import { agentsGlobalViews } from "./views/agents/register";
 import { reviewGlobalViews } from "./views/review/register";
+import { settingsGlobalViews } from "./views/settings/register";
 import { workspaceRegistration } from "./views/workspace/register";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "./views/workstreams/register";
 
@@ -20,6 +21,7 @@ export const appGlobalViews: Partial<Record<GlobalView, GlobalViewRenderer>> = {
   ...workstreamsGlobalViews,
   ...agentsGlobalViews,
   ...reviewGlobalViews,
+  ...settingsGlobalViews,
 };
 
 /**

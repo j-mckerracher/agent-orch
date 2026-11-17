@@ -211,6 +211,24 @@ mod tests {
         assert!(envs.is_empty(), "the launch sets no environment: {envs:?}");
     }
 
+    #[test]
+    fn a_child_without_a_stdin_pipe_gets_no_secret_and_an_error() {
+        // The test program itself, listing its tests and exiting: it runs on every platform
+        // and never reads its stdin. Its stdin is not a pipe, so `take()` finds nothing.
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let secret = ApproverSecret::generate().unwrap();
+        let error = send_approver(&mut child, &secret).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        assert!(child.stdin.is_none(), "there was no pipe to write to");
+        child.wait().unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn the_data_dir_and_log_are_owner_only_new_or_existing() {

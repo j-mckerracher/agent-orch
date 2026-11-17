@@ -25,7 +25,8 @@ export type Capability =
   | "conversation_history"
   | "conversation_selection"
   | "permission_levels"
-  | "orchestrator_actions";
+  | "orchestrator_actions"
+  | "settings";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -46,6 +47,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "permission_levels",
   "orchestrator_actions",
+  "settings",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -64,6 +66,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "permission_levels",
   "orchestrator_actions",
+  "settings",
 ];
 
 export interface Welcome {
@@ -666,6 +669,37 @@ export type ProposalScopeWire = { kind: "global" } | { kind: "workstream"; works
 export interface ActionsPendingWire {
   proposals: Array<ActionProposalWire & { scope: ProposalScopeWire }>;
   more: boolean;
+}
+
+/** One machine meter that gates new task starts (capability `settings`, DPES-1105). GPU is never gated. */
+export type LoadMeterName = "cpu" | "memory" | "disk";
+
+/** The three machine load limits as whole percents from 50 to 100; 100 turns that meter's check off. */
+export interface LoadLimitsWire {
+  cpu_percent: number;
+  memory_percent: number;
+  disk_percent: number;
+}
+
+/** What the gate knows of one meter: a 60 second mean (whole percent), nothing yet, or a check that is off. */
+export type LoadMeterWire =
+  | { meter: LoadMeterName; state: "mean"; mean_percent: number }
+  | { meter: LoadMeterName; state: "unknown"; reason: "warming_up" | "unavailable" }
+  | { meter: LoadMeterName; state: "off" };
+
+/** The meter that holds new starts back, with the mean that closed it and the mean at which it reopens. */
+export interface LoadHoldWire {
+  meter: LoadMeterName;
+  mean_percent: number;
+  limit_percent: number;
+  reopen_percent: number;
+}
+
+/** `settings.get` and `settings.set` result. `feed` is `disabled_by_environment` only for a test daemon. */
+export interface SettingsWire {
+  load: LoadLimitsWire;
+  gate: { state: "open" | "closed"; hold: LoadHoldWire | null; meters: LoadMeterWire[] };
+  feed?: "sampler" | "disabled_by_environment";
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */

@@ -17,7 +17,7 @@ export type TaskFilter =
   | `state:${string}`;
 
 /** Global (not project-scoped) views of the app shell, in navigation order. Hash form: `#/<view>`. */
-export const GLOBAL_VIEWS = ["workspace", "workstreams", "agents", "review"] as const;
+export const GLOBAL_VIEWS = ["workspace", "workstreams", "agents", "review", "settings"] as const;
 export type GlobalView = (typeof GLOBAL_VIEWS)[number];
 
 const isGlobalView = (segment: string | undefined): segment is GlobalView =>

@@ -12,6 +12,7 @@ import activityFixture from "../../fixtures/ui/activity.json";
 import conversationFixture from "../../fixtures/ui/conversation.json";
 import decisionFixture from "../../fixtures/ui/decision-queue.json";
 import modelFixture from "../../fixtures/ui/model-catalog.json";
+import settingsFixture from "../../fixtures/ui/settings.json";
 import metricsFixture from "../../fixtures/ui/system-metrics.json";
 import usageFixture from "../../fixtures/ui/usage.json";
 import localToolsFixture from "../../fixtures/ui/local-tools.json";
@@ -41,6 +42,8 @@ import type {
   ProposalItem,
   ResolveReceipt,
   SendReceipt,
+  SettingsSource,
+  SettingsSnapshot,
   SurfaceId,
   SurfaceReceipt,
   SurfaceResult,
@@ -84,6 +87,8 @@ export interface SurfaceFixtureOptions {
   now?: () => number;
   /** Other AI tools' state at start. Defaults to opted out. The opt-in control changes it in memory. */
   localTools?: LocalToolsFixtureState;
+  /** Whether the settings fixture shows the machine load gate open (the default) or closed. */
+  settingsGate?: "open" | "closed";
 }
 
 type ProviderSet = "priced" | "one_unpriced" | "no_calls" | "not_run";
@@ -500,6 +505,31 @@ function decisionSource(ctx: Ctx): DecisionQueueSource {
   };
 }
 
+/**
+ * DPES-1105. Fixture mode shows the open gate, or the closed-gate example when asked, and saves nothing.
+ * It never reaches a daemon, so a typed limit changes only what the page holds.
+ */
+function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
+  const envelope = settingsFixture as unknown as Envelope<Record<"open" | "closed", SettingsSnapshot>>;
+  return {
+    provenance: provenance("D17", envelope),
+    get: () =>
+      resolve<Record<"open" | "closed", SettingsSnapshot>, SettingsSnapshot>(
+        "D17",
+        envelope,
+        ctx,
+        (data) => data[gate],
+        (data) => data[gate],
+      ),
+    set: () =>
+      Promise.resolve({
+        simulated: true,
+        provenance: provenance("D17", envelope),
+        snapshot: envelope.scenarios.success.data[gate],
+      }),
+  };
+}
+
 export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): SurfaceSources {
   const ctx: Ctx = { scenario: options.scenario ?? "success", now: options.now ?? Date.now };
   const workstreams = workstreamSource(ctx);
@@ -514,5 +544,6 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     models: modelSource(ctx),
     search: createSearchSource(workstreams, decisions, ctx.now),
     decisions,
+    settings: settingsSource(ctx, options.settingsGate ?? "open"),
   };
 }

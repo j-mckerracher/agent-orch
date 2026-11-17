@@ -16,7 +16,7 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-const VIEWS: GlobalView[] = ["workspace", "workstreams", "agents", "review"];
+const VIEWS: GlobalView[] = ["workspace", "workstreams", "agents", "review", "settings"];
 const route = (view: GlobalView): Route => ({ name: "global", view });
 
 describe("M7 wiring", () => {

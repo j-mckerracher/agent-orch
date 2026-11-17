@@ -53,6 +53,8 @@ import type {
   CoordinatorChangeResult,
   CoordinatorClearResult,
   CopilotSignInRecord,
+  LoadLimitsWire,
+  SettingsWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -481,6 +483,22 @@ export class DaemonApi {
       if (isMissingFeature(asDaemonError(error))) return { proposals: [], more: false };
       throw error;
     }
+  }
+
+  /**
+   * DPES-1105. The machine load limits and the live state of the gate that holds new task starts. A read only.
+   * A daemon without the `settings` capability rejects it as a missing feature, which callers read as "not available".
+   */
+  settingsGet(): Promise<SettingsWire> {
+    return this.session.request("settings.get", {});
+  }
+
+  /**
+   * DPES-1105. Changes some of the load limits and answers with `settings.get` as it now stands. A user-only method:
+   * the daemon refuses it unless this session proved the approver secret. The new limits apply from the next sample.
+   */
+  settingsSet(patch: Partial<LoadLimitsWire>, idempotencyKey: string): Promise<SettingsWire> {
+    return this.session.request("settings.set", { idempotency_key: idempotencyKey, load: patch });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

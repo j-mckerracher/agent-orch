@@ -16,6 +16,7 @@ const GLOBAL_VIEW_TITLES: Record<GlobalView, string> = {
   workstreams: "Workstreams",
   agents: "Agents & Sessions",
   review: "Review & Decisions",
+  settings: "Settings",
 };
 
 /** Renders the content of a global view; it is placed inside the shell's `<main>`. */

@@ -900,6 +900,7 @@ fn a_host_with_a_stale_secret_stays_connected_to_a_daemon_it_did_not_start() {
     let (reopened, mut frames) = fixture.open("main", &Capability::ALL);
     assert!(!reopened.launched_by_host);
     assert_eq!(reopened.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "the stale secret is dropped");
     assert_eq!(
         frames.error_code(
             bridge,
@@ -913,4 +914,45 @@ fn a_host_with_a_stale_secret_stays_connected_to_a_daemon_it_did_not_start() {
     assert_eq!(listed, json!([]));
     bridge.close_window("main");
     other.stop(&fixture.data);
+}
+
+#[test]
+fn a_secret_the_daemon_refuses_is_not_presented_again() {
+    let fixture = Fixture::new(&[]);
+    let bridge = &fixture.bridge;
+    let (opened, _frames) = fixture.open("main", &Capability::ALL);
+    assert!(opened.launched_by_host);
+    assert!(bridge.approver().is_some());
+    bridge.close_window("main");
+
+    stop_daemon(&fixture.data);
+    let other = OtherDaemon::start(&fixture.data);
+
+    // The first open offers the old secret and this daemon refuses it. The handshake reads the
+    // secret only from the host's own state, so a cleared state is a secret never sent again.
+    let (first, _first_frames) = fixture.open("main", &Capability::ALL);
+    assert_eq!(first.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "a refused secret was kept");
+    let (second, _second_frames) = fixture.open("other", &Capability::ALL);
+    assert_eq!(second.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "a refused secret came back");
+    bridge.close_window("main");
+    bridge.close_window("other");
+    other.stop(&fixture.data);
+
+    // A daemon the host starts again gets a new secret, and the role returns with it.
+    let (relaunched, mut frames) = fixture.open("main", &Capability::ALL);
+    assert!(relaunched.launched_by_host);
+    assert_eq!(relaunched.welcome["approver"], true);
+    assert!(bridge.approver().is_some());
+    assert_eq!(
+        frames.error_code(
+            bridge,
+            relaunched.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        PROPOSAL_NOT_FOUND
+    );
+    bridge.close_window("main");
 }

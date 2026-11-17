@@ -35,16 +35,16 @@
  * - Every adapter result carries an observation. Non-ok observations date the status
  *   attempt, not a successful data read; they never imply retained data is fresh.
  * - The derived mutations are D10 `send` (`coordinator.send_message` or
- *   `conversations.send`), `cancel` (`conversations.cancel`) and D9 `workstreams.*`
- *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
+ *   `conversations.send`), `cancel` (`conversations.cancel`), D9 `workstreams.*`
+ *   writes and D17 `settings.set`. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
-import type { ApprovalState, CopilotSignInRecord, TaskState } from "../../daemon/types";
+import type { ApprovalState, CopilotSignInRecord, LoadMeterName, TaskState } from "../../daemon/types";
 import type { UsageTokenWarningsWire } from "../../daemon/usageWire";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
 
 export type { Provenance, SimulatedReceipt, SourceId };
 
-export type SurfaceId = Extract<SourceId, "D9" | "D10" | "D11" | "D12" | "D13" | "D14" | "D15" | "D16">;
+export type SurfaceId = Extract<SourceId, "D9" | "D10" | "D11" | "D12" | "D13" | "D14" | "D15" | "D16" | "D17">;
 
 export type SurfaceStatus = "ok" | "unavailable" | "unsupported" | "unknown";
 
@@ -632,6 +632,41 @@ export interface DecisionQueueSource {
   simulateDismiss(id: string): Promise<SurfaceReceipt>;
 }
 
+// D17 -- SettingsSource. Derived: settings.get / settings.set (capability `settings`), the machine load limits and the gate they feed.
+/** The three limits as whole percents from 50 to 100; 100 turns that meter's check off. */
+export type LoadLimits = Record<LoadMeterName, number>;
+/** What the gate knows of one meter: a 60 second mean, nothing yet, or a check that is off. */
+export type LoadReading =
+  | { state: "mean"; meanPercent: number }
+  | { state: "unknown"; reason: "warming_up" | "unavailable" }
+  | { state: "off" };
+/** The meter that holds new task starts back, and the mean at which it lets them go again. */
+export interface LoadHold {
+  meter: LoadMeterName;
+  meanPercent: number;
+  limitPercent: number;
+  reopenPercent: number;
+}
+export interface SettingsSnapshot {
+  limits: LoadLimits;
+  gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
+  /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
+  feed: "sampler" | "disabled_by_environment";
+}
+export interface SettingsReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** What the daemon holds after the change; for a simulated receipt, the fixture as it was. */
+  snapshot: SettingsSnapshot;
+}
+export interface SettingsSource {
+  readonly provenance: Provenance;
+  get(): Promise<SurfaceResult<SettingsSnapshot>>;
+  /** Sends only the fields in `patch`. Derived: `settings.set`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  set(patch: Partial<LoadLimits>): Promise<SettingsReceipt>;
+}
+
 export interface SurfaceSources {
   workstreams: WorkstreamSource;
   conversation: ConversationSource;
@@ -642,4 +677,5 @@ export interface SurfaceSources {
   models: ModelCatalogSource;
   search: SearchSource;
   decisions: DecisionQueueSource;
+  settings: SettingsSource;
 }

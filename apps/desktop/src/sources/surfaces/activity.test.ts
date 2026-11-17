@@ -90,6 +90,58 @@ describe("live D11 activity adapter", () => {
     expect(data.upNext).toMatchObject({ status: "unknown" });
   });
 
+  it("a_load_wait_reads_as_waiting_for_machine_capacity_with_the_meter_mean_and_limit", async () => {
+    const fake = new FakeDaemon();
+    fake.tasks = ["a", "b", "c"].map((id) => mkTask(id, ALPHA, { state: "Queued" }));
+    const loads = [
+      { meter: "cpu", mean_percent: 91, limit_percent: 80, reopen_percent: 70 },
+      { meter: "memory", mean_percent: 90, limit_percent: 85, reopen_percent: 75 },
+      { meter: "gpu", mean_percent: 99, limit_percent: 95, reopen_percent: 85 },
+    ];
+    withSnapshot(fake, (wire) => ({
+      ...wire,
+      queued: fake.tasks.map((task, index) => ({
+        task_id: task.contract.id,
+        project_id: ALPHA,
+        position: index + 1,
+        waiting_reason: "load",
+        waiting_on: null,
+        waiting_detail: null,
+        load: loads[index],
+      })),
+    }));
+    const data = await okActivity(fake);
+    expect(data.queued.map((entry) => entry.waiting)).toEqual([
+      { reason: "capacity", detail: "Waiting for machine capacity: CPU 91 percent, limit 80." },
+      { reason: "capacity", detail: "Waiting for machine capacity: memory 90 percent, limit 85." },
+      { reason: "capacity", detail: "Waiting for machine capacity: gpu 99 percent, limit 95." },
+    ]);
+  });
+
+  it("a_load_wait_in_the_reopen_band_says_when_it_resumes", async () => {
+    const fake = new FakeDaemon();
+    fake.tasks = [mkTask("a", ALPHA, { state: "Queued" })];
+    withSnapshot(fake, (wire) => ({
+      ...wire,
+      queued: [
+        {
+          task_id: "a",
+          project_id: ALPHA,
+          position: 1,
+          waiting_reason: "load",
+          waiting_on: null,
+          waiting_detail: null,
+          load: { meter: "cpu", mean_percent: 75, limit_percent: 80, reopen_percent: 70 },
+        },
+      ],
+    }));
+    const data = await okActivity(fake);
+    expect(data.queued[0]!.waiting).toEqual({
+      reason: "capacity",
+      detail: "Waiting for machine capacity: CPU 75 percent, limit 80. It resumes at 70 percent.",
+    });
+  });
+
   it("does not claim an up-next task or a pause when the restart gate blocks dispatch", async () => {
     const fake = new FakeDaemon();
     fake.queue = { ...DEFAULT_QUEUE_SETTINGS, dispatch_blocked: true };

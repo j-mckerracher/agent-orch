@@ -25,6 +25,26 @@ describe("parseQueueSnapshot", () => {
     expect(parseQueueSnapshot(wire).queued[0]).toMatchObject({ position: null, waiting_detail: null });
   });
 
+  it("a_load_wait_is_parsed_and_an_entry_without_one_has_no_load_field", () => {
+    const wire = valid() as unknown as { queued: Array<Record<string, unknown>> };
+    wire.queued.push({ ...wire.queued[0]!, task_id: "q2", waiting_reason: "load", load: { meter: "cpu", mean_percent: 91, limit_percent: 80, reopen_percent: 70 } });
+    const parsed = parseQueueSnapshot(wire);
+    expect(parsed.queued[0]).not.toHaveProperty("load");
+    expect(parsed.queued[1]).toMatchObject({ waiting_reason: "load", load: { meter: "cpu", mean_percent: 91, limit_percent: 80, reopen_percent: 70 } });
+  });
+
+  it.each([
+    ["a load wait that is not an object", "cpu"],
+    ["a load wait without a meter", { mean_percent: 91, limit_percent: 80, reopen_percent: 70 }],
+    ["a load wait with a negative mean", { meter: "cpu", mean_percent: -1, limit_percent: 80, reopen_percent: 70 }],
+    ["a load wait with a string limit", { meter: "cpu", mean_percent: 91, limit_percent: "80", reopen_percent: 70 }],
+    ["a load wait without a reopen level", { meter: "cpu", mean_percent: 91, limit_percent: 80 }],
+  ])("rejects %s as a protocol error", (_label, load) => {
+    const wire = valid() as unknown as { queued: Array<Record<string, unknown>> };
+    wire.queued[0]!.load = load;
+    expect(() => parseQueueSnapshot(wire)).toThrowError(expect.objectContaining({ kind: "protocol" }));
+  });
+
   it.each([
     ["a non-object", null],
     ["a missing limits block", { ...valid(), limits: undefined }],
