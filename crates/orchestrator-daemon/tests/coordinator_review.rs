@@ -21,7 +21,7 @@ use std::io::Write;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
-use support::process::{connect, Daemon, Layout};
+use support::process::{connect, connect_as_approver, Daemon, Layout};
 use support::seed;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -260,7 +260,7 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
     let task_id = seeded["task_id"].as_str().unwrap();
     let candidate = seeded["candidate_commit"].as_str().unwrap();
     let _daemon = Daemon::start(&layout);
-    let mut client = connect(&layout.data);
+    let mut client = connect_as_approver(&layout);
 
     let before = timed!(client.review_evidence(task_id, None, None)).unwrap();
     assert_eq!(before["state"], "missing");
@@ -360,7 +360,7 @@ fn approval_flow_approves_and_delivers_through_the_real_daemon() {
 fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
     let (layout, seeded) = seeded_layout(&["task-b", "task-c"]);
     let _daemon = Daemon::start(&layout);
-    let mut client = connect(&layout.data);
+    let mut client = connect_as_approver(&layout);
 
     // Reject: the decision sticks, evidence calls the approval inactive, and
     // nothing is delivered or can be approved afterwards.

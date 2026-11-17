@@ -31,8 +31,10 @@
 //!    task) are read back unchanged by the new one;
 //! 5. approvals: a requested approval survives a hard daemon kill and restart; approve
 //!    delivers a review ref at exactly the candidate commit; reject delivers nothing and
-//!    blocks a later approve or delivery;
-//! 6. orderly shutdown removes the token, and the daemon log holds no credential.
+//!    blocks a later approve or delivery. The new daemon is started as the desktop host
+//!    starts it, with the approver secret on stdin, and approves as an approver session;
+//! 6. orderly shutdown removes the token, and the daemon log holds no credential (the
+//!    approver secret included).
 //!
 //! What it does NOT prove: code signing, notarization or Authenticode (the packaging
 //! scripts check those), Gatekeeper or SmartScreen, the installer or the GUI, a pending
@@ -45,13 +47,13 @@
 #[path = "../tests/support/seed.rs"]
 mod seed;
 
-use orchestrator_ipc::{Capability, Client, IpcError};
+use orchestrator_ipc::{ApproverSecret, Capability, Client, IpcError};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -68,6 +70,9 @@ const AGENT_STOP_EXTENSION: &str = "stop";
 
 static LOG: OnceLock<PathBuf> = OnceLock::new();
 static STEPS: Mutex<Vec<(u32, String)>> = Mutex::new(Vec::new());
+/// The approver secret of every daemon this run started as the host starts one, oldest first.
+/// Each start adds a fresh one, as the host does; the last belongs to the daemon now running.
+static APPROVERS: Mutex<Vec<Arc<ApproverSecret>>> = Mutex::new(Vec::new());
 
 fn main() {
     if let Some(pid_file) = std::env::var_os(AGENT_ROLE) {
@@ -247,10 +252,34 @@ fn connect(data: &Path) -> Result<Client, IpcError> {
     Client::connect_with_timeout(data, &Capability::ALL, CALL_TIMEOUT)
 }
 
+/// The session the desktop host opens: it presents the approver secret of the daemon it
+/// started, which `approvals.resolve` requires.
+fn connect_as_approver(data: &Path) -> Result<Client, IpcError> {
+    let secret = APPROVERS
+        .lock()
+        .unwrap()
+        .last()
+        .cloned()
+        .expect("a daemon was started with an approver secret");
+    let client =
+        Client::connect_with_approver(data, &Capability::ALL, CALL_TIMEOUT, Some(secret))?;
+    assert!(client.is_approver(), "the daemon did not accept the approver secret");
+    Ok(client)
+}
+
 /// One request per fresh connection: an idle connection without an event subscription is
 /// dropped by the daemon after a short timeout.
 fn call<T>(data: &Path, what: &str, mut request: impl FnMut(&mut Client) -> Option<T>) -> T {
     until(what, || request(&mut connect(data).ok()?))
+}
+
+/// Like `call`, as an approver session.
+fn call_as_approver<T>(
+    data: &Path,
+    what: &str,
+    mut request: impl FnMut(&mut Client) -> Option<T>,
+) -> T {
+    until(what, || request(&mut connect_as_approver(data).ok()?))
 }
 
 fn task(data: &Path, task_id: &str) -> Value {
@@ -277,25 +306,41 @@ fn wait_exit(pid: u32) {
 struct Daemon(Option<Child>);
 
 impl Daemon {
-    fn start(binary: &Path, env: &Env) -> Self {
+    /// Starts `binary` over the data directory. With `as_host` it is started as the desktop
+    /// host starts it: `--approver-stdin`, a fresh secret written to its stdin, and the pipe
+    /// closed. An older packaged daemon does not know the flag, so it is started without.
+    fn start(binary: &Path, env: &Env, as_host: bool) -> Self {
         let log = fs::File::options()
             .create(true)
             .append(true)
             .open(&env.log)
             .unwrap();
-        let child = Command::new(binary)
-            .arg("--data-dir")
-            .arg(&env.data)
+        let mut command = Command::new(binary);
+        command.arg("--data-dir").arg(&env.data);
+        if as_host {
+            command.arg("--approver-stdin");
+        }
+        let mut child = command
             .env("AGENT_ORCH_CODEX_PROGRAM", &env.agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", env.work.join("no-such-agent"))
             .env("AGENT_ORCH_PI_PROGRAM", env.work.join("no-such-agent"))
             .env(AGENT_ROLE, &env.pid_file)
             .env("AGENT_ORCH_ENV_PASSTHROUGH", AGENT_ROLE)
-            .stdin(Stdio::null())
+            .stdin(if as_host { Stdio::piped() } else { Stdio::null() })
             .stdout(log.try_clone().unwrap())
             .stderr(log)
             .spawn()
             .unwrap_or_else(|error| panic!("cannot start {}: {error}", binary.display()));
+        if as_host {
+            let secret = Arc::new(ApproverSecret::generate().expect("a random approver secret"));
+            let mut stdin = child.stdin.take().expect("the daemon has a stdin pipe");
+            if let Err(error) = stdin.write_all(secret.to_wire().as_bytes()) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("cannot give the daemon its approver secret: {error}");
+            }
+            APPROVERS.lock().unwrap().push(secret);
+        }
         let mut daemon = Self(Some(child));
         until("daemon accepts an authenticated client", || {
             assert!(
@@ -482,7 +527,7 @@ fn scenario(options: &Options) -> Value {
         1,
         "phase A: start the installed (old) daemon and register a project",
     );
-    let daemon = Daemon::start(old, &env);
+    let daemon = Daemon::start(old, &env, false);
     let project = call(&env.data, "projects.register", |client| {
         client.projects_register(&repo.display().to_string()).ok()
     });
@@ -532,7 +577,7 @@ fn scenario(options: &Options) -> Value {
             "phase B: restart the same daemon (a reinstall; the upgrade is NOT exercised)"
         },
     );
-    let daemon = Daemon::start(&options.new_daemon, &env);
+    let daemon = Daemon::start(&options.new_daemon, &env, true);
     let versions = daemon_versions(&env.log);
     assert_eq!(versions.len(), 2, "two daemon_start events: {versions:?}");
     println!("UPGRADE: {} -> {}", versions[0], versions[1]);
@@ -615,7 +660,7 @@ fn scenario(options: &Options) -> Value {
     let approve_id = approve["task_id"].as_str().unwrap();
     let reject_id = reject["task_id"].as_str().unwrap();
     let candidate = approve["candidate_commit"].as_str().unwrap();
-    let daemon = Daemon::start(&options.new_daemon, &env);
+    let daemon = Daemon::start(&options.new_daemon, &env, true);
     let requested = call(&env.data, "review.request_approval", |client| {
         client
             .review_request_approval(review_params(&approve, "smoke-request-a"))
@@ -638,7 +683,7 @@ fn scenario(options: &Options) -> Value {
         "a pending approval survives a hard daemon kill and restart",
     );
     daemon.crash();
-    let daemon = Daemon::start(&options.new_daemon, &env);
+    let daemon = Daemon::start(&options.new_daemon, &env, true);
     let pending = call(&env.data, "approvals.list", |client| {
         client.approvals_list().ok()
     });
@@ -667,9 +712,19 @@ fn scenario(options: &Options) -> Value {
 
     step(
         10,
-        "approve delivers a review ref at exactly the candidate commit",
+        "a token-only session cannot approve; an approver's approve delivers a review ref at \
+         exactly the candidate commit",
     );
-    let approved = call(&env.data, "approvals.resolve", |client| {
+    // The step count is fixed (`SMOKE_STEP_COUNT` in the release scripts), so the refusal is
+    // part of this step.
+    let mut bare = connect(&env.data).unwrap();
+    assert!(!bare.is_approver());
+    assert!(matches!(
+        bare.approvals_resolve(&approval_id, "approve", "smoke-resolve-bare"),
+        Err(IpcError::Forbidden)
+    ));
+    drop(bare);
+    let approved = call_as_approver(&env.data, "approvals.resolve", |client| {
         client
             .approvals_resolve(&approval_id, "approve", "smoke-resolve-a")
             .ok()
@@ -690,7 +745,7 @@ fn scenario(options: &Options) -> Value {
         11,
         "reject delivers nothing and blocks a later approve and delivery",
     );
-    let mut client = connect(&env.data).unwrap();
+    let mut client = connect_as_approver(&env.data).unwrap();
     let rejected = client
         .approvals_resolve(&reject_approval, "reject", "smoke-resolve-r")
         .unwrap();
@@ -725,6 +780,12 @@ fn scenario(options: &Options) -> Value {
         !log.contains(&token),
         "the IPC token was written to daemon.log"
     );
+    for secret in APPROVERS.lock().unwrap().iter() {
+        assert!(
+            !log.contains(&secret.to_wire()),
+            "an approver secret was written to daemon.log"
+        );
+    }
     assert!(!process_running(orphan) && !process_running(second));
 
     let steps: Vec<Value> = STEPS

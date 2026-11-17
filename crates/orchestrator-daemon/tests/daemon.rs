@@ -4,7 +4,7 @@ use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
 use orchestrator_core::records::Project;
-use orchestrator_ipc::{Client, IpcError};
+use orchestrator_ipc::{ApproverSecret, Capability, Client, IpcError, DEFAULT_IO_TIMEOUT};
 use orchestrator_store::{SqliteStore, Store};
 use serde_json::json;
 use std::fs;
@@ -13,6 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -32,6 +33,22 @@ impl Daemon {
             .arg(data_dir)
             .stdout(Stdio::piped());
         Self::spawn(&mut command, data_dir)
+    }
+
+    /// Starts the daemon as the desktop host does: the approver secret goes to its
+    /// stdin, which is then closed.
+    fn start_with_approver(data_dir: &Path, approver: &ApproverSecret) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
+        command
+            .arg("--data-dir")
+            .arg(data_dir)
+            .arg("--approver-stdin")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped());
+        let mut daemon = Self::spawn(&mut command, data_dir);
+        let mut stdin = daemon.child().stdin.take().unwrap();
+        stdin.write_all(approver.to_wire().as_bytes()).unwrap();
+        daemon
     }
 
     /// Spawns `command` with stderr in `daemon.log` under `data_dir`. A file,
@@ -144,6 +161,63 @@ fn rejected_authentication_does_not_log_either_token() {
     assert!(!stdout.contains(&token) && !stdout.contains(&wrong));
     assert!(!stderr.contains(&token) && !stderr.contains(&wrong));
 }
+
+#[test]
+fn the_approver_flag_without_a_secret_fails_startup() {
+    let dir = TempDir::new().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
+        .arg("--data-dir")
+        .arg(dir.path())
+        .arg("--approver-stdin")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("daemon_failed"), "{stderr}");
+    assert!(
+        stderr.contains("approver secret on stdin is missing or malformed"),
+        "{stderr}"
+    );
+    // No token, socket, lock or store: the secret is read before any of them exists.
+    let left: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(left.is_empty(), "the daemon created {left:?} without a secret");
+}
+
+#[test]
+fn a_token_only_client_cannot_resolve_an_approval() {
+    let dir = TempDir::new().unwrap();
+    let approver = Arc::new(ApproverSecret::generate().unwrap());
+    let mut daemon = Daemon::start_with_approver(dir.path(), &approver);
+    wait_for_ipc(dir.path(), &mut daemon);
+
+    // The same unknown approval: the gate answers a token-only client before the lookup.
+    let mut bare = Client::connect(dir.path()).unwrap();
+    assert!(!bare.is_approver());
+    assert!(matches!(
+        bare.approvals_resolve("missing", "approve", "gate-1"),
+        Err(IpcError::Forbidden)
+    ));
+    let mut decider = Client::connect_with_approver(
+        dir.path(),
+        &Capability::ALL,
+        DEFAULT_IO_TIMEOUT,
+        Some(approver),
+    )
+    .unwrap();
+    assert!(decider.is_approver());
+    assert!(matches!(
+        decider.approvals_resolve("missing", "approve", "gate-1"),
+        Err(IpcError::NotFound)
+    ));
+    drop(bare);
+    decider.shutdown().unwrap();
+    assert!(daemon.finish().status.success());
+}
+
 #[test]
 fn second_daemon_reports_holder_and_shutdown_removes_resources() {
     let dir = TempDir::new().unwrap();
@@ -320,9 +394,17 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
     store.create(&blocker_contract()).unwrap();
     drop(store);
 
-    let mut daemon = Daemon::start(dir.path());
+    // `approvals.resolve` below is a user-only method: the client must be an approver.
+    let approver = Arc::new(ApproverSecret::generate().unwrap());
+    let mut daemon = Daemon::start_with_approver(dir.path(), &approver);
     wait_for_ipc(dir.path(), &mut daemon);
-    let mut client = Client::connect(dir.path()).unwrap();
+    let mut client = Client::connect_with_approver(
+        dir.path(),
+        &Capability::ALL,
+        DEFAULT_IO_TIMEOUT,
+        Some(approver),
+    )
+    .unwrap();
     assert_eq!(
         client.projects_list().unwrap(),
         json!([{"id": "project-1", "coordinator_active": true}])
