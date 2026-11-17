@@ -33,7 +33,7 @@ pub struct OrchestratorSettings {
     pub chat_pr_delivery: bool,
     /// Phase 6b: the read-only task tools for the orchestrator chat. Off by default.
     pub mcp: McpSettings,
-    /// Migration 0054: the directory a task runs in when it is not clear which project it
+    /// Migration 0055: the directory a task runs in when it is not clear which project it
     /// belongs to. The daemon validates the path before it is stored. `None` means none is set.
     pub home_directory: Option<String>,
 }
