@@ -354,7 +354,7 @@ pub(super) fn reference_str<'a>(reference: &'a Value, field: &str) -> Result<&'a
         .ok_or(RpcError::Internal)
 }
 
-fn map_conversation_error(error: ConversationError) -> RpcError {
+pub(super) fn map_conversation_error(error: ConversationError) -> RpcError {
     match error {
         ConversationError::Store(error) => map_store_error(error),
         ConversationError::TurnRunning { .. } | ConversationError::TurnNotRunning(_) => {
@@ -416,7 +416,7 @@ impl DaemonApi {
     /// A turn as the wire shows it. `verified` says whether the version the turn
     /// recorded is one the daemon has verified; the desktop warns once per version
     /// when it is not (DPES-1106). The version itself is always recorded.
-    fn turn_wire(&self, turn: &ConversationTurn) -> Value {
+    pub(super) fn turn_wire(&self, turn: &ConversationTurn) -> Value {
         let identity = RuntimeIdentity {
             name: turn.runtime_name.clone(),
             version: turn.runtime_version.clone(),

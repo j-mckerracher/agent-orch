@@ -36,6 +36,7 @@ use orchestrator_store::{
 
 use super::conversation_snapshot::build_snapshot;
 use super::load::LoadHandle;
+use super::actions::promotion_denial;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
 use crate::executor::unix_now_ms;
@@ -428,7 +429,9 @@ impl ReplySink {
             Ok(block) if self.targets_in_scope(&block) => {
                 let store = &*self.shared.store;
                 TurnBlock::Accepted(block.checked_with(|action| match action {
-                    Action::TaskPropose(propose) => denial_of(store, propose),
+                    Action::TaskPropose(propose) => {
+                        denial_of(store, propose).or_else(|| promotion_denial(store, propose))
+                    }
                     Action::TaskRevise(revise) => revise_denial(store, revise),
                     _ => None,
                 }))
@@ -589,7 +592,7 @@ impl ConversationService {
         level: PermissionLevel,
         negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
-        self.start_as(target, turn_id, text, choice, level, negotiated, None)
+        self.start_as(target, turn_id, text, choice, level, negotiated, None, None)
     }
 
     /// Starts a wake turn: Restricted always, the daemon's default model choice, actions
@@ -612,11 +615,41 @@ impl ConversationService {
             PermissionLevel::Restricted,
             true,
             Some(brief),
+            None,
+        )
+    }
+
+    /// Starts the turn of a user's relay of a scout report (DPES-1105 phase 4a): Restricted
+    /// always and the daemon's default model choice, whatever the chat was last set to, so
+    /// the turn can only propose. `block` is the report inside its delimiters, handed to this
+    /// one turn as data in its context; the stored opening text is `text`, written by the
+    /// daemon, never the report. The turn is marked as one that read a report, so a proposal
+    /// it makes says so. `turn_id` is stable per request, so a second call returns the stored
+    /// turn (`created == false`). Like a user message it cancels a running wake turn.
+    pub(crate) fn start_relay(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+        block: &str,
+        negotiated: bool,
+    ) -> Result<BegunTurn, ConversationError> {
+        self.start_as(
+            target,
+            turn_id,
+            text,
+            None,
+            PermissionLevel::Restricted,
+            negotiated,
+            None,
+            Some(block),
         )
     }
 
     /// The one start path. A `wake` brief makes the turn a wake turn and forces the level
-    /// to Restricted whatever the caller passed, so no other level is reachable.
+    /// to Restricted whatever the caller passed, so no other level is reachable. A `relay`
+    /// block (a scout report, already delimited) does the same and drops the caller's model
+    /// choice, so a turn that read a report always runs at the least authority.
     #[allow(clippy::too_many_arguments)]
     fn start_as(
         &self,
@@ -627,12 +660,14 @@ impl ConversationService {
         level: PermissionLevel,
         negotiated: bool,
         wake: Option<&WakeBrief>,
+        relay: Option<&str>,
     ) -> Result<BegunTurn, ConversationError> {
-        let level = if wake.is_some() {
+        let level = if wake.is_some() || relay.is_some() {
             PermissionLevel::Restricted
         } else {
             level
         };
+        let choice = if relay.is_some() { None } else { choice };
         let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
         let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
@@ -662,10 +697,16 @@ impl ConversationService {
         if !begun.created {
             return Ok(begun);
         }
+        // The mark comes before the launch, so a proposal of this turn always says it read a
+        // report. A turn that cannot be marked never launches.
+        let unmarked = relay.is_some() && store.mark_turn_read_report(turn_id).is_err();
         let failure = match permission {
+            _ if unmarked => Some(RuntimeFailure::Failed),
             Err(failure) => Some(failure),
             Ok(permission) => self
-                .launch(&identity, choice, level, target, turn_id, text, actions, wake)
+                .launch(
+                    &identity, choice, level, target, turn_id, text, actions, wake, relay,
+                )
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
                 }),
@@ -716,6 +757,7 @@ impl ConversationService {
         text: &str,
         actions: bool,
         wake: Option<&WakeBrief>,
+        relay: Option<&str>,
     ) -> Option<RuntimeFailure> {
         if let Some(failure) = self.pin_failure(choice) {
             return Some(failure);
@@ -735,10 +777,15 @@ impl ConversationService {
                     &self.shared.load.read(Instant::now()),
                 );
                 // A turn nobody asked for sees no path or token a task title may hold.
-                if wake.is_some() {
+                let snapshot = if wake.is_some() {
                     redact_snapshot(&snapshot)
                 } else {
                     snapshot
+                };
+                // The relayed report follows the snapshot, inside its own delimiters.
+                match relay {
+                    Some(block) => format!("{snapshot}\n\n{block}"),
+                    None => snapshot,
                 }
             }),
             actions,

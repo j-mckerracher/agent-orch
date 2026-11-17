@@ -16,10 +16,13 @@ use orchestrator_core::load_gate::{Reading, Unknown};
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
-use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, WorkstreamStoreError};
+use orchestrator_store::{
+    ConversationTarget, OpenTask, SqliteStore, Store, WorkstreamStoreError,
+};
 
 use super::conversation_agent::sanitize;
 use super::load::LoadReading;
+use super::reports::{newest_reports, report_title};
 
 /// Largest snapshot, in bytes. Shares the command line with the preamble.
 const SNAPSHOT_MAX_BYTES: usize = 6 * 1024;
@@ -41,6 +44,10 @@ const RANK_WORKSTREAMS: u8 = 2;
 const RANK_OPEN_TASKS: u8 = 3;
 /// Proposals of this conversation, cut first when the snapshot is full.
 const RANK_PROPOSALS: u8 = 4;
+/// Scout reports not yet relayed, cut after every list above.
+const RANK_REPORTS: u8 = 5;
+/// Newest reports read for the snapshot, so the line count stays bounded.
+const REPORT_LINES: usize = 50;
 /// Newest proposals of this conversation listed (DPES-1105).
 const PROPOSALS_LISTED: usize = 10;
 
@@ -100,6 +107,7 @@ pub(crate) fn build_snapshot(
     blocks.push(workstreams(store, actions));
     blocks.extend(tasks(store));
     blocks.push(approvals(store));
+    blocks.push(reports(store));
     if actions {
         let kinds: Vec<&str> = ActionKind::ALL.map(ActionKind::as_str).into();
         blocks.push(Block::text(format!("Action kinds: {}", kinds.join(", "))));
@@ -416,6 +424,35 @@ fn approvals(store: &SqliteStore) -> Block {
             Block::text(format!("Pending delivery approvals: {delivery}"))
         }
         Err(_) => Block::text("Pending delivery approvals: unavailable"),
+    }
+}
+
+/// Scout reports the user has not had relayed: the task id and an 80 byte title, never any
+/// report text (DPES-1105 phase 4a). A report's text reaches a turn only through the user's
+/// relay.
+fn reports(store: &SqliteStore) -> Block {
+    let Ok(summaries) = newest_reports(store, REPORT_LINES) else {
+        return Block::unavailable("Scout reports ready");
+    };
+    let items: Vec<String> = summaries
+        .iter()
+        .filter(|summary| summary.relayed_at.is_none())
+        .map(|summary| {
+            let title = store
+                .get(&summary.task_id)
+                .map_or_else(|_| String::new(), |task| report_title(&task.contract.objective));
+            format!(
+                "- task {} '{}' (not yet relayed)",
+                field(&summary.task_id, TEXT_BYTES),
+                title
+            )
+        })
+        .collect();
+    Block {
+        head: format!("Scout reports ready: {}", items.len()),
+        total: items.len(),
+        items,
+        rank: RANK_REPORTS,
     }
 }
 

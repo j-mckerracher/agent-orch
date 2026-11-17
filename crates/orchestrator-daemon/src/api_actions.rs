@@ -110,6 +110,9 @@ enum Execution {
 struct ProposeExec {
     submit: TaskSubmitParams,
     link: Option<LinkTarget>,
+    /// The finished scout this task promotes to a task that ships. Only the lineage link
+    /// carries it: the objective is the text the proposal wrote, never the scout's report.
+    promote_from: Option<String>,
 }
 
 struct LinkTarget {
@@ -325,6 +328,13 @@ impl ProposeExec {
                 api.submit_task_inner(&self.submit, &self.submit.idempotency_key, None)?;
             }
         }
+        // Written once, right after the task exists. A rerun finds the same link and
+        // changes nothing.
+        if let Some(source) = &self.promote_from {
+            api.store
+                .add_task_lineage(&task_id, source, LineageRelation::PromotedFrom, None)
+                .map_err(lineage_error)?;
+        }
         if let Some(link) = &self.link {
             api.link_task_inner(&LinkTaskParams {
                 workstream_id: link.workstream_id.clone(),
@@ -442,6 +452,41 @@ impl ReviseTaskExec {
     }
 }
 
+/// The refusal a promotion meets, as the sink and the approval check it: a `task.propose`
+/// with `promote_from` whose source is not a finished scout of the same project with a
+/// relayed report is a contract denial. Any other proposal, and a promotion that passes, is
+/// not refused. An unreadable store refuses, so nothing passes on a guess.
+pub(super) fn promotion_denial(
+    store: &SqliteStore,
+    propose: &ProposeTask,
+) -> Option<orchestrator_core::task_envelope::Denial> {
+    let source = propose.promote_from.as_deref()?;
+    let scout_project = promotable_scout(store, source).ok().flatten();
+    let same_project = scout_project
+        .zip(super::projects_defaults::project_id_for_code(store, &propose.project))
+        .is_some_and(|(scout, own)| scout == own);
+    (!same_project || propose.task_kind != TaskKind::Implement)
+        .then_some(orchestrator_core::task_envelope::Denial::Contract)
+}
+
+/// The project of `task_id` when it is a scout that succeeded and whose report the user has
+/// had relayed: the one condition a promotion asks of its source. `None` for a task that is
+/// gone, is not a scout, has not succeeded, or has a report nobody relayed.
+fn promotable_scout(store: &SqliteStore, task_id: &str) -> Result<Option<String>, StoreError> {
+    let task = match store.get(task_id) {
+        Ok(task) => task,
+        Err(StoreError::NotFound(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if task.contract.kind != TaskKind::Investigate || task.state != TaskState::Succeeded {
+        return Ok(None);
+    }
+    let relayed = store
+        .task_report(task_id)?
+        .is_some_and(|report| report.relayed_at.is_some());
+    Ok(relayed.then_some(task.contract.project_id))
+}
+
 /// The id of the hold an execution under `key` makes.
 fn hold_id(key: &str) -> String {
     idempotency::stable_id("hold", key)
@@ -506,6 +551,18 @@ fn link_effect(api: &DaemonApi, request: &LinkTaskParams) -> Result<Option<Strin
 }
 
 impl DaemonApi {
+    /// The refusal a pending promotion meets on approve, against the scout as it is now.
+    /// `None` for any other proposal. Local reads only.
+    fn recheck_promotion(
+        &self,
+        proposal: &ActionProposal,
+    ) -> Result<Option<orchestrator_core::task_envelope::Denial>, RpcError> {
+        Ok(match serde_json::from_str::<Action>(&proposal.params_json) {
+            Ok(Action::TaskPropose(propose)) => promotion_denial(&self.store, &propose),
+            _ => None,
+        })
+    }
+
     /// `actions.resolve`. Any session that negotiated `orchestrator_actions` may
     /// call it; `resolve_as` decides whether the caller may approve.
     pub(super) fn actions_resolve(&self, params: Value) -> Result<Value, RpcError> {
@@ -549,7 +606,11 @@ impl DaemonApi {
                 // setting between propose and approve denies the card. A reject is never
                 // re-checked.
                 if matches!(request.decision, Decision::Approve) {
-                    if let Some(denial) = self.recheck_task_denial(&current)? {
+                    let denial = match self.recheck_task_denial(&current)? {
+                        Some(denial) => Some(denial),
+                        None => self.recheck_promotion(&current)?,
+                    };
+                    if let Some(denial) = denial {
                         let denied = self
                             .store
                             .deny_action_proposal(&request.proposal_id, denial.as_str(), APPROVER)
@@ -976,6 +1037,7 @@ impl DaemonApi {
                     },
                 },
                 link,
+                promote_from: None,
             },
         })
     }
@@ -1007,6 +1069,21 @@ impl DaemonApi {
             .ok_or(INVALID)?
             .to_owned();
         let project_id = project?;
+        // A promotion is checked again here, at execution: the scout and its report are
+        // read as they are now.
+        if let Some(source) = &propose.promote_from {
+            if propose.task_kind != TaskKind::Implement {
+                return Err(INVALID);
+            }
+            match promotable_scout(&self.store, source) {
+                Ok(Some(scout_project)) if scout_project == project_id => {}
+                Ok(_) => return Err(INVALID),
+                Err(error) => {
+                    internal("actions", &error);
+                    return Err("internal");
+                }
+            }
+        }
         let workstream_id = match (propose.workstream_id, propose.workstream_ref, parent) {
             (Some(workstream_id), None, _) => Some(workstream_id),
             (None, Some(_), Some(parent)) => Some(parent.result_ref.clone().ok_or(INVALID)?),
@@ -1041,6 +1118,7 @@ impl DaemonApi {
                 },
             },
             link,
+            promote_from: propose.promote_from,
         })
     }
 
@@ -1106,6 +1184,8 @@ impl DaemonApi {
             "error_code": proposal.error_code,
             "denial": proposal.denial,
             "target": self.proposal_target(proposal),
+            // Whether the turn that made the proposal was handed a scout report.
+            "after_report": self.store.turn_read_report(&proposal.turn_id).unwrap_or(false),
             "created_at": proposal.created_at,
             "updated_at": proposal.updated_at,
         })
@@ -1125,6 +1205,13 @@ impl DaemonApi {
                     .resolve_project(&propose.project)
                     .ok()
                     .and_then(|id| project_name(&id).map(str::to_owned));
+                // A promotion shows the scout it comes from, by title.
+                let promoted_from_title = propose.promote_from.as_deref().and_then(|source| {
+                    self.store
+                        .get(source)
+                        .ok()
+                        .map(|task| cut_at_char(&task.contract.objective, TARGET_TITLE_BYTES).to_owned())
+                });
                 // Advisory: the gate as it is now, which can change before the user decides.
                 let machine_busy = self
                     .config
@@ -1133,6 +1220,9 @@ impl DaemonApi {
                     .hold
                     .is_some();
                 let mut target = json!({"project_name": name, "machine_busy": machine_busy});
+                if let Some(title) = promoted_from_title {
+                    target["promoted_from_title"] = json!(title);
+                }
                 // Only a project in a pull-request mode can be below its default.
                 if let Some(mode) = self.below_project_default(propose) {
                     target["below_project_default"] = json!(true);

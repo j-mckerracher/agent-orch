@@ -460,6 +460,10 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "conversations.send" | "conversations.get" | "conversations.cancel" => {
             Some(Capability::Coordinator)
         }
+        // DPES-1105 phase 4a: reading scout reports, and asking the orchestrator to relay one.
+        // They share the coordinator capability. None is user-only: the desktop reads data it
+        // already holds redacted, and a relay only starts a Restricted chat turn.
+        "reports.list" | "reports.get" | "reports.relay" => Some(Capability::Coordinator),
         // DPES-1105: clearing history and removing or restoring coordinators. An older
         // daemon does not know this capability, so the desktop disables these actions.
         "conversations.clear"

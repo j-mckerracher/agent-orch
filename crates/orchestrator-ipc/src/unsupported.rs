@@ -180,6 +180,15 @@ impl Client {
     pub fn holds_list(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn reports_list(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn reports_get(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn reports_relay(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn review_evidence(
         &mut self,
         _: &str,

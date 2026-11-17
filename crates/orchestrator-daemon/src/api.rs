@@ -409,6 +409,11 @@ impl RpcHandler for DaemonApi {
             "holds.set" => self.holds_set(params),
             "holds.release" => self.holds_release(params),
             "holds.list" => self.holds_list(params),
+            "reports.list" => self.reports_list(params),
+            "reports.get" => self.reports_get(params),
+            "reports.relay" => {
+                self.reports_relay(params, context.negotiated(Capability::OrchestratorActions))
+            }
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -1599,6 +1604,10 @@ mod monitoring;
 mod projects_defaults;
 #[path = "api_queue.rs"]
 mod queue;
+#[path = "api_reports.rs"]
+mod reports;
+#[path = "report.rs"]
+pub(crate) mod report;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
@@ -1643,6 +1652,9 @@ mod actions_tests;
 #[cfg(test)]
 #[path = "api_projects_defaults_tests.rs"]
 mod projects_defaults_tests;
+#[cfg(test)]
+#[path = "api_reports_tests.rs"]
+mod reports_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

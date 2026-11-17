@@ -132,6 +132,9 @@ mod monitoring_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "holds_tests.rs"]
 mod holds_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "reports_tests.rs"]
+mod reports_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

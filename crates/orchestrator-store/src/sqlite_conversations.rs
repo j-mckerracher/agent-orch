@@ -473,6 +473,39 @@ impl SqliteStore {
         })
     }
 
+    /// Marks a turn as one the user's relay handed a scout report to (DPES-1105 phase 4a,
+    /// column `read_report` of migration 0044), so a proposal made in it can say so. Safe
+    /// to repeat. A turn that does not exist fails with `TurnNotFound`.
+    pub fn mark_turn_read_report(&self, turn_id: &str) -> Result<(), ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let result = sqlx::query("UPDATE conversation_turns SET read_report = 1 WHERE id = ?")
+                .bind(&turn_id)
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            if result.rows_affected() == 1 {
+                Ok(())
+            } else {
+                Err(ConversationError::TurnNotFound)
+            }
+        })
+    }
+
+    /// Whether the turn was handed a scout report. `false` for a turn that does not exist.
+    pub fn turn_read_report(&self, turn_id: &str) -> Result<bool, ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let flag: Option<i64> =
+                sqlx::query_scalar("SELECT read_report FROM conversation_turns WHERE id = ?")
+                    .bind(&turn_id)
+                    .fetch_optional(&pool)
+                    .await?;
+            Ok(flag.is_some_and(|flag| flag != 0))
+        })
+    }
+
     /// End a running turn. Returns the terminal entry, or `None` when the turn
     /// was already terminal (the first terminal state wins).
     pub fn finish_conversation_turn(

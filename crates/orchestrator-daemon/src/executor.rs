@@ -37,7 +37,7 @@ use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
 };
-use orchestrator_core::contract::ModelSelection;
+use orchestrator_core::contract::{ModelSelection, TaskKind};
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
@@ -1362,7 +1362,10 @@ fn finish(
         return close(resolution);
     }
     match monitored.exit {
-        AgentExit::Completed { code: Some(0), .. } => {
+        AgentExit::Completed {
+            code: Some(0),
+            ref last_message,
+        } => {
             store
                 .update_session_state(&job.task_id, &job.session_id, SessionState::Exited)
                 .map_err(|error| format!("cannot mark session exited: {error}"))?;
@@ -1398,12 +1401,56 @@ fn finish(
                 .map_err(|error| format!("cannot record candidate: {error}"))?;
             job.diag
                 .info(LOG, "candidate_ready", &job.event_fields(&[]));
+            capture_report(store, job, last_message.as_deref());
             close(resolution)
         }
         _ => {
             fail_after_agent_exit(store, job);
             close(resolution)
         }
+    }
+}
+
+/// Keeps a finished scout's last message as its report (DPES-1105 phase 4a). Only an
+/// `Investigate` task leaves one, and only when the agent wrote a message. The text is
+/// untrusted agent output: it is redacted and capped before it is stored, and nothing here
+/// puts it in a log line. A failure to store it is logged without the text and never
+/// fails the task, which has already succeeded.
+fn capture_report(store: &SqliteStore, job: &Job, last_message: Option<&str>) {
+    record_report(store, &job.diag, &job.task_id, &job.attempt_id, last_message);
+}
+
+/// The body of [`capture_report`], without the job, so a test can run it.
+pub(crate) fn record_report(
+    store: &SqliteStore,
+    diag: &Diagnostics,
+    task_id: &str,
+    attempt_id: &str,
+    last_message: Option<&str>,
+) {
+    let Some(text) = last_message.map(str::trim).filter(|text| !text.is_empty()) else {
+        return;
+    };
+    let scout = store
+        .get(task_id)
+        .is_ok_and(|task| task.contract.kind == TaskKind::Investigate);
+    if !scout {
+        return;
+    }
+    let (body, truncated) = crate::api::report::report_body(text);
+    if body.trim().is_empty() {
+        return;
+    }
+    let captured_at = crate::api::report::utc_text(unix_now_ms());
+    if store
+        .capture_task_report(task_id, attempt_id, &body, truncated, &captured_at)
+        .is_err()
+    {
+        diag.error(
+            LOG,
+            "report_record_failed",
+            &[("task_id", task_id), ("attempt_id", attempt_id)],
+        );
     }
 }
 

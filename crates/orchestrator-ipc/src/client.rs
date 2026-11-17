@@ -402,6 +402,22 @@ impl Client {
         )
     }
 
+    /// `reports.list`: the newest scout reports, without their text.
+    pub fn reports_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.list", params)
+    }
+
+    /// `reports.get`: one scout report with its text.
+    pub fn reports_get(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.get", params)
+    }
+
+    /// `reports.relay`: asks the orchestrator to read one scout report in a new Restricted
+    /// turn of the global conversation.
+    pub fn reports_relay(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.relay", params)
+    }
+
     pub fn review_request_approval(&mut self, params: Value) -> Result<Value, IpcError> {
         self.call_feature(Capability::Review, "review.request_approval", params)
     }

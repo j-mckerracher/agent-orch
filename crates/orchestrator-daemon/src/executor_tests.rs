@@ -259,6 +259,69 @@ fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
     api.shutdown();
 }
 
+/// A scripted agent that prints one final message before it finishes, in the event shape the
+/// codex adapter reads its `last_message` from.
+fn messaging_agent(fixture: &Fixture, message: &str) -> PathBuf {
+    let event = format!(
+        r#"{{"type":"item.completed","item":{{"id":"item_0","type":"agent_message","text":"{message}"}}}}"#
+    );
+    fixture.script(
+        "messaging-agent",
+        &format!("{THREAD_STARTED}printf '%s\\n' '{event}'\n{TURN_COMPLETED}"),
+    )
+}
+
+/// `kind` of the contract `Fixture::submit_full` builds is fixed to `Implement`; a scout needs
+/// the other kind, so this submits the same contract with `Investigate`.
+fn submit_kind(fixture: &Fixture, api: &DaemonApi, key: &str, kind: &str) -> String {
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({
+                "idempotency_key": key,
+                "contract": {
+                    "project_id": fixture.project_id(),
+                    "parent_id": null,
+                    "objective": format!("objective of {key}"),
+                    "kind": kind,
+                    "agent": "codex",
+                    "dependencies": [],
+                    "verification": "None",
+                    "delivery": "ReportOnly",
+                    "autonomy": "WorkspaceWrites",
+                    "max_retries": 0,
+                    "max_repairs": 0
+                }
+            }),
+        )
+        .unwrap();
+    task["contract"]["id"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn a_finished_scout_leaves_its_last_message_as_a_redacted_report_and_a_ship_leaves_none() {
+    let fixture = Fixture::new();
+    // A credential shape the diagnostics redactor masks; a bare long word is masked only in the
+    // copy a relay hands a model (`report::relay_block`), not in the stored report.
+    let secret = "SECRETVALUE1234";
+    let api = fixture.api(&messaging_agent(
+        &fixture,
+        &format!("The slow query is in the loader, password={secret}"),
+    ));
+    let scout = submit_kind(&fixture, &api, "scout-1", "Investigate");
+    wait_state(&api, &scout, "Verifying");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let report = store.task_report(&scout).unwrap().expect("a scout leaves a report");
+    assert!(report.body.contains("The slow query is in the loader"), "{}", report.body);
+    assert!(!report.body.contains(secret), "{}", report.body);
+    assert!(!report.truncated && report.relayed_at.is_none());
+
+    let ship = submit_kind(&fixture, &api, "ship-1", "Implement");
+    wait_state(&api, &ship, "Verifying");
+    assert_eq!(store.task_report(&ship).unwrap(), None);
+    api.shutdown();
+}
+
 #[test]
 fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
     let fixture = Fixture::new();
