@@ -599,6 +599,7 @@ function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
     wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
     chatPrDelivery: false,
     mcpEnabled: false,
+    homeDirectory: null,
   });
   const simulated = () =>
     Promise.resolve({

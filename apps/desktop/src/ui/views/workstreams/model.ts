@@ -122,6 +122,15 @@ export function taskLabelOf(task: Pick<WsTask, "id" | "objective">): string {
   return task.objective.trim() === "" ? task.id : task.objective;
 }
 
+/** Most words a task title shows in the sidebar. */
+export const TASK_TITLE_WORDS = 5;
+
+/** A task's short title: the first five words of its label, with "…" when cut. */
+export function taskTitleOf(task: Pick<WsTask, "id" | "objective">): string {
+  const words = taskLabelOf(task).trim().split(/\s+/);
+  return words.length <= TASK_TITLE_WORDS ? words.join(" ") : `${words.slice(0, TASK_TITLE_WORDS).join(" ")}…`;
+}
+
 function approvalKind(approval: Approval): string {
   const kind = approval.action.kind;
   return kind.type === "delivery" ? kind.kind : kind.type;

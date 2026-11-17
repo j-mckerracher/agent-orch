@@ -206,10 +206,13 @@ impl DaemonApi {
             .store
             .get_project(&task.contract.project_id)
             .map_err(map_store_error)?;
-        let mut workspaces = self
+        let mut workspaces: Vec<_> = self
             .store
             .workspaces_for_task(&request.task_id)
-            .map_err(map_store_error)?;
+            .map_err(map_store_error)?
+            .into_iter()
+            .filter(|workspace| !workspace.is_in_place())
+            .collect();
         if workspaces.len() > 1 {
             return Err(RpcError::Conflict);
         }

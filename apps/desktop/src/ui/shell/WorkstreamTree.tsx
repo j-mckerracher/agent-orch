@@ -5,6 +5,7 @@ import {
   taskCount,
   taskLabelOf,
   taskListNotice,
+  taskTitleOf,
   useWorkstreamModel,
   type WsGroup,
   type WsTask,
@@ -257,7 +258,7 @@ export function WorkstreamTree() {
                     const body = (
                       <>
                         <span className="ws-tree-task-head">
-                          <span className="ws-tree-task-name">{taskLabelOf(task)}</span>
+                          <span className="ws-tree-task-name" title={taskLabelOf(task)}>{taskTitleOf(task)}</span>
                           <small>{task.state}</small>
                         </span>
                         <WorkerRows task={task} />

@@ -36,6 +36,7 @@ use orchestrator_store::{
 
 use super::actions::promotion_denial;
 use super::conversation_snapshot::build_snapshot_with_notes;
+use super::home_directory::with_in_place_delivery;
 use super::landing_api::{merge_denial, with_project_merge_methods};
 use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
@@ -455,6 +456,8 @@ impl ReplySink {
                 // A merge without a method gets the project's method now, so the card shows
                 // and the digest binds the method that will run.
                 let block = with_project_merge_methods(store, block);
+                // A task for the home directory can only end in a report.
+                let block = with_in_place_delivery(store, block);
                 TurnBlock::Accepted(block.checked_with(|action| match action {
                     Action::TaskPropose(propose) => {
                         denial_of(store, propose).or_else(|| promotion_denial(store, propose))

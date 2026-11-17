@@ -14,6 +14,21 @@ pub struct Project {
     pub settings: serde_json::Value,
 }
 
+/// The `Project::settings` key set to `true` on a project whose tasks run directly in
+/// its directory, with no Git worktree. The home directory is one.
+pub const IN_PLACE_SETTING: &str = "in_place";
+
+impl Project {
+    /// Whether tasks of this project run directly in `root_path`. Such a project needs
+    /// no Git repository, and its tasks produce no candidate commit.
+    pub fn is_in_place(&self) -> bool {
+        self.settings
+            .get(IN_PLACE_SETTING)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }
+}
+
 /// A task-owned Git worktree.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Workspace {
@@ -27,6 +42,25 @@ pub struct Workspace {
     pub branch: String,
     /// Commit from which the worktree was created.
     pub base_commit: String,
+}
+
+impl Workspace {
+    /// The record of a task that ran in its project directory itself: no branch and no
+    /// base commit, because nothing was checked out.
+    pub fn in_place(id: String, task_id: String, path: String) -> Self {
+        Self {
+            id,
+            task_id,
+            path,
+            branch: String::new(),
+            base_commit: String::new(),
+        }
+    }
+
+    /// Whether this record is a task's project directory rather than a Git worktree.
+    pub fn is_in_place(&self) -> bool {
+        self.branch.is_empty() && self.base_commit.is_empty()
+    }
 }
 
 /// Evidence from one verification run.

@@ -596,6 +596,7 @@ impl Inner {
             model_selection: task.contract.model_selection.clone(),
             permission: task.contract.permission,
             worktree: PathBuf::new(),
+            in_place: false,
             diag: self.config.diagnostics.clone(),
             output: self.output.clone(),
         };
@@ -616,7 +617,14 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
-        let worktree =
+        // The home directory is a project whose tasks run in the directory itself.
+        let in_place = store
+            .get_project(&task.contract.project_id)
+            .is_ok_and(|project| project.is_in_place());
+        job.in_place = in_place;
+        let checkout = if in_place {
+            in_place_checkout(&task.contract.project_id)
+        } else {
             Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
                 std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
                 let root =
@@ -645,8 +653,15 @@ impl Inner {
                     }
                     None => "HEAD".to_owned(),
                 };
-                create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)
-            });
+                let worktree =
+                    create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)?;
+                Ok(Checkout {
+                    path: worktree.path().to_path_buf(),
+                    branch: worktree.branch().to_string(),
+                    base_commit: worktree.base_sha().to_string(),
+                })
+            })
+        };
         store
             .add_attempt(
                 &task_id,
@@ -659,8 +674,8 @@ impl Inner {
                 },
             )
             .map_err(|error| format!("cannot record attempt: {error}"))?;
-        let worktree = match worktree {
-            Ok(worktree) => worktree,
+        let checkout = match checkout {
+            Ok(checkout) => checkout,
             Err(error) => {
                 // No process exists yet: take the attempt through Running so
                 // it can end Failed, and fail the task so it can be retried.
@@ -674,7 +689,11 @@ impl Inner {
                     .record_attempt_failure(
                         &task_id,
                         &job.attempt_id,
-                        worktree_failure_reason(&error),
+                        if in_place {
+                            HOME_DIRECTORY_MISSING
+                        } else {
+                            worktree_failure_reason(&error)
+                        },
                     )
                     .map_err(|e| format!("cannot fail attempt: {e}"))?;
                 store
@@ -683,15 +702,22 @@ impl Inner {
                 return Err(format!("cannot create worktree: {error}"));
             }
         };
-        job.worktree = worktree.path().to_path_buf();
-        store
-            .add_workspace(&Workspace {
-                id: format!("{task_id}-workspace-{number}"),
+        job.worktree = checkout.path.clone();
+        let workspace_id = format!("{task_id}-workspace-{number}");
+        let path = checkout.path.display().to_string();
+        let workspace = if in_place {
+            Workspace::in_place(workspace_id, task_id.clone(), path)
+        } else {
+            Workspace {
+                id: workspace_id,
                 task_id: task_id.clone(),
-                path: worktree.path().display().to_string(),
-                branch: worktree.branch().to_string(),
-                base_commit: worktree.base_sha().to_string(),
-            })
+                path,
+                branch: checkout.branch,
+                base_commit: checkout.base_commit,
+            }
+        };
+        store
+            .add_workspace(&workspace)
             .map_err(|error| format!("cannot record worktree: {error}"))?;
         store
             .transition(&task_id, TaskEvent::ExecutionStarted)
@@ -731,6 +757,29 @@ impl Inner {
     }
 }
 
+/// Where a task runs: a fresh worktree, or (in place) the project directory itself.
+struct Checkout {
+    path: PathBuf,
+    branch: String,
+    base_commit: String,
+}
+
+/// The directory of an in-place project. No branch, no base commit, nothing created.
+fn in_place_checkout(root: &str) -> Result<Checkout, GitError> {
+    let path = PathBuf::from(root);
+    if !path.is_dir() {
+        return Err(GitError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "the project directory does not exist",
+        )));
+    }
+    Ok(Checkout {
+        path,
+        branch: String::new(),
+        base_commit: String::new(),
+    })
+}
+
 #[derive(Clone)]
 struct Job {
     task_id: String,
@@ -741,6 +790,8 @@ struct Job {
     model_selection: Option<ModelSelection>,
     permission: PermissionLevel,
     worktree: PathBuf,
+    /// The task runs in its project's directory, not a worktree: nothing to commit.
+    in_place: bool,
     diag: Diagnostics,
     output: Arc<OutputStore>,
 }
@@ -779,6 +830,9 @@ fn preserved_work(job: &Job) -> (String, String) {
     (worktree, uncommitted)
 }
 
+/// Attempt failure reason when the directory of an in-place project is gone.
+const HOME_DIRECTORY_MISSING: &str =
+    "The project directory no longer exists. Check the home directory in Settings, then retry.";
 /// Attempt failure reason when the project's base branch no longer resolves.
 pub(crate) const BASE_BRANCH_MISSING: &str = "The project's base branch no longer exists. Set a base branch that exists in the project defaults, or clear it, then retry.";
 
@@ -944,7 +998,7 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
         return spawn_copilot(inner, job).await;
     }
     let selection = job.model_selection.as_ref();
-    let Some((program, args)) = agent_command(
+    let Some((program, mut args)) = agent_command(
         &inner.config,
         &job.agent,
         &job.objective,
@@ -953,6 +1007,10 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
     ) else {
         return Err(format!("agent {:?} has no daemon launcher", job.agent));
     };
+    // `codex exec` refuses a directory that is not a Git repository unless told otherwise.
+    if job.in_place && job.agent == CODEX_AGENT {
+        args.insert(1, "--skip-git-repo-check".to_owned());
+    }
     if let Some(selection) = selection {
         // The catalog may have changed since submission (signed out, CLI
         // replaced), so the selection is checked again against a fresh read.
@@ -1462,7 +1520,13 @@ fn finish(
             store
                 .update_session_state(&job.task_id, &job.session_id, SessionState::Exited)
                 .map_err(|error| format!("cannot mark session exited: {error}"))?;
-            if let Err(error) = commit_candidate(&job.worktree, &job.task_id) {
+            // An in-place task changed its project directory itself: nothing to commit.
+            let committed = if job.in_place {
+                Ok(())
+            } else {
+                commit_candidate(&job.worktree, &job.task_id)
+            };
+            if let Err(error) = committed {
                 store
                     .update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::Failed)
                     .map_err(|e| format!("cannot fail attempt: {e}"))?;
@@ -1505,7 +1569,8 @@ fn finish(
 }
 
 /// Keeps a finished scout's last message as its report (DPES-1105 phase 4a). Only an
-/// `Investigate` task leaves one, and only when the agent wrote a message. The text is
+/// `Investigate` task, or a task that ran in place (nothing to review, so its last message is
+/// the record of what it did), leaves one, and only when the agent wrote a message. The text is
 /// untrusted agent output: it is redacted and capped before it is stored, and nothing here
 /// puts it in a log line. A failure to store it is logged without the text and never
 /// fails the task, which has already succeeded.
@@ -1530,10 +1595,13 @@ pub(crate) fn record_report(
     let Some(text) = last_message.map(str::trim).filter(|text| !text.is_empty()) else {
         return;
     };
-    let scout = store
-        .get(task_id)
-        .is_ok_and(|task| task.contract.kind == TaskKind::Investigate);
-    if !scout {
+    let leaves_report = store.get(task_id).is_ok_and(|task| {
+        task.contract.kind == TaskKind::Investigate
+            || store
+                .get_project(&task.contract.project_id)
+                .is_ok_and(|project| project.is_in_place())
+    });
+    if !leaves_report {
         return;
     }
     let (body, truncated) = crate::api::report::report_body(text);

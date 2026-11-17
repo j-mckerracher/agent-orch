@@ -555,8 +555,9 @@ impl DaemonApi {
             .store
             .projects_without_coordinator()
             .map_err(map_store_error)?;
-        // `mode` appears only for a project that has a defaults row, and `archived` only
-        // (as true) for an archived one, so a project that never set a default lists as before.
+        // `mode` appears only for a project that has a defaults row, `archived` only (as true)
+        // for an archived one, and `in_place` only (as true) for one whose tasks run in its
+        // directory, so a project that never set a default lists as before.
         let modes: std::collections::HashMap<String, String> = self
             .store
             .list_project_defaults()
@@ -578,6 +579,9 @@ impl DaemonApi {
                     }
                     if archived_all.contains(&project.id) {
                         row["archived"] = json!(true);
+                    }
+                    if project.is_in_place() {
+                        row["in_place"] = json!(true);
                     }
                     row
                 })
@@ -746,9 +750,14 @@ impl DaemonApi {
             permission,
             work_item: request.contract.work_item.clone(),
         };
-        self.store
+        let project = self
+            .store
             .get_project(&contract.project_id)
             .map_err(map_store_error)?;
+        // A task in the home directory leaves nothing to review or land.
+        if project.is_in_place() && contract.delivery != DeliveryPolicy::ReportOnly {
+            return Err(RpcError::InvalidParams);
+        }
         // A removed project takes no new task until it is registered again.
         if self
             .store
@@ -1297,10 +1306,14 @@ impl DaemonApi {
         task_id: &str,
         requested_id: Option<&str>,
     ) -> Result<Workspace, RpcError> {
-        let workspaces = self
+        // A task that ran in place has no checkout of its own to diff, review or land.
+        let workspaces: Vec<Workspace> = self
             .store
             .workspaces_for_task(task_id)
-            .map_err(map_store_error)?;
+            .map_err(map_store_error)?
+            .into_iter()
+            .filter(|workspace| !workspace.is_in_place())
+            .collect();
         match requested_id {
             Some(id) => workspaces
                 .into_iter()
@@ -1736,6 +1749,8 @@ mod grant_matcher;
 mod grants;
 #[path = "api_holds.rs"]
 mod holds;
+#[path = "api_home_directory.rs"]
+mod home_directory;
 #[path = "api_host.rs"]
 mod host;
 #[path = "api_intake.rs"]
@@ -1813,6 +1828,9 @@ mod grant_matcher_tests;
 #[cfg(test)]
 #[path = "api_grants_tests.rs"]
 mod grants_tests;
+#[cfg(test)]
+#[path = "api_home_directory_tests.rs"]
+mod home_directory_tests;
 #[cfg(test)]
 #[path = "api_landing_merge_tests.rs"]
 mod landing_merge_tests;

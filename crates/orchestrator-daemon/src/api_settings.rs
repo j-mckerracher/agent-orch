@@ -11,7 +11,7 @@
 //!   that meter off); an unknown field or an empty `load` is `InvalidParams`.
 //! - Both answer `{load, gate: {state, hold, meters}, feed, supervision, wake_limits}`. A
 //!   new limit applies from the next sample, with no restart. No path and no id appears in
-//!   the result.
+//!   the result, except the home directory below, which is a path the user typed.
 //! - Phase 3 (DPES-1105) adds two groups to the same methods. `supervision` is
 //!   `{base_interval_secs, min_interval_secs, attempt_wall_minutes}` and `wake_limits` is
 //!   `{hourly_cap, daily_cap, daily_token_budget}`; in `wake_limits` a JSON `null` means
@@ -27,6 +27,13 @@
 //!   orchestrator chat. `enabled` is a JSON boolean; an `mcp` group with no field is
 //!   `InvalidParams`. No new method: `settings.set` stays user-only, so a token-only session
 //!   cannot turn it on.
+//! - `home_directory` is a string or `null` in both answers (`null` while none is set) and an
+//!   optional field of `settings.set`: the directory a task runs in when it is not clear which
+//!   project it belongs to. A string is a path (`~` is the user's home) that must name an
+//!   existing directory, otherwise `InvalidParams`; the answer holds the canonical path. A
+//!   JSON `null` clears it and an absent field leaves it. Setting it registers the directory as
+//!   an in-place project unless it is already a project (see `api_home_directory.rs`). The log
+//!   line says the setting was set or cleared, never where.
 
 use std::time::Instant;
 
@@ -70,6 +77,14 @@ struct SetParams {
     /// loosening, so only the user-only method sets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mcp: Option<McpParams>,
+    /// The directory a task runs in when it is not clear which project it belongs to (a path;
+    /// `~` is the user's home). A JSON `null` clears it and an absent field leaves it.
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    home_directory: Option<Option<String>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -254,6 +269,7 @@ impl DaemonApi {
             && request.wake_limits.is_none()
             && request.chat_pr_delivery.is_none()
             && request.mcp.is_none()
+            && request.home_directory.is_none()
         {
             return Err(RpcError::InvalidParams);
         }
@@ -269,6 +285,17 @@ impl DaemonApi {
         if let Some(mcp) = &request.mcp {
             mcp.validate()?;
         }
+        // Resolved before the key is claimed, so a path that does not exist yet does not
+        // poison the key for a retry.
+        let home_directory = match &request.home_directory {
+            None => None,
+            Some(None) => Some(None),
+            Some(Some(typed)) => {
+                let resolved = home_directory::resolve(typed)?;
+                let text = resolved.to_str().ok_or(RpcError::InvalidParams)?.to_owned();
+                Some(Some(text))
+            }
+        };
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
@@ -301,6 +328,7 @@ impl DaemonApi {
                         .as_ref()
                         .map(McpParams::patch)
                         .unwrap_or_default(),
+                    home_directory: home_directory.clone(),
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
@@ -321,6 +349,18 @@ impl DaemonApi {
                 }
                 if let Some(value) = request.mcp.as_ref().and_then(|mcp| mcp.enabled) {
                     fields.push(("mcp_enabled", value.to_string()));
+                }
+                // The log names the change, never the path.
+                if let Some(directory) = &home_directory {
+                    if let Some(root) = directory {
+                        self.ensure_home_project(root)?;
+                    }
+                    let change = if directory.is_some() {
+                        "set"
+                    } else {
+                        "cleared"
+                    };
+                    fields.push(("home_directory", change.to_owned()));
                 }
                 let saved = self.store.update_orchestrator_settings(&patch);
                 self.finish(saved, request.load.is_some(), &fields)
@@ -389,6 +429,7 @@ impl DaemonApi {
             },
             "chat_pr_delivery": settings.chat_pr_delivery,
             "mcp": { "enabled": settings.mcp.enabled },
+            "home_directory": settings.home_directory,
         }))
     }
 }

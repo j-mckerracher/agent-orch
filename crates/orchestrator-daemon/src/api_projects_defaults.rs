@@ -21,7 +21,9 @@ use orchestrator_core::authorization::Authorization;
 use orchestrator_core::contract::TaskKind;
 use orchestrator_core::orchestrator_action::{Action, ProposeTask};
 use orchestrator_core::project_mode::{drops, MergeMethod, ProjectDefaults, ProjectMode};
-use orchestrator_core::task_envelope::{chat_task_envelope, check_task, task_envelope_for, Denial};
+use orchestrator_core::task_envelope::{
+    chat_task_envelope, check_task, in_place_envelope, task_envelope_for, Denial,
+};
 use orchestrator_git::{is_safe_branch_name, BranchPrefix};
 use orchestrator_store::{ProjectDefaultsRow, SqliteStore};
 
@@ -62,7 +64,9 @@ pub(super) fn typed(row: &ProjectDefaultsRow) -> ProjectDefaults {
 /// The envelope a task of `kind` proposed from chat is checked against, for the project
 /// `project_id` (`None` when it is unknown). No project, no row and `local-only` all give the
 /// fixed chat envelope, so a project that never set a default behaves as before. A pull-request
-/// mode goes through `task_envelope_for` with the current `chat_pr_delivery` setting.
+/// mode goes through `task_envelope_for` with the current `chat_pr_delivery` setting. A project
+/// that runs in place (the home directory) has no candidate to review or land, so only
+/// `ReportOnly` is granted.
 pub(super) fn envelope_for(
     store: &SqliteStore,
     project_id: Option<&str>,
@@ -71,6 +75,12 @@ pub(super) fn envelope_for(
     let Some(project_id) = project_id else {
         return Ok(chat_task_envelope());
     };
+    if store
+        .get_project(project_id)
+        .is_ok_and(|project| project.is_in_place())
+    {
+        return Ok(in_place_envelope());
+    }
     let Some(row) = store.project_defaults(project_id)? else {
         return Ok(chat_task_envelope());
     };

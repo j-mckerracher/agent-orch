@@ -40,6 +40,13 @@ pub fn chat_task_envelope() -> Authorization {
     }
 }
 
+/// The envelope for a task in an in-place project (the home directory). Such a task changes
+/// the directory itself and produces no candidate to review or land, so it can only end in a
+/// report. The fixed chat envelope otherwise.
+pub fn in_place_envelope() -> Authorization {
+    report_only(chat_task_envelope())
+}
+
 /// The envelope for a task of `kind` in a project with `defaults` (`None` means no row).
 /// `chat_pr_delivery` is the global setting that lets chat ask for a pull request; it
 /// is off by default and only the user turns it on.

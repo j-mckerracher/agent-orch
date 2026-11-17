@@ -1235,6 +1235,45 @@ fn interrupted_task_without_a_recorded_workspace_refuses_scheduling() {
 // ---- the gate: persisted delivery journals ------------------------------------------
 
 #[test]
+fn interrupted_task_that_ran_in_place_is_settled_and_does_not_block_scheduling() {
+    let fixture = fixture();
+    // The home directory is no Git repository: the task ran in it, with no worktree.
+    let home = fs::canonicalize(fixture.root.path()).unwrap().join("home");
+    fs::create_dir_all(&home).unwrap();
+    fs::write(home.join("notes.txt"), "the agent was here\n").unwrap();
+    let home_id = home.display().to_string();
+    seed_running_session_in(
+        &fixture,
+        "crash-in-place",
+        Some(dead_identity(&fixture, "crash-in-place")),
+        &home_id,
+        &home_id,
+    );
+    open_store(&fixture)
+        .add_workspace(&Workspace::in_place(
+            "crash-in-place-workspace-1".to_owned(),
+            "crash-in-place".to_owned(),
+            home_id,
+        ))
+        .unwrap();
+
+    let run = run_command(&fixture, "after-in-place", "edit")
+        .output()
+        .expect("run CLI");
+
+    assert_success(&run, "run beside an interrupted in-place task");
+    assert_eq!(
+        open_store(&fixture).get("crash-in-place").unwrap().state,
+        TaskState::Failed
+    );
+    assert_eq!(
+        fs::read(home.join("notes.txt")).unwrap(),
+        b"the agent was here\n",
+        "the directory is never touched"
+    );
+}
+
+#[test]
 fn interrupted_task_with_partial_delivery_refuses_scheduling_and_keeps_evidence() {
     let fixture = fixture();
     seed_running_session(
