@@ -406,7 +406,7 @@ export interface QueueEntry {
   agent: string;
   state: TaskState;
   /** Null for entries that are not waiting (running). `unknown` means the daemon reports no reason. */
-  waiting: { reason: WaitingReason; detail: string } | null;
+  waiting: { reason: WaitingReason; detail: string; nextStep?: string } | null;
 }
 export type AttentionPriority = "P1" | "P2" | "unknown";
 export interface AttentionItem {

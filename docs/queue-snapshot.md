@@ -46,7 +46,7 @@ limits.
   clients began building on these fields, and `tasks.list` already carries it.
   The behavior is pinned by `verifying_tasks_are_in_neither_list_and_hold_no_capacity`.
 - `waiting_reason`: `dependency` | `global_cap` | `project_cap` | `approval` |
-  `other`. It is taken from a real scheduler pass with the daemon's real
+  `load` | `other`. It is taken from a real scheduler pass with the daemon's real
   limits, so it equals the executor's decision. The global cap is reported
   before the project cap, as the scheduler checks it first.
   - `dependency`: `waiting_on` is the unfinished dependency's task id.
@@ -54,8 +54,14 @@ limits.
     daemon authorizes any task whose project is registered, and the store
     cannot hold tasks for an unregistered project, so this value is produced
     only if a future policy withholds authorization.
+  - `load`: the machine-load gate is closed. `load` contains `meter`,
+    `mean_percent`, `limit_percent`, and `reopen_percent`. Once closed, the
+    gate stays closed until every gated meter's unrounded rolling average is
+    at or below its reopen threshold. The displayed mean is rounded down.
+    For example, disk at 89% can still block new launches after triggering
+    the 90% limit: its rolling average must reach 80% or lower.
   - `other`: `waiting_detail` is `worktree_owned` (`waiting_on` is the owning
-    task), `dispatch_pending` (the next pass starts it), `dispatch_blocked`
+    task), `dispatch_pending` (scheduler-eligible, not proof of launch), `dispatch_blocked`
     (the restart gate blocks all launches) or `not_queued`.
   - Capacity reasons carry no `waiting_on`/`waiting_detail`.
 - `position`: 1-based "up next" order. Tasks the next pass starts come first,
@@ -73,3 +79,28 @@ limits.
 
 Implementation: `crates/orchestrator-daemon/src/api_queue.rs`; scheduler read
 accessors and `WaitingReason` in `crates/orchestrator-core/src/scheduler.rs`.
+
+## Desktop queue feedback
+
+Queued task details show queue diagnostics above the task objective, including
+the reported wait reason and a next step. The workspace activity queue uses
+the same explanations and labels queue order as **First in queue**, not a
+launch promise. Disk-load holds tell the operator to free space on the daemon
+host and show the reopen threshold, even while usage is below the trigger
+limit. Task details refresh on daemon events, reconnection,
+window focus, every 15 seconds, and through **Refresh queue status** (which
+also reloads the task). Failed reads and missing queue support are shown
+explicitly rather than interpreted as an empty queue or successful launch.
+
+The snapshot describes scheduler eligibility, not a launch guarantee.
+`dispatch_pending` therefore does not promise that the next pass will launch
+an agent. It cannot establish CLI authentication or provider quota; the UI
+suggests checking those and the daemon log when the wait persists without
+claiming they caused the delay. No wait duration or start-time estimate is
+invented from the snapshot's observation time.
+
+This feedback is persistent, contextual, and nonmodal, following NN/g's
+[visibility of system status](https://www.nngroup.com/articles/visibility-system-status/)
+guidance. The [user-feedback article](https://www.nngroup.com/articles/user-feedback/)
+concerns surveys rather than system status; its advice not to interrupt the
+user's task is also respected.

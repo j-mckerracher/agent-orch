@@ -335,7 +335,7 @@ describe("local search", () => {
     await screen.findByRole("option", { name: /release/ });
     await user.keyboard("{Enter}");
     const methods = fake.calls.slice(before).map((call) => call.method);
-    expect(methods.filter((method) => !/\.(list|get|pending)$|subscribe|capabilities/.test(method))).toEqual([]);
+    expect(methods.filter((method) => method !== "queue.snapshot" && !/\.(list|get|pending)$|subscribe|capabilities/.test(method))).toEqual([]);
   });
 
   it("reports skipped inputs instead of implying absence", async () => {

@@ -8,6 +8,7 @@ import { TERMINAL_STATES, basename, pendingApprovals, stateLabel } from "./forma
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
+import { TaskQueueStatus } from "./TaskQueueStatus";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
@@ -210,6 +211,9 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 <span className="muted">No pending approval for this task.</span>
               )}
             </div>
+            {record.state === "Queued" && (
+              <TaskQueueStatus key={taskId} taskId={taskId} agent={record.contract.agent} />
+            )}
             <section aria-label="Task summary" className="ps-section">
               <p>
                 <strong>{record.contract.objective}</strong>

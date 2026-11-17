@@ -87,6 +87,7 @@ describe("live D11 activity adapter", () => {
     expect(waiting[1]!.detail).toMatch(/not registered/);
     expect(waiting[2]!.detail).toMatch(/worktree/);
     expect(waiting[6]!.detail).toMatch(/something_new/);
+    expect(waiting.every((wait) => Boolean(wait.nextStep))).toBe(true);
     expect(data.upNext).toMatchObject({ status: "unknown" });
   });
 
@@ -111,10 +112,10 @@ describe("live D11 activity adapter", () => {
       })),
     }));
     const data = await okActivity(fake);
-    expect(data.queued.map((entry) => entry.waiting)).toEqual([
-      { reason: "capacity", detail: "Waiting for machine capacity: CPU 91 percent, limit 80." },
-      { reason: "capacity", detail: "Waiting for machine capacity: memory 90 percent, limit 85." },
-      { reason: "capacity", detail: "Waiting for machine capacity: gpu 99 percent, limit 95." },
+    expect(data.queued.map((entry) => entry.waiting)).toMatchObject([
+      { reason: "capacity", detail: "Waiting for machine capacity: CPU 91 percent, limit 80. New launches wait for a rolling average of 70 percent or lower." },
+      { reason: "capacity", detail: "Waiting for machine capacity: memory 90 percent, limit 85. New launches wait for a rolling average of 75 percent or lower." },
+      { reason: "capacity", detail: "Waiting for machine capacity: gpu 99 percent, limit 95. New launches wait for a rolling average of 85 percent or lower." },
     ]);
   });
 
@@ -136,9 +137,9 @@ describe("live D11 activity adapter", () => {
       ],
     }));
     const data = await okActivity(fake);
-    expect(data.queued[0]!.waiting).toEqual({
+    expect(data.queued[0]!.waiting).toMatchObject({
       reason: "capacity",
-      detail: "Waiting for machine capacity: CPU 75 percent, limit 80. It resumes at 70 percent.",
+      detail: "Waiting for machine capacity: CPU 75 percent, limit 80. New launches wait for a rolling average of 70 percent or lower.",
     });
   });
 

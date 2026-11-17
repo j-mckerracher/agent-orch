@@ -156,11 +156,12 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
           </span>
           {(isNext || waiting) && (
             <span className="activity-row-pills">
-              {isNext && <Pill tone="info">Next to dispatch</Pill>}
+              {isNext && <Pill tone="info">First in queue</Pill>}
               {waiting && <Pill tone={waiting.tone}>{waiting.text}</Pill>}
             </span>
           )}
           {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
+          {entry.waiting?.nextStep && <span className="activity-row-meta">Next step: {entry.waiting.nextStep}</span>}
           {confirming ? (
             <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
               <Button
