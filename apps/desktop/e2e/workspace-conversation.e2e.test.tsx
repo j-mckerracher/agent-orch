@@ -400,6 +400,9 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      // Action proposals are carried only by Restricted turns (DPES-1105); the chat defaults to Auto.
+      await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
+      await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
       // user-event reads "[[" as a literal "[".
       await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:script] plan the post-MVP work");
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
@@ -411,11 +414,16 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(screen.getByRole("log", { name: /Conversation with Global orchestrator/ }).textContent).not.toContain("mcao-actions");
 
       await userEvent.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-      await waitFor(() => expect(card.querySelector(".ui-pill")).toHaveTextContent("Created"), { timeout: 15000 });
+      // The card is re-rendered once the action completes, so read the current one, not the pre-approval node.
+      await waitFor(
+        () => expect(screen.getByRole("article", { name: "Proposed: Create workstream" }).querySelector(".ui-pill")?.textContent).toContain("Created"),
+        { timeout: 15000 },
+      );
 
       const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
       expect(titled).toHaveLength(1);
     } finally {
+      window.localStorage.removeItem(RESTRICTED_PREFERENCE_KEY);
       await t.stop();
       rmSync(dir, { recursive: true, force: true });
     }
