@@ -20,7 +20,7 @@ export const WINDOWS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): 3 call-context tests, so 59 becomes 62.
   // DPES-1105 action resolve (PR #116, CI run 43998558420, measured on Windows): the ipc lib has 64 tests.
   // DPES-1105 approver credential and task actions (CI run 44023050296, measured on Windows): the ipc lib has 83 tests.
-  ipc: { passed: 117, sequence: [117, 0] },
+  ipc: { passed: 122, sequence: [122, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
@@ -56,13 +56,13 @@ export const WINDOWS = {
   // Project coordinator replies add one portable conversation_runtime regression.
   // The home directory and Global tasks add 13 portable daemon unit tests (the 2 executor tests are Unix-only): 612 becomes 625.
   // Dispatch defaults add two portable unit tests: 625 becomes 627.
-  daemon: { passed: 627, ignored: 1, sequence: [532, 82, 2, 5, 0, 1, 2, 4] },
+  daemon: { passed: 657, ignored: 1, sequence: [560, 82, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
   // CI run 43998558420: the Windows ipc lib has 64 tests, so 50 are filtered out.
   // CI run 44023050296: the Windows ipc lib has 83 tests, so 69 are filtered out.
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 103 },
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 108 },
   // DPES-1105 approver credential (CI run 44023050296, measured on Windows): four host tests (launch and the real-daemon bridge), 18 passed.
   tauri: { passed: 20, sequence: [20, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
@@ -116,7 +116,7 @@ export const MACOS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): 3 call-context tests, so 58 becomes 61.
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): the ipc lib has 63 tests.
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): the ipc lib has 82 tests.
-  ipc: { passed: 116, sequence: [116, 0] },
+  ipc: { passed: 121, sequence: [121, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
@@ -147,7 +147,7 @@ export const MACOS = {
   // Project coordinator replies add one conversation_runtime regression.
   // The home directory and Global tasks add 15 daemon unit tests (13 portable, 2 Unix-only executor): 707 becomes 722.
   // Dispatch defaults add two portable unit tests and three Unix fake-CLI tests: 722 becomes 727.
-  daemon: { passed: 727, ignored: 1, sequence: [614, 87, 2, 5, 13, 1, 2, 4] },
+  daemon: { passed: 774, ignored: 1, sequence: [650, 87, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -180,7 +180,7 @@ export const MACOS = {
   // Project coordinator replies add one runtime regression.
   // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
-  workspace: { passed: 2111, ignored: 2 },
+  workspace: { passed: 2195, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
