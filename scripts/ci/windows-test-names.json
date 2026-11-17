@@ -641,7 +641,22 @@
    "the_mcp_secret_is_not_in_the_prompt_the_transcript_the_diagnostics_or_the_store",
    "two_mcp_turns_have_different_ports_and_secrets",
    "with_the_setting_off_no_mcp_flag_reaches_any_agent",
-   "with_the_setting_on_a_restricted_claude_turn_gets_the_mcp_config_and_allow_list"
+   "with_the_setting_on_a_restricted_claude_turn_gets_the_mcp_config_and_allow_list",
+   "the_mcp_port_is_closed_after_the_turn_and_after_a_cancel",
+   "conversation_methods_require_the_coordinator_capability",
+   "transcript_fails_closed_survives_restart_and_grants_no_authority",
+   "a_token_only_client_cannot_request_approval_or_changes",
+   "approval_flow_approves_and_delivers_through_the_real_daemon",
+   "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
+   "approval_flow_rejects_and_requests_changes_through_the_real_daemon",
+   "daemon_gates_the_coordinator_and_review_methods_on_token_and_capability",
+   "a_failed_launch_is_explained_in_the_log_without_the_credential",
+   "host_metrics_needs_the_host_capability",
+   "host_metrics_serves_every_resource_through_the_real_daemon",
+   "the_relay_exits_when_its_stdin_closes",
+   "the_relay_says_the_hello_first_then_copies_lines_both_ways",
+   "the_relay_rejects_unknown_arguments_without_connecting",
+   "the_relay_without_the_secret_or_without_a_listener_fails_with_the_fixed_word"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",

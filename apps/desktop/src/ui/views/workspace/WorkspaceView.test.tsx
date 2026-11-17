@@ -601,7 +601,8 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const { user } = await mountView(services, false);
     await waitLive(services);
     await screen.findByRole("heading", { name: /alpha coordinator/ });
-    expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A · high/ })).toBeInTheDocument();
+    // The picker label arrives with the catalog read, which a slow runner can finish after the heading.
+    expect(await screen.findByRole("button", { name: /^Model settings: Codex · GPT A · high/ })).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
     expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
