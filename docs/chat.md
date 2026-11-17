@@ -4,7 +4,7 @@ The Orchestrator Workspace is where you talk to an agent. Each message can use a
 
 ## Choose who you talk to
 
-The target picker lists Global, project coordinators, and workstreams. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository.
+The target picker lists Global, project coordinators, and workstreams. Click anywhere on a target's row to load its conversation and restore its unsent draft. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository.
 
 ## Choose an agent and model
 

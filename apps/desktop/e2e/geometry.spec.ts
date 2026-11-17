@@ -15,6 +15,37 @@ async function openFixture(page: Page, width: number) {
   await expect(page.getByTestId("fixture-banner")).toBeVisible();
 }
 
+for (const { width, area } of [{ width: 960, area: "text" }, { width: 1280, area: "padding" }]) {
+  test(`conversation target rows load the selected conversation via ${area} at ${width} CSS px`, async ({ page }) => {
+    await openFixture(page, width);
+    const picker = page.getByRole("button", { name: /Choose conversation target/ });
+    const globalMessage = "Which workstreams need attention today?";
+    const projectMessage = "Please split the docs work into smaller tasks.";
+    await page.getByRole("textbox", { name: "Message Global orchestrator", exact: true }).fill("global draft");
+
+    for (const label of ["Auth hardening coordinator", "Global orchestrator", "Docs refresh coordinator"]) {
+      await picker.click();
+      const row = page.locator(".ws-target-option").filter({ hasText: label });
+      if (area === "text") {
+        await row.locator(":scope > span").click();
+      } else {
+        const bounds = await row.boundingBox();
+        if (!bounds) throw new Error(`Missing conversation row: ${label}`);
+        await row.click({ position: { x: bounds.width - 12, y: bounds.height / 2 } });
+      }
+      await expect(page.getByRole("heading", { name: `Talking to: ${label}`, exact: true })).toBeVisible();
+      const log = page.getByRole("log", { name: `Conversation with ${label}`, exact: true });
+      const global = label === "Global orchestrator";
+      await expect(log).toContainText(global ? globalMessage : projectMessage);
+      await expect(log).not.toContainText(global ? projectMessage : globalMessage);
+      await expect(page.getByRole("textbox", { name: `Message ${label}`, exact: true }))
+        .toHaveValue(global ? "global draft" : "");
+      await expect(picker).toHaveAttribute("aria-expanded", "false");
+      await expect(picker).toBeFocused();
+    }
+  });
+}
+
 async function expectSidebarAndConnectionControlsSeparate(page: Page): Promise<void> {
   const geometry = await page.evaluate(() => {
     const bounds = (selector: string) => {
