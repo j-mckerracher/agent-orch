@@ -23,6 +23,53 @@ fn open(directory: &Path) -> SqliteStore {
     SqliteStore::new(&directory.join("store.sqlite")).unwrap()
 }
 
+#[test]
+fn dispatch_defaults_persist_and_partial_updates_preserve_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    assert_eq!(
+        store.orchestrator_settings().unwrap().dispatch_defaults,
+        Default::default()
+    );
+    let defaults = serde_json::from_value(serde_json::json!({
+        "default_agent": "codex",
+        "providers": {"codex": {"model": "gpt-6-luna", "effort": "low"}, "claude-code": {"model": "sonnet"}}
+    })).unwrap();
+    store
+        .update_orchestrator_settings(&SettingsPatch {
+            dispatch_defaults: Some(defaults),
+            ..Default::default()
+        })
+        .unwrap();
+    updated(&store, &cpu(75));
+    let saved = store.orchestrator_settings().unwrap();
+    drop(store);
+    let store = open(directory.path());
+    assert_eq!(store.orchestrator_settings().unwrap(), saved);
+    store
+        .update_orchestrator_settings(&SettingsPatch {
+            dispatch_defaults: Some(Default::default()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        store.orchestrator_settings().unwrap().dispatch_defaults,
+        Default::default()
+    );
+    assert_eq!(stored(&store).0, 75);
+    let path = directory.path().join("store.sqlite");
+    try_sql(
+        &path,
+        "UPDATE orchestrator_settings SET dispatch_defaults = 'broken'",
+        &[],
+    )
+    .unwrap();
+    assert!(
+        store.orchestrator_settings().is_err(),
+        "corruption must not silently clear defaults"
+    );
+}
+
 /// The three limits the store holds now, as (cpu, memory, disk).
 fn stored(store: &SqliteStore) -> (u8, u8, u8) {
     let settings = store.orchestrator_settings().unwrap();

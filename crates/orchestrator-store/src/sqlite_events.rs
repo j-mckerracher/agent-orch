@@ -116,6 +116,38 @@ impl SqliteStore {
         })
     }
 
+    /// Reads an existing claim without creating one, before fallible request preparation.
+    pub fn lookup_idempotency(
+        &self,
+        key: &str,
+        method: &str,
+        fingerprint: &str,
+    ) -> Result<Option<IdempotencyStart>, StoreError> {
+        validate_idempotency(key, method, fingerprint)?;
+        let (key, method, fingerprint) =
+            (key.to_owned(), method.to_owned(), fingerprint.to_owned());
+        self.call(move |pool| async move {
+            let row = sqlx::query(
+                "SELECT method, fingerprint, result FROM idempotency_records WHERE key = ?",
+            )
+            .bind(key)
+            .fetch_optional(&pool)
+            .await?;
+            let Some(row) = row else { return Ok(None) };
+            let stored_method: String = row.try_get("method")?;
+            let stored_fingerprint: String = row.try_get("fingerprint")?;
+            let cleared = stored_fingerprint == crate::sqlite_history::CLEARED_FINGERPRINT;
+            if stored_method != method || (stored_fingerprint != fingerprint && !cleared) {
+                return Err(StoreError::IdempotencyConflict);
+            }
+            let result: Option<String> = row.try_get("result")?;
+            Ok(Some(match result {
+                Some(value) => IdempotencyStart::Completed(serde_json::from_str(&value)?),
+                None => IdempotencyStart::InProgress,
+            }))
+        })
+    }
+
     /// Claims a key, or returns its completed result without repeating work.
     pub fn begin_idempotency(
         &self,

@@ -10,9 +10,11 @@
 //! The wake cursor shares the row but is not a setting: it has its own functions in
 //! `sqlite_wake.rs`, and no write here names its column.
 
+use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
+use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::interval::{IntervalPolicy, IntervalPolicyError};
 use orchestrator_core::load_gate::{LoadLimits, LoadMeter};
 use orchestrator_core::supervision::{MonitoringMode, WakeLimits};
@@ -36,6 +38,40 @@ pub struct OrchestratorSettings {
     /// Migration 0055: the directory a task runs in when it is not clear which project it
     /// belongs to. The daemon validates the path before it is stored. `None` means none is set.
     pub home_directory: Option<String>,
+    pub dispatch_defaults: DispatchDefaults,
+}
+
+/// Defaults for new tasks only. Provider keys are canonical agent adapter ids.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DispatchDefaults {
+    pub default_agent: Option<String>,
+    pub providers: BTreeMap<String, ModelSelection>,
+}
+
+impl DispatchDefaults {
+    pub fn validate(&self) -> Result<(), StoreError> {
+        let valid_agent = |agent: &str| {
+            !agent.is_empty()
+                && agent.len() <= 64
+                && agent.bytes().all(|c| c.is_ascii_lowercase() || c == b'-')
+        };
+        if self
+            .default_agent
+            .as_deref()
+            .is_some_and(|agent| !valid_agent(agent))
+            || self.providers.len() > 16
+            || self
+                .providers
+                .iter()
+                .any(|(agent, selection)| !valid_agent(agent) || selection.validate().is_err())
+        {
+            return Err(invalid_input(
+                "dispatch defaults contain an invalid agent or selection",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The read-only MCP server setting (migration 0049). Only `settings.set` changes it.
@@ -117,6 +153,8 @@ pub struct SettingsPatch {
     pub mcp: McpPatch,
     /// `Some(None)` clears the home directory.
     pub home_directory: Option<Option<String>>,
+    /// Replaces this group; an absent group leaves it unchanged.
+    pub dispatch_defaults: Option<DispatchDefaults>,
 }
 
 impl SettingsPatch {
@@ -142,7 +180,7 @@ impl Bound {
 const SETTINGS_COLUMNS: &str = "load_cpu_percent, load_memory_percent, load_disk_percent, \
     monitoring_mode, base_interval_secs, min_interval_secs, wake_hourly_cap, wake_daily_cap, \
     wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery, mcp_server_enabled, \
-    home_directory";
+    home_directory, dispatch_defaults";
 
 impl SqliteStore {
     /// The settings row. A new store holds the defaults: load limits 80, 85 and 90, mode on,
@@ -270,6 +308,11 @@ impl SqliteStore {
                     Some(path) => Bound::Owned(path.clone()),
                 };
                 named.push(("home_directory", bound));
+            }
+            if let Some(defaults) = &patch.dispatch_defaults {
+                defaults.validate()?;
+                let json = serde_json::to_string(defaults).map_err(|_| damaged())?;
+                named.push(("dispatch_defaults", Bound::Owned(json)));
             }
 
             // Set only the columns the patch names. A write must never touch a column it was
@@ -443,6 +486,9 @@ async fn read_settings(
     };
     let mode_text: String = row.try_get("monitoring_mode")?;
     let mode = MonitoringMode::parse(&mode_text).ok_or_else(damaged)?;
+    let dispatch_defaults: DispatchDefaults =
+        serde_json::from_str(row.try_get("dispatch_defaults")?).map_err(|_| damaged())?;
+    dispatch_defaults.validate().map_err(|_| damaged())?;
     Ok(OrchestratorSettings {
         load,
         supervision,
@@ -453,6 +499,7 @@ async fn read_settings(
             enabled: row.try_get::<i64, _>("mcp_server_enabled")? != 0,
         },
         home_directory: row.try_get("home_directory")?,
+        dispatch_defaults,
     })
 }
 

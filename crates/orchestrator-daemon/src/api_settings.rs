@@ -41,7 +41,8 @@ use orchestrator_core::load_gate::{
     LoadLimits, LoadMeter, LoadStatus, Reading, Unknown, MIN_LIMIT, OFF,
 };
 use orchestrator_store::{
-    LoadPatch, McpPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, WakeLimitsPatch,
+    DispatchDefaults, LoadPatch, McpPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch,
+    WakeLimitsPatch,
 };
 use serde::Deserializer;
 
@@ -85,6 +86,8 @@ struct SetParams {
         skip_serializing_if = "Option::is_none"
     )]
     home_directory: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dispatch_defaults: Option<DispatchDefaults>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -264,12 +267,21 @@ impl DaemonApi {
 
     pub(super) fn settings_set(&self, params: Value) -> Result<Value, RpcError> {
         let request: SetParams = parse_params(params)?;
+        if let Some(reply) = idempotency::replay(
+            &self.store,
+            "settings.set",
+            &request.idempotency_key,
+            &request,
+        )? {
+            return Ok(reply);
+        }
         if request.load.is_none()
             && request.supervision.is_none()
             && request.wake_limits.is_none()
             && request.chat_pr_delivery.is_none()
             && request.mcp.is_none()
             && request.home_directory.is_none()
+            && request.dispatch_defaults.is_none()
         {
             return Err(RpcError::InvalidParams);
         }
@@ -284,6 +296,35 @@ impl DaemonApi {
         }
         if let Some(mcp) = &request.mcp {
             mcp.validate()?;
+        }
+        if let Some(defaults) = &request.dispatch_defaults {
+            defaults.validate().map_err(settings_store_error)?;
+            for agent in defaults
+                .default_agent
+                .iter()
+                .chain(defaults.providers.keys())
+            {
+                if canonical_agent_id(agent) != Some(agent.as_str()) {
+                    return Err(RpcError::InvalidParams);
+                }
+            }
+            // Catalog probes must happen before the mutation gate is acquired.
+            if let Some(agent) = defaults
+                .default_agent
+                .as_ref()
+                .filter(|agent| !defaults.providers.contains_key(*agent))
+            {
+                self.check_selection(
+                    &self.catalog(agent),
+                    &ModelSelection {
+                        model: None,
+                        effort: None,
+                    },
+                )?;
+            }
+            for (agent, selection) in &defaults.providers {
+                self.check_selection(&self.catalog(agent), selection)?;
+            }
         }
         // Resolved before the key is claimed, so a path that does not exist yet does not
         // poison the key for a retry.
@@ -329,6 +370,7 @@ impl DaemonApi {
                         .map(McpParams::patch)
                         .unwrap_or_default(),
                     home_directory: home_directory.clone(),
+                    dispatch_defaults: request.dispatch_defaults.clone(),
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
@@ -361,6 +403,9 @@ impl DaemonApi {
                         "cleared"
                     };
                     fields.push(("home_directory", change.to_owned()));
+                }
+                if request.dispatch_defaults.is_some() {
+                    fields.push(("dispatch_defaults", "updated".to_owned()));
                 }
                 let saved = self.store.update_orchestrator_settings(&patch);
                 self.finish(saved, request.load.is_some(), &fields)
@@ -430,6 +475,7 @@ impl DaemonApi {
             "chat_pr_delivery": settings.chat_pr_delivery,
             "mcp": { "enabled": settings.mcp.enabled },
             "home_directory": settings.home_directory,
+            "dispatch_defaults": settings.dispatch_defaults,
         }))
     }
 }

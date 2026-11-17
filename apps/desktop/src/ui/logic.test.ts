@@ -34,10 +34,10 @@ describe("buildSubmission", () => {
     });
   });
 
-  it("requires an objective and an agent; no agent is chosen for the user", () => {
+  it("requires an objective but leaves a blank agent for saved dispatch defaults", () => {
     const result = buildSubmission("/repo", draft({ objective: " ", agent: "" }));
     expect(result.ok).toBe(false);
-    expect(!result.ok && result.errors.join(" ")).toMatch(/Objective is required.*Agent is required/);
+    expect(!result.ok && result.errors).toEqual(["Objective is required."]);
   });
 
   it("splits verification commands on whitespace, one argv per line", () => {

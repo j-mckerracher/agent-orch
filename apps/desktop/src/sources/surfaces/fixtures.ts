@@ -600,6 +600,7 @@ function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
     chatPrDelivery: false,
     mcpEnabled: false,
     homeDirectory: null,
+    dispatchDefaults: { defaultAgent: null, providers: {} },
   });
   const simulated = () =>
     Promise.resolve({

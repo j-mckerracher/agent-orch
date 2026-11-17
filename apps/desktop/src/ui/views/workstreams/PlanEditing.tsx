@@ -218,7 +218,7 @@ function AddTaskForm({ group, controls, submit, projectIds }: FormProps & { proj
   const [objectiveId, setObjectiveId] = useState("");
   const objectives = group.objectives.status === "ok" ? group.objectives.value : [];
   const off = controls.busy;
-  const ready = projectIds.includes(projectId) && objective.trim() !== "" && agent !== "";
+  const ready = projectIds.includes(projectId) && objective.trim() !== "";
   const send = (event: FormEvent) => {
     event.preventDefault();
     if (!ready) return;
@@ -256,7 +256,7 @@ function AddTaskForm({ group, controls, submit, projectIds }: FormProps & { proj
           ))}
         </select>
       </label>
-      <AgentSelect value={agent} disabled={off} onChange={setAgent} />
+      <AgentSelect value={agent} disabled={off} onChange={setAgent} allowDefault />
       <label>
         Under objective
         <select value={objectiveId} disabled={off} onChange={(e) => setObjectiveId(e.target.value)}>
@@ -281,17 +281,19 @@ function AgentSelect({
   current,
   disabled,
   onChange,
+  allowDefault = false,
 }: {
   value: string;
   current?: string;
   disabled: boolean;
   onChange: (agent: string) => void;
+  allowDefault?: boolean;
 }) {
   return (
     <label>
       Agent
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Choose an agent</option>
+        <option value="">{allowDefault ? "Use Settings default provider" : "Choose an agent"}</option>
         {AGENTS.map((id) => (
           <option key={id} value={id} disabled={id === current}>
             {agentDisplayName(id)}

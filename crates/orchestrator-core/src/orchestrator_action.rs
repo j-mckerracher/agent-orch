@@ -218,6 +218,7 @@ pub struct ProposeTask {
     /// The `p-xxxxxxxx` code the snapshot shows after a project's folder name.
     pub project: String,
     pub objective: String,
+    #[serde(default = "default_task_agent")]
     pub agent: String,
     #[serde(default = "default_task_kind")]
     pub task_kind: TaskKind,
@@ -240,6 +241,10 @@ pub struct ProposeTask {
 #[serde(deny_unknown_fields)]
 pub struct CancelTask {
     pub task_id: String,
+}
+
+fn default_task_agent() -> String {
+    "default".to_owned()
 }
 
 /// `task.retry`.
@@ -668,7 +673,7 @@ fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
     {
         return Err(BlockError::InvalidField("objective"));
     }
-    if !TASK_AGENTS.contains(&propose.agent.as_str()) {
+    if propose.agent != "default" && !TASK_AGENTS.contains(&propose.agent.as_str()) {
         return Err(BlockError::InvalidField("agent"));
     }
     if let Some(workstream_id) = &propose.workstream_id {

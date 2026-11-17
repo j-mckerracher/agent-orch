@@ -32,6 +32,7 @@ import { SaveButton, useSaveGuard } from "./SaveBar";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
 import { McpToolsSection } from "./McpToolsSection";
+import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
 import { NotesSection } from "./NotesSection";
 import { SupervisionSections } from "./SupervisionSection";
@@ -196,6 +197,7 @@ export function SettingsView() {
         <h1>Settings</h1>
         {!model.live && <Badge tone="placeholder">Fixture data</Badge>}
       </header>
+      <DispatchDefaultsSection model={model} />
       <section aria-labelledby={headingId} className="settings-section">
         <h2 id={headingId}>Machine load limits</h2>
         <p className="settings-intro">{INTRO_TEXT}</p>

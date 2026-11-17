@@ -68,7 +68,7 @@ function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null): 
 }
 
 /** Per-model efforts win; an agent that reports none per model uses its adapter-wide list. */
-function effortsFor(provider: ModelProvider | undefined, model: ModelOption | undefined): string[] {
+export function effortsFor(provider: ModelProvider | undefined, model: ModelOption | undefined): string[] {
   if (model?.efforts && model.efforts.length > 0) return model.efforts;
   return provider?.efforts.status === "ok" ? provider.efforts.value : [];
 }

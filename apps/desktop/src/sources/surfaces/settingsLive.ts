@@ -60,6 +60,9 @@ export function mapSettings(wire: SettingsWire): SettingsSnapshot {
     ...(wire.chat_pr_delivery === undefined ? {} : { chatPrDelivery: wire.chat_pr_delivery }),
     ...(wire.mcp === undefined ? {} : { mcpEnabled: wire.mcp.enabled }),
     ...(wire.home_directory === undefined ? {} : { homeDirectory: wire.home_directory }),
+    ...(wire.dispatch_defaults === undefined ? {} : {
+      dispatchDefaults: { defaultAgent: wire.dispatch_defaults.default_agent, providers: wire.dispatch_defaults.providers },
+    }),
   };
 }
 
@@ -74,7 +77,7 @@ function patchOf(patch: Partial<LoadLimits>): Partial<LoadLimitsWire> {
 /** Only the fields present are sent, and a group with no field is left out: the daemon refuses an empty group. */
 export function groupsPatchOf(
   patch: GroupsPatch,
-): Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory"> {
+): Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory" | "dispatch_defaults"> {
   const { supervision: s, wakeLimits: w } = patch;
   const supervision = {
     ...(s?.baseIntervalSecs === undefined ? {} : { base_interval_secs: s.baseIntervalSecs }),
@@ -94,6 +97,9 @@ export function groupsPatchOf(
     ...(patch.mcpEnabled === undefined ? {} : { mcp: { enabled: patch.mcpEnabled } }),
     // `null` is kept: it clears the folder.
     ...(patch.homeDirectory === undefined ? {} : { home_directory: patch.homeDirectory }),
+    ...(patch.dispatchDefaults === undefined ? {} : {
+      dispatch_defaults: { default_agent: patch.dispatchDefaults.defaultAgent, providers: patch.dispatchDefaults.providers },
+    }),
   };
 }
 

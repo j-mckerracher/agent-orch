@@ -75,6 +75,184 @@ fn api_for(fixture: &Fixture, agents: &Agents) -> DaemonApi {
     })
 }
 
+fn save_dispatch_defaults(api: &DaemonApi, key: &str, defaults: Value) -> Result<Value, RpcError> {
+    api.dispatch(
+        "settings.set",
+        json!({"idempotency_key": key, "dispatch_defaults": defaults}),
+    )
+}
+
+fn dispatch_defaults() -> Value {
+    json!({
+        "default_agent": "codex",
+        "providers": {
+            "codex": {"model": "gpt-6-luna", "effort": "low"},
+            "claude-code": {"model": "sonnet", "effort": "medium"}
+        }
+    })
+}
+
+#[test]
+fn dispatch_defaults_reach_the_agent_and_survive_restart_without_changing_existing_tasks() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let api = api_for(&fixture, &agents);
+    save_dispatch_defaults(&api, "defaults-save", dispatch_defaults()).unwrap();
+    let submitted = submit_with(&fixture, &api, "defaults-task", "", Value::Null).unwrap();
+    let task_id = submitted["contract"]["id"].as_str().unwrap();
+    assert_eq!(submitted["contract"]["agent"], "codex");
+    assert_eq!(
+        submitted["contract"]["model_selection"],
+        dispatch_defaults()["providers"]["codex"]
+    );
+    wait_state(&api, task_id, "Verifying");
+    let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    assert!(argv.contains("-m\ngpt-6-luna\n"), "{argv}");
+    assert!(argv.contains("model_reasoning_effort=\"low\""), "{argv}");
+    drop(api);
+    let api = api_for(&fixture, &agents);
+    assert_eq!(
+        api.dispatch("settings.get", Value::Null).unwrap()["dispatch_defaults"],
+        dispatch_defaults()
+    );
+    let changed = json!({"default_agent": "claude-code", "providers": {}});
+    save_dispatch_defaults(&api, "defaults-change", changed).unwrap();
+    assert_eq!(
+        task(&api, task_id)["contract"]["model_selection"]["model"],
+        "gpt-6-luna"
+    );
+    let next = submit_with(&fixture, &api, "defaults-next", "", Value::Null).unwrap();
+    assert_eq!(next["contract"]["agent"], "claude-code");
+    assert!(next["contract"]["model_selection"].is_null());
+    save_dispatch_defaults(
+        &api,
+        "defaults-clear",
+        json!({"default_agent":null,"providers":{}}),
+    )
+    .unwrap();
+    assert_eq!(
+        submit_with(&fixture, &api, "defaults-task", "", Value::Null).unwrap(),
+        submitted
+    );
+    assert_eq!(
+        submit_with(&fixture, &api, "defaults-missing", "", Value::Null),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(
+        submit_with(&fixture, &api, "defaults-task", "claude-code", Value::Null),
+        Err(RpcError::IdempotencyConflict)
+    );
+}
+
+#[test]
+fn dispatch_defaults_respect_explicit_choices_and_work_classes_without_mixing_model_efforts() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let api = api_for(&fixture, &agents);
+    save_dispatch_defaults(&api, "defaults-save", dispatch_defaults()).unwrap();
+    for (key, agent, selection, expected) in [
+        (
+            "provider",
+            "claude-code",
+            Value::Null,
+            json!({"model":"sonnet","effort":"medium"}),
+        ),
+        (
+            "effort",
+            "codex",
+            json!({"effort":"medium"}),
+            json!({"model":"gpt-6-luna","effort":"medium"}),
+        ),
+        (
+            "model",
+            "codex",
+            json!({"model":"gpt-6-sol"}),
+            json!({"model":"gpt-6-sol"}),
+        ),
+        (
+            "pair",
+            "codex",
+            json!({"model":"gpt-6-sol","effort":"high"}),
+            json!({"model":"gpt-6-sol","effort":"high"}),
+        ),
+    ] {
+        let task = submit_with(&fixture, &api, key, agent, selection).unwrap();
+        assert_eq!(task["contract"]["model_selection"], expected, "{key}");
+    }
+    assert_eq!(
+        submit_with(&fixture, &api, "empty-choice", "codex", json!({})),
+        Err(RpcError::InvalidParams)
+    );
+    let classes = api.dispatch("settings.workClasses.set", json!({
+        "classes": [{"name": "review", "agent": "codex", "model": "gpt-6-sol", "effort": "high"}]
+    })).unwrap();
+    assert_eq!(classes["saved"], true);
+    let workstream = api
+        .dispatch(
+            "workstreams.create",
+            json!({"title":"Defaults", "idempotency_key":"defaults-ws"}),
+        )
+        .unwrap();
+    for (key, class, expected) in [
+        (
+            "ws-default",
+            None,
+            dispatch_defaults()["providers"]["codex"].clone(),
+        ),
+        (
+            "ws-class",
+            Some("review"),
+            json!({"model":"gpt-6-sol","effort":"high"}),
+        ),
+    ] {
+        let created = api.dispatch("workstreams.add_task", json!({
+            "idempotency_key":key, "workstream_id":workstream["id"],
+            "contract": {
+                "project_id":fixture.project_id(), "objective":"Review changes", "kind":"Investigate",
+                "dependencies":[], "verification":"None", "delivery":"ReportOnly",
+                "autonomy":"WorkspaceWrites", "max_retries":0, "max_repairs":0, "work_class":class,
+            }
+        })).unwrap();
+        let record = task(&api, created["created"][0].as_str().unwrap());
+        assert_eq!(record["contract"]["model_selection"], expected);
+    }
+}
+
+#[test]
+fn dispatch_defaults_refuse_invalid_or_unavailable_catalog_choices() {
+    let fixture = Fixture::new();
+    let agents = agents(&fixture);
+    let api = api_for(&fixture, &agents);
+    save_dispatch_defaults(&api, "defaults-save", dispatch_defaults()).unwrap();
+    for (key, selection) in [
+        ("unknown", json!({"model":"gone"})),
+        ("effort", json!({"model":"gpt-6-sol","effort":"low"})),
+    ] {
+        assert_eq!(
+            save_dispatch_defaults(
+                &api,
+                key,
+                json!({
+                    "default_agent":"codex","providers":{"codex":selection}
+                })
+            ),
+            Err(RpcError::InvalidParams)
+        );
+    }
+    assert_eq!(
+        api.dispatch("settings.get", Value::Null).unwrap()["dispatch_defaults"],
+        dispatch_defaults()
+    );
+    drop(api);
+    fs::write(&agents.signed_out, "").unwrap();
+    let api = api_for(&fixture, &agents);
+    assert_eq!(
+        submit_with(&fixture, &api, "unavailable", "", Value::Null),
+        Err(RpcError::Conflict)
+    );
+    assert_eq!(api.dispatch("tasks.list", json!({})).unwrap(), json!([]));
+}
+
 fn submit_with(
     fixture: &Fixture,
     api: &DaemonApi,

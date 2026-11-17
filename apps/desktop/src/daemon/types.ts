@@ -921,6 +921,12 @@ export interface SettingsWire {
   mcp?: McpWire;
   /** The folder a task runs in when it is not clear which project it belongs to; `null` while none is set. Absent from an older daemon. */
   home_directory?: string | null;
+  dispatch_defaults?: DispatchDefaultsWire;
+}
+
+export interface DispatchDefaultsWire {
+  default_agent: string | null;
+  providers: Record<string, ModelSelectionWire>;
 }
 
 /** `settings.get` mcp group: whether the read-only task tools are on. Off by default. */
@@ -951,6 +957,7 @@ export interface SettingsPatchWire {
   mcp?: McpWire;
   /** The folder to run in when no project is clear; `null` clears it. The daemon refuses a folder that does not exist. */
   home_directory?: string | null;
+  dispatch_defaults?: DispatchDefaultsWire;
 }
 
 /** Automatic monitoring is limited to Global and workstream conversation targets. */

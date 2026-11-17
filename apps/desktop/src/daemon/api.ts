@@ -672,7 +672,7 @@ export class DaemonApi {
    * must name at least one field. User-only, like `settingsSet`.
    */
   settingsSetGroups(
-    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory">,
+    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory" | "dispatch_defaults">,
     idempotencyKey: string,
   ): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
