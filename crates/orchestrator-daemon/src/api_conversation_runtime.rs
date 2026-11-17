@@ -6,7 +6,10 @@
 //! The daemon owns the transcript, turn lifecycle, cancellation and recovery.
 //! A [`ConversationRuntime`] only produces reply text for one turn through a
 //! [`ReplySink`]. It receives no store handle, no task, approval or delivery
-//! capability, and nothing it emits is parsed as a command.
+//! capability, and nothing it emits is run as a command. The one exception is
+//! a trailing action block in a completed reply, on a session that negotiated
+//! `orchestrator_actions`: it becomes pending proposals (DPES-1105), which do
+//! nothing until the user approves them.
 //!
 //! No provider is bound here. The daemon binds the agent runtime of
 //! `api_conversation_agent.rs` (M7-25), which fails every turn with
@@ -19,11 +22,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use orchestrator_agents::SelectionReason;
+use orchestrator_core::orchestrator_action::{
+    parse_block, Action, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
+};
 use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTED};
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
-    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnOutcome,
-    TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
+    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnBlock,
+    TurnOutcome, TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
 };
 
 use super::conversation_snapshot::build_snapshot;
@@ -72,6 +78,9 @@ pub(crate) struct TurnRequest {
     /// store (DPES-1105). Data for the agent, never instructions. `None` only
     /// in tests.
     pub context: Option<String>,
+    /// The session negotiated `orchestrator_actions`, so the agent is told the
+    /// action block format (DPES-1105).
+    pub actions: bool,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -230,6 +239,30 @@ impl Shared {
             _ => None,
         }
     }
+
+    /// Complete a running turn and record its action block in the same store
+    /// transaction. A store error rolls that back, so the block is retried as
+    /// rejected; if that also fails the turn fails, and is never left running.
+    fn complete(&self, turn_id: &str, block: TurnBlock) {
+        let stored = match self.store.complete_conversation_turn(turn_id, block) {
+            Err(_) => self
+                .store
+                .complete_conversation_turn(turn_id, TurnBlock::Rejected),
+            stored => stored,
+        };
+        match stored {
+            Ok(Some(_)) => {
+                self.controls().remove(turn_id);
+            }
+            Ok(None) => {}
+            Err(_) => {
+                let outcome = TurnOutcome::Failed(RuntimeFailure::Failed.code().to_owned());
+                if let Some(control) = self.finish(turn_id, &outcome) {
+                    control.cancel();
+                }
+            }
+        }
+    }
 }
 
 /// The reply channel for one turn. Cloneable and safe to use from any thread.
@@ -237,6 +270,13 @@ impl Shared {
 pub(crate) struct ReplySink {
     shared: Arc<Shared>,
     turn_id: String,
+    target: ConversationTarget,
+    /// The session negotiated `orchestrator_actions`. Without it a held block is
+    /// stripped, never parsed.
+    actions: bool,
+    /// Holds back an action block as it streams in. Shared by clones, so the
+    /// order of output is the order of the lock.
+    filter: Arc<Mutex<ReplyFilter>>,
 }
 
 /// The turn no longer accepts output; the runtime should stop.
@@ -245,8 +285,19 @@ pub(crate) struct SinkClosed;
 
 impl ReplySink {
     /// Append reply text. Fails once the turn is canceled, failed, completed
-    /// or too large.
+    /// or too large. Text that may be an action block is held back until the
+    /// turn completes (DPES-1105).
     pub(crate) fn delta(&self, text: &str) -> Result<(), SinkClosed> {
+        let mut filter = self.filter();
+        let shown = filter.push(text);
+        if shown.is_empty() {
+            return Ok(());
+        }
+        self.append(&shown)
+    }
+
+    /// Stores already shown text as reply chunks. Held text never reaches here.
+    fn append(&self, text: &str) -> Result<(), SinkClosed> {
         for piece in chunks(text) {
             match self.shared.store.append_reply_chunk(&self.turn_id, piece) {
                 Ok(_) => {}
@@ -263,8 +314,62 @@ impl ReplySink {
         Ok(())
     }
 
+    fn filter(&self) -> MutexGuard<'_, ReplyFilter> {
+        self.filter
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
+    /// Ends the turn as completed. The held block, if any, is parsed here and
+    /// recorded with the turn; a block that does not pass is rejected, and the
+    /// reply text is kept either way. A completion on a turn that is already
+    /// terminal records nothing.
     pub(crate) fn complete(&self) {
-        self.shared.finish(&self.turn_id, &TurnOutcome::Completed);
+        let end = std::mem::take(&mut *self.filter()).finish();
+        // A failed tail append means the turn is already terminal, or the store
+        // is failing. A held block is never present with a tail, so the turn
+        // still completes without one.
+        if !end.tail.is_empty() {
+            let _ = self.append(&end.tail);
+        }
+        let block = self.block(end.block);
+        self.shared.complete(&self.turn_id, block);
+    }
+
+    /// Decides what the held block, if any, does to the turn.
+    fn block(&self, held: Option<HeldBlock>) -> TurnBlock {
+        let text = match held {
+            None => return TurnBlock::None,
+            Some(_) if !self.actions => return TurnBlock::Stripped,
+            Some(HeldBlock::Overflow) => return TurnBlock::Rejected,
+            Some(HeldBlock::Text(text)) => text,
+        };
+        let scope = match &self.target {
+            ConversationTarget::Global => BlockScope::Global,
+            ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
+        };
+        match parse_block(&text, scope) {
+            Ok(block) if self.revisions_in_scope(&block) => TurnBlock::Accepted(block),
+            _ => TurnBlock::Rejected,
+        }
+    }
+
+    /// An objective revision in a workstream conversation must name one of that
+    /// workstream's objectives. The lookup needs the store, so it is checked here.
+    fn revisions_in_scope(&self, block: &ActionBlock) -> bool {
+        let ConversationTarget::Workstream(workstream_id) = &self.target else {
+            return true;
+        };
+        block
+            .actions()
+            .iter()
+            .filter_map(Action::revised_objective)
+            .all(|objective_id| {
+                self.shared
+                    .store
+                    .get_objective(objective_id)
+                    .is_ok_and(|objective| objective.workstream_id == *workstream_id)
+            })
     }
 
     pub(crate) fn fail(&self, failure: RuntimeFailure) {
@@ -375,7 +480,10 @@ impl ConversationService {
     /// answer fails the turn, not the call: the message stays in the transcript.
     /// A level the agent refuses fails the turn with its code and no agent runs.
     /// The level is recorded on the turn only once the agent has started, so a
-    /// turn that never launched records none.
+    /// turn that never launched records none. `actions` is the session's
+    /// negotiated `orchestrator_actions`. Actions are on only for a Restricted
+    /// turn: at Auto and Full the agent has a shell and could reach the daemon's
+    /// local token, and the daemon has no caller identity (DPES-1105).
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
@@ -383,7 +491,9 @@ impl ConversationService {
         text: &str,
         choice: Option<&Choice>,
         level: PermissionLevel,
+        actions: bool,
     ) -> Result<BegunTurn, ConversationError> {
+        let actions = actions && level == PermissionLevel::Restricted;
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);
@@ -400,7 +510,7 @@ impl ConversationService {
         let failure = match permission {
             Err(failure) => Some(failure),
             Ok(permission) => self
-                .launch(&identity, choice, level, target, turn_id, text)
+                .launch(&identity, choice, level, target, turn_id, text, actions)
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
                 }),
@@ -421,6 +531,7 @@ impl ConversationService {
     /// Start the runtime for a begun turn. A failure code means the turn must
     /// be closed as failed; a store error while registering the control is one
     /// too, so no turn is left running with nothing to finish it.
+    #[allow(clippy::too_many_arguments)]
     fn launch(
         &self,
         identity: &RuntimeIdentity,
@@ -429,6 +540,7 @@ impl ConversationService {
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
+        actions: bool,
     ) -> Option<RuntimeFailure> {
         if let Some(failure) = self.pin_failure(choice) {
             return Some(failure);
@@ -440,11 +552,15 @@ impl ConversationService {
             choice: choice.cloned(),
             level,
             history: self.history(target, turn_id),
-            context: Some(build_snapshot(&self.shared.store, target)),
+            context: Some(build_snapshot(&self.shared.store, target, actions)),
+            actions,
         };
         let sink = ReplySink {
             shared: self.shared.clone(),
             turn_id: turn_id.to_owned(),
+            target: target.clone(),
+            actions,
+            filter: Arc::new(Mutex::new(ReplyFilter::default())),
         };
         match self.runtime.start_turn(request, sink) {
             Ok(control) => self

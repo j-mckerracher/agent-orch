@@ -7,9 +7,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use orchestrator_core::orchestrator_action::{parse_block, proposal_id, BlockScope};
 use orchestrator_core::records::Project;
 use orchestrator_store::{
-    ConversationError, ConversationTarget, IdempotencyStart, SqliteStore, TurnOutcome,
+    ConversationError, ConversationTarget, IdempotencyStart, ProposalState, SqliteStore,
+    TurnBlock, TurnOutcome,
 };
 use serde_json::json;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -19,6 +21,8 @@ const GLOBAL_MESSAGE: &str = "MARKER-GLOBAL-MESSAGE-7f3a";
 const GLOBAL_REPLY: &str = "MARKER-GLOBAL-REPLY-91bc";
 const COORDINATOR_NOTE: &str = "MARKER-COORDINATOR-NOTE-2c8d";
 const COORDINATOR_PROPOSAL: &str = "MARKER-COORDINATOR-PROPOSAL-5e0f";
+const ACTION_MARKER: &str = "MARKER-ACTION-TITLE-4d7e";
+const MARKED_CREATE: &str = r#"{"kind": "workstream.create", "title": "MARKER-ACTION-TITLE-4d7e"}"#;
 
 fn store_path(directory: &Path) -> PathBuf {
     directory.join("store.sqlite")
@@ -549,4 +553,205 @@ fn a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows() {
             .clear_generation,
         1
     );
+}
+
+/// An accepted block in `scope`, parsed from the fenced text a reply would carry.
+fn accepted_block(scope: BlockScope<'_>, actions: &str) -> TurnBlock {
+    let held = format!("```mcao-actions\n{{\"mcao_actions\": 1, \"actions\": [{actions}]}}\n```");
+    TurnBlock::Accepted(parse_block(&held, scope).unwrap())
+}
+
+#[test]
+fn a_clear_deletes_its_proposals_and_keeps_their_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let workstream = ConversationTarget::Workstream("ws-1".to_owned());
+    begin_global(&store, "t1", GLOBAL_MESSAGE);
+    store
+        .complete_conversation_turn("t1", accepted_block(BlockScope::Global, MARKED_CREATE))
+        .unwrap();
+    store
+        .begin_conversation_turn(&workstream, "t2", "hi", "test-runtime", "1.0.0")
+        .unwrap();
+    store
+        .complete_conversation_turn(
+            "t2",
+            accepted_block(
+                BlockScope::Workstream("ws-1"),
+                r#"{"kind": "objective.add", "workstream_id": "ws-1", "title": "Plan"}"#,
+            ),
+        )
+        .unwrap();
+    let global_id = proposal_id("t1", 0);
+    // Control: the proposal's text is on disk before the clear, so the search below means something.
+    assert!(!files_containing(directory.path(), ACTION_MARKER).is_empty());
+
+    assert!(
+        store
+            .clear_conversation_history(&ConversationTarget::Global)
+            .unwrap()
+            .cleared
+    );
+    assert!(store.action_proposal(&global_id).unwrap().is_none());
+    assert!(store
+        .action_proposals(&ConversationTarget::Global, 10)
+        .unwrap()
+        .is_empty());
+    // The other scope's proposal is untouched.
+    assert_eq!(store.action_proposals(&workstream, 10).unwrap().len(), 1);
+    // The events outlive the clear. They hold digests, never the proposal's text.
+    let events = store.action_proposal_events(&global_id).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].to_state, ProposalState::Pending);
+    assert_eq!(events[0].digest.len(), 64);
+    assert!(files_containing(directory.path(), ACTION_MARKER).is_empty());
+}
+
+#[test]
+fn action_proposals_are_deleted_only_by_a_clear_and_events_never() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = store_path(directory.path());
+    {
+        let store = open(directory.path());
+        begin_global(&store, "t1", GLOBAL_MESSAGE);
+        store
+            .complete_conversation_turn("t1", accepted_block(BlockScope::Global, MARKED_CREATE))
+            .unwrap();
+    }
+
+    assert!(!accepted(&path, "DELETE FROM action_proposals"));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET params_json = '{}'"
+    ));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET digest = '0000000000000000000000000000000000000000000000000000000000000000'"
+    ));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET subject = 'x'"
+    ));
+    assert!(!accepted(&path, "DELETE FROM action_proposal_events"));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposal_events SET to_state = 'approved'"
+    ));
+    assert!(!accepted(
+        &path,
+        "INSERT INTO action_proposal_events (proposal_id, scope, to_state, actor, digest) \
+         VALUES ('p1', 'conversation:global', 'pending', 'bogus', \
+         '0000000000000000000000000000000000000000000000000000000000000000')"
+    ));
+    assert!(!accepted(
+        &path,
+        "UPDATE conversation_turns SET action_block = 'bogus'"
+    ));
+    // Only the state may change, and only along the legal edges: pending -> approved,
+    // approved -> executed. A skipped edge and any change to a terminal row abort.
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET state = 'executed'"
+    ));
+    assert!(accepted(
+        &path,
+        "UPDATE action_proposals SET state = 'approved'"
+    ));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET state = 'pending'"
+    ));
+    assert!(accepted(
+        &path,
+        "UPDATE action_proposals SET state = 'executed'"
+    ));
+    assert!(!accepted(
+        &path,
+        "UPDATE action_proposals SET state = 'failed'"
+    ));
+    assert!(accepted(
+        &path,
+        "INSERT INTO action_proposal_events (proposal_id, scope, to_state, actor, digest) \
+         VALUES ('p1', 'conversation:global', 'pending', 'grant:g1', \
+         '0000000000000000000000000000000000000000000000000000000000000000')"
+    ));
+}
+
+#[test]
+fn a_database_from_0036_is_migrated_with_its_turns_and_no_action_block() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = store_path(directory.path());
+
+    // Build the database as it was before 0037: only the migrations up to 0036.
+    let legacy_dir = directory.path().join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let version: u32 = entry
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split('_')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        if version <= 36 {
+            fs::copy(&entry, legacy_dir.join(entry.file_name().unwrap())).unwrap();
+        }
+    }
+    let rt = runtime();
+    let mut connection = raw_connect(&path);
+    rt.block_on(async {
+        sqlx::migrate::Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO conversations (id, target_kind) VALUES ('conversation:global', 'global')",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO conversation_turns (id, conversation_id, state, runtime_name, runtime_version) \
+             VALUES ('t1', 'conversation:global', 'completed', 'test-runtime', '1.0.0')",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    });
+    drop(connection);
+
+    let store = open(directory.path());
+    assert_eq!(
+        store.conversation_turn("t1").unwrap().unwrap().action_block,
+        None
+    );
+    assert_eq!(
+        raw_scalar(
+            directory.path(),
+            "SELECT name FROM sqlite_master WHERE name = 'action_proposal_events'",
+        ),
+        "action_proposal_events"
+    );
+    // The migrated database takes a block, and a clear still deletes what it holds.
+    begin_global(&store, "t2", GLOBAL_MESSAGE);
+    assert_eq!(
+        store
+            .complete_conversation_turn("t2", accepted_block(BlockScope::Global, MARKED_CREATE))
+            .unwrap(),
+        Some(vec![proposal_id("t2", 0)])
+    );
+    assert!(
+        store
+            .clear_conversation_history(&ConversationTarget::Global)
+            .unwrap()
+            .cleared
+    );
+    assert!(store.conversation_turn("t2").unwrap().is_none());
 }

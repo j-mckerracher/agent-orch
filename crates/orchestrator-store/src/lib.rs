@@ -52,6 +52,7 @@ pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 // Windows) live in their own crate so the desktop host shares them.
 pub use orchestrator_private_fs::{create_private_dir, create_private_file, restrict_to_owner};
 pub mod sqlite;
+mod sqlite_actions;
 mod sqlite_approvals;
 mod sqlite_attempts;
 mod sqlite_conversations;
@@ -66,6 +67,9 @@ pub use sqlite_conversations::{
     ConversationTurn, TurnOutcome, TurnPermission, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
+};
+pub use sqlite_actions::{
+    ActionBlockOutcome, ActionProposal, ProposalEvent, ProposalState, TurnBlock,
 };
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};

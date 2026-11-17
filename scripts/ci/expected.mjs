@@ -15,7 +15,8 @@ export const WINDOWS = {
   // still derived: 118 + 11 + 2 + 4 + 0 + 1 + 2 = 138 once M7-08 passes.
   // DPES-1105 adds 2 portable ipc tests (history capability), so 56 becomes 58.
   // The chat model choice (DPES-1105) adds 1 portable ipc test (selection capability): 58 becomes 59 (CI run 43734333632).
-  ipc: { passed: 59, sequence: [59, 0] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): 3 call-context tests, so 59 becomes 62.
+  ipc: { passed: 62, sequence: [62, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
@@ -40,10 +41,13 @@ export const WINDOWS = {
   // conversation_runtime 24 becomes 30. The not-pinned refusal tests are replaced by the unverified-run tests, so 179 becomes 192 passed.
   // DPES-1105 orchestrator preamble and snapshot (PR #108, CI run 43974417288, measured on Windows): the unit binary 154 becomes 165 and
   // conversation_runtime 30 becomes 31; one service test is renamed, so 192 becomes 204 passed.
-  daemon: { passed: 204, ignored: 1, sequence: [165, 31, 2, 4, 0, 1, 2] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): the unit binary 165 becomes 167 and
+  // conversation_runtime 31 becomes 42, so 204 becomes 217 passed.
+  daemon: { passed: 217, ignored: 1, sequence: [167, 42, 2, 4, 0, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 45 },
+  // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 48 },
   tauri: { passed: 14, sequence: [14, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
@@ -71,7 +75,9 @@ export const WINDOWS = {
   // the store totals 170 passed plus 1 ignored. The lib gains 3 portable tests (permission level and migration checks).
   // WI-DPES-736: Seven portable audit-envelope tests add the new binary after attempt_history. Windows counts are derived; native CI verifies them.
   // DPES-1105 task overview (PR #108, CI run 43974417288, measured on Windows): the lib 68 becomes 69, so 177 becomes 178 passed.
-  store: { passed: 178, ignored: 1, sequence: [69, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): new tests/action_proposals.rs (7) after the lib, and
+  // conversation_history 10 becomes 13, so 178 becomes 188 passed.
+  store: { passed: 188, ignored: 1, sequence: [69, 7, 9, 2, 7, 13, 1, 13, 11, 9, 11, 3, 3, 3, 11, 4, 1, 12, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 68 },
@@ -85,7 +91,8 @@ export const MACOS = {
   // Measured on the M7 final integration merge (macOS, this branch).
   // Measured on the DPES-1105 branch: 55 plus the two history capability tests.
   // The chat model choice (DPES-1105) adds the selection capability test: 57 becomes 58 (CI run 43734333632).
-  ipc: { passed: 58, sequence: [58, 0] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): 3 call-context tests, so 58 becomes 61.
+  ipc: { passed: 61, sequence: [61, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
@@ -105,7 +112,9 @@ export const MACOS = {
   // conversation_runtime 29 becomes 35, so 265 becomes 278 passed.
   // DPES-1105 orchestrator preamble and snapshot (PR #108, CI run 43974417288, measured on macOS): the unit binary 224 becomes 235 and
   // conversation_runtime 35 becomes 36; one service test is renamed, so 278 becomes 290 passed.
-  daemon: { passed: 290, ignored: 1, sequence: [235, 36, 2, 4, 11, 1, 2] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): the unit binary 235 becomes 237 and
+  // conversation_runtime 36 becomes 47, so 290 becomes 303 passed.
+  daemon: { passed: 303, ignored: 1, sequence: [237, 47, 2, 4, 11, 1, 2] },
   coordinatorReview: { passed: 4, sequence: [4] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -130,7 +139,8 @@ export const MACOS = {
   // gate measured them in CI run 43951278199 (1174 against 1169 before main's 3 usage preflight tests): 1172 becomes 1177.
   // DPES-1106 unverified agent versions (PR #101) adds 13 tests to the workspace total (macOS workspace-tests gate, CI run 43965574766): 1177 becomes 1190.
   // DPES-1105 orchestrator preamble and snapshot (PR #108, macOS workspace-tests gate, CI run 43974417288): 1190 becomes 1203.
-  workspace: { passed: 1203, ignored: 2 },
+  // DPES-1105 action proposals (macOS workspace-tests gate, PR #113, CI run 43981399384): 1203 becomes 1258.
+  workspace: { passed: 1258, ignored: 2 },
   tauri: { passed: 16, sequence: [16, 0, 0] },
   gitLib: { passed: 58, sequence: [58] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
@@ -142,7 +152,9 @@ export const MACOS = {
   // totals 174 passed plus 1 ignored.
   // WI-DPES-736: Measured default-parallel macOS store run, 181 passed and 1 ignored, with seven tests in the audit_envelope binary.
   // DPES-1105 task overview (PR #108, CI run 43974417288, measured on macOS): the lib 70 becomes 71, so 181 becomes 182 passed.
-  store: { passed: 182, ignored: 1, sequence: [71, 9, 2, 7, 13, 1, 10, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
+  // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): new tests/action_proposals.rs (7) after the lib, and
+  // conversation_history 10 becomes 13, so 182 becomes 192 passed.
+  store: { passed: 192, ignored: 1, sequence: [71, 7, 9, 2, 7, 13, 1, 13, 11, 9, 11, 3, 4, 3, 11, 5, 1, 12, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 70 },

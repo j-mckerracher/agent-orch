@@ -38,6 +38,9 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use sqlx::SqlitePool;
 
+use crate::sqlite_actions::{
+    delete_scope_proposals, insert_block_proposals, ActionBlockOutcome, TurnBlock,
+};
 use crate::sqlite_history::{
     record_audit, set_clear_gate, tombstone_conversation_sends, ClearOutcome,
 };
@@ -64,7 +67,7 @@ pub enum ConversationTarget {
 }
 
 impl ConversationTarget {
-    fn id(&self) -> String {
+    pub(crate) fn id(&self) -> String {
         match self {
             Self::Global => "conversation:global".to_owned(),
             Self::Workstream(id) => format!("conversation:workstream:{id}"),
@@ -170,6 +173,9 @@ pub struct ConversationTurn {
     pub permission_level: Option<PermissionLevel>,
     /// The argument profile the turn ran with, such as `codex:auto:v1`.
     pub permission_profile: Option<String>,
+    /// What the reply's action block did. `None` when the reply had no block, or the
+    /// turn predates migration 0037.
+    pub action_block: Option<ActionBlockOutcome>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -255,7 +261,7 @@ macro_rules! entry_columns {
 macro_rules! turn_columns {
     () => {
         "id, conversation_id, state, error_code, runtime_name, runtime_version, reply_bytes, \
-         permission_level, permission_profile, created_at, updated_at"
+         permission_level, permission_profile, action_block, created_at, updated_at"
     };
 }
 
@@ -473,6 +479,62 @@ impl SqliteStore {
         })
     }
 
+    /// Completes a running turn and records what its reply's action block did, in one
+    /// transaction (DPES-1105). The terminal state, the block outcome and any proposals
+    /// commit together, so a turn never completes without the proposals it produced.
+    ///
+    /// `None` means the turn was already terminal, and nothing was recorded. Otherwise
+    /// the effective proposal id of each action comes back in block order. An action
+    /// that matches a pending card returns that card's id.
+    ///
+    /// This is a trusted-caller API. It does not check the session's negotiated
+    /// capabilities. The daemon applies the `orchestrator_actions` gate, and a caller
+    /// must pass [`TurnBlock::Stripped`] when the session did not negotiate it.
+    pub fn complete_conversation_turn(
+        &self,
+        turn_id: &str,
+        block: TurnBlock,
+    ) -> Result<Option<Vec<String>>, ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            if finish_turn(&mut transaction, &turn_id, &TurnOutcome::Completed, "")
+                .await?
+                .is_none()
+            {
+                transaction.commit().await?;
+                return Ok(None);
+            }
+            let turn = load_turn(&mut transaction, &turn_id)
+                .await?
+                .ok_or(ConversationError::TurnNotFound)?;
+            let (outcome, effective) = match block {
+                TurnBlock::None => (None, Vec::new()),
+                TurnBlock::Stripped => (Some(ActionBlockOutcome::Stripped), Vec::new()),
+                TurnBlock::Rejected => (Some(ActionBlockOutcome::Rejected), Vec::new()),
+                TurnBlock::Accepted(action_block) => {
+                    let effective = insert_block_proposals(
+                        &mut transaction,
+                        &turn.conversation_id,
+                        &turn_id,
+                        &action_block,
+                    )
+                    .await?;
+                    (Some(ActionBlockOutcome::Accepted), effective)
+                }
+            };
+            if let Some(outcome) = outcome {
+                sqlx::query("UPDATE conversation_turns SET action_block = ? WHERE id = ?")
+                    .bind(outcome.as_str())
+                    .bind(&turn_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+            transaction.commit().await?;
+            Ok(Some(effective))
+        })
+    }
+
     /// Fail every turn left `running` by a previous daemon process.
     ///
     /// Returns the ids of the interrupted turns.
@@ -585,7 +647,8 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
-    /// Permanently delete one conversation's messages, replies and turns (DPES-1105).
+    /// Permanently delete one conversation's messages, replies, turns and action
+    /// proposals (DPES-1105).
     ///
     /// A running turn refuses the clear with [`ConversationError::TurnRunning`], and
     /// nothing is deleted. The check and the delete share one `BEGIN IMMEDIATE`
@@ -639,6 +702,7 @@ impl SqliteStore {
             let entries = u64::try_from(entries).unwrap_or(0);
             let turns = u64::try_from(turns).unwrap_or(0);
             set_clear_gate(&mut transaction, true).await?;
+            delete_scope_proposals(&mut transaction, &conversation_id).await?;
             tombstone_conversation_sends(&mut transaction, &conversation_id).await?;
             sqlx::query("DELETE FROM conversation_entries WHERE conversation_id = ?")
                 .bind(&conversation_id)
@@ -701,7 +765,7 @@ where
         .map_err(ConversationError::Store)?
 }
 
-fn corrupt(detail: String) -> StoreError {
+pub(crate) fn corrupt(detail: String) -> StoreError {
     StoreError::Corrupt {
         task_id: String::new(),
         detail,
@@ -843,6 +907,10 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
                 .ok_or_else(|| corrupt(format!("unknown permission level {name}")))
         })
         .transpose()?;
+    let action_block: Option<String> = row.try_get("action_block")?;
+    let action_block = action_block
+        .map(|name| ActionBlockOutcome::parse(&name))
+        .transpose()?;
     Ok(ConversationTurn {
         id: row.try_get("id")?,
         conversation_id: row.try_get("conversation_id")?,
@@ -853,6 +921,7 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
         reply_bytes: u64::try_from(reply_bytes).unwrap_or(0),
         permission_level,
         permission_profile: row.try_get("permission_profile")?,
+        action_block,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

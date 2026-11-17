@@ -51,10 +51,14 @@ pub enum Capability {
     /// A permission level chosen for one `conversations.send` (DPES-1105). Not
     /// advertised by an older daemon, which runs every message read-only.
     PermissionLevels,
+    /// A completed reply may end in one `mcao-actions` block that becomes
+    /// pending proposals (DPES-1105). Not advertised by an older daemon, which
+    /// never parses a reply.
+    OrchestratorActions,
 }
 
 impl Capability {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -72,6 +76,7 @@ impl Capability {
         Self::ConversationHistory,
         Self::ConversationSelection,
         Self::PermissionLevels,
+        Self::OrchestratorActions,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -93,6 +98,7 @@ impl Capability {
             Self::ConversationHistory => "conversation_history",
             Self::ConversationSelection => "conversation_selection",
             Self::PermissionLevels => "permission_levels",
+            Self::OrchestratorActions => "orchestrator_actions",
         }
     }
 

@@ -75,6 +75,9 @@ pub use server::{Server, ServerConfig};
 pub use unsupported::{Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
 
 #[cfg(all(test, any(unix, windows)))]
+#[path = "actions_tests.rs"]
+mod actions_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "coordinator_review_tests.rs"]
 mod coordinator_review_tests;
 #[cfg(all(test, any(unix, windows)))]
@@ -179,6 +182,29 @@ impl RpcError {
     }
 }
 
+/// What the calling session negotiated, passed to [`RpcHandler::dispatch_in`]
+/// for each request. [`CallContext::NONE`] negotiates nothing, so a handler
+/// that ignores the context fails closed.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CallContext<'a> {
+    capabilities: &'a [Capability],
+}
+
+impl<'a> CallContext<'a> {
+    /// A session that negotiated no capability beyond the handshake.
+    pub const NONE: CallContext<'static> = CallContext { capabilities: &[] };
+
+    /// The context of a session that negotiated `capabilities`.
+    pub fn new(capabilities: &'a [Capability]) -> Self {
+        Self { capabilities }
+    }
+
+    /// Whether the session negotiated `capability`.
+    pub fn negotiated(&self, capability: Capability) -> bool {
+        self.capabilities.contains(&capability)
+    }
+}
+
 /// Daemon-owned API boundary used by the transport after authentication.
 pub trait RpcHandler: Send + Sync + 'static {
     /// Returns only capabilities implemented by this handler.
@@ -190,6 +216,18 @@ pub trait RpcHandler: Send + Sync + 'static {
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, RpcError>;
+
+    /// Runs a negotiated method with the calling session's context. A handler
+    /// that does not read the context keeps `dispatch`.
+    fn dispatch_in(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        context: &CallContext<'_>,
+    ) -> Result<serde_json::Value, RpcError> {
+        let _ = context;
+        self.dispatch(method, params)
+    }
 
     /// Loads a bounded, ordered page of durable events after a cursor.
     fn events_after(&self, after_sequence: i64, limit: usize) -> Result<Vec<IpcEvent>, RpcError>;

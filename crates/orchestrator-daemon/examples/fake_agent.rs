@@ -17,6 +17,10 @@
 //! - `[fake:flood]` replies with more text than a turn may store.
 //! - `[fake:unreadable]` prints an event the parser does not know, so the turn fails.
 //! - `[fake:echo]` replies with the prompt's context and history lines.
+//! - `[fake:script]` replies with the file named by `FAKE_AGENT_REPLY`, cut
+//!   into pieces at each `---split---`, then completes.
+//!   `[fake:script-fail]` exits non-zero after the pieces, and
+//!   `[fake:script-hang]` stops after them without finishing the turn.
 //!
 //! Environment: `AGENT_ORCH_FAKE_VERSION` (default `0.0.0-fake`),
 //! `AGENT_ORCH_FAKE_VERSION_MODE` (`fail`, `garbage`, `hang` or `flood`: how
@@ -184,6 +188,32 @@ fn finished(dialect: Dialect, whole: &str) {
     }
 }
 
+/// How a scripted turn ends.
+#[derive(Clone, Copy)]
+enum Ending {
+    Complete,
+    Fail,
+    Hang,
+}
+
+fn scripted_ending(message: &str) -> Option<Ending> {
+    if message.contains("[fake:script-fail]") {
+        Some(Ending::Fail)
+    } else if message.contains("[fake:script-hang]") {
+        Some(Ending::Hang)
+    } else if message.contains("[fake:script]") {
+        Some(Ending::Complete)
+    } else {
+        None
+    }
+}
+
+/// The script cut into reply pieces at each `---split---`. The marker may sit
+/// mid-line, so a test can split a fence between two pieces.
+fn script_pieces(script: &str) -> Vec<String> {
+    script.split("---split---").map(str::to_owned).collect()
+}
+
 fn turn(args: &[String], prompt: &str, dialect: Dialect) {
     if let Some(path) = std::env::var_os("FAKE_AGENT_LOG") {
         if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -203,6 +233,24 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
         // An event type the parser does not know: the turn must fail, never end
         // as an empty reply (DPES-1106).
         emit(r#"{"type":"mystery.event","payload":{"unknown":true}}"#);
+        return;
+    }
+    if let Some(ending) = scripted_ending(message) {
+        let path = std::env::var("FAKE_AGENT_REPLY").unwrap_or_default();
+        let script = std::fs::read_to_string(path).unwrap_or_default();
+        let mut whole = String::new();
+        for text in script_pieces(&script) {
+            piece(dialect, &text);
+            whole.push_str(&text);
+        }
+        match ending {
+            Ending::Complete => finished(dialect, &whole),
+            Ending::Fail => {
+                eprintln!("fake_agent: failing on request");
+                std::process::exit(3);
+            }
+            Ending::Hang => std::thread::sleep(Duration::from_secs(600)),
+        }
         return;
     }
     let mut pieces: Vec<String> = Vec::new();

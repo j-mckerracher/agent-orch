@@ -126,7 +126,13 @@ struct ConversationClearParams {
 }
 
 impl DaemonApi {
-    pub(super) fn conversations_send(&self, params: Value) -> Result<Value, RpcError> {
+    /// `actions` is the session's negotiated `orchestrator_actions`. It is not
+    /// part of the idempotency fingerprint: a replay returns the recorded turn.
+    pub(super) fn conversations_send(
+        &self,
+        params: Value,
+        actions: bool,
+    ) -> Result<Value, RpcError> {
         let request: ConversationSendParams = parse_params(params)?;
         if request.text.trim().is_empty() || request.text.len() > MAX_CONVERSATION_MESSAGE_BYTES {
             return Err(RpcError::InvalidParams);
@@ -153,7 +159,14 @@ impl DaemonApi {
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
                 let begun = self
                     .conversations
-                    .start(&target, &turn_id, &request.text, choice.as_ref(), level)
+                    .start(
+                        &target,
+                        &turn_id,
+                        &request.text,
+                        choice.as_ref(),
+                        level,
+                        actions,
+                    )
                     .map_err(map_conversation_error)?;
                 Ok(json!({
                     "entry_id": begun.user_entry.id,

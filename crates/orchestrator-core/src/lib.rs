@@ -19,6 +19,7 @@ pub mod authorization;
 pub mod contract;
 pub mod decomposition;
 pub mod identity;
+pub mod orchestrator_action;
 pub mod permission;
 pub mod records;
 pub mod retry;

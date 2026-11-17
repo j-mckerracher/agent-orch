@@ -29,7 +29,7 @@ use orchestrator_git::delivery::{
     DeliveryRequest, DeliveryStep, VerificationCheck,
 };
 use orchestrator_git::Repository;
-use orchestrator_ipc::{Capability, IpcEvent, RpcError, RpcHandler};
+use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
     CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore,
@@ -290,10 +290,20 @@ impl RpcHandler for DaemonApi {
             Capability::ConversationHistory,
             Capability::ConversationSelection,
             Capability::PermissionLevels,
+            Capability::OrchestratorActions,
         ]
     }
 
     fn dispatch(&self, method: &str, params: Value) -> Result<Value, RpcError> {
+        self.dispatch_in(method, params, &CallContext::NONE)
+    }
+
+    fn dispatch_in(
+        &self,
+        method: &str,
+        params: Value,
+        context: &CallContext<'_>,
+    ) -> Result<Value, RpcError> {
         let result = self.report_internal(|| match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
@@ -319,7 +329,9 @@ impl RpcHandler for DaemonApi {
             "coordinator.clear" => self.coordinator_clear(params),
             "coordinator.remove" => self.coordinator_remove(params),
             "coordinator.restore" => self.coordinator_restore(params),
-            "conversations.send" => self.conversations_send(params),
+            "conversations.send" => {
+                self.conversations_send(params, context.negotiated(Capability::OrchestratorActions))
+            }
             "conversations.get" => self.conversations_get(params),
             "conversations.cancel" => self.conversations_cancel(params),
             "conversations.clear" => self.conversations_clear(params),
