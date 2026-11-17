@@ -13,8 +13,12 @@
 
 mod bridge;
 mod launch;
+mod notifications;
 
 use bridge::{Bridge, HostError, Opened};
+use notifications::{
+    decision_notifications_get, decision_notifications_notice, decision_notifications_set, Service,
+};
 use orchestrator_ipc::Capability;
 use serde_json::Value;
 use tauri::ipc::Channel;
@@ -78,6 +82,13 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
                     .and_then(|builder| builder.build());
             }
         }
+        RunEvent::Exit => {
+            if let Some(service) = app.try_state::<Result<Service, String>>() {
+                if let Ok(service) = service.inner() {
+                    service.stop();
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -85,16 +96,31 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .build(),
         )
         .manage(Bridge::from_environment())
+        .setup(|app| {
+            let service = notifications::create_tray(app.handle())
+                .map_err(|_| "Unable to create the notification tray.".to_owned())
+                .and_then(|()| Service::new(app.handle().clone(), launch::data_dir()))
+                .and_then(|service| {
+                    service.start()?;
+                    Ok(service)
+                });
+            app.manage(service);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             daemon_open,
             daemon_send,
-            daemon_close
+            daemon_close,
+            decision_notifications_get,
+            decision_notifications_set,
+            decision_notifications_notice
         ])
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {

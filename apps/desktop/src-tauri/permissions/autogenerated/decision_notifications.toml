@@ -1,0 +1,31 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-decision-notifications-get"
+description = "Enables the decision_notifications_get command."
+commands.allow = ["decision_notifications_get"]
+
+[[permission]]
+identifier = "deny-decision-notifications-get"
+description = "Denies the decision_notifications_get command."
+commands.deny = ["decision_notifications_get"]
+
+[[permission]]
+identifier = "allow-decision-notifications-set"
+description = "Enables the decision_notifications_set command."
+commands.allow = ["decision_notifications_set"]
+
+[[permission]]
+identifier = "deny-decision-notifications-set"
+description = "Denies the decision_notifications_set command."
+commands.deny = ["decision_notifications_set"]
+
+[[permission]]
+identifier = "allow-decision-notifications-notice"
+description = "Enables the decision_notifications_notice command."
+commands.allow = ["decision_notifications_notice"]
+
+[[permission]]
+identifier = "deny-decision-notifications-notice"
+description = "Denies the decision_notifications_notice command."
+commands.deny = ["decision_notifications_notice"]
