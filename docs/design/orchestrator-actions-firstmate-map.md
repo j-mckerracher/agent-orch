@@ -21,8 +21,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | Status | Count |
 | --- | --- |
-| HAVE | 17 |
-| PARTIAL | 19 |
+| HAVE | 16 |
+| PARTIAL | 20 |
 | GAP | 32 |
 | Total | 68 |
 
@@ -35,7 +35,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | D3 | An explicit contract before any work starts | HAVE | `TaskContract` is validated and immutable once admitted (`orchestrator-core/src/contract.rs`). |
 | D4 | A clean isolated worktree per task | HAVE | `orchestrator-git/src/worktree.rs`. Tasks never run in the primary checkout. |
 | D5 | Dispatch profiles: which agent, model and effort | HAVE | Contract `agent` and `model_selection`, `agents.validate_selection`, `agents.catalog`, assignment profile policy v1. |
-| D6 | Capacity bounds per project and host | HAVE | `SchedulerLimits`, `queue.snapshot`, `host.metrics`. |
+| D6 | Capacity bounds per project and host | PARTIAL | `SchedulerLimits` (worker counts only), `queue.snapshot`, `host.metrics`. Missing: a gate on machine load. Phase 2 adds it (decision N12): no new worker while CPU, memory or disk is at its threshold. |
 | D7 | Event-driven wake of the liaison when something needs the user | GAP | Phase 3: the daemon is the watcher and starts an orchestrator turn. See "Wake-up loop" in the main document. |
 | D8 | Turn-end guard: no turn ends blind while work runs | GAP | Phase 3: obligations live in the store (open proposals, pending approvals, unacknowledged wake records), not in the model's memory. The daemon re-surfaces them. A per-turn CLI cannot "forget" a record. |
 | D9 | Durable wake queue, acknowledged only after handling | GAP | Phase 3: `wake_records` table. A wake is closed by the turn that handled it, or by the user. |
