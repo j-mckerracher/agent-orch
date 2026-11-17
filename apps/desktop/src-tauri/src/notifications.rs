@@ -1,4 +1,4 @@
-use orchestrator_ipc::{Capability, Relay, RelayEvent};
+use orchestrator_ipc::{Capability, Relay, RelayError, RelayEvent};
 use orchestrator_private_fs::{create_private_dir, create_private_file, is_owner_only};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,13 +17,18 @@ const SETTINGS_FILE: &str = "decision-notifications.json";
 const MAX_STATE_BYTES: u64 = 1_048_576;
 const MAX_MARKERS: usize = 4096;
 const MAX_APPROVAL_ID_BYTES: usize = 256;
-const DEFAULT_INTERVAL_MINUTES: u16 = 15;
+/// Owner decision 72334 (DPES-856): an unanswered decision is reminded once it is 4 hours old,
+/// then every 4 hours until it is answered or deferred.
+const DEFAULT_INTERVAL_MINUTES: u16 = 240;
 const MIN_INTERVAL_MINUTES: u16 = 5;
 const MAX_INTERVAL_MINUTES: u16 = 1440;
 const SNAPSHOT_INTERVAL: Duration = Duration::from_secs(15);
 const AGGREGATE_WINDOW: Duration = Duration::from_secs(1);
 const RETRY_DELAY: Duration = Duration::from_secs(2);
 const EVENT_CAPACITY: usize = 2048;
+/// The notifier only reads. Every request it sends must be on this list, so no code path here
+/// can grant, decide, approve or reject an approval (`approvals.resolve`, `review.*`).
+const READ_ONLY_METHODS: [&str; 3] = ["events.subscribe", "approvals.list", "queue.snapshot"];
 static TEMP_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -43,11 +48,22 @@ impl Default for Settings {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct Marker {
-    first_observed_at: u64,
+    /// When the decision was requested, from a real journal event timestamp. `None` when no real
+    /// timestamp is known (`approvals.list` carries none): the age is never invented, so such a
+    /// decision is announced once and never reminded by age.
+    #[serde(default)]
+    requested_at: Option<u64>,
     last_notified_at: Option<u64>,
     last_reminded_at: Option<u64>,
     new_notification_attempted: bool,
+    /// The decision was answered (approved, rejected, superseded or changes requested).
     acknowledged: bool,
+    /// Local only: the user silenced reminders for this decision. It stays pending.
+    #[serde(default)]
+    silenced: bool,
+    /// Local only: no reminder before this time (unix seconds). The decision stays pending.
+    #[serde(default)]
+    deferred_until: Option<u64>,
 }
 
 impl Default for Permission {
@@ -138,12 +154,74 @@ fn update_settings(
     Ok(request)
 }
 
+/// A local action on the current notice. It changes only this app's reminder state; the decisions
+/// stay pending and no daemon request is made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NoticeAction {
+    /// Silence reminders for the decisions pending now.
+    Acknowledge,
+    /// Postpone reminders for the decisions pending now by this many minutes.
+    Defer(u16),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NoticeRequest {
+    action: String,
+    minutes: Option<u16>,
+}
+
+fn parse_notice_request(input: Value) -> Result<NoticeAction, &'static str> {
+    let request = serde_json::from_value::<NoticeRequest>(input)
+        .map_err(|_| "Invalid notification action.")?;
+    match (request.action.as_str(), request.minutes) {
+        ("acknowledge", None) => Ok(NoticeAction::Acknowledge),
+        ("defer", Some(minutes)) if valid_interval(Some(minutes)) => Ok(NoticeAction::Defer(minutes)),
+        ("defer", _) => Err("Defer must be 5–1440 minutes."),
+        _ => Err("Invalid notification action."),
+    }
+}
+
+/// Applies a local notice action to the decisions that are pending and unanswered. Returns whether
+/// anything changed. It never touches `acknowledged` (answered) or the pending set.
+fn apply_notice_action(
+    markers: &mut BTreeMap<String, Marker>,
+    pending: &BTreeSet<String>,
+    action: NoticeAction,
+    now: u64,
+) -> bool {
+    let mut changed = false;
+    for id in pending {
+        let Some(marker) = markers.get_mut(id).filter(|marker| !marker.acknowledged) else {
+            continue;
+        };
+        match action {
+            NoticeAction::Acknowledge if !marker.silenced => {
+                marker.silenced = true;
+                changed = true;
+            }
+            NoticeAction::Defer(minutes) => {
+                let until = now.saturating_add(u64::from(minutes) * 60);
+                if marker.deferred_until != Some(until) {
+                    marker.deferred_until = Some(until);
+                    changed = true;
+                }
+            }
+            NoticeAction::Acknowledge => {}
+        }
+    }
+    changed
+}
+
 #[derive(Default)]
 struct RuntimeState {
     permission: Permission,
     pending_count: Option<usize>,
     error: Option<String>,
     pending_ids: BTreeSet<String>,
+    /// Pending decisions whose task is waiting on a dependency (excluded from reminders).
+    /// `None` when that is unknown, which also pauses reminders.
+    held_ids: Option<BTreeSet<String>>,
 }
 
 struct Inner {
@@ -175,6 +253,7 @@ impl Service {
             pending_count: None,
             error: load_error,
             pending_ids: BTreeSet::new(),
+            held_ids: None,
         };
         Ok(Self(Arc::new(Inner {
             app,
@@ -248,6 +327,29 @@ impl Service {
     }
 }
 
+impl Service {
+    /// Local acknowledge/defer of the current notice. Touches only the private reminder state.
+    pub fn notice(&self, input: Value) -> Status {
+        let action = match parse_notice_request(input) {
+            Ok(action) => action,
+            Err(message) => return fail_status(&self.0, message),
+        };
+        let mut durable = self.0.durable.lock().unwrap_or_else(|e| e.into_inner());
+        let pending = self.0.runtime.lock().unwrap_or_else(|e| e.into_inner()).pending_ids.clone();
+        let mut next = durable.clone();
+        if apply_notice_action(&mut next.markers, &pending, action, unix_now()) {
+            if save_state(&self.0.path, &next).is_err() {
+                drop(durable);
+                return fail_status(&self.0, "Unable to save notification history.");
+            }
+            *durable = next;
+        }
+        drop(durable);
+        let snapshot = status(&self.0);
+        publish(&self.0, &snapshot)
+    }
+}
+
 fn unavailable_status(error: &str) -> Status {
     Status {
         enabled: false,
@@ -275,6 +377,17 @@ pub fn decision_notifications_set(
 ) -> Status {
     match service.inner() {
         Ok(service) => service.set(settings),
+        Err(error) => unavailable_status(error),
+    }
+}
+
+#[tauri::command]
+pub fn decision_notifications_notice(
+    service: tauri::State<'_, Result<Service, String>>,
+    notice: Value,
+) -> Status {
+    match service.inner() {
+        Ok(service) => service.notice(notice),
         Err(error) => unavailable_status(error),
     }
 }
@@ -522,6 +635,7 @@ fn update_badge(inner: &Inner, count: Option<usize>) -> Result<(), &'static str>
 fn invalidate_pending_state(runtime: &mut RuntimeState) {
     runtime.pending_count = None;
     runtime.pending_ids.clear();
+    runtime.held_ids = None;
 }
 
 fn enqueue_relay_event(
@@ -545,6 +659,10 @@ fn mark_unknown(inner: &Inner, message: &str) {
 
 fn run(inner: Arc<Inner>) {
     refresh_permission(&inner);
+    // The first snapshot of this process is the baseline: decisions already pending at app start
+    // are recorded silently. Every later snapshot, including the first one after a reconnect, is
+    // not: a decision that appeared while disconnected is announced.
+    let mut baseline_done = false;
     loop {
         if inner.stop.load(Ordering::Acquire) {
             return;
@@ -556,12 +674,31 @@ fn run(inner: Arc<Inner>) {
         };
         let (sender, receiver) = mpsc::sync_channel(EVENT_CAPACITY);
         let overflowed = Arc::new(AtomicBool::new(false));
-        let (relay, _) = match Relay::open(data_dir, &[Capability::Events, Capability::Approvals], {
+        let open = |capabilities: &[Capability]| {
             let sender = sender.clone();
             let overflowed = Arc::clone(&overflowed);
-            move |event| enqueue_relay_event(&sender, &overflowed, event)
-        }) {
-            Ok(opened) => opened,
+            Relay::open(data_dir, capabilities, move |event| {
+                enqueue_relay_event(&sender, &overflowed, event)
+            })
+        };
+        // `queue.snapshot` tells which pending decisions wait on a dependency. A daemon without
+        // it still works; reminders then pause because the hold state is unknown.
+        let (relay, queue_available) = match open(&[
+            Capability::Events,
+            Capability::Approvals,
+            Capability::Queue,
+        ]) {
+            Ok((relay, _)) => (relay, true),
+            Err(RelayError::UnsupportedCapability) => {
+                match open(&[Capability::Events, Capability::Approvals]) {
+                    Ok((relay, _)) => (relay, false),
+                    Err(_) => {
+                        mark_unknown(&inner, "Unable to connect to the local daemon.");
+                        sleep_or_stop(&inner, RETRY_DELAY);
+                        continue;
+                    }
+                }
+            }
             Err(_) => {
                 mark_unknown(&inner, "Unable to connect to the local daemon.");
                 sleep_or_stop(&inner, RETRY_DELAY);
@@ -569,34 +706,26 @@ fn run(inner: Arc<Inner>) {
             }
         };
         let mut next_id = 1_u64;
-        if relay
-            .send(json!({"jsonrpc":"2.0","id":next_id,"method":"events.subscribe","params":{}}))
-            .is_err()
-        {
+        if send_rpc(&relay, next_id, "events.subscribe", json!({})).is_err() {
             relay.close();
             mark_unknown(&inner, "Unable to subscribe to decision events.");
             continue;
         }
         next_id += 1;
-        let first_snapshot_id = next_id;
-        if relay
-            .send(json!({"jsonrpc":"2.0","id":first_snapshot_id,"method":"approvals.list","params":null}))
-            .is_err()
-        {
-            relay.close();
-            mark_unknown(&inner, "Unable to request pending decisions.");
-            continue;
-        }
-        next_id += 1;
+        let mut outstanding = match request_snapshot(&relay, &mut next_id, queue_available) {
+            Ok(outstanding) => Some(outstanding),
+            Err(_) => {
+                relay.close();
+                mark_unknown(&inner, "Unable to request pending decisions.");
+                continue;
+            }
+        };
         let mut subscription: Option<String> = None;
         let subscription_deadline = Instant::now() + Duration::from_secs(10);
         let mut initial = false;
-        let mut pending_new = BTreeMap::<String, u64>::new();
+        // Real journal timestamps of unresolved `approval.requested` events (replayed or live).
+        let mut requested_ts = BTreeMap::<String, u64>::new();
         let mut pending_ack = BTreeSet::<String>::new();
-        let mut outstanding_snapshot = Some((
-            first_snapshot_id,
-            Instant::now() + Duration::from_secs(10),
-        ));
         let mut snapshot_deadline = Instant::now() + SNAPSHOT_INTERVAL;
         let mut new_deadline: Option<Instant> = None;
         let mut reminder_deadline = Instant::now() + Duration::from_secs(30);
@@ -614,23 +743,20 @@ fn run(inner: Arc<Inner>) {
                 mark_unknown(&inner, "Decision event subscription timed out.");
                 break;
             }
-            if outstanding_snapshot.is_some_and(|(_, deadline)| now >= deadline) {
+            if outstanding.as_ref().is_some_and(|pending| now >= pending.deadline) {
                 mark_unknown(&inner, "Pending decision snapshot timed out.");
                 break;
             }
             let snapshot_due = now >= snapshot_deadline
                 || new_deadline.is_some_and(|deadline| now >= deadline);
-            if snapshot_due && outstanding_snapshot.is_none() {
-                let request_id = next_id;
-                next_id += 1;
-                if relay
-                    .send(json!({"jsonrpc":"2.0","id":request_id,"method":"approvals.list","params":null}))
-                    .is_err()
-                {
-                    mark_unknown(&inner, "Unable to request pending decisions.");
-                    break;
+            if snapshot_due && outstanding.is_none() {
+                match request_snapshot(&relay, &mut next_id, queue_available) {
+                    Ok(pending) => outstanding = Some(pending),
+                    Err(_) => {
+                        mark_unknown(&inner, "Unable to request pending decisions.");
+                        break;
+                    }
                 }
-                outstanding_snapshot = Some((request_id, now + Duration::from_secs(10)));
                 snapshot_deadline = now + SNAPSHOT_INTERVAL;
                 new_deadline = None;
             }
@@ -652,26 +778,36 @@ fn run(inner: Arc<Inner>) {
                             mark_unknown(&inner, "Decision event subscription was rejected.");
                             break;
                         }
-                    } else if outstanding_snapshot.is_some_and(|(id, _)| response_id == Some(id)) {
-                        outstanding_snapshot = None;
-                        let Some(rows) = message.get("result").and_then(Value::as_array) else {
-                            mark_unknown(&inner, "Unable to read pending decisions.");
-                            break;
-                        };
-                        let ids: BTreeSet<String> = rows.iter().filter_map(approval_id).collect();
-                        let baseline = !initial;
-                        reconcile(&inner, &ids, baseline, &pending_new, &pending_ack);
-                        refresh_known_count(&inner);
-                        initial = true;
-                        if baseline {
-                            pending_new.clear();
+                    } else if response_id.is_some()
+                        && outstanding.as_ref().is_some_and(|pending| pending.owns(response_id))
+                    {
+                        let Some(pending) = outstanding.as_mut() else { continue };
+                        if response_id == Some(pending.approvals_id) {
+                            let Some(rows) = message.get("result").and_then(Value::as_array) else {
+                                mark_unknown(&inner, "Unable to read pending decisions.");
+                                break;
+                            };
+                            pending.rows = Some(pending_rows(rows));
                         } else {
-                            notify_new(&inner, &pending_new);
-                            pending_new.clear();
+                            // A failed or malformed `queue.snapshot` leaves the hold state unknown.
+                            pending.waiting_tasks =
+                                Some(message.get("result").and_then(dependency_waiting_tasks));
                         }
-                        pending_ack.clear();
-                        snapshot_deadline = Instant::now() + SNAPSHOT_INTERVAL;
-                        publish(&inner, &status(&inner));
+                        if outstanding.as_ref().is_some_and(Outstanding::complete) {
+                            let Some((rows, waiting_tasks)) = outstanding.take().and_then(Outstanding::finish) else {
+                                continue;
+                            };
+                            let ids: BTreeSet<String> = rows.iter().map(|(id, _)| id.clone()).collect();
+                            let held = held_approval_ids(&rows, waiting_tasks.as_ref());
+                            reconcile(&inner, &ids, held, !baseline_done, &requested_ts, &pending_ack);
+                            refresh_known_count(&inner);
+                            initial = true;
+                            baseline_done = true;
+                            notify_new(&inner);
+                            pending_ack.clear();
+                            snapshot_deadline = Instant::now() + SNAPSHOT_INTERVAL;
+                            publish(&inner, &status(&inner));
+                        }
                     } else if message.get("method").and_then(Value::as_str) == Some("events.event") {
                         let params = &message["params"];
                         if params.get("subscription_id").and_then(Value::as_str) != subscription.as_deref() {
@@ -682,26 +818,26 @@ fn run(inner: Arc<Inner>) {
                         let Some(id) = event.get("payload").and_then(approval_id) else {
                             continue;
                         };
-                        let acknowledged = is_acknowledgement_event(kind);
-                        if acknowledged && !insert_acknowledgement_id(&mut pending_ack, &id) {
-                            mark_unknown(&inner, "Acknowledgement backlog exceeded its safe limit.");
-                            break;
-                        }
-                        if kind == "approval.requested" && initial
-                            && pending_new.len() >= MAX_MARKERS && !pending_new.contains_key(&id)
-                        {
-                            mark_unknown(&inner, "New decision backlog exceeded its safe limit.");
-                            break;
-                        }
-                        if acknowledged || (kind == "approval.requested" && initial) {
-                            let at = event.get("created_at")
+                        if kind == "approval.requested" {
+                            // Only a real journal timestamp counts; none means the age stays unknown.
+                            if let Some(at) = event.get("created_at")
                                 .and_then(Value::as_str)
                                 .and_then(parse_timestamp)
-                                .unwrap_or_else(unix_now);
-                            handle_event(&inner, kind.to_owned(), id, at, &mut pending_new, &mut pending_ack);
-                            if !pending_new.is_empty() || !pending_ack.is_empty() {
+                            {
+                                remember_requested(&mut requested_ts, &id, at);
+                                adopt_requested_at(&inner, &id, at);
+                            }
+                            if initial {
                                 new_deadline = Some(Instant::now() + AGGREGATE_WINDOW);
                             }
+                        } else if is_acknowledgement_event(kind) {
+                            requested_ts.remove(&id);
+                            if !insert_acknowledgement_id(&mut pending_ack, &id) {
+                                mark_unknown(&inner, "Acknowledgement backlog exceeded its safe limit.");
+                                break;
+                            }
+                            apply_answered_event(&inner, &id);
+                            new_deadline = Some(Instant::now() + AGGREGATE_WINDOW);
                         }
                     } else if message.get("method").and_then(Value::as_str) == Some("events.error") {
                         mark_unknown(&inner, "Decision event stream failed.");
@@ -766,24 +902,138 @@ fn insert_acknowledgement_id(ids: &mut BTreeSet<String>, id: &str) -> bool {
     }
     ids.insert(id.to_owned())
 }
-fn handle_event(
-    inner: &Inner,
-    kind: String,
-    id: String,
-    at: u64,
-    new_ids: &mut BTreeMap<String, u64>,
-    ack_ids: &mut BTreeSet<String>,
-) {
-    if is_acknowledgement_event(&kind) {
-        ack_ids.insert(id.clone());
-        let mut durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
-        let changed = durable.markers.get_mut(&id).is_some_and(acknowledge_marker);
-        if changed && save_state(&inner.path, &durable).is_err() {
-            set_error(inner, Some("Unable to save notification history."));
-        }
-    } else if kind == "approval.requested" {
-        new_ids.entry(id).or_insert(at);
+fn apply_answered_event(inner: &Inner, id: &str) {
+    let mut durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
+    let changed = durable.markers.get_mut(id).is_some_and(acknowledge_marker);
+    if changed && save_state(&inner.path, &durable).is_err() {
+        set_error(inner, Some("Unable to save notification history."));
     }
+}
+
+/// Remembers a real journal timestamp. When the map is full a new id is skipped, which only leaves
+/// that decision's age unknown (it is then never reminded by age).
+fn remember_requested(requested: &mut BTreeMap<String, u64>, id: &str, at: u64) {
+    if requested.contains_key(id) || requested.len() < MAX_MARKERS {
+        requested.insert(id.to_owned(), at);
+    }
+}
+
+/// Fills in the real request time of a known decision that has none yet. Returns whether it did.
+fn adopt_requested_time(markers: &mut BTreeMap<String, Marker>, id: &str, at: u64) -> bool {
+    match markers.get_mut(id) {
+        Some(marker) if marker.requested_at.is_none() => {
+            marker.requested_at = Some(at);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn adopt_requested_at(inner: &Inner, id: &str, at: u64) {
+    let mut durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
+    if adopt_requested_time(&mut durable.markers, id, at) && save_state(&inner.path, &durable).is_err() {
+        set_error(inner, Some("Unable to save notification history."));
+    }
+}
+
+/// `(approval id, task id)` of one pending decision.
+type PendingRow = (String, Option<String>);
+
+fn pending_rows(rows: &[Value]) -> Vec<PendingRow> {
+    rows.iter()
+        .filter_map(|row| {
+            let task = row
+                .pointer("/action/task_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            approval_id(row).map(|id| (id, task))
+        })
+        .collect()
+}
+
+/// Task ids that `queue.snapshot` reports as waiting on a dependency. `None` when the result is
+/// not a queue snapshot.
+fn dependency_waiting_tasks(result: &Value) -> Option<BTreeSet<String>> {
+    let queued = result.get("queued")?.as_array()?;
+    Some(
+        queued
+            .iter()
+            .filter(|entry| entry.get("waiting_reason").and_then(Value::as_str) == Some("dependency"))
+            .filter_map(|entry| entry.get("task_id").and_then(Value::as_str).map(str::to_owned))
+            .collect(),
+    )
+}
+
+/// Pending decisions whose task waits on a dependency. `None` (unknown) when the queue state is
+/// unknown.
+fn held_approval_ids(
+    rows: &[PendingRow],
+    waiting_tasks: Option<&BTreeSet<String>>,
+) -> Option<BTreeSet<String>> {
+    let waiting = waiting_tasks?;
+    Some(
+        rows.iter()
+            .filter(|(_, task)| task.as_ref().is_some_and(|task| waiting.contains(task)))
+            .map(|(id, _)| id.clone())
+            .collect(),
+    )
+}
+
+/// The two read-only requests of one snapshot, answered independently.
+struct Outstanding {
+    approvals_id: u64,
+    queue_id: Option<u64>,
+    deadline: Instant,
+    rows: Option<Vec<PendingRow>>,
+    /// Outer `None`: queue reply not received yet. Inner `None`: hold state unknown.
+    waiting_tasks: Option<Option<BTreeSet<String>>>,
+}
+
+impl Outstanding {
+    fn owns(&self, id: Option<u64>) -> bool {
+        id == Some(self.approvals_id) || (id.is_some() && id == self.queue_id)
+    }
+
+    fn complete(&self) -> bool {
+        self.rows.is_some() && self.waiting_tasks.is_some()
+    }
+
+    fn finish(self) -> Option<(Vec<PendingRow>, Option<BTreeSet<String>>)> {
+        Some((self.rows?, self.waiting_tasks?))
+    }
+}
+
+/// Builds a request only for a read-only method; anything else is refused.
+fn rpc_request(id: u64, method: &str, params: Value) -> Option<Value> {
+    READ_ONLY_METHODS
+        .contains(&method)
+        .then(|| json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+}
+
+fn send_rpc(relay: &Relay, id: u64, method: &str, params: Value) -> Result<(), ()> {
+    let request = rpc_request(id, method, params).ok_or(())?;
+    relay.send(request).map_err(|_| ())
+}
+
+fn request_snapshot(relay: &Relay, next_id: &mut u64, queue_available: bool) -> Result<Outstanding, ()> {
+    let approvals_id = *next_id;
+    *next_id += 1;
+    send_rpc(relay, approvals_id, "approvals.list", Value::Null)?;
+    let queue_id = if queue_available {
+        let id = *next_id;
+        *next_id += 1;
+        send_rpc(relay, id, "queue.snapshot", Value::Null)?;
+        Some(id)
+    } else {
+        None
+    };
+    Ok(Outstanding {
+        approvals_id,
+        queue_id,
+        deadline: Instant::now() + Duration::from_secs(10),
+        rows: None,
+        waiting_tasks: if queue_available { None } else { Some(None) },
+    })
 }
 
 
@@ -843,26 +1093,37 @@ fn insert_marker_if_room(markers: &mut BTreeMap<String, Marker>, id: String, mar
     markers.insert(id, marker);
     true
 }
+/// Records the pending decisions. `baseline` is true only for the first snapshot of this app
+/// process: decisions already pending then are recorded as already announced, so launching the app
+/// never produces a notification burst. A later snapshot (including the first one after a
+/// reconnect) leaves a decision it has not seen before unannounced, so it is announced once.
+/// `requested` holds real journal timestamps only; a decision without one keeps an unknown age.
 fn reconcile_markers(
     markers: &mut BTreeMap<String, Marker>,
     pending: &BTreeSet<String>,
-    initial: bool,
-    new_ids: &BTreeMap<String, u64>,
+    baseline: bool,
+    requested: &BTreeMap<String, u64>,
     acknowledgement_ids: &BTreeSet<String>,
     now: u64,
 ) -> (bool, bool) {
     let mut changed = prune_resolved(markers, pending);
     let mut at_capacity = false;
     for id in pending {
+        let requested_at = requested.get(id).copied().filter(|at| *at <= now);
         if markers.contains_key(id) {
+            if let Some(at) = requested_at {
+                changed |= adopt_requested_time(markers, id, at);
+            }
             continue;
         }
         let marker = Marker {
-            first_observed_at: new_ids.get(id).copied().unwrap_or(now).min(now),
+            requested_at,
             last_notified_at: None,
             last_reminded_at: None,
-            new_notification_attempted: initial || !new_ids.contains_key(id),
+            new_notification_attempted: baseline,
             acknowledged: false,
+            silenced: false,
+            deferred_until: None,
         };
         if insert_marker_if_room(markers, id.clone(), marker) {
             changed = true;
@@ -877,8 +1138,9 @@ fn reconcile_markers(
 fn reconcile(
     inner: &Inner,
     pending: &BTreeSet<String>,
-    initial: bool,
-    new_ids: &BTreeMap<String, u64>,
+    held: Option<BTreeSet<String>>,
+    baseline: bool,
+    requested: &BTreeMap<String, u64>,
     acknowledgement_ids: &BTreeSet<String>,
 ) {
     let now = unix_now();
@@ -886,8 +1148,8 @@ fn reconcile(
     let (changed, at_capacity) = reconcile_markers(
         &mut durable.markers,
         pending,
-        initial,
-        new_ids,
+        baseline,
+        requested,
         acknowledgement_ids,
         now,
     );
@@ -898,6 +1160,7 @@ fn reconcile(
     drop(durable);
     let mut runtime = inner.runtime.lock().unwrap_or_else(|e| e.into_inner());
     runtime.pending_ids = pending.clone();
+    runtime.held_ids = held;
     runtime.pending_count = count;
     if !saved {
         runtime.error = Some("Unable to save notification history.".into());
@@ -908,11 +1171,24 @@ fn reconcile(
     }
 }
 
+/// Parses a journal `created_at`: SQLite `CURRENT_TIMESTAMP` (`YYYY-MM-DD HH:MM:SS`, UTC) as the
+/// daemon stores it, or RFC 3339. Anything else, or a future time, is not a real timestamp.
+fn parse_timestamp_at(timestamp: &str, now: u64) -> Option<u64> {
+    let parsed = time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .or_else(|| {
+            let format = time::format_description::parse_borrowed::<2>(
+                "[year]-[month]-[day] [hour]:[minute]:[second]",
+            )
+            .ok()?;
+            Some(time::PrimitiveDateTime::parse(timestamp, &format).ok()?.assume_utc())
+        })?
+        .unix_timestamp();
+    u64::try_from(parsed).ok().filter(|value| *value <= now)
+}
 
 fn parse_timestamp(timestamp: &str) -> Option<u64> {
-    let format = time::format_description::well_known::Rfc3339;
-    let parsed = time::OffsetDateTime::parse(timestamp, &format).ok()?.unix_timestamp();
-    u64::try_from(parsed).ok().filter(|value| *value <= unix_now())
+    parse_timestamp_at(timestamp, unix_now())
 }
 
 fn unix_now() -> u64 {
@@ -922,12 +1198,40 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
+/// A reminder is due once the decision is `interval` old by its real request time, then every
+/// `interval` after the last reminder. No real request time means no age, so never due. Answered,
+/// silenced and deferred (until the deferral passes) decisions are never due.
 fn reminder_due(marker: &Marker, now: u64, interval: Option<u16>) -> bool {
-    let Some(minutes) = interval else {
+    let (Some(minutes), Some(requested_at)) = (interval, marker.requested_at) else {
         return false;
     };
-    let last = marker.last_reminded_at.or(marker.last_notified_at).unwrap_or(marker.first_observed_at);
-    !marker.acknowledged && now.saturating_sub(last) >= u64::from(minutes) * 60
+    let since = marker.last_reminded_at.unwrap_or(requested_at);
+    !marker.acknowledged
+        && !marker.silenced
+        && marker.deferred_until.is_none_or(|until| now >= until)
+        && requested_at <= now
+        && now.saturating_sub(since) >= u64::from(minutes) * 60
+}
+
+/// Pending decisions to remind about now. Decisions waiting on a dependency are excluded; when
+/// that is unknown (`held` is `None`) nothing is reminded.
+fn reminders_due(
+    markers: &BTreeMap<String, Marker>,
+    pending: &BTreeSet<String>,
+    held: Option<&BTreeSet<String>>,
+    now: u64,
+    interval: Option<u16>,
+) -> Vec<String> {
+    let Some(held) = held else {
+        return Vec::new();
+    };
+    markers
+        .iter()
+        .filter(|(id, marker)| {
+            pending.contains(*id) && !held.contains(*id) && reminder_due(marker, now, interval)
+        })
+        .map(|(id, _)| id.clone())
+        .collect()
 }
 
 fn notification_allowed(enabled: bool, permission: Permission) -> bool {
@@ -943,11 +1247,13 @@ fn send_due_reminder(inner: &Inner) {
         let durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
         let runtime = inner.runtime.lock().unwrap_or_else(|e| e.into_inner());
         let interval = durable.settings.reminder_interval_minutes;
-        let due = interval.map_or_else(Vec::new, |minutes| {
-            durable.markers.iter().filter_map(|(id, marker)| {
-                (runtime.pending_ids.contains(id) && reminder_due(marker, now, Some(minutes))).then(|| id.clone())
-            }).collect()
-        });
+        let due = reminders_due(
+            &durable.markers,
+            &runtime.pending_ids,
+            runtime.held_ids.as_ref(),
+            now,
+            interval,
+        );
         (durable.settings.enabled, interval, runtime.permission, runtime.pending_count.is_some(), due)
     };
     if interval.is_none() || due.is_empty() || !delivery_allowed(known, enabled, permission) {
@@ -984,18 +1290,13 @@ fn notification_body(count: usize) -> String {
     }
 }
 
-fn notify_new(inner: &Inner, ids: &BTreeMap<String, u64>) {
-    if ids.is_empty() {
-        return;
-    }
+fn notify_new(inner: &Inner) {
     let now = unix_now();
     let (enabled, permission, known, eligible) = {
         let durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
         let runtime = inner.runtime.lock().unwrap_or_else(|e| e.into_inner());
-        let eligible = ids.keys().filter(|id| {
-            durable.markers.get(*id).is_some_and(|marker| {
-                should_notify_new(marker)
-            })
+        let eligible = runtime.pending_ids.iter().filter(|id| {
+            durable.markers.get(*id).is_some_and(should_notify_new)
         }).cloned().collect::<Vec<_>>();
         (durable.settings.enabled, runtime.permission, runtime.pending_count.is_some(), eligible)
     };
@@ -1006,7 +1307,6 @@ fn notify_new(inner: &Inner, ids: &BTreeMap<String, u64>) {
     let mut durable = inner.durable.lock().unwrap_or_else(|e| e.into_inner());
     for id in &eligible {
         if let Some(marker) = durable.markers.get_mut(id) {
-            marker.first_observed_at = ids.get(id).copied().unwrap_or(now).min(now);
             marker.new_notification_attempted = true;
             if should_send {
                 marker.last_notified_at = Some(now);
@@ -1043,18 +1343,26 @@ mod tests {
 
     fn marker() -> Marker {
         Marker {
-            first_observed_at: 1_000,
+            requested_at: Some(1_000),
             last_notified_at: None,
             last_reminded_at: None,
             new_notification_attempted: false,
             acknowledged: false,
+            silenced: false,
+            deferred_until: None,
         }
     }
+
+    const FOUR_HOURS: u64 = 4 * 60 * 60;
 
     #[test]
     fn defaults_and_interval_bounds_are_supported() {
         assert!(!Settings::default().enabled);
-        assert_eq!(Settings::default().reminder_interval_minutes, Some(15));
+        // Owner decision 72334: the default reminder interval is 4 hours.
+        assert_eq!(DEFAULT_INTERVAL_MINUTES, 240);
+        assert_eq!(Settings::default().reminder_interval_minutes, Some(240));
+        assert_eq!(unavailable_status("x").reminder_interval_minutes, Some(240));
+        assert!(valid_interval(Some(DEFAULT_INTERVAL_MINUTES)));
         assert!(valid_interval(None));
         assert!(valid_interval(Some(5)));
         assert!(valid_interval(Some(1440)));
@@ -1099,28 +1407,196 @@ mod tests {
     }
 
     #[test]
-    fn reminder_uses_first_observed_age_and_respects_future_off_and_boundary() {
+    fn reminder_fires_at_four_hours_then_every_four_hours_from_the_real_request_time() {
+        let requested = Marker { requested_at: Some(10_000), ..marker() };
+        let interval = Some(DEFAULT_INTERVAL_MINUTES);
+        assert!(!reminder_due(&requested, 10_000 + FOUR_HOURS - 1, interval));
+        assert!(reminder_due(&requested, 10_000 + FOUR_HOURS, interval));
+        // Announcing the new decision does not move the first reminder.
+        let announced = Marker { last_notified_at: Some(10_100), ..requested.clone() };
+        assert!(reminder_due(&announced, 10_000 + FOUR_HOURS, interval));
+        // After a reminder the next one is four hours later, again and again.
+        let reminded_at = 10_000 + FOUR_HOURS + 30;
+        let reminded = Marker { last_reminded_at: Some(reminded_at), ..requested.clone() };
+        assert!(!reminder_due(&reminded, reminded_at + FOUR_HOURS - 1, interval));
+        assert!(reminder_due(&reminded, reminded_at + FOUR_HOURS, interval));
+        // Reminders off, a future request time and an answered decision are never due.
+        assert!(!reminder_due(&requested, 10_000 + 10 * FOUR_HOURS, None));
+        let future = Marker { requested_at: Some(20_000), ..marker() };
+        assert!(!reminder_due(&future, 10_000 + FOUR_HOURS, interval));
+        let answered = Marker { acknowledged: true, ..requested };
+        assert!(!reminder_due(&answered, 10_000 + 10 * FOUR_HOURS, interval));
+    }
+
+    #[test]
+    fn a_decision_without_a_real_timestamp_is_announced_once_and_never_reminded_by_age() {
         let pending = BTreeSet::from(["approval-1".to_owned()]);
         let mut markers = BTreeMap::new();
-        reconcile_markers(
-            &mut markers,
-            &pending,
-            false,
-            &BTreeMap::new(),
-            &BTreeSet::new(),
-            1_000,
-        );
-        let observed = markers.get("approval-1").unwrap();
-        assert_eq!(observed.first_observed_at, 1_000);
-        assert!(!reminder_due(observed, 1_899, Some(15)));
-        assert!(reminder_due(observed, 1_900, Some(15)));
-        assert!(!reminder_due(observed, 10_000, None));
+        // `approvals.list` carries no timestamp and no journal event was seen: nothing is invented.
+        reconcile_markers(&mut markers, &pending, false, &BTreeMap::new(), &BTreeSet::new(), 1_000);
+        let unknown_age = markers.get("approval-1").unwrap();
+        assert_eq!(unknown_age.requested_at, None);
+        assert!(should_notify_new(unknown_age), "announced once");
+        for now in [1_000, 1_000 + FOUR_HOURS, 1_000 + 100 * FOUR_HOURS] {
+            assert!(!reminder_due(unknown_age, now, Some(DEFAULT_INTERVAL_MINUTES)));
+            assert!(reminders_due(&markers, &pending, Some(&BTreeSet::new()), now, Some(5)).is_empty());
+        }
+        // A later real event timestamp is adopted, and only then can the age-based reminder fire.
+        assert!(adopt_requested_time(&mut markers, "approval-1", 500));
+        assert!(!adopt_requested_time(&mut markers, "approval-1", 900), "a known time is kept");
+        let due = reminders_due(&markers, &pending, Some(&BTreeSet::new()), 500 + FOUR_HOURS, Some(240));
+        assert_eq!(due, ["approval-1"]);
+    }
 
-        let future = Marker {
-            first_observed_at: 2_000,
-            ..marker()
-        };
-        assert!(!reminder_due(&future, 1_900, Some(15)));
+    #[test]
+    fn real_event_timestamps_set_the_age_and_a_future_timestamp_is_not_real() {
+        let pending = BTreeSet::from(["approval-1".to_owned(), "approval-2".to_owned()]);
+        let requested = BTreeMap::from([("approval-1".to_owned(), 400), ("approval-2".to_owned(), 5_000)]);
+        let mut markers = BTreeMap::new();
+        reconcile_markers(&mut markers, &pending, true, &requested, &BTreeSet::new(), 1_000);
+        assert_eq!(markers["approval-1"].requested_at, Some(400));
+        assert_eq!(markers["approval-2"].requested_at, None, "in the future");
+    }
+
+    #[test]
+    fn journal_timestamps_parse_in_the_sqlite_utc_format_and_rfc3339() {
+        let now = 2_000_000_000;
+        // SQLite CURRENT_TIMESTAMP, as the daemon's durable_events.created_at stores it.
+        assert_eq!(parse_timestamp_at("2026-01-02 03:04:05", now), Some(1_767_323_045));
+        assert_eq!(parse_timestamp_at("2026-01-02T03:04:05Z", now), Some(1_767_323_045));
+        assert_eq!(parse_timestamp_at("2026-01-02T04:04:05+01:00", now), Some(1_767_323_045));
+        for bad in ["", "yesterday", "2026-01-02", "2026-13-02 03:04:05", "1767323045"] {
+            assert_eq!(parse_timestamp_at(bad, now), None, "{bad}");
+        }
+        assert_eq!(parse_timestamp_at("2026-01-02 03:04:05", 1_767_323_044), None, "future");
+    }
+
+    #[test]
+    fn decisions_waiting_on_a_dependency_are_excluded_from_reminders() {
+        let pending = BTreeSet::from(["held".to_owned(), "free".to_owned()]);
+        let markers = BTreeMap::from([("held".to_owned(), marker()), ("free".to_owned(), marker())]);
+        let now = 1_000 + FOUR_HOURS;
+        let rows = vec![
+            ("held".to_owned(), Some("task-waiting".to_owned())),
+            ("free".to_owned(), Some("task-running".to_owned())),
+        ];
+        let queue = serde_json::json!({"queued": [
+            {"task_id": "task-waiting", "waiting_reason": "dependency", "waiting_on": "task-a"},
+            {"task_id": "task-running", "waiting_reason": "global_cap"}
+        ]});
+        let waiting = dependency_waiting_tasks(&queue);
+        assert_eq!(waiting, Some(BTreeSet::from(["task-waiting".to_owned()])));
+        let held = held_approval_ids(&rows, waiting.as_ref());
+        assert_eq!(held, Some(BTreeSet::from(["held".to_owned()])));
+
+        assert_eq!(reminders_due(&markers, &pending, held.as_ref(), now, Some(240)), ["free"]);
+        // Once the dependency is met the decision is reminded.
+        let released = held_approval_ids(&rows, Some(&BTreeSet::new()));
+        assert_eq!(reminders_due(&markers, &pending, released.as_ref(), now, Some(240)), ["free", "held"]);
+        // An unknown hold state (no queue snapshot) pauses every reminder.
+        assert_eq!(held_approval_ids(&rows, None), None);
+        assert!(reminders_due(&markers, &pending, None, now, Some(240)).is_empty());
+        assert_eq!(dependency_waiting_tasks(&serde_json::json!({"nope": []})), None);
+    }
+
+    #[test]
+    fn acknowledge_and_defer_are_local_and_leave_the_decision_pending() {
+        let pending = BTreeSet::from(["approval-1".to_owned(), "approval-2".to_owned()]);
+        let answered = Marker { acknowledged: true, ..marker() };
+        let mut markers = BTreeMap::from([
+            ("approval-1".to_owned(), marker()),
+            ("approval-2".to_owned(), answered),
+        ]);
+        let now = 1_000 + FOUR_HOURS;
+        let interval = Some(DEFAULT_INTERVAL_MINUTES);
+        let none_held = BTreeSet::new();
+        assert_eq!(reminders_due(&markers, &pending, Some(&none_held), now, interval), ["approval-1"]);
+
+        // Defer postpones: not due until the deferral passes, then due again.
+        assert!(apply_notice_action(&mut markers, &pending, NoticeAction::Defer(60), now));
+        assert_eq!(markers["approval-1"].deferred_until, Some(now + 3_600));
+        assert!(reminders_due(&markers, &pending, Some(&none_held), now + 3_599, interval).is_empty());
+        assert_eq!(reminders_due(&markers, &pending, Some(&none_held), now + 3_600, interval), ["approval-1"]);
+
+        // Acknowledge silences until the decision is answered.
+        assert!(apply_notice_action(&mut markers, &pending, NoticeAction::Acknowledge, now));
+        assert!(!apply_notice_action(&mut markers, &pending, NoticeAction::Acknowledge, now));
+        assert!(reminders_due(&markers, &pending, Some(&none_held), now + 100 * FOUR_HOURS, interval).is_empty());
+
+        // Neither action answers the decision: it is still pending, still counted, and no answer
+        // (`acknowledged`) was recorded. An already answered decision is left untouched.
+        assert_eq!(pending_count(Some(&pending), &markers), Some(1));
+        assert!(!markers["approval-1"].acknowledged);
+        assert!(!markers["approval-2"].silenced && markers["approval-2"].deferred_until.is_none());
+    }
+
+    #[test]
+    fn notice_requests_are_validated_and_the_notifier_can_only_send_read_only_requests() {
+        assert_eq!(
+            parse_notice_request(serde_json::json!({"action": "acknowledge", "minutes": null})),
+            Ok(NoticeAction::Acknowledge)
+        );
+        assert_eq!(
+            parse_notice_request(serde_json::json!({"action": "defer", "minutes": 60})),
+            Ok(NoticeAction::Defer(60))
+        );
+        for invalid in [
+            serde_json::json!({"action": "defer", "minutes": 4}),
+            serde_json::json!({"action": "defer", "minutes": 1441}),
+            serde_json::json!({"action": "defer", "minutes": null}),
+            serde_json::json!({"action": "acknowledge", "minutes": 60}),
+            serde_json::json!({"action": "approve", "minutes": null}),
+            serde_json::json!({"action": "acknowledge", "minutes": null, "approval_id": "a"}),
+            serde_json::json!({"minutes": 60}),
+        ] {
+            assert!(parse_notice_request(invalid.clone()).is_err(), "{invalid}");
+        }
+
+        // No approval RPC can be built, so none can be sent: only reads are allowed.
+        for read in ["events.subscribe", "approvals.list", "queue.snapshot"] {
+            assert!(rpc_request(7, read, Value::Null).is_some(), "{read}");
+        }
+        for write in [
+            "approvals.resolve",
+            "review.request_approval",
+            "review.request_changes",
+            "delivery.request",
+            "tasks.cancel",
+        ] {
+            assert!(rpc_request(7, write, serde_json::json!({"decision": "approve"})).is_none(), "{write}");
+        }
+    }
+
+    #[test]
+    fn first_launch_baseline_is_silent_and_a_reconnect_announces_what_appeared_while_disconnected() {
+        let no_acks = BTreeSet::new();
+        let none = BTreeMap::new();
+        let mut markers = BTreeMap::new();
+
+        // First launch: decisions already pending are recorded as announced (no burst).
+        let at_start = BTreeSet::from(["old-1".to_owned(), "old-2".to_owned()]);
+        reconcile_markers(&mut markers, &at_start, true, &none, &no_acks, 1_000);
+        assert!(markers.values().all(|marker| !should_notify_new(marker)));
+
+        // Disconnected; "new-1" is requested meanwhile. The first snapshot after the reconnect is
+        // not a baseline: only the decision not seen before is announced.
+        let after_reconnect = BTreeSet::from(["old-1".to_owned(), "old-2".to_owned(), "new-1".to_owned()]);
+        reconcile_markers(&mut markers, &after_reconnect, false, &none, &no_acks, 2_000);
+        let announce: Vec<_> = after_reconnect.iter().filter(|id| should_notify_new(&markers[*id])).collect();
+        assert_eq!(announce, ["new-1"]);
+
+        // A decision answered while disconnected is dropped, not announced.
+        let later = BTreeSet::from(["old-2".to_owned(), "new-1".to_owned()]);
+        reconcile_markers(&mut markers, &later, false, &none, &no_acks, 3_000);
+        assert!(!markers.contains_key("old-1"));
+    }
+
+    #[test]
+    fn markers_from_before_these_fields_still_load_with_no_age_and_no_local_action() {
+        let old = r#"{"first_observed_at":5,"last_notified_at":null,"last_reminded_at":null,"new_notification_attempted":true,"acknowledged":false}"#;
+        let restored: Marker = serde_json::from_str(old).unwrap();
+        assert_eq!(restored.requested_at, None);
+        assert!(!restored.silenced && restored.deferred_until.is_none());
     }
 
     #[test]

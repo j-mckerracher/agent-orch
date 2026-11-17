@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import {
   decisionNotificationsClient,
+  type DecisionNoticeAction,
   type DecisionNotificationSnapshot,
   type DecisionNotificationsClient,
 } from "../../../native/decisionNotifications";
 import { Button } from "../../theme";
 
-const INTERVALS = [15, 30, 60] as const;
-type IntervalChoice = "off" | "15" | "30" | "60" | "custom";
+const INTERVALS = [60, 120, 240] as const;
+/** Reminders for an unanswered decision start at 4 hours and repeat every 4 hours (owner decision 72334). */
+const DEFAULT_INTERVAL = 240;
+/** How long "Defer reminders" postpones them. */
+const DEFER_MINUTES = 60;
+type IntervalChoice = "off" | "60" | "120" | "240" | "custom";
 
 function choiceFor(interval: number | null): IntervalChoice {
   if (interval === null) return "off";
-  if (interval === 15) return "15";
-  if (interval === 30) return "30";
   if (interval === 60) return "60";
+  if (interval === 120) return "120";
+  if (interval === 240) return "240";
   return "custom";
 }
 
@@ -22,8 +27,8 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [choice, setChoice] = useState<IntervalChoice>("15");
-  const [customInterval, setCustomInterval] = useState("15");
+  const [choice, setChoice] = useState<IntervalChoice>(String(DEFAULT_INTERVAL) as IntervalChoice);
+  const [customInterval, setCustomInterval] = useState(String(DEFAULT_INTERVAL));
   const revision = useRef(0);
   const lifecycle = useRef(0);
   const draftInterval = useRef<number | null | undefined>(undefined);
@@ -116,6 +121,27 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
     }
   }
 
+  async function applyNotice(action: DecisionNoticeAction) {
+    if (!snapshot || busy) return;
+    setBusy(true);
+    setOperationError(null);
+    const requestRevision = ++revision.current;
+    const operationLifecycle = lifecycle.current;
+    try {
+      const next = await client.notice(action);
+      if (lifecycle.current === operationLifecycle && revision.current === requestRevision) {
+        setSnapshot(next);
+        setLoadError(null);
+      }
+    } catch {
+      if (lifecycle.current === operationLifecycle && revision.current === requestRevision) {
+        setOperationError("Reminder action could not be applied.");
+      }
+    } finally {
+      if (lifecycle.current === operationLifecycle) setBusy(false);
+    }
+  }
+
   function saveInterval() {
     if (!snapshot) return;
     let interval: number | null;
@@ -189,6 +215,17 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
                   Disable notifications
                 </Button>
               )}
+            </div>
+          )}
+          {!unavailable && snapshot.pending_count !== null && snapshot.pending_count > 0 && (
+            <div className="rd-notification-controls" role="group" aria-label="Local reminder actions">
+              <Button onClick={() => void applyNotice({ action: "acknowledge" })} disabled={busy}>
+                Acknowledge reminders
+              </Button>
+              <Button onClick={() => void applyNotice({ action: "defer", minutes: DEFER_MINUTES })} disabled={busy}>
+                Defer reminders {DEFER_MINUTES} minutes
+              </Button>
+              <span>Local only: decisions stay pending and nothing is approved or rejected.</span>
             </div>
           )}
         </>

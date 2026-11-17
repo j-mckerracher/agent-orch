@@ -16,7 +16,9 @@ mod launch;
 mod notifications;
 
 use bridge::{Bridge, HostError, Opened};
-use notifications::{decision_notifications_get, decision_notifications_set, Service};
+use notifications::{
+    decision_notifications_get, decision_notifications_notice, decision_notifications_set, Service,
+};
 use orchestrator_ipc::Capability;
 use serde_json::Value;
 use tauri::ipc::Channel;
@@ -117,7 +119,8 @@ pub fn run() {
             daemon_send,
             daemon_close,
             decision_notifications_get,
-            decision_notifications_set
+            decision_notifications_set,
+            decision_notifications_notice
         ])
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {

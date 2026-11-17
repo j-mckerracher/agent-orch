@@ -18,9 +18,16 @@ export interface DecisionNotificationSettings {
   request_permission: boolean;
 }
 
+/**
+ * A LOCAL action on the current notice. It only silences or postpones this app's reminders; the
+ * decisions stay pending. It never grants, decides, approves or rejects an approval.
+ */
+export type DecisionNoticeAction = { action: "acknowledge" } | { action: "defer"; minutes: number };
+
 export interface DecisionNotificationsClient {
   get(): Promise<DecisionNotificationSnapshot>;
   set(settings: DecisionNotificationSettings): Promise<DecisionNotificationSnapshot>;
+  notice(action: DecisionNoticeAction): Promise<DecisionNotificationSnapshot>;
   listen(
     onSnapshot: (snapshot: DecisionNotificationSnapshot) => void,
     onError: () => void,
@@ -50,6 +57,18 @@ function validSettings(value: unknown): value is DecisionNotificationSettings {
     validInterval(value.reminder_interval_minutes) &&
     "request_permission" in value &&
     typeof value.request_permission === "boolean"
+  );
+}
+
+function validNotice(value: unknown): value is DecisionNoticeAction {
+  if (typeof value !== "object" || value === null || !("action" in value)) return false;
+  if (value.action === "acknowledge") return Object.keys(value).length === 1;
+  return (
+    value.action === "defer" &&
+    Object.keys(value).length === 2 &&
+    "minutes" in value &&
+    typeof value.minutes === "number" &&
+    validInterval(value.minutes)
   );
 }
 
@@ -104,6 +123,16 @@ export function createDecisionNotificationsClient(): DecisionNotificationsClient
         return parseSnapshot(await invoke<unknown>("decision_notifications_set", { settings }));
       } catch {
         throw new Error("Notification settings could not be saved.");
+      }
+    },
+    async notice(action) {
+      if (!validNotice(action)) throw new Error("Notification action is invalid.");
+      if (!isNativeHost()) return PREVIEW_SNAPSHOT;
+      try {
+        const notice = { action: action.action, minutes: action.action === "defer" ? action.minutes : null };
+        return parseSnapshot(await invoke<unknown>("decision_notifications_notice", { notice }));
+      } catch {
+        throw new Error("Notification action could not be applied.");
       }
     },
     async listen(onSnapshot, onError) {

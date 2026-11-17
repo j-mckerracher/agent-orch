@@ -1,16 +1,21 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type {
-  DecisionNotificationSettings,
-  DecisionNotificationSnapshot,
-  DecisionNotificationsClient,
+import {
+  createDecisionNotificationsClient,
+  type DecisionNoticeAction,
+  type DecisionNotificationSettings,
+  type DecisionNotificationSnapshot,
+  type DecisionNotificationsClient,
 } from "../../../native/decisionNotifications";
 import { DecisionNotifications } from "./DecisionNotifications";
 
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+
 const snapshot = (overrides: Partial<DecisionNotificationSnapshot> = {}): DecisionNotificationSnapshot => ({
   enabled: false,
-  reminder_interval_minutes: 15,
+  reminder_interval_minutes: 240,
   permission: "prompt",
   pending_count: null,
   error: null,
@@ -21,8 +26,13 @@ function clientFor(initial: DecisionNotificationSnapshot) {
   let current = initial;
   let listener: ((next: DecisionNotificationSnapshot) => void) | undefined;
   const sets: DecisionNotificationSettings[] = [];
+  const notices: DecisionNoticeAction[] = [];
   const client: DecisionNotificationsClient = {
     get: vi.fn(async () => current),
+    notice: vi.fn(async (action) => {
+      notices.push(action);
+      return current;
+    }),
     set: vi.fn(async (settings) => {
       sets.push(settings);
       current = snapshot({
@@ -40,7 +50,7 @@ function clientFor(initial: DecisionNotificationSnapshot) {
       return () => { listener = undefined; };
     }),
   };
-  return { client, sets, emit: (next: DecisionNotificationSnapshot) => listener?.(next) };
+  return { client, sets, notices, emit: (next: DecisionNotificationSnapshot) => listener?.(next) };
 }
 
 describe("decision notification control", () => {
@@ -53,7 +63,7 @@ describe("decision notification control", () => {
     expect(fake.client.set).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Enable notifications" }));
 
-    await waitFor(() => expect(fake.sets).toEqual([{ enabled: true, reminder_interval_minutes: 15, request_permission: true }]));
+    await waitFor(() => expect(fake.sets).toEqual([{ enabled: true, reminder_interval_minutes: 240, request_permission: true }]));
     expect(await screen.findByText(/Notifications: enabled · Permission: granted/)).toBeInTheDocument();
   });
 
@@ -86,7 +96,7 @@ describe("decision notification control", () => {
     expect(await screen.findByText(/Permission: denied/)).toHaveTextContent("Decisions needing attention: unknown");
     expect(screen.getByRole("alert")).toHaveTextContent("Permission denied.");
     await user.click(screen.getByRole("button", { name: "Retry permission" }));
-    await waitFor(() => expect(fake.sets[0]).toEqual({ enabled: true, reminder_interval_minutes: 15, request_permission: true }));
+    await waitFor(() => expect(fake.sets[0]).toEqual({ enabled: true, reminder_interval_minutes: 240, request_permission: true }));
   });
 
   it("marks browser-preview notifications unavailable without offering fake enablement", async () => {
@@ -101,6 +111,7 @@ describe("decision notification control", () => {
     const client: DecisionNotificationsClient = {
       get: vi.fn(async () => { throw new Error("private host detail"); }),
       set: vi.fn(async () => snapshot()),
+      notice: vi.fn(async () => snapshot()),
       listen: vi.fn(async () => () => undefined),
     };
     render(<DecisionNotifications client={client} />);
@@ -122,6 +133,7 @@ describe("decision notification control", () => {
           resolveSet = resolve;
         });
       }),
+      notice: vi.fn(async () => snapshot()),
       listen: vi.fn(async (onSnapshot) => {
         emit = onSnapshot;
         return stop;
@@ -138,5 +150,95 @@ describe("decision notification control", () => {
 
     view.unmount();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults the reminder interval to 4 hours", async () => {
+    const fake = clientFor(snapshot());
+    render(<DecisionNotifications client={fake.client} />);
+
+    await screen.findByText(/Permission: prompt/);
+    expect(screen.getByLabelText("Reminder interval")).toHaveValue("240");
+    expect(screen.getByRole("option", { name: "240 minutes" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "15 minutes" })).not.toBeInTheDocument();
+  });
+
+  it("acknowledges and defers the notice locally: only the local notice action is called, never a decision", async () => {
+    const user = userEvent.setup();
+    const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 2 }));
+    render(<DecisionNotifications client={fake.client} />);
+    await screen.findByText(/Decisions needing attention: 2/);
+
+    await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));
+    await user.click(screen.getByRole("button", { name: "Defer reminders 60 minutes" }));
+
+    await waitFor(() => expect(fake.notices).toEqual([{ action: "acknowledge" }, { action: "defer", minutes: 60 }]));
+    expect(screen.getByText(/nothing is approved or rejected/)).toBeInTheDocument();
+    // The component can reach only this client; settings are untouched and the decisions stay pending.
+    expect(fake.client.set).not.toHaveBeenCalled();
+    expect(Object.keys(fake.client).sort()).toEqual(["get", "listen", "notice", "set"]);
+    expect(screen.getByText(/Decisions needing attention: 2/)).toBeInTheDocument();
+  });
+
+  it("offers local actions only when decisions are pending", async () => {
+    const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 0 }));
+    const view = render(<DecisionNotifications client={fake.client} />);
+    await screen.findByText(/Decisions needing attention: 0/);
+    expect(screen.queryByRole("button", { name: /Acknowledge reminders|Defer reminders/ })).not.toBeInTheDocument();
+
+    act(() => fake.emit(snapshot({ enabled: true, permission: "granted", pending_count: null })));
+    await screen.findByText(/Decisions needing attention: unknown/);
+    expect(screen.queryByRole("button", { name: /Acknowledge reminders|Defer reminders/ })).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("shows a failed local action without changing the pending count", async () => {
+    const user = userEvent.setup();
+    const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 3 }));
+    vi.mocked(fake.client.notice).mockRejectedValueOnce(new Error("private host detail"));
+    render(<DecisionNotifications client={fake.client} />);
+    await screen.findByText(/Decisions needing attention: 3/);
+
+    await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Reminder action could not be applied.");
+    expect(screen.getByText(/Decisions needing attention: 3/)).toBeInTheDocument();
+  });
+});
+
+describe("native decision notification client", () => {
+  it("sends the local notice action as one notice command and rejects invalid actions before the host", async () => {
+    invoke.mockClear();
+    invoke.mockResolvedValue({
+      enabled: true,
+      reminder_interval_minutes: 240,
+      permission: "granted",
+      pending_count: 1,
+      error: null,
+    });
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    try {
+      const client = createDecisionNotificationsClient();
+      await client.notice({ action: "acknowledge" });
+      await client.notice({ action: "defer", minutes: 60 });
+      expect(invoke.mock.calls).toEqual([
+        ["decision_notifications_notice", { notice: { action: "acknowledge", minutes: null } }],
+        ["decision_notifications_notice", { notice: { action: "defer", minutes: 60 } }],
+      ]);
+
+      invoke.mockClear();
+      for (const invalid of [
+        { action: "defer", minutes: 4 },
+        { action: "defer", minutes: 1441 },
+        { action: "defer" },
+        { action: "acknowledge", minutes: 60 },
+        { action: "approve" },
+        { action: "reject" },
+      ]) {
+        await expect(client.notice(invalid as never)).rejects.toThrow("Notification action is invalid.");
+      }
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
   });
 });
