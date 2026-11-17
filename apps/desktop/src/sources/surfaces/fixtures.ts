@@ -22,6 +22,7 @@ import { countStates, measured, notOk, observation, okResult } from "./result";
 import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
+import { createFixtureHolds } from "./holds";
 import type {
   ActionProposal,
   ActivitySnapshot,
@@ -45,6 +46,8 @@ import type {
   MonitoringMode,
   MonitoringSource,
   MonitoringState,
+  ProjectDefaults,
+  ProjectDefaultsSource,
   SettingsSource,
   WakeRecord,
   SettingsSnapshot,
@@ -317,6 +320,21 @@ const TASK_CARDS: ActionProposal[] = [
     errorCode: "action_denied",
     denial: "delivery_not_authorized",
   }),
+  taskCard(7, {
+    kind: "task.revise",
+    params: { task_id: "fixture:task-auth-2", added_intent: "Also cover the refresh token that expires during a request." },
+    target: { taskTitle: "Add refresh-token expiry", taskState: "Running" },
+  }),
+  taskCard(8, {
+    kind: "decision.hold",
+    params: { task_id: "fixture:task-auth-1", until: "2026-01-09" },
+    target: { taskTitle: "Fix the login bug", taskState: "Running" },
+  }),
+  taskCard(9, {
+    kind: "project.remove",
+    params: { project: "p-3fa9c1d2" },
+    target: { projectName: "alpha", taskCount: 4, runningTasks: 0 },
+  }),
 ];
 
 /** The Global conversation's cards. The JSON holds the workstream cards, written before a card had `denial` or `target`. */
@@ -569,6 +587,7 @@ function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
     ...data[gate],
     supervision: { baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 },
     wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
+    chatPrDelivery: false,
   });
   const simulated = () =>
     Promise.resolve({
@@ -604,6 +623,42 @@ function monitoringSource(ctx: Ctx): MonitoringSource {
   };
 }
 
+/** One fixture project per mode. A fixture id not listed here reads as `local-only`, like a daemon project with no row. */
+export const FIXTURE_PROJECT_DEFAULTS: Readonly<Record<string, ProjectDefaults>> = {
+  "fixture:project-alpha": { mode: "local-only", baseBranch: null, branchPrefix: null, checks: [], mergeMethod: "squash" },
+  "fixture:project-beta": {
+    mode: "direct-pr",
+    baseBranch: "main",
+    branchPrefix: "moa/",
+    checks: [["cargo", "test"]],
+    mergeMethod: "squash",
+  },
+  "fixture:project-gamma": {
+    mode: "no-mistakes",
+    baseBranch: "main",
+    branchPrefix: "bot/",
+    checks: [["cargo", "test"], ["cargo", "clippy"]],
+    mergeMethod: "rebase",
+  },
+};
+
+/** Fixture project defaults: never reaches a daemon, so a save changes nothing and says so. */
+function projectDefaultsSource(ctx: Ctx): ProjectDefaultsSource {
+  const provenance: Provenance = { kind: "fixture", id: "D2", fixture: "project-defaults" };
+  const local: ProjectDefaults = { mode: "local-only", baseBranch: null, branchPrefix: null, checks: [], mergeMethod: "squash" };
+  return {
+    provenance,
+    get: (projectId) => {
+      if (ctx.scenario === "loading") return new Promise(() => undefined);
+      if (ctx.scenario === "unavailable" || ctx.scenario === "unsupported" || ctx.scenario === "unknown") {
+        return Promise.resolve(notOk(provenance, ctx.scenario, `Fixture scenario: project defaults are ${ctx.scenario}.`, observation(ctx.now())));
+      }
+      return Promise.resolve(okResult(provenance, FIXTURE_PROJECT_DEFAULTS[projectId] ?? local, observation(ctx.now())));
+    },
+    set: (_projectId, defaults) => Promise.resolve({ simulated: true, provenance, defaults }),
+  };
+}
+
 export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): SurfaceSources {
   const ctx: Ctx = { scenario: options.scenario ?? "success", now: options.now ?? Date.now };
   const workstreams = workstreamSource(ctx);
@@ -620,5 +675,7 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     decisions,
     settings: settingsSource(ctx, options.settingsGate ?? "open"),
     monitoring: monitoringSource(ctx),
+    holds: createFixtureHolds(ctx.scenario, ctx.now),
+    projectDefaults: projectDefaultsSource(ctx),
   };
 }

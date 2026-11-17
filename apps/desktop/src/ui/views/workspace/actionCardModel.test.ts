@@ -450,3 +450,116 @@ describe("task card copy", () => {
     expect(openWorkstreamId(cancel, null, "ws-1")).toBeNull();
   });
 });
+
+const revise = proposal({
+  id: "proposal-8",
+  kind: "task.revise",
+  params: { task_id: "task-0123", added_intent: "Also cover the expired token.\nKeep the public API." },
+  target: RUNNING_TASK,
+});
+const hold = proposal({
+  id: "proposal-9",
+  kind: "decision.hold",
+  params: { task_id: "task-0123", until: "2026-11-21" },
+  target: RUNNING_TASK,
+});
+const remove = proposal({
+  id: "proposal-10",
+  kind: "project.remove",
+  params: { project: "p-3fa9c1d2" },
+  target: { projectName: "alpha", taskCount: 4, runningTasks: 0 },
+});
+const failedWith = (p: ActionProposal, errorCode: string): ActionProposal => ({ ...p, state: "failed", errorCode });
+
+describe("revise, hold and remove card copy", () => {
+  it("phase4d_names_the_three_kinds_headings_button_phrases_and_done_labels", () => {
+    expect(cardTitle("task.revise")).toBe("Proposed: Revise task");
+    expect(cardTitle("decision.hold")).toBe("Proposed: Hold decision");
+    expect(cardTitle("project.remove")).toBe("Proposed: Remove project");
+    expect(actionPhrase(revise, NAMES)).toBe("revise task Add refresh-token expiry");
+    expect(actionPhrase(hold, NAMES)).toBe("hold decision Add refresh-token expiry");
+    expect(actionPhrase(remove, NAMES)).toBe("remove project alpha");
+    expect(actionPhrase({ ...remove, target: null }, NAMES)).toBe("remove project p-3fa9c1d2");
+    const done = (p: ActionProposal) => viewOf({ ...p, state: "executed" }, null, LIVE).pill.text;
+    expect([done(revise), done(hold), done(remove)]).toEqual(["Revision started", "Held", "Removed"]);
+  });
+
+  it("phase4d_revise_card_shows_the_title_the_whole_added_instruction_and_the_effect", () => {
+    expect(fieldsOf(revise, NAMES, null)).toEqual([
+      { label: "Task title", value: "Add refresh-token expiry" },
+      { label: "Task state now", value: "Running" },
+      { label: "Added instruction", value: ["Also cover the expired token.", "Keep the public API."] },
+      {
+        label: "What happens",
+        value: "The current attempt stops. Its work is kept. A new task starts with the old objective plus this instruction.",
+      },
+      { label: "Task id", value: "task-0123" },
+    ]);
+    expect(fieldsOf({ ...revise, target: null }, NAMES, null)[0]).toEqual({ label: "Task title", value: "(not available)" });
+  });
+
+  it("phase4d_hold_card_shows_the_date_in_words_and_where_the_decision_stays", () => {
+    const rows = fieldsOf(hold, NAMES, null);
+    expect(rows).toContainEqual({ label: "Until", value: "21 November 2026" });
+    expect(rows).toContainEqual({
+      label: "What happens",
+      value: "It stays in Review and Decisions, marked Held, and comes back on that day.",
+    });
+  });
+
+  it("phase4d_remove_card_shows_the_folder_name_and_the_task_counts_never_a_path", () => {
+    expect(fieldsOf(remove, NAMES, null)).toEqual([
+      { label: "Project", value: "alpha (p-3fa9c1d2)" },
+      { label: "Tasks", value: "4 tasks are kept in history. Running tasks: 0" },
+      expect.objectContaining({ label: "What happens" }),
+    ]);
+    const one = { ...remove, target: { projectName: "alpha", taskCount: 1, runningTasks: 1 } };
+    expect(fieldsOf(one, NAMES, null)[1]).toEqual({ label: "Tasks", value: "1 task is kept in history. Running tasks: 1" });
+    expect(fieldsOf({ ...remove, target: null }, NAMES, null)[1]).toEqual({ label: "Tasks", value: "(not available)" });
+  });
+
+  it("phase4d_pending_cards_are_approver_gated_with_a_visible_reason", () => {
+    for (const card of [revise, hold, remove]) {
+      const on = viewOf(card, null, LIVE);
+      expect(on.approve.enabled).toBe(true);
+      const off = viewOf(card, null, { ...LIVE, approver: false });
+      expect(off.approve).toMatchObject({ enabled: false, reason: APPROVER_REQUIRED_NOTICE });
+      expect(off.reject.enabled).toBe(false);
+    }
+    expect(viewOf(revise, null, LIVE).approve.variant).toBe("danger");
+    expect(viewOf(hold, null, LIVE).approve.variant).toBe("primary");
+  });
+
+  it("phase4d_failure_words_per_kind_end_by_saying_nothing_was_changed", () => {
+    for (const card of [revise, hold, remove]) {
+      for (const code of ["conflict", "invalid", "not_found"]) {
+        const words = failureText(failedWith(card, code));
+        expect(words).toMatch(/Nothing was changed\.$/);
+        expect(words).not.toMatch(/workstream/i);
+      }
+    }
+    expect(failureText(failedWith(revise, "conflict"))).toMatch(/already finished/);
+    expect(failureText(failedWith(hold, "invalid"))).toMatch(/60 days/);
+    expect(failureText(failedWith(remove, "conflict"))).toMatch(/running work or decisions waiting/);
+    expect(failureText(failedWith(remove, "forbidden"))).toBe("The app does not allow this change. Nothing was changed.");
+  });
+
+  it("phase4d_executed_and_announced_text_names_the_result", () => {
+    const executed = (p: ActionProposal) => viewOf({ ...p, state: "executed" }, null, LIVE).message.text;
+    expect(executed(revise)).toBe(
+      "Revision started for “Add refresh-token expiry”. The old attempt is stopping and a new task is queued.",
+    );
+    expect(executed(hold)).toBe("Held the decision for “Add refresh-token expiry” until 21 November 2026.");
+    expect(executed(remove)).toBe("Removed project “alpha”. Its tasks stay in history.");
+    expect(outcomeAnnouncement(failedWith(hold, "conflict"), null, NAMES)).toBe(
+      "Failed: hold decision Add refresh-token expiry. The task has already finished, so there is nothing to hold. Nothing was changed.",
+    );
+  });
+
+  it("phase4d_open_task_goes_to_the_new_task_for_a_revise_and_the_held_task_for_a_hold", () => {
+    expect(openTaskId(executedOf(revise, { resultRef: "task-new" }))).toBe("task-new");
+    expect(openTaskId(revise)).toBeNull();
+    expect(openTaskId(hold)).toBe("task-0123");
+    expect(openTaskId(remove)).toBeNull();
+  });
+});

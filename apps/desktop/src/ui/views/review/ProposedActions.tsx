@@ -1,6 +1,7 @@
 // The proposed actions waiting for a decision (DPES-1105). This list only points at each card: the person decides
 // on the card in the conversation (decisions-2 Q8), so there is no Approve or Reject here.
 import { useId } from "react";
+import { NO_HELD, type HeldSets } from "../../../sources/surfaces/holds";
 import type { ConversationTarget, DecisionQueue, ProposalItem } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { decisionCountText } from "../../format";
@@ -45,7 +46,7 @@ function CardLink({ item }: { item: ProposalItem }) {
   );
 }
 
-export function ProposedActions({ decisions }: { decisions: SurfaceState<DecisionQueue> }) {
+export function ProposedActions({ decisions, held = NO_HELD }: { decisions: SurfaceState<DecisionQueue>; held?: HeldSets }) {
   const headingId = useId();
   const { data, surfaces } = useServices();
   // The queue carries no `more`, so it comes from the AppData slice the nav, the top bar and the badge read.
@@ -55,8 +56,12 @@ export function ProposedActions({ decisions }: { decisions: SurfaceState<Decisio
   // A daemon without the capability has no proposals to list, so the section is left out, as the cards are.
   if (live && !gate.connection.capabilities.includes("orchestrator_actions")) return null;
   const fixture = decisions.status === "ok" && decisions.provenance.kind === "fixture";
-  // Only pending cards are listed, as only they are counted, so the pill below is true of every row.
-  const items = decisions.status === "ok" ? decisions.data.proposals.filter((item) => item.proposal.state === "pending") : [];
+  // Only pending cards are listed, as only they are counted, so the pill below is true of every row. A held card is
+  // postponed: it is listed in the Held tab instead.
+  const items =
+    decisions.status === "ok"
+      ? decisions.data.proposals.filter((item) => item.proposal.state === "pending" && !held.proposals.has(item.proposal.id))
+      : [];
   return (
     <section aria-labelledby={headingId} className="rd-card" data-testid="proposed-actions">
       <header className="rd-card-head">

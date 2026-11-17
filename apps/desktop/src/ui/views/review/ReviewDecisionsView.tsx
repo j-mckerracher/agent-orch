@@ -20,6 +20,7 @@ import {
   type ReviewEvidenceSource,
 } from "../../../review/sources";
 import type { ReviewState } from "../../../review/useReview";
+import type { ProposalItem } from "../../../sources/surfaces/types";
 import { Badge, Button, Pill } from "../../theme";
 import { useServices, useStore, useSurface } from "../../services";
 import { useRetained } from "../workspace/useRetained";
@@ -29,7 +30,8 @@ import { DecisionTabs } from "./DecisionTabs";
 import { ProposedActions } from "./ProposedActions";
 import { SixFactsRecord } from "./ReviewRecord";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
-import { indexMeta, type TabId } from "./queue";
+import { filterByTab, indexMeta, tabsFor, type TabId } from "./queue";
+import { useHolds, type HoldsModel } from "./useHolds";
 import "./review-decisions.css";
 
 export interface ReviewDecisionsViewProps {
@@ -46,6 +48,7 @@ export interface ReviewDecisionsViewProps {
 }
 
 const ALL_SCOPE = {};
+const NO_PROPOSALS: ProposalItem[] = [];
 
 function ScopeRow() {
   return (
@@ -86,7 +89,10 @@ export function ReviewDecisionsView({
   newKey,
 }: ReviewDecisionsViewProps) {
   const { connection, surfaces, data } = useServices();
-  const [tab, setTab] = useState<TabId>("actionable");
+  const [chosenTab, setTab] = useState<TabId>("actionable");
+  const holds = useHolds();
+  // A daemon that loses the `holds` capability takes the Held tab away, and the view falls back to Actionable.
+  const tab = tabsFor(holds.supported).some((item) => item.id === chosenTab) ? chosenTab : "actionable";
   const workstreamOf = useWorkstreamOf();
   const client = useMemo(
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
@@ -135,20 +141,26 @@ export function ReviewDecisionsView({
     () => ({
       header: (state: ReviewState) => (
         <>
-          <Heading state={state} />
-          <DecisionTabs state={state} tab={tab} onTab={setTab} />
+          <Heading state={state} holds={holds} />
+          <DecisionTabs state={state} tab={tab} onTab={setTab} holds={holds} />
           <ScopeRow />
         </>
       ),
       queue: (state: ReviewState) => (
         <>
-          <ProposedActions decisions={decisions} />
-          <DecisionQueue state={state} meta={meta} tab={tab} />
+          <ProposedActions decisions={decisions} held={holds.held} />
+          <DecisionQueue
+            state={state}
+            meta={meta}
+            tab={tab}
+            holds={holds}
+            proposals={decisions.status === "ok" ? decisions.data.proposals : NO_PROPOSALS}
+          />
         </>
       ),
       behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
     }),
-    [decisions, meta, fixture, tab],
+    [decisions, meta, fixture, tab, holds],
   );
 
   return (
@@ -169,8 +181,9 @@ export function ReviewDecisionsView({
   );
 }
 
-function Heading({ state }: { state: ReviewState }) {
-  const waiting = state.items.filter((item) => item.state.state === "requested").length;
+function Heading({ state, holds }: { state: ReviewState; holds: HoldsModel }) {
+  // A held decision is postponed, so it is not waiting for a decision now.
+  const waiting = filterByTab("actionable", state.items, holds.held).length;
   return (
     <header className="rd-heading">
       <div>

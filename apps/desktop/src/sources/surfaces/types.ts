@@ -221,6 +221,13 @@ export interface ProposalTarget {
   projectName?: string | null;
   taskTitle?: string;
   taskState?: string;
+  /** True when the task asks for less than the project's default delivery (DPES-1105). */
+  belowProjectDefault?: boolean;
+  /** The project's mode string; sent with `belowProjectDefault`. */
+  projectMode?: string;
+  /** Only on a `project.remove` card: the tasks kept in history, and how many of them are running now. */
+  taskCount?: number;
+  runningTasks?: number;
 }
 
 /** A pending proposal and the conversation that holds its card (DPES-1105). */
@@ -675,11 +682,15 @@ export interface WakeLimitSettings {
 export interface GroupsPatch {
   supervision?: Partial<SupervisionSettings>;
   wakeLimits?: Partial<WakeLimitSettings>;
+  /** Whether chat may propose tasks that end in a pull request. */
+  chatPrDelivery?: boolean;
 }
 export interface SettingsSnapshot {
   limits: LoadLimits;
   supervision?: SupervisionSettings;
   wakeLimits?: WakeLimitSettings;
+  /** Absent from a daemon that cannot change it. */
+  chatPrDelivery?: boolean;
   gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
   /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
   feed: "sampler" | "disabled_by_environment";
@@ -753,6 +764,65 @@ export interface MonitoringSource {
   ack(target: LiveConversationTarget): Promise<void>;
 }
 
+// Holds (DPES-1105 Phase 4d). Derived: holds.list / holds.set / holds.release (capability `holds`).
+/** What a hold hides: all pending approvals of a task (`approval`, the subject id is the task id) or one action card (`proposal`). */
+export type HoldSubjectKind = "approval" | "proposal";
+
+/** One hold in force. The kind and state stay the daemon's strings so an unknown value is never coerced. */
+export interface HoldItem {
+  id: string;
+  subjectKind: string;
+  subjectId: string;
+  /** `YYYY-MM-DD`: the day the decision comes back. */
+  untilDate: string;
+  state: string;
+}
+
+export interface HoldReceipt {
+  /** True fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was changed." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  hold: HoldItem;
+}
+
+export interface HoldsSource {
+  readonly provenance: Provenance;
+  /** The holds in force now. Derived: `holds.list`. Fixture: one held decision. */
+  list(): Promise<SurfaceResult<HoldItem[]>>;
+  /** Derived: `holds.set`, a user-only method; it rejects on failure. Fixture: changes in-memory holds only. */
+  set(subjectKind: HoldSubjectKind, subjectId: string, until: string): Promise<HoldReceipt>;
+  /** Derived: `holds.release`, user-only. Fixture: changes in-memory holds only. */
+  release(holdId: string): Promise<HoldReceipt>;
+}
+
+// Project defaults (DPES-1105 Phase 4). Derived: projects.get_defaults / projects.set_defaults (capability `projects`).
+/** A project's delivery defaults. The mode and merge method stay the daemon's strings; the form offers the known ones. */
+export interface ProjectDefaults {
+  /** `local-only`, `direct-pr` or `no-mistakes`. */
+  mode: string;
+  baseBranch: string | null;
+  branchPrefix: string | null;
+  /** Argument arrays; a command never reaches a shell. */
+  checks: string[][];
+  /** `merge`, `squash` or `rebase`. */
+  mergeMethod: string;
+}
+export interface ProjectDefaultsReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** What the daemon holds after the change; for a simulated receipt, what was typed. */
+  defaults: ProjectDefaults;
+}
+export interface ProjectDefaultsSource {
+  readonly provenance: Provenance;
+  get(projectId: string): Promise<SurfaceResult<ProjectDefaults>>;
+  /** Derived: `projects.set_defaults`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  set(projectId: string, defaults: ProjectDefaults): Promise<ProjectDefaultsReceipt>;
+}
+
 export interface SurfaceSources {
   workstreams: WorkstreamSource;
   conversation: ConversationSource;
@@ -765,4 +835,6 @@ export interface SurfaceSources {
   decisions: DecisionQueueSource;
   settings: SettingsSource;
   monitoring: MonitoringSource;
+  holds: HoldsSource;
+  projectDefaults: ProjectDefaultsSource;
 }

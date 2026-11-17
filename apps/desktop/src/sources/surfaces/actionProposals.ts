@@ -29,7 +29,15 @@ export function mapProposal(wire: ActionProposalWire): ActionProposal {
     // An older daemon sends neither field.
     denial: wire.denial ?? null,
     target: wire.target
-      ? { projectName: wire.target.project_name, taskTitle: wire.target.task_title, taskState: wire.target.task_state }
+      ? {
+          projectName: wire.target.project_name,
+          taskTitle: wire.target.task_title,
+          taskState: wire.target.task_state,
+          belowProjectDefault: wire.target.below_project_default,
+          projectMode: wire.target.project_mode,
+          taskCount: wire.target.task_count,
+          runningTasks: wire.target.running_tasks,
+        }
       : null,
     updatedAt: wire.updated_at,
   };

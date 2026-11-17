@@ -173,6 +173,7 @@ describe("tabs", () => {
       "Candidates",
       "Delivery",
       "Resolved",
+      "Held",
     ]);
     screen.getByRole("tab", { name: /Actionable/ }).focus();
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
@@ -180,7 +181,7 @@ describe("tabs", () => {
     expect(verification).toHaveAttribute("aria-selected", "true");
     expect(verification).toHaveFocus();
     expect(screen.getByRole("tabpanel")).toHaveTextContent(/no separate verification decision/i);
-    await userEvent.keyboard("{End}");
+    await userEvent.keyboard("{End}{ArrowLeft}");
     expect(screen.getByRole("tab", { name: /Resolved/ })).toHaveAttribute("aria-selected", "true");
     expect(within(screen.getByRole("tabpanel")).getByText("Nothing in this tab")).toBeTruthy();
   });

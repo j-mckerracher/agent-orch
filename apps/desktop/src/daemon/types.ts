@@ -27,7 +27,8 @@ export type Capability =
   | "permission_levels"
   | "orchestrator_actions"
   | "settings"
-  | "monitoring";
+  | "monitoring"
+  | "holds";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -50,6 +51,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "orchestrator_actions",
   "settings",
   "monitoring",
+  "holds",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -70,6 +72,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "orchestrator_actions",
   "settings",
   "monitoring",
+  "holds",
 ];
 
 export interface Welcome {
@@ -152,6 +155,27 @@ export interface ProjectRow {
   id: string;
   /** False while the project's coordinator is removed (DPES-1105). Absent from older daemons, where it is active. */
   coordinator_active?: boolean;
+  /** The project's delivery mode; present only for a project with saved defaults (DPES-1105). */
+  mode?: string;
+  /** True only for an archived project. The daemon already hides those from the list. */
+  archived?: true;
+}
+
+/** A project's delivery defaults on the wire (`projects.get_defaults` and `projects.set_defaults`, DPES-1105). */
+export interface ProjectDefaultsWire {
+  /** `local-only`, `direct-pr` or `no-mistakes`; kept a string so a newer mode survives. */
+  mode: string;
+  base_branch: string | null;
+  branch_prefix: string | null;
+  /** Argument arrays, never a shell string. */
+  checks: string[][];
+  /** `merge`, `squash` or `rebase`. */
+  merge_method: string;
+}
+
+/** `projects.get_defaults` and `projects.set_defaults` result. */
+export interface ProjectDefaultsResultWire {
+  defaults: ProjectDefaultsWire;
 }
 
 export interface SessionEntry {
@@ -629,7 +653,10 @@ export type ActionKindWire =
   | "task.propose"
   | "task.cancel"
   | "task.retry"
-  | "workstream.link_task";
+  | "workstream.link_task"
+  | "task.revise"
+  | "decision.hold"
+  | "project.remove";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
 export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
@@ -642,6 +669,13 @@ export interface ProposalTargetWire {
   project_name?: string | null;
   task_title?: string;
   task_state?: string;
+  /** Present only on a `task.propose` card; true when the task asks for less than the project's default. */
+  below_project_default?: boolean;
+  /** The project's mode string; sent with `below_project_default`. */
+  project_mode?: string;
+  /** Present only on a `project.remove` card: the tasks kept in history and the ones still running. */
+  task_count?: number;
+  running_tasks?: number;
 }
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
@@ -710,6 +744,8 @@ export interface SettingsWire {
   /** Phase 3 groups. Absent from a daemon that cannot change them (DPES-1105). */
   supervision?: SupervisionWire;
   wake_limits?: WakeLimitsWire;
+  /** Whether chat may propose tasks that end in a pull request. Absent from an older daemon (DPES-1105). */
+  chat_pr_delivery?: boolean;
 }
 
 /** `settings.get` supervision group: the stall-check intervals in seconds and the attempt wall-time bound in minutes. */
@@ -731,6 +767,7 @@ export interface SettingsPatchWire {
   load?: Partial<LoadLimitsWire>;
   supervision?: Partial<SupervisionWire>;
   wake_limits?: Partial<WakeLimitsWire>;
+  chat_pr_delivery?: boolean;
 }
 
 /** Where a wake record or a monitoring count belongs; the same shape as a conversation target. */
@@ -765,6 +802,26 @@ export interface MonitoringWire {
 export interface MonitoringAckWire {
   authority: "none";
   acked: number;
+}
+
+/** One decision hold (capability `holds`). `subject_kind` is `approval` (subject id is the task id) or `proposal`; both stay strings. */
+export interface HoldWire {
+  id: string;
+  subject_kind: string;
+  subject_id: string;
+  /** `YYYY-MM-DD`: the day the decision returns. */
+  until_date: string;
+  state: string;
+}
+
+/** `holds.set` and `holds.release` result. */
+export interface HoldResultWire {
+  hold: HoldWire;
+}
+
+/** `holds.list` result: the holds in force now. */
+export interface HoldsListWire {
+  holds: HoldWire[];
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */

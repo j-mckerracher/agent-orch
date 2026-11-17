@@ -6,6 +6,7 @@
 import { APPROVER_REQUIRED_NOTICE, presentError, type DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
+import { formatHoldDay } from "../review/holdDates";
 
 export type CardState = "pending" | "approved" | "executed" | "rejected" | "failed" | "superseded" | "expired" | "unknown";
 
@@ -28,6 +29,9 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "task.cancel": { heading: "Cancel task", done: "Cancellation requested" },
   "task.retry": { heading: "Retry task", done: "Retry queued" },
   "workstream.link_task": { heading: "Link task", done: "Linked" },
+  "task.revise": { heading: "Revise task", done: "Revision started" },
+  "decision.hold": { heading: "Hold decision", done: "Held" },
+  "project.remove": { heading: "Remove project", done: "Removed" },
 };
 
 /** The kinds that act on a task. Their failures read in task words. */
@@ -50,6 +54,27 @@ const TASK_FAILURE_TEXT: Readonly<Record<string, string>> = {
     "The task, workstream or link is not in a state that allows this (for example the task is already running or finished). Nothing was changed.",
 };
 
+/** Replaces both tables above for a kind whose failures need their own words. */
+const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "task.revise": {
+    not_found: "The task is gone. Nothing was changed.",
+    conflict: "The task has already finished, so it cannot be revised. Ask the orchestrator to create a new task instead. Nothing was changed.",
+    invalid:
+      "The app could not revise this task: the request is outside this conversation, or the task text would be too long. Nothing was changed.",
+  },
+  "decision.hold": {
+    not_found: "The task is gone, or it has no decision waiting. Nothing was changed.",
+    conflict: "The task has already finished, so there is nothing to hold. Nothing was changed.",
+    invalid:
+      "The date is not allowed (it must be from today to 60 days from today), or the request is outside this conversation. Nothing was changed.",
+  },
+  "project.remove": {
+    not_found: "The project is gone. Nothing was changed.",
+    conflict: "The project still has running work or decisions waiting, so it was not removed. Nothing was changed.",
+    invalid: "The request is outside this conversation. Nothing was changed.",
+  },
+};
+
 /** Why the app refused a task before it reached the user, by the daemon's `denial` key. */
 const DENIAL_TEXT: Readonly<Record<string, string>> = {
   delivery_not_authorized:
@@ -60,6 +85,29 @@ const DENIAL_TEXT: Readonly<Record<string, string>> = {
 };
 
 const DENIAL_FALLBACK = "The app refused this task. Nothing was created.";
+
+const REVISE_EFFECT =
+  "The current attempt stops. Its work is kept. A new task starts with the old objective plus this instruction.";
+const HOLD_EFFECT = "It stays in Review and Decisions, marked Held, and comes back on that day.";
+const REMOVE_EFFECT =
+  "The project leaves the project list. Its folder, worktrees and branches are not touched. Register the folder again to bring it back.";
+
+/** The delivery a project mode asks for, in card words. An unknown mode is named as the daemon sent it. */
+function modeDeliveryWords(mode: string | undefined): string {
+  if (mode === "direct-pr" || mode === "no-mistakes") return "pull request";
+  return mode === "local-only" ? "local review" : (mode ?? "not available");
+}
+
+function deliveryWords(delivery: string): string {
+  if (delivery === "LocalReview") return "local review";
+  if (delivery === "ReportOnly") return "report only";
+  return delivery === "PullRequest" ? "pull request" : delivery;
+}
+
+/** One sentence for the "Below this project's default" row: text, so the card never leans on colour. */
+function belowDefaultText(mode: string | undefined, delivery: string): string {
+  return `Project default: ${modeDeliveryWords(mode)}. This task: ${deliveryWords(delivery)}.`;
+}
 
 /** The longest subject shown in a heading phrase, a button name or an announcement. */
 const SUBJECT_CHARS = 60;
@@ -155,9 +203,16 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
   }
   if (p.kind === "objective.revise") return text(p.params.objective_id);
   if (p.kind === "task.propose") return shorten(text(p.params.objective));
-  if (p.kind === "task.cancel" || p.kind === "task.retry" || p.kind === "workstream.link_task") {
+  if (
+    p.kind === "task.cancel" ||
+    p.kind === "task.retry" ||
+    p.kind === "workstream.link_task" ||
+    p.kind === "task.revise" ||
+    p.kind === "decision.hold"
+  ) {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
+  if (p.kind === "project.remove") return shorten(p.target?.projectName || text(p.params.project));
   return text(p.params.title);
 }
 
@@ -249,6 +304,7 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("Agent", text(x.agent)),
         field("Task kind", text(x.task_kind)),
         field("Delivery", text(x.delivery)),
+        ...(p.target?.belowProjectDefault ? [field("Below this project's default", belowDefaultText(p.target.projectMode, text(x.delivery)))] : []),
         // The envelope fixes both: chat cannot raise them, and the card says so.
         field("Autonomy", "Approval required, fixed by the app"),
         field("Verification", "None, fixed by the app"),
@@ -272,6 +328,38 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("Objective", text(x.objective_id)),
       ];
     }
+    case "task.revise":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Added instruction", linesOf(text(x.added_intent))),
+        field("What happens", REVISE_EFFECT),
+        field("Task id", text(x.task_id)),
+      ];
+    case "decision.hold":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Until", formatHoldDay(text(x.until), true)),
+        field("What happens", HOLD_EFFECT),
+        field("Task id", text(x.task_id)),
+      ];
+    case "project.remove": {
+      const project = text(x.project);
+      const name = p.target?.projectName;
+      const count = p.target?.taskCount;
+      const running = p.target?.runningTasks;
+      return [
+        field("Project", name ? `${name} (${project})` : project),
+        field(
+          "Tasks",
+          count === undefined || running === undefined
+            ? "(not available)"
+            : `${count} ${count === 1 ? "task is" : "tasks are"} kept in history. Running tasks: ${running}`,
+        ),
+        field("What happens", REMOVE_EFFECT),
+      ];
+    }
     default:
       return Object.keys(x)
         .sort()
@@ -283,6 +371,8 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
 export function failureText(p: ActionProposal): string {
   const code = p.errorCode;
   if (code === "action_denied") return denialText(p.denial);
+  const own = Object.prototype.hasOwnProperty.call(KIND_FAILURE_TEXT, p.kind) ? lookup(KIND_FAILURE_TEXT[p.kind], code) : null;
+  if (own !== null) return own;
   if (code === "stale_revision" && p.kind === "objective.revise") {
     return "A newer change to this objective exists. Ask the orchestrator to propose again.";
   }
@@ -337,7 +427,11 @@ export function openTaskId(p: ActionProposal): string | null {
       return p.resultRef;
     case "task.cancel":
     case "task.retry":
+    case "decision.hold":
       return text(p.params.task_id) || null;
+    case "task.revise":
+      // The new task: the daemon's result is its id.
+      return p.resultRef;
     default:
       return null;
   }
@@ -353,6 +447,12 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Retry queued for “${subjectOf(p, names)}”.`;
     case "workstream.link_task":
       return `Linked “${subjectOf(p, names)}” to the workstream.`;
+    case "task.revise":
+      return `Revision started for “${subjectOf(p, names)}”. The old attempt is stopping and a new task is queued.`;
+    case "decision.hold":
+      return `Held the decision for “${subjectOf(p, names)}” until ${formatHoldDay(text(p.params.until), true)}.`;
+    case "project.remove":
+      return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
     case "workstream.create":
       return `Created workstream “${text(p.params.title)}”.`;
     case "objective.add":
@@ -389,9 +489,14 @@ function pendingView(p: ActionProposal, parent: ActionProposal | null, ctx: View
           : waiting
             ? waitingText
             : null;
-  // Archiving and stopping a task are hard to undo.
+  // Archiving, stopping a task and removing a project are hard to undo.
   const variant: "primary" | "danger" =
-    (p.kind === "workstream.update" && p.params.state === "archived") || p.kind === "task.cancel" ? "danger" : "primary";
+    (p.kind === "workstream.update" && p.params.state === "archived") ||
+    p.kind === "task.cancel" ||
+    p.kind === "task.revise" ||
+    p.kind === "project.remove"
+      ? "danger"
+      : "primary";
   const rejectEnabled = ctx.canDecide && ctx.approver && !ctx.deciding;
   return {
     state: "pending",

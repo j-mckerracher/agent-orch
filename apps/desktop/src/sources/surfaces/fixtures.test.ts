@@ -92,6 +92,9 @@ describe("fixture surfaces (D9-D16)", () => {
       "pending",
       "pending",
       "failed",
+      "pending",
+      "pending",
+      "pending",
     ]);
   });
 
@@ -107,10 +110,13 @@ describe("fixture surfaces (D9-D16)", () => {
       "task.retry",
       "workstream.link_task",
       "task.propose",
+      "task.revise",
+      "decision.hold",
+      "project.remove",
     ]);
     expect(new Set(proposals.map((item) => item.turnId))).toEqual(new Set(["fixture:turn-1"]));
     expect(new Set(proposals.map((item) => item.digest)).size).toBe(proposals.length);
-    expect(proposals.map((item) => item.denial)).toEqual([null, null, null, null, null, null, "delivery_not_authorized"]);
+    expect(proposals.map((item) => item.denial)).toEqual([null, null, null, null, null, null, "delivery_not_authorized", null, null, null]);
     expect(proposals.filter((item) => item.errorCode === "action_denied")).toHaveLength(1);
   });
 
@@ -124,6 +130,9 @@ describe("fixture surfaces (D9-D16)", () => {
       "fixture:proposal-4",
       "fixture:proposal-5",
       "fixture:proposal-6",
+      "fixture:proposal-8",
+      "fixture:proposal-9",
+      "fixture:proposal-10",
     ]);
     expect(items.every((item) => item.proposal.state === "pending" && item.scope.kind === "global")).toBe(true);
 

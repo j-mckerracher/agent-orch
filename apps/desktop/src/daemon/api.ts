@@ -26,6 +26,8 @@ import type {
   DeliveryRequest,
   DeliveryResult,
   ProjectRow,
+  ProjectDefaultsResultWire,
+  ProjectDefaultsWire,
   ResolveDecision,
   ReviewApprovalRequest,
   ReviewApprovalResult,
@@ -58,6 +60,8 @@ import type {
   SettingsPatchWire,
   MonitoringWire,
   MonitoringAckWire,
+  HoldResultWire,
+  HoldsListWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -109,6 +113,24 @@ export class DaemonApi {
 
   projectsRegister(path: string): Promise<ProjectRow> {
     return this.session.request("projects.register", { path });
+  }
+
+  /** DPES-1105. A project's delivery defaults; `local-only` when none are saved. A daemon without the method rejects as a missing feature. */
+  async projectsGetDefaults(projectId: string): Promise<ProjectDefaultsResultWire> {
+    return this.session.request("projects.get_defaults", { project_id: realId(projectId) });
+  }
+
+  /** DPES-1105. Replaces a project's delivery defaults. A user-only method: the daemon refuses it without the approver secret. */
+  async projectsSetDefaults(
+    projectId: string,
+    defaults: ProjectDefaultsWire,
+    idempotencyKey: string,
+  ): Promise<ProjectDefaultsResultWire> {
+    return this.session.request("projects.set_defaults", {
+      project_id: realId(projectId),
+      ...defaults,
+      idempotency_key: idempotencyKey,
+    });
   }
 
   tasksList(): Promise<TaskRecord[]> {
@@ -508,7 +530,7 @@ export class DaemonApi {
    * DPES-1105 Phase 3. Changes the supervision or wake-limit groups. Only the groups present are sent: a group
    * must name at least one field. User-only, like `settingsSet`.
    */
-  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits">, idempotencyKey: string): Promise<SettingsWire> {
+  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery">, idempotencyKey: string): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
   }
 
@@ -525,6 +547,26 @@ export class DaemonApi {
   /** DPES-1105 Phase 3. Marks a scope's wake records seen. Changes no decision, so it is not user-only. */
   async monitoringAck(target: ConversationWireTarget, idempotencyKey: string): Promise<MonitoringAckWire> {
     return this.session.request("monitoring.ack", { idempotency_key: idempotencyKey, target: realTarget(target) });
+  }
+
+  /** DPES-1105 Phase 4. Hides one decision until a date (`YYYY-MM-DD`). User-only; needs the `holds` capability. */
+  async holdsSet(subjectKind: string, subjectId: string, until: string, idempotencyKey: string): Promise<HoldResultWire> {
+    return this.session.request("holds.set", {
+      subject_kind: subjectKind,
+      subject_id: realId(subjectId),
+      until,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1105 Phase 4. Ends a hold before its date. User-only. */
+  async holdsRelease(holdId: string, idempotencyKey: string): Promise<HoldResultWire> {
+    return this.session.request("holds.release", { hold_id: realId(holdId), idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 Phase 4. The holds in force now. A read. */
+  async holdsList(): Promise<HoldsListWire> {
+    return this.session.request("holds.list", {});
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

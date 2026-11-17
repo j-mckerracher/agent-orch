@@ -45,6 +45,8 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   health: "health",
   "projects.list": "projects",
   "projects.register": "projects",
+  "projects.get_defaults": "projects",
+  "projects.set_defaults": "projects",
   "tasks.submit": "tasks",
   "tasks.list": "tasks",
   "tasks.get": "tasks",
@@ -93,6 +95,9 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "monitoring.get": "monitoring",
   "monitoring.set": "monitoring",
   "monitoring.ack": "monitoring",
+  "holds.set": "holds",
+  "holds.release": "holds",
+  "holds.list": "holds",
 };
 
 interface Pending {

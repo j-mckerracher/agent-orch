@@ -1,16 +1,20 @@
+import { useEffect, useRef } from "react";
 import type { Approval } from "../../../daemon/types";
-import type { DecisionItem } from "../../../sources/surfaces/types";
+import type { DecisionItem, ProposalItem } from "../../../sources/surfaces/types";
 import type { ReviewState } from "../../../review/useReview";
 import { Badge, Button, EmptyState, Pill, type Tone } from "../../theme";
+import { HOLD_REASON_ID, HoldControl } from "./HoldControl";
+import { HeldList } from "./HeldList";
+import type { HoldsModel } from "./useHolds";
 import {
   KIND_LABEL,
   PRIMARY_ACTION_LABEL,
   STATE_LABEL,
-  TABS,
   approvalKind,
   filterByTab,
   formatResponseTime,
   metaKey,
+  tabsFor,
   type TabId,
 } from "./queue";
 
@@ -46,9 +50,9 @@ function MetaLine({ approval, meta }: { approval: Approval; meta: QueueMeta }) {
  * Partial grouping receipt (review-and-app-only-06). The daemon has no grouping key, so the group count
  * is "not available". Raw requests and independent decisions are counted from the approvals listed here.
  */
-function GroupingReceipt({ state }: { state: ReviewState }) {
+function GroupingReceipt({ state, holds }: { state: ReviewState; holds: HoldsModel }) {
   const rawRequests = state.items.length;
-  const independent = state.items.filter((a) => a.state.state === "requested").length;
+  const independent = filterByTab("actionable", state.items, holds.held).length;
   return (
     <p className="rd-receipt">
       Groups: not available · {rawRequests} raw request{rawRequests === 1 ? "" : "s"} · {independent} independent decision
@@ -57,9 +61,44 @@ function GroupingReceipt({ state }: { state: ReviewState }) {
   );
 }
 
-export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: QueueMeta; tab: TabId }) {
-  const current = TABS.find((t) => t.id === tab) ?? TABS[0];
-  const shown = filterByTab(tab, state.items);
+export function DecisionQueue({
+  state,
+  meta,
+  tab,
+  holds,
+  proposals,
+}: {
+  state: ReviewState;
+  meta: QueueMeta;
+  tab: TabId;
+  holds: HoldsModel;
+  proposals: readonly ProposalItem[];
+}) {
+  const tabs = tabsFor(holds.supported);
+  const current = tabs.find((t) => t.id === tab) ?? tabs[0];
+  const shown = filterByTab(current.id, state.items, holds.held);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const startedFrom = useRef<string | null>(null);
+  const wasBusy = useRef(false);
+
+  // The control a person used leaves the page once the daemon confirms: a held decision leaves Actionable and a
+  // released one leaves Held. Focus then goes to the row if it is still listed (a refusal), else to the panel.
+  useEffect(() => {
+    if (holds.busy !== null) {
+      wasBusy.current = true;
+      return;
+    }
+    if (!wasBusy.current) return;
+    wasBusy.current = false;
+    const panel = panelRef.current;
+    const row = Array.from(panel?.querySelectorAll<HTMLElement>("[data-row-key]") ?? []).find(
+      (item) => item.dataset.rowKey === startedFrom.current,
+    );
+    (row ?? panel)?.focus();
+  }, [holds.busy]);
+  const startFrom = (rowKey: string) => {
+    startedFrom.current = rowKey;
+  };
 
   return (
     <section aria-labelledby="rd-queue-title" className="rd-card rd-queue-card">
@@ -70,16 +109,42 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
         </Button>
       </header>
 
-      {state.listState === "ready" && <GroupingReceipt state={state} />}
+      {state.listState === "ready" && <GroupingReceipt state={state} holds={holds} />}
+      {holds.supported && (
+        // A polite status, so a hold or a release is read once, with its result or its reason, and never interrupts.
+        <p className="rd-note" role="status" aria-live="polite" data-testid="holds-status">
+          {holds.announcement}
+        </p>
+      )}
 
-      <div role="tabpanel" id="rd-tabpanel" aria-labelledby={`rd-tab-${tab}`} className="rd-tabpanel">
+      <div
+        role="tabpanel"
+        id="rd-tabpanel"
+        aria-labelledby={`rd-tab-${current.id}`}
+        className="rd-tabpanel"
+        ref={panelRef}
+        tabIndex={-1}
+      >
         <p className="rd-note">{current.description}</p>
         {state.approval && !current.unsupported && !shown.some((a) => a.id === state.approval?.id) && (
           <p className="rd-note" role="note">
             The candidate shown on the right (approval {state.approval.id}) is not in this tab.
           </p>
         )}
-        {current.unsupported ? (
+        {holds.supported && holds.blocked !== null && (current.id === "actionable" || current.id === "held") && (
+          <p id={HOLD_REASON_ID} className="rd-note">
+            {holds.blocked}
+          </p>
+        )}
+        {current.id === "held" ? (
+          <HeldList
+            holds={holds}
+            approvals={state.items}
+            proposals={proposals}
+            onReview={(approvalId) => state.select(approvalId)}
+            onStart={startFrom}
+          />
+        ) : current.unsupported ? (
           <EmptyState title="No separate verification decisions" description={current.unsupported} />
         ) : shown.length === 0 ? (
           state.listState === "ready" && <EmptyState title="Nothing in this tab" description={current.description} />
@@ -88,7 +153,7 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
             {shown.map((approval) => {
               const selected = state.approval?.id === approval.id;
               return (
-                <li key={approval.id} className="rd-row-item">
+                <li key={approval.id} className="rd-row-item" data-row-key={`approval:${approval.id}`} tabIndex={-1}>
                   <button
                     type="button"
                     className="rd-row"
@@ -108,6 +173,9 @@ export function DecisionQueue({ state, meta, tab }: { state: ReviewState; meta: 
                   <Button className="rd-row-action" onClick={() => state.select(approval.id)}>
                     {PRIMARY_ACTION_LABEL}
                   </Button>
+                  {holds.supported && current.id === "actionable" && approval.state.state === "requested" && (
+                    <HoldControl taskId={approval.action.task_id} holds={holds} onStart={() => startFrom(`approval:${approval.id}`)} />
+                  )}
                 </li>
               );
             })}

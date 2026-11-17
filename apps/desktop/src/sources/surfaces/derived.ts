@@ -30,6 +30,8 @@ import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
+import { createLiveHolds, HOLDS_METHODS } from "./holds";
+import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
 import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
 import { createLiveLocalToolsSource } from "./localToolsLive";
 import { createLiveUsageSource } from "./usageLive";
@@ -293,6 +295,9 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const settings = createLiveSettings(connection, prov("D17", SETTINGS_METHODS), keys, now);
   // Monitoring belongs to the conversations, so it carries their id (D10) rather than a new surface id.
   const monitoring = createLiveMonitoring(connection, prov("D10", MONITORING_METHODS), keys, now);
+  // Holds hide decisions, so they carry the decision queue's id (D16).
+  const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
+  const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
 
   return {
     workstreams,
@@ -306,5 +311,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     decisions,
     settings,
     monitoring,
+    holds,
+    projectDefaults,
   };
 }

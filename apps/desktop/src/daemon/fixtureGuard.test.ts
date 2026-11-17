@@ -13,6 +13,7 @@ import { FakeDaemon } from "../test/fakeDaemon";
  */
 const FX = "fixture:placeholder-id";
 const REAL = "real-id-1";
+const DEFAULTS_WIRE = { mode: "local-only", base_branch: null, branch_prefix: null, checks: [], merge_method: "squash" };
 const DIGEST = "0".repeat(64);
 
 type Row = { method: keyof DaemonApi; wire: string; bad: (api: DaemonApi) => Promise<unknown>; good: (api: DaemonApi) => Promise<unknown> };
@@ -86,6 +87,15 @@ const ROWS: Row[] = [
   row("conversationsCancel", "conversations.cancel", (a) => a.conversationsCancel({ kind: "global" }, FX, "k"), (a) => a.conversationsCancel({ kind: "global" }, "turn-1", "k")),
   row("conversationsClear", "conversations.clear", (a) => a.conversationsClear({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.conversationsClear({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
+  row("holdsSet", "holds.set", (a) => a.holdsSet("approval", FX, "2026-11-21", "k"), (a) => a.holdsSet("approval", REAL, "2026-11-21", "k")),
+  row("holdsRelease", "holds.release", (a) => a.holdsRelease(FX, "k"), (a) => a.holdsRelease(REAL, "k")),
+  row("projectsGetDefaults", "projects.get_defaults", (a) => a.projectsGetDefaults(FX), (a) => a.projectsGetDefaults(REAL)),
+  row(
+    "projectsSetDefaults",
+    "projects.set_defaults",
+    (a) => a.projectsSetDefaults(FX, DEFAULTS_WIRE, "k"),
+    (a) => a.projectsSetDefaults(REAL, DEFAULTS_WIRE, "k"),
+  ),
   row("actionsResolve", "actions.resolve", (a) => a.actionsResolve(FX, "approve", DIGEST, "k"), (a) => a.actionsResolve(REAL, "approve", DIGEST, "k")),
   row("agentsValidateSelection", "agents.validate_selection", (a) => a.agentsValidateSelection(FX, { model: "m" }), (a) => a.agentsValidateSelection("codex", { model: "m" })),
 ];
@@ -114,6 +124,7 @@ const NO_ID_METHODS = new Set<string>([
   "settingsSetGroups",
   "monitoringGet",
   "monitoringSet",
+  "holdsList",
 ]);
 
 async function api(fake: FakeDaemon) {
