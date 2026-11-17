@@ -709,7 +709,11 @@ impl Action {
             // proposal the ref resolves to) too, so the same objective for another agent
             // or workstream is another card. NUL ends each part: none of them holds one.
             Self::TaskPropose(propose) => {
-                let workstream = propose.workstream_id.as_deref().or(parent).unwrap_or_default();
+                let workstream = propose
+                    .workstream_id
+                    .as_deref()
+                    .or(parent)
+                    .unwrap_or_default();
                 let objective = normalize(&propose.objective);
                 let mut hash = Sha256::new();
                 for part in [objective.as_str(), propose.agent.as_str(), workstream] {
@@ -1639,20 +1643,34 @@ mod tests {
 
     #[test]
     fn a_task_objective_with_an_invisible_character_is_refused() {
-        let invisible = [
+        // Representatives of every group the conversation transcript's `sanitize`
+        // strips, so the card never shows text the task agent reads differently: the
+        // controls, the bidirectional marks and isolates, and the characters that
+        // render as nothing (soft hyphen, zero-width space, word joiner and invisible
+        // operators, line and paragraph separators, byte-order mark, tag block).
+        let refused = [
+            ("escape", '\u{1b}'),
+            ("delete", '\u{7f}'),
+            ("next line", '\u{85}'),
             ("soft hyphen", '\u{ad}'),
+            ("Arabic letter mark", '\u{61c}'),
             ("zero-width space", '\u{200b}'),
+            ("left-to-right mark", '\u{200e}'),
+            ("right-to-left mark", '\u{200f}'),
+            ("line separator", '\u{2028}'),
+            ("paragraph separator", '\u{2029}'),
+            ("right-to-left override", '\u{202e}'),
             ("word joiner", '\u{2060}'),
             ("invisible times", '\u{2062}'),
             ("invisible plus", '\u{2064}'),
+            ("left-to-right isolate", '\u{2066}'),
+            ("pop directional isolate", '\u{2069}'),
             ("byte-order mark", '\u{feff}'),
-            ("line separator", '\u{2028}'),
-            ("paragraph separator", '\u{2029}'),
             ("tag block start", '\u{e0000}'),
             ("tag letter", '\u{e0041}'),
             ("tag block end", '\u{e007f}'),
         ];
-        for (name, c) in invisible {
+        for (name, c) in refused {
             let text = propose(&[(
                 "objective",
                 json!(format!("Add tests{c}for the retry module.")),

@@ -1448,12 +1448,15 @@ fn a_scope_with_20_pending_proposals_stores_no_more_and_the_block_is_rejected() 
     let global = ConversationTarget::Global;
     let ids = fill_the_global_conversation(&store);
 
-    // A block that would take the conversation to 21 stores nothing, not even the actions
-    // of it that would fit. The turn still completes, and it records the block as rejected
-    // in the same transaction, so the daemon does not need a second attempt.
+    // A block that would take the conversation to 21 stores nothing. The turn still
+    // completes, and it records the block as rejected in the same transaction, so the
+    // daemon does not need a second attempt.
     begin(&store, &global, "t3");
     let over = accepted(BlockScope::Global, &task_requests(20, 1));
-    assert_eq!(store.complete_conversation_turn("t3", over).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.complete_conversation_turn("t3", over).unwrap(),
+        Some(Vec::new())
+    );
     let turn = store.conversation_turn("t3").unwrap().unwrap();
     assert_eq!(turn.state, TurnState::Completed);
     assert_eq!(turn.action_block, Some(ActionBlockOutcome::Rejected));
@@ -1484,7 +1487,10 @@ fn a_scope_with_20_pending_proposals_stores_no_more_and_the_block_is_rejected() 
     store.reject_action_proposal(&ids[0], "user").unwrap();
     begin(&store, &global, "t5");
     let two = accepted(BlockScope::Global, &task_requests(21, 2));
-    assert_eq!(store.complete_conversation_turn("t5", two).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.complete_conversation_turn("t5", two).unwrap(),
+        Some(Vec::new())
+    );
     assert_eq!(
         store.conversation_turn("t5").unwrap().unwrap().action_block,
         Some(ActionBlockOutcome::Rejected)
@@ -1518,7 +1524,10 @@ fn a_decided_proposal_frees_a_slot_under_the_pending_cap() {
     // Full: one more is refused.
     begin(&store, &global, "t3");
     let next = accepted(BlockScope::Global, &task_requests(20, 1));
-    assert_eq!(store.complete_conversation_turn("t3", next).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.complete_conversation_turn("t3", next).unwrap(),
+        Some(Vec::new())
+    );
     assert_eq!(
         store.conversation_turn("t3").unwrap().unwrap().action_block,
         Some(ActionBlockOutcome::Rejected)
@@ -1539,7 +1548,10 @@ fn a_decided_proposal_frees_a_slot_under_the_pending_cap() {
     // Full again: a decided card never counts, and a new one does.
     begin(&store, &global, "t5");
     let over = accepted(BlockScope::Global, &task_requests(22, 1));
-    assert_eq!(store.complete_conversation_turn("t5", over).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.complete_conversation_turn("t5", over).unwrap(),
+        Some(Vec::new())
+    );
     assert_eq!(
         store.conversation_turn("t5").unwrap().unwrap().action_block,
         Some(ActionBlockOutcome::Rejected)
