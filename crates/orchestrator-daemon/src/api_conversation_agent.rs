@@ -1005,6 +1005,12 @@ pub(crate) fn build_prompt(request: &TurnRequest) -> Prompt {
     }
 }
 
+/// Added to the content of a wake turn, outside the fixed instructions. Under 600 bytes.
+const WAKE_BLOCK: &str = "This is an automatic update from the app, not a message from the user. \
+The events are listed below as the current message. Say briefly what matters and what the \
+user could decide. You may propose actions with the action block. If nothing needs the user, \
+reply with exactly MCAO_QUIET and nothing else.\n";
+
 fn one_line(text: &str) -> String {
     sanitize(text).replace(['\n', '\t'], " ")
 }
@@ -1036,6 +1042,10 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
             content.push_str(&one_line(reply));
             content.push('\n');
         }
+    }
+    if request.wake.is_some() {
+        content.push('\n');
+        content.push_str(WAKE_BLOCK);
     }
     content.push('\n');
     content.push_str(CURRENT_MESSAGE_MARKER);
@@ -1112,6 +1122,14 @@ fn run_turn(turn: Turn, sink: &ReplySink) {
     runtime.block_on(drive(turn, sink));
 }
 
+/// Hands what the agent reported so far to the usage ledger. Cheap when nothing is waiting.
+fn drain(handle: &mut dyn AgentHandle, sink: &ReplySink) {
+    let reports = handle.take_usage();
+    if !reports.is_empty() {
+        sink.usage(reports);
+    }
+}
+
 async fn drive(turn: Turn, sink: &ReplySink) {
     let spawned = if turn.agent == CODEX {
         CodexAdapter::new().spawn(turn.launch).await
@@ -1147,10 +1165,12 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     loop {
         if turn.cancelled.load(Ordering::Acquire) {
             let _ = handle.cancel().await;
+            drain(&mut *handle, sink);
             return;
         }
         if Instant::now() >= deadline {
             let _ = handle.cancel().await;
+            drain(&mut *handle, sink);
             sink.fail(RuntimeFailure::Timeout);
             return;
         }
@@ -1160,10 +1180,12 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             Ok(Ok(None)) => break,
             Ok(Err(_)) => {
                 let _ = handle.cancel().await;
+                drain(&mut *handle, sink);
                 sink.fail(RuntimeFailure::Failed);
                 return;
             }
         };
+        drain(&mut *handle, sink);
         match event {
             AgentEvent::MessageDelta { text } => {
                 let mut piece = sanitize(&text);
@@ -1177,6 +1199,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                     any_text = true;
                     if sink.delta(&piece).is_err() {
                         let _ = handle.cancel().await;
+                        drain(&mut *handle, sink);
                         return;
                     }
                 }
@@ -1184,6 +1207,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             AgentEvent::SessionExited { .. } => break,
             AgentEvent::ProtocolError { .. } => {
                 let _ = handle.cancel().await;
+                drain(&mut *handle, sink);
                 sink.fail(RuntimeFailure::Failed);
                 return;
             }
@@ -1191,6 +1215,7 @@ async fn drive(turn: Turn, sink: &ReplySink) {
         }
     }
     let exit = handle.wait().await;
+    drain(&mut *handle, sink);
     if turn.agent == GITHUB_COPILOT {
         if let Ok(exit) = &exit {
             turn.sign_in.record_run(exit);
@@ -1237,6 +1262,7 @@ mod tests {
             history,
             context: None,
             actions: false,
+            wake: None,
         }
     }
 

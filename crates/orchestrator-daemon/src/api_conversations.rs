@@ -24,10 +24,11 @@ use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
     ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget,
-    ConversationTurn, MAX_CONVERSATION_MESSAGE_BYTES,
+    ConversationTurn, TurnTrigger, MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
+use super::monitoring::{quiet_turn_ids, wake_record_wire};
 use super::*;
 
 const CONVERSATION_PAGE_SIZE: usize = 100;
@@ -35,13 +36,13 @@ const MAX_CHOICE_AGENT_BYTES: usize = 64;
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum TargetParam {
+pub(super) enum TargetParam {
     Global {},
     Workstream { workstream_id: String },
 }
 
 impl TargetParam {
-    fn to_store(&self) -> ConversationTarget {
+    pub(super) fn to_store(&self) -> ConversationTarget {
         match self {
             Self::Global {} => ConversationTarget::Global,
             Self::Workstream { workstream_id } => {
@@ -223,6 +224,10 @@ impl DaemonApi {
             || {
                 let target = request.target.to_store();
                 self.conversations.require_target(&target)?;
+                // The user's own action is never blocked by a turn the user did not ask for.
+                self.conversations
+                    .cancel_wake_turn(&target, None)
+                    .map_err(map_conversation_error)?;
                 let outcome = self
                     .store
                     .clear_conversation_history(&target)
@@ -253,6 +258,11 @@ impl DaemonApi {
         let target = request.target.to_store();
         self.conversations.require_target(&target)?;
         let (proposals, proposals_more) = self.proposals_page(&target)?;
+        let (records, wake_records_more) = self.wake_records(&target)?;
+        // A quiet wake turn replied with the quiet token alone: its reply entries stay out of
+        // the wire and the record carries the collapsed line instead.
+        let quiet_turns = quiet_turn_ids(&records);
+        let wake_records: Vec<Value> = records.iter().map(wake_record_wire).collect();
         let mut page = self
             .store
             .conversation_page(&target, cursor, CONVERSATION_PAGE_SIZE + 1)
@@ -266,6 +276,9 @@ impl DaemonApi {
         let entries = page
             .entries
             .iter()
+            .filter(|entry| {
+                entry.kind != "reply_chunk" || !quiet_turns.contains(entry.turn_id.as_str())
+            })
             .map(|entry| entry_wire(&self.store, entry))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(json!({
@@ -279,6 +292,8 @@ impl DaemonApi {
             "turn": page.latest_turn.as_ref().map(|turn| self.turn_wire(turn)),
             "proposals": proposals,
             "proposals_more": proposals_more,
+            "wake_records": wake_records,
+            "wake_records_more": wake_records_more,
             "epoch": epoch
         }))
     }
@@ -374,7 +389,8 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
     let mut value = entry_json(entry);
     let is_version_mismatch = entry.error_code.as_deref() == Some("version_mismatch");
     let is_completed = entry.kind == "turn_completed";
-    if is_version_mismatch || is_completed {
+    let is_opening = entry.kind == "user_message";
+    if is_version_mismatch || is_completed || is_opening {
         let turn = store
             .conversation_turn(&entry.turn_id)
             .map_err(map_conversation_error)?;
@@ -385,6 +401,11 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
             }
             if let (true, Some(block)) = (is_completed, turn.action_block) {
                 value["action_block"] = json!(block.as_str());
+            }
+            // The opening entry of a wake turn is stored as a user message, but the wire
+            // never calls it one (DPES-1105).
+            if is_opening && turn.trigger == TurnTrigger::Wake {
+                value["origin"] = json!("wake");
             }
         }
     }
@@ -419,6 +440,7 @@ fn turn_json(turn: &ConversationTurn) -> Value {
         "permission_profile": turn.permission_profile,
         // What became of the turn's action block (DPES-1105). Null when it had none.
         "action_block": turn.action_block.map(ActionBlockOutcome::as_str),
+        "trigger": turn.trigger.as_str(),
         "created_at": turn.created_at,
         "updated_at": turn.updated_at
     })

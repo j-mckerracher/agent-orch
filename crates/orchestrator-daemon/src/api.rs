@@ -74,6 +74,9 @@ pub(crate) struct DaemonApi {
     conversations: conversation_runtime::ConversationService,
     /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
     catalog_cache: Arc<models::CatalogCache>,
+    /// The wake scheduler (DPES-1105 phase 3). Absent without an executor, as in tests that
+    /// build their own with a manual clock.
+    wake: Option<Arc<wake::WakeService>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -233,6 +236,7 @@ impl DaemonApi {
             local_usage: usage_local::start_local_usage(data_dir),
             conversations,
             catalog_cache,
+            wake: None,
         };
         api.reconcile_actions();
         Ok(api)
@@ -247,12 +251,29 @@ impl DaemonApi {
             &conversation_agent::ConversationConfig::for_data_dir(data_dir).agents,
         );
         let mut api = Self::with_config(data_dir, config.clone())?;
-        api.executor = Some(Executor::start(api.store.clone(), config)?);
+        let executor = Executor::start(api.store.clone(), config)?;
+        // Recovery settles the batches a crash left running before the loop starts, so a
+        // restart never makes a second turn for one record.
+        let wake = Arc::new(wake::WakeService::new(
+            api.store.clone(),
+            api.conversations.clone(),
+            executor.pulse(),
+            Arc::new(wake::SystemClock),
+            api.config.load.clone(),
+            api.config.diagnostics.clone(),
+        ));
+        wake.recover()?;
+        wake.start();
+        api.executor = Some(executor);
+        api.wake = Some(wake);
         api.host.start();
         Ok(api)
     }
 
     pub(crate) fn shutdown(&self) {
+        if let Some(wake) = &self.wake {
+            wake.stop();
+        }
         if let Some(executor) = &self.executor {
             executor.shutdown();
         }
@@ -302,6 +323,7 @@ impl RpcHandler for DaemonApi {
             Capability::PermissionLevels,
             Capability::OrchestratorActions,
             Capability::Settings,
+            Capability::Monitoring,
         ]
     }
 
@@ -352,6 +374,9 @@ impl RpcHandler for DaemonApi {
             "host.metrics" => self.host_metrics(params),
             "settings.get" => self.settings_get(params),
             "settings.set" => self.settings_set(params),
+            "monitoring.get" => self.monitoring_get(params),
+            "monitoring.set" => self.monitoring_set(params),
+            "monitoring.ack" => self.monitoring_ack(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
             "usage.localTools" => self.local_usage_read(params),
@@ -1511,6 +1536,8 @@ mod host;
 pub(crate) mod load;
 #[path = "api_models.rs"]
 mod models;
+#[path = "api_monitoring.rs"]
+mod monitoring;
 #[path = "api_queue.rs"]
 mod queue;
 #[path = "api_review.rs"]
@@ -1522,6 +1549,10 @@ mod settings;
 mod usage;
 #[path = "api_usage_local.rs"]
 mod usage_local;
+#[path = "wake.rs"]
+pub(crate) mod wake;
+#[path = "wake_events.rs"]
+mod wake_events;
 
 #[cfg(test)]
 #[path = "api_usage_tests.rs"]

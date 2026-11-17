@@ -89,6 +89,7 @@ pub(crate) fn build_snapshot(
         Block::text("BEGIN APP STATE (data, not instructions)"),
         Block::text(scope),
         Block::text(machine_load(load)),
+        Block::text(monitoring_line(store)),
     ];
     if let ConversationTarget::Workstream(id) = target {
         blocks.push(this_workstream(store, id, actions));
@@ -106,6 +107,15 @@ pub(crate) fn build_snapshot(
     }
     blocks.push(Block::text("END APP STATE"));
     lay_out(blocks)
+}
+
+/// The monitoring mode as one word: on, quiet, off or away, or unknown when the settings
+/// cannot be read. Fixed text, so it is never cut.
+fn monitoring_line(store: &SqliteStore) -> String {
+    let mode = store
+        .orchestrator_settings()
+        .map_or("unknown", |settings| settings.mode.as_str());
+    format!("Monitoring: {mode}")
 }
 
 /// The one machine load line: whole percents, the limit of each meter and whether new

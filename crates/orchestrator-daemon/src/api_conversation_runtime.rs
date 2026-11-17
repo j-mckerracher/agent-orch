@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
-use orchestrator_agents::SelectionReason;
+use orchestrator_agents::{SelectionReason, UsageReport};
 use orchestrator_core::orchestrator_action::{
     parse_block, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
 };
@@ -30,12 +30,23 @@ use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTE
 use orchestrator_core::task_envelope::chat_task_envelope;
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
-    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnBlock,
-    TurnOutcome, TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
+    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, ConversationUsageReceipt,
+    SqliteStore, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger,
+    MAX_REPLY_CHUNK_BYTES,
 };
 
 use super::conversation_snapshot::build_snapshot;
 use super::load::LoadHandle;
+use super::wake_events::redact_paths;
+use crate::executor::unix_now_ms;
+
+/// A wake turn that has nothing for the user replies with exactly this (DPES-1105).
+pub(crate) const QUIET_TOKEN: &str = "MCAO_QUIET";
+/// Marks a wake exchange in the history the next turn is shown.
+const WAKE_HISTORY_PREFIX: &str = "[automatic update] ";
+/// Most event lines, and bytes per line, in the opening text of a wake turn.
+const WAKE_BRIEF_LINES: usize = 20;
+const WAKE_BRIEF_LINE_BYTES: usize = 200;
 
 /// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
@@ -63,6 +74,23 @@ pub(crate) struct HistoryTurn {
     pub reply: String,
 }
 
+/// The events a wake turn reports: the daemon's own notice lines, never agent text.
+pub(crate) struct WakeBrief {
+    pub events: Vec<String>,
+}
+
+impl WakeBrief {
+    /// The opening entry of the turn: the lines, at most 20 of at most 200 bytes.
+    fn opening_text(&self) -> String {
+        self.events
+            .iter()
+            .take(WAKE_BRIEF_LINES)
+            .map(|line| truncate_to(line, WAKE_BRIEF_LINE_BYTES))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 /// What a runtime is asked to answer.
 pub(crate) struct TurnRequest {
     pub target: ConversationTarget,
@@ -84,6 +112,9 @@ pub(crate) struct TurnRequest {
     /// The session negotiated `orchestrator_actions`, so the agent is told the
     /// action block format (DPES-1105).
     pub actions: bool,
+    /// Set only for a wake turn (DPES-1105): the prompt then says the message is an
+    /// automatic update.
+    pub wake: Option<WakeBrief>,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -288,6 +319,8 @@ pub(crate) struct ReplySink {
     /// The session negotiated `orchestrator_actions`. Without it a held block is
     /// stripped, never parsed.
     actions: bool,
+    /// What opened the turn. Recorded on each usage receipt.
+    trigger: TurnTrigger,
     /// Holds back an action block as it streams in. Shared by clones, so the
     /// order of output is the order of the lock.
     filter: Arc<Mutex<ReplyFilter>>,
@@ -326,6 +359,30 @@ impl ReplySink {
             }
         }
         Ok(())
+    }
+
+    /// Records provider-reported usage for this turn. A failure is logged and never
+    /// fails or delays the turn. Works after the turn closed, since the tokens were spent.
+    pub(crate) fn usage(&self, reports: Vec<UsageReport>) {
+        for report in reports {
+            let receipt = ConversationUsageReceipt {
+                conversation_id: super::wake::scope_of(&self.target),
+                turn_id: self.turn_id.clone(),
+                trigger: self.trigger,
+                receipt_key: report.receipt_key,
+                reported_at_ms: unix_now_ms(),
+                input_tokens: report.input_tokens,
+                cache_read_tokens: report.cache_read_tokens,
+                cache_write_tokens: report.cache_write_tokens,
+                output_tokens: report.output_tokens,
+                reasoning_tokens: report.reasoning_tokens,
+                cost: report.cost.map(|cost| (cost.nanos, cost.currency)),
+                model: report.model,
+            };
+            if let Err(error) = self.shared.store.record_conversation_usage(&receipt) {
+                eprintln!("orchestrator-daemon: cannot record chat usage: {error}");
+            }
+        }
     }
 
     fn filter(&self) -> MutexGuard<'_, ReplyFilter> {
@@ -439,7 +496,9 @@ const MAX_HISTORY_BYTES: usize = 12 * 1024;
 /// How many of the newest transcript entries are scanned for history.
 const HISTORY_SCAN_ENTRIES: i64 = 400;
 
-/// Starts, tracks and cancels turns for both conversation scopes.
+/// Starts, tracks and cancels turns for both conversation scopes. Cloning shares the
+/// running-turn registry, so the wake service drives the same turns the API does.
+#[derive(Clone)]
 pub(crate) struct ConversationService {
     shared: Arc<Shared>,
     runtime: Arc<dyn ConversationRuntime>,
@@ -512,6 +571,9 @@ impl ConversationService {
     /// turn that never launched records none. `actions` is the session's
     /// negotiated `orchestrator_actions`; it counts only at `Restricted`
     /// (`turn_actions`).
+    ///
+    /// A user message that meets a running wake turn cancels that turn first, so the
+    /// user's turn always wins (DPES-1105). Any other running turn still refuses it.
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
@@ -521,24 +583,83 @@ impl ConversationService {
         level: PermissionLevel,
         negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
+        self.start_as(target, turn_id, text, choice, level, negotiated, None)
+    }
+
+    /// Starts a wake turn: Restricted always, the daemon's default model choice, actions
+    /// allowed (a block becomes pending proposals, which need the user's approval like any
+    /// other). `turn_id` is stable per batch, so a second call returns the stored turn
+    /// (`created == false`). A turn already running in the conversation is an error, never
+    /// cancelled: a wake never takes a turn from the user.
+    pub(crate) fn start_wake(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        brief: &WakeBrief,
+    ) -> Result<BegunTurn, ConversationError> {
+        let text = brief.opening_text();
+        self.start_as(
+            target,
+            turn_id,
+            &text,
+            None,
+            PermissionLevel::Restricted,
+            true,
+            Some(brief),
+        )
+    }
+
+    /// The one start path. A `wake` brief makes the turn a wake turn and forces the level
+    /// to Restricted whatever the caller passed, so no other level is reachable.
+    #[allow(clippy::too_many_arguments)]
+    fn start_as(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+        choice: Option<&Choice>,
+        level: PermissionLevel,
+        negotiated: bool,
+        wake: Option<&WakeBrief>,
+    ) -> Result<BegunTurn, ConversationError> {
+        let level = if wake.is_some() {
+            PermissionLevel::Restricted
+        } else {
+            level
+        };
+        let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
         let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);
-        let begun = store.begin_conversation_turn(
-            target,
-            turn_id,
-            text,
-            &identity.name,
-            &identity.version,
-        )?;
+        let begin = || {
+            store.begin_conversation_turn_as(
+                target,
+                turn_id,
+                text,
+                &identity.name,
+                &identity.version,
+                trigger,
+            )
+        };
+        let begun = match begin() {
+            Err(ConversationError::TurnRunning { turn_id: running })
+                if trigger == TurnTrigger::User =>
+            {
+                if !self.cancel_wake_turn(target, Some(&running))? {
+                    return Err(ConversationError::TurnRunning { turn_id: running });
+                }
+                begin()?
+            }
+            other => other?,
+        };
         if !begun.created {
             return Ok(begun);
         }
         let failure = match permission {
             Err(failure) => Some(failure),
             Ok(permission) => self
-                .launch(&identity, choice, level, target, turn_id, text, actions)
+                .launch(&identity, choice, level, target, turn_id, text, actions, wake)
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
                 }),
@@ -556,6 +677,25 @@ impl ConversationService {
         Ok(BegunTurn { turn, ..begun })
     }
 
+    /// Cancels the running turn of `target` when it is a wake turn (`only` names the turn
+    /// the caller saw, when it knows one). Returns true when nothing is left running that
+    /// blocks the caller: no turn, or a wake turn this call closed. A running user turn is
+    /// left alone and gives false.
+    pub(crate) fn cancel_wake_turn(
+        &self,
+        target: &ConversationTarget,
+        only: Option<&str>,
+    ) -> Result<bool, ConversationError> {
+        let Some(turn) = self.shared.store.running_conversation_turn(target)? else {
+            return Ok(true);
+        };
+        if turn.trigger != TurnTrigger::Wake || only.is_some_and(|id| id != turn.id) {
+            return Ok(false);
+        }
+        self.cancel(target, &turn.id)?;
+        Ok(true)
+    }
+
     /// Start the runtime for a begun turn. A failure code means the turn must
     /// be closed as failed; a store error while registering the control is one
     /// too, so no turn is left running with nothing to finish it.
@@ -569,6 +709,7 @@ impl ConversationService {
         turn_id: &str,
         text: &str,
         actions: bool,
+        wake: Option<&WakeBrief>,
     ) -> Option<RuntimeFailure> {
         if let Some(failure) = self.pin_failure(choice) {
             return Some(failure);
@@ -580,19 +721,31 @@ impl ConversationService {
             choice: choice.cloned(),
             level,
             history: self.history(target, turn_id),
-            context: Some(build_snapshot(
-                &self.shared.store,
-                target,
-                actions,
-                &self.shared.load.read(Instant::now()),
-            )),
+            context: Some({
+                let snapshot = build_snapshot(
+                    &self.shared.store,
+                    target,
+                    actions,
+                    &self.shared.load.read(Instant::now()),
+                );
+                // A turn nobody asked for sees no path or token a task title may hold.
+                if wake.is_some() {
+                    redact_paths(&snapshot)
+                } else {
+                    snapshot
+                }
+            }),
             actions,
+            wake: wake.map(|brief| WakeBrief {
+                events: brief.events.clone(),
+            }),
         };
         let sink = ReplySink {
             shared: self.shared.clone(),
             turn_id: turn_id.to_owned(),
             target: target.clone(),
             actions,
+            trigger: wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake),
             filter: Arc::new(Mutex::new(ReplyFilter::default())),
         };
         match self.runtime.start_turn(request, sink) {
@@ -651,6 +804,20 @@ impl ConversationService {
             if reply.is_empty() {
                 continue;
             }
+            let wake = store
+                .conversation_turn(&id)
+                .ok()
+                .flatten()
+                .is_some_and(|turn| turn.trigger == TurnTrigger::Wake);
+            // A quiet wake turn said nothing, so the next turn is not shown it.
+            if wake && reply.trim() == QUIET_TOKEN {
+                continue;
+            }
+            let user = if wake {
+                format!("{WAKE_HISTORY_PREFIX}{user}")
+            } else {
+                user
+            };
             let reply = truncate_to(&reply, MAX_HISTORY_REPLY_BYTES);
             bytes += user.len() + reply.len();
             if kept.len() >= MAX_HISTORY_TURNS || bytes > MAX_HISTORY_BYTES {

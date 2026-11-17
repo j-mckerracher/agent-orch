@@ -9,26 +9,152 @@
 //! - `settings.set` takes `{idempotency_key, load: {cpu_percent?, memory_percent?,
 //!   disk_percent?}}`. Every present value is an integer from 50 to 100 (100 turns
 //!   that meter off); an unknown field or an empty `load` is `InvalidParams`.
-//! - Both answer `{load, gate: {state, hold, meters}, feed}`. A new limit applies
-//!   from the next sample, with no restart. No path and no id appears in the result.
+//! - Both answer `{load, gate: {state, hold, meters}, feed, supervision, wake_limits}`. A
+//!   new limit applies from the next sample, with no restart. No path and no id appears in
+//!   the result.
+//! - Phase 3 (DPES-1105) adds two groups to the same methods. `supervision` is
+//!   `{base_interval_secs, min_interval_secs, attempt_wall_minutes}` and `wake_limits` is
+//!   `{hourly_cap, daily_cap, daily_token_budget}`; in `wake_limits` a JSON `null` means
+//!   unlimited and an absent field means unchanged. A patch names at least one group and each
+//!   present group names at least one field. `settings.set` never sets the monitoring mode:
+//!   only `monitoring.set` does. The wake scheduler reads the settings on every pass, so a
+//!   change applies at its next tick.
 
 use std::time::Instant;
 
 use orchestrator_core::load_gate::{
     LoadLimits, LoadMeter, LoadStatus, Reading, Unknown, MIN_LIMIT, OFF,
 };
-use orchestrator_store::{LoadPatch, OrchestratorSettings, SettingsPatch};
+use orchestrator_store::{
+    LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, WakeLimitsPatch,
+};
+use serde::Deserializer;
 
 use super::load::LoadReading;
 use super::*;
 
 const LOG: &str = "settings";
 
+/// Present-null versus absent: `Some(None)` is a JSON `null`, `None` is an absent field.
+fn present_null<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SetParams {
     idempotency_key: String,
-    load: LoadParams,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    load: Option<LoadParams>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    supervision: Option<SupervisionParams>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wake_limits: Option<WakeLimitsParams>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SupervisionParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    min_interval_secs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attempt_wall_minutes: Option<u32>,
+}
+
+impl SupervisionParams {
+    /// At least one field. Ranges are checked by the store on the merged row.
+    fn validate(&self) -> Result<(), RpcError> {
+        if self.base_interval_secs.is_none()
+            && self.min_interval_secs.is_none()
+            && self.attempt_wall_minutes.is_none()
+        {
+            return Err(RpcError::InvalidParams);
+        }
+        Ok(())
+    }
+
+    fn patch(&self) -> SupervisionPatch {
+        SupervisionPatch {
+            base_interval_secs: self.base_interval_secs,
+            min_interval_secs: self.min_interval_secs,
+            attempt_wall_minutes: self.attempt_wall_minutes,
+        }
+    }
+
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        [
+            ("base_interval_secs", self.base_interval_secs),
+            ("min_interval_secs", self.min_interval_secs),
+            ("attempt_wall_minutes", self.attempt_wall_minutes),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| value.map(|value| (name, value.to_string())))
+        .collect()
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct WakeLimitsParams {
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    hourly_cap: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    daily_cap: Option<Option<u32>>,
+    #[serde(
+        default,
+        deserialize_with = "present_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    daily_token_budget: Option<Option<u64>>,
+}
+
+impl WakeLimitsParams {
+    fn validate(&self) -> Result<(), RpcError> {
+        if self.hourly_cap.is_none()
+            && self.daily_cap.is_none()
+            && self.daily_token_budget.is_none()
+        {
+            return Err(RpcError::InvalidParams);
+        }
+        Ok(())
+    }
+
+    fn patch(&self) -> WakeLimitsPatch {
+        WakeLimitsPatch {
+            hourly_cap: self.hourly_cap,
+            daily_cap: self.daily_cap,
+            daily_token_budget: self.daily_token_budget,
+        }
+    }
+
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        let show = |value: Option<String>| value.unwrap_or_else(|| "unlimited".to_owned());
+        let mut fields = Vec::new();
+        if let Some(cap) = self.hourly_cap {
+            fields.push(("hourly_cap", show(cap.map(|v| v.to_string()))));
+        }
+        if let Some(cap) = self.daily_cap {
+            fields.push(("daily_cap", show(cap.map(|v| v.to_string()))));
+        }
+        if let Some(budget) = self.daily_token_budget {
+            fields.push(("daily_token_budget", show(budget.map(|v| v.to_string()))));
+        }
+        fields
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -60,26 +186,45 @@ impl LoadParams {
         Ok(())
     }
 
-    fn patch(&self) -> SettingsPatch {
-        SettingsPatch {
-            load: LoadPatch {
-                cpu: self.cpu_percent,
-                memory: self.memory_percent,
-                disk: self.disk_percent,
-            },
+    fn patch(&self) -> LoadPatch {
+        LoadPatch {
+            cpu: self.cpu_percent,
+            memory: self.memory_percent,
+            disk: self.disk_percent,
         }
+    }
+
+    fn fields(&self) -> Vec<(&'static str, String)> {
+        self.named()
+            .into_iter()
+            .filter_map(|(name, value)| value.map(|value| (name, value.to_string())))
+            .collect()
     }
 }
 
 impl DaemonApi {
     pub(super) fn settings_get(&self, params: Value) -> Result<Value, RpcError> {
         require_empty_params(&params)?;
-        Ok(self.settings_body())
+        self.settings_body()
     }
 
     pub(super) fn settings_set(&self, params: Value) -> Result<Value, RpcError> {
         let request: SetParams = parse_params(params)?;
-        request.load.validate()?;
+        if request.load.is_none()
+            && request.supervision.is_none()
+            && request.wake_limits.is_none()
+        {
+            return Err(RpcError::InvalidParams);
+        }
+        if let Some(load) = &request.load {
+            load.validate()?;
+        }
+        if let Some(supervision) = &request.supervision {
+            supervision.validate()?;
+        }
+        if let Some(wake_limits) = &request.wake_limits {
+            wake_limits.validate()?;
+        }
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
@@ -88,33 +233,61 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let saved = self
-                    .store
-                    .update_orchestrator_settings(&request.load.patch());
-                self.adopt(saved, &request.load)
+                let patch = SettingsPatch {
+                    load: request.load.as_ref().map(LoadParams::patch).unwrap_or_default(),
+                    supervision: request
+                        .supervision
+                        .as_ref()
+                        .map(SupervisionParams::patch)
+                        .unwrap_or_default(),
+                    wake_limits: request
+                        .wake_limits
+                        .as_ref()
+                        .map(WakeLimitsParams::patch)
+                        .unwrap_or_default(),
+                    // `settings.set` never sets the mode.
+                    mode: None,
+                    // The Phase 4 booleans are set by their own methods, never by this one.
+                    ..SettingsPatch::default()
+                };
+                let mut fields = Vec::new();
+                fields.extend(request.load.iter().flat_map(LoadParams::fields));
+                fields.extend(request.supervision.iter().flat_map(SupervisionParams::fields));
+                fields.extend(request.wake_limits.iter().flat_map(WakeLimitsParams::fields));
+                let saved = self.store.update_orchestrator_settings(&patch);
+                self.finish(saved, request.load.is_some(), &fields)
             },
         )
     }
 
     /// Applies what the store saved. A failed write changes no limit.
+    #[cfg(test)]
     pub(super) fn adopt(
         &self,
         saved: Result<OrchestratorSettings, StoreError>,
         load: &LoadParams,
     ) -> Result<Value, RpcError> {
-        let saved = saved.map_err(map_store_error)?;
-        self.config.load.set_limits(saved.load);
-        self.log_change(load);
-        Ok(self.settings_body())
+        self.finish(saved, true, &load.fields())
+    }
+
+    /// Hands the saved load limits to the gate only when the request carried a `load` group,
+    /// so a supervision-only change leaves the gate untouched.
+    fn finish(
+        &self,
+        saved: Result<OrchestratorSettings, StoreError>,
+        load_changed: bool,
+        fields: &[(&'static str, String)],
+    ) -> Result<Value, RpcError> {
+        let saved = saved.map_err(settings_store_error)?;
+        if load_changed {
+            self.config.load.set_limits(saved.load);
+        }
+        self.log_change(fields);
+        self.settings_body()
     }
 
     /// One line: the names of the fields that changed and their new numbers.
-    fn log_change(&self, load: &LoadParams) {
-        let fields: Vec<(&str, String)> = load
-            .named()
-            .into_iter()
-            .filter_map(|(name, value)| value.map(|value| (name, value.to_string())))
-            .collect();
+    fn log_change(&self, fields: &[(&'static str, String)]) {
         let fields: Vec<(&str, &str)> = fields
             .iter()
             .map(|(name, value)| (*name, value.as_str()))
@@ -124,14 +297,40 @@ impl DaemonApi {
             .info(LOG, "settings_changed", &fields);
     }
 
-    /// The limits and the live gate, as `settings.get` and `settings.set` answer.
-    fn settings_body(&self) -> Value {
+    /// The limits, the live gate and the Phase 3 groups, as `settings.get` and `settings.set`
+    /// answer.
+    fn settings_body(&self) -> Result<Value, RpcError> {
+        let settings = self
+            .store
+            .orchestrator_settings()
+            .map_err(map_store_error)?;
         let LoadReading { limits, status } = self.config.load.read(Instant::now());
-        json!({
+        Ok(json!({
             "load": limits_wire(limits),
             "gate": gate_wire(&status),
             "feed": if self.config.load_feed { "sampler" } else { "disabled_by_environment" },
-        })
+            "supervision": {
+                "base_interval_secs": settings.supervision.base_interval_secs,
+                "min_interval_secs": settings.supervision.min_interval_secs,
+                "attempt_wall_minutes": settings.supervision.attempt_wall_minutes,
+            },
+            "wake_limits": {
+                "hourly_cap": settings.wake_limits.hourly,
+                "daily_cap": settings.wake_limits.daily,
+                "daily_token_budget": settings.wake_limits.daily_tokens,
+            },
+        }))
+    }
+}
+
+/// A value the store refused as out of range (including a minimum above the merged base) is
+/// the caller's mistake. Any other failure is ours.
+fn settings_store_error(error: StoreError) -> RpcError {
+    match error {
+        StoreError::Io(io) if io.kind() == std::io::ErrorKind::InvalidInput => {
+            RpcError::InvalidParams
+        }
+        other => map_store_error(other),
     }
 }
 

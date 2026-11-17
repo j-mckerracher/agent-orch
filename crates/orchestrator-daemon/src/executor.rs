@@ -25,7 +25,7 @@
 //! its task `Running` until the next daemon start reconciles it, and agent
 //! output is consumed but not persisted beyond the lifecycle events.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -192,6 +192,33 @@ impl ExecutorConfig {
     }
 }
 
+/// Last time each running session produced an agent event, in Unix ms. In memory only:
+/// agent output is not persisted (see the module note), so a restart empties it and every
+/// running attempt gets a fresh quiet period. The wake scheduler's stall check reads it
+/// (DPES-1105).
+#[derive(Default)]
+pub(crate) struct SessionPulse {
+    last: Mutex<HashMap<String, u64>>,
+}
+
+impl SessionPulse {
+    pub(crate) fn touch(&self, session_id: &str) {
+        self.touch_at(session_id, unix_now_ms());
+    }
+
+    pub(crate) fn touch_at(&self, session_id: &str, now_ms: u64) {
+        lock(&self.last).insert(session_id.to_owned(), now_ms);
+    }
+
+    pub(crate) fn last_event_ms(&self, session_id: &str) -> Option<u64> {
+        lock(&self.last).get(session_id).copied()
+    }
+
+    pub(crate) fn forget(&self, session_id: &str) {
+        lock(&self.last).remove(session_id);
+    }
+}
+
 pub(crate) struct Executor {
     inner: Arc<Inner>,
     scheduler: Mutex<Option<JoinHandle<()>>>,
@@ -209,6 +236,8 @@ struct Inner {
     /// Project that received the last start; mirrors the loop's fairness
     /// cursor so read models order the queue as the next pass would.
     cursor: Mutex<Option<String>>,
+    /// Liveness of running sessions, touched by `monitor_agent`.
+    pulse: Arc<SessionPulse>,
 }
 
 impl Executor {
@@ -221,6 +250,7 @@ impl Executor {
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
+            pulse: Arc::new(SessionPulse::default()),
         });
         // A weak reference: the gate outlives the executor and must not keep it alive.
         let weak = Arc::downgrade(&inner);
@@ -238,6 +268,11 @@ impl Executor {
             inner,
             scheduler: Mutex::new(Some(handle)),
         })
+    }
+
+    /// The registry the wake scheduler's stall check reads.
+    pub(crate) fn pulse(&self) -> Arc<SessionPulse> {
+        self.inner.pulse.clone()
     }
 
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
@@ -968,7 +1003,9 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
-    let monitored = monitor_agent(handle, store, &owner, job).await;
+    let pulse = Some(inner.pulse.as_ref());
+    let monitored = monitor_agent_with(handle, store, &owner, job, pulse).await;
+    inner.pulse.forget(&job.session_id);
     if let (COPILOT_AGENT, Ok(outcome)) = (job.agent.as_str(), &monitored) {
         inner.config.copilot_sign_in.record_run(&outcome.exit);
     }
@@ -1061,7 +1098,7 @@ fn record_usage(
     }
 }
 
-fn unix_now_ms() -> u64 {
+pub(crate) fn unix_now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| {
@@ -1072,11 +1109,23 @@ fn unix_now_ms() -> u64 {
 /// Drives the agent to exit. A cancellation request is consumed at most once,
 /// and `cancellation_succeeded` is set only after the handle's cancel returned
 /// Ok. Neither depends on any client connection.
+#[cfg(test)]
 async fn monitor_agent(
+    handle: Box<dyn AgentHandle>,
+    store: &SqliteStore,
+    owner: &CancellationOwner,
+    job: &Job,
+) -> Result<MonitorOutcome, String> {
+    monitor_agent_with(handle, store, owner, job, None).await
+}
+
+/// `pulse`, when given, is touched at the start and on every agent event.
+async fn monitor_agent_with(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
     job: &Job,
+    pulse: Option<&SessionPulse>,
 ) -> Result<MonitorOutcome, String> {
     let requested_model = requested_codex_model(job);
     let requested_model = requested_model.as_deref();
@@ -1087,6 +1136,9 @@ async fn monitor_agent(
     let mut supervision_error = None;
     let mut request_unreadable_logged = false;
     let started_ms = unix_now_ms();
+    if let Some(pulse) = pulse {
+        pulse.touch_at(&job.session_id, started_ms);
+    }
 
     loop {
         if !attempted {
@@ -1165,6 +1217,9 @@ async fn monitor_agent(
                 });
             }
             Some(Ok(Some(_))) => {
+                if let Some(pulse) = pulse {
+                    pulse.touch(&job.session_id);
+                }
                 record_usage(&mut *handle, store, owner, started_ms, requested_model)
             }
             Some(Ok(None)) => {

@@ -16,7 +16,10 @@ use orchestrator_core::contract::{
 };
 use orchestrator_core::records::Project;
 use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayEvent, USER_ONLY_METHODS};
-use orchestrator_store::{ActionBlockOutcome, ConversationTarget, SqliteStore, Store};
+use orchestrator_store::{
+    ActionBlockOutcome, ConversationTarget, ConversationUsageReceipt, ReceiptOutcome, SqliteStore,
+    Store, TurnTrigger,
+};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
@@ -62,7 +65,7 @@ fn fake_env(layout: &Layout, extra: &[(&str, &str)]) -> Vec<(String, String)> {
         // the names listed here, so the fake agent's own settings are listed.
         (
             "AGENT_ORCH_ENV_PASSTHROUGH".to_owned(),
-            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY".to_owned(),
+            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY,FAKE_AGENT_INPUT_TOKENS".to_owned(),
         ),
     ];
     for (name, value) in extra {
@@ -2850,5 +2853,66 @@ fn actions_pending_is_open_to_a_token_only_session_and_needs_the_capability() {
     // -32004: the method's capability was not negotiated on this session.
     assert_eq!(unsupported["error"]["code"], -32004, "{unsupported}");
     without.relay.close();
+    stop(&layout, daemon, chat);
+}
+
+/// Whether the store holds a chat receipt for the turn. Re-recording an older observation
+/// under the same key changes nothing when the receipt exists, and inserts when it does not.
+fn chat_receipt_exists(store: &SqliteStore, turn_id: &str) -> bool {
+    let probe = ConversationUsageReceipt {
+        conversation_id: "conversation:global".into(),
+        turn_id: turn_id.into(),
+        trigger: TurnTrigger::User,
+        receipt_key: "turn.completed:1".into(),
+        reported_at_ms: 0,
+        input_tokens: Some(42),
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        output_tokens: None,
+        reasoning_tokens: None,
+        cost: None,
+        model: None,
+    };
+    matches!(
+        store.record_conversation_usage(&probe).unwrap(),
+        ReceiptOutcome::Unchanged
+    )
+}
+
+#[test]
+fn a_chat_turn_records_provider_usage() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[("FAKE_AGENT_INPUT_TOKENS", "42")]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "hello", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["trigger"], "user", "{page}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert!(chat_receipt_exists(&store, &turn_id));
+}
+
+#[test]
+fn monitoring_get_is_open_to_a_session_that_negotiated_it_and_carries_no_authority() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let chat = Chat::open(&layout);
+    let mut bare = Chat::negotiate_without_approver(&layout, &[Capability::Monitoring]);
+    let got = bare.call("monitoring.get", json!({}));
+    assert_eq!(got["result"]["authority"], "none", "{got}");
+    assert_eq!(got["result"]["mode"], "on", "{got}");
+    assert_eq!(got["result"]["paused"], json!([]), "{got}");
+    // Setting the mode is user-only: the token alone is refused.
+    let refused = bare.call(
+        "monitoring.set",
+        json!({"idempotency_key": "k-1", "mode": "off"}),
+    );
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    let still = bare.call("monitoring.get", json!({}));
+    assert_eq!(still["result"]["mode"], "on", "{still}");
+    bare.relay.close();
     stop(&layout, daemon, chat);
 }

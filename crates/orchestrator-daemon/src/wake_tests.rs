@@ -1,0 +1,1391 @@
+//! Wake scheduler tests (DPES-1105 phase 3c). Time is a `ManualClock` that starts at the real
+//! time (a session's start comes from the database clock) and moves only when a test says so.
+//! The model runtime is a probe that records what it was asked and never starts a process.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use orchestrator_agents::UsageReport;
+use orchestrator_core::contract::{
+    AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+};
+use orchestrator_core::permission::PermissionLevel;
+use orchestrator_core::records::Project;
+use orchestrator_core::supervision::{ManualClock, DEBOUNCE_MS};
+use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent};
+use orchestrator_core::workstream::{Workstream, WorkstreamState};
+use orchestrator_diagnostics::Diagnostics;
+use orchestrator_store::{ConversationUsageReceipt, ReceiptOutcome, TurnTrigger};
+
+use super::super::conversation_agent::build_prompt;
+use super::super::conversation_runtime::{
+    Choice, ConversationRuntime, ConversationService, ReplySink, RuntimeFailure, RuntimeIdentity,
+    TurnControl, TurnRequest, WorkstreamDirectory,
+};
+use super::super::load::tests::{at, cpu};
+use super::super::*;
+use super::*;
+
+const MINUTE: u64 = 60_000;
+/// Slack past a whole interval: a session's start is the database clock cut to the second.
+const SLACK: u64 = 2_000;
+
+#[derive(Clone)]
+struct Seen {
+    level: PermissionLevel,
+    wake: bool,
+    actions: bool,
+    context: String,
+    prompt: String,
+}
+
+struct Control(Arc<AtomicBool>);
+
+impl TurnControl for Control {
+    fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Answers inside `start_turn` when it has a reply, else keeps the sink for the test.
+struct Probe {
+    identity: RuntimeIdentity,
+    reply: Mutex<Option<String>>,
+    tokens: Mutex<Option<u64>>,
+    held: Mutex<Vec<ReplySink>>,
+    seen: Mutex<Vec<Seen>>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl Probe {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            identity: RuntimeIdentity {
+                name: "probe".into(),
+                version: "1.0.0".into(),
+            },
+            reply: Mutex::new(None),
+            tokens: Mutex::new(None),
+            held: Mutex::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    fn replying(&self, text: Option<&str>) {
+        *self.reply.lock().unwrap() = text.map(str::to_owned);
+    }
+
+    fn reporting(&self, tokens: Option<u64>) {
+        *self.tokens.lock().unwrap() = tokens;
+    }
+
+    fn started(&self) -> usize {
+        self.seen.lock().unwrap().len()
+    }
+
+    fn last(&self) -> Seen {
+        self.seen.lock().unwrap().last().cloned().expect("a turn")
+    }
+
+    /// Ends a held turn with `text`.
+    fn finish(&self, index: usize, text: &str) {
+        let sink = self.held.lock().unwrap()[index].clone();
+        sink.delta(text).unwrap();
+        sink.complete();
+    }
+}
+
+impl ConversationRuntime for Probe {
+    fn identity(&self, _choice: Option<&Choice>) -> RuntimeIdentity {
+        self.identity.clone()
+    }
+
+    fn start_turn(
+        &self,
+        request: TurnRequest,
+        sink: ReplySink,
+    ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
+        self.seen.lock().unwrap().push(Seen {
+            level: request.level,
+            wake: request.wake.is_some(),
+            actions: request.actions,
+            context: request.context.clone().unwrap_or_default(),
+            prompt: build_prompt(&request).joined(),
+        });
+        let reply = self.reply.lock().unwrap().clone();
+        match reply {
+            Some(text) => {
+                let _ = sink.delta(&text);
+                if let Some(tokens) = *self.tokens.lock().unwrap() {
+                    sink.usage(vec![UsageReport {
+                        receipt_key: "turn.completed:1".into(),
+                        model: None,
+                        input_tokens: Some(tokens),
+                        cache_read_tokens: None,
+                        cache_write_tokens: None,
+                        output_tokens: None,
+                        reasoning_tokens: None,
+                        cost: None,
+                        occurred_at_ms: None,
+                    }]);
+                }
+                sink.complete();
+            }
+            None => self.held.lock().unwrap().push(sink),
+        }
+        Ok(Box::new(Control(self.cancelled.clone())))
+    }
+}
+
+struct Directory;
+
+impl WorkstreamDirectory for Directory {
+    fn exists(&self, workstream_id: &str) -> Result<bool, RpcError> {
+        Ok(workstream_id == "w1")
+    }
+}
+
+struct Fixture {
+    _directory: tempfile::TempDir,
+    api: DaemonApi,
+    clock: Arc<ManualClock>,
+    pulse: Arc<SessionPulse>,
+    probe: Arc<Probe>,
+    wake: Arc<WakeService>,
+}
+
+fn fixture() -> Fixture {
+    let directory = tempfile::tempdir().unwrap();
+    let mut api = DaemonApi::new(directory.path()).unwrap();
+    let probe = Probe::new();
+    api.conversations = ConversationService::new(
+        api.store.clone(),
+        probe.clone(),
+        Arc::new(Directory),
+        true,
+        api.config.load.clone(),
+    );
+    api.store
+        .register_project(&Project {
+            id: "p".into(),
+            root_path: "/repo".into(),
+            settings: json!({}),
+        })
+        .unwrap();
+    let clock = Arc::new(ManualClock::new(crate::executor::unix_now_ms()));
+    let pulse = Arc::new(SessionPulse::default());
+    let wake = Arc::new(service(&api, &clock, &pulse));
+    api.wake = Some(wake.clone());
+    Fixture {
+        _directory: directory,
+        api,
+        clock,
+        pulse,
+        probe,
+        wake,
+    }
+}
+
+fn service(api: &DaemonApi, clock: &Arc<ManualClock>, pulse: &Arc<SessionPulse>) -> WakeService {
+    WakeService::new(
+        api.store.clone(),
+        api.conversations.clone(),
+        pulse.clone(),
+        clock.clone(),
+        api.config.load.clone(),
+        Diagnostics::memory(),
+    )
+}
+
+fn contract(id: &str, objective: &str) -> TaskContract {
+    TaskContract {
+        id: id.into(),
+        project_id: "p".into(),
+        parent_id: None,
+        objective: objective.into(),
+        kind: TaskKind::Implement,
+        agent: "codex".into(),
+        dependencies: Vec::new(),
+        verification: VerificationPolicy::Commands {
+            commands: vec![vec!["true".into()]],
+        },
+        delivery: DeliveryPolicy::LocalReview,
+        autonomy: AutonomyPolicy::WorkspaceWrites,
+        max_retries: 1,
+        max_repairs: 1,
+        model_selection: None,
+        permission: Default::default(),
+    }
+}
+
+/// A task held Queued: no attempt, no session.
+fn queue_task(f: &Fixture, id: &str, objective: &str) {
+    f.api.store.create(&contract(id, objective)).unwrap();
+    f.api.store.transition(id, TaskEvent::Admit).unwrap();
+}
+
+/// A task with a Running attempt and a Spawning session, the way the executor leaves it.
+fn run_task(f: &Fixture, id: &str, objective: &str) {
+    queue_task(f, id, objective);
+    let attempt = format!("{id}-a1");
+    let store = &f.api.store;
+    store
+        .add_attempt(
+            id,
+            &Attempt {
+                id: attempt.clone(),
+                task_id: id.into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+            },
+        )
+        .unwrap();
+    store
+        .update_attempt_state(id, &attempt, AttemptState::Running)
+        .unwrap();
+    store.transition(id, TaskEvent::ExecutionStarted).unwrap();
+    store
+        .add_session(
+            id,
+            &Session {
+                id: format!("{id}-s1"),
+                attempt_id: attempt,
+                adapter: "codex".into(),
+                state: SessionState::Spawning,
+            },
+        )
+        .unwrap();
+}
+
+fn fail_task(f: &Fixture, id: &str, objective: &str) {
+    run_task(f, id, objective);
+    f.api.store.transition(id, TaskEvent::ExecutionFailed).unwrap();
+}
+
+fn tick(f: &Fixture) -> TickReport {
+    f.wake.tick().unwrap()
+}
+
+fn advance(f: &Fixture, ms: u64) {
+    f.clock.advance(ms);
+}
+
+/// Waits out the debounce and ticks: the batch starts.
+fn start_batch(f: &Fixture) -> TickReport {
+    advance(f, DEBOUNCE_MS);
+    tick(f)
+}
+
+fn global_records(f: &Fixture) -> Vec<WakeRecord> {
+    f.api
+        .store
+        .wake_records_page(GLOBAL_SCOPE, 50)
+        .unwrap()
+        .0
+}
+
+fn records_of(f: &Fixture, kind: WakeKind) -> Vec<WakeRecord> {
+    global_records(f)
+        .into_iter()
+        .filter(|record| record.kind == kind)
+        .collect()
+}
+
+fn global() -> Value {
+    json!({"kind": "global"})
+}
+
+fn get(f: &Fixture) -> Value {
+    f.api
+        .dispatch(
+            "conversations.get",
+            json!({"target": global(), "after_sequence": 0}),
+        )
+        .unwrap()
+}
+
+fn monitoring(f: &Fixture) -> Value {
+    f.api.dispatch("monitoring.get", json!({})).unwrap()
+}
+
+fn set_mode(f: &Fixture, mode: &str) -> Result<Value, RpcError> {
+    f.api.dispatch(
+        "monitoring.set",
+        json!({"idempotency_key": format!("mode-{mode}"), "mode": mode}),
+    )
+}
+
+fn set_settings(f: &Fixture, key: &str, patch: Value) -> Result<Value, RpcError> {
+    let mut params = patch;
+    params["idempotency_key"] = json!(key);
+    f.api.dispatch("settings.set", params)
+}
+
+fn user_send(f: &Fixture, key: &str) -> Result<Value, RpcError> {
+    f.api.dispatch(
+        "conversations.send",
+        json!({"target": global(), "text": "hello", "idempotency_key": key}),
+    )
+}
+
+fn running_turn(f: &Fixture) -> Option<orchestrator_store::ConversationTurn> {
+    f.api
+        .store
+        .running_conversation_turn(&ConversationTarget::Global)
+        .unwrap()
+}
+
+fn ledger_rows(f: &Fixture) -> u32 {
+    f.api
+        .store
+        .wake_usage(GLOBAL_SCOPE, f.clock.now_ms())
+        .unwrap()
+        .day_count
+}
+
+/// Another service over the same store, as after a restart.
+fn restarted(f: &Fixture) -> WakeService {
+    f.api.conversations.recover().unwrap();
+    let again = service(&f.api, &f.clock, &f.pulse);
+    again.recover().unwrap();
+    again
+}
+
+// ---- events, notices and the turn --------------------------------------------------------
+
+#[test]
+fn a_failed_task_writes_a_notice_before_any_wake_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "Fix the login bug");
+
+    tick(&f);
+
+    let records = records_of(&f, WakeKind::TaskFailed);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].notice, "Task t-1 (Fix the login bug) failed.");
+    assert_eq!(records[0].state, WakeState::Pending);
+    assert_eq!(f.probe.started(), 0, "no turn before the window ends");
+    let anchor = records[0].anchor_sequence;
+
+    assert_eq!(start_batch(&f).started, 1);
+    let page = f
+        .api
+        .store
+        .conversation_page(&ConversationTarget::Global, 0, 10)
+        .unwrap();
+    assert!(page.entries[0].sequence > anchor);
+    assert_eq!(page.entries[0].body, "Task t-1 (Fix the login bug) failed.");
+}
+
+#[test]
+fn events_inside_sixty_seconds_share_one_wake_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 20_000);
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    advance(&f, 30_000);
+    fail_task(&f, "t-3", "three");
+    tick(&f);
+    advance(&f, 9_000);
+    tick(&f);
+    assert_eq!(f.probe.started(), 0, "no turn at 59 s");
+
+    advance(&f, 1_000);
+    assert_eq!(tick(&f).started, 1);
+
+    assert_eq!(f.probe.started(), 1);
+    let page = f
+        .api
+        .store
+        .conversation_page(&ConversationTarget::Global, 0, 10)
+        .unwrap();
+    assert_eq!(page.entries[0].body.lines().count(), 3);
+}
+
+#[test]
+fn one_wake_turn_per_target_at_a_time() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 1);
+
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 1, "the second batch waits");
+
+    f.probe.finish(0, "noted");
+    let report = tick(&f);
+
+    assert!(report.settled >= 1);
+    assert_eq!(f.probe.started(), 2);
+}
+
+#[test]
+fn a_user_turn_in_flight_holds_the_wake() {
+    let f = fixture();
+    user_send(&f, "u-1").unwrap();
+    assert_eq!(f.probe.started(), 1);
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 1, "the wake waits for the user's turn");
+    assert_eq!(records_of(&f, WakeKind::TaskFailed)[0].state, WakeState::Pending);
+
+    f.probe.finish(0, "hi");
+    tick(&f);
+
+    assert_eq!(f.probe.started(), 2);
+    assert!(f.probe.last().wake);
+}
+
+#[test]
+fn a_user_message_cancels_a_running_wake_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    let wake_turn = running_turn(&f).unwrap();
+    assert_eq!(wake_turn.trigger, TurnTrigger::Wake);
+
+    let sent = user_send(&f, "u-1").unwrap();
+
+    assert_eq!(sent["turn"]["trigger"], "user");
+    let cancelled = f.api.store.conversation_turn(&wake_turn.id).unwrap().unwrap();
+    assert_eq!(cancelled.state, orchestrator_store::TurnState::Cancelled);
+    assert_eq!(running_turn(&f).unwrap().trigger, TurnTrigger::User);
+    tick(&f);
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Pending);
+    assert_eq!(record.attempts, 0);
+}
+
+#[test]
+fn a_user_message_over_a_running_user_turn_is_still_refused() {
+    let f = fixture();
+    user_send(&f, "u-1").unwrap();
+    assert_eq!(user_send(&f, "u-2"), Err(RpcError::Conflict));
+}
+
+#[test]
+fn conversations_clear_cancels_a_running_wake_turn_first() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    assert!(running_turn(&f).is_some());
+
+    let cleared = f
+        .api
+        .dispatch(
+            "conversations.clear",
+            json!({"target": global(), "idempotency_key": "c-1"}),
+        )
+        .unwrap();
+
+    assert_eq!(cleared["cleared"], true);
+    assert!(running_turn(&f).is_none());
+}
+
+#[test]
+fn a_wake_turn_always_runs_at_restricted() {
+    let f = fixture();
+    // The user's last choice was Full.
+    f.api
+        .conversations
+        .start(
+            &ConversationTarget::Global,
+            "u-1",
+            "hello",
+            None,
+            PermissionLevel::Full,
+            true,
+        )
+        .unwrap();
+    assert_eq!(f.probe.last().level, PermissionLevel::Full);
+    f.probe.finish(0, "hi");
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+
+    start_batch(&f);
+
+    let seen = f.probe.last();
+    assert!(seen.wake);
+    assert_eq!(seen.level, PermissionLevel::Restricted);
+    assert!(seen.actions, "a block becomes proposals that need the user");
+    let turn = running_turn(&f).unwrap();
+    assert_eq!(turn.trigger, TurnTrigger::Wake);
+}
+
+#[test]
+fn a_wake_turn_gets_the_snapshot_and_no_paths() {
+    let f = fixture();
+    let dir = f._directory.path().display().to_string();
+    fail_task(&f, "t-1", "Fix /Users/me/secret/repo/main.rs please");
+    queue_task(&f, "t-2", "Also C:\\work\\private\\x.txt and ~/notes");
+    tick(&f);
+
+    start_batch(&f);
+
+    let seen = f.probe.last();
+    assert!(seen.context.contains("Monitoring: on"), "{}", seen.context);
+    for needle in ["/Users/me", "secret/repo", "C:\\work", "~/notes", dir.as_str()] {
+        assert!(!seen.prompt.contains(needle), "{needle} in {}", seen.prompt);
+    }
+    assert!(!seen.prompt.contains("daemon.token"));
+}
+
+#[test]
+fn a_path_in_a_task_title_never_reaches_a_notice_or_the_prompt() {
+    let f = fixture();
+    fail_task(&f, "t-1", "Fix /etc/passwd and /home/me/.ssh/id_rsa now");
+    tick(&f);
+    let notice = &records_of(&f, WakeKind::TaskFailed)[0].notice;
+    assert!(!notice.contains("/etc") && !notice.contains(".ssh"), "{notice}");
+
+    start_batch(&f);
+
+    let prompt = f.probe.last().prompt;
+    assert!(!prompt.contains("/etc") && !prompt.contains(".ssh"), "{prompt}");
+    assert!(prompt.contains("[path]"));
+}
+
+#[test]
+fn the_wake_turn_is_marked_and_labelled_as_an_update() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+
+    let page = get(&f);
+
+    assert_eq!(page["turn"]["trigger"], "wake");
+    let opening = &page["entries"][0];
+    assert_eq!(opening["kind"], "user_message");
+    assert_eq!(opening["origin"], "wake");
+    assert_eq!(opening["body"], "Task t-1 (one) failed.");
+    assert_eq!(page["wake_records"][0]["notice"], "Task t-1 (one) failed.");
+    assert_eq!(page["wake_records"][0]["event"], "task_failed");
+    assert_eq!(page["wake_records"][0]["state"], "running");
+    // A user message carries no origin.
+    f.probe.finish(0, "hello");
+    tick(&f);
+    user_send(&f, "u-1").unwrap();
+    let page = get(&f);
+    let user = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rfind(|entry| entry["kind"] == "user_message")
+        .unwrap();
+    assert!(user.get("origin").is_none(), "{user}");
+}
+
+#[test]
+fn the_wake_block_is_short_and_outside_the_preamble() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    let wake = f.probe.last().prompt;
+    f.probe.finish(0, "x");
+    tick(&f);
+    user_send(&f, "u-1").unwrap();
+    let user = f.probe.last().prompt;
+
+    assert!(wake.contains("automatic update from the app"));
+    assert!(wake.contains("MCAO_QUIET"));
+    assert!(!user.contains("automatic update from the app"));
+    let block_start = wake.find("This is an automatic update").unwrap();
+    let block_end = wake[block_start..].find("MCAO_QUIET and nothing else.").unwrap();
+    assert!(block_end + "MCAO_QUIET and nothing else.".len() < 600);
+}
+
+#[test]
+fn the_quiet_token_closes_the_record_as_quiet() {
+    let f = fixture();
+    f.probe.replying(Some("MCAO_QUIET"));
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    tick(&f);
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Handled);
+    assert_eq!(record.outcome, Some(WakeOutcome::Quiet));
+    let page = get(&f);
+    assert!(
+        page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["kind"] != "reply_chunk"),
+        "{page}"
+    );
+
+    f.probe.replying(Some("Task two needs a look."));
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    start_batch(&f);
+    tick(&f);
+    let second = &records_of(&f, WakeKind::TaskFailed)[1];
+    assert_eq!(second.outcome, Some(WakeOutcome::Replied));
+}
+
+#[test]
+fn quiet_mode_stores_the_reply_without_a_badge() {
+    let f = fixture();
+    set_mode(&f, "quiet").unwrap();
+    f.probe.replying(Some("Look at task one."));
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    tick(&f);
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Handled);
+    assert!(!record.notify_reply);
+    assert_eq!(monitoring(&f)["unseen"], json!([]));
+}
+
+#[test]
+fn mode_off_gives_notices_only() {
+    let f = fixture();
+    set_mode(&f, "off").unwrap();
+    fail_task(&f, "t-1", "one");
+
+    tick(&f);
+    start_batch(&f);
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Skipped);
+    assert_eq!(record.skip_reason, Some(SkipReason::ModeOff));
+    assert_eq!(f.probe.started(), 0);
+    assert_eq!(ledger_rows(&f), 0);
+    assert_eq!(monitoring(&f)["unseen"][0]["count"], 1);
+}
+
+#[test]
+fn turning_monitoring_off_skips_pending_records_and_cancels_the_running_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+
+    set_mode(&f, "off").unwrap();
+    tick(&f);
+
+    assert!(running_turn(&f).is_none());
+    let records = records_of(&f, WakeKind::TaskFailed);
+    assert!(records.iter().all(|record| record.state == WakeState::Skipped));
+    assert!(records
+        .iter()
+        .all(|record| record.skip_reason == Some(SkipReason::ModeOff)));
+}
+
+#[test]
+fn monitoring_set_takes_only_a_mode_and_refuses_away() {
+    let f = fixture();
+    for bad in ["away", "sometimes", ""] {
+        assert_eq!(set_mode(&f, bad), Err(RpcError::InvalidParams), "{bad}");
+    }
+    assert_eq!(
+        f.api.dispatch(
+            "monitoring.set",
+            json!({"idempotency_key": "k", "mode": "on", "hourly_cap": 3})
+        ),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(set_mode(&f, "quiet").unwrap()["mode"], "quiet");
+    assert_eq!(monitoring(&f)["authority"], "none");
+}
+
+#[test]
+fn monitoring_ack_marks_the_scope_seen() {
+    let f = fixture();
+    set_mode(&f, "off").unwrap();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    assert_eq!(monitoring(&f)["unseen"][0]["count"], 1);
+
+    let acked = f
+        .api
+        .dispatch(
+            "monitoring.ack",
+            json!({"target": global(), "idempotency_key": "a-1"}),
+        )
+        .unwrap();
+
+    assert_eq!(acked["acked"], 1);
+    assert_eq!(monitoring(&f)["unseen"], json!([]));
+}
+
+#[test]
+fn a_workstream_event_also_notices_global() {
+    let f = fixture();
+    f.api
+        .store
+        .create_workstream(
+            &Workstream {
+                id: "w1".into(),
+                title: "w1".into(),
+                summary: String::new(),
+                state: WorkstreamState::Active,
+                revision: 1,
+            },
+            "test",
+        )
+        .unwrap();
+    queue_task(&f, "t-1", "one");
+    f.api.store.link_task("w1", "t-1", None).unwrap();
+    f.api
+        .store
+        .add_attempt(
+            "t-1",
+            &Attempt {
+                id: "t-1-a1".into(),
+                task_id: "t-1".into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+            },
+        )
+        .unwrap();
+    f.api
+        .store
+        .update_attempt_state("t-1", "t-1-a1", AttemptState::Running)
+        .unwrap();
+    f.api
+        .store
+        .transition("t-1", TaskEvent::ExecutionStarted)
+        .unwrap();
+    f.api
+        .store
+        .transition("t-1", TaskEvent::ExecutionFailed)
+        .unwrap();
+
+    tick(&f);
+
+    let own = f
+        .api
+        .store
+        .wake_records_page("conversation:workstream:w1", 50)
+        .unwrap()
+        .0;
+    assert_eq!(own.len(), 1);
+    assert!(own[0].needs_model);
+    let copy = records_of(&f, WakeKind::TaskFailed);
+    assert_eq!(copy.len(), 1);
+    assert!(!copy[0].needs_model);
+    assert!(copy[0].dedupe_key.starts_with("up:"));
+    assert_eq!(copy[0].state, WakeState::Noticed);
+}
+
+// ---- limits ------------------------------------------------------------------------------
+
+#[test]
+fn six_wake_turns_an_hour_then_paused() {
+    let f = fixture();
+    f.probe.replying(Some("ok"));
+    for index in 0..6 {
+        fail_task(&f, &format!("t-{index}"), "Fix it");
+        tick(&f);
+        assert_eq!(start_batch(&f).started, 1, "turn {index}");
+    }
+    assert_eq!(f.probe.started(), 6);
+
+    fail_task(&f, "t-6", "Fix it");
+    tick(&f);
+    let report = start_batch(&f);
+
+    assert_eq!(report.started, 0);
+    assert_eq!(f.probe.started(), 6, "nothing spent past the cap");
+    let seventh = records_of(&f, WakeKind::TaskFailed)
+        .into_iter()
+        .find(|record| record.subject == "t-6")
+        .unwrap();
+    assert_eq!(seventh.state, WakeState::Skipped);
+    assert_eq!(seventh.skip_reason, Some(SkipReason::LimitHourly));
+    // The notice still reads in the transcript.
+    let page = get(&f);
+    let notices: Vec<&Value> = page["wake_records"].as_array().unwrap().iter().collect();
+    assert!(notices.iter().any(|record| record["subject"] == "t-6"));
+    assert_eq!(ledger_rows(&f), 6);
+    let paused = &monitoring(&f)["paused"][0];
+    assert_eq!(paused["reason"], "hourly");
+    let until = paused["until"].as_str().unwrap();
+    assert!(until.ends_with('Z') && until.len() == 20, "{until}");
+}
+
+#[test]
+fn a_daily_token_budget_pauses_the_scope_and_a_null_clears_it() {
+    let f = fixture();
+    set_settings(&f, "s-1", json!({"wake_limits": {"daily_token_budget": 5}})).unwrap();
+    f.probe.replying(Some("ok"));
+    f.probe.reporting(Some(10));
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+
+    start_batch(&f);
+
+    assert_eq!(f.probe.started(), 1);
+    let second = records_of(&f, WakeKind::TaskFailed)
+        .into_iter()
+        .find(|record| record.subject == "t-2")
+        .unwrap();
+    assert_eq!(second.skip_reason, Some(SkipReason::LimitTokens));
+    let paused = &monitoring(&f)["paused"][0];
+    assert_eq!(paused["reason"], "tokens");
+    assert_eq!(paused["until"], Value::Null);
+
+    set_settings(&f, "s-2", json!({"wake_limits": {"daily_token_budget": null}})).unwrap();
+    assert_eq!(monitoring(&f)["paused"], json!([]));
+}
+
+#[test]
+fn wake_turns_are_deferred_while_the_load_gate_is_closed() {
+    let f = fixture();
+    let load = f.api.config.load.clone();
+    let t0 = Instant::now();
+    for n in 0..5 {
+        load.record(cpu(95.0), at(t0, n));
+    }
+    fail_task(&f, "t-1", "one");
+
+    tick(&f);
+    for _ in 0..3 {
+        advance(&f, DEBOUNCE_MS);
+        assert_eq!(tick(&f).started, 0);
+    }
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Pending, "the notice stands, nothing claimed");
+    assert_eq!(f.probe.started(), 0);
+    assert_eq!(ledger_rows(&f), 0, "no cap spent");
+    assert!(running_turn(&f).is_none());
+    assert!(f
+        .api
+        .store
+        .conversation_page(&ConversationTarget::Global, 0, 5)
+        .unwrap()
+        .entries
+        .is_empty());
+
+    // A chat turn is never gated.
+    user_send(&f, "u-1").unwrap();
+    f.probe.finish(0, "hi");
+
+    for n in 5..12 {
+        load.record(cpu(0.0), at(t0, n));
+    }
+    assert_eq!(tick(&f).started, 1, "the first tick after the gate opens starts it");
+    assert_eq!(ledger_rows(&f), 1, "the cap is spent only when the turn starts");
+}
+
+#[test]
+fn a_task_held_queued_by_a_closed_gate_is_not_stalled() {
+    let f = fixture();
+    let load = f.api.config.load.clone();
+    let t0 = Instant::now();
+    for n in 0..5 {
+        load.record(cpu(95.0), at(t0, n));
+    }
+    queue_task(&f, "held", "waiting for the machine");
+
+    for _ in 0..18 {
+        advance(&f, 10 * MINUTE);
+        tick(&f);
+    }
+
+    assert!(records_of(&f, WakeKind::TaskStalled).is_empty());
+    assert!(f.api.store.supervision_load().unwrap().is_empty());
+}
+
+#[test]
+fn held_tasks_add_no_work_unit() {
+    let f = fixture();
+    for index in 0..30 {
+        queue_task(&f, &format!("held-{index}"), "waiting");
+    }
+    run_task(&f, "r-1", "running");
+    run_task(&f, "r-2", "running");
+
+    let load = f.api.store.supervision_load().unwrap();
+    let global = load.iter().find(|load| load.scope == GLOBAL_SCOPE).unwrap();
+
+    assert_eq!(global.work_units, 2);
+    let policy = f.api.store.orchestrator_settings().unwrap().interval_policy();
+    assert_eq!(policy.interval(2), Some(Duration::from_secs(300)));
+}
+
+#[test]
+fn a_gate_that_closes_while_an_attempt_runs_still_flags_a_silent_attempt() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    let load = f.api.config.load.clone();
+    let t0 = Instant::now();
+    for n in 0..5 {
+        load.record(cpu(95.0), at(t0, n));
+    }
+
+    advance(&f, 10 * MINUTE + SLACK);
+    tick(&f);
+
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 1);
+}
+
+#[test]
+fn a_wake_turn_that_waited_for_the_gate_counts_its_cap_only_when_it_starts() {
+    // Covered with the deferral test above; this pins the ledger on its own.
+    let f = fixture();
+    let load = f.api.config.load.clone();
+    let t0 = Instant::now();
+    for n in 0..5 {
+        load.record(cpu(95.0), at(t0, n));
+    }
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    for _ in 0..3 {
+        start_batch(&f);
+    }
+    assert_eq!(ledger_rows(&f), 0);
+
+    for n in 5..12 {
+        load.record(cpu(0.0), at(t0, n));
+    }
+    tick(&f);
+
+    assert_eq!(ledger_rows(&f), 1);
+}
+
+// ---- the stall check ---------------------------------------------------------------------
+
+#[test]
+fn a_stalled_task_raises_a_notice_without_a_model_turn() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+
+    advance(&f, 9 * MINUTE);
+    tick(&f);
+    assert!(records_of(&f, WakeKind::TaskStalled).is_empty());
+
+    advance(&f, MINUTE + SLACK);
+    tick(&f);
+
+    let stalled = records_of(&f, WakeKind::TaskStalled);
+    assert_eq!(stalled.len(), 1);
+    assert!(stalled[0].notice.contains("silent"), "{}", stalled[0].notice);
+    assert_eq!(f.probe.started(), 0, "the scan starts no turn");
+    assert_eq!(ledger_rows(&f), 0, "and writes no ledger row");
+}
+
+#[test]
+fn an_attempt_over_its_wall_time_is_flagged_when_crossed() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    let touch = |f: &Fixture| f.pulse.touch_at("t-1-s1", f.clock.now_ms());
+    tick(&f);
+    for _ in 0..23 {
+        advance(&f, 5 * MINUTE);
+        touch(&f);
+        tick(&f);
+    }
+    // 115 minutes in, then 119.
+    advance(&f, 4 * MINUTE);
+    touch(&f);
+    tick(&f);
+    assert!(records_of(&f, WakeKind::TaskStalled).is_empty());
+
+    advance(&f, MINUTE + SLACK);
+    touch(&f);
+    tick(&f);
+
+    let stalled = records_of(&f, WakeKind::TaskStalled);
+    assert_eq!(stalled.len(), 1, "flagged on the tick it crosses, not the next interval");
+    assert!(stalled[0].notice.contains("time limit"), "{}", stalled[0].notice);
+}
+
+#[test]
+fn an_event_resets_the_quiet_period() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 9 * MINUTE);
+    f.pulse.touch_at("t-1-s1", f.clock.now_ms());
+    tick(&f);
+
+    advance(&f, MINUTE + SLACK);
+    tick(&f);
+    assert!(records_of(&f, WakeKind::TaskStalled).is_empty(), "one minute quiet");
+
+    advance(&f, 10 * MINUTE);
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 1, "eleven minutes quiet");
+}
+
+#[test]
+fn stall_fires_once_per_attempt_and_rule() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    for _ in 0..6 {
+        advance(&f, 10 * MINUTE + SLACK);
+        tick(&f);
+    }
+
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 1);
+}
+
+#[test]
+fn the_stall_check_runs_at_the_scaled_interval() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    run_task(&f, "t-2", "two");
+    tick(&f);
+
+    advance(&f, 299_000);
+    tick(&f);
+    assert!(records_of(&f, WakeKind::TaskStalled).is_empty(), "W = 2 is not due at 299 s");
+
+    advance(&f, 3_000);
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 2, "W = 2 is due at 5 minutes");
+}
+
+#[test]
+fn a_rise_in_work_brings_the_next_check_earlier() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 4 * MINUTE);
+    tick(&f);
+    run_task(&f, "t-2", "two");
+    // The session started on the real clock; the test clock is ahead, so mark it alive now.
+    f.pulse.touch_at("t-2-s1", f.clock.now_ms());
+
+    advance(&f, MINUTE + SLACK);
+    tick(&f);
+
+    let stalled = records_of(&f, WakeKind::TaskStalled);
+    assert_eq!(stalled.len(), 1, "the check ran at 5 minutes, not 10");
+    assert_eq!(stalled[0].subject, "t-1");
+}
+
+#[test]
+fn a_changed_setting_applies_at_the_next_check() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    set_settings(&f, "s-1", json!({"supervision": {"base_interval_secs": 300}})).unwrap();
+
+    advance(&f, 5 * MINUTE + SLACK);
+    tick(&f);
+
+    assert_eq!(records_of(&f, WakeKind::TaskStalled).len(), 1, "no restart, the new base applies");
+}
+
+#[test]
+fn event_wakes_are_not_delayed_by_the_interval() {
+    let f = fixture();
+    set_settings(&f, "s-1", json!({"supervision": {"base_interval_secs": 14_400}})).unwrap();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+
+    assert_eq!(start_batch(&f).started, 1, "60 s debounce, never the interval");
+}
+
+#[test]
+fn a_finding_never_cancels_or_revises_a_task() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 10 * MINUTE + SLACK);
+    tick(&f);
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 1);
+
+    let task = f.api.store.get("t-1").unwrap();
+    assert_eq!(task.state, orchestrator_core::task::TaskState::Running);
+    assert!(f
+        .api
+        .store
+        .action_proposals(&ConversationTarget::Global, 10)
+        .unwrap()
+        .is_empty());
+}
+
+// ---- restart -----------------------------------------------------------------------------
+
+#[test]
+fn restart_requeues_a_claimed_batch_without_a_second_live_turn() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    let first = records_of(&f, WakeKind::TaskFailed)[0].clone();
+    assert_eq!(first.state, WakeState::Running);
+
+    let again = restarted(&f);
+
+    let record = records_of(&f, WakeKind::TaskFailed)[0].clone();
+    assert_eq!(record.state, WakeState::Pending);
+    assert_eq!(record.attempts, 1);
+    assert_eq!(record.batch_id, None);
+    assert!(running_turn(&f).is_none(), "the old turn is terminal");
+
+    advance(&f, DEBOUNCE_MS);
+    assert_eq!(again.tick().unwrap().started, 1);
+    let second = records_of(&f, WakeKind::TaskFailed)[0].clone();
+    assert_ne!(second.turn_id, first.turn_id, "a new batch has a new turn id");
+    assert!(running_turn(&f).is_some());
+    assert_eq!(f.probe.started(), 2);
+}
+
+#[test]
+fn restart_after_a_completed_turn_settles_it_handled() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    f.probe.finish(0, "Task one failed; retry it?");
+
+    let again = restarted(&f);
+    advance(&f, DEBOUNCE_MS);
+    again.tick().unwrap();
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Handled);
+    assert_eq!(record.outcome, Some(WakeOutcome::Replied));
+    assert_eq!(f.probe.started(), 1, "no new turn");
+}
+
+#[test]
+fn a_batch_that_failed_twice_is_not_tried_a_third_time() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+
+    let again = restarted(&f);
+    advance(&f, DEBOUNCE_MS);
+    again.tick().unwrap();
+    assert_eq!(f.probe.started(), 2);
+
+    let third = restarted(&f);
+    advance(&f, DEBOUNCE_MS);
+    third.tick().unwrap();
+
+    assert_eq!(records_of(&f, WakeKind::TaskFailed)[0].state, WakeState::Failed);
+    assert_eq!(f.probe.started(), 2, "never a third try");
+}
+
+#[test]
+fn a_crash_between_event_and_record_loses_nothing() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    // The events are committed; the wake cursor never moved and nothing was recorded.
+    assert_eq!(f.api.store.wake_cursor().unwrap(), 0);
+    assert!(global_records(&f).is_empty());
+
+    let again = restarted(&f);
+    again.tick().unwrap();
+    again.tick().unwrap();
+
+    assert_eq!(records_of(&f, WakeKind::TaskFailed).len(), 1, "recorded once");
+    assert!(f.api.store.wake_cursor().unwrap() > 0);
+}
+
+#[test]
+fn a_restart_that_finds_changes_records_one_catch_up_notice() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+
+    let _again = restarted(&f);
+
+    let starts = records_of(&f, WakeKind::DaemonStart);
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].notice, "The daemon restarted. Checking what changed.");
+}
+
+// ---- settings ----------------------------------------------------------------------------
+
+#[test]
+fn settings_get_carries_the_supervision_and_wake_limit_groups() {
+    let f = fixture();
+    let body = f.api.dispatch("settings.get", Value::Null).unwrap();
+
+    assert_eq!(
+        body["supervision"],
+        json!({"base_interval_secs": 600, "min_interval_secs": 60, "attempt_wall_minutes": 120})
+    );
+    assert_eq!(
+        body["wake_limits"],
+        json!({"hourly_cap": 6, "daily_cap": 40, "daily_token_budget": null})
+    );
+    assert!(body.get("mode").is_none(), "the mode is monitoring.get's");
+}
+
+#[test]
+fn settings_set_refuses_a_minimum_above_the_base_in_one_call_unless_both_move() {
+    let f = fixture();
+    set_settings(&f, "s-1", json!({"supervision": {"min_interval_secs": 600}})).unwrap();
+
+    let refused = set_settings(&f, "s-2", json!({"supervision": {"base_interval_secs": 300}}));
+
+    assert_eq!(refused, Err(RpcError::InvalidParams));
+    assert_eq!(
+        f.api.store.orchestrator_settings().unwrap().supervision.base_interval_secs,
+        600
+    );
+    let both = set_settings(
+        &f,
+        "s-3",
+        json!({"supervision": {"base_interval_secs": 300, "min_interval_secs": 120}}),
+    )
+    .unwrap();
+    assert_eq!(both["supervision"]["base_interval_secs"], 300);
+    assert_eq!(both["supervision"]["min_interval_secs"], 120);
+}
+
+#[test]
+fn settings_set_null_clears_a_wake_cap_and_absent_leaves_it() {
+    let f = fixture();
+    let cleared = set_settings(&f, "s-1", json!({"wake_limits": {"hourly_cap": null}})).unwrap();
+    assert_eq!(cleared["wake_limits"]["hourly_cap"], Value::Null);
+    assert_eq!(f.api.store.orchestrator_settings().unwrap().wake_limits.hourly, None);
+
+    let changed = set_settings(&f, "s-2", json!({"wake_limits": {"daily_cap": 50}})).unwrap();
+
+    assert_eq!(changed["wake_limits"]["daily_cap"], 50);
+    assert_eq!(changed["wake_limits"]["hourly_cap"], Value::Null, "absent leaves it as it was");
+}
+
+#[test]
+fn settings_set_with_only_a_supervision_group_leaves_the_load_limits_and_the_gate_alone() {
+    let f = fixture();
+    let load = f.api.config.load.clone();
+    let t0 = Instant::now();
+    for n in 0..5 {
+        load.record(cpu(95.0), at(t0, n));
+    }
+    let before = load.read(Instant::now());
+
+    let body = set_settings(&f, "s-1", json!({"supervision": {"attempt_wall_minutes": 30}})).unwrap();
+
+    assert_eq!(body["supervision"]["attempt_wall_minutes"], 30);
+    let after = load.read(Instant::now());
+    assert_eq!(after.limits, before.limits);
+    assert_eq!(body["gate"]["state"], "closed");
+}
+
+#[test]
+fn settings_set_refuses_an_empty_patch_an_empty_group_and_the_mode() {
+    let f = fixture();
+    for patch in [
+        json!({}),
+        json!({"supervision": {}}),
+        json!({"wake_limits": {}}),
+        json!({"mode": "off"}),
+        json!({"wake_limits": {"hourly_cap": 0}}),
+        json!({"wake_limits": {"daily_token_budget": 0}}),
+        json!({"supervision": {"attempt_wall_minutes": 4}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (index, patch) = patch;
+        assert_eq!(
+            set_settings(&f, &format!("s-{index}"), patch.clone()),
+            Err(RpcError::InvalidParams),
+            "{patch}"
+        );
+    }
+    assert_eq!(f.api.store.orchestrator_settings().unwrap().mode, MonitoringMode::On);
+}
+
+#[test]
+fn the_limits_survive_a_restart_for_the_new_groups_too() {
+    let directory = tempfile::tempdir().unwrap();
+    {
+        let api = DaemonApi::new(directory.path()).unwrap();
+        api.dispatch(
+            "settings.set",
+            json!({
+                "idempotency_key": "s-1",
+                "supervision": {"base_interval_secs": 900, "min_interval_secs": 30, "attempt_wall_minutes": 60},
+                "wake_limits": {"hourly_cap": 3, "daily_cap": null, "daily_token_budget": 1000},
+            }),
+        )
+        .unwrap();
+        api.dispatch(
+            "monitoring.set",
+            json!({"idempotency_key": "m-1", "mode": "quiet"}),
+        )
+        .unwrap();
+    }
+
+    let api = DaemonApi::new(directory.path()).unwrap();
+
+    let body = api.dispatch("settings.get", Value::Null).unwrap();
+    assert_eq!(
+        body["supervision"],
+        json!({"base_interval_secs": 900, "min_interval_secs": 30, "attempt_wall_minutes": 60})
+    );
+    assert_eq!(
+        body["wake_limits"],
+        json!({"hourly_cap": 3, "daily_cap": null, "daily_token_budget": 1000})
+    );
+    assert_eq!(api.dispatch("monitoring.get", json!({})).unwrap()["mode"], "quiet");
+}
+
+// ---- usage -------------------------------------------------------------------------------
+
+#[test]
+fn chat_turns_write_usage_receipts_for_user_and_wake() {
+    let f = fixture();
+    f.probe.replying(Some("ok"));
+    f.probe.reporting(Some(7));
+    let sent = user_send(&f, "u-1").unwrap();
+    let user_turn = sent["turn"]["id"].as_str().unwrap().to_owned();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    let wake_turn = records_of(&f, WakeKind::TaskFailed)[0].turn_id.clone().unwrap();
+
+    let receipt = |turn: &str, trigger| ConversationUsageReceipt {
+        conversation_id: GLOBAL_SCOPE.into(),
+        turn_id: turn.into(),
+        trigger,
+        receipt_key: "turn.completed:1".into(),
+        reported_at_ms: 0,
+        input_tokens: Some(7),
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        output_tokens: None,
+        reasoning_tokens: None,
+        cost: None,
+        model: None,
+    };
+    // An older observation under the same key changes nothing when the receipt exists.
+    for (turn, trigger) in [(&user_turn, TurnTrigger::User), (&wake_turn, TurnTrigger::Wake)] {
+        let outcome = f
+            .api
+            .store
+            .record_conversation_usage(&receipt(turn, trigger))
+            .unwrap();
+        assert!(matches!(outcome, ReceiptOutcome::Unchanged), "{turn}");
+    }
+    // Only the wake turn's tokens count toward the wake budget.
+    assert_eq!(f.api.store.wake_tokens_since(GLOBAL_SCOPE, 0).unwrap(), 7);
+}
