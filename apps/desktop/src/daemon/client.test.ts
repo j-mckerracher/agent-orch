@@ -135,6 +135,18 @@ describe("DaemonSession", () => {
     });
     expect(seen).toEqual([]);
   });
+
+  it("a_welcome_with_approver_true_makes_the_session_an_approver", async () => {
+    const fake = new FakeDaemon();
+    fake.approver = true;
+    expect((await open(fake)).isApprover).toBe(true);
+  });
+
+  it("a_welcome_without_approver_is_not_an_approver", async () => {
+    const fake = new FakeDaemon();
+    fake.approver = null;
+    expect((await open(fake)).isApprover).toBe(false);
+  });
 });
 
 describe("DaemonApi placeholder-id guard", () => {
@@ -196,6 +208,55 @@ describe("DaemonApi placeholder-id guard", () => {
     });
     await api.agentsCatalog();
     expect(fake.callsTo("agents.catalog")).toHaveLength(1);
+  });
+});
+
+describe("DaemonApi actionsPending", () => {
+  const listed = {
+    proposals: [
+      {
+        id: "proposal-1",
+        turn_id: "turn-1",
+        index: 0,
+        kind: "task.propose",
+        params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+        digest: "d".repeat(64),
+        depends_on: null,
+        state: "pending",
+        result_ref: null,
+        error_code: null,
+        denial: null,
+        target: { project_name: "alpha" },
+        created_at: "2026-11-10T21:00:00Z",
+        updated_at: "2026-11-10T21:00:00Z",
+        scope: { kind: "global" },
+      },
+    ],
+    more: false,
+  };
+
+  it("actions_pending_sends_an_empty_request_and_returns_what_the_daemon_listed", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("actions.pending", listed);
+    await expect(new DaemonApi(await open(fake)).actionsPending()).resolves.toEqual(listed);
+    expect(fake.callsTo("actions.pending")).toEqual([{ method: "actions.pending", params: {} }]);
+  });
+
+  it("actions_pending_reads_a_daemon_without_the_method_as_nothing_pending", async () => {
+    const api = new DaemonApi(await open(new FakeDaemon()));
+    await expect(api.actionsPending()).resolves.toEqual({ proposals: [], more: false });
+  });
+
+  it("actions_pending_reads_a_session_without_orchestrator_actions_as_nothing_pending", async () => {
+    const fake = new FakeDaemon();
+    const api = new DaemonApi(new DaemonSession(await fake.open(["health"])));
+    await expect(api.actionsPending()).resolves.toEqual({ proposals: [], more: false });
+  });
+
+  it("actions_pending_still_rejects_a_failure_that_is_not_a_missing_feature", async () => {
+    const fake = new FakeDaemon();
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" });
+    await expect(new DaemonApi(await open(fake)).actionsPending()).rejects.toMatchObject({ kind: "internal" });
   });
 });
 

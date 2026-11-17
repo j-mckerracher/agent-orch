@@ -1,11 +1,13 @@
 /**
  * The approve and reject state of the conversations' cards (DPES-1105). Only what the daemon confirmed is kept as
- * a card's state: nothing shows as done until `actions.resolve` answers. Every outcome reloads the transcript.
- * State is kept per conversation, so switching target does not lose a decision that is still in flight.
+ * a card's state: nothing shows as done until `actions.resolve` answers. Every outcome reloads the transcript and
+ * the pending proposals the nav count reads. State is kept per conversation, so switching target does not lose a
+ * decision that is still in flight.
  */
 import { useRef, useState } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { ActionProposal, ConversationSource, Decision } from "../../../sources/surfaces/types";
+import { useServices } from "../../services";
 import { reloadWorkstreams } from "../workstreams/model";
 import { outcomeAnnouncement, requestErrorText, type WorkstreamNames } from "./actionCardModel";
 
@@ -53,6 +55,7 @@ export function useActionDecisions(options: {
   reload(): void;
 }): ActionDecisions {
   const { scope, resolve, announce, reload } = options;
+  const { data } = useServices();
   const [byScope, setByScope] = useState<ReadonlyMap<string, Decided>>(() => new Map());
   // Guards a second click that lands before the state update does. A decision is never sent twice.
   const sending = useRef(new Set<string>());
@@ -94,6 +97,8 @@ export function useActionDecisions(options: {
       sending.current.delete(proposal.id);
       update(scope, (value) => ({ ...value, inFlight: withFlight(value.inFlight, proposal.id, false) }));
       reload();
+      // Whatever the outcome, the pending list the nav count reads may have changed (also after an error that left it unknown).
+      void data.refreshProposals();
     }
   };
 

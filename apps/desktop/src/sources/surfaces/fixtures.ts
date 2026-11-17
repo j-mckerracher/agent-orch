@@ -38,6 +38,7 @@ import type {
   ModelCatalogSource,
   Decision,
   Provenance,
+  ProposalItem,
   ResolveReceipt,
   SendReceipt,
   SurfaceId,
@@ -204,9 +205,78 @@ function notMutable(): Promise<never> {
   return Promise.reject(new DaemonError("method-unavailable", "Fixture workstreams cannot be changed; nothing was sent to the daemon."));
 }
 
+type ConversationData = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
+
+type TaskCardFields = Pick<ActionProposal, "kind" | "params" | "target"> & Partial<Pick<ActionProposal, "state" | "errorCode" | "denial">>;
+
+/** A Global card on the fixture reply's turn, after the two workstream cards. */
+function taskCard(index: number, fields: TaskCardFields): ActionProposal {
+  return {
+    id: `fixture:proposal-${index + 1}`,
+    turnId: "fixture:turn-1",
+    index,
+    digest: String(index + 1).repeat(64),
+    dependsOn: null,
+    state: "pending",
+    resultRef: null,
+    errorCode: null,
+    denial: null,
+    updatedAt: "2026-01-01T09:00:05Z",
+    ...fields,
+  };
+}
+
+/** One card per task kind, and one the app denied (DPES-1105). Their ids and titles match the fixture tasks. */
+const TASK_CARDS: ActionProposal[] = [
+  taskCard(2, {
+    kind: "task.propose",
+    params: {
+      project: "p-3fa9c1d2",
+      objective: "Add unit tests for the retry module.\nRun them locally and report what failed.",
+      agent: "codex",
+      task_kind: "Implement",
+      delivery: "LocalReview",
+    },
+    target: { projectName: "alpha" },
+  }),
+  taskCard(3, {
+    kind: "task.cancel",
+    params: { task_id: "fixture:task-auth-2" },
+    target: { taskTitle: "Add refresh-token expiry", taskState: "Running" },
+  }),
+  taskCard(4, {
+    kind: "task.retry",
+    params: { task_id: "fixture:task-docs-1" },
+    target: { taskTitle: "Rewrite the install guide", taskState: "Failed" },
+  }),
+  taskCard(5, {
+    kind: "workstream.link_task",
+    params: { workstream_id: "fixture:ws-docs", task_id: "fixture:task-auth-3" },
+    target: { taskTitle: "Document the session model", taskState: "Queued" },
+  }),
+  taskCard(6, {
+    kind: "task.propose",
+    params: {
+      project: "p-3fa9c1d2",
+      objective: "Fix the flaky login test and open a pull request.",
+      agent: "claude-code",
+      task_kind: "Implement",
+      delivery: "PullRequest",
+    },
+    target: { projectName: "alpha" },
+    state: "failed",
+    errorCode: "action_denied",
+    denial: "delivery_not_authorized",
+  }),
+];
+
+/** The Global conversation's cards. The JSON holds the workstream cards, written before a card had `denial` or `target`. */
+function conversationProposals(data: ConversationData): ActionProposal[] {
+  return [...data.proposals.map((proposal) => ({ ...proposal, denial: proposal.denial ?? null, target: proposal.target ?? null })), ...TASK_CARDS];
+}
+
 function conversationSource(ctx: Ctx): ConversationSource {
-  type Data = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
-  const envelope = conversationFixture as unknown as Envelope<Data>;
+  const envelope = conversationFixture as unknown as Envelope<ConversationData>;
   const counter = { n: 0 };
   // Simulated clears (DPES-1105) empty a fixture transcript for the rest of the session only.
   const cleared = new Set<string>();
@@ -227,7 +297,7 @@ function conversationSource(ctx: Ctx): ConversationSource {
     provenance: provenance("D10", envelope),
     transcript: (target: ConversationTarget) =>
       resolve<
-        Data,
+        ConversationData,
         {
           target: ConversationTarget;
           entries: ConversationEntry[];
@@ -240,7 +310,7 @@ function conversationSource(ctx: Ctx): ConversationSource {
         "D10",
         envelope,
         ctx,
-        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], data.proposals),
+        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], conversationProposals(data)),
         () => transcriptOf(target, []),
       ),
     // DPES-1105. Fixture cards stay pending: nothing is sent and the daemon is never asked.
@@ -404,18 +474,26 @@ function modelSource(ctx: Ctx): ModelCatalogSource {
   };
 }
 
+/** The Global conversation's pending cards, as the queue lists them. The fixture has no workstream conversations. */
+function pendingProposals(): ProposalItem[] {
+  const { data } = (conversationFixture as unknown as Envelope<ConversationData>).scenarios.success;
+  return conversationProposals(data)
+    .filter((proposal) => proposal.state === "pending")
+    .map((proposal): ProposalItem => ({ proposal, scope: { kind: "global" } }));
+}
+
 function decisionSource(ctx: Ctx): DecisionQueueSource {
-  const envelope = decisionFixture as unknown as Envelope<DecisionQueue>;
+  const envelope = decisionFixture as unknown as Envelope<Omit<DecisionQueue, "proposals">>;
   const counter = { n: 0 };
   return {
     provenance: provenance("D16", envelope),
     queue: () =>
-      resolve<DecisionQueue, DecisionQueue>(
+      resolve<Omit<DecisionQueue, "proposals">, DecisionQueue>(
         "D16",
         envelope,
         ctx,
-        (data) => data,
-        (data) => ({ ...data, items: [] }),
+        (data) => ({ ...data, proposals: pendingProposals() }),
+        (data) => ({ ...data, items: [], proposals: [] }),
       ),
     simulatePostpone: (id) => Promise.resolve(receipt("D16", envelope, ctx, counter, `postpone of ${id}`)),
     simulateDismiss: (id) => Promise.resolve(receipt("D16", envelope, ctx, counter, `dismissal of ${id}`)),

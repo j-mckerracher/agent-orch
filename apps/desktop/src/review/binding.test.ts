@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { acceptBlockers, deliveryPlan, digestHex, evidenceBlockers, rejectBlockers, type ActionContext } from "./binding";
 import { approval, evidenceFor, taskRecord } from "./testing";
+import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 
 function ctx(overrides: Partial<ActionContext> = {}): ActionContext {
   const a = approval();
   return {
     connected: true,
+    approver: true,
     loading: false,
     stale: false,
     refreshRequired: false,
@@ -136,6 +138,18 @@ describe("delivery plan", () => {
     const a = approved();
     const e = evidenceFor(a, { action: { ...evidenceFor(a).action, target: null } });
     expect(deliveryPlan(ctx({ approval: a, evidence: { state: "available", evidence: e } })).request).toBeNull();
+  });
+});
+
+describe("approver policy (DPES-1105)", () => {
+  it("accept_and_reject_are_blocked_with_the_approver_notice_when_the_session_is_not_an_approver", () => {
+    const notApprover = ctx({ approver: false });
+    expect(acceptBlockers(notApprover)).toContain(APPROVER_REQUIRED_NOTICE);
+    expect(rejectBlockers(notApprover)).toContain(APPROVER_REQUIRED_NOTICE);
+    const disconnected = ctx({ connected: false, approver: false });
+    expect(acceptBlockers(disconnected)).not.toContain(APPROVER_REQUIRED_NOTICE);
+    expect(rejectBlockers(disconnected)).not.toContain(APPROVER_REQUIRED_NOTICE);
+    expect(deliveryPlan(notApprover).blockers).toEqual(deliveryPlan(ctx()).blockers);
   });
 });
 

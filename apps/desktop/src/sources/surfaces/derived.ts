@@ -3,7 +3,7 @@
  * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
  * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
  * approvals.list. D12 uses usage.summary and the usage.localTools methods; D13 uses host.metrics; D14 uses
- * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list.
+ * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list and adds actions.pending.
  * D15 indexes D9 and D16 locally. No daemon method is added here.
  *
  * Failed reads retain daemon provenance and never fall back to fixtures. Missing
@@ -15,8 +15,9 @@ import type { ConnectionManager } from "../../daemon/connection";
 import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
-import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
+import type { ActionsPendingWire, Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { createDerivedActivity } from "./activity";
+import { mapProposal } from "./actionProposals";
 import {
   createLiveConversation,
   HistoryChanged,
@@ -40,6 +41,7 @@ import type {
   DecisionQueueSource,
   ModelCatalogSource,
   Provenance,
+  ProposalItem,
   SurfaceId,
   SurfaceResult,
   SurfaceSources,
@@ -80,6 +82,14 @@ function approvalKind(approval: Approval): string {
 
 function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
   return new Map(tasks.map((task) => [task.contract.id, task.contract.project_id]));
+}
+
+/** A pending proposal and the conversation that holds its card, from `actions.pending`. */
+function proposalItemOf(wire: ActionsPendingWire["proposals"][number]): ProposalItem {
+  return {
+    proposal: mapProposal(wire),
+    scope: wire.scope.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.scope.workstream_id },
+  };
 }
 
 export function createDerivedSurfaces(connection: ConnectionManager, now: () => number = Date.now): SurfaceSources {
@@ -245,13 +255,14 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const modelsProvenance = prov("D14", MODELS_METHODS);
   const models: ModelCatalogSource = createLiveModels(connection, modelsProvenance, now);
 
-  const decisionProvenance = prov("D16", ["approvals.list", "tasks.list"]);
+  const decisionProvenance = prov("D16", ["approvals.list", "tasks.list", "actions.pending"]);
   const decisions: DecisionQueueSource = {
     provenance: decisionProvenance,
     queue: () =>
       guarded(decisionProvenance, now, async () => {
         const api = connection.api();
-        const [approvals, tasks] = await Promise.all([api.approvalsList(), api.tasksList()]);
+        // `actionsPending` answers an older daemon with an empty list, so the queue never fails for the missing method.
+        const [approvals, tasks, pending] = await Promise.all([api.approvalsList(), api.tasksList(), api.actionsPending()]);
         const projects = projectOf(tasks);
         const reason = "The daemon has no decision for this action; use approve or reject on the review screen.";
         return {
@@ -265,6 +276,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
             priority: "unknown",
             latestResponseAt: null,
           })),
+          proposals: pending.proposals.map<ProposalItem>(proposalItemOf),
           actions: {
             postpone: { available: false, reason },
             dismiss: { available: false, reason },

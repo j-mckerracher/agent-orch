@@ -12,6 +12,7 @@ import { DaemonError, asDaemonError } from "./errors";
 import { IdempotencyTracker } from "./idempotency";
 import { Store } from "./store";
 import type {
+  ActionsPendingWire,
   Approval,
   DaemonEvent,
   ProjectRow,
@@ -43,6 +44,11 @@ export interface AppDataSnapshot {
   tasks: Loadable<TaskRecord[]>;
   sessions: Loadable<SessionEntry[]>;
   approvals: Loadable<Approval[]>;
+  /**
+   * `actions.pending`: the proposed actions waiting for a decision (DPES-1105). A daemon without the method
+   * gives an empty loaded list, never an error, so the nav count falls back to the approvals alone.
+   */
+  proposals: Loadable<ActionsPendingWire["proposals"]>;
   timelines: Record<string, Timeline>;
   /** `tasks.get` per watched task id. */
   taskDetails: Record<string, Loadable<TaskRecord>>;
@@ -59,6 +65,12 @@ export type MutationResult<T> = { ok: true; value: T } | { ok: false; error: Dae
 
 const idle = <T>(): Loadable<T> => ({ status: "idle", data: null, error: null });
 
+/**
+ * No event tells the app that a turn ended with a new proposal, so while the window is visible the pending
+ * proposals are read again at this interval (decisions-2 Q12).
+ */
+export const PROPOSALS_REFRESH_MS = 30_000;
+
 export const timelineKey = (taskId: string, sessionId: string): string => `${taskId}/${sessionId}`;
 
 export interface AppDataOptions {
@@ -72,6 +84,7 @@ export class AppData extends Store<AppDataSnapshot> {
   private refreshing = false;
   private dirty = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private proposalsTimer: ReturnType<typeof setInterval> | null = null;
   private readonly detach: Array<() => void> = [];
   private readonly watched = new Map<string, () => Promise<void>>();
   private readonly timelineLoads = new Map<string, number>();
@@ -85,6 +98,7 @@ export class AppData extends Store<AppDataSnapshot> {
       tasks: idle(),
       sessions: idle(),
       approvals: idle(),
+      proposals: idle(),
       timelines: {},
       taskDetails: {},
       taskSessions: {},
@@ -99,12 +113,21 @@ export class AppData extends Store<AppDataSnapshot> {
       }),
       connection.onEvent((event) => this.onEvent(event)),
     );
+    // One interval per instance. It keeps running while the window is hidden but does nothing then, so a window
+    // that is shown again reads the list within one interval. Without a document (a node run) there is no window.
+    if (typeof document !== "undefined") {
+      this.proposalsTimer = setInterval(() => {
+        if (!document.hidden && !this.refreshing) void this.refreshProposals();
+      }, PROPOSALS_REFRESH_MS);
+    }
   }
 
   dispose(): void {
     for (const off of this.detach) off();
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    if (this.proposalsTimer !== null) clearInterval(this.proposalsTimer);
+    this.proposalsTimer = null;
   }
 
   /** Refetches every snapshot; overlapping calls collapse into one rerun. */
@@ -122,6 +145,7 @@ export class AppData extends Store<AppDataSnapshot> {
           this.load("tasks", (api) => api.tasksList()),
           this.load("sessions", (api) => api.sessionsList(null)),
           this.load("approvals", (api) => api.approvalsList()),
+          this.loadProposals(),
           ...[...this.watched.values()].map((reload) => reload()),
         ]);
       } while (this.dirty);
@@ -130,7 +154,17 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
-  private async load<K extends "projects" | "tasks" | "sessions" | "approvals">(
+  /** Reads the pending proposed actions again. While disconnected nothing is sent; the next connect reads them. */
+  async refreshProposals(): Promise<void> {
+    if (this.connection.getSnapshot().status !== "connected") return;
+    await this.loadProposals();
+  }
+
+  private loadProposals(): Promise<void> {
+    return this.load("proposals", async (api) => (await api.actionsPending()).proposals);
+  }
+
+  private async load<K extends "projects" | "tasks" | "sessions" | "approvals" | "proposals">(
     key: K,
     fetcher: (api: ReturnType<ConnectionManager["api"]>) => Promise<NonNullable<AppDataSnapshot[K]["data"]>>,
   ): Promise<void> {

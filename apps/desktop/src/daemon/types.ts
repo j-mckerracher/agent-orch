@@ -71,6 +71,8 @@ export interface Welcome {
   capabilities: Capability[];
   /** Names the durable journal; absent from daemons without a store epoch. */
   journal_epoch?: string;
+  /** True when this session proved the approver secret; absent from older daemons. */
+  approver?: boolean;
 }
 
 export type TaskState =
@@ -609,13 +611,28 @@ export interface ConversationSendResult {
 }
 
 /** An action proposal's kind on the wire (DPES-1105). Unknown kinds arrive as strings and render as unknown. */
-export type ActionKindWire = "workstream.create" | "workstream.update" | "objective.add" | "objective.revise";
+export type ActionKindWire =
+  | "workstream.create"
+  | "workstream.update"
+  | "objective.add"
+  | "objective.revise"
+  | "task.propose"
+  | "task.cancel"
+  | "task.retry"
+  | "workstream.link_task";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
 export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
 
 /** What the orchestrator's action block in one reply became (DPES-1105). */
 export type ActionBlockWire = "accepted" | "rejected" | "stripped";
+
+/** Display facts the daemon read live for a task proposal: a project's folder name, or a task's title and state now. */
+export interface ProposalTargetWire {
+  project_name?: string | null;
+  task_title?: string;
+  task_state?: string;
+}
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
 export interface ActionProposalWire {
@@ -629,6 +646,10 @@ export interface ActionProposalWire {
   state: ProposalStateWire | (string & {});
   result_ref: string | null;
   error_code: string | null;
+  /** The envelope's reason when `error_code` is "action_denied"; null otherwise. Absent from older daemons. */
+  denial?: string | null;
+  /** Null for kinds that need no display facts. Absent from older daemons. */
+  target?: ProposalTargetWire | null;
   created_at: string;
   updated_at: string;
 }
@@ -636,6 +657,15 @@ export interface ActionProposalWire {
 /** `actions.resolve` result: the proposal as the daemon now holds it (DPES-1105). */
 export interface ActionsResolveWire {
   proposal: ActionProposalWire;
+}
+
+/** The conversation that holds a proposal's card. */
+export type ProposalScopeWire = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+
+/** `actions.pending` result: pending proposals only, newest first. `more` is true when any were left out. */
+export interface ActionsPendingWire {
+  proposals: Array<ActionProposalWire & { scope: ProposalScopeWire }>;
+  more: boolean;
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */

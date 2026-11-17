@@ -10,6 +10,8 @@ export interface ReviewConnection {
   status: ConnectionStatus;
   /** Set after ReplayGap/SlowConsumer until a fresh baseline is established. */
   historyIncomplete: boolean;
+  /** True when this session proved the approver secret (DPES-1105). */
+  approver: boolean;
 }
 
 export type ReviewNotice =
@@ -34,7 +36,10 @@ export function createReviewClient(manager: ConnectionManager): ReviewClient {
   const connection = (): ReviewConnection => {
     const snapshot = manager.getSnapshot();
     if (!last || last.snapshot !== snapshot) {
-      last = { snapshot, state: { status: snapshot.status, historyIncomplete: snapshot.history.incomplete } };
+      last = {
+        snapshot,
+        state: { status: snapshot.status, historyIncomplete: snapshot.history.incomplete, approver: snapshot.approver },
+      };
     }
     return last.state;
   };

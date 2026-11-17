@@ -306,7 +306,7 @@ describe("counts and placeholders", () => {
   it("derives the review count and top-bar counts from the same lists", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1"));
-    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending approvals");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
     const counts = screen.getByTestId("top-counts");
     expect(counts).toHaveTextContent("2 tasks");
     expect(counts).toHaveTextContent("1 running");

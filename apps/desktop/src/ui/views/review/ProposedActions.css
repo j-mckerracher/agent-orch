@@ -1,0 +1,15 @@
+/* The proposed actions waiting for a decision (DPES-1105). Token variables only; both themes come from ui/theme. */
+.pa-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.pa-link {
+  justify-self: start;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

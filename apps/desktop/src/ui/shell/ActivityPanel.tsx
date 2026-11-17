@@ -8,9 +8,10 @@
  *   `approvals.list` when a daemon is bound; PLACEHOLDER fixtures in `?fixture=1` mode).
  *   The panel re-reads the source whenever the connection changes or `AppData` refreshes
  *   `tasks`/`approvals` after a live event, and keeps the last answer on screen meanwhile.
- * - The badge is the `AppData` pending-approval count, the exact value `ReviewCount` and the top
- *   bar show, so the three agree. Without a loaded list (including fixture mode) it shows
- *   "—", never 0 and never a sample number; the sample attention rows stay PLACEHOLDER-labeled.
+ * - The badge is the `AppData` pending-decision count (approvals plus proposed actions, `pendingDecisionCount`),
+ *   the exact value `ReviewCount` and the top bar show, so the three agree. Without both lists loaded
+ *   (including fixture mode) it shows "—", never 0 and never a sample number; the sample attention rows
+ *   stay PLACEHOLDER-labeled.
  * - Queued tasks are grouped honestly: "Up next" only for capacity-waiting or source-named next
  *   tasks, "Waiting" for known blockers, "Unclassified" when the daemon reports no reason.
  * - Slots, dispatch order, pause, stop-all and queue settings have no daemon data yet
@@ -43,7 +44,7 @@ import type {
   UsageSummary,
   WaitingReason,
 } from "../../sources/surfaces/types";
-import { basename, pendingApprovals, stateLabel } from "../format";
+import { basename, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { usePopover } from "../usePopover";
@@ -363,13 +364,16 @@ export function ActivityPanel() {
     },
   };
 
-  // The badge uses the same pending-approval count as the Review nav and top bar, so the three
-  // cannot disagree. Fixture mode has no AppData list, so it shows "—" rather than a sample number.
-  const attentionCount = appData.approvals.data ? pendingApprovals(appData.approvals.data).length : null;
+  // The badge uses the same pending-decision count (approvals plus proposed actions) as the Review nav and top
+  // bar, so the three cannot disagree. Fixture mode has no AppData list, so it shows "—" rather than a sample number.
+  const attentionCount =
+    appData.approvals.data && appData.proposals.data ? pendingDecisionCount(appData.approvals.data, appData.proposals.data) : null;
   const badge = attentionCount === null ? "—" : String(attentionCount);
+  // The source lists approvals only; a pending proposed action waits on its card in the conversation.
+  const proposalCount = appData.proposals.data ? pendingProposals(appData.proposals.data).length : 0;
   const attentionKnown = !snapshot?.degraded?.approvals;
   const statusLine = snapshot
-    ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${attention.length} require attention` : "attention not available"}.`
+    ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${attention.length + proposalCount} require attention` : "attention not available"}.`
     : activity.status === "loading"
       ? "Loading workspace activity."
       : `Workspace activity is ${activity.status} (observed ${formatAge(activity.observedAt, activity.ageMs, Date.now())}).`;
@@ -488,14 +492,24 @@ export function ActivityPanel() {
                   <p className="activity-empty" data-testid="activity-attention-degraded">
                     Attention list not available: {snapshot.degraded?.approvals}
                   </p>
-                ) : attention.length === 0 ? (
-                  <EmptyState title="Nothing needs attention." description="Pending approvals appear here." />
+                ) : attention.length === 0 && proposalCount === 0 ? (
+                  <EmptyState title="Nothing needs attention." description="Pending approvals and proposed actions appear here." />
                 ) : (
-                  <ul className="activity-list">
-                    {attention.map((item) => (
-                      <AttentionRow key={item.approvalId} item={item} />
-                    ))}
-                  </ul>
+                  <>
+                    {proposalCount > 0 && (
+                      <p className="activity-note" data-testid="activity-attention-proposals">
+                        {proposalCount} proposed action{proposalCount === 1 ? " waits" : "s wait"} for a decision on{" "}
+                        {proposalCount === 1 ? "its card" : "their cards"}. Review all decisions lists {proposalCount === 1 ? "it" : "them"}.
+                      </p>
+                    )}
+                    {attention.length > 0 && (
+                      <ul className="activity-list">
+                        {attention.map((item) => (
+                          <AttentionRow key={item.approvalId} item={item} />
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 )}
               </>
             ) : (

@@ -11,6 +11,7 @@ import type {
   PermissionLevel,
   Workstream,
 } from "../../../sources/surfaces/types";
+import type { Route } from "../../router";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -49,7 +50,7 @@ interface SimulatedEntry {
 export function WorkspaceView() {
   const { surfaces, drafts, data } = useServices();
   const snapshot = useStore(drafts);
-  const projectList = useStore(data).projects;
+  const { projects: projectList, tasks: taskList } = useStore(data);
   const gate = useGate();
   const live = surfaces.conversation.provenance.kind === "daemon";
   // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
@@ -88,6 +89,14 @@ export function WorkspaceView() {
     if (workstreams.status === "ok") for (const ws of workstreams.data) names.set(ws.workstreamId ?? ws.id, ws.title);
     return names;
   }, [workstreams]);
+  // A proposal names a task by id only; its page needs the task's project, which the tasks list holds (DPES-1105).
+  const taskRoute = useCallback(
+    (taskId: string): Route | null => {
+      const task = (taskList.data ?? []).find((item) => item.contract.id === taskId);
+      return task ? { name: "task", projectId: task.contract.project_id, taskId } : null;
+    },
+    [taskList.data],
+  );
   const addable = useMemo(
     () => Array.from(removedIds).map((id) => ({ id, label: projectLabel(id) })),
     [removedIds],
@@ -175,6 +184,7 @@ export function WorkspaceView() {
         option={option}
         options={options}
         workstreamNames={workstreamNames}
+        taskRoute={taskRoute}
         live={live}
         draft={drafts.workspaceDraft(resolved)}
         simulated={simulated[resolved] ?? []}
@@ -289,6 +299,7 @@ interface ConversationProps {
   option: TargetOption;
   options: readonly TargetOption[];
   workstreamNames: ReadonlyMap<string, string>;
+  taskRoute: (taskId: string) => Route | null;
   live: boolean;
   draft: string;
   simulated: readonly SimulatedEntry[];
@@ -306,6 +317,7 @@ function Conversation({
   option,
   options,
   workstreamNames,
+  taskRoute,
   live,
   draft,
   simulated,
@@ -347,9 +359,9 @@ function Conversation({
   );
   const transcript = useRetained(loaded, option.key);
 
-  // Approval cards: live ones need the capability; fixture ones always show (DPES-1105).
+  // Approval cards: live ones need the capability and the approver role; fixture ones always show (DPES-1105).
   const actionsShown = live ? gate.connection.capabilities.includes("orchestrator_actions") : true;
-  const canDecide = !live || gate.can("orchestrator_actions");
+  const canDecide = !live || (gate.can("orchestrator_actions") && gate.connection.approver);
   const decisions = useActionDecisions({
     scope: option.key,
     resolve: (proposalId, decision, digest) => surfaces.conversation.resolve(proposalId, decision, digest),
@@ -517,8 +529,11 @@ function Conversation({
         parent={parent}
         names={workstreamNames}
         scope={target.kind === "workstream" ? target.workstreamId : null}
+        taskRoute={taskRoute}
         live={live}
         canDecide={canDecide}
+        connected={!live || gate.connected}
+        approver={!live || gate.connection.approver}
         deciding={decisions.inFlight.has(p.id)}
         notice={decisions.notices.get(p.id) ?? null}
         error={decisions.errors.get(p.id) ?? null}

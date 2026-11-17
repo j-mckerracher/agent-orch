@@ -11,6 +11,7 @@ const healthy: ConnectionSnapshot = {
   lastSequence: 4,
   lastEventAt: 1,
   lastConnectedAt: 1,
+  approver: true,
   history: { incomplete: false, reason: null },
   resumedFrom: 3,
   generation: 1,

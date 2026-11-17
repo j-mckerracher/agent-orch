@@ -203,7 +203,24 @@ export interface ActionProposal {
   /** The record the executed action created or changed; null until it runs. */
   resultRef: string | null;
   errorCode: string | null;
+  /** The envelope's reason when `errorCode` is "action_denied"; null otherwise. */
+  denial: string | null;
+  /** Display facts the daemon read live; null for kinds that need none. No paths. */
+  target: ProposalTarget | null;
   updatedAt: string;
+}
+
+/** What the daemon read when it listed a task proposal: the project's folder name, or the task's title and state now. */
+export interface ProposalTarget {
+  projectName?: string | null;
+  taskTitle?: string;
+  taskState?: string;
+}
+
+/** A pending proposal and the conversation that holds its card (DPES-1105). */
+export interface ProposalItem {
+  proposal: ActionProposal;
+  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string };
 }
 
 /** Outcome of approve or reject. `simulated` receipts changed nothing; `proposal` is what the daemon confirmed. */
@@ -602,6 +619,8 @@ export interface ActionSupport {
 }
 export interface DecisionQueue {
   items: DecisionItem[];
+  /** Pending proposed actions (DPES-1105). The user decides on the card in the conversation; the queue only links to it. */
+  proposals: ProposalItem[];
   /** Approve and reject belong to the review screen; these extra actions have no daemon decision type. */
   actions: Record<"postpone" | "dismiss" | "escalate", ActionSupport>;
 }

@@ -48,7 +48,7 @@ const workstream = (id: string, title: string, tasks: Array<[string, string]>): 
   counts: measured(countStates(tasks.map(() => "Queued")), observation(NOW)),
   objectives: { status: "ok", value: [], observedAt: new Date(NOW).toISOString(), ageMs: 0 },
 });
-const emptyQueue: DecisionQueue = { items: [], actions: { postpone: { available: false, reason: "r" }, dismiss: { available: false, reason: "r" }, escalate: { available: false, reason: "r" } } };
+const emptyQueue: DecisionQueue = { items: [], proposals: [], actions: { postpone: { available: false, reason: "r" }, dismiss: { available: false, reason: "r" }, escalate: { available: false, reason: "r" } } };
 
 describe("D15 local search", () => {
   const ws = okResult(daemon("D9", ["workstreams.list", "tasks.list"]), [workstream("/r/alpha", "alpha", [["t1", "Fix Login Bug"], ["t2", "Write docs"]])], observation(NOW, 5_000));

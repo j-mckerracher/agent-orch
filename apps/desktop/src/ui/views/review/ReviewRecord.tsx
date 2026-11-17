@@ -8,6 +8,8 @@ import { SixFacts, deriveFacts } from "./SixFacts";
 function bindingContext(state: ReviewState): ActionContext {
   return {
     connected: true,
+    // Only the evidence blockers read this context, so the approver role is not checked here.
+    approver: true,
     loading: false,
     stale: false,
     refreshRequired: false,

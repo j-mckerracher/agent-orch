@@ -120,6 +120,10 @@ export function isMissingFeature(error: DaemonError): boolean {
   );
 }
 
+/** Shown by the card and the Review view when this app did not start the running daemon (DPES-1105). */
+export const APPROVER_REQUIRED_NOTICE =
+  "This app did not start the orchestrator service that is running, so it cannot approve or reject for it. Close the app and open it again once the service has stopped, about a minute after running work finishes. Nothing is lost.";
+
 export interface ErrorPresentation {
   reason: string;
   nextStep: string;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../daemon/errors";
+import type { ActionProposalWire } from "../../daemon/types";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { stubConversation } from "../../test/m724Stubs";
 import { ALPHA, BETA, WORKSTREAM_STATE, connect, populate } from "./testkit";
@@ -229,6 +230,70 @@ describe("derived D16 decisions", () => {
     fake.approvals = [mkApproval("a-x", "ghost-task")];
     const result = await (await live(fake)).decisions.queue();
     expect(result.status === "ok" && result.data.items[0]!.projectId).toBeNull();
+  });
+
+  const pendingWire = (id: string, over: Partial<ActionProposalWire> = {}): ActionProposalWire => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    ...over,
+  });
+
+  it("queue_lists_each_pending_proposal_with_the_conversation_that_holds_its_card", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.stub("actions.pending", {
+      proposals: [
+        { ...pendingWire("proposal-1"), scope: { kind: "global" } },
+        {
+          ...pendingWire("proposal-2", {
+            kind: "task.cancel",
+            params: { kind: "task.cancel", task_id: "t-run" },
+            target: { task_title: "objective of t-run", task_state: "Running" },
+          }),
+          scope: { kind: "workstream", workstream_id: "ws-1" },
+        },
+      ],
+      more: false,
+    });
+    const result = await (await live(fake)).decisions.queue();
+    expect(result).toMatchObject({
+      status: "ok",
+      provenance: { kind: "daemon", id: "D16", methods: ["approvals.list", "tasks.list", "actions.pending"] },
+    });
+    if (result.status !== "ok") return;
+    expect(result.data.proposals.map((item) => [item.proposal.id, item.proposal.kind, item.scope])).toEqual([
+      ["proposal-1", "task.propose", { kind: "global" }],
+      ["proposal-2", "task.cancel", { kind: "workstream", workstreamId: "ws-1" }],
+    ]);
+    // The wire's `kind` inside `params` is dropped, as for every card, and the display facts come through.
+    expect(result.data.proposals[0]!.proposal.params).not.toHaveProperty("kind");
+    expect(result.data.proposals[1]!.proposal.target).toEqual({ projectName: undefined, taskTitle: "objective of t-run", taskState: "Running" });
+    expect(fake.callsTo("actions.pending")).toHaveLength(1);
+  });
+
+  it("queue_has_no_proposals_and_no_failure_when_the_daemon_has_no_actions_pending", async () => {
+    const result = await (await live(populate(new FakeDaemon()))).decisions.queue();
+    expect(result.status).toBe("ok");
+    expect(result.status === "ok" && result.data.proposals).toEqual([]);
+  });
+
+  it("queue_is_unavailable_not_empty_when_actions_pending_fails_for_another_reason", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 10);
+    const result = await (await live(fake)).decisions.queue();
+    expect(result.status).toBe("unavailable");
+    expect("data" in result).toBe(false);
   });
 });
 

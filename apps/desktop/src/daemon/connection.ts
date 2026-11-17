@@ -43,6 +43,8 @@ export interface ConnectionSnapshot {
   /** Time the last event was received, not inferred from heartbeats. */
   lastEventAt: number | null;
   lastConnectedAt: number | null;
+  /** True only while the connected session proved the approver secret; false when disconnected. */
+  approver: boolean;
   /** Set when replay may have missed events; cleared by a fresh baseline. */
   history: { incomplete: boolean; reason: DaemonErrorKind | null };
   /** Cursor used to resume the latest subscription; null for a fresh baseline. */
@@ -94,6 +96,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
       lastSequence: 0,
       lastEventAt: null,
       lastConnectedAt: null,
+      approver: false,
       history: { incomplete: false, reason: null },
       resumedFrom: null,
       generation: 0,
@@ -238,6 +241,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
       status: "connected",
       error: null,
       capabilities: session.welcome.capabilities,
+      approver: session.isApprover,
       lastConnectedAt: this.now(),
       resumedFrom: cursor > 0 ? cursor : null,
       generation: this.state_().generation + 1,
@@ -302,6 +306,7 @@ export class ConnectionManager extends Store<ConnectionSnapshot> {
     const session = this.session;
     this.session = null;
     session?.close();
+    if (this.state_().approver) this.update({ approver: false });
   }
 
   private clearTimer(): void {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptySubmitDraft, type SubmitDraft } from "./drafts";
-import { matchesFilter } from "./format";
+import { matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
 import { mkApproval, mkTask } from "../test/fakeDaemon";
@@ -133,5 +133,21 @@ describe("matchesFilter", () => {
     expect(ids("review")).toEqual(["ok"]);
     expect(ids("state:Succeeded")).toEqual(["done"]);
     expect(ids("all")).toHaveLength(5);
+  });
+});
+
+describe("pendingDecisionCount", () => {
+  const approvals = [mkApproval("a1", "t1"), mkApproval("a2", "t2", "approved"), mkApproval("a3", "t3")];
+  const proposals = [{ state: "pending" }, { state: "executed" }, { state: "pending" }, { state: "failed" }, { state: "rejected" }];
+
+  it("adds_pending_approvals_to_pending_proposed_actions_and_leaves_decided_ones_out", () => {
+    expect(pendingProposals(proposals)).toHaveLength(2);
+    expect(pendingDecisionCount(approvals, proposals)).toBe(4);
+  });
+
+  it("counts_each_list_alone_and_zero_for_two_empty_lists", () => {
+    expect(pendingDecisionCount(approvals, [])).toBe(2);
+    expect(pendingDecisionCount([], proposals)).toBe(2);
+    expect(pendingDecisionCount([], [])).toBe(0);
   });
 });

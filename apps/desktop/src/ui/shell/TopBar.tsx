@@ -1,4 +1,4 @@
-import { matchesFilter, pendingApprovals } from "../format";
+import { matchesFilter, pendingDecisionCount } from "../format";
 import { useGate, useServices, useStore, useSurface } from "../services";
 import { Badge } from "../theme";
 import type { GlobalView } from "../router";
@@ -66,10 +66,10 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
 const surfaceCount = (status: string, value: number | undefined): Count =>
   value ?? (status === "loading" ? "loading" : "unavailable");
 
-/** Same task and approval lists as the nav, lists and Review count, so the numbers cannot drift. */
+/** Same task, approval and proposal lists as the nav, lists and Review count, so the numbers cannot drift. */
 function LiveCounts() {
   const { data, surfaces } = useServices();
-  const { tasks, approvals } = useStore(data);
+  const { tasks, approvals, proposals } = useStore(data);
   const gate = useGate();
   const taskList = tasks.data;
   // The daemon emits no workstream events, so D9 re-reads when a workstream mutation lands
@@ -93,7 +93,11 @@ function LiveCounts() {
         running: taskList
           ? taskList.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length
           : pendingRead(tasks.status),
-        attention: approvals.data ? pendingApprovals(approvals.data).length : pendingRead(approvals.status),
+        // Pending approvals plus pending proposed actions, the number the Review nav and the activity badge show.
+        attention:
+          approvals.data && proposals.data
+            ? pendingDecisionCount(approvals.data, proposals.data)
+            : pendingRead(approvals.data ? proposals.status : approvals.status),
       }}
     />
   );

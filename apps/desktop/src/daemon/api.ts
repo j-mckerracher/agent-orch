@@ -5,7 +5,7 @@
  * placeholder id can never reach a real daemon mutation even if a caller wires
  * a fixture record into a real action by mistake.
  */
-import { DaemonError } from "./errors";
+import { DaemonError, asDaemonError, isMissingFeature } from "./errors";
 import { parseQueueSnapshot, type QueueSnapshotWire } from "./queue";
 import type { DaemonSession } from "./session";
 import type {
@@ -46,6 +46,7 @@ import type {
   WorkstreamTaskLinkWire,
   WorkstreamUpdateRequest,
   WorkstreamWire,
+  ActionsPendingWire,
   ActionsResolveWire,
   ClearedEntryReference,
   ConversationClearResult,
@@ -467,6 +468,19 @@ export class DaemonApi {
       digest,
       idempotency_key: idempotencyKey,
     });
+  }
+
+  /**
+   * DPES-1105. Every pending proposal across all conversations, newest first. A read only: nothing is decided here.
+   * An older daemon has no such method or capability, so that reads as nothing pending, never as a failure.
+   */
+  async actionsPending(): Promise<ActionsPendingWire> {
+    try {
+      return await this.session.request("actions.pending", {});
+    } catch (error) {
+      if (isMissingFeature(asDaemonError(error))) return { proposals: [], more: false };
+      throw error;
+    }
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

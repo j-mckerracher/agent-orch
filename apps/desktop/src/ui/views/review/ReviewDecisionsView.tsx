@@ -4,7 +4,8 @@
 // review.request_changes, delivery.request, idempotency keys, stale handling), embedded without
 // its own <main> because the app shell already provides one. The queue lists every pending
 // approval from approvals.list across projects. Priority and latest response time come from the
-// D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon.
+// D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon. Proposed
+// actions (actions.pending) are listed above the queue and link to their card in the conversation.
 import { useMemo, useState } from "react";
 import type { ReviewClient } from "../../../review/client";
 import { createReviewClient } from "../../../review/client";
@@ -20,10 +21,12 @@ import {
 } from "../../../review/sources";
 import type { ReviewState } from "../../../review/useReview";
 import { Badge, Button, Pill } from "../../theme";
-import { useServices, useSurface } from "../../services";
+import { useServices, useStore, useSurface } from "../../services";
+import { useRetained } from "../workspace/useRetained";
 import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
 import { DecisionTabs } from "./DecisionTabs";
+import { ProposedActions } from "./ProposedActions";
 import { SixFactsRecord } from "./ReviewRecord";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
 import { indexMeta, type TabId } from "./queue";
@@ -82,7 +85,7 @@ export function ReviewDecisionsView({
   changeRequestSource: changesOverride,
   newKey,
 }: ReviewDecisionsViewProps) {
-  const { connection, surfaces } = useServices();
+  const { connection, surfaces, data } = useServices();
   const [tab, setTab] = useState<TabId>("actionable");
   const workstreamOf = useWorkstreamOf();
   const client = useMemo(
@@ -111,7 +114,14 @@ export function ReviewDecisionsView({
     [changesOverride, fixtureMode, changesScenario, connection],
   );
 
-  const decisions = useSurface(() => surfaces.decisions.queue(), "review-decisions", surfaces.decisions.provenance);
+  // The nav count reads the proposals slice, which refreshes on its own. The list re-reads when the pending ids in
+  // that slice change, and keeps the last answer on screen meanwhile, so the list and the count do not stay apart.
+  const { proposals } = useStore(data);
+  const pendingIds = proposals.data?.map((item) => item.id).join(",") ?? "";
+  const decisions = useRetained(
+    useSurface(() => surfaces.decisions.queue(), `review-decisions:${pendingIds}`, surfaces.decisions.provenance),
+    "review-decisions",
+  );
   const fixture = client.provenance === "fixture";
   const meta: QueueMeta = useMemo(
     () => ({
@@ -130,10 +140,15 @@ export function ReviewDecisionsView({
           <ScopeRow />
         </>
       ),
-      queue: (state: ReviewState) => <DecisionQueue state={state} meta={meta} tab={tab} />,
+      queue: (state: ReviewState) => (
+        <>
+          <ProposedActions decisions={decisions} />
+          <DecisionQueue state={state} meta={meta} tab={tab} />
+        </>
+      ),
       behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
     }),
-    [meta, fixture, tab],
+    [decisions, meta, fixture, tab],
   );
 
   return (

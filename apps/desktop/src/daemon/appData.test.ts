@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { AppData, timelineKey } from "./appData";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppData, PROPOSALS_REFRESH_MS, timelineKey } from "./appData";
 import { ConnectionManager } from "./connection";
 import { DaemonError } from "./errors";
 import { OPTIONAL_CAPABILITIES, type TaskSubmission } from "./types";
@@ -517,5 +517,154 @@ describe("AppData", () => {
       expect(timeline.events).toHaveLength(2);
       expect(timeline.error?.kind).toBe("internal");
     });
+  });
+});
+
+describe("AppData proposals", () => {
+  const pendingWire = (id: string) => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    scope: { kind: "global" },
+  });
+  const stubPending = (fake: FakeDaemon, ids: string[] = ["proposal-1"]) =>
+    fake.stub("actions.pending", () => ({ proposals: ids.map(pendingWire), more: false }));
+  const every = (data: AppData) =>
+    (["projects", "tasks", "sessions", "approvals", "proposals"] as const).every((key) => data.getSnapshot()[key].status === "ready");
+  const setHidden = (hidden: boolean) => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+  const idleFor = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "hidden");
+    vi.useRealTimers();
+  });
+
+  it("proposals_slice_loads_the_pending_list_on_connect", async () => {
+    const fake = new FakeDaemon();
+    stubPending(fake, ["proposal-1", "proposal-2"]);
+    const { connection, data } = setup(fake);
+    expect(data.getSnapshot().proposals).toEqual({ status: "idle", data: null, error: null });
+    connection.start();
+    await until(() => data.getSnapshot().proposals.status === "ready");
+    expect(data.getSnapshot().proposals.data?.map((item) => [item.id, item.scope])).toEqual([
+      ["proposal-1", { kind: "global" }],
+      ["proposal-2", { kind: "global" }],
+    ]);
+  });
+
+  it("proposals_slice_is_an_empty_loaded_list_for_a_daemon_without_actions_pending", async () => {
+    const fake = new FakeDaemon();
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => data.getSnapshot().proposals.status === "ready");
+    expect(data.getSnapshot().proposals).toEqual({ status: "ready", data: [], error: null });
+    expect(data.getSnapshot().approvals.status).toBe("ready");
+  });
+
+  it("refresh_all_loads_the_proposals_again_with_the_other_lists", async () => {
+    const fake = new FakeDaemon();
+    stubPending(fake);
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => every(data));
+    const before = fake.callsTo("actions.pending").length;
+    await data.refreshAll();
+    expect(fake.callsTo("actions.pending").length).toBeGreaterThan(before);
+  });
+
+  it("refresh_proposals_sends_nothing_while_disconnected", async () => {
+    const fake = new FakeDaemon();
+    const { data } = setup(fake);
+    await data.refreshProposals();
+    expect(fake.callsTo("actions.pending")).toHaveLength(0);
+    expect(data.getSnapshot().proposals.status).toBe("idle");
+  });
+
+  it("a_failed_proposals_read_keeps_the_previous_list_and_records_the_error", async () => {
+    const fake = new FakeDaemon();
+    stubPending(fake);
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => every(data));
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" });
+    await data.refreshProposals();
+    const slice = data.getSnapshot().proposals;
+    expect(slice.status).toBe("error");
+    expect(slice.error?.kind).toBe("internal");
+    expect(slice.data?.map((item) => item.id)).toEqual(["proposal-1"]);
+  });
+
+  it("proposals_are_read_every_30_seconds_while_the_window_is_visible_and_not_while_it_is_hidden", async () => {
+    // Only the intervals are faked: the connection and `until` keep their real timers.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const fake = new FakeDaemon();
+    stubPending(fake);
+    const { connection, data } = setup(fake);
+    setHidden(false);
+    connection.start();
+    await until(() => every(data));
+    await idleFor(30);
+    const reads = () => fake.callsTo("actions.pending").length;
+    const first = reads();
+
+    vi.advanceTimersByTime(PROPOSALS_REFRESH_MS - 1);
+    await idleFor(30);
+    expect(reads()).toBe(first);
+    vi.advanceTimersByTime(1);
+    await until(() => reads() === first + 1);
+
+    setHidden(true);
+    vi.advanceTimersByTime(3 * PROPOSALS_REFRESH_MS);
+    await idleFor(30);
+    expect(reads()).toBe(first + 1);
+
+    setHidden(false);
+    vi.advanceTimersByTime(PROPOSALS_REFRESH_MS);
+    await until(() => reads() === first + 2);
+  });
+
+  it("each_app_data_starts_one_proposals_interval_and_dispose_clears_it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const fake = new FakeDaemon();
+    stubPending(fake);
+    const connection = new ConnectionManager({ connector: fake, backoffMs: [5], requestTimeoutMs: 100 });
+    expect(vi.getTimerCount()).toBe(0);
+    const first = new AppData(connection, { coalesceMs: 10 });
+    expect(vi.getTimerCount()).toBe(1);
+    const second = new AppData(connection, { coalesceMs: 10 });
+    expect(vi.getTimerCount()).toBe(2);
+    try {
+      setHidden(false);
+      connection.start();
+      await until(() => every(second));
+      await idleFor(30);
+      first.dispose();
+      expect(vi.getTimerCount()).toBe(1);
+      const reads = fake.callsTo("actions.pending").length;
+      second.dispose();
+      second.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(5 * PROPOSALS_REFRESH_MS);
+      await idleFor(30);
+      expect(fake.callsTo("actions.pending")).toHaveLength(reads);
+    } finally {
+      connection.stop();
+      first.dispose();
+      second.dispose();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DaemonError } from "../../../daemon/errors";
+import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import {
   actionPhrase,
@@ -7,6 +7,7 @@ import {
   failureText,
   fieldsOf,
   newerRecord,
+  openTaskId,
   openWorkstreamId,
   outcomeAnnouncement,
   requestErrorText,
@@ -16,7 +17,7 @@ import {
 const at = "2026-11-10T21:00:00.000Z";
 const later = "2026-11-10T21:05:00.000Z";
 const NAMES = new Map([["ws-1", "Alpha stream"]]);
-const LIVE = { canDecide: true, deciding: false, names: NAMES };
+const LIVE = { canDecide: true, connected: true, approver: true, deciding: false, names: NAMES };
 
 function proposal(over: Partial<ActionProposal> = {}): ActionProposal {
   return {
@@ -30,6 +31,8 @@ function proposal(over: Partial<ActionProposal> = {}): ActionProposal {
     state: "pending",
     resultRef: null,
     errorCode: null,
+    denial: null,
+    target: null,
     updatedAt: at,
     ...over,
   };
@@ -114,7 +117,7 @@ describe("approval card copy", () => {
   });
 
   it("disables both decisions while disconnected and while one is in flight", () => {
-    const offline = viewOf(create, null, { ...LIVE, canDecide: false });
+    const offline = viewOf(create, null, { ...LIVE, canDecide: false, connected: false, approver: false });
     expect(offline.approve.enabled).toBe(false);
     expect(offline.reject.enabled).toBe(false);
     expect(offline.message.text).toBe("Reconnect to the daemon to approve or reject.");
@@ -123,6 +126,15 @@ describe("approval card copy", () => {
     expect(sending.approve.enabled).toBe(false);
     expect(sending.reject.enabled).toBe(false);
     expect(sending.message.text).toBe("Sending your decision…");
+  });
+
+  it("explains in plain words why a connected session that is not the approver cannot decide", () => {
+    const view = viewOf(create, null, { ...LIVE, canDecide: false, approver: false });
+    expect(view.approve.enabled).toBe(false);
+    expect(view.approve.reason).toBe(APPROVER_REQUIRED_NOTICE);
+    expect(view.reject.enabled).toBe(false);
+    expect(view.reject.reason).toBe(APPROVER_REQUIRED_NOTICE);
+    expect(view.message.text).toBe(APPROVER_REQUIRED_NOTICE);
   });
 
   it("uses the danger variant for an archive", () => {
@@ -219,5 +231,222 @@ describe("approval card copy", () => {
     expect(newerRecord(listed, undefined)).toBe(listed);
     expect(newerRecord(listed, answered)).toBe(answered);
     expect(newerRecord(listed, proposal({ state: "rejected", updatedAt: "2026-11-10T20:00:00.000Z" }))).toBe(listed);
+  });
+});
+
+const TASK_PARAMS = {
+  project: "p-3fa9c1d2",
+  objective: "Add unit tests for the retry module.\nRun them locally and report what failed.",
+  agent: "codex",
+  task_kind: "Implement",
+  delivery: "LocalReview",
+};
+const RUNNING_TASK = { taskTitle: "Add refresh-token expiry", taskState: "Running" };
+const propose = proposal({ id: "proposal-3", kind: "task.propose", params: TASK_PARAMS, target: { projectName: "alpha" } });
+const cancel = proposal({ id: "proposal-4", kind: "task.cancel", params: { task_id: "task-0123" }, target: RUNNING_TASK });
+const retry = proposal({ id: "proposal-5", kind: "task.retry", params: { task_id: "task-0123" }, target: RUNNING_TASK });
+const link = proposal({
+  id: "proposal-6",
+  kind: "workstream.link_task",
+  params: { workstream_id: "ws-1", task_id: "task-0123" },
+  target: RUNNING_TASK,
+});
+const denied = proposal({
+  id: "proposal-7",
+  kind: "task.propose",
+  params: { ...TASK_PARAMS, delivery: "PullRequest", objective: "Fix the flaky login test and open a pull request." },
+  target: { projectName: "alpha" },
+  state: "failed",
+  errorCode: "action_denied",
+  denial: "delivery_not_authorized",
+});
+const waitingTask = proposal({
+  id: "proposal-8",
+  kind: "task.propose",
+  params: { ...TASK_PARAMS, workstream_ref: "proposal-1" },
+  dependsOn: "proposal-1",
+});
+const executedOf = (p: ActionProposal, over: Partial<ActionProposal> = {}): ActionProposal => ({ ...p, state: "executed", ...over });
+
+describe("task card copy", () => {
+  it("names each task kind's heading and button phrase", () => {
+    expect(cardTitle("task.propose")).toBe("Proposed: Create task");
+    expect(cardTitle("task.cancel")).toBe("Proposed: Cancel task");
+    expect(cardTitle("task.retry")).toBe("Proposed: Retry task");
+    expect(cardTitle("workstream.link_task")).toBe("Proposed: Link task");
+    expect(actionPhrase(propose, NAMES)).toBe("create task Add unit tests for the retry module. Run them locally and re…");
+    expect(actionPhrase(cancel, NAMES)).toBe("cancel task Add refresh-token expiry");
+    expect(actionPhrase(retry, NAMES)).toBe("retry task Add refresh-token expiry");
+    expect(actionPhrase(link, NAMES)).toBe("link task Add refresh-token expiry");
+    expect(actionPhrase({ ...cancel, target: null }, NAMES)).toBe("cancel task task-0123");
+  });
+
+  it("cuts a long task to one line of 60 characters without splitting a character", () => {
+    const long = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, objective: "x".repeat(80) } });
+    expect(actionPhrase(long, NAMES)).toBe(`create task ${"x".repeat(60)}…`);
+    const emoji = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, objective: "😀".repeat(70) } });
+    expect(actionPhrase(emoji, NAMES)).toBe(`create task ${"😀".repeat(60)}…`);
+    const exact = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, objective: "y".repeat(60) } });
+    expect(actionPhrase(exact, NAMES)).toBe(`create task ${"y".repeat(60)}`);
+  });
+
+  it("shows a proposed task's exact parameters and the two fixed policy rows", () => {
+    expect(fieldsOf(propose, NAMES, null)).toEqual([
+      { label: "Project", value: "alpha (p-3fa9c1d2)" },
+      { label: "Task", value: ["Add unit tests for the retry module.", "Run them locally and report what failed."] },
+      { label: "Agent", value: "codex" },
+      { label: "Task kind", value: "Implement" },
+      { label: "Delivery", value: "LocalReview" },
+      { label: "Autonomy", value: "Approval required, fixed by the app" },
+      { label: "Verification", value: "None, fixed by the app" },
+    ]);
+  });
+
+  it("lists a task objective one entry per line and drops blank lines", () => {
+    const spaced = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, objective: "First\r\n\n  \nSecond" } });
+    expect(fieldsOf(spaced, NAMES, null)[1]).toEqual({ label: "Task", value: ["First", "Second"] });
+  });
+
+  it("shows the project code alone when the daemon named no project, and the workstream and objective a task joins", () => {
+    expect(fieldsOf({ ...propose, target: null }, NAMES, null)[0]).toEqual({ label: "Project", value: "p-3fa9c1d2" });
+
+    const linked = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, workstream_id: "ws-1", objective_id: "objective-9" } });
+    expect(fieldsOf(linked, NAMES, null).slice(-2)).toEqual([
+      { label: "Workstream", value: "Alpha stream" },
+      { label: "Objective", value: "objective-9" },
+    ]);
+    expect(fieldsOf(waitingTask, NAMES, create).slice(-1)).toEqual([
+      { label: "Workstream", value: "The workstream from “Create workstream: Post-MVP work”" },
+    ]);
+  });
+
+  it("shows a cancel, retry and link by the task's title, state now and id", () => {
+    expect(fieldsOf(cancel, NAMES, null)).toEqual([
+      { label: "Task title", value: "Add refresh-token expiry" },
+      { label: "Task state now", value: "Running" },
+      { label: "Task id", value: "task-0123" },
+    ]);
+    expect(fieldsOf({ ...retry, target: null }, NAMES, null)).toEqual([
+      { label: "Task title", value: "(not available)" },
+      { label: "Task state now", value: "(not available)" },
+      { label: "Task id", value: "task-0123" },
+    ]);
+    expect(fieldsOf(link, NAMES, null)).toEqual([
+      { label: "Workstream", value: "Alpha stream" },
+      { label: "Task title", value: "Add refresh-token expiry" },
+      { label: "Task id", value: "task-0123" },
+      { label: "Objective", value: "(none)" },
+    ]);
+  });
+
+  it("uses the danger variant for a task cancel and the primary variant for the other task kinds", () => {
+    expect(viewOf(cancel, null, LIVE).approve.variant).toBe("danger");
+    for (const p of [propose, retry, link]) expect(viewOf(p, null, LIVE).approve.variant, p.kind).toBe("primary");
+    for (const p of [propose, cancel, retry, link]) expect(viewOf(p, null, LIVE).approve.enabled, p.kind).toBe(true);
+  });
+
+  it("keeps a proposed task's Approve off until the workstream it joins is created", () => {
+    const waiting = viewOf(waitingTask, create, LIVE);
+    expect(waiting.approve.enabled).toBe(false);
+    expect(waiting.message.text).toBe("Approve “Create workstream: Post-MVP work” first. This task goes into that workstream.");
+    expect(viewOf(waitingTask, null, LIVE).message.text).toBe(
+      "This task goes into a workstream that is not created yet. Approve that workstream first.",
+    );
+    expect(viewOf(waitingTask, proposal({ state: "executed", resultRef: "ws-new" }), LIVE).approve.enabled).toBe(true);
+  });
+
+  it("gives an executed task change its pill and says a cancel was only requested", () => {
+    expect(viewOf(executedOf(propose, { resultRef: "task-new" }), null, LIVE).pill).toEqual({ tone: "ok", text: "Queued" });
+    expect(viewOf(executedOf(retry), null, LIVE).pill.text).toBe("Retry queued");
+    expect(viewOf(executedOf(link), null, LIVE).pill.text).toBe("Linked");
+
+    const stopped = viewOf(executedOf(cancel), null, LIVE);
+    expect(stopped.pill).toEqual({ tone: "ok", text: "Cancellation requested" });
+    expect(stopped.message.text).toBe("Cancellation requested for “Add refresh-token expiry”. The task stops when its agent confirms.");
+    expect(`${stopped.pill.text} ${stopped.message.text}`).not.toMatch(/cancelled/i);
+  });
+
+  it("announces what each executed task change did", () => {
+    expect(outcomeAnnouncement(executedOf(propose), null, NAMES)).toBe(
+      "Created and queued task “Add unit tests for the retry module. Run them locally and re…”. Open the task to follow it.",
+    );
+    expect(outcomeAnnouncement(executedOf(cancel), null, NAMES)).toBe(
+      "Cancellation requested for “Add refresh-token expiry”. The task stops when its agent confirms.",
+    );
+    expect(outcomeAnnouncement(executedOf(retry), null, NAMES)).toBe("Retry queued for “Add refresh-token expiry”.");
+    expect(outcomeAnnouncement(executedOf(link), null, NAMES)).toBe("Linked “Add refresh-token expiry” to the workstream.");
+  });
+
+  it.each([
+    [
+      "delivery_not_authorized",
+      "This task asks for a delivery the app does not allow from chat. Nothing was created. Ask the orchestrator for local review or a report only.",
+    ],
+    ["autonomy_not_authorized", "This task asks for more autonomy than chat may request. Nothing was created."],
+    ["verification_not_authorized", "This task asks for verification commands, which chat may not request. Nothing was created."],
+    ["contract_invalid", "The task text is not valid. Nothing was created. Ask the orchestrator to propose again."],
+    ["a_key_from_a_newer_daemon", "The app refused this task. Nothing was created."],
+  ])("explains the %s denial in plain words", (denial, expected) => {
+    expect(viewOf({ ...denied, denial }, null, LIVE).message).toEqual({ tone: "warn", text: expected });
+  });
+
+  it("shows a denied proposal as a Denied warning with no decision, and any other failure as Failed", () => {
+    const view = viewOf(denied, null, LIVE);
+    expect(view.state).toBe("failed");
+    expect(view.pill).toEqual({ tone: "warn", text: "Denied" });
+    expect(view.approve.enabled).toBe(false);
+    expect(view.reject.enabled).toBe(false);
+    expect(viewOf({ ...denied, denial: null }, null, LIVE).message.text).toBe("The app refused this task. Nothing was created.");
+    expect(viewOf({ ...denied, errorCode: "conflict", denial: null }, null, LIVE).pill).toEqual({ tone: "bad", text: "Failed" });
+  });
+
+  it("announces a denied proposal as Denied, and a task's own full stop or ellipsis is not doubled", () => {
+    expect(outcomeAnnouncement(denied, null, NAMES)).toBe(
+      "Denied: create task Fix the flaky login test and open a pull request. This task asks for a delivery the app does not allow from chat. Nothing was created. Ask the orchestrator for local review or a report only.",
+    );
+    expect(outcomeAnnouncement({ ...propose, state: "rejected" }, null, NAMES)).toBe(
+      "Rejected: create task Add unit tests for the retry module. Run them locally and re… Nothing was changed.",
+    );
+    expect(outcomeAnnouncement({ ...cancel, state: "rejected" }, null, NAMES)).toBe(
+      "Rejected: cancel task Add refresh-token expiry. Nothing was changed.",
+    );
+  });
+
+  it.each([
+    ["not_found", "The project, task or workstream this names was not found. Nothing was changed."],
+    [
+      "conflict",
+      "The task, workstream or link is not in a state that allows this (for example the task is already running or finished). Nothing was changed.",
+    ],
+    ["forbidden", "The app does not allow this change. Nothing was changed."],
+    ["invalid", "The daemon could not apply these values. Nothing was changed. Ask the orchestrator to propose again."],
+    ["dependency_not_executed", "The workstream this needs was not created, so this did not run. Nothing was changed."],
+  ])("explains %s for a task change in plain words", (errorCode, expected) => {
+    for (const p of [propose, cancel, retry, link]) expect(failureText({ ...p, state: "failed", errorCode }), p.kind).toBe(expected);
+  });
+
+  it("words forbidden for a workstream change too and keeps its workstream wording for conflict", () => {
+    expect(failureText(proposal({ state: "failed", errorCode: "forbidden" }))).toBe("The app does not allow this change. Nothing was changed.");
+    expect(failureText(proposal({ state: "failed", errorCode: "conflict" }))).toBe(
+      "The workstream is not in a state that allows this change, for example it is archived. Nothing was changed.",
+    );
+  });
+
+  it("links Open task to the task a propose created or a cancel and a retry name", () => {
+    expect(openTaskId(executedOf(propose, { resultRef: "task-new" }))).toBe("task-new");
+    expect(openTaskId(propose)).toBeNull();
+    expect(openTaskId(cancel)).toBe("task-0123");
+    expect(openTaskId(retry)).toBe("task-0123");
+    expect(openTaskId(link)).toBeNull();
+    expect(openTaskId(create)).toBeNull();
+  });
+
+  it("links Open workstream to the workstream a task joins", () => {
+    const joined = proposal({ kind: "task.propose", params: { ...TASK_PARAMS, workstream_id: "ws-1" } });
+    expect(openWorkstreamId(joined, null, null)).toBe("ws-1");
+    expect(openWorkstreamId(waitingTask, proposal({ state: "executed", resultRef: "ws-new" }), null)).toBe("ws-new");
+    expect(openWorkstreamId(link, null, null)).toBe("ws-1");
+    expect(openWorkstreamId(propose, null, "ws-9")).toBeNull();
+    expect(openWorkstreamId(cancel, null, "ws-1")).toBeNull();
   });
 });

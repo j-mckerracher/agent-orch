@@ -54,6 +54,8 @@ describe("action proposals (DPES-1105)", () => {
         state: "pending",
         resultRef: null,
         errorCode: null,
+        denial: null,
+        target: null,
         updatedAt: at,
       },
     ]);
@@ -250,7 +252,33 @@ describe("mapProposal", () => {
       state: "paused",
       resultRef: "ref-1",
       errorCode: "x",
+      denial: null,
+      target: null,
       updatedAt: at,
     });
+  });
+
+  it("reads a denial and the display facts a daemon sends with a task proposal", () => {
+    const denied = mapProposal(
+      proposal({
+        kind: "task.propose",
+        state: "failed",
+        error_code: "action_denied",
+        denial: "delivery_not_authorized",
+        target: { project_name: "alpha" },
+      }),
+    );
+    expect(denied).toMatchObject({
+      kind: "task.propose",
+      errorCode: "action_denied",
+      denial: "delivery_not_authorized",
+      target: { projectName: "alpha" },
+    });
+
+    const cancel = mapProposal(
+      proposal({ kind: "task.cancel", target: { task_title: "Add refresh-token expiry", task_state: "Running" } }),
+    );
+    expect(cancel.target).toEqual({ taskTitle: "Add refresh-token expiry", taskState: "Running" });
+    expect(mapProposal(proposal({ kind: "task.retry", target: null })).target).toBeNull();
   });
 });

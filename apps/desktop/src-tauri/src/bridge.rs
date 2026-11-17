@@ -6,9 +6,13 @@
 //! sends `shutdown` or a second `handshake` on the webview's behalf; and a
 //! connection ending is reported as a connection event, never inferred to be a
 //! daemon or agent state.
+//!
+//! The host also holds the approver secret of the daemon it started. The webview
+//! never sees it either: the welcome carries only whether the proof held. A
+//! daemon this host did not start is never offered the secret.
 
 use crate::launch;
-use orchestrator_ipc::{Capability, Relay, RelayError, RelayEvent};
+use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayError, RelayEvent};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -69,6 +73,10 @@ struct Inner {
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, Connection>>,
     launch_gate: Mutex<()>,
+    /// Secret of the daemon this host process started, set only after that
+    /// start succeeded and replaced by the next one. Every connection
+    /// presents it, so a reopened window keeps the role. Never formatted.
+    approver: Mutex<Option<Arc<ApproverSecret>>>,
 }
 
 #[derive(Clone)]
@@ -92,6 +100,7 @@ impl Bridge {
                 next_id: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),
                 launch_gate: Mutex::new(()),
+                approver: Mutex::new(None),
             }),
         }
     }
@@ -142,7 +151,10 @@ impl Bridge {
         };
         let attempt = |sink: &Sink| {
             let sink = sink.clone();
-            Relay::open(data_dir, requested, move |event| sink(event))
+            let approver = self.approver().clone();
+            Relay::open_with_approver(data_dir, requested, approver.as_deref(), move |event| {
+                sink(event)
+            })
         };
 
         let (relay, welcome, launched_by_host) = match attempt(&sink) {
@@ -189,12 +201,24 @@ impl Bridge {
                 "no daemon is running and the daemon executable was not found next to the app",
             )
         })?;
-        let mut child = launch::spawn(program, data_dir).map_err(|error| {
-            HostError::unavailable(launch::explain_with_log(
-                format!("could not start the daemon ({:?}: {error})", error.kind()),
-                data_dir,
-            ))
+        // No daemon starts without a secret, and the secret is masked in any text
+        // this host shows or logs before the daemon can echo it.
+        let approver = ApproverSecret::generate()
+            .map_err(|_| HostError::unavailable("could not create the approval credential"))?;
+        orchestrator_diagnostics::register_secret(&approver.to_wire());
+        let mut child = launch::spawn(program, data_dir, &approver).map_err(|error| {
+            let message = if error.kind() == std::io::ErrorKind::BrokenPipe {
+                // It had already closed its input: it exited before it was given the secret.
+                format!(
+                    "the daemon exited right after starting; see {}",
+                    data_dir.join(launch::DAEMON_LOG).display()
+                )
+            } else {
+                format!("could not start the daemon ({:?}: {error})", error.kind())
+            };
+            HostError::unavailable(launch::explain_with_log(message, data_dir))
         })?;
+        *self.approver() = Some(Arc::new(approver));
         let deadline = Instant::now() + LAUNCH_WAIT;
         loop {
             match attempt(sink) {
@@ -208,6 +232,8 @@ impl Bridge {
                 Err(error) => return Err(error.into()),
             }
             if let Ok(Some(status)) = child.try_wait() {
+                // That daemon is gone, and so is what its secret was for.
+                *self.approver() = None;
                 return Err(HostError::unavailable(launch::explain_with_log(
                     format!(
                         "the daemon exited right after starting ({status}); see {}",
@@ -281,6 +307,13 @@ impl Bridge {
     fn connections(&self) -> MutexGuard<'_, HashMap<u64, Connection>> {
         self.inner
             .connections
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn approver(&self) -> MutexGuard<'_, Option<Arc<ApproverSecret>>> {
+        self.inner
+            .approver
             .lock()
             .unwrap_or_else(|e| e.into_inner())
     }

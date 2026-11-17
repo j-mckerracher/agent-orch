@@ -9,6 +9,7 @@ import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import type { Route } from "../router";
+import { ActivityPanel } from "./ActivityPanel";
 import { topBarSlots } from "./TopBar";
 
 const WORKSPACE: Route = { name: "global", view: "workspace" };
@@ -334,7 +335,7 @@ describe("local search", () => {
     await screen.findByRole("option", { name: /release/ });
     await user.keyboard("{Enter}");
     const methods = fake.calls.slice(before).map((call) => call.method);
-    expect(methods.filter((method) => !/\.(list|get)$|subscribe|capabilities/.test(method))).toEqual([]);
+    expect(methods.filter((method) => !/\.(list|get|pending)$|subscribe|capabilities/.test(method))).toEqual([]);
   });
 
   it("reports skipped inputs instead of implying absence", async () => {
@@ -347,5 +348,75 @@ describe("local search", () => {
     const skipped = await screen.findByTestId("top-search-skipped");
     expect(skipped).toHaveTextContent("Not searched: D16");
     expect(skipped).toHaveTextContent("not evidence of absence");
+  });
+});
+
+describe("top bar pending decisions", () => {
+  const pendingWire = (id: string) => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    scope: { kind: "global" },
+  });
+
+  it("top_bar_counts_pending_proposed_actions_with_approvals_and_matches_the_nav_and_the_activity_badge", async () => {
+    const fake = daemon();
+    fake.stub("actions.pending", { proposals: [pendingWire("proposal-1"), pendingWire("proposal-2")], more: false });
+    const services = createServices({
+      connector: fake,
+      initialRoute: WORKSPACE,
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+    });
+    render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
+    await connected();
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
+    expect(screen.getByTestId("activity-badge")).toHaveTextContent("3");
+  });
+
+  it("top_bar_reads_a_daemon_without_actions_pending_as_the_approvals_alone_not_as_unavailable", async () => {
+    await mount(daemon());
+    const counts = screen.getByTestId("top-counts");
+    await waitFor(() => expect(counts).toHaveTextContent("1 require attention"));
+    expect(counts).not.toHaveTextContent("attention: not available");
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+  });
+
+  it("top_bar_attention_is_unavailable_not_a_partial_number_while_the_proposals_list_cannot_be_read", async () => {
+    const fake = daemon();
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 20);
+    const { services } = await mount(fake);
+    await waitFor(() => expect(services.data.getSnapshot().proposals.status).toBe("error"));
+    const counts = screen.getByTestId("top-counts");
+    expect(counts).toHaveTextContent("3 tasks");
+    expect(counts).toHaveTextContent("— require attention");
+    expect(counts).toHaveTextContent("require attention: not available");
+    expect(counts.textContent).not.toMatch(/\b1 require attention/);
+  });
+
+  it("top_bar_attention_drops_when_a_proposal_is_decided_and_the_pending_list_is_read_again", async () => {
+    const fake = daemon();
+    let ids = ["proposal-1", "proposal-2"];
+    fake.stub("actions.pending", () => ({ proposals: ids.map(pendingWire), more: false }));
+    const { services } = await mount(fake);
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention"));
+    ids = ["proposal-1"];
+    await act(async () => services.data.refreshProposals());
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
   });
 });

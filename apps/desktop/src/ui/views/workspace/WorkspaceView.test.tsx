@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { DaemonError } from "../../../daemon/errors";
-import { ALL_CAPABILITIES } from "../../../daemon/types";
+import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
+import { ALL_CAPABILITIES, type ActionProposalWire } from "../../../daemon/types";
 import { createServices } from "../../createServices";
 import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
@@ -93,6 +93,57 @@ function stubAgents(fake: FakeDaemon, launchable: Record<string, boolean>) {
     })),
   );
 }
+
+/** One pending workstream creation in the Global conversation, as the daemon lists it. */
+function pendingCreate(): ActionProposalWire {
+  const at = "2026-11-10T21:00:00Z";
+  return {
+    id: "proposal-1",
+    turn_id: "turn-1",
+    index: 0,
+    kind: "workstream.create",
+    params: { kind: "workstream.create", title: "Post-MVP work", summary: "" },
+    digest: "digest-1",
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    created_at: at,
+    updated_at: at,
+  };
+}
+
+/** Mounts live Global with one proposal under the reply. The welcome's `approver` is `approver`; null omits it. */
+async function globalCard(approver: boolean | null): Promise<HTMLElement> {
+  const fake = liveDaemon();
+  fake.approver = approver;
+  const state = stubConversation(fake, "completed");
+  state.proposals = [pendingCreate()];
+  const services = track(build({ fake }));
+  const { user } = await mountView(services, false);
+  await waitLive(services);
+  await pickTarget(user, /Global orchestrator/);
+  await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
+  await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+  await screen.findByText("Hello from the runtime.");
+  return screen.getByRole("article", { name: "Proposed: Create workstream" });
+}
+
+describe("approval cards need the approver role (DPES-1105)", () => {
+  it("a live card is not decidable without the approver role and shows the plain-words notice", async () => {
+    const card = await globalCard(false);
+    expect(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" })).toBeDisabled();
+    expect(within(card).getByRole("button", { name: "Reject: create workstream Post-MVP work" })).toBeDisabled();
+    expect(card).toHaveTextContent(APPROVER_REQUIRED_NOTICE);
+    expect(card).not.toHaveTextContent(/forbidden/i);
+  });
+
+  it("a live card is decidable with the approver role", async () => {
+    const card = await globalCard(true);
+    expect(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" })).toBeEnabled();
+    expect(within(card).getByRole("button", { name: "Reject: create workstream Post-MVP work" })).toBeEnabled();
+  });
+});
 
 describe("saved model choice across a remount, live (DPES-1105)", () => {
   it("keeps Claude Code after the view is left and reopened, and sends it with the next message", async () => {

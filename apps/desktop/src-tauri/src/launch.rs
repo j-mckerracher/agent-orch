@@ -1,11 +1,17 @@
 //! Daemon launch for the desktop host. The daemon is an independent process:
 //! the host starts it on demand, detached, and never stops it. Closing the
 //! app, or the host exiting, must not end agent work.
+//!
+//! The approver secret goes to the daemon on its stdin pipe and nowhere else:
+//! not its arguments, its environment or a file, all of which another process
+//! of the same user can read.
 
 use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+use orchestrator_ipc::ApproverSecret;
 use orchestrator_private_fs::{create_private_dir, restrict_to_owner};
 
 pub const DAEMON_LOG: &str = "daemon.log";
@@ -51,19 +57,46 @@ pub fn daemon_program() -> Option<PathBuf> {
 /// Starts the daemon detached from this process, with its output appended to
 /// `<data dir>/daemon.log`. The log is rotated once at launch when it has grown
 /// past `DAEMON_LOG_MAX_BYTES`, so it keeps at most about two generations.
-pub fn spawn(program: &Path, data_dir: &Path) -> std::io::Result<Child> {
+/// `approver` is written to the daemon's stdin, which is then closed. When that
+/// fails the daemon is killed and reaped: it never runs without its secret.
+pub fn spawn(
+    program: &Path,
+    data_dir: &Path,
+    approver: &ApproverSecret,
+) -> std::io::Result<Child> {
     create_private_dir(data_dir)?;
     rotate_log(data_dir);
     let log = open_private_log(&data_dir.join(DAEMON_LOG))?;
+    let stdout = Stdio::from(log.try_clone()?);
+    let mut child = daemon_command(program, data_dir, stdout, Stdio::from(log)).spawn()?;
+    if let Err(error) = send_approver(&mut child, approver) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    Ok(child)
+}
+
+/// The launch command. Nothing secret is part of it; a test reads its arguments
+/// and environment.
+fn daemon_command(program: &Path, data_dir: &Path, stdout: Stdio, stderr: Stdio) -> Command {
     let mut command = Command::new(program);
     command
         .arg("--data-dir")
         .arg(data_dir)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log);
+        .arg("--approver-stdin")
+        .stdin(Stdio::piped())
+        .stdout(stdout)
+        .stderr(stderr);
     detach(&mut command);
-    command.spawn()
+    command
+}
+
+/// Writes the secret to the child's stdin and closes the pipe, which is the end
+/// of input the daemon reads to.
+fn send_approver(child: &mut Child, approver: &ApproverSecret) -> std::io::Result<()> {
+    let mut stdin = child.stdin.take().ok_or(std::io::ErrorKind::BrokenPipe)?;
+    stdin.write_all(approver.to_wire().as_bytes())
 }
 
 /// How much of the end of `daemon.log` a launch failure quotes.
@@ -156,6 +189,26 @@ mod tests {
 
         rotate_log(dir.path());
         assert!(!log.exists(), "a missing log is not an error");
+    }
+
+    #[test]
+    fn the_secret_is_not_in_the_arguments_or_the_environment() {
+        let secret = ApproverSecret::generate().unwrap();
+        let wire = secret.to_wire();
+        let command = daemon_command(
+            Path::new("orchestrator-daemon"),
+            Path::new("data"),
+            Stdio::null(),
+            Stdio::null(),
+        );
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args, ["--data-dir", "data", "--approver-stdin"]);
+        assert!(args.iter().all(|arg| !arg.contains(&wire)));
+        let envs: Vec<_> = command.get_envs().collect();
+        assert!(envs.is_empty(), "the launch sets no environment: {envs:?}");
     }
 
     #[cfg(unix)]

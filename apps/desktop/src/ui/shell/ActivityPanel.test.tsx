@@ -409,3 +409,81 @@ describe("workspace activity popover", () => {
     expect(within(panel).getByRole("link", { name: "Review all decisions" })).toBeInTheDocument();
   });
 });
+
+describe("pending decision count", () => {
+  const pendingWire = (id: string) => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    scope: { kind: "global" },
+  });
+
+  /** One pending approval (a1) plus `count` pending proposed actions the test can shorten later. */
+  function daemonWithProposals(count: number) {
+    const fake = liveDaemon();
+    let list = Array.from({ length: count }, (_, index) => pendingWire(`proposal-${index + 1}`));
+    fake.stub("actions.pending", () => ({ proposals: list, more: false }));
+    return { fake, keep: (kept: number) => (list = list.slice(0, kept)) };
+  }
+
+  it("nav_top_bar_and_activity_badge_show_pending_approvals_plus_proposed_actions_as_one_number", async () => {
+    const { fake } = daemonWithProposals(2);
+    const { panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("3");
+    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/3 require attention/);
+    await waitFor(() => expect(within(panel).getByTestId("activity-status")).toHaveTextContent("3 require attention"));
+  });
+
+  it("the_count_drops_in_all_three_places_when_a_proposal_is_decided_and_the_list_is_read_again", async () => {
+    const { fake, keep } = daemonWithProposals(2);
+    const { services, panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
+    keep(1);
+    await act(async () => services.data.refreshProposals());
+    await waitFor(() => {
+      expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
+      expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
+      expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
+    });
+  });
+
+  it("all_three_places_show_a_dash_while_the_proposals_list_has_not_loaded_though_approvals_have", async () => {
+    const { fake } = daemonWithProposals(1);
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 20);
+    const { services, panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => {
+      expect(services.data.getSnapshot().approvals.status).toBe("ready");
+      expect(services.data.getSnapshot().proposals.status).toBe("error");
+    });
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("pending decisions: not available");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—");
+  });
+
+  it("the_attention_section_names_pending_proposed_actions_and_does_not_claim_that_nothing_needs_attention", async () => {
+    const { fake } = daemonWithProposals(1);
+    fake.approvals = [];
+    const { panel, user } = await mountPanel(fake);
+    await expandSection(user, panel, "Attention");
+    await waitFor(() =>
+      expect(within(panel).getByTestId("activity-attention-proposals")).toHaveTextContent("1 proposed action waits for a decision on its card."),
+    );
+    expect(within(panel).getByTestId("activity-attention")).not.toHaveTextContent("Nothing needs attention.");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("1");
+  });
+});

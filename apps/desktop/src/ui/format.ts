@@ -45,6 +45,16 @@ export function pendingApprovals(approvals: readonly Approval[]): Approval[] {
   return approvals.filter((approval) => approval.state.state === "requested");
 }
 
+/** Proposed actions (DPES-1105) still waiting for a decision. A decided one never counts, whatever list it is in. */
+export function pendingProposals<T extends { state: string }>(proposals: readonly T[]): T[] {
+  return proposals.filter((proposal) => proposal.state === "pending");
+}
+
+/** Pending approvals plus pending proposed actions: the one number the nav, the top bar and the activity badge show. */
+export function pendingDecisionCount(approvals: readonly Approval[], proposals: readonly { state: string }[]): number {
+  return pendingApprovals(approvals).length + pendingProposals(proposals).length;
+}
+
 /**
  * Local-only filter semantics (no server filter parameter exists).
  * - blocked: not yet running, and a dependency in this list has not succeeded

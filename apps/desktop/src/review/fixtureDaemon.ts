@@ -12,7 +12,7 @@ export function createFixtureDaemonClient(): ReviewClient {
   const approvals = structuredClone(demo.approvals) as Approval[];
   const tasks = demo.tasks as unknown as TaskRecord[];
   const receipts = new Map<string, unknown>();
-  const connection: ReviewConnection = { status: "connected", historyIncomplete: false };
+  const connection: ReviewConnection = { status: "connected", historyIncomplete: false, approver: true };
 
   function call(method: string, params: Record<string, unknown> = {}): unknown {
     switch (method) {

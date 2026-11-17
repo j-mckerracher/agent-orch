@@ -3,7 +3,7 @@
  * renders these, and the tests read them directly. The daemon's answer is the only state shown; nothing here
  * guesses an outcome.
  */
-import { presentError, type DaemonError } from "../../../daemon/errors";
+import { APPROVER_REQUIRED_NOTICE, presentError, type DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 
@@ -23,7 +23,15 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "workstream.update": { heading: "Update workstream", done: "Updated" },
   "objective.add": { heading: "Add objective", done: "Created" },
   "objective.revise": { heading: "Revise objective", done: "Revised" },
+  "task.propose": { heading: "Create task", done: "Queued" },
+  // The daemon only confirms it asked the task to stop (decisions-2 Q11), so the card never says "Cancelled".
+  "task.cancel": { heading: "Cancel task", done: "Cancellation requested" },
+  "task.retry": { heading: "Retry task", done: "Retry queued" },
+  "workstream.link_task": { heading: "Link task", done: "Linked" },
 };
+
+/** The kinds that act on a task. Their failures read in task words. */
+const TASK_KINDS: readonly string[] = ["task.propose", "task.cancel", "task.retry", "workstream.link_task"];
 
 const FAILURE_TEXT: Readonly<Record<string, string>> = {
   stale_revision: "A newer change to this workstream exists. Ask the orchestrator to propose again.",
@@ -31,8 +39,30 @@ const FAILURE_TEXT: Readonly<Record<string, string>> = {
   conflict: "The workstream is not in a state that allows this change, for example it is archived. Nothing was changed.",
   invalid: "The daemon could not apply these values. Nothing was changed. Ask the orchestrator to propose again.",
   dependency_not_executed: "The workstream this needs was not created, so this did not run. Nothing was changed.",
+  forbidden: "The app does not allow this change. Nothing was changed.",
   internal: "The app could not finish this change. Nothing else was changed. Ask the orchestrator to propose it again.",
 };
+
+/** Replaces `FAILURE_TEXT` for a task kind, where the workstream wording would mislead. */
+const TASK_FAILURE_TEXT: Readonly<Record<string, string>> = {
+  not_found: "The project, task or workstream this names was not found. Nothing was changed.",
+  conflict:
+    "The task, workstream or link is not in a state that allows this (for example the task is already running or finished). Nothing was changed.",
+};
+
+/** Why the app refused a task before it reached the user, by the daemon's `denial` key. */
+const DENIAL_TEXT: Readonly<Record<string, string>> = {
+  delivery_not_authorized:
+    "This task asks for a delivery the app does not allow from chat. Nothing was created. Ask the orchestrator for local review or a report only.",
+  autonomy_not_authorized: "This task asks for more autonomy than chat may request. Nothing was created.",
+  verification_not_authorized: "This task asks for verification commands, which chat may not request. Nothing was created.",
+  contract_invalid: "The task text is not valid. Nothing was created. Ask the orchestrator to propose again.",
+};
+
+const DENIAL_FALLBACK = "The app refused this task. Nothing was created.";
+
+/** The longest subject shown in a heading phrase, a button name or an announcement. */
+const SUBJECT_CHARS = 60;
 
 const NO_NAMES: ReadonlyMap<string, string> = new Map();
 
@@ -45,8 +75,12 @@ export interface Field {
 }
 
 export interface ViewContext {
-  /** False while the daemon cannot take a decision, for example when disconnected. */
+  /** False while the daemon cannot take a decision, for example when disconnected or not an approver. */
   canDecide: boolean;
+  /** False while the daemon session is not connected. */
+  connected: boolean;
+  /** False when this app did not start the running daemon, so it cannot approve or reject for it (DPES-1105). */
+  approver: boolean;
   /** True while this card's decision is in flight. */
   deciding: boolean;
   names: WorkstreamNames;
@@ -90,13 +124,40 @@ function gatesOf(value: unknown): string[] {
   return Array.isArray(value) ? value.map(gateText) : [];
 }
 
-/** The name of what a proposal changes: a title for a create or an objective, the workstream's title for an update. */
+function lookup(table: Readonly<Record<string, string>>, key: string | null): string | null {
+  return key !== null && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null;
+}
+
+/** One line of at most `SUBJECT_CHARS` characters, cut on a character boundary. */
+function shorten(value: string): string {
+  const line = value.replace(/\s+/g, " ").trim();
+  const chars = Array.from(line);
+  return chars.length > SUBJECT_CHARS ? `${chars.slice(0, SUBJECT_CHARS).join("").trimEnd()}…` : line;
+}
+
+/** A task the app refused when the reply arrived. It is never pending, so it has no decision. */
+function isDenied(p: ActionProposal): boolean {
+  return p.state === "failed" && p.errorCode === "action_denied";
+}
+
+function denialText(denial: string | null): string {
+  return lookup(DENIAL_TEXT, denial) ?? DENIAL_FALLBACK;
+}
+
+/**
+ * The name of what a proposal changes: a title for a create or an objective, the workstream's title for an update,
+ * the start of the objective for a new task, and the task's title (else its id) for a cancel, retry or link.
+ */
 function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
   if (p.kind === "workstream.update") {
     const id = text(p.params.workstream_id);
     return names.get(id) ?? id;
   }
   if (p.kind === "objective.revise") return text(p.params.objective_id);
+  if (p.kind === "task.propose") return shorten(text(p.params.objective));
+  if (p.kind === "task.cancel" || p.kind === "task.retry" || p.kind === "workstream.link_task") {
+    return shorten(p.target?.taskTitle || text(p.params.task_id));
+  }
   return text(p.params.title);
 }
 
@@ -107,6 +168,17 @@ function parentLabel(parent: ActionProposal): string {
 
 function field(label: string, value: string | string[]): Field {
   return { label, value: value.length === 0 ? "(none)" : value };
+}
+
+/** The text one entry per non-blank line, so a long task is shown whole and stays readable. */
+function linesOf(value: string): string[] {
+  return value.split(/\r\n|\r|\n/).filter((line) => line.trim() !== "");
+}
+
+/** The workstream a new objective or task goes into: named by id, or by the proposal that creates it. */
+function workstreamOf(id: string, names: WorkstreamNames, parent: ActionProposal | null): string {
+  if (id !== "") return names.get(id) ?? id;
+  return parent !== null ? `The workstream from “${parentLabel(parent)}”` : "";
 }
 
 /** The state the daemon reported, or `unknown` for a value this app version does not know. */
@@ -134,7 +206,7 @@ export function actionPhrase(p: ActionProposal, names: WorkstreamNames): string 
 
 /**
  * The exact fields of a proposal, read from its canonical parameters. Free text is shown as the daemon stored it.
- * `parent` names the workstream an objective goes into when the objective does not name one yet.
+ * `parent` names the workstream an objective or a task goes into when it does not name one yet.
  */
 export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: ActionProposal | null): Field[] {
   const x = p.params;
@@ -151,17 +223,13 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("New state", text(x.state)),
       ];
     }
-    case "objective.add": {
-      const id = text(x.workstream_id);
-      const workstream =
-        id !== "" ? (names.get(id) ?? id) : parent !== null ? `The workstream from “${parentLabel(parent)}”` : "";
+    case "objective.add":
       return [
-        field("Workstream", workstream),
+        field("Workstream", workstreamOf(text(x.workstream_id), names, parent)),
         field("Title", text(x.title)),
         field("Description", text(x.description)),
         field("Gates", gatesOf(x.gates)),
       ];
-    }
     case "objective.revise":
       return [
         field("Objective", text(x.objective_id)),
@@ -170,6 +238,40 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("New description", text(x.description)),
         field("Add gates", gatesOf(x.add_gates)),
       ];
+    case "task.propose": {
+      const project = text(x.project);
+      const name = p.target?.projectName;
+      const workstream = workstreamOf(text(x.workstream_id), names, parent);
+      const objective = text(x.objective_id);
+      return [
+        field("Project", name ? `${name} (${project})` : project),
+        field("Task", linesOf(text(x.objective))),
+        field("Agent", text(x.agent)),
+        field("Task kind", text(x.task_kind)),
+        field("Delivery", text(x.delivery)),
+        // The envelope fixes both: chat cannot raise them, and the card says so.
+        field("Autonomy", "Approval required, fixed by the app"),
+        field("Verification", "None, fixed by the app"),
+        ...(workstream !== "" ? [field("Workstream", workstream)] : []),
+        ...(objective !== "" ? [field("Objective", objective)] : []),
+      ];
+    }
+    case "task.cancel":
+    case "task.retry":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Task id", text(x.task_id)),
+      ];
+    case "workstream.link_task": {
+      const id = text(x.workstream_id);
+      return [
+        field("Workstream", names.get(id) ?? id),
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task id", text(x.task_id)),
+        field("Objective", text(x.objective_id)),
+      ];
+    }
     default:
       return Object.keys(x)
         .sort()
@@ -180,10 +282,12 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
 /** Plain words for a failed execution, by the daemon's error code. */
 export function failureText(p: ActionProposal): string {
   const code = p.errorCode;
+  if (code === "action_denied") return denialText(p.denial);
   if (code === "stale_revision" && p.kind === "objective.revise") {
     return "A newer change to this objective exists. Ask the orchestrator to propose again.";
   }
-  if (code !== null && Object.prototype.hasOwnProperty.call(FAILURE_TEXT, code)) return FAILURE_TEXT[code];
+  const known = (TASK_KINDS.includes(p.kind) ? lookup(TASK_FAILURE_TEXT, code) : null) ?? lookup(FAILURE_TEXT, code);
+  if (known !== null) return known;
   return code === null ? "The action failed." : `The action failed (${code}).`;
 }
 
@@ -217,6 +321,23 @@ export function openWorkstreamId(p: ActionProposal, parent: ActionProposal | nul
       return text(p.params.workstream_id) || parent?.resultRef || null;
     case "objective.revise":
       return targetWorkstream;
+    case "task.propose":
+      return text(p.params.workstream_id) || parent?.resultRef || null;
+    case "workstream.link_task":
+      return text(p.params.workstream_id) || null;
+    default:
+      return null;
+  }
+}
+
+/** The task "Open task" goes to once the change has executed; null when the card names none. */
+export function openTaskId(p: ActionProposal): string | null {
+  switch (p.kind) {
+    case "task.propose":
+      return p.resultRef;
+    case "task.cancel":
+    case "task.retry":
+      return text(p.params.task_id) || null;
     default:
       return null;
   }
@@ -224,6 +345,14 @@ export function openWorkstreamId(p: ActionProposal, parent: ActionProposal | nul
 
 function executedText(p: ActionProposal, names: WorkstreamNames): string {
   switch (p.kind) {
+    case "task.propose":
+      return `Created and queued task “${subjectOf(p, names)}”. Open the task to follow it.`;
+    case "task.cancel":
+      return `Cancellation requested for “${subjectOf(p, names)}”. The task stops when its agent confirms.`;
+    case "task.retry":
+      return `Retry queued for “${subjectOf(p, names)}”.`;
+    case "workstream.link_task":
+      return `Linked “${subjectOf(p, names)}” to the workstream.`;
     case "workstream.create":
       return `Created workstream “${text(p.params.title)}”.`;
     case "objective.add":
@@ -244,21 +373,26 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
  */
 function pendingView(p: ActionProposal, parent: ActionProposal | null, ctx: ViewContext): CardView {
   const waiting = p.dependsOn !== null && parent?.state !== "executed";
+  const noun = p.kind === "task.propose" ? "task" : "objective";
   const waitingText =
     parent !== null
-      ? `Approve “${parentLabel(parent)}” first. This objective goes into that workstream.`
-      : "This objective goes into a workstream that is not created yet. Approve that workstream first.";
+      ? `Approve “${parentLabel(parent)}” first. This ${noun} goes into that workstream.`
+      : `This ${noun} goes into a workstream that is not created yet. Approve that workstream first.`;
   const approveBlock = ctx.deciding
     ? "Sending your decision…"
-    : !ctx.canDecide
-      ? "Reconnect to the daemon to approve or reject."
-      : copyOf(p.kind) === null
-        ? "This app version cannot show this action. Update the app to approve it."
-        : waiting
-          ? waitingText
-          : null;
-  const variant: "primary" | "danger" = p.kind === "workstream.update" && p.params.state === "archived" ? "danger" : "primary";
-  const rejectEnabled = ctx.canDecide && !ctx.deciding;
+    : ctx.connected && !ctx.approver
+      ? APPROVER_REQUIRED_NOTICE
+      : !ctx.canDecide
+        ? "Reconnect to the daemon to approve or reject."
+        : copyOf(p.kind) === null
+          ? "This app version cannot show this action. Update the app to approve it."
+          : waiting
+            ? waitingText
+            : null;
+  // Archiving and stopping a task are hard to undo.
+  const variant: "primary" | "danger" =
+    (p.kind === "workstream.update" && p.params.state === "archived") || p.kind === "task.cancel" ? "danger" : "primary";
+  const rejectEnabled = ctx.canDecide && ctx.approver && !ctx.deciding;
   return {
     state: "pending",
     pill: { tone: "info", text: "Pending approval" },
@@ -290,7 +424,10 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
     case "rejected":
       return closedView(state, { tone: "neutral", text: "Rejected" }, { tone: "neutral", text: "You rejected this. Nothing was changed." });
     case "failed":
-      return closedView(state, { tone: "bad", text: "Failed" }, { tone: "bad", text: failureText(p) });
+      // A denial is the app's refusal, not a fault: a warning, and nothing for the user to retry or approve.
+      return isDenied(p)
+        ? closedView(state, { tone: "warn", text: "Denied" }, { tone: "warn", text: failureText(p) })
+        : closedView(state, { tone: "bad", text: "Failed" }, { tone: "bad", text: failureText(p) });
     case "superseded":
       return closedView(
         state,
@@ -315,12 +452,14 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
 /** What the polite region says once the daemon has answered a decision. */
 export function outcomeAnnouncement(p: ActionProposal, parent: ActionProposal | null, names: WorkstreamNames): string {
   const phrase = actionPhrase(p, names);
+  // A task's words can already end in a full stop or an ellipsis.
+  const sentence = /[.…]$/.test(phrase) ? phrase : `${phrase}.`;
   switch (stateOf(p)) {
     case "rejected":
-      return `Rejected: ${phrase}. Nothing was changed.`;
+      return `Rejected: ${sentence} Nothing was changed.`;
     case "failed":
-      return `Failed: ${phrase}. ${failureText(p)}`;
+      return `${isDenied(p) ? "Denied" : "Failed"}: ${sentence} ${failureText(p)}`;
     default:
-      return viewOf(p, parent, { canDecide: true, deciding: false, names }).message.text;
+      return viewOf(p, parent, { canDecide: true, connected: true, approver: true, deciding: false, names }).message.text;
   }
 }

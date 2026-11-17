@@ -1,36 +1,42 @@
-import { matchesFilter, pendingApprovals } from "../format";
+import { matchesFilter, pendingApprovals, pendingDecisionCount, pendingProposals } from "../format";
 import { useServices, useStore } from "../services";
 import { ThemeToggle } from "../theme";
 import { NavLink } from "./NavLink";
 import { ResourcesSlot } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 
-/** Pending approvals from `approvals.list`; "—" (not 0) when no list has loaded. */
+/** Pending approvals plus pending proposed actions (`approvals.list`, `actions.pending`); "—" (not 0) until both have loaded. */
 export function ReviewCount() {
   const { data } = useServices();
-  const { approvals } = useStore(data);
-  if (approvals.data === null) {
+  const { approvals, proposals } = useStore(data);
+  if (approvals.data === null || proposals.data === null) {
     return (
-      <span className="shell-count" aria-label="pending approvals: not available" data-testid="nav-review-count">
+      <span className="shell-count" aria-label="pending decisions: not available" data-testid="nav-review-count">
         —
       </span>
     );
   }
-  const count = pendingApprovals(approvals.data).length;
+  const count = pendingDecisionCount(approvals.data, proposals.data);
+  const approvalCount = pendingApprovals(approvals.data).length;
+  const proposalCount = pendingProposals(proposals.data).length;
   return (
-    <span className="shell-count" aria-label={`${count} pending approvals`} data-testid="nav-review-count">
+    <span
+      className="shell-count"
+      aria-label={`${count} pending decisions: ${approvalCount} approvals, ${proposalCount} proposed actions`}
+      data-testid="nav-review-count"
+    >
       {count}
     </span>
   );
 }
 
-/** Counts derived from `tasks.list` and `approvals.list`; "—" where the list has not loaded. */
+/** Counts derived from `tasks.list`, `approvals.list` and `actions.pending`; "—" where the list has not loaded. */
 export function TopBarCounts() {
   const { data } = useServices();
-  const { tasks, approvals } = useStore(data);
+  const { tasks, approvals, proposals } = useStore(data);
   const taskList = tasks.data;
   const running = taskList?.filter((task) => matchesFilter(task, "running", taskList, approvals.data ?? [])).length;
-  const attention = approvals.data ? pendingApprovals(approvals.data).length : undefined;
+  const attention = approvals.data && proposals.data ? pendingDecisionCount(approvals.data, proposals.data) : undefined;
   const text = (value: number | undefined) => (value === undefined ? "—" : String(value));
   return (
     <p className="shell-counts" data-testid="top-counts">

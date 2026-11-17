@@ -39,6 +39,18 @@ async function review(commit: string) {
   return { fake, ...hook };
 }
 
+describe("review connection mapping (DPES-1105)", () => {
+  it.each([true, false])("the mapped ReviewConnection carries approver %s from the snapshot", async (approver) => {
+    const fake = new FakeDaemon();
+    fake.approver = approver;
+    const connection = new ConnectionManager({ connector: fake, backoffMs: [5], requestTimeoutMs: 100 });
+    stops.push(() => connection.stop());
+    connection.start();
+    await until(() => connection.getSnapshot().status === "connected", "connected");
+    expect(createReviewClient(connection).connection()).toMatchObject({ status: "connected", approver });
+  });
+});
+
 describe("A1b review candidate context before real client transport", () => {
   it.each(["approve", "reject"] as const)("refuses %s for a real approval bound to a fixture-like candidate", async (decision: ResolveDecision) => {
     for (const commit of ["fixture:commit", "fixture0001", "  FIXTURE0001  "]) {

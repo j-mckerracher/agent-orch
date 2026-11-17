@@ -87,6 +87,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "conversations.get": "coordinator",
   "conversations.cancel": "coordinator",
   "actions.resolve": "orchestrator_actions",
+  "actions.pending": "orchestrator_actions",
 };
 
 interface Pending {
@@ -125,6 +126,10 @@ export class DaemonSession {
 
   hasCapability(capability: Capability): boolean {
     return this.welcome.capabilities.includes(capability);
+  }
+
+  get isApprover(): boolean {
+    return this.welcome.approver === true;
   }
 
   onClose(listener: (reason: DaemonError | null) => void): void {
