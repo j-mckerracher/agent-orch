@@ -173,9 +173,22 @@ impl Chat {
     fn call(&mut self, method: &str, params: Value) -> Value {
         self.next_id += 1;
         let id = self.next_id;
-        self.relay
+        if self
+            .relay
             .send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
-            .unwrap();
+            .is_err()
+        {
+            // The relay closed before this call: say why, from the close event it queued.
+            let closed: Vec<String> = self
+                .frames
+                .try_iter()
+                .filter_map(|event| match event {
+                    RelayEvent::Closed(reason) => Some(format!("{reason:?}")),
+                    RelayEvent::Message(_) => None,
+                })
+                .collect();
+            panic!("sending {method} failed: the relay was already closed ({closed:?})");
+        }
         loop {
             match self
                 .frames
@@ -3421,9 +3434,16 @@ fn mcp_port(line: &str) -> u16 {
         .unwrap()
 }
 
+/// Whether something accepts a connection on the loopback `port`. The connect is bounded: on
+/// Windows a refused connection can otherwise take seconds, with the test thread not reading.
+fn mcp_port_is_open(port: u16) -> bool {
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&address, Duration::from_millis(250)).is_ok()
+}
+
 fn mcp_wait_port_closed(port: u16) {
     let deadline = Instant::now() + WAIT;
-    while std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+    while mcp_port_is_open(port) {
         assert!(Instant::now() < deadline, "port {port} is still open");
         thread::sleep(Duration::from_millis(50));
     }
@@ -3577,7 +3597,7 @@ fn the_mcp_port_is_closed_after_the_turn_and_after_a_cancel() {
         thread::sleep(Duration::from_millis(20));
     };
     let port = mcp_port(&hung);
-    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_ok());
+    assert!(mcp_port_is_open(port));
     let cancelled = chat.call(
         "conversations.cancel",
         json!({"target": global(), "turn_id": turn_id, "idempotency_key": "c-1"}),
