@@ -603,7 +603,8 @@ mod tests {
         assert!(
             actions.contains(concat!(
                 "Action kinds: workstream.create, workstream.update, objective.add, ",
-                "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task\n"
+                "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task, ",
+                "task.revise, project.remove, decision.hold\n"
             )),
             "{actions}"
         );

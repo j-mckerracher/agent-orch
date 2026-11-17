@@ -11,6 +11,10 @@
 #[macro_use]
 mod support;
 
+use orchestrator_core::approval::{
+    Actor, ApprovalAction, ApprovalActionKind, ApproverAllowlist, ParameterDigest,
+};
+use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
@@ -2915,4 +2919,248 @@ fn monitoring_get_is_open_to_a_session_that_negotiated_it_and_carries_no_authori
     assert_eq!(still["result"]["mode"], "on", "{still}");
     bare.relay.close();
     stop(&layout, daemon, chat);
+}
+
+// Phase 4d: `task.revise`, `decision.hold` and `project.remove` (DPES-1105).
+
+const SEEDED_TASK: &str = "task-seeded";
+
+/// The UTC date `days` after today, as `YYYY-MM-DD`.
+fn date_in_days(days: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let shifted = i64::try_from(now / 86_400).unwrap() + days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// A reply with one `task.revise`, one `decision.hold` and one `project.remove`.
+fn phase4_block(project: &str, until: &str) -> String {
+    let block = json!({
+        "mcao_actions": 1,
+        "actions": [
+            {"kind": "task.revise", "task_id": SEEDED_TASK, "added_intent": "Also cover the error path."},
+            {"kind": "decision.hold", "task_id": SEEDED_TASK, "until": until},
+            {"kind": "project.remove", "project": project},
+        ],
+    });
+    format!("Three below.\n```mcao-actions\n{block}\n```\n")
+}
+
+/// Seeds an idle task with one pending approval before the daemon starts.
+fn seed_task_with_approval(layout: &Layout) {
+    seed_idle_task(layout, SEEDED_TASK);
+    let action = ApprovalAction::new(
+        ApprovalActionKind::Delivery(ActionKind::LocalReviewMerge),
+        ParameterDigest::from_sha256([1; 32]),
+        "a".repeat(40),
+        SEEDED_TASK,
+    )
+    .unwrap();
+    store_after_stop(layout)
+        .request_approval(
+            "approval-seeded",
+            &action,
+            &Actor::Agent("agent-1".into()),
+            &ApproverAllowlist::new("user-1", ["reviewer-1"]).unwrap(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_scripted_revise_hold_and_remove_block_yields_three_pending_cards_with_no_path() {
+    let layout = Layout::new();
+    seed_task_with_approval(&layout);
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, phase4_block(&code, &date_in_days(3))).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(reply(&page), "Three below.\n");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 3, "{page}");
+
+    let card = |kind: &str| -> Value {
+        page["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|proposal| proposal["kind"] == kind)
+            .unwrap_or_else(|| panic!("no {kind} card in {page}"))
+            .clone()
+    };
+    for kind in ["task.revise", "decision.hold", "project.remove"] {
+        assert_eq!(card(kind)["state"], "pending", "{kind}");
+    }
+    assert_eq!(card("task.revise")["target"]["task_title"], "Seeded task");
+    assert_eq!(card("project.remove")["target"]["project_name"], "r");
+    // A card names the project by its folder, never by a path.
+    let root = layout
+        .repo
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap();
+    assert!(!page["proposals"].to_string().contains(root), "{page}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        proposal_rows(&store),
+        [
+            "decision.hold pending",
+            "project.remove pending",
+            "task.revise pending"
+        ]
+    );
+    assert!(store.active_decision_holds().unwrap().is_empty());
+    assert!(store.archived_project_ids().unwrap().is_empty());
+}
+
+#[test]
+fn approving_a_hold_card_and_a_remove_card_holds_and_archives_once() {
+    let layout = Layout::new();
+    seed_task_with_approval(&layout);
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, phase4_block(&code, &date_in_days(3))).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 3, "{page}");
+    // `Chat` negotiates only the conversation capabilities, so projects are read by a client of their own.
+    assert_eq!(connect(&layout.data).projects_list().unwrap().as_array().unwrap().len(), 2);
+
+    let held = resolve(&mut chat, &ids[1], "approve", "r-1");
+    assert_eq!(held["result"]["proposal"]["state"], "executed", "{held}");
+    assert!(
+        held["result"]["proposal"]["result_ref"]
+            .as_str()
+            .unwrap()
+            .starts_with("hold:"),
+        "{held}"
+    );
+    let removed = resolve(&mut chat, &ids[2], "approve", "r-2");
+    assert_eq!(removed["result"]["proposal"]["state"], "executed", "{removed}");
+    assert_eq!(removed["result"]["proposal"]["result_ref"], code.as_str(), "{removed}");
+
+    // The same key replays; a second key finds nothing pending.
+    let replay = resolve(&mut chat, &ids[2], "approve", "r-2");
+    assert_eq!(replay["result"], removed["result"], "{replay}");
+    let second = resolve(&mut chat, &ids[2], "approve", "r-3");
+    assert_eq!(second["error"]["code"], -32022, "{second}");
+
+    // The archived project leaves the list. The approval the hold names is untouched.
+    let listed = connect(&layout.data).projects_list().unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    let approvals = connect(&layout.data).approvals_list().unwrap();
+    assert_eq!(approvals.as_array().unwrap().len(), 1, "{approvals}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(store.active_decision_holds().unwrap().len(), 1);
+    assert_eq!(store.archived_project_ids().unwrap().len(), 1);
+    assert!(layout.repo.exists());
+    assert_eq!(
+        proposal_rows(&store),
+        [
+            "decision.hold executed",
+            "project.remove executed",
+            "task.revise pending"
+        ]
+    );
+}
+
+#[test]
+fn a_restart_between_approve_and_execute_holds_and_archives_once() {
+    let layout = Layout::new();
+    seed_task_with_approval(&layout);
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, phase4_block(&code, &date_in_days(3))).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 3, "{page}");
+    stop(&layout, daemon, chat);
+
+    // Both approvals commit, then the process stops before either change runs.
+    let store = store_after_stop(&layout);
+    store.approve_action_proposal(&ids[1], "user").unwrap();
+    store.approve_action_proposal(&ids[2], "user").unwrap();
+    drop(store);
+
+    // The next start finishes each, once, and a third start changes nothing.
+    for _ in 0..2 {
+        let daemon = start(&layout, &[]);
+        let chat = Chat::open(&layout);
+        stop(&layout, daemon, chat);
+        let store = store_after_stop(&layout);
+        assert_eq!(
+            proposal_rows(&store),
+            [
+                "decision.hold executed",
+                "project.remove executed",
+                "task.revise pending"
+            ]
+        );
+        assert_eq!(store.active_decision_holds().unwrap().len(), 1);
+        assert_eq!(store.archived_project_ids().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn an_auto_turn_cannot_propose_a_revise_hold_or_remove() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &phase4_block(PROJECT_CODE, &date_in_days(3)));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let mut turns = Vec::new();
+    for (level, key) in [("auto", "m-1"), ("full", "m-2")] {
+        let sent = chat.send_params(json!({
+            "target": global(),
+            "text": "[fake:script]",
+            "idempotency_key": key,
+            "permission": level,
+        }));
+        turns.push((level, sent["turn"]["id"].as_str().unwrap().to_owned()));
+        let page = chat.settled(&global());
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+        assert_eq!(page["turn"]["permission_level"], level, "{page}");
+        assert_eq!(reply(&page), "Three below.\n", "{level}");
+        assert_eq!(page["proposals"], json!([]), "{level}: {page}");
+    }
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    for (level, turn_id) in &turns {
+        assert_eq!(
+            block_outcome(&store, turn_id),
+            Some(ActionBlockOutcome::Stripped),
+            "{level}"
+        );
+    }
+    assert!(proposal_rows(&store).is_empty());
+    assert!(store.active_decision_holds().unwrap().is_empty());
+    assert!(store.archived_project_ids().unwrap().is_empty());
 }

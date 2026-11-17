@@ -18,11 +18,11 @@ use super::*;
 
 /// The project every test registers. Its id is a repository path, so the leak test can
 /// look for the path text.
-const ALPHA: &str = "/private/canary-root/alpha";
+pub(super) const ALPHA: &str = "/private/canary-root/alpha";
 const OBJECTIVE: &str = "Add unit tests for the retry module.";
 const CREATE: &str = r#"{"kind": "workstream.create", "ref": "w1", "title": "Alpha"}"#;
 
-fn register_project(api: &DaemonApi, id: &str) {
+pub(super) fn register_project(api: &DaemonApi, id: &str) {
     api.store
         .register_project(&Project {
             id: id.to_owned(),
@@ -43,7 +43,7 @@ fn in_workstream(workstream: &str) -> String {
     format!(r#", "workstream_id": "{workstream}""#)
 }
 
-fn task_action(kind: &str, task_id: &str) -> String {
+pub(super) fn task_action(kind: &str, task_id: &str) -> String {
     format!(r#"{{"kind": "{kind}", "task_id": "{task_id}"}}"#)
 }
 
@@ -54,7 +54,7 @@ fn link_action(workstream: &str, task_id: &str) -> String {
 }
 
 /// The `tasks.submit` request the daemon builds for a proposal under `key`.
-fn chat_submit(key: &str, objective: &str) -> TaskSubmitParams {
+pub(super) fn chat_submit(key: &str, objective: &str) -> TaskSubmitParams {
     TaskSubmitParams {
         idempotency_key: key.to_owned(),
         contract: TaskSubmission {
@@ -96,12 +96,12 @@ fn chat_contract(id: &str, objective: &str) -> TaskContract {
 }
 
 /// The id of the task a proposal makes: derived from the proposal id alone.
-fn proposed_task_id(proposal_id: &str) -> String {
+pub(super) fn proposed_task_id(proposal_id: &str) -> String {
     idempotency::stable_id("task", &idempotency::stable_id("action", proposal_id))
 }
 
 /// A queued task, made through the public method, as a user would.
-fn submit_queued(api: &DaemonApi, key: &str, objective: &str) -> String {
+pub(super) fn submit_queued(api: &DaemonApi, key: &str, objective: &str) -> String {
     let submitted = call(
         api,
         "tasks.submit",
@@ -137,7 +137,7 @@ fn attempt(task_id: &str) -> Attempt {
 }
 
 /// A task whose first attempt is running.
-fn running_task(api: &DaemonApi, key: &str) -> String {
+pub(super) fn running_task(api: &DaemonApi, key: &str) -> String {
     let id = submit_queued(api, key, "Runs now");
     api.store.add_attempt(&id, &attempt(&id)).unwrap();
     api.store
@@ -150,7 +150,7 @@ fn running_task(api: &DaemonApi, key: &str) -> String {
 }
 
 /// A task that ran once and failed, so one retry is allowed.
-fn failed_task(api: &DaemonApi, key: &str) -> String {
+pub(super) fn failed_task(api: &DaemonApi, key: &str) -> String {
     let id = running_task(api, key);
     api.store
         .record_attempt_failure(&id, "attempt-1", "attempt failed")
@@ -170,7 +170,7 @@ fn link_task(api: &DaemonApi, workstream: &str, task_id: &str, key: &str) {
     .unwrap();
 }
 
-fn task_count(api: &DaemonApi) -> usize {
+pub(super) fn task_count(api: &DaemonApi) -> usize {
     api.store.list().unwrap().len()
 }
 
@@ -185,7 +185,7 @@ fn retries_scheduled(api: &DaemonApi, task_id: &str) -> usize {
 }
 
 /// Claims `key` and runs `effect`, then stops before the claim completes, as a crash would.
-fn stop_after_effect(
+pub(super) fn stop_after_effect(
     api: &DaemonApi,
     method: &str,
     key: &str,
@@ -202,12 +202,12 @@ fn stop_after_effect(
     assert!(stopped.is_err());
 }
 
-fn assert_executed(result: &Value, result_ref: &str) {
+pub(super) fn assert_executed(result: &Value, result_ref: &str) {
     assert_eq!(result["proposal"]["state"], "executed", "{result}");
     assert_eq!(result["proposal"]["result_ref"], result_ref, "{result}");
 }
 
-fn assert_failed(result: &Value, code: &str) {
+pub(super) fn assert_failed(result: &Value, code: &str) {
     assert_eq!(result["proposal"]["state"], "failed", "{result}");
     assert_eq!(result["proposal"]["error_code"], code, "{result}");
 }

@@ -115,6 +115,15 @@ struct RegisterProjectParams {
     path: String,
 }
 
+/// An archived project (`project.remove`) is left out of `projects.list` unless the
+/// caller asks for it.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectsListParams {
+    #[serde(default)]
+    include_archived: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TaskIdParams {
@@ -262,7 +271,8 @@ impl DaemonApi {
             api.config.load.clone(),
             api.config.diagnostics.clone(),
         ));
-        wake.recover()?;
+        // A transient store error is logged inside and does not stop startup.
+        let _ = wake.recover();
         wake.start();
         api.executor = Some(executor);
         api.wake = Some(wake);
@@ -393,6 +403,9 @@ impl RpcHandler for DaemonApi {
             "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             "actions.resolve" => self.actions_resolve(params),
             "actions.pending" => self.actions_pending(params),
+            "holds.set" => self.holds_set(params),
+            "holds.release" => self.holds_release(params),
+            "holds.list" => self.holds_list(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -450,7 +463,16 @@ impl RpcHandler for DaemonApi {
 
 impl DaemonApi {
     fn projects_list(&self, params: Value) -> Result<Value, RpcError> {
-        require_empty_params(&params)?;
+        let request: ProjectsListParams = if params.is_null() {
+            ProjectsListParams::default()
+        } else {
+            parse_params(params)?
+        };
+        let archived = if request.include_archived {
+            Vec::new()
+        } else {
+            self.store.archived_project_ids().map_err(map_store_error)?
+        };
         let projects = self.store.list_projects().map_err(map_store_error)?;
         // `coordinator_active` is false while a project's coordinator is removed
         // (DPES-1105). The project itself is listed either way.
@@ -461,6 +483,7 @@ impl DaemonApi {
         Ok(Value::Array(
             projects
                 .into_iter()
+                .filter(|project| !archived.contains(&project.id))
                 .map(|project| {
                     let coordinator_active = !removed.contains(&project.id);
                     json!({"id": project.id, "coordinator_active": coordinator_active})
@@ -488,7 +511,10 @@ impl DaemonApi {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         match self.store.get_project(&root) {
-            Ok(project) if project.root_path == root => {}
+            // Registering a removed project again is the undo of `project.remove`.
+            Ok(project) if project.root_path == root => {
+                self.store.restore_project(&root).map_err(map_store_error)?;
+            }
             Ok(_) => return Err(RpcError::Conflict),
             Err(StoreError::RecordNotFound { .. }) => self
                 .store
@@ -578,6 +604,14 @@ impl DaemonApi {
         self.store
             .get_project(&contract.project_id)
             .map_err(map_store_error)?;
+        // A removed project takes no new task until it is registered again.
+        if self
+            .store
+            .project_is_archived(&contract.project_id)
+            .map_err(map_store_error)?
+        {
+            return Err(RpcError::Conflict);
+        }
         contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
         if let Some(parent_id) = &contract.parent_id {
             match self.store.get(parent_id) {
@@ -1532,6 +1566,8 @@ mod conversations;
 mod coordinator;
 #[path = "api_host.rs"]
 mod host;
+#[path = "api_holds.rs"]
+mod holds;
 #[path = "api_load.rs"]
 pub(crate) mod load;
 #[path = "api_models.rs"]
@@ -1575,6 +1611,9 @@ mod review_tests;
 #[cfg(test)]
 #[path = "api_actions_task_tests.rs"]
 mod actions_task_tests;
+#[cfg(test)]
+#[path = "api_actions_phase4_tests.rs"]
+mod actions_phase4_tests;
 #[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;

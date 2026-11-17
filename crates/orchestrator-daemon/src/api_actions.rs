@@ -8,7 +8,7 @@
 
 use std::sync::MutexGuard;
 
-use orchestrator_core::orchestrator_action::{Action, ProposeTask};
+use orchestrator_core::orchestrator_action::{Action, ProposeTask, ReviseTask};
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{
@@ -16,8 +16,8 @@ use orchestrator_core::task_envelope::{
 };
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, ConversationTarget, ProposalState, ResolveError, TaskRecord,
-    WorkstreamStoreError,
+    ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, HoldSubject, LineageError,
+    LineageRelation, ProposalState, ResolveError, TaskRecord, WorkstreamStoreError,
 };
 
 use super::workstreams::{
@@ -101,6 +101,9 @@ enum Execution {
     Cancel(CancelParams),
     Retry(RetryParams),
     Link(LinkTaskParams),
+    ReviseTask(Box<ReviseTaskExec>),
+    RemoveProject(RemoveParams),
+    HoldDecision(HoldParams),
 }
 
 /// A `task.propose`: the `tasks.submit` request it stands for, and the workstream
@@ -115,6 +118,29 @@ struct LinkTarget {
     objective_id: Option<String>,
 }
 
+/// A `task.revise`: the task to stop, the instruction added to its objective, and the
+/// new task that carries both. The new task is a `task.propose` in every respect but its
+/// source: the daemon builds its contract from the old one and the fixed chat envelope.
+struct ReviseTaskExec {
+    old_task_id: String,
+    added_intent: String,
+    task: ProposeExec,
+}
+
+/// A `project.remove`: the project to archive. The archive hides it and keeps every row.
+#[derive(Serialize)]
+struct RemoveParams {
+    project_id: String,
+}
+
+/// A `decision.hold`. The key seeds the hold id, so a rerun finds the hold it made.
+#[derive(Serialize)]
+struct HoldParams {
+    task_id: String,
+    until: String,
+    idempotency_key: String,
+}
+
 impl Execution {
     /// The method the execution key is claimed under.
     fn method(&self) -> &'static str {
@@ -127,6 +153,9 @@ impl Execution {
             Self::Cancel(_) => "tasks.cancel",
             Self::Retry(_) => "tasks.retry",
             Self::Link(_) => "workstreams.link_task",
+            Self::ReviseTask(_) => "tasks.revise",
+            Self::RemoveProject(_) => "projects.remove",
+            Self::HoldDecision(_) => "holds.set",
         }
     }
 
@@ -140,6 +169,16 @@ impl Execution {
             Self::Cancel(request) => serde_json::to_value(request),
             Self::Retry(request) => serde_json::to_value(request),
             Self::Link(request) => serde_json::to_value(request),
+            Self::ReviseTask(exec) => {
+                let submit = serde_json::to_value(&exec.task.submit).map_err(|_| RpcError::Internal)?;
+                Ok(json!({
+                    "task_id": exec.old_task_id,
+                    "added_intent": exec.added_intent,
+                    "submit": submit,
+                }))
+            }
+            Self::RemoveProject(request) => serde_json::to_value(request),
+            Self::HoldDecision(request) => serde_json::to_value(request),
         };
         value.map_err(|_| RpcError::Internal)
     }
@@ -175,6 +214,26 @@ impl Execution {
             Self::Link(request) => api
                 .link_task_inner(request)
                 .map(|link| link.task_id)
+                .map_err(ActionError::from),
+            Self::ReviseTask(exec) => exec.run(api),
+            Self::RemoveProject(request) => {
+                match api.store.archive_project(&request.project_id) {
+                    Ok(_) => Ok(project_code(&request.project_id)),
+                    Err(error) => Err(match ArchiveError::of(&error) {
+                        // The project has live work. The proposal ends failed, never retried.
+                        Some(_) => RpcError::Conflict.into(),
+                        None => error.into(),
+                    }),
+                }
+            }
+            Self::HoldDecision(request) => api
+                .set_hold_inner(
+                    HoldSubject::Approval,
+                    &request.task_id,
+                    &request.until,
+                    &hold_id(&request.idempotency_key),
+                )
+                .map(|hold| format!("hold:{}", hold.id))
                 .map_err(ActionError::from),
         }
     }
@@ -221,6 +280,21 @@ impl Execution {
             Self::Cancel(request) => return cancel_effect(api, &request.task_id),
             Self::Retry(request) => return retry_effect(api, &request.task_id),
             Self::Link(request) => return link_effect(api, request),
+            Self::ReviseTask(exec) => return exec.effect_exists(api),
+            Self::RemoveProject(request) => {
+                return match api.store.project_is_archived(&request.project_id) {
+                    Ok(true) => Ok(Some(project_code(&request.project_id))),
+                    Ok(false) | Err(StoreError::RecordNotFound { .. }) => Ok(None),
+                    Err(error) => Err(error.into()),
+                }
+            }
+            Self::HoldDecision(request) => {
+                let id = hold_id(&request.idempotency_key);
+                return Ok(api
+                    .store
+                    .decision_hold(&id)?
+                    .map(|hold| format!("hold:{}", hold.id)));
+            }
         };
         match found {
             Ok(id) => Ok(Some(id)),
@@ -294,6 +368,91 @@ impl ProposeExec {
             }
         }
         Ok(())
+    }
+}
+
+impl ReviseTaskExec {
+    /// Admits the new task, then asks the old one to stop, then links the two. Every step
+    /// is safe to repeat and the new task id derives from the execution key, so a rerun
+    /// after a stop only does what is still missing and never makes a second task.
+    fn run(&self, api: &DaemonApi) -> Result<String, ActionError> {
+        if find_task(api, &self.task.task_id())?.is_none() {
+            self.preflight(api)?;
+        }
+        let new_task_id = self.task.run(api)?;
+        self.stop_old(api)?;
+        api.store
+            .add_task_lineage(
+                &new_task_id,
+                &self.old_task_id,
+                LineageRelation::RevisedFrom,
+                Some(&self.added_intent),
+            )
+            .map_err(lineage_error)?;
+        Ok(new_task_id)
+    }
+
+    /// Whether the new task exists, which means a stopped run got that far. The steps it
+    /// did not reach run now.
+    fn effect_exists(&self, api: &DaemonApi) -> Result<Option<String>, ActionError> {
+        match find_task(api, &self.task.task_id())? {
+            Some(_) => self.run(api).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// Refuses a revise that could not stop the old task, before anything is made. Only a
+    /// queued task, or a running one whose owner is alive, can be asked to stop. A finished
+    /// task is not revised: `task.retry` and `task.propose` start new work.
+    fn preflight(&self, api: &DaemonApi) -> Result<(), ActionError> {
+        let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
+        match old.state {
+            TaskState::Queued => {}
+            TaskState::Running => {
+                api.require_live_cancellation_owner(&self.old_task_id)?;
+                // No owner at all passes the check above and leaves nothing to take the request.
+                let owned = api
+                    .store
+                    .open_cancellation_owners()?
+                    .iter()
+                    .any(|owner| owner.task_id == self.old_task_id);
+                if !owned {
+                    return Err(RpcError::Conflict.into());
+                }
+            }
+            _ => return Err(RpcError::Conflict.into()),
+        }
+        if api.store.project_is_archived(&old.contract.project_id)? {
+            return Err(RpcError::Conflict.into());
+        }
+        Ok(())
+    }
+
+    /// Asks the old task to stop, through the path `task.cancel` uses. Already asked, or
+    /// already finished while the new task was made, counts as done. The old worktree and
+    /// branch are never touched from here.
+    fn stop_old(&self, api: &DaemonApi) -> Result<(), ActionError> {
+        if cancel_effect(api, &self.old_task_id)?.is_some() {
+            return Ok(());
+        }
+        let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
+        if matches!(old.state, TaskState::Queued | TaskState::Running) {
+            api.cancel_task_inner(&self.old_task_id)?;
+        }
+        Ok(())
+    }
+}
+
+/// The id of the hold an execution under `key` makes.
+fn hold_id(key: &str) -> String {
+    idempotency::stable_id("hold", key)
+}
+
+/// A lineage refusal is a conflict, whatever its cause. Any other store failure is internal.
+fn lineage_error(error: StoreError) -> ActionError {
+    match LineageError::of(&error) {
+        Some(_) => RpcError::Conflict.into(),
+        None => error.into(),
     }
 }
 
@@ -588,6 +747,14 @@ impl DaemonApi {
             Execution::Cancel(request) => self.task_in_workstream(&request.task_id, workstream)?,
             Execution::Retry(request) => self.task_in_workstream(&request.task_id, workstream)?,
             Execution::Link(request) => request.workstream_id == workstream,
+            Execution::ReviseTask(exec) => {
+                self.task_in_workstream(&exec.old_task_id, workstream)?
+            }
+            Execution::HoldDecision(request) => {
+                self.task_in_workstream(&request.task_id, workstream)?
+            }
+            // Removing a project reaches outside any one workstream.
+            Execution::RemoveProject(_) => false,
         })
     }
 
@@ -720,6 +887,83 @@ impl DaemonApi {
                 objective_id: link.objective_id,
                 idempotency_key: key,
             }),
+            Action::TaskRevise(revise) => {
+                Execution::ReviseTask(Box::new(self.revise_execution(revise, key)?))
+            }
+            Action::ProjectRemove(remove) => Execution::RemoveProject(RemoveParams {
+                project_id: self.resolve_project(&remove.project)?,
+            }),
+            Action::DecisionHold(hold) => Execution::HoldDecision(HoldParams {
+                task_id: hold.task_id,
+                until: hold.until,
+                idempotency_key: key,
+            }),
+        })
+    }
+
+    /// The new task a `task.revise` stands for. Agent, kind, delivery and dependencies
+    /// copy from the old contract; autonomy and verification come from the fixed chat
+    /// envelope and no permission is set, so the new task takes the daemon default
+    /// (Restricted) and never the level a hand-made task ran at. The new objective is the
+    /// old one, a blank line, a fixed heading and the added instruction. It joins the old
+    /// task's workstream and objective. The old task may be finished by now, so its state
+    /// is not read here: `ReviseTaskExec::preflight` reads it when nothing is made yet.
+    fn revise_execution(
+        &self,
+        revise: ReviseTask,
+        key: String,
+    ) -> Result<ReviseTaskExec, &'static str> {
+        let old = match self.store.get(&revise.task_id) {
+            Ok(old) => old,
+            Err(StoreError::NotFound(_)) => return Err("not_found"),
+            Err(error) => {
+                internal("actions", &error);
+                return Err("internal");
+            }
+        };
+        let envelope = chat_task_envelope();
+        if !envelope.delivery_grants(old.contract.delivery) {
+            return Err("action_denied");
+        }
+        let objective = format!(
+            "{}\n\nAdded instruction from the user:\n{}",
+            old.contract.objective, revise.added_intent
+        );
+        if objective.len() > orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES {
+            return Err(INVALID);
+        }
+        let link = self
+            .store
+            .workstream_task_link(&revise.task_id)
+            .map_err(|error| ActionError::from(error).code())?
+            .map(|link| LinkTarget {
+                workstream_id: link.workstream_id,
+                objective_id: link.objective_id,
+            });
+        Ok(ReviseTaskExec {
+            old_task_id: revise.task_id,
+            added_intent: revise.added_intent,
+            task: ProposeExec {
+                submit: TaskSubmitParams {
+                    idempotency_key: key,
+                    contract: TaskSubmission {
+                        project_id: old.contract.project_id,
+                        parent_id: None,
+                        objective,
+                        kind: old.contract.kind,
+                        agent: old.contract.agent,
+                        dependencies: old.contract.dependencies,
+                        verification: envelope.verification,
+                        delivery: old.contract.delivery,
+                        autonomy: envelope.autonomy,
+                        max_retries: CHAT_TASK_MAX_RETRIES,
+                        max_repairs: CHAT_TASK_MAX_REPAIRS,
+                        model_selection: None,
+                        permission: None,
+                    },
+                },
+                link,
+            },
         })
     }
 
@@ -777,6 +1021,35 @@ impl DaemonApi {
                 },
             },
             link,
+        })
+    }
+
+    /// What a `project.remove` card shows: the project's folder name, how many of its tasks
+    /// stay in history and how many are still queued, running or verifying (the proposal
+    /// fails closed while that is above zero). Never the path.
+    fn remove_target(&self, code: &str) -> Value {
+        let Ok(project_id) = self.resolve_project(code) else {
+            return Value::Null;
+        };
+        let Ok(tasks) = self.store.list() else {
+            return Value::Null;
+        };
+        let own = tasks
+            .iter()
+            .filter(|task| task.contract.project_id == project_id);
+        let kept = own.clone().count();
+        let active = own
+            .filter(|task| {
+                matches!(
+                    task.state,
+                    TaskState::Queued | TaskState::Running | TaskState::Verifying
+                )
+            })
+            .count();
+        json!({
+            "project_name": project_name(&project_id),
+            "task_count": kept,
+            "running_tasks": active,
         })
     }
 
@@ -841,8 +1114,11 @@ impl DaemonApi {
                     .is_some();
                 return json!({"project_name": name, "machine_busy": machine_busy});
             }
+            Action::ProjectRemove(remove) => return self.remove_target(&remove.project),
             Action::TaskCancel(cancel) => &cancel.task_id,
             Action::TaskRetry(retry) => &retry.task_id,
+            Action::TaskRevise(revise) => &revise.task_id,
+            Action::DecisionHold(hold) => &hold.task_id,
             Action::WorkstreamLinkTask(link) => &link.task_id,
             _ => return Value::Null,
         };

@@ -37,7 +37,7 @@ use orchestrator_store::{
 
 use super::conversation_snapshot::build_snapshot;
 use super::load::LoadHandle;
-use super::wake_events::redact_paths;
+use super::wake_events::redact_snapshot;
 use crate::executor::unix_now_ms;
 
 /// A wake turn that has nothing for the user replies with exactly this (DPES-1105).
@@ -730,7 +730,7 @@ impl ConversationService {
                 );
                 // A turn nobody asked for sees no path or token a task title may hold.
                 if wake.is_some() {
-                    redact_paths(&snapshot)
+                    redact_snapshot(&snapshot)
                 } else {
                     snapshot
                 }
