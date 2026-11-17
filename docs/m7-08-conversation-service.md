@@ -235,19 +235,12 @@ no flag.
   beyond the reply sink. A reply is data, with one exception: a completed reply
   may end with one `mcao-actions` block. The daemon parses that block into
   pending proposals, which carry no authority until the user approves them in a
-<<<<<<< HEAD
   later step. Only a Restricted turn from a session that negotiated
   `orchestrator_actions` gets a parse, and only that turn's instructions name
   the block format. At Auto and Full the agent has a shell and could reach the
   daemon's local token, and the daemon has no caller identity, so those turns
   get no actions (DPES-1105). Any other turn strips the block, records
   `action_block` `stripped`, and creates no proposals. A block that does not
-=======
-  later step. Only a turn at `restricted` in a session that negotiated
-  `orchestrator_actions` gets a parse. Any other turn gets no block format in its
-  preamble, and a block it emits is stripped, recorded as `action_block`
-  `stripped`, and creates no proposals. A block that does not
->>>>>>> df95c1fcf (feat(daemon): DPES-1105 - Approve and run orchestrator action proposals)
   pass is recorded as `rejected`, and a block in a canceled or failed turn is
   ignored.
 - **Recovery.** Unchanged: the daemon owns the transcript, a turn the daemon
