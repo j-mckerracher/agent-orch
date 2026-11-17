@@ -225,12 +225,33 @@ describe("live data", () => {
     expect(within(tree()).queryByText("Cache downloads")).not.toBeInTheDocument();
   });
 
-  it("opens the existing task detail route from a tree row and a table row", async () => {
-    const { services, user } = await mount(daemon());
-    const link = await within(tree()).findByRole("treeitem", { name: /Wire the CLI/ });
-    expect(link).toHaveAttribute("href", "#/project/%2Fwork%2Falpha/task/a2");
-    await user.click(link);
-    expect(services.router.getSnapshot()).toEqual({ name: "task", projectId: A, taskId: "a2" });
+  it("opens each sidebar task's parent workstream while table links still open task details", async () => {
+    const workspace: Route = { name: "global", view: "workspace" };
+    const { services, user } = await mount(daemon(), { route: workspace });
+    const second = await within(tree()).findByRole("treeitem", { name: /Workstream 2 of 2/ });
+    second.focus();
+    await user.keyboard("{ArrowRight}");
+    for (const [name, workstreamId, title] of [
+      ["Ship the parser", "ws-a", "Alpha stream"],
+      ["Wire the CLI", "ws-a", "Alpha stream"],
+      ["Cache downloads", "ws-b", "Beta stream"],
+    ] as const) {
+      await act(async () => services.router.navigate(workspace));
+      const link = within(tree()).getByRole("treeitem", { name: new RegExp(name) });
+      await user.click(link);
+      expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId });
+      expect(link).toHaveAttribute("href", `#/workstreams?workstream=${workstreamId}`);
+      expect(await screen.findByRole("heading", { level: 2, name: title })).toBeVisible();
+    }
+
+    await act(async () => services.router.navigate(workspace));
+    await user.click(within(tree()).getByTestId("tree-worker"));
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
+    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Beta stream" })).toBeVisible();
+    await user.click(within(tree()).getByRole("treeitem", { name: /Wire the CLI/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+    expect(within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ })).toHaveAttribute("aria-expanded", "true");
 
     await act(async () => services.router.navigate(VIEW));
     const row = (await screen.findAllByTestId("task-row"))[0]!;
@@ -338,6 +359,8 @@ describe("live data", () => {
     const fake = daemon();
     const { services, user } = await mount(fake);
     const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
+    await user.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "true");
     await user.click(first);
     expect(first).toHaveAttribute("aria-expanded", "false");
     await user.click(within(tree()).getByRole("treeitem", { name: /Workstream 2 of 2/ }));
@@ -733,7 +756,7 @@ describe("tree keyboard navigation", () => {
     expect(within(tree()).getAllByRole("treeitem").at(-1)).toHaveFocus();
   });
 
-  it("expands, collapses and moves between levels with Right, Left and Enter", async () => {
+  it("expands, collapses and moves between levels with Right, Left and Space", async () => {
     const { user } = await mount(daemon());
     const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
     first.focus();
@@ -743,7 +766,7 @@ describe("tree keyboard navigation", () => {
     expect(first).toHaveFocus();
     await user.keyboard("{ArrowLeft}");
     expect(first).toHaveAttribute("aria-expanded", "false");
-    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
     expect(first).toHaveAttribute("aria-expanded", "true");
     await user.keyboard(" ");
     expect(first).toHaveAttribute("aria-expanded", "false");
@@ -751,12 +774,40 @@ describe("tree keyboard navigation", () => {
     expect(first).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("Enter on a task row follows its link", async () => {
+  it("a workstream row opens that workstream's view on click or Enter", async () => {
     const { services, user } = await mount(daemon());
-    const task = await within(tree()).findByRole("treeitem", { name: /Ship the parser/ });
-    task.focus();
+    const second = await within(tree()).findByRole("treeitem", { name: /Workstream 2 of 2/ });
+    await user.click(second);
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-b" });
+    expect(second).toHaveAttribute("aria-current", "page");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+
+    const first = within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ });
+    first.focus();
     await user.keyboard("{Enter}");
-    expect(services.router.getSnapshot()).toMatchObject({ name: "task", taskId: "a1" });
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
+    expect(first).toHaveAttribute("aria-current", "page");
+    expect(second).not.toHaveAttribute("aria-current");
+
+    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
+    expect(screen.getByRole("heading", { level: 2, name: "Beta stream" })).toBeVisible();
+    await user.click(first);
+    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+  });
+
+  it("Enter and Space on a task row open its parent workstream", async () => {
+    const { services, user } = await mount(daemon(), {
+      route: { name: "global", view: "workstreams", workstreamId: "ws-b" },
+    });
+    const task = await within(tree()).findByRole("treeitem", { name: /Ship the parser/ });
+    for (const key of ["{Enter}", " "]) {
+      await act(async () => services.router.navigate({ name: "global", view: "workstreams", workstreamId: "ws-b" }));
+      task.focus();
+      await user.keyboard(key);
+      expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
+      expect(task).toHaveFocus();
+      expect(await screen.findByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+    }
   });
 });
 

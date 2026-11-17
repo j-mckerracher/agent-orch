@@ -70,8 +70,8 @@ export function WorkstreamsView() {
   const routeWorkstream = route.name === "global" ? route.workstreamId : undefined;
   const [selected, setSelected] = useState<string | null>(routeWorkstream ?? null);
   useEffect(() => {
-    if (routeWorkstream !== undefined) setSelected(routeWorkstream);
-  }, [routeWorkstream]);
+    if (route.name === "global" && route.workstreamId !== undefined) setSelected(route.workstreamId);
+  }, [route]);
   const [filter, setFilter] = useState("");
   const [title, setTitle] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
