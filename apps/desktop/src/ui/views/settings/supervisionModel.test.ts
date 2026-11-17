@@ -39,9 +39,8 @@ describe("supervision model", () => {
     expect(previewText(600, 600)).toBe("Checks always run every 10 min.");
   });
 
-  it("supervision_model_patch_holds_only_changed_fields_and_converts_minutes_to_seconds", () => {
-    expect(supervisionPatch(SAVED, {})).toEqual({});
-    expect(supervisionPatch(SAVED, { baseMinutes: "10", wallMinutes: "120" })).toEqual({});
+  it("supervision_model_patch_holds_every_valid_field_from_its_typed_text_or_else_the_saved_value", () => {
+    expect(supervisionPatch(SAVED, {})).toEqual({ baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 });
     expect(supervisionPatch(SAVED, { baseMinutes: "20", minSeconds: "30", wallMinutes: "60" })).toEqual({
       baseIntervalSecs: 1200,
       minIntervalSecs: 30,
@@ -50,12 +49,12 @@ describe("supervision model", () => {
     expect(supervisionText(SAVED)).toEqual({ baseMinutes: "10", minSeconds: "60", wallMinutes: "120" });
   });
 
-  it("supervision_model_wake_patch_sends_null_for_a_cleared_cap_and_nothing_for_an_untouched_one", () => {
-    expect(wakePatch(LIMITS, {})).toEqual({});
-    expect(wakePatch(LIMITS, { hourlyCap: "" })).toEqual({ hourlyCap: null });
-    expect(wakePatch(LIMITS, { dailyCap: "no limit", dailyTokenBudget: "500000" })).toEqual({ dailyCap: null, dailyTokenBudget: 500000 });
-    expect(wakePatch(LIMITS, { dailyTokenBudget: "off" })).toEqual({});
-    expect(wakePatch(LIMITS, { hourlyCap: "0" })).toEqual({});
+  it("supervision_model_wake_patch_sends_null_for_a_cleared_cap_and_the_saved_value_for_an_untouched_one", () => {
+    expect(wakePatch(LIMITS, {})).toEqual({ hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null });
+    expect(wakePatch(LIMITS, { hourlyCap: "" })).toEqual({ hourlyCap: null, dailyCap: 40, dailyTokenBudget: null });
+    expect(wakePatch(LIMITS, { dailyCap: "no limit", dailyTokenBudget: "500000" })).toEqual({ hourlyCap: 6, dailyCap: null, dailyTokenBudget: 500000 });
+    expect(wakePatch(LIMITS, { dailyTokenBudget: "off" })).toEqual({ hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null });
+    expect(wakePatch(LIMITS, { hourlyCap: "0" })).toEqual({ dailyCap: 40, dailyTokenBudget: null });
   });
 
   it("supervision_model_wake_fields_accept_numbers_or_words_and_say_the_range_otherwise", () => {

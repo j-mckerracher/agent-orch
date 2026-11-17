@@ -306,7 +306,9 @@
   align-items: center;
   gap: 8px 12px;
   grid-column: 1 / -1;
-  margin-top: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--control-border);
 }
 
 .ps-form-footer > p {

@@ -53,14 +53,13 @@ async function connected(wire: SettingsWire, approver: boolean | null = true) {
 }
 
 describe("Read-only task tools section", () => {
-  it("mcp_setting_shows_one_unchecked_checkbox_with_the_consequence_and_a_disabled_save", async () => {
+  it("mcp_setting_shows_one_unchecked_checkbox_with_the_consequence_and_an_enabled_save", async () => {
     const { services } = await connected({ ...BASE, mcp: { enabled: false } });
     page(services);
     expect(await screen.findByRole("heading", { level: 2, name: "Read-only task tools for the orchestrator chat" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: LABEL })).not.toBeChecked();
     expect(screen.getByText(/The tools only read; they cannot change anything\. Applies from the next message/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: SAVE })).toBeDisabled();
-    expect(screen.getByRole("button", { name: SAVE })).toHaveAccessibleDescription("Change the setting to save.");
+    expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
   });
 
   it("mcp_setting_is_hidden_for_a_daemon_that_does_not_send_the_setting", async () => {
@@ -89,7 +88,7 @@ describe("Read-only task tools section", () => {
     page(services);
     const box = await screen.findByRole("checkbox", { name: LABEL });
     expect(box).toBeDisabled();
-    expect(box).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
+    expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
     expect(screen.getByRole("button", { name: SAVE })).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
   });
 

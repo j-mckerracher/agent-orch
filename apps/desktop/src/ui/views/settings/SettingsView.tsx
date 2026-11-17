@@ -19,7 +19,6 @@ import {
   OFF_NOTE,
   REFRESH_FAILED_TEXT,
   SAVED_TEXT,
-  UNCHANGED_REASON,
   UNSUPPORTED_DETAIL,
   UNSUPPORTED_TITLE,
   gateStatus,
@@ -29,6 +28,7 @@ import {
   parseLimit,
   readingText,
 } from "./settingsModel";
+import { SaveButton, useSaveGuard } from "./SaveBar";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { McpToolsSection } from "./McpToolsSection";
 import { GrantsSection } from "./GrantsSection";
@@ -104,7 +104,6 @@ function LimitRow({
 
 function LimitsForm({ model, snapshot, refreshFailed }: { model: SettingsModel; snapshot: SettingsSnapshot; refreshFailed: boolean }) {
   const gate = useGate();
-  const reasonId = useId();
   // What the user has typed, by meter. A field that was not touched follows the daemon on every refresh.
   const [typed, setTyped] = useState<Typed>({});
   const status = gateStatus(snapshot);
@@ -115,24 +114,19 @@ function LimitsForm({ model, snapshot, refreshFailed }: { model: SettingsModel; 
   const patch = limitPatch(snapshot.limits, typed);
   // Only the app that started the service can change limits; the fields stay readable without it.
   const locked = model.live && !(gate.connected && gate.connection.approver);
-  const disabledReason = (): string | null => {
-    if (model.live && !gate.connected) return NOT_CONNECTED_REASON;
-    if (locked) return APPROVER_REQUIRED_NOTICE;
-    if (LOAD_METERS.some((meter) => errorOf(meter) !== null)) return INVALID_REASON;
-    return Object.keys(patch).length === 0 ? UNCHANGED_REASON : null;
-  };
-  const reason = disabledReason();
+  const reason: string | null =
+    model.live && !gate.connected
+      ? NOT_CONNECTED_REASON
+      : locked
+        ? APPROVER_REQUIRED_NOTICE
+        : LOAD_METERS.some((meter) => errorOf(meter) !== null)
+          ? INVALID_REASON
+          : null;
   const { result } = model;
+  const { tried, guard } = useSaveGuard();
 
   return (
-    <form
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (reason !== null) return;
-        void model.save(patch).then((saved) => saved && setTyped({}));
-      }}
-    >
+    <form noValidate onSubmit={guard(reason, () => void model.save(patch).then((saved) => saved && setTyped({})))}>
       {refreshFailed && <Notice tone="warn" role="status">{REFRESH_FAILED_TEXT}</Notice>}
       <div className="settings-strip" data-testid="settings-load-status">
         <Pill tone={status.tone}>{status.text}</Pill>
@@ -160,20 +154,7 @@ function LimitsForm({ model, snapshot, refreshFailed }: { model: SettingsModel; 
         />
       ))}
       <div className="settings-actions">
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={reason !== null}
-          aria-busy={model.saving}
-          aria-describedby={reason === null ? undefined : reasonId}
-        >
-          Save machine load limits
-        </Button>
-        {reason !== null && (
-          <p id={reasonId} className="settings-reason">
-            {reason}
-          </p>
-        )}
+        <SaveButton label="Save machine load limits" reason={reason} saving={model.saving} tried={tried} />
         <div role="status" aria-live="polite" aria-label="Save result" className="settings-result">
           {result?.kind === "saved" && <p>{SAVED_TEXT}</p>}
           {result?.kind === "fixture" && <p>{FIXTURE_SAVE_TEXT}</p>}
