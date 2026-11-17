@@ -130,7 +130,32 @@ impl ReviseObjectiveParams {
     }
 }
 
+/// Seeds the stable id of the workstream that holds the tasks the global conversation
+/// proposes without naming a workstream, so every run finds the one it made.
+const GLOBAL_TASKS_KEY: &str = "default:global-tasks";
+const GLOBAL_TASKS_TITLE: &str = "Global tasks";
+const GLOBAL_TASKS_SUMMARY: &str =
+    "Tasks the global orchestrator proposed without naming a workstream.";
+
 impl DaemonApi {
+    /// The default workstream for tasks proposed in the global conversation. It is made on
+    /// first use and found by its stable id afterwards, so a rename keeps it. The caller
+    /// holds the workstream gate.
+    pub(super) fn global_tasks_workstream(&self) -> Result<Workstream, WorkstreamStoreError> {
+        let id = idempotency::stable_id("workstream", GLOBAL_TASKS_KEY);
+        match self.store.get_workstream(&id) {
+            Err(WorkstreamStoreError::NotFound { .. }) => self.create_inner(
+                &CreateParams {
+                    title: GLOBAL_TASKS_TITLE.to_owned(),
+                    summary: GLOBAL_TASKS_SUMMARY.to_owned(),
+                    idempotency_key: GLOBAL_TASKS_KEY.to_owned(),
+                },
+                "daemon",
+            ),
+            found => found,
+        }
+    }
+
     pub(super) fn workstreams_create(&self, params: Value) -> Result<Value, RpcError> {
         let request: CreateParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
