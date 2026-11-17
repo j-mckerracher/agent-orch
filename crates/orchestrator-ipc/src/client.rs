@@ -2,6 +2,7 @@
 //! that arrive before its response (for example a replay in flight), so the
 //! connection stays in sync; the daemon pages replay and bounds live lag.
 //! Updated: 2026-11-08T18:09:45+00:00.
+use crate::approver::ApproverSecret;
 use crate::protocol::{
     self, Capability, Handshake, IncomingMessage, RpcId, RpcRequest, RpcResponse, Welcome,
 };
@@ -14,6 +15,7 @@ use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// I/O timeout `Client::connect` uses for the handshake and each call.
@@ -31,6 +33,11 @@ pub struct Client {
     cursor_epoch: Option<String>,
     events: VecDeque<Result<IpcEvent, IpcError>>,
     io_timeout: Duration,
+    /// Presented in every handshake, `reconnect()` included, so a reconnect
+    /// keeps the role. Never formatted or logged.
+    approver: Option<Arc<ApproverSecret>>,
+    /// What the welcome said: true only when the daemon accepted the proof.
+    approver_granted: bool,
 }
 
 impl Client {
@@ -54,6 +61,19 @@ impl Client {
         requested: &[Capability],
         io_timeout: Duration,
     ) -> Result<Self, IpcError> {
+        Self::connect_with_approver(data_dir, requested, io_timeout, None)
+    }
+
+    /// Like `connect_with_timeout`, presenting the approver secret in the
+    /// handshake. A daemon that does not accept it still connects; the session
+    /// is then not an approver (see `is_approver`). `reconnect()` presents it
+    /// again.
+    pub fn connect_with_approver(
+        data_dir: impl AsRef<Path>,
+        requested: &[Capability],
+        io_timeout: Duration,
+        approver: Option<Arc<ApproverSecret>>,
+    ) -> Result<Self, IpcError> {
         let data_dir = data_dir.as_ref();
         let token = read_token(data_dir)?;
         let mut stream = connect_local(data_dir).map_err(|_| IpcError::Operation)?;
@@ -71,6 +91,7 @@ impl Client {
                     .iter()
                     .map(|capability| capability.as_str().to_owned())
                     .collect(),
+                approver: approver.as_deref().map(ApproverSecret::to_wire),
             })
             .map_err(|_| IpcError::Operation)?,
         };
@@ -104,7 +125,15 @@ impl Client {
             cursor_epoch: None,
             events: VecDeque::new(),
             io_timeout,
+            approver,
+            approver_granted: welcome.approver,
         })
+    }
+
+    /// True when the daemon accepted this session's approver secret, so it may
+    /// call the user-only methods (`actions.resolve`, `approvals.resolve`).
+    pub fn is_approver(&self) -> bool {
+        self.approver_granted
     }
 
     pub fn health(&mut self) -> Result<Health, IpcError> {
@@ -276,6 +305,11 @@ impl Client {
             "agents.validate_selection",
             json!({"agent": agent, "model": model, "effort": effort}),
         )
+    }
+
+    /// Lists the pending proposals of every conversation; see `actions.pending`.
+    pub fn actions_pending(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::OrchestratorActions, "actions.pending", Value::Null)
     }
 
     /// Approves or rejects one proposed action; see `actions.resolve`.
@@ -483,8 +517,12 @@ impl Client {
     pub fn reconnect(&mut self) -> Result<(), IpcError> {
         let cursor = self.last_event_sequence;
         let cursor_epoch = self.cursor_epoch.clone();
-        let mut fresh =
-            Self::connect_with_timeout(&self.data_dir, &self.requested, self.io_timeout)?;
+        let mut fresh = Self::connect_with_approver(
+            &self.data_dir,
+            &self.requested,
+            self.io_timeout,
+            self.approver.clone(),
+        )?;
         let resumed = match cursor {
             Some(cursor) => fresh
                 .events_subscribe_in_epoch(Some(cursor), cursor_epoch.as_deref())

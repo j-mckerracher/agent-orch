@@ -156,12 +156,17 @@ pub(crate) struct RpcFailure {
     pub(crate) message: String,
 }
 
+/// No `Debug`: `token` and `approver` are secrets.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Handshake {
     pub(crate) token: Option<String>,
     pub(crate) versions: Vec<u16>,
     pub(crate) capabilities: Vec<String>,
+    /// Proof of the approver secret. Left out when absent, so a daemon that
+    /// predates it (and refuses unknown fields) still accepts the handshake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) approver: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -170,6 +175,10 @@ pub(crate) struct Welcome {
     pub(crate) capabilities: Vec<Capability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) journal_epoch: Option<String>,
+    /// True when this session proved the approver secret. A daemon that
+    /// predates it omits the field, which reads as false.
+    #[serde(default)]
+    pub(crate) approver: bool,
 }
 
 pub(crate) fn read<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<T, FrameError> {

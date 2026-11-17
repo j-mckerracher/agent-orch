@@ -1,10 +1,36 @@
 use crate::{Capability, Health, IpcError, IpcEvent, RpcHandler};
 use serde_json::Value;
+use std::fmt;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub const DEFAULT_IO_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Holds no bytes here: `generate` and `read_from` always fail.
+pub struct ApproverSecret;
+
+impl fmt::Debug for ApproverSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ApproverSecret([REDACTED])")
+    }
+}
+
+impl ApproverSecret {
+    pub fn generate() -> Result<Self, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn to_wire(&self) -> String {
+        String::new()
+    }
+    pub fn from_wire(_: &str) -> Option<Self> {
+        None
+    }
+    pub fn read_from(_: &mut impl Read) -> Result<Self, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+}
 
 pub struct Client;
 
@@ -15,6 +41,17 @@ impl Client {
         _: Duration,
     ) -> Result<Self, IpcError> {
         Err(IpcError::Unsupported)
+    }
+    pub fn connect_with_approver(
+        _: impl AsRef<std::path::Path>,
+        _: &[Capability],
+        _: Duration,
+        _: Option<Arc<ApproverSecret>>,
+    ) -> Result<Self, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn is_approver(&self) -> bool {
+        false
     }
     pub fn connect(_: impl AsRef<std::path::Path>) -> Result<Self, IpcError> {
         Err(IpcError::Unsupported)
@@ -65,6 +102,9 @@ impl Client {
         Err(IpcError::Unsupported)
     }
     pub fn approvals_resolve(&mut self, _: &str, _: &str, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn actions_pending(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
     pub fn actions_resolve(
@@ -152,6 +192,9 @@ impl ServerConfig {
         self
     }
     pub fn with_stream_timeout(self, _: Duration) -> Self {
+        self
+    }
+    pub fn with_approver(self, _: ApproverSecret) -> Self {
         self
     }
 }

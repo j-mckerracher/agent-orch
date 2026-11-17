@@ -1,3 +1,4 @@
+use crate::approver::{require_approver, ApproverSecret};
 use crate::auth::{authenticate, AuthError, Secret};
 use crate::protocol::{self, Capability, Handshake, RpcFailure, RpcId, RpcRequest, RpcResponse};
 use crate::transport::IpcStream;
@@ -22,6 +23,9 @@ pub(crate) struct State {
     pub(crate) stopping: AtomicBool,
     pub(crate) handler: Option<Arc<dyn RpcHandler>>,
     pub(crate) capabilities: Vec<Capability>,
+    /// The secret a session must present to call a user-only method. Fixed at
+    /// start, so it needs no lock. `None` makes every session a non-approver.
+    approver: Option<Arc<ApproverSecret>>,
 }
 
 impl State {
@@ -32,6 +36,7 @@ impl State {
         idle_timeout: Duration,
         stream_timeout: Duration,
         handler: Option<Arc<dyn RpcHandler>>,
+        approver: Option<Arc<ApproverSecret>>,
     ) -> Self {
         let started = Instant::now();
         let mut capabilities = vec![Capability::Health];
@@ -60,6 +65,7 @@ impl State {
             stopping: AtomicBool::new(false),
             handler,
             capabilities,
+            approver,
         }
     }
 
@@ -207,7 +213,15 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
         }
         None => None,
     };
-    let mut welcome = json!({"version": version, "capabilities": &capabilities});
+    // The one place the proof is checked. A missing, malformed or wrong value is
+    // not an error: the session connects as a non-approver. Nothing re-checks it
+    // later, and a second `handshake` is refused, so a session cannot upgrade.
+    let approver = match (&state.approver, handshake.approver.as_deref()) {
+        (Some(secret), Some(supplied)) => secret.matches(supplied),
+        _ => false,
+    };
+    let mut welcome =
+        json!({"version": version, "capabilities": &capabilities, "approver": approver});
     if let Some(epoch) = journal_epoch {
         welcome["journal_epoch"] = json!(epoch);
     }
@@ -235,6 +249,7 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
                 &mut stream,
                 &state,
                 &capabilities,
+                approver,
                 request,
                 &mut subscription,
             ) {
@@ -277,6 +292,7 @@ fn handle_request(
     stream: &mut Box<dyn IpcStream>,
     state: &State,
     capabilities: &[Capability],
+    approver: bool,
     request: RpcRequest,
     subscription: &mut Option<Subscription>,
 ) -> bool {
@@ -365,6 +381,11 @@ fn handle_request(
     if !capabilities.contains(&capability) {
         return write_error(stream, request.id, -32004, "capability not negotiated").is_ok();
     }
+    // After the capability check and before the handler, so a refused session
+    // never reaches idempotency or any proposal lookup.
+    if let Err(error) = require_approver(method, approver) {
+        return write_rpc_error(stream, request.id, error);
+    }
     let Some(handler) = &state.handler else {
         return write_error(stream, request.id, -32601, "method unavailable").is_ok();
     };
@@ -394,7 +415,7 @@ fn empty_control_params(params: &Value) -> bool {
     params.is_null() || params.as_object().is_some_and(|object| object.is_empty())
 }
 
-fn method_capability(method: &str) -> Option<Capability> {
+pub(crate) fn method_capability(method: &str) -> Option<Capability> {
     match method {
         "projects.list" | "projects.register" => Some(Capability::Projects),
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
@@ -439,9 +460,10 @@ fn method_capability(method: &str) -> Option<Capability> {
         | "coordinator.clear"
         | "coordinator.remove"
         | "coordinator.restore" => Some(Capability::ConversationHistory),
-        // DPES-1105: approving or rejecting a proposed action. Only a session that
-        // negotiated `orchestrator_actions` can resolve one.
-        "actions.resolve" => Some(Capability::OrchestratorActions),
+        // DPES-1105: approving or rejecting a proposed action, and reading the pending
+        // ones. Only a session that negotiated `orchestrator_actions` can do either.
+        // `actions.pending` only reads, so it is not a user-only method.
+        "actions.resolve" | "actions.pending" => Some(Capability::OrchestratorActions),
         _ => None,
     }
 }

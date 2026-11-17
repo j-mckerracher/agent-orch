@@ -7,8 +7,9 @@
 //! wrong-version, malformed-JSON, and I/O failures. Malformed-JSON errors carry
 //! no parser detail or input text. JSON-RPC 2.0 `handshake` is the first
 //! request on each stream. Request IDs accept strings and numbers. Its params
-//! have a lowercase 64-character hex token, supported versions, and requested
-//! capabilities. Server picks the highest common version and compares the
+//! have a lowercase 64-character hex token, supported versions, requested
+//! capabilities, and an optional lowercase 64-character hex `approver`. Server
+//! picks the highest common version and compares the
 //! token in constant time. It negotiates only implemented, requested
 //! capabilities; `capabilities` reports that set. `health` returns package
 //! version, uptime seconds, and data directory. `shutdown` remains lifecycle
@@ -43,7 +44,21 @@
 //! check before method dispatch. Other targets use the typed `Unsupported`
 //! transport.
 //!
+//! Approver credential (DPES-1105). Only the desktop host holds the 32-byte
+//! approver secret: it generates it, passes it to the daemon it spawns over an
+//! inherited pipe, and presents it in each handshake. The proof is compared in
+//! constant time once, at handshake. The welcome always carries `approver`
+//! (true only when the proof held; a daemon that predates it omits the field,
+//! which reads as false). A missing, malformed or wrong value does not fail the
+//! handshake: the session connects as a non-approver. A non-approver calling a
+//! user-only method (`actions.resolve`, `approvals.resolve`) gets `Forbidden`,
+//! code -32012, after the capability check and before the handler runs. This
+//! closes the protocol-level hole (token plus socket is enough to approve); it
+//! is not a sandbox. The secret never appears in errors, logs or debug output.
+//!
 
+#[cfg(any(unix, windows))]
+mod approver;
 #[cfg(any(unix, windows))]
 mod auth;
 mod protocol;
@@ -66,17 +81,22 @@ mod server;
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(any(unix, windows))]
+pub use approver::{ApproverSecret, USER_ONLY_METHODS};
+#[cfg(any(unix, windows))]
 pub use client::{Client, DEFAULT_IO_TIMEOUT};
 #[cfg(any(unix, windows))]
 pub use relay::{CloseReason, Relay, RelayError, RelayEvent};
 #[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
 #[cfg(not(any(unix, windows)))]
-pub use unsupported::{Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
+pub use unsupported::{ApproverSecret, Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
 
 #[cfg(all(test, any(unix, windows)))]
 #[path = "actions_tests.rs"]
 mod actions_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "approver_tests.rs"]
+mod approver_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "coordinator_review_tests.rs"]
 mod coordinator_review_tests;
