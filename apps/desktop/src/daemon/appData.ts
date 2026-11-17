@@ -27,6 +27,12 @@ export interface Loadable<T> {
   error: DaemonError | null;
 }
 
+/** `actions.pending` slice: the list as a `Loadable`, plus whether the daemon held more pending than it sent. */
+export interface ProposalsSlice extends Loadable<ActionsPendingWire["proposals"]> {
+  /** True when the daemon capped the list, so the pending count is a lower bound ("100+"). Kept through a failed read. */
+  more: boolean;
+}
+
 export interface Timeline {
   taskId: string;
   sessionId: string;
@@ -48,7 +54,7 @@ export interface AppDataSnapshot {
    * `actions.pending`: the proposed actions waiting for a decision (DPES-1105). A daemon without the method
    * gives an empty loaded list, never an error, so the nav count falls back to the approvals alone.
    */
-  proposals: Loadable<ActionsPendingWire["proposals"]>;
+  proposals: ProposalsSlice;
   timelines: Record<string, Timeline>;
   /** `tasks.get` per watched task id. */
   taskDetails: Record<string, Loadable<TaskRecord>>;
@@ -88,6 +94,7 @@ export class AppData extends Store<AppDataSnapshot> {
   private readonly detach: Array<() => void> = [];
   private readonly watched = new Map<string, () => Promise<void>>();
   private readonly timelineLoads = new Map<string, number>();
+  private proposalsLoads = 0;
 
   constructor(
     private readonly connection: ConnectionManager,
@@ -98,7 +105,7 @@ export class AppData extends Store<AppDataSnapshot> {
       tasks: idle(),
       sessions: idle(),
       approvals: idle(),
-      proposals: idle(),
+      proposals: { status: "idle", data: null, error: null, more: false },
       timelines: {},
       taskDetails: {},
       taskSessions: {},
@@ -160,11 +167,25 @@ export class AppData extends Store<AppDataSnapshot> {
     await this.loadProposals();
   }
 
-  private loadProposals(): Promise<void> {
-    return this.load("proposals", async (api) => (await api.actionsPending()).proposals);
+  /**
+   * Only the newest started read may write the slice, so a slow read that began before a decision cannot finish
+   * after the post-decision read and put the old list back; an older answer is dropped, as for `timelineLoads`.
+   */
+  private async loadProposals(): Promise<void> {
+    const generation = ++this.proposalsLoads;
+    const stale = () => this.proposalsLoads !== generation;
+    const previous = this.getSnapshot().proposals;
+    this.update({ proposals: { ...previous, status: "loading", error: null } });
+    try {
+      const { proposals, more } = await this.connection.api().actionsPending();
+      if (!stale()) this.update({ proposals: { status: "ready", data: proposals, error: null, more } });
+    } catch (error) {
+      const failure = asDaemonError(error);
+      if (!stale()) this.update({ proposals: { status: "error", data: previous.data, error: failure, more: previous.more } });
+    }
   }
 
-  private async load<K extends "projects" | "tasks" | "sessions" | "approvals" | "proposals">(
+  private async load<K extends "projects" | "tasks" | "sessions" | "approvals">(
     key: K,
     fetcher: (api: ReturnType<ConnectionManager["api"]>) => Promise<NonNullable<AppDataSnapshot[K]["data"]>>,
   ): Promise<void> {

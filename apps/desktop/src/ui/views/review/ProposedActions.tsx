@@ -3,7 +3,8 @@
 import { useId } from "react";
 import type { ConversationTarget, DecisionQueue, ProposalItem } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
-import { useGate, useServices, type SurfaceState } from "../../services";
+import { decisionCountText } from "../../format";
+import { useGate, useServices, useStore, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { Badge, Pill } from "../../theme";
 import { actionPhrase, cardTitle, type WorkstreamNames } from "../workspace/actionCardModel";
@@ -22,10 +23,12 @@ const targetOf = (scope: ProposalItem["scope"]): ConversationTarget =>
 const whereOf = (scope: ProposalItem["scope"]): string =>
   scope.kind === "global" ? "Global orchestrator" : `Workstream ${scope.workstreamId}`;
 
-const countText = (count: number): string =>
-  count === 0
-    ? "No proposed actions are waiting."
-    : `${count} proposed action${count === 1 ? " is" : "s are"} waiting for a decision.`;
+/** `more`: the daemon held more than it sent, so the list is cut short and the count is a lower bound ("100+"). */
+const countText = (count: number, more: boolean): string => {
+  if (count === 0 && !more) return "No proposed actions are waiting.";
+  const waiting = `${decisionCountText(count, more)} proposed action${count === 1 && !more ? " is" : "s are"} waiting for a decision.`;
+  return more ? `${waiting} More are waiting.` : waiting;
+};
 
 /**
  * Opens the Workspace view on the conversation that holds the card. The route names no conversation, so the click
@@ -44,13 +47,16 @@ function CardLink({ item }: { item: ProposalItem }) {
 
 export function ProposedActions({ decisions }: { decisions: SurfaceState<DecisionQueue> }) {
   const headingId = useId();
-  const { surfaces } = useServices();
+  const { data, surfaces } = useServices();
+  // The queue carries no `more`, so it comes from the AppData slice the nav, the top bar and the badge read.
+  const { more } = useStore(data).proposals;
   const gate = useGate();
   const live = surfaces.decisions.provenance.kind === "daemon";
   // A daemon without the capability has no proposals to list, so the section is left out, as the cards are.
   if (live && !gate.connection.capabilities.includes("orchestrator_actions")) return null;
   const fixture = decisions.status === "ok" && decisions.provenance.kind === "fixture";
-  const items = decisions.status === "ok" ? decisions.data.proposals : [];
+  // Only pending cards are listed, as only they are counted, so the pill below is true of every row.
+  const items = decisions.status === "ok" ? decisions.data.proposals.filter((item) => item.proposal.state === "pending") : [];
   return (
     <section aria-labelledby={headingId} className="rd-card" data-testid="proposed-actions">
       <header className="rd-card-head">
@@ -62,7 +68,7 @@ export function ProposedActions({ decisions }: { decisions: SurfaceState<Decisio
         {decisions.status === "loading"
           ? "Loading proposed actions…"
           : decisions.status === "ok"
-            ? countText(items.length)
+            ? countText(items.length, more)
             : `Proposed actions are not available: ${decisions.reason}`}
       </p>
       {items.length > 0 && (

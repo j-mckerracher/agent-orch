@@ -8,8 +8,13 @@
 //! daemon or agent state.
 //!
 //! The host also holds the approver secret of the daemon it started. The webview
-//! never sees it either: the welcome carries only whether the proof held. A
-//! daemon this host did not start is never offered the secret.
+//! never sees it either: the welcome carries only whether the proof held. The
+//! host holds a secret only after it launched a daemon itself, and sends it in
+//! the `approver` field of a connection's own handshake, never in a second one
+//! on that connection. It clears the secret when a daemon refuses it: a welcome
+//! with `approver: false`, or an older daemon's protocol error for the unknown
+//! field, after which that open is repeated once without the secret. A daemon
+//! this host did not start is therefore offered the secret once, never again.
 
 use crate::launch;
 use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayError, RelayEvent};
@@ -75,7 +80,8 @@ struct Inner {
     launch_gate: Mutex<()>,
     /// Secret of the daemon this host process started, set only after that
     /// start succeeded and replaced by the next one. Every connection
-    /// presents it, so a reopened window keeps the role. Never formatted.
+    /// presents it, so a reopened window keeps the role, until a daemon
+    /// refuses it and it is cleared. Never formatted.
     approver: Mutex<Option<Arc<ApproverSecret>>>,
 }
 
@@ -150,11 +156,29 @@ impl Bridge {
             })
         };
         let attempt = |sink: &Sink| {
-            let sink = sink.clone();
-            let approver = self.approver().clone();
-            Relay::open_with_approver(data_dir, requested, approver.as_deref(), move |event| {
-                sink(event)
-            })
+            let presented = self.approver().clone();
+            let open = |approver: Option<&ApproverSecret>| {
+                let sink = sink.clone();
+                Relay::open_with_approver(data_dir, requested, approver, move |event| sink(event))
+            };
+            let mut opened = open(presented.as_deref());
+            if let Some(presented) = &presented {
+                if matches!(opened, Err(RelayError::Protocol)) {
+                    // An older daemon refuses the unknown `approver` field, which the relay
+                    // reports as a protocol error. Connect again without it: a non-approver
+                    // keeps read access, where an error would lose the connection. The
+                    // secret is dropped only when that works, so any other protocol error
+                    // does not cost the role.
+                    opened = open(None);
+                    if opened.is_ok() {
+                        self.forget_approver(presented);
+                    }
+                } else if matches!(&opened, Ok((_, welcome)) if welcome["approver"] != true) {
+                    // This daemon is not the one the secret was made for.
+                    self.forget_approver(presented);
+                }
+            }
+            opened
         };
 
         let (relay, welcome, launched_by_host) = match attempt(&sink) {
@@ -316,6 +340,18 @@ impl Bridge {
             .approver
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A secret its daemon refused is stale: stop presenting it, unless a newer
+    /// launch has already replaced it.
+    fn forget_approver(&self, refused: &Arc<ApproverSecret>) {
+        let mut stored = self.approver();
+        if stored
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, refused))
+        {
+            *stored = None;
+        }
     }
 }
 

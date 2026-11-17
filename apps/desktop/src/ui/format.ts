@@ -56,6 +56,14 @@ export function pendingDecisionCount(approvals: readonly Approval[], proposals: 
 }
 
 /**
+ * A pending count as text. `more` means the daemon held more pending proposed actions than it sent (it caps the list),
+ * so the count is a lower bound and reads "100+"; every place that shows the count uses this, so they cannot disagree.
+ */
+export function decisionCountText(count: number, more: boolean): string {
+  return more ? `${count}+` : String(count);
+}
+
+/**
  * Local-only filter semantics (no server filter parameter exists).
  * - blocked: not yet running, and a dependency in this list has not succeeded
  *   (an unknown dependency counts as unmet);

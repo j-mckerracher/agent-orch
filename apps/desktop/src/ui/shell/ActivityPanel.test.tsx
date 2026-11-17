@@ -430,10 +430,10 @@ describe("pending decision count", () => {
   });
 
   /** One pending approval (a1) plus `count` pending proposed actions the test can shorten later. */
-  function daemonWithProposals(count: number) {
+  function daemonWithProposals(count: number, more = false) {
     const fake = liveDaemon();
     let list = Array.from({ length: count }, (_, index) => pendingWire(`proposal-${index + 1}`));
-    fake.stub("actions.pending", () => ({ proposals: list, more: false }));
+    fake.stub("actions.pending", () => ({ proposals: list, more }));
     return { fake, keep: (kept: number) => (list = list.slice(0, kept)) };
   }
 
@@ -459,6 +459,24 @@ describe("pending decision count", () => {
       expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
       expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
     });
+  });
+
+  it("the_activity_panel_and_the_default_slots_read_n_plus_when_more_proposals_are_waiting", async () => {
+    const { fake } = daemonWithProposals(2, true);
+    fake.approvals = [];
+    const { panel, user } = await mountPanel(fake);
+    await expandSection(user, panel, "Attention");
+    await waitFor(() =>
+      expect(within(panel).getByTestId("activity-attention-proposals")).toHaveTextContent(
+        "2+ proposed actions wait for a decision on their cards.",
+      ),
+    );
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2+");
+    expect(within(panel).getByTestId("activity-status")).toHaveTextContent("2+ require attention");
+    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/2\+ require attention/);
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2+");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("2+ pending decisions: 0 approvals, 2+ proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("2+ require attention");
   });
 
   it("all_three_places_show_a_dash_while_the_proposals_list_has_not_loaded_though_approvals_have", async () => {

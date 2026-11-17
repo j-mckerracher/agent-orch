@@ -44,7 +44,7 @@ import type {
   UsageSummary,
   WaitingReason,
 } from "../../sources/surfaces/types";
-import { basename, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
+import { basename, decisionCountText, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { usePopover } from "../usePopover";
@@ -366,14 +366,18 @@ export function ActivityPanel() {
 
   // The badge uses the same pending-decision count (approvals plus proposed actions) as the Review nav and top
   // bar, so the three cannot disagree. Fixture mode has no AppData list, so it shows "—" rather than a sample number.
+  // `more`: the daemon held more proposed actions than it sent, so every count here reads "N+".
+  const { more } = appData.proposals;
   const attentionCount =
-    appData.approvals.data && appData.proposals.data ? pendingDecisionCount(appData.approvals.data, appData.proposals.data) : null;
-  const badge = attentionCount === null ? "—" : String(attentionCount);
+    appData.approvals.data && appData.proposals.data
+      ? decisionCountText(pendingDecisionCount(appData.approvals.data, appData.proposals.data), more)
+      : null;
+  const badge = attentionCount ?? "—";
   // The source lists approvals only; a pending proposed action waits on its card in the conversation.
   const proposalCount = appData.proposals.data ? pendingProposals(appData.proposals.data).length : 0;
   const attentionKnown = !snapshot?.degraded?.approvals;
   const statusLine = snapshot
-    ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${attention.length + proposalCount} require attention` : "attention not available"}.`
+    ? `${running.length} running, ${queued.length} queued, ${attentionKnown ? `${decisionCountText(attention.length + proposalCount, more)} require attention` : "attention not available"}.`
     : activity.status === "loading"
       ? "Loading workspace activity."
       : `Workspace activity is ${activity.status} (observed ${formatAge(activity.observedAt, activity.ageMs, Date.now())}).`;
@@ -498,7 +502,7 @@ export function ActivityPanel() {
                   <>
                     {proposalCount > 0 && (
                       <p className="activity-note" data-testid="activity-attention-proposals">
-                        {proposalCount} proposed action{proposalCount === 1 ? " waits" : "s wait"} for a decision on{" "}
+                        {decisionCountText(proposalCount, more)} proposed action{proposalCount === 1 ? " waits" : "s wait"} for a decision on{" "}
                         {proposalCount === 1 ? "its card" : "their cards"}. Review all decisions lists {proposalCount === 1 ? "it" : "them"}.
                       </p>
                     )}

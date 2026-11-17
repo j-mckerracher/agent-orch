@@ -285,7 +285,8 @@ describe("Accept / Reject", () => {
     client.setApprover(false);
     await waitFor(() => expect(accept().disabled).toBe(true));
     expect(reject().disabled).toBe(true);
-    expect(screen.getByText(APPROVER_REQUIRED_NOTICE)).toBeInTheDocument();
+    // The notice shows once with the decision blockers and once in the Request changes panel.
+    expect(screen.getAllByText(APPROVER_REQUIRED_NOTICE).length).toBeGreaterThan(0);
   });
 
   it("never lets the real D7 fixture enable Accept (default fixtures in real mode)", async () => {

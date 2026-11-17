@@ -388,6 +388,25 @@ describe("top bar pending decisions", () => {
     expect(screen.getByTestId("activity-badge")).toHaveTextContent("3");
   });
 
+  it("the_decision_count_shows_a_plus_when_more_proposals_are_waiting", async () => {
+    const fake = daemon();
+    // The daemon caps the list and says so: the two sent are not all that wait.
+    fake.stub("actions.pending", { proposals: [pendingWire("proposal-1"), pendingWire("proposal-2")], more: true });
+    const services = createServices({
+      connector: fake,
+      initialRoute: WORKSPACE,
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+    });
+    render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
+    await connected();
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3+ require attention"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3+");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3+ pending decisions: 1 approvals, 2+ proposed actions");
+    expect(screen.getByTestId("activity-badge")).toHaveTextContent("3+");
+  });
+
   it("top_bar_reads_a_daemon_without_actions_pending_as_the_approvals_alone_not_as_unavailable", async () => {
     await mount(daemon());
     const counts = screen.getByTestId("top-counts");

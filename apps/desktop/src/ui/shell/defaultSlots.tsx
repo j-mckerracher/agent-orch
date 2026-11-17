@@ -1,11 +1,14 @@
-import { matchesFilter, pendingApprovals, pendingDecisionCount, pendingProposals } from "../format";
+import { decisionCountText, matchesFilter, pendingApprovals, pendingDecisionCount, pendingProposals } from "../format";
 import { useServices, useStore } from "../services";
 import { ThemeToggle } from "../theme";
 import { NavLink } from "./NavLink";
 import { ResourcesSlot } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 
-/** Pending approvals plus pending proposed actions (`approvals.list`, `actions.pending`); "—" (not 0) until both have loaded. */
+/**
+ * Pending approvals plus pending proposed actions (`approvals.list`, `actions.pending`); "—" (not 0) until both have
+ * loaded, and "100+" when the daemon held more proposed actions than it sent.
+ */
 export function ReviewCount() {
   const { data } = useServices();
   const { approvals, proposals } = useStore(data);
@@ -16,9 +19,9 @@ export function ReviewCount() {
       </span>
     );
   }
-  const count = pendingDecisionCount(approvals.data, proposals.data);
+  const count = decisionCountText(pendingDecisionCount(approvals.data, proposals.data), proposals.more);
   const approvalCount = pendingApprovals(approvals.data).length;
-  const proposalCount = pendingProposals(proposals.data).length;
+  const proposalCount = decisionCountText(pendingProposals(proposals.data).length, proposals.more);
   return (
     <span
       className="shell-count"
@@ -36,8 +39,9 @@ export function TopBarCounts() {
   const { tasks, approvals, proposals } = useStore(data);
   const taskList = tasks.data;
   const running = taskList?.filter((task) => matchesFilter(task, "running", taskList, approvals.data ?? [])).length;
-  const attention = approvals.data && proposals.data ? pendingDecisionCount(approvals.data, proposals.data) : undefined;
-  const text = (value: number | undefined) => (value === undefined ? "—" : String(value));
+  const attention =
+    approvals.data && proposals.data ? decisionCountText(pendingDecisionCount(approvals.data, proposals.data), proposals.more) : undefined;
+  const text = (value: number | string | undefined) => (value === undefined ? "—" : String(value));
   return (
     <p className="shell-counts" data-testid="top-counts">
       <NavLink to={{ name: "global", view: "workstreams" }}>— workstreams</NavLink>

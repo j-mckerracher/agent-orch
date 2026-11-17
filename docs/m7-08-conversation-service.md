@@ -72,11 +72,12 @@ Names are proposals so concurrent daemon work does not collide; no new
   nothing, so an approval binds the parameters the user saw. A proposal from a
   turn that did not run at `restricted` is also `proposal_invalid`. Needs the
   `orchestrator_actions` capability; a session without it gets `-32004`, the
-  capability-not-negotiated error. The daemon has no caller identity on the wire
-  today: `resolve` checks the configured approver against the approval allowlist,
-  and the desktop is the only client that sends `actions.resolve`. How a wire
-  caller is identified is open. Returns `{"proposal": …}`, the proposal as it
-  stands after the call. An approved proposal runs in the same call. A run that
+  capability-not-negotiated error. It also needs the approver credential: a
+  session that did not prove it gets `-32012` (`Forbidden`) before any lookup
+  runs, see "Approver credential" below. `resolve` then checks the configured
+  approver against the approval allowlist, and the desktop is the only client that
+  sends `actions.resolve`. Returns `{"proposal": …}`, the proposal as it stands
+  after the call. An approved proposal runs in the same call. A run that
   fails still returns success, with `state` `failed` and an `error_code`. Codes:
   `proposal_not_found` (-32021), `proposal_not_pending` (-32022) and
   `proposal_invalid` (-32023), plus the usual `invalid_params` and
@@ -251,8 +252,9 @@ no flag.
   later step. Only a Restricted turn from a session that negotiated
   `orchestrator_actions` gets a parse, and only that turn's instructions name
   the block format. At Auto and Full the agent has a shell and could reach the
-  daemon's local token, and the daemon has no caller identity, so those turns
-  get no actions (DPES-1105). Any other turn strips the block, records
+  daemon's local token. A shell can edit the store or replace the daemon, which
+  no credential stops, so those turns get no actions (DPES-1105). Any other turn
+  strips the block, records
   `action_block` `stripped`, and creates no proposals. A block that does not
   pass is recorded as `rejected`, and a block in a canceled or failed turn is
   ignored.
@@ -371,7 +373,8 @@ which is append-only: `UPDATE` and `DELETE` both abort. Each clear, remove and
 restore writes one row with its action, its scope (`conversation:global`,
 `conversation:workstream:<id>` or `coordinator:<project_id>`), its actor, the
 number of entries and turns deleted, and a timestamp. The row never holds content.
-The actor is always NULL, because the daemon has no caller identity today. The
+The actor is always NULL. The row does not yet record which session made the
+call; the approver credential decides only whether the call is allowed. The
 clear is not written to `durable_events`, which requires a task id.
 
 **Idempotency and text.** Migration `0034_idempotency_scrub.sql` rewrites every
@@ -506,7 +509,9 @@ policy is applied; history is kept until someone clears it.
 **Who may propose.** Actions exist only for turns at `restricted`, whatever the
 chat level is set to: the chat level does not widen authority. At `auto` and
 `full` the agent has a shell, so it could read the daemon's local token and call
-`actions.resolve` itself, and the daemon has no caller identity to refuse it.
+`actions.resolve` itself. The approver credential refuses that call from a
+session that does not hold the secret, but it is not a sandbox, so those turns
+still get no actions. See "Approver credential" below.
 
 **States.** A proposal moves `pending` to `approved` (approve) or `rejected`
 (reject), then `approved` to `executed` or `failed`. A pending proposal can
@@ -547,7 +552,8 @@ action record the actor `action:<proposal id>` in the revision history.
   does a replay of that key.
 - The approval allowlist refuses an agent actor, with nothing changed. That is a
   unit-level check (`the_approval_allowlist_refuses_an_agent_actor`), not a wire
-  guarantee, because the daemon has no caller identity today.
+  guarantee. Every wire session acts as the local user, so on the wire the
+  approver credential decides who may call `actions.resolve`.
 - A digest that does not match refuses with `proposal_invalid` and changes
   nothing.
 
@@ -598,6 +604,66 @@ and an update and a revise whose effect committed before a stop.
 the real daemon, including the capability refusal (`-32004`), the snapshot
 outcome, a restart between approve and execute, and the same outcome at each
 permission level.
+
+### Approver credential
+
+Without the approver credential, any process that held `daemon.token` and the
+socket could call `actions.resolve`, and an Auto or Full chat turn has a shell.
+The approver credential closes that protocol path. It is not a sandbox.
+
+The desktop host creates the secret and gives it to the daemon it starts. Only a
+session that presents the secret is an approver.
+
+- The host generates 32 random bytes from the OS random source. It starts the
+  daemon with `--approver-stdin`, writes the secret as 64 hex characters to the
+  daemon's stdin pipe, and closes the pipe.
+- The daemon reads the secret once, before it creates any server resource, and
+  keeps it in memory only. It is never written to disk, an argument, an
+  environment variable or a log. The daemon does not read stdin again.
+- The host presents the secret in the `approver` field of the handshake, and only
+  to a daemon it spawned itself. The daemon compares it in constant time.
+- The welcome carries `approver: true` or `approver: false`. The webview never
+  receives the secret.
+- A missing, wrong or malformed `approver` does not fail the handshake. The
+  session connects as a non-approver and keeps read access. A session cannot
+  become an approver later, because a second handshake is refused.
+- A daemon started without `--approver-stdin` has no secret, so every session on
+  it is a non-approver.
+
+The gate refuses the methods in `USER_ONLY_METHODS` to a session that is not an
+approver. The list is `actions.resolve` and `approvals.resolve`. The refusal is
+`Forbidden` (-32012). It comes before any handler runs and before the idempotency
+lookup, so a non-approver cannot replay a key to read a cached approval. A session
+that did not negotiate the capability still gets `-32004` first. Later phases add
+`settings.set` (phase 2), `monitoring.set` (phase 3), and `grants.create` and
+`grants.revoke` (phase 5), each in the same change that routes the method.
+
+The Restricted-only rule is unchanged. The credential does not enable actions at
+Auto or Full.
+
+What it does not stop. A process of the same user can still:
+
+- edit `store.sqlite` directly, and mark a proposal approved without any RPC;
+- kill the daemon and start its own on the same data directory, with its own
+  secret;
+- call `shutdown`, which any token holder may do (the host forbids it for the
+  webview);
+- harvest the secret by swapping the socket the host connects to. A fix needs a
+  server nonce, and that is deferred;
+- on Windows, read the memory of the daemon or the host.
+
+The token also still opens `tasks.submit`, `tasks.cancel`, `tasks.retry` and
+`workstreams.*`, including gate changes. So the proposal approval gates only
+Restricted chat proposals. No wire path lets a process that holds only the token
+approve or decide for the user.
+
+A host that did not spawn the running daemon is not an approver. This happens,
+for example, after an app upgrade while the old daemon still runs. That session
+can still read and cancel, but it cannot approve or reject. The daemon exits
+about 60 seconds after its last client leaves. A daemon that a host then spawns
+is an approver. The host has no command yet to restart such a daemon. On Windows
+the app exits with its last window, so the secret is lost while the daemon keeps
+running. The action card and the Review view say so in plain words.
 
 ## Task proposals (DPES-1105, phase 2)
 

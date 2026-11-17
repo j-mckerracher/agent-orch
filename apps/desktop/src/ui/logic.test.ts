@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptySubmitDraft, type SubmitDraft } from "./drafts";
-import { matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
+import { decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
 import { mkApproval, mkTask } from "../test/fakeDaemon";
@@ -149,5 +149,11 @@ describe("pendingDecisionCount", () => {
     expect(pendingDecisionCount(approvals, [])).toBe(2);
     expect(pendingDecisionCount([], proposals)).toBe(2);
     expect(pendingDecisionCount([], [])).toBe(0);
+  });
+
+  it("decision_count_text_is_the_bare_number_and_gets_a_plus_only_when_more_are_waiting", () => {
+    expect(decisionCountText(3, false)).toBe("3");
+    expect(decisionCountText(0, false)).toBe("0");
+    expect(decisionCountText(101, true)).toBe("101+");
   });
 });

@@ -63,9 +63,13 @@ function section(services: Services, decisions: SurfaceState<DecisionQueue>) {
 }
 
 /** A connected daemon session that negotiated `capabilities` (every capability when none is given). */
-async function connectedServices(capabilities: typeof ALL_CAPABILITIES = ALL_CAPABILITIES): Promise<Services> {
+async function connectedServices(
+  capabilities: typeof ALL_CAPABILITIES = ALL_CAPABILITIES,
+  configure: (fake: FakeDaemon) => void = () => undefined,
+): Promise<Services> {
   const fake = new FakeDaemon();
   fake.capabilitiesOverride = [...capabilities];
+  configure(fake);
   const services = createServices({ connector: fake, connection: { backoffMs: [5], requestTimeoutMs: 250 }, data: { coalesceMs: 10 } });
   stops.push(() => {
     services.connection.stop();
@@ -153,6 +157,29 @@ describe("ProposedActions", () => {
     for (const row of rows) expect(within(row).getByText("Fixture data")).toBeInTheDocument();
     expect(within(region).getByRole("heading", { name: /Proposed actions/ })).toHaveTextContent("Proposed actions");
     expect(within(region).getAllByText("Fixture data")).toHaveLength(rows.length + 1);
+  });
+
+  it("a_decided_proposal_in_the_list_is_not_shown_as_pending", () => {
+    const decided: ProposalItem = { proposal: proposal("proposal-3", { state: "executed" }), scope: { kind: "global" } };
+    const view = section(createServices(), queue([globalCard, decided]));
+    const region = screen.getByRole("region", { name: "Proposed actions" });
+    // The list and the count agree: one card is pending, and only it is listed and labeled so.
+    expect(within(region).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(region).getAllByText("Pending approval")).toHaveLength(1);
+    expect(within(region).getAllByRole("link")).toHaveLength(1);
+    expect(within(region).getByRole("status")).toHaveTextContent("1 proposed action is waiting for a decision.");
+    view.update(queue([decided]));
+    expect(screen.getByRole("status")).toHaveTextContent("No proposed actions are waiting.");
+    expect(screen.queryByText("Pending approval")).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("proposed_actions_says_more_are_waiting_and_shows_a_plus_when_the_daemon_held_more_than_it_sent", async () => {
+    const services = await connectedServices(ALL_CAPABILITIES, (fake) => fake.stub("actions.pending", { proposals: [], more: true }));
+    await until(() => services.data.getSnapshot().proposals.more, "the capped list");
+    section(services, queue([globalCard, workstreamCard]));
+    expect(screen.getByRole("status")).toHaveTextContent("2+ proposed actions are waiting for a decision. More are waiting.");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 
   it("proposed_actions_are_left_out_when_the_daemon_did_not_negotiate_orchestrator_actions", async () => {

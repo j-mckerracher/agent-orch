@@ -226,7 +226,11 @@ export function ReviewScreen({
             />
           </section>
 
-          <ChangeRequestPanel source={changeRequestSource} approval={approval} />
+          <ChangeRequestPanel
+            source={changeRequestSource}
+            approval={approval}
+            approver={client.provenance === "fixture" || r.connection.approver}
+          />
 
           <section aria-label="Delivery" className="panel">
             <h3>Delivery</h3>

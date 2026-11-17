@@ -557,7 +557,7 @@ describe("AppData proposals", () => {
     const fake = new FakeDaemon();
     stubPending(fake, ["proposal-1", "proposal-2"]);
     const { connection, data } = setup(fake);
-    expect(data.getSnapshot().proposals).toEqual({ status: "idle", data: null, error: null });
+    expect(data.getSnapshot().proposals).toEqual({ status: "idle", data: null, error: null, more: false });
     connection.start();
     await until(() => data.getSnapshot().proposals.status === "ready");
     expect(data.getSnapshot().proposals.data?.map((item) => [item.id, item.scope])).toEqual([
@@ -571,7 +571,7 @@ describe("AppData proposals", () => {
     const { connection, data } = setup(fake);
     connection.start();
     await until(() => data.getSnapshot().proposals.status === "ready");
-    expect(data.getSnapshot().proposals).toEqual({ status: "ready", data: [], error: null });
+    expect(data.getSnapshot().proposals).toEqual({ status: "ready", data: [], error: null, more: false });
     expect(data.getSnapshot().approvals.status).toBe("ready");
   });
 
@@ -606,6 +606,69 @@ describe("AppData proposals", () => {
     expect(slice.status).toBe("error");
     expect(slice.error?.kind).toBe("internal");
     expect(slice.data?.map((item) => item.id)).toEqual(["proposal-1"]);
+  });
+
+  it("the_proposals_slice_carries_more_from_the_daemon_and_keeps_it_through_a_failed_read", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("actions.pending", () => ({ proposals: [pendingWire("proposal-1")], more: true }));
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => every(data));
+    expect(data.getSnapshot().proposals.more).toBe(true);
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" });
+    await data.refreshProposals();
+    expect(data.getSnapshot().proposals).toMatchObject({ status: "error", more: true });
+    fake.stub("actions.pending", () => ({ proposals: [pendingWire("proposal-1")], more: false }));
+    await data.refreshProposals();
+    expect(data.getSnapshot().proposals).toMatchObject({ status: "ready", more: false });
+  });
+
+  /** An AppData whose `actions.pending` answers only when the test says so: no timers, so the order of replies is exact. */
+  function withHeldReads() {
+    const reads: Array<{ answer: (result: unknown) => void; fail: (error: unknown) => void }> = [];
+    const connection = {
+      getSnapshot: () => ({ status: "connected" }),
+      onConnected: () => () => undefined,
+      onEvent: () => () => undefined,
+      api: () => ({
+        actionsPending: () => new Promise((answer, fail) => reads.push({ answer, fail })),
+      }),
+    } as unknown as ConnectionManager;
+    const data = new AppData(connection, { coalesceMs: 10 });
+    disposables.push(() => data.dispose());
+    const ids = () => data.getSnapshot().proposals.data?.map((item) => item.id);
+    return { data, reads, ids };
+  }
+
+  it("an_older_proposals_read_that_finishes_late_does_not_overwrite_a_newer_one", async () => {
+    const { data, reads, ids } = withHeldReads();
+    // The first read starts before a decision; the second is the read made after it.
+    const older = data.refreshProposals();
+    const newer = data.refreshProposals();
+    expect(reads).toHaveLength(2);
+
+    reads[1]!.answer({ proposals: [pendingWire("proposal-2")], more: false });
+    await newer;
+    expect(ids()).toEqual(["proposal-2"]);
+
+    // The old list, which still holds the decided card, arrives after the newer one.
+    reads[0]!.answer({ proposals: [pendingWire("proposal-1"), pendingWire("proposal-2")], more: true });
+    await older;
+    expect(ids()).toEqual(["proposal-2"]);
+    expect(data.getSnapshot().proposals).toMatchObject({ status: "ready", more: false });
+  });
+
+  it("an_older_proposals_read_that_fails_late_does_not_replace_a_newer_answer_with_an_error", async () => {
+    const { data, reads, ids } = withHeldReads();
+    const older = data.refreshProposals();
+    const newer = data.refreshProposals();
+
+    reads[1]!.answer({ proposals: [pendingWire("proposal-2")], more: false });
+    await newer;
+    reads[0]!.fail(new DaemonError("internal", "store busy", -32603));
+    await older;
+    expect(data.getSnapshot().proposals).toMatchObject({ status: "ready", error: null });
+    expect(ids()).toEqual(["proposal-2"]);
   });
 
   it("proposals_are_read_every_30_seconds_while_the_window_is_visible_and_not_while_it_is_hidden", async () => {
