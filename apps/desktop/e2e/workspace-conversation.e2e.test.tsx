@@ -414,7 +414,11 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(screen.getByRole("log", { name: /Conversation with Global orchestrator/ }).textContent).not.toContain("mcao-actions");
 
       await userEvent.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-      await waitFor(() => expect(card.querySelector(".ui-pill")).toHaveTextContent("Created"), { timeout: 15000 });
+      // The card re-renders when the daemon confirms, so read it again instead of holding the first node.
+      await waitFor(
+        () => expect(screen.getByRole("article", { name: "Proposed: Create workstream" }).querySelector(".ui-pill")?.textContent).toContain("Created"),
+        { timeout: 15000 },
+      );
 
       const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
       expect(titled).toHaveLength(1);
