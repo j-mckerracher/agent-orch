@@ -45,6 +45,7 @@ fn cpu(value: u8) -> SettingsPatch {
             cpu: Some(value),
             ..LoadPatch::default()
         },
+        ..SettingsPatch::default()
     }
 }
 
@@ -54,6 +55,7 @@ fn memory(value: u8) -> SettingsPatch {
             memory: Some(value),
             ..LoadPatch::default()
         },
+        ..SettingsPatch::default()
     }
 }
 
@@ -63,6 +65,7 @@ fn disk(value: u8) -> SettingsPatch {
             disk: Some(value),
             ..LoadPatch::default()
         },
+        ..SettingsPatch::default()
     }
 }
 
@@ -342,6 +345,7 @@ fn the_limits_50_and_100_are_accepted() {
             memory: Some(50),
             disk: Some(50),
         },
+        ..Default::default()
     };
     assert_eq!(updated(&store, &lowest), (50, 50, 50));
     let highest = SettingsPatch {
@@ -350,6 +354,7 @@ fn the_limits_50_and_100_are_accepted() {
             memory: Some(100),
             disk: Some(100),
         },
+        ..Default::default()
     };
     assert_eq!(updated(&store, &highest), (100, 100, 100));
 }
@@ -366,6 +371,7 @@ fn a_patch_changes_only_the_named_limits_and_survives_a_reopen() {
             memory: None,
             disk: Some(95),
         },
+        ..Default::default()
     };
     assert_eq!(updated(&store, &cpu_and_disk), (60, 70, 95));
     assert_eq!(stored(&store), (60, 70, 95));
@@ -411,6 +417,7 @@ fn a_refused_patch_writes_nothing_even_for_its_valid_fields() {
             memory: Some(101),
             disk: Some(95),
         },
+        ..Default::default()
     };
     assert!(store.update_orchestrator_settings(&patch).is_err());
     assert_eq!(stored(&store), (80, 85, 90));

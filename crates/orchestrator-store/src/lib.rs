@@ -55,13 +55,16 @@ pub mod sqlite;
 mod sqlite_actions;
 mod sqlite_approvals;
 mod sqlite_attempts;
+mod sqlite_conversation_usage;
 mod sqlite_conversations;
 mod sqlite_delivery;
 mod sqlite_history;
 mod sqlite_ops;
 mod sqlite_review;
 mod sqlite_settings;
+mod sqlite_supervision;
 mod sqlite_verification;
+mod sqlite_wake;
 mod sqlite_workstreams;
 pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
@@ -76,7 +79,16 @@ pub use sqlite_actions::{
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
-pub use sqlite_settings::{LoadPatch, OrchestratorSettings, SettingsPatch};
+pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
+pub use sqlite_settings::{
+    LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, SupervisionSettings,
+    WakeLimitsPatch,
+};
+pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
+pub use sqlite_wake::{
+    NewWakeRecord, Settle, SkipReason, StaleProposal, WakeKind, WakeOutcome, WakeRecord,
+    WakeState, WAKE_PAGE_SIZE,
+};
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
 pub mod audit_envelope;
 mod sqlite_events;
