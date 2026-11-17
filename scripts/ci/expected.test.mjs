@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 import { gatesFor } from "./gates.mjs";
+import { TEST_GATES } from "./sync-expected.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
@@ -80,6 +81,11 @@ test("gates take their counts from expected.mjs", () => {
   assert.equal(mac["workspace-tests"].passed, MACOS.workspace.passed);
   assert.equal(mac["tauri-tests"].passed, MACOS.tauri.passed);
   assert.equal(win["tauri-tests"].passed, WINDOWS.tauri.passed);
+  for (const [gates, table] of [[win, WINDOWS], [mac, MACOS]]) {
+    for (const [gate, [key]] of Object.entries(TEST_GATES)) {
+      if (gates[gate]) assert.equal(gates[gate].ignored, table[key].ignored ?? 0, `${gate} takes its ignored count from expected.mjs`);
+    }
+  }
 });
 
 test("the Windows-only p12 gate needs both binaries and takes its paths from the harness", () => {
