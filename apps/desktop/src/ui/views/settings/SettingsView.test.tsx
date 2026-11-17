@@ -394,7 +394,8 @@ describe("Settings page, refresh", () => {
     const source: SettingsSource = { provenance: FIXTURE, get: () => new Promise(() => undefined), set: () => Promise.reject(new Error("not used")), setGroups: () => Promise.reject(new Error("not used")) };
     page(createServices({ surfaces: { ...createFixtureSurfaces(), settings: source } }));
     await advance(0);
-    expect(screen.getByRole("status")).toHaveTextContent("Loading settings");
+    // The standing approvals section keeps its own result region, so name the loading line.
+    expect(screen.getByText("Loading settings…")).toHaveAttribute("role", "status");
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 });

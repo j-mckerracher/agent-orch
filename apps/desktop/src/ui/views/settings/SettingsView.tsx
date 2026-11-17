@@ -30,6 +30,7 @@ import {
   readingText,
 } from "./settingsModel";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
+import { GrantsSection } from "./GrantsSection";
 import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
 import "./SettingsView.css";
@@ -218,6 +219,7 @@ export function SettingsView() {
       </section>
       <SupervisionSections model={model} />
       <ChatPullRequestSection model={model} />
+      <GrantsSection />
     </div>
   );
 }

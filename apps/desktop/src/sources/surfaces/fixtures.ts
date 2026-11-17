@@ -22,6 +22,7 @@ import { countStates, measured, notOk, observation, okResult } from "./result";
 import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
+import { createFixtureGrants } from "./grants";
 import { createFixtureHolds } from "./holds";
 import type {
   ActionProposal,
@@ -677,5 +678,6 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     monitoring: monitoringSource(ctx),
     holds: createFixtureHolds(ctx.scenario, ctx.now),
     projectDefaults: projectDefaultsSource(ctx),
+    grants: createFixtureGrants(ctx.scenario, ctx.now),
   };
 }

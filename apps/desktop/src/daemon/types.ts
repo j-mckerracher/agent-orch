@@ -28,7 +28,8 @@ export type Capability =
   | "orchestrator_actions"
   | "settings"
   | "monitoring"
-  | "holds";
+  | "holds"
+  | "standing_approvals";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -52,6 +53,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "settings",
   "monitoring",
   "holds",
+  "standing_approvals",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -73,6 +75,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "settings",
   "monitoring",
   "holds",
+  "standing_approvals",
 ];
 
 export interface Welcome {
@@ -694,6 +697,11 @@ export interface ActionProposalWire {
   denial?: string | null;
   /** Null for kinds that need no display facts. Absent from older daemons. */
   target?: ProposalTargetWire | null;
+  /**
+   * Who approved it (DPES-1105 Phase 5): `{ kind: "user" }`, or a standing grant with its id. Null until approved.
+   * Absent from older daemons. A bare `grant:<id>` event actor is read the same way.
+   */
+  approved_by?: { kind: "user" } | { kind: "grant"; grant_id: string } | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -822,6 +830,67 @@ export interface HoldResultWire {
 /** `holds.list` result: the holds in force now. */
 export interface HoldsListWire {
   holds: HoldWire[];
+}
+
+/** What a standing approval is bound to: one project (by its short code) or one workstream. `label` is a folder name or a title, never a path. */
+export interface GrantScopeWire {
+  kind: "project" | "workstream" | (string & {});
+  id: string;
+  label?: string;
+}
+
+/** One standing approval (capability `standing_approvals`, DPES-1105 Phase 5). `status` stays a string so a newer state survives. */
+export interface GrantWire {
+  id: string;
+  scope: GrantScopeWire;
+  kinds: string[];
+  created_at_ms: number;
+  expires_at_ms: number;
+  max_uses: number;
+  uses_used: number;
+  token_budget: number;
+  /** Tokens the tasks started under the grant reported so far; tasks that report none count zero. */
+  tokens_spent: number;
+  status: "active" | "revoked" | "expired" | "exhausted" | "budget_exhausted" | (string & {});
+  revoked_at_ms: number | null;
+}
+
+/** The limits and the kinds a grant may name; the form offers nothing else. */
+export interface GrantPolicyWire {
+  grantable_kinds: string[];
+  default_expires_in_secs: number;
+  max_expires_in_secs: number;
+  min_expires_in_secs: number;
+  default_max_uses: number;
+  max_max_uses: number;
+  max_token_budget: number;
+}
+
+/** `grants.list` result. */
+export interface GrantsListWire {
+  grants: GrantWire[];
+  more: boolean;
+  policy: GrantPolicyWire;
+}
+
+/** `grants.create` params (user-only). `token_budget` is required. */
+export interface GrantsCreateParams {
+  scope: { kind: "project" | "workstream"; id: string };
+  kinds: string[];
+  expires_in_secs: number;
+  max_uses: number;
+  token_budget: number;
+}
+
+/** `grants.create` result. */
+export interface GrantCreateResultWire {
+  grant: GrantWire;
+}
+
+/** `grants.revoke` result (user-only). `stopped` counts approved actions that had not started and were failed. */
+export interface GrantRevokeResultWire {
+  grant: GrantWire;
+  stopped: number;
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */

@@ -126,3 +126,73 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* Standing approvals (DPES-1105 Phase 5). */
+.settings-fieldset,
+.settings-kinds {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.settings-fieldset > legend,
+.settings-kinds > legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.settings-label {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.settings-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+}
+
+.settings-choice input {
+  width: auto;
+}
+
+.settings-view .settings-row select,
+.settings-view .settings-row input[type="text"] {
+  max-width: 100%;
+}
+
+.settings-row input[type="text"] {
+  width: 12rem;
+}
+
+.settings-subhead {
+  margin: 16px 0 8px;
+}
+
+.settings-grants {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-grant {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.settings-grant-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}

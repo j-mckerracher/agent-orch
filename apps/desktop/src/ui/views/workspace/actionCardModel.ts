@@ -44,6 +44,8 @@ const FAILURE_TEXT: Readonly<Record<string, string>> = {
   invalid: "The daemon could not apply these values. Nothing was changed. Ask the orchestrator to propose again.",
   dependency_not_executed: "The workstream this needs was not created, so this did not run. Nothing was changed.",
   forbidden: "The app does not allow this change. Nothing was changed.",
+  grant_revoked: "The standing approval was revoked before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
+  grant_expired: "The standing approval had expired before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
   internal: "The app could not finish this change. Nothing else was changed. Ask the orchestrator to propose it again.",
 };
 
@@ -379,6 +381,19 @@ export function failureText(p: ActionProposal): string {
   const known = (TASK_KINDS.includes(p.kind) ? lookup(TASK_FAILURE_TEXT, code) : null) ?? lookup(FAILURE_TEXT, code);
   if (known !== null) return known;
   return code === null ? "The action failed." : `The action failed (${code}).`;
+}
+
+/** A short grant id is enough to tell two apart; the full id is never shown. */
+const GRANT_LABEL_CHARS = 10;
+
+/**
+ * The line under a card whose action a standing approval approved, with the grant's short label. Null for a card a
+ * person approved, one nobody approved yet, or an older daemon that does not say. Read from the proposal event's actor
+ * (`grant:<id>`); the id is cut short and never shown as a path or a token.
+ */
+export function approvedByText(p: ActionProposal): string | null {
+  if (p.approvedBy?.kind !== "grant") return null;
+  return `Approved by a standing approval (${p.approvedBy.grantId.slice(0, GRANT_LABEL_CHARS)}).`;
 }
 
 /** The inline text for a request that the daemon refused or never answered. */

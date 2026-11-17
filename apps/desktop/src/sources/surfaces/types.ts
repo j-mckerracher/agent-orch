@@ -211,6 +211,8 @@ export interface ActionProposal {
   errorCode: string | null;
   /** The envelope's reason when `errorCode` is "action_denied"; null otherwise. */
   denial: string | null;
+  /** Who approved it: a user, or a standing approval by id. Absent from older daemons and null until approved. */
+  approvedBy?: { kind: "user" } | { kind: "grant"; grantId: string } | null;
   /** Display facts the daemon read live; null for kinds that need none. No paths. */
   target: ProposalTarget | null;
   updatedAt: string;
@@ -823,6 +825,75 @@ export interface ProjectDefaultsSource {
   set(projectId: string, defaults: ProjectDefaults): Promise<ProjectDefaultsReceipt>;
 }
 
+// Standing approvals (DPES-1105 Phase 5). Derived: grants.list / grants.create / grants.revoke (capability `standing_approvals`).
+/** One standing approval. The status stays the daemon's string so a newer state is shown as unknown, never coerced. */
+export interface GrantItem {
+  id: string;
+  /** `project` (the id is a short code) or `workstream`. */
+  scopeKind: string;
+  scopeId: string;
+  /** A project's folder name or a workstream's title; never a path. Null when the daemon sent none. */
+  scopeLabel: string | null;
+  kinds: string[];
+  createdAtMs: number;
+  expiresAtMs: number;
+  maxUses: number;
+  usesUsed: number;
+  tokenBudget: number;
+  /** Tokens reported so far by the tasks the grant started; tasks that report none count zero. */
+  tokensSpent: number;
+  /** `active`, `expired`, `revoked`, `exhausted` or `budget_exhausted`. */
+  status: string;
+  revokedAtMs: number | null;
+}
+
+/** The kinds and limits the daemon allows; the form offers nothing else. */
+export interface GrantPolicy {
+  grantableKinds: string[];
+  defaultExpiresInSecs: number;
+  maxExpiresInSecs: number;
+  minExpiresInSecs: number;
+  defaultMaxUses: number;
+  maxMaxUses: number;
+  maxTokenBudget: number;
+}
+
+export interface GrantsSnapshot {
+  grants: GrantItem[];
+  policy: GrantPolicy;
+}
+
+/** What the form sends. The scope id is a project code or a workstream id. */
+export interface GrantTerms {
+  scopeKind: "project" | "workstream";
+  scopeId: string;
+  kinds: string[];
+  expiresInSecs: number;
+  maxUses: number;
+  tokenBudget: number;
+}
+
+export interface GrantReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  grant: GrantItem;
+  /** Revoke only: approved actions that had not started and were stopped. */
+  stopped: number;
+}
+
+export interface GrantsSource {
+  readonly provenance: Provenance;
+  /** The grants (ended ones included) and the policy. Derived: `grants.list`. Fixture: one fixture grant and the daemon's limits. */
+  list(): Promise<SurfaceResult<GrantsSnapshot>>;
+  /** Derived: `grants.create`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  create(terms: GrantTerms): Promise<GrantReceipt>;
+  /** Derived: `grants.revoke`, user-only. Fixture: saves nothing. */
+  revoke(grantId: string): Promise<GrantReceipt>;
+}
+
 export interface SurfaceSources {
   workstreams: WorkstreamSource;
   conversation: ConversationSource;
@@ -837,4 +908,5 @@ export interface SurfaceSources {
   monitoring: MonitoringSource;
   holds: HoldsSource;
   projectDefaults: ProjectDefaultsSource;
+  grants: GrantsSource;
 }

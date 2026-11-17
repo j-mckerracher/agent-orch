@@ -2,7 +2,7 @@
  * Daemon and transport failures as one typed error.
  *
  * Codes come from `crates/orchestrator-ipc` (handshake -32001..-32004,
- * -32601, -32600) and `RpcError` (-32602, -32010..-32023, -32603). Messages
+ * -32601, -32600) and `RpcError` (-32602, -32010..-32025, -32603). Messages
  * from the daemon are sanitized and path-free; the UI still never renders a
  * token, which the webview does not hold.
  */
@@ -29,6 +29,8 @@ export type DaemonErrorKind =
   | "proposal-not-found"
   | "proposal-not-pending"
   | "proposal-invalid"
+  | "grant-not-found"
+  | "grant-invalid"
   | "internal"
   | "timeout"
   | "disconnected"
@@ -57,6 +59,8 @@ const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
   [-32021]: "proposal-not-found",
   [-32022]: "proposal-not-pending",
   [-32023]: "proposal-invalid",
+  [-32024]: "grant-not-found",
+  [-32025]: "grant-invalid",
   [-32603]: "internal",
 };
 
@@ -213,6 +217,14 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   "proposal-invalid": {
     reason: "The daemon cannot approve this proposal now.",
     nextStep: "Approve the proposal it depends on first, then try again.",
+  },
+  "grant-not-found": {
+    reason: "The standing approval or its project or workstream no longer exists.",
+    nextStep: "Refresh the list.",
+  },
+  "grant-invalid": {
+    reason: "The daemon refused the terms of this standing approval.",
+    nextStep: "Check the kinds and the limits, then try again.",
   },
   internal: {
     reason: "The daemon reported an internal error.",

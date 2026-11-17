@@ -13,6 +13,7 @@ import { FakeDaemon } from "../test/fakeDaemon";
  */
 const FX = "fixture:placeholder-id";
 const REAL = "real-id-1";
+const GRANT_PARAMS = { kinds: ["task.propose"], expires_in_secs: 3600, max_uses: 5, token_budget: 1000 };
 const DEFAULTS_WIRE = { mode: "local-only", base_branch: null, branch_prefix: null, checks: [], merge_method: "squash" };
 const DIGEST = "0".repeat(64);
 
@@ -89,6 +90,13 @@ const ROWS: Row[] = [
   row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("holdsSet", "holds.set", (a) => a.holdsSet("approval", FX, "2026-11-21", "k"), (a) => a.holdsSet("approval", REAL, "2026-11-21", "k")),
   row("holdsRelease", "holds.release", (a) => a.holdsRelease(FX, "k"), (a) => a.holdsRelease(REAL, "k")),
+  row("grantsRevoke", "grants.revoke", (a) => a.grantsRevoke(FX, "k"), (a) => a.grantsRevoke(REAL, "k")),
+  row(
+    "grantsCreate",
+    "grants.create",
+    (a) => a.grantsCreate({ ...GRANT_PARAMS, scope: { kind: "workstream", id: FX } }, "k"),
+    (a) => a.grantsCreate({ ...GRANT_PARAMS, scope: { kind: "workstream", id: "ws-1" } }, "k"),
+  ),
   row("projectsGetDefaults", "projects.get_defaults", (a) => a.projectsGetDefaults(FX), (a) => a.projectsGetDefaults(REAL)),
   row(
     "projectsSetDefaults",
@@ -125,6 +133,7 @@ const NO_ID_METHODS = new Set<string>([
   "monitoringGet",
   "monitoringSet",
   "holdsList",
+  "grantsList",
 ]);
 
 async function api(fake: FakeDaemon) {

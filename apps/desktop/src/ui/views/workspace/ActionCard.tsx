@@ -7,6 +7,7 @@ import { Badge, Button, Pill } from "../../theme";
 import { Notice } from "../../widgets";
 import {
   actionPhrase,
+  approvedByText,
   cardTitle,
   fieldsOf,
   openTaskId,
@@ -64,6 +65,7 @@ export function ActionCard({
   const link = view.state === "executed" ? openWorkstreamId(proposal, parent, scope) : null;
   const taskId = view.state === "executed" ? openTaskId(proposal) : null;
   const taskLink = taskId !== null ? taskRoute(taskId) : null;
+  const approvedBy = approvedByText(proposal);
 
   // The buttons leave the page once the state settles, so keep focus on the card instead of letting it fall to the body.
   useEffect(() => {
@@ -116,6 +118,7 @@ export function ActionCard({
       <Notice id={messageId} tone={view.message.tone}>
         {view.message.text}
       </Notice>
+      {approvedBy !== null && <p className="ws-action-approver">{approvedBy}</p>}
       {notice !== null && <Notice tone="info">{notice}</Notice>}
       {error !== null && <Notice tone="bad">{requestErrorText(error, parent)}</Notice>}
       {view.state === "pending" && (

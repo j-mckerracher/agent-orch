@@ -60,6 +60,10 @@ import type {
   SettingsPatchWire,
   MonitoringWire,
   MonitoringAckWire,
+  GrantCreateResultWire,
+  GrantRevokeResultWire,
+  GrantsCreateParams,
+  GrantsListWire,
   HoldResultWire,
   HoldsListWire,
 } from "./types";
@@ -567,6 +571,22 @@ export class DaemonApi {
   /** DPES-1105 Phase 4. The holds in force now. A read. */
   async holdsList(): Promise<HoldsListWire> {
     return this.session.request("holds.list", {});
+  }
+
+  /** DPES-1105 Phase 5. The standing approvals and the limits for a new one. A read; needs `standing_approvals`. */
+  async grantsList(includeEnded = true): Promise<GrantsListWire> {
+    return this.session.request("grants.list", { include_ended: includeEnded, limit: 50 });
+  }
+
+  /** DPES-1105 Phase 5. Creates one standing approval. User-only. */
+  async grantsCreate(params: GrantsCreateParams, idempotencyKey: string): Promise<GrantCreateResultWire> {
+    realId(params.scope.id);
+    return this.session.request("grants.create", { ...params, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 Phase 5. Ends a standing approval now. User-only. */
+  async grantsRevoke(grantId: string, idempotencyKey: string): Promise<GrantRevokeResultWire> {
+    return this.session.request("grants.revoke", { grant_id: realId(grantId), idempotency_key: idempotencyKey });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

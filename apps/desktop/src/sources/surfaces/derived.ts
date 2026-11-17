@@ -30,6 +30,7 @@ import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
+import { createLiveGrants, GRANTS_METHODS } from "./grants";
 import { createLiveHolds, HOLDS_METHODS } from "./holds";
 import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
 import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
@@ -298,6 +299,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   // Holds hide decisions, so they carry the decision queue's id (D16).
   const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
   const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
+  const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
 
   return {
     workstreams,
@@ -313,5 +315,6 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     monitoring,
     holds,
     projectDefaults,
+    grants,
   };
 }
