@@ -256,9 +256,24 @@ mod tests {
     #[test]
     fn modes_round_trip_and_map_to_delivery_and_checks() {
         let table = [
-            (ProjectMode::LocalOnly, "local-only", DeliveryPolicy::LocalReview, false),
-            (ProjectMode::DirectPr, "direct-pr", DeliveryPolicy::PullRequest, true),
-            (ProjectMode::NoMistakes, "no-mistakes", DeliveryPolicy::PullRequest, true),
+            (
+                ProjectMode::LocalOnly,
+                "local-only",
+                DeliveryPolicy::LocalReview,
+                false,
+            ),
+            (
+                ProjectMode::DirectPr,
+                "direct-pr",
+                DeliveryPolicy::PullRequest,
+                true,
+            ),
+            (
+                ProjectMode::NoMistakes,
+                "no-mistakes",
+                DeliveryPolicy::PullRequest,
+                true,
+            ),
         ];
         for (mode, key, delivery, requires) in table {
             assert_eq!(mode.as_str(), key);
@@ -298,10 +313,22 @@ mod tests {
     #[test]
     fn verification_follows_the_mode_and_the_checks() {
         let commands = VerificationPolicy::Commands { commands: checks() };
-        assert_eq!(with(ProjectMode::LocalOnly, checks()).verification(), VerificationPolicy::None);
-        assert_eq!(with(ProjectMode::DirectPr, Vec::new()).verification(), VerificationPolicy::None);
-        assert_eq!(with(ProjectMode::DirectPr, checks()).verification(), commands);
-        assert_eq!(with(ProjectMode::NoMistakes, checks()).verification(), commands);
+        assert_eq!(
+            with(ProjectMode::LocalOnly, checks()).verification(),
+            VerificationPolicy::None
+        );
+        assert_eq!(
+            with(ProjectMode::DirectPr, Vec::new()).verification(),
+            VerificationPolicy::None
+        );
+        assert_eq!(
+            with(ProjectMode::DirectPr, checks()).verification(),
+            commands
+        );
+        assert_eq!(
+            with(ProjectMode::NoMistakes, checks()).verification(),
+            commands
+        );
     }
 
     #[test]
@@ -310,11 +337,20 @@ mod tests {
         type Case = (Vec<Vec<String>>, Result<(), DefaultsError>);
         let table: [Case; 8] = [
             (vec![vec![arg(1)]; MAX_CHECKS], Ok(())),
-            (vec![vec![arg(1)]; MAX_CHECKS + 1], Err(DefaultsError::TooManyChecks)),
+            (
+                vec![vec![arg(1)]; MAX_CHECKS + 1],
+                Err(DefaultsError::TooManyChecks),
+            ),
             (vec![Vec::new()], Err(DefaultsError::EmptyCheck)),
-            (vec![vec![arg(1); MAX_CHECK_ARGS + 1]], Err(DefaultsError::TooManyArgs)),
+            (
+                vec![vec![arg(1); MAX_CHECK_ARGS + 1]],
+                Err(DefaultsError::TooManyArgs),
+            ),
             (vec![vec![String::new()]], Err(DefaultsError::EmptyArg)),
-            (vec![vec![arg(MAX_CHECK_ARG_LEN + 1)]], Err(DefaultsError::ArgTooLong)),
+            (
+                vec![vec![arg(MAX_CHECK_ARG_LEN + 1)]],
+                Err(DefaultsError::ArgTooLong),
+            ),
             (vec![vec!["a\0b".to_owned()]], Err(DefaultsError::NulInArg)),
             (vec![vec![arg(MAX_CHECK_ARG_LEN); MAX_CHECK_ARGS]], Ok(())),
         ];
@@ -356,20 +392,33 @@ mod tests {
 
         // A project with no defaults: nothing is below the default.
         for proposed in [report, local, pr] {
-            let expected = if proposed < local { vec![delivery(local, proposed)] } else { vec![] };
+            let expected = if proposed < local {
+                vec![delivery(local, proposed)]
+            } else {
+                vec![]
+            };
             assert_eq!(drops(&ProjectDefaults::LOCAL, proposed, &none), expected);
         }
         let direct = with(ProjectMode::DirectPr, checks());
         assert_eq!(drops(&direct, pr, &commands), vec![]);
         assert_eq!(drops(&direct, local, &commands), vec![delivery(pr, local)]);
-        assert_eq!(drops(&direct, local, &none), vec![delivery(pr, local), Drop::Checks]);
+        assert_eq!(
+            drops(&direct, local, &none),
+            vec![delivery(pr, local), Drop::Checks]
+        );
         assert_eq!(drops(&direct, pr, &none), vec![Drop::Checks]);
-        assert_eq!(drops(&direct, report, &commands), vec![delivery(pr, report)]);
+        assert_eq!(
+            drops(&direct, report, &commands),
+            vec![delivery(pr, report)]
+        );
         // No checks set, so none to drop.
         let bare = with(ProjectMode::DirectPr, Vec::new());
         assert_eq!(drops(&bare, pr, &none), vec![]);
         assert_eq!(drops(&bare, local, &none), vec![delivery(pr, local)]);
         // A local-only project with checks set does not run them, so none to drop.
-        assert_eq!(drops(&with(ProjectMode::LocalOnly, checks()), local, &none), vec![]);
+        assert_eq!(
+            drops(&with(ProjectMode::LocalOnly, checks()), local, &none),
+            vec![]
+        );
     }
 }

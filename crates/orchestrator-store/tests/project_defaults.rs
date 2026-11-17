@@ -129,10 +129,12 @@ fn migration_0043_applies_to_a_0042_database_and_keeps_projects_and_settings() {
             .await
             .unwrap();
         assert_eq!(newest, 42);
-        sqlx::query("INSERT INTO projects (id, root_path, settings) VALUES ('old', '/work/old', '{}')")
-            .execute(&mut connection)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, root_path, settings) VALUES ('old', '/work/old', '{}')",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
         sqlx::query("UPDATE orchestrator_settings SET load_cpu_percent = 70")
             .execute(&mut connection)
             .await
@@ -259,7 +261,10 @@ fn a_patch_changes_only_the_named_defaults() {
         )
         .unwrap_err();
     assert_eq!(refusal(&error), Some(ProjectDefaultsError::BranchPrefix));
-    assert_eq!(store.project_defaults("p1").unwrap().unwrap().mode, "direct-pr");
+    assert_eq!(
+        store.project_defaults("p1").unwrap().unwrap().mode,
+        "direct-pr"
+    );
     assert!(matches!(
         store.update_project_defaults(
             "ghost",
@@ -280,7 +285,10 @@ fn a_patch_changes_only_the_named_defaults() {
     assert_eq!(stored.branch_prefix, None);
     assert_eq!(store.list_project_defaults().unwrap().len(), 1);
     store.reset_project_defaults("p1").unwrap();
-    assert_eq!(store.project_defaults("p1").unwrap().unwrap().mode, "local-only");
+    assert_eq!(
+        store.project_defaults("p1").unwrap().unwrap().mode,
+        "local-only"
+    );
     assert!(try_sql(&path, "DELETE FROM project_defaults", &[]).is_err());
     assert_eq!(scalars(&path, ROW_COUNT), vec!["1"]);
 }
@@ -367,7 +375,10 @@ fn the_mode_check_refuses_an_unknown_mode() {
         Some(ProjectDefaultsError::Checks)
     );
     // Only the raw insert above wrote a row, and it kept the default mode.
-    assert_eq!(store.project_defaults("p1").unwrap().unwrap().mode, "local-only");
+    assert_eq!(
+        store.project_defaults("p1").unwrap().unwrap().mode,
+        "local-only"
+    );
 }
 
 #[test]
@@ -388,7 +399,10 @@ fn chat_pr_delivery_is_off_by_default_and_changes_only_by_a_patch() {
         .unwrap();
     assert!(!store.orchestrator_settings().unwrap().chat_pr_delivery);
     assert_eq!(
-        scalars(&path, "SELECT CAST(chat_pr_delivery AS TEXT) FROM orchestrator_settings"),
+        scalars(
+            &path,
+            "SELECT CAST(chat_pr_delivery AS TEXT) FROM orchestrator_settings"
+        ),
         vec!["0"]
     );
 
@@ -396,7 +410,12 @@ fn chat_pr_delivery_is_off_by_default_and_changes_only_by_a_patch() {
         chat_pr_delivery: Some(true),
         ..SettingsPatch::default()
     };
-    assert!(store.update_orchestrator_settings(&on).unwrap().chat_pr_delivery);
+    assert!(
+        store
+            .update_orchestrator_settings(&on)
+            .unwrap()
+            .chat_pr_delivery
+    );
     assert!(store.orchestrator_settings().unwrap().chat_pr_delivery);
     // A patch that does not name it leaves it on, and a patch can turn it off.
     store
@@ -413,7 +432,12 @@ fn chat_pr_delivery_is_off_by_default_and_changes_only_by_a_patch() {
         chat_pr_delivery: Some(false),
         ..SettingsPatch::default()
     };
-    assert!(!store.update_orchestrator_settings(&off).unwrap().chat_pr_delivery);
+    assert!(
+        !store
+            .update_orchestrator_settings(&off)
+            .unwrap()
+            .chat_pr_delivery
+    );
     assert!(try_sql(
         &path,
         "UPDATE orchestrator_settings SET chat_pr_delivery = 2",

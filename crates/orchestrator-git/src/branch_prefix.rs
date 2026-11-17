@@ -107,7 +107,9 @@ impl BranchPrefix {
             return Err(invalid("is too long"));
         }
         if prefix.0.starts_with(RESERVED_NAMESPACE) {
-            return Err(invalid("must not use the reserved `orchestrator/` namespace"));
+            return Err(invalid(
+                "must not use the reserved `orchestrator/` namespace",
+            ));
         }
         if prefix.0.contains("..") {
             return Err(invalid("must not contain `..`"));

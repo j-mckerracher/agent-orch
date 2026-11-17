@@ -44,7 +44,9 @@ use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
-use orchestrator_git::{create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository};
+use orchestrator_git::{
+    create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository,
+};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
@@ -557,32 +559,37 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
-        let worktree = Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
-            std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
-            let root = std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
-            // A project's own base branch and prefix win over HEAD and the machine-wide
-            // prefix (DPES-1105). A task already running keeps the worktree it has.
-            let defaults = store
-                .project_defaults(&task.contract.project_id)
-                .map_err(|error| GitError::Io(std::io::Error::other(error.to_string())))?;
-            let prefix = match defaults.as_ref().and_then(|row| row.branch_prefix.as_deref()) {
-                Some(value) => BranchPrefix::parse_for_project(value)?,
-                None => BranchPrefix::read(&self.config.data_dir)?,
-            };
-            // The stored value passed a looser database check, so it is re-checked here, and
-            // named under `refs/heads/` so a tag of the same name cannot decide the base.
-            let base_ref = match defaults.as_ref().and_then(|row| row.base_branch.as_deref()) {
-                Some(branch) if is_safe_branch_name(branch) => format!("refs/heads/{branch}"),
-                Some(branch) => {
-                    return Err(GitError::InvalidBaseRef {
-                        refspec: branch.to_owned(),
-                        detail: "not a safe branch name".to_owned(),
-                    })
-                }
-                None => "HEAD".to_owned(),
-            };
-            create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)
-        });
+        let worktree =
+            Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
+                std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
+                let root =
+                    std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
+                // A project's own base branch and prefix win over HEAD and the machine-wide
+                // prefix (DPES-1105). A task already running keeps the worktree it has.
+                let defaults = store
+                    .project_defaults(&task.contract.project_id)
+                    .map_err(|error| GitError::Io(std::io::Error::other(error.to_string())))?;
+                let prefix = match defaults
+                    .as_ref()
+                    .and_then(|row| row.branch_prefix.as_deref())
+                {
+                    Some(value) => BranchPrefix::parse_for_project(value)?,
+                    None => BranchPrefix::read(&self.config.data_dir)?,
+                };
+                // The stored value passed a looser database check, so it is re-checked here, and
+                // named under `refs/heads/` so a tag of the same name cannot decide the base.
+                let base_ref = match defaults.as_ref().and_then(|row| row.base_branch.as_deref()) {
+                    Some(branch) if is_safe_branch_name(branch) => format!("refs/heads/{branch}"),
+                    Some(branch) => {
+                        return Err(GitError::InvalidBaseRef {
+                            refspec: branch.to_owned(),
+                            detail: "not a safe branch name".to_owned(),
+                        })
+                    }
+                    None => "HEAD".to_owned(),
+                };
+                create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)
+            });
         store
             .add_attempt(
                 &task_id,
@@ -1425,7 +1432,13 @@ fn finish(
 /// puts it in a log line. A failure to store it is logged without the text and never
 /// fails the task, which has already succeeded.
 fn capture_report(store: &SqliteStore, job: &Job, last_message: Option<&str>) {
-    record_report(store, &job.diag, &job.task_id, &job.attempt_id, last_message);
+    record_report(
+        store,
+        &job.diag,
+        &job.task_id,
+        &job.attempt_id,
+        last_message,
+    );
 }
 
 /// The body of [`capture_report`], without the job, so a test can run it.

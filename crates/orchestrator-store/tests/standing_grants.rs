@@ -11,9 +11,7 @@ use std::thread;
 
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::standing_grant::{GrantRefusal, GrantScope, GrantTerms};
-use orchestrator_store::{
-    GrantError, GrantEventKind, GrantOutcome, SqliteStore, StoreError,
-};
+use orchestrator_store::{GrantError, GrantEventKind, GrantOutcome, SqliteStore, StoreError};
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection;
@@ -96,7 +94,12 @@ fn refusal(error: &StoreError) -> Option<GrantError> {
     GrantError::of(error)
 }
 
-fn consume(store: &SqliteStore, id: &str, proposal: &str, at: u64) -> Result<(), Option<GrantError>> {
+fn consume(
+    store: &SqliteStore,
+    id: &str,
+    proposal: &str,
+    at: u64,
+) -> Result<(), Option<GrantError>> {
     store
         .consume_grant_use(id, proposal, DIGEST, at)
         .map(drop)
@@ -258,16 +261,24 @@ fn migration_0047_applies_to_a_database_at_the_latest_version_and_keeps_every_ro
     );
     // A proposal that existed before the migration is never matched, and the flag can flip.
     assert_eq!(
-        scalars(&path, "SELECT CAST(grant_tried AS TEXT) FROM action_proposals"),
+        scalars(
+            &path,
+            "SELECT CAST(grant_tried AS TEXT) FROM action_proposals"
+        ),
         vec!["1"]
     );
     sql(&path, "UPDATE action_proposals SET grant_tried = 0", &[]);
     assert_eq!(
-        scalars(&path, "SELECT CAST(grant_tried AS TEXT) FROM action_proposals"),
+        scalars(
+            &path,
+            "SELECT CAST(grant_tried AS TEXT) FROM action_proposals"
+        ),
         vec!["0"]
     );
     // The new tables work on the migrated database.
-    let grant = store.create_standing_grant("grant-1", &terms(3), now()).unwrap();
+    let grant = store
+        .create_standing_grant("grant-1", &terms(3), now())
+        .unwrap();
     assert_eq!(grant.uses_used, 0);
 }
 
@@ -275,7 +286,11 @@ fn migration_0047_applies_to_a_database_at_the_latest_version_and_keeps_every_ro
 fn a_grant_for_a_never_grantable_kind_is_refused() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    for kind in [ActionKind::TaskCancel, ActionKind::TaskRevise, ActionKind::ProjectRemove] {
+    for kind in [
+        ActionKind::TaskCancel,
+        ActionKind::TaskRevise,
+        ActionKind::ProjectRemove,
+    ] {
         let mut asked = terms(5);
         asked.kinds = vec![ActionKind::TaskPropose, kind];
         let error = store
@@ -292,11 +307,19 @@ fn a_grant_for_a_never_grantable_kind_is_refused() {
         "0"
     );
     assert_eq!(
-        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grant_events"),
+        count(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grant_events"
+        ),
         "0"
     );
     // The database refuses the names as well, as another writer would meet it.
-    for name in ["project.remove", "delivery.merge", "task.cancel", "task.revise"] {
+    for name in [
+        "project.remove",
+        "delivery.merge",
+        "task.cancel",
+        "task.revise",
+    ] {
         let kinds = format!("[\"task.propose\",\"{name}\"]");
         assert!(
             try_sql(
@@ -316,7 +339,9 @@ fn a_grant_for_a_never_grantable_kind_is_refused() {
 fn a_grant_cannot_be_edited_only_revoked() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
 
     for statement in [
         "UPDATE standing_grants SET id = 'grant-2'",
@@ -339,7 +364,11 @@ fn a_grant_cannot_be_edited_only_revoked() {
         vec!["0"]
     );
     // One use at a time is allowed, and a revoke is the only other change.
-    sql(&path, "UPDATE standing_grants SET uses_used = uses_used + 1", &[]);
+    sql(
+        &path,
+        "UPDATE standing_grants SET uses_used = uses_used + 1",
+        &[],
+    );
 
     let revoked = store.revoke_standing_grant("grant-1", now() + 5).unwrap();
     assert_eq!(revoked.revoked_at_ms, Some(now() + 5));
@@ -356,7 +385,9 @@ fn a_grant_cannot_be_edited_only_revoked() {
 fn a_revoked_grant_cannot_be_used() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
     consume(&store, "grant-1", "proposal-1", now() + 1).unwrap();
 
     let revoked = store.revoke_standing_grant("grant-1", now() + 2).unwrap();
@@ -371,7 +402,10 @@ fn a_revoked_grant_cannot_be_used() {
         ),
         "1"
     );
-    for (proposal, at) in [("proposal-2", now() + 3), ("proposal-3", now() + HOUR_MS * 9)] {
+    for (proposal, at) in [
+        ("proposal-2", now() + 3),
+        ("proposal-3", now() + HOUR_MS * 9),
+    ] {
         assert_eq!(
             consume(&store, "grant-1", proposal, at),
             Err(Some(GrantError::Revoked))
@@ -388,7 +422,9 @@ fn the_last_use_is_consumed_exactly_once_by_two_handles() {
     let directory = tempfile::tempdir().unwrap();
     let (first, path) = store_at(directory.path());
     let second = SqliteStore::new(&path).unwrap();
-    first.create_standing_grant("grant-1", &terms(1), now()).unwrap();
+    first
+        .create_standing_grant("grant-1", &terms(1), now())
+        .unwrap();
 
     let barrier = Arc::new(Barrier::new(2));
     let handles: Vec<_> = [(first, "proposal-a"), (second, "proposal-b")]
@@ -401,10 +437,20 @@ fn the_last_use_is_consumed_exactly_once_by_two_handles() {
             })
         })
         .collect();
-    let results: Vec<_> = handles.into_iter().map(|handle| handle.join().unwrap()).collect();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
 
-    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1, "{results:?}");
-    assert!(results.contains(&Err(Some(GrantError::UsesExhausted))), "{results:?}");
+    assert_eq!(
+        results.iter().filter(|result| result.is_ok()).count(),
+        1,
+        "{results:?}"
+    );
+    assert!(
+        results.contains(&Err(Some(GrantError::UsesExhausted))),
+        "{results:?}"
+    );
     assert_eq!(
         scalars(&path, "SELECT CAST(uses_used AS TEXT) FROM standing_grants"),
         vec!["1"]
@@ -422,7 +468,9 @@ fn the_last_use_is_consumed_exactly_once_by_two_handles() {
 fn an_expired_grant_cannot_be_used() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    let grant = store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    let grant = store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
     assert_eq!(grant.expires_at_ms, now() + HOUR_MS);
 
     // The last millisecond still works; the expiry instant does not; time never rewinds a grant.
@@ -432,7 +480,12 @@ fn an_expired_grant_cannot_be_used() {
         Err(Some(GrantError::Expired))
     );
     assert_eq!(
-        consume(&store, "grant-1", "proposal-3", grant.expires_at_ms + HOUR_MS),
+        consume(
+            &store,
+            "grant-1",
+            "proposal-3",
+            grant.expires_at_ms + HOUR_MS
+        ),
         Err(Some(GrantError::Expired))
     );
     assert_eq!(
@@ -454,7 +507,9 @@ fn an_expired_grant_cannot_be_used() {
 fn a_grant_event_cannot_be_updated_or_deleted() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
     consume(&store, "grant-1", "proposal-1", now() + 1).unwrap();
 
     for statement in [
@@ -486,14 +541,27 @@ fn create_is_idempotent_and_refuses_the_same_id_with_other_terms() {
          VALUES ('old-proposal', 'conversation:global', NULL, 'pending', 'agent', ?)",
         &[DIGEST],
     );
-    let first = store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
-    assert_eq!(first.proposal_floor, 1, "the floor is the newest proposal event");
-    assert_eq!(first.kinds, vec![ActionKind::TaskPropose, ActionKind::TaskRetry]);
+    let first = store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
+    assert_eq!(
+        first.proposal_floor, 1,
+        "the floor is the newest proposal event"
+    );
+    assert_eq!(
+        first.kinds,
+        vec![ActionKind::TaskPropose, ActionKind::TaskRetry]
+    );
 
-    let again = store.create_standing_grant("grant-1", &terms(5), now() + 50).unwrap();
+    let again = store
+        .create_standing_grant("grant-1", &terms(5), now() + 50)
+        .unwrap();
     assert_eq!(again, first);
     assert_eq!(
-        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grant_events"),
+        count(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grant_events"
+        ),
         "1"
     );
     let error = store
@@ -501,7 +569,8 @@ fn create_is_idempotent_and_refuses_the_same_id_with_other_terms() {
         .unwrap_err();
     assert_eq!(refusal(&error), Some(GrantError::IdInUse));
 
-    let cases: [(fn(&mut GrantTerms), GrantRefusal); 4] = [
+    type Break = fn(&mut GrantTerms);
+    let cases: [(Break, GrantRefusal); 4] = [
         (|t| t.expires_in_secs = 59, GrantRefusal::ExpiryOutOfRange),
         (|t| t.max_uses = 201, GrantRefusal::UsesOutOfRange),
         (|t| t.token_budget = 0, GrantRefusal::BudgetOutOfRange),
@@ -525,7 +594,9 @@ fn create_is_idempotent_and_refuses_the_same_id_with_other_terms() {
 fn a_use_refuses_a_spent_budget_a_repeated_proposal_and_an_unknown_grant() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
 
     assert_eq!(
         consume(&store, "missing", "proposal-1", now()),
@@ -548,12 +619,21 @@ fn a_use_refuses_a_spent_budget_a_repeated_proposal_and_an_unknown_grant() {
             "grant-1",
             "proposal-1",
             DIGEST,
-            GrantOutcome::Executed { task_id: Some("task-1") },
+            GrantOutcome::Executed {
+                task_id: Some("task-1"),
+            },
             now() + 3,
         )
         .unwrap();
     add_task_with_session(&path, "task-1");
-    add_receipt(&path, "task-1", "provider_reported", "r1", now() + 4, [Some(400), Some(500), Some(100)]);
+    add_receipt(
+        &path,
+        "task-1",
+        "provider_reported",
+        "r1",
+        now() + 4,
+        [Some(400), Some(500), Some(100)],
+    );
     assert_eq!(store.grant_tokens_spent("grant-1").unwrap(), 1000);
     assert_eq!(
         consume(&store, "grant-1", "proposal-2", now() + 5),
@@ -569,7 +649,9 @@ fn a_use_refuses_a_spent_budget_a_repeated_proposal_and_an_unknown_grant() {
 fn the_token_total_counts_reported_figures_of_started_tasks_since_creation() {
     let directory = tempfile::tempdir().unwrap();
     let (store, path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
     for (proposal, task) in [("proposal-1", "task-1"), ("proposal-2", "task-2")] {
         consume(&store, "grant-1", proposal, now() + 1).unwrap();
         store
@@ -577,7 +659,9 @@ fn the_token_total_counts_reported_figures_of_started_tasks_since_creation() {
                 "grant-1",
                 proposal,
                 DIGEST,
-                GrantOutcome::Executed { task_id: Some(task) },
+                GrantOutcome::Executed {
+                    task_id: Some(task),
+                },
                 now() + 2,
             )
             .unwrap();
@@ -586,12 +670,47 @@ fn the_token_total_counts_reported_figures_of_started_tasks_since_creation() {
     add_task_with_session(&path, "task-other");
 
     // Counted: reported figures of the two started tasks, NULL as zero.
-    add_receipt(&path, "task-1", "provider_reported", "r1", now() + 3, [Some(10), None, None]);
-    add_receipt(&path, "task-2", "provider_reported", "r2", now() + 3, [None, Some(20), Some(5)]);
+    add_receipt(
+        &path,
+        "task-1",
+        "provider_reported",
+        "r1",
+        now() + 3,
+        [Some(10), None, None],
+    );
+    add_receipt(
+        &path,
+        "task-2",
+        "provider_reported",
+        "r2",
+        now() + 3,
+        [None, Some(20), Some(5)],
+    );
     // Not counted: before the grant, the estimated twin, a task the grant did not start.
-    add_receipt(&path, "task-1", "provider_reported", "r0", now() - 1, [Some(9999), None, None]);
-    add_receipt(&path, "task-1", "estimated", "e1", now() + 3, [Some(9999), None, None]);
-    add_receipt(&path, "task-other", "provider_reported", "ro", now() + 3, [Some(9999), None, None]);
+    add_receipt(
+        &path,
+        "task-1",
+        "provider_reported",
+        "r0",
+        now() - 1,
+        [Some(9999), None, None],
+    );
+    add_receipt(
+        &path,
+        "task-1",
+        "estimated",
+        "e1",
+        now() + 3,
+        [Some(9999), None, None],
+    );
+    add_receipt(
+        &path,
+        "task-other",
+        "provider_reported",
+        "ro",
+        now() + 3,
+        [Some(9999), None, None],
+    );
 
     assert_eq!(store.grant_tokens_spent("grant-1").unwrap(), 35);
     assert_eq!(store.grant_tokens_spent("missing").unwrap(), 0);
@@ -601,7 +720,9 @@ fn the_token_total_counts_reported_figures_of_started_tasks_since_creation() {
 fn an_outcome_is_recorded_once_and_only_for_a_recorded_use() {
     let directory = tempfile::tempdir().unwrap();
     let (store, _path) = store_at(directory.path());
-    store.create_standing_grant("grant-1", &terms(5), now()).unwrap();
+    store
+        .create_standing_grant("grant-1", &terms(5), now())
+        .unwrap();
 
     let early = store
         .record_grant_outcome(
@@ -620,7 +741,9 @@ fn an_outcome_is_recorded_once_and_only_for_a_recorded_use() {
             "grant-1",
             "proposal-1",
             OTHER_DIGEST,
-            GrantOutcome::Stopped { code: "grant_revoked" },
+            GrantOutcome::Stopped {
+                code: "grant_revoked",
+            },
             now() + 2,
         )
         .unwrap_err();
@@ -632,7 +755,9 @@ fn an_outcome_is_recorded_once_and_only_for_a_recorded_use() {
                 "grant-1",
                 "proposal-1",
                 DIGEST,
-                GrantOutcome::Stopped { code: "grant_revoked" },
+                GrantOutcome::Stopped {
+                    code: "grant_revoked",
+                },
                 now() + 3,
             )
             .unwrap();
@@ -640,7 +765,11 @@ fn an_outcome_is_recorded_once_and_only_for_a_recorded_use() {
     let events = store.grant_events("grant-1", 0, 10).unwrap();
     assert_eq!(
         events.iter().map(|event| event.event).collect::<Vec<_>>(),
-        vec![GrantEventKind::Created, GrantEventKind::Used, GrantEventKind::Stopped]
+        vec![
+            GrantEventKind::Created,
+            GrantEventKind::Used,
+            GrantEventKind::Stopped
+        ]
     );
     assert_eq!(events[2].code.as_deref(), Some("grant_revoked"));
 }
@@ -649,10 +778,18 @@ fn an_outcome_is_recorded_once_and_only_for_a_recorded_use() {
 fn the_grant_list_shows_open_grants_and_all_grants_newest_first() {
     let directory = tempfile::tempdir().unwrap();
     let (store, _path) = store_at(directory.path());
-    store.create_standing_grant("grant-old", &terms(5), now()).unwrap();
-    store.create_standing_grant("grant-new", &terms(1), now() + 10).unwrap();
-    store.create_standing_grant("grant-revoked", &terms(5), now() + 20).unwrap();
-    store.revoke_standing_grant("grant-revoked", now() + 21).unwrap();
+    store
+        .create_standing_grant("grant-old", &terms(5), now())
+        .unwrap();
+    store
+        .create_standing_grant("grant-new", &terms(1), now() + 10)
+        .unwrap();
+    store
+        .create_standing_grant("grant-revoked", &terms(5), now() + 20)
+        .unwrap();
+    store
+        .revoke_standing_grant("grant-revoked", now() + 21)
+        .unwrap();
     consume(&store, "grant-new", "proposal-1", now() + 22).unwrap();
 
     let ids = |grants: Vec<orchestrator_core::standing_grant::StandingGrant>| {

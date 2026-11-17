@@ -21,15 +21,17 @@ use std::io;
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::standing_grant::{GrantRefusal, GrantScope, GrantTerms, StandingGrant};
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Row, SqliteConnection};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
+use crate::sqlite_actions::{
+    approve_pending, fail_approved, load_proposal, ActionProposal, ProposalState, ResolveError,
+};
 use crate::sqlite_conversations::corrupt;
 use crate::{SqliteStore, StoreError};
 
 const COLUMNS: &str = "id, scope_kind, scope_id, kinds, created_at_ms, expires_at_ms, max_uses, \
                        uses_used, token_budget, proposal_floor, revoked_at_ms";
-const EVENT_COLUMNS: &str =
-    "sequence, grant_id, event, proposal_id, digest, task_id, code, at_ms";
+const EVENT_COLUMNS: &str = "sequence, grant_id, event, proposal_id, digest, task_id, code, at_ms";
 
 /// What one audit row records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,14 +113,20 @@ pub enum GrantError {
 impl fmt::Display for GrantError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Invalid(reason) => write!(formatter, "the grant terms are refused: {}", reason.code()),
-            Self::BadInput => formatter.write_str("the grant id, proposal id or digest is malformed"),
+            Self::Invalid(reason) => {
+                write!(formatter, "the grant terms are refused: {}", reason.code())
+            }
+            Self::BadInput => {
+                formatter.write_str("the grant id, proposal id or digest is malformed")
+            }
             Self::NotFound => formatter.write_str("no standing grant has this id"),
             Self::IdInUse => formatter.write_str("a standing grant with this id has other terms"),
             Self::Revoked => formatter.write_str("the standing grant is revoked"),
             Self::Expired => formatter.write_str("the standing grant has expired"),
             Self::UsesExhausted => formatter.write_str("the standing grant has no uses left"),
-            Self::BudgetExhausted => formatter.write_str("the standing grant's token budget is spent"),
+            Self::BudgetExhausted => {
+                formatter.write_str("the standing grant's token budget is spent")
+            }
             Self::AlreadyUsed => formatter.write_str("this proposal already consumed a grant use"),
             Self::NotUsed => formatter.write_str("this proposal has no recorded grant use"),
         }
@@ -130,6 +138,38 @@ impl std::error::Error for GrantError {}
 impl From<GrantError> for StoreError {
     fn from(error: GrantError) -> Self {
         StoreError::Io(io::Error::new(io::ErrorKind::InvalidInput, error))
+    }
+}
+
+/// Why [`SqliteStore::approve_action_proposal_by_grant`] refused. A refused call writes nothing.
+#[derive(Debug)]
+pub enum GrantClaimError {
+    /// The grant refused the use: revoked, expired, out of uses or out of token budget.
+    Grant(GrantError),
+    /// The proposal is gone, no longer pending, or waits on a parent.
+    Proposal(ResolveError),
+    /// The proposal's digest is not the one the matcher read.
+    DigestChanged,
+}
+
+impl From<StoreError> for GrantClaimError {
+    fn from(error: StoreError) -> Self {
+        match GrantError::of(&error) {
+            Some(refusal) => Self::Grant(refusal),
+            None => Self::Proposal(ResolveError::Store(error)),
+        }
+    }
+}
+
+impl From<sqlx::Error> for GrantClaimError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::from(StoreError::Database(error))
+    }
+}
+
+impl From<ResolveError> for GrantClaimError {
+    fn from(error: ResolveError) -> Self {
+        Self::Proposal(error)
     }
 }
 
@@ -202,8 +242,16 @@ impl SqliteStore {
             .bind(floor)
             .execute(&mut *transaction)
             .await?;
-            insert_event(&mut transaction, &id, GrantEventKind::Created, None, None, None, created)
-                .await?;
+            insert_event(
+                &mut transaction,
+                &id,
+                GrantEventKind::Created,
+                None,
+                None,
+                None,
+                created,
+            )
+            .await?;
             let saved = read_grant(&mut transaction, &id)
                 .await?
                 .ok_or_else(|| corrupt("the standing grant just written is missing".to_owned()))?;
@@ -263,30 +311,87 @@ impl SqliteStore {
         let id = id.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            let stored = read_grant(&mut transaction, &id)
-                .await?
-                .ok_or_else(|| StoreError::from(GrantError::NotFound))?;
-            if stored.revoked_at_ms.is_some() {
-                return Ok(stored);
-            }
-            // A caller clock behind the grant's creation still revokes: the column check
-            // needs the time to be at least `created_at_ms`.
-            let revoked_at = at.max(to_i64(stored.created_at_ms)?);
-            sqlx::query(
-                "UPDATE standing_grants SET revoked_at_ms = ? WHERE id = ? AND revoked_at_ms IS NULL",
-            )
-            .bind(revoked_at)
-            .bind(&id)
-            .execute(&mut *transaction)
-            .await?;
-            insert_event(&mut transaction, &id, GrantEventKind::Revoked, None, None, None, revoked_at)
-                .await?;
-            let saved = read_grant(&mut transaction, &id)
-                .await?
-                .ok_or_else(|| corrupt("the standing grant just revoked is missing".to_owned()))?;
+            let saved = revoke_in(&mut transaction, &id, at).await?;
             transaction.commit().await?;
             Ok(saved)
         })
+    }
+
+    /// [`SqliteStore::revoke_standing_grant`], and in the same transaction every proposal this
+    /// grant approved that has not started is moved to `failed` with `grant_revoked` and a
+    /// `stopped` event, so nothing under the grant starts after the revoke commits. Returns the
+    /// grant and how many proposals were stopped. A grant already revoked still stops any
+    /// proposal it left approved.
+    pub fn revoke_standing_grant_and_stop(
+        &self,
+        id: &str,
+        now_ms: u64,
+    ) -> Result<(StandingGrant, usize), StoreError> {
+        let at = to_i64(now_ms)?;
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let saved = revoke_in(&mut transaction, &id, at).await?;
+            let actor = format!("grant:{id}");
+            let waiting: Vec<String> = sqlx::query_scalar(
+                "SELECT e.proposal_id FROM action_proposal_events e \
+                 WHERE e.to_state = 'approved' AND e.actor = ? \
+                   AND (SELECT p.state FROM action_proposals p WHERE p.id = e.proposal_id) = 'approved' \
+                 ORDER BY e.sequence",
+            )
+            .bind(&actor)
+            .fetch_all(&mut *transaction)
+            .await?;
+            let mut stopped = 0;
+            for proposal_id in waiting {
+                let Some(proposal) = load_proposal(&mut transaction, &proposal_id).await? else {
+                    continue;
+                };
+                fail_approved(&mut transaction, &proposal, REVOKED_CODE, &actor)
+                    .await
+                    .map_err(resolve_to_store)?;
+                // A proposal with no recorded use has no audit row to close, and still stops.
+                if let Err(error) = close_use(
+                    &mut transaction,
+                    &id,
+                    &proposal.id,
+                    &proposal.digest,
+                    (GrantEventKind::Stopped, None, Some(REVOKED_CODE)),
+                    at.max(to_i64(saved.created_at_ms)?),
+                )
+                .await
+                {
+                    if GrantError::of(&error) != Some(GrantError::NotUsed) {
+                        return Err(error);
+                    }
+                }
+                stopped += 1;
+            }
+            transaction.commit().await?;
+            Ok((saved, stopped))
+        })
+    }
+
+    /// The claim that makes a grant approval: in ONE `BEGIN IMMEDIATE` transaction, checks the
+    /// proposal is still pending with `digest`, consumes one use of the grant (the same checks
+    /// as [`SqliteStore::consume_grant_use`]), moves the proposal to `approved` with event
+    /// actor `grant:<grant_id>`, and writes the `used` event. All of it commits or none of it
+    /// does, so a use is never spent without an approval and an approval never lacks a use.
+    pub fn approve_action_proposal_by_grant(
+        &self,
+        id: &str,
+        digest: &str,
+        grant_id: &str,
+        now_ms: u64,
+    ) -> Result<ActionProposal, GrantClaimError> {
+        if to_i64(now_ms).is_err() {
+            return Err(GrantClaimError::Grant(GrantError::BadInput));
+        }
+        let (id, digest, grant_id) = (id.to_owned(), digest.to_owned(), grant_id.to_owned());
+        self.call(move |pool| async move {
+            Ok::<_, StoreError>(claim_in(pool, id, digest, grant_id, now_ms).await)
+        })
+        .map_err(|error| GrantClaimError::Proposal(ResolveError::Store(error)))?
     }
 
     /// The atomic claim. In one `BEGIN IMMEDIATE` transaction: refuses a grant that is revoked
@@ -305,60 +410,14 @@ impl SqliteStore {
         if !valid_proposal_and_digest(proposal_id, digest) {
             return Err(StoreError::from(GrantError::BadInput));
         }
-        let now = to_i64(now_ms)?;
+        to_i64(now_ms)?;
         let grant_id = grant_id.to_owned();
         let proposal_id = proposal_id.to_owned();
         let digest = digest.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            let grant = read_grant(&mut transaction, &grant_id)
-                .await?
-                .ok_or_else(|| StoreError::from(GrantError::NotFound))?;
-            if grant.revoked_at_ms.is_some() {
-                return Err(StoreError::from(GrantError::Revoked));
-            }
-            if now_ms >= grant.expires_at_ms {
-                return Err(StoreError::from(GrantError::Expired));
-            }
-            if grant.uses_used >= grant.max_uses {
-                return Err(StoreError::from(GrantError::UsesExhausted));
-            }
-            let already: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM standing_grant_events WHERE event = 'used' AND proposal_id = ?",
-            )
-            .bind(&proposal_id)
-            .fetch_one(&mut *transaction)
-            .await?;
-            if already > 0 {
-                return Err(StoreError::from(GrantError::AlreadyUsed));
-            }
-            if tokens_spent(&mut transaction, &grant).await? >= grant.token_budget {
-                return Err(StoreError::from(GrantError::BudgetExhausted));
-            }
-            let updated = sqlx::query(
-                "UPDATE standing_grants SET uses_used = uses_used + 1 \
-                 WHERE id = ? AND revoked_at_ms IS NULL AND uses_used < max_uses AND expires_at_ms > ?",
-            )
-            .bind(&grant_id)
-            .bind(now)
-            .execute(&mut *transaction)
-            .await?;
-            if updated.rows_affected() != 1 {
-                return Err(corrupt("a checked standing grant refused its use".to_owned()));
-            }
-            insert_event(
-                &mut transaction,
-                &grant_id,
-                GrantEventKind::Used,
-                Some((proposal_id.as_str(), digest.as_str())),
-                None,
-                None,
-                now,
-            )
-            .await?;
-            let saved = read_grant(&mut transaction, &grant_id)
-                .await?
-                .ok_or_else(|| corrupt("the standing grant just used is missing".to_owned()))?;
+            let saved =
+                consume_in(&mut transaction, &grant_id, &proposal_id, &digest, now_ms).await?;
             transaction.commit().await?;
             Ok(saved)
         })
@@ -397,36 +456,12 @@ impl SqliteStore {
         let digest = digest.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            let used: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM standing_grant_events \
-                 WHERE grant_id = ? AND event = 'used' AND proposal_id = ? AND digest = ?",
-            )
-            .bind(&grant_id)
-            .bind(&proposal_id)
-            .bind(&digest)
-            .fetch_one(&mut *transaction)
-            .await?;
-            if used == 0 {
-                return Err(StoreError::from(GrantError::NotUsed));
-            }
-            let closed: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM standing_grant_events \
-                 WHERE grant_id = ? AND event IN ('executed', 'stopped') AND proposal_id = ?",
-            )
-            .bind(&grant_id)
-            .bind(&proposal_id)
-            .fetch_one(&mut *transaction)
-            .await?;
-            if closed > 0 {
-                return Ok(());
-            }
-            insert_event(
+            close_use(
                 &mut transaction,
                 &grant_id,
-                event,
-                Some((proposal_id.as_str(), digest.as_str())),
-                task_id.as_deref(),
-                code.as_deref(),
+                &proposal_id,
+                &digest,
+                (event, task_id.as_deref(), code.as_deref()),
                 at,
             )
             .await?;
@@ -475,6 +510,195 @@ impl SqliteStore {
     }
 }
 
+/// Code of the `stopped` event and the `failed` proposal that a revoke leaves behind.
+const REVOKED_CODE: &str = "grant_revoked";
+
+fn resolve_to_store(error: ResolveError) -> StoreError {
+    match error {
+        ResolveError::Store(error) => error,
+        other => corrupt(format!(
+            "a proposal of a grant could not be stopped: {other:?}"
+        )),
+    }
+}
+
+/// Revokes inside the caller's transaction. See [`SqliteStore::revoke_standing_grant`].
+async fn revoke_in(
+    connection: &mut SqliteConnection,
+    id: &str,
+    at: i64,
+) -> Result<StandingGrant, StoreError> {
+    let stored = read_grant(connection, id)
+        .await?
+        .ok_or_else(|| StoreError::from(GrantError::NotFound))?;
+    if stored.revoked_at_ms.is_some() {
+        return Ok(stored);
+    }
+    // A caller clock behind the grant's creation still revokes: the column check
+    // needs the time to be at least `created_at_ms`.
+    let revoked_at = at.max(to_i64(stored.created_at_ms)?);
+    sqlx::query(
+        "UPDATE standing_grants SET revoked_at_ms = ? WHERE id = ? AND revoked_at_ms IS NULL",
+    )
+    .bind(revoked_at)
+    .bind(id)
+    .execute(&mut *connection)
+    .await?;
+    insert_event(
+        connection,
+        id,
+        GrantEventKind::Revoked,
+        None,
+        None,
+        None,
+        revoked_at,
+    )
+    .await?;
+    read_grant(connection, id)
+        .await?
+        .ok_or_else(|| corrupt("the standing grant just revoked is missing".to_owned()))
+}
+
+/// Consumes one use inside the caller's transaction. See [`SqliteStore::consume_grant_use`].
+async fn consume_in(
+    connection: &mut SqliteConnection,
+    grant_id: &str,
+    proposal_id: &str,
+    digest: &str,
+    now_ms: u64,
+) -> Result<StandingGrant, StoreError> {
+    let now = to_i64(now_ms)?;
+    let grant = read_grant(connection, grant_id)
+        .await?
+        .ok_or_else(|| StoreError::from(GrantError::NotFound))?;
+    if grant.revoked_at_ms.is_some() {
+        return Err(StoreError::from(GrantError::Revoked));
+    }
+    if now_ms >= grant.expires_at_ms {
+        return Err(StoreError::from(GrantError::Expired));
+    }
+    if grant.uses_used >= grant.max_uses {
+        return Err(StoreError::from(GrantError::UsesExhausted));
+    }
+    let already: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM standing_grant_events WHERE event = 'used' AND proposal_id = ?",
+    )
+    .bind(proposal_id)
+    .fetch_one(&mut *connection)
+    .await?;
+    if already > 0 {
+        return Err(StoreError::from(GrantError::AlreadyUsed));
+    }
+    if tokens_spent(connection, &grant).await? >= grant.token_budget {
+        return Err(StoreError::from(GrantError::BudgetExhausted));
+    }
+    let updated = sqlx::query(
+        "UPDATE standing_grants SET uses_used = uses_used + 1 \
+         WHERE id = ? AND revoked_at_ms IS NULL AND uses_used < max_uses AND expires_at_ms > ?",
+    )
+    .bind(grant_id)
+    .bind(now)
+    .execute(&mut *connection)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(corrupt(
+            "a checked standing grant refused its use".to_owned(),
+        ));
+    }
+    insert_event(
+        connection,
+        grant_id,
+        GrantEventKind::Used,
+        Some((proposal_id, digest)),
+        None,
+        None,
+        now,
+    )
+    .await?;
+    read_grant(connection, grant_id)
+        .await?
+        .ok_or_else(|| corrupt("the standing grant just used is missing".to_owned()))
+}
+
+/// Writes the closing event of a use inside the caller's transaction, unless the use already
+/// has one. See [`SqliteStore::record_grant_outcome`].
+async fn close_use(
+    connection: &mut SqliteConnection,
+    grant_id: &str,
+    proposal_id: &str,
+    digest: &str,
+    (event, task_id, code): (GrantEventKind, Option<&str>, Option<&str>),
+    at: i64,
+) -> Result<(), StoreError> {
+    let used: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM standing_grant_events \
+         WHERE grant_id = ? AND event = 'used' AND proposal_id = ? AND digest = ?",
+    )
+    .bind(grant_id)
+    .bind(proposal_id)
+    .bind(digest)
+    .fetch_one(&mut *connection)
+    .await?;
+    if used == 0 {
+        return Err(StoreError::from(GrantError::NotUsed));
+    }
+    let closed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM standing_grant_events \
+         WHERE grant_id = ? AND event IN ('executed', 'stopped') AND proposal_id = ?",
+    )
+    .bind(grant_id)
+    .bind(proposal_id)
+    .fetch_one(&mut *connection)
+    .await?;
+    if closed > 0 {
+        return Ok(());
+    }
+    insert_event(
+        connection,
+        grant_id,
+        event,
+        Some((proposal_id, digest)),
+        task_id,
+        code,
+        at,
+    )
+    .await
+}
+
+/// The claim of [`SqliteStore::approve_action_proposal_by_grant`] in one transaction.
+async fn claim_in(
+    pool: SqlitePool,
+    id: String,
+    digest: String,
+    grant_id: String,
+    now_ms: u64,
+) -> Result<ActionProposal, GrantClaimError> {
+    let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let proposal = load_proposal(&mut transaction, &id)
+        .await?
+        .ok_or(GrantClaimError::Proposal(ResolveError::NotFound))?;
+    if proposal.state != ProposalState::Pending {
+        return Err(GrantClaimError::Proposal(ResolveError::NotPending(
+            proposal.state,
+        )));
+    }
+    if proposal.digest != digest {
+        return Err(GrantClaimError::DigestChanged);
+    }
+    consume_in(
+        &mut transaction,
+        &grant_id,
+        &proposal.id,
+        &proposal.digest,
+        now_ms,
+    )
+    .await?;
+    let approved =
+        approve_pending(&mut transaction, &proposal, &format!("grant:{grant_id}")).await?;
+    transaction.commit().await?;
+    Ok(approved)
+}
+
 fn to_i64(value: u64) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| GrantError::BadInput.into())
 }
@@ -487,7 +711,9 @@ fn to_u64(row: &SqliteRow, column: &str) -> Result<u64, StoreError> {
 fn valid_proposal_and_digest(proposal_id: &str, digest: &str) -> bool {
     (1..=160).contains(&proposal_id.chars().count())
         && digest.len() == 64
-        && digest.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        && digest
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Whether a stored grant is the grant `terms` would create (kind order does not matter).
@@ -587,7 +813,8 @@ fn grant_from_row(row: &SqliteRow) -> Result<StandingGrant, StoreError> {
         token_budget: to_u64(row, "token_budget")?,
         revoked_at_ms: revoked
             .map(|value| {
-                u64::try_from(value).map_err(|_| corrupt("grant revoke time is negative".to_owned()))
+                u64::try_from(value)
+                    .map_err(|_| corrupt("grant revoke time is negative".to_owned()))
             })
             .transpose()?,
         proposal_floor: row.try_get("proposal_floor")?,

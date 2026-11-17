@@ -212,7 +212,10 @@ mod tests {
             verification: VerificationPolicy::None,
         };
         for setting in [false, true] {
-            assert_eq!(task_envelope_for(None, setting, TaskKind::Investigate), expected);
+            assert_eq!(
+                task_envelope_for(None, setting, TaskKind::Investigate),
+                expected
+            );
             for mode in ProjectMode::ALL {
                 assert_eq!(
                     task_envelope_for(Some(&defaults(mode)), setting, TaskKind::Investigate),
@@ -253,13 +256,21 @@ mod tests {
         }
         // Checks are carried to the proposal for a mode that runs them, never for local-only.
         assert_eq!(
-            task_envelope_for(Some(&defaults(ProjectMode::LocalOnly)), true, TaskKind::Implement)
-                .verification,
+            task_envelope_for(
+                Some(&defaults(ProjectMode::LocalOnly)),
+                true,
+                TaskKind::Implement
+            )
+            .verification,
             VerificationPolicy::None
         );
         assert_ne!(
-            task_envelope_for(Some(&defaults(ProjectMode::DirectPr)), false, TaskKind::Implement)
-                .verification,
+            task_envelope_for(
+                Some(&defaults(ProjectMode::DirectPr)),
+                false,
+                TaskKind::Implement
+            )
+            .verification,
             VerificationPolicy::None
         );
     }

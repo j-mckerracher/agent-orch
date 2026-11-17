@@ -167,7 +167,9 @@ fn an_approver_session_reaches_the_handler_for_every_grant_method() {
         Some(&approver),
     );
     assert!(user.is_approver());
-    assert!(user.grants_create(json!({"idempotency_key": "key-1"})).is_ok());
+    assert!(user
+        .grants_create(json!({"idempotency_key": "key-1"}))
+        .is_ok());
     assert!(user
         .grants_revoke(json!({"grant_id": "grant-1", "idempotency_key": "key-2"}))
         .is_ok());

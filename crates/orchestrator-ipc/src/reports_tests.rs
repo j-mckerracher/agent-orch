@@ -123,7 +123,11 @@ fn a_token_only_session_lists_reports_but_cannot_read_or_relay_one() {
     let approver = Arc::new(ApproverSecret::generate().unwrap());
     let daemon = serve(dir.path(), &recorder, &approver);
 
-    let mut client = connect(dir.path(), &[Capability::Health, Capability::Coordinator], None);
+    let mut client = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Coordinator],
+        None,
+    );
     assert!(!client.is_approver());
     assert!(client.reports_list(json!({})).is_ok());
     assert!(matches!(

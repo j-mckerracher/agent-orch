@@ -158,10 +158,15 @@ fn an_approver_session_reaches_the_handler_for_every_hold_method() {
         Some(&approver),
     );
     assert!(user.is_approver());
-    assert!(user.holds_set("task", "task-1", "2026-12-01", "key-1").is_ok());
+    assert!(user
+        .holds_set("task", "task-1", "2026-12-01", "key-1")
+        .is_ok());
     assert!(user.holds_release("hold-1", "key-2").is_ok());
     assert!(user.holds_list().is_ok());
-    assert_eq!(recorder.calls(), ["holds.set", "holds.release", "holds.list"]);
+    assert_eq!(
+        recorder.calls(),
+        ["holds.set", "holds.release", "holds.list"]
+    );
     drop(user);
     stop(dir.path(), daemon);
 }

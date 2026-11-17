@@ -69,7 +69,8 @@ fn fake_env(layout: &Layout, extra: &[(&str, &str)]) -> Vec<(String, String)> {
         // the names listed here, so the fake agent's own settings are listed.
         (
             "AGENT_ORCH_ENV_PASSTHROUGH".to_owned(),
-            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY,FAKE_AGENT_INPUT_TOKENS".to_owned(),
+            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY,FAKE_AGENT_INPUT_TOKENS"
+                .to_owned(),
         ),
     ];
     for (name, value) in extra {
@@ -1812,7 +1813,10 @@ fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
     for (level, key) in [("restricted", "m-1"), ("auto", "m-2"), ("full", "m-3")] {
         std::fs::write(
             &reply_file,
-            format!("Level {level}.\n{}", block_titled(&format!("Level {level}"))),
+            format!(
+                "Level {level}.\n{}",
+                block_titled(&format!("Level {level}"))
+            ),
         )
         .unwrap();
         let sent = chat.send_params(json!({
@@ -1836,9 +1840,15 @@ fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
     assert_eq!(ids.len(), 2, "{page}");
     assert_eq!(page["proposals"].as_array().unwrap().len(), 2, "{page}");
     let approved = resolve(&mut chat, &ids[0], "approve", "approve-restricted-0");
-    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
+    assert_eq!(
+        approved["result"]["proposal"]["state"], "executed",
+        "{approved}"
+    );
     let approved = resolve(&mut chat, &ids[1], "approve", "approve-restricted-1");
-    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
+    assert_eq!(
+        approved["result"]["proposal"]["state"], "executed",
+        "{approved}"
+    );
     stop(&layout, daemon, chat);
 
     // Only the Restricted turn was told the block format.
@@ -2206,12 +2216,18 @@ fn a_token_only_session_cannot_resolve_an_action() {
 #[test]
 fn a_token_only_session_cannot_replay_an_approved_key() {
     let layout = Layout::new();
-    let reply_file = script(&layout, &format!("Held.\n{}", block_titled("Replayed work")));
+    let reply_file = script(
+        &layout,
+        &format!("Held.\n{}", block_titled("Replayed work")),
+    );
     let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
     let mut chat = Chat::open(&layout);
     let (_ids, params) = held_proposals(&mut chat);
     let approved = chat.call("actions.resolve", params.clone());
-    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
+    assert_eq!(
+        approved["result"]["proposal"]["state"], "executed",
+        "{approved}"
+    );
 
     // The cached answer belongs to the approver, not to whoever repeats the key.
     let mut bare = Chat::open_without_approver(&layout);
@@ -2263,7 +2279,10 @@ fn projects_set_defaults_is_refused_to_a_token_only_session() {
     seed::init_repo(&layout.repo);
     let daemon = start(&layout, &[]);
     let mut chat = Chat::negotiate(&layout, &Capability::ALL);
-    let registered = chat.call("projects.register", json!({"path": layout.repo.to_str().unwrap()}));
+    let registered = chat.call(
+        "projects.register",
+        json!({"path": layout.repo.to_str().unwrap()}),
+    );
     let project_id = registered["result"]["id"].as_str().unwrap().to_owned();
     let params = json!({
         "project_id": project_id,
@@ -2286,7 +2305,76 @@ fn projects_set_defaults_is_refused_to_a_token_only_session() {
     bare.relay.close();
 
     let accepted = chat.call("projects.set_defaults", params);
-    assert_eq!(accepted["result"]["defaults"]["mode"], "direct-pr", "{accepted}");
+    assert_eq!(
+        accepted["result"]["defaults"]["mode"], "direct-pr",
+        "{accepted}"
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn grants_create_and_revoke_are_refused_to_a_token_only_session_on_a_real_daemon() {
+    use sha2::{Digest, Sha256};
+
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::negotiate(&layout, &Capability::ALL);
+    let registered = chat.call(
+        "projects.register",
+        json!({"path": layout.repo.to_str().unwrap()}),
+    );
+    let project_id = registered["result"]["id"].as_str().unwrap().to_owned();
+    let hash = Sha256::digest(project_id.as_bytes());
+    let code = format!(
+        "p-{}",
+        hash[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let create = json!({
+        "scope": {"kind": "project", "id": code},
+        "kinds": ["task.propose"],
+        "token_budget": 1000,
+        "idempotency_key": "g-1",
+    });
+
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("grants.create", create.clone());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    // Reading is open, and shows nothing was written.
+    let listed = bare.call("grants.list", json!({}));
+    assert_eq!(listed["result"]["grants"], json!([]), "{listed}");
+
+    let accepted = chat.call("grants.create", create);
+    let grant_id = accepted["result"]["grant"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        accepted["result"]["grant"]["status"], "active",
+        "{accepted}"
+    );
+    let revoke = json!({"grant_id": grant_id, "idempotency_key": "g-2"});
+    let refused = bare.call("grants.revoke", revoke.clone());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    let listed = bare.call("grants.list", json!({}));
+    assert_eq!(
+        listed["result"]["grants"][0]["status"], "active",
+        "{listed}"
+    );
+    // Nothing the daemon answers names the repository path or the token.
+    assert!(
+        !listed.to_string().contains(layout.repo.to_str().unwrap()),
+        "{listed}"
+    );
+    bare.relay.close();
+
+    let revoked = chat.call("grants.revoke", revoke);
+    assert_eq!(revoked["result"]["grant"]["status"], "revoked", "{revoked}");
     stop(&layout, daemon, chat);
 }
 
@@ -2326,11 +2414,16 @@ fn a_token_only_session_cannot_resolve_an_approval() {
     let pending = chat.call("approvals.list", Value::Null);
     let waiting = pending["result"].as_array().unwrap();
     assert!(
-        waiting.iter().any(|approval| approval["id"] == approval_id.as_str()),
+        waiting
+            .iter()
+            .any(|approval| approval["id"] == approval_id.as_str()),
         "{pending}"
     );
     let approved = chat.call("approvals.resolve", decision);
-    assert_eq!(approved["result"]["state"]["state"], "approved", "{approved}");
+    assert_eq!(
+        approved["result"]["state"]["state"], "approved",
+        "{approved}"
+    );
     stop(&layout, daemon, chat);
 }
 
@@ -2718,7 +2811,10 @@ fn a_restart_between_approve_and_execute_creates_the_task_once() {
     let mut chat = Chat::open(&layout);
     let tasks = chat.call("tasks.list", Value::Null);
     assert_eq!(tasks["result"].as_array().unwrap().len(), 1, "{tasks}");
-    let task_id = tasks["result"][0]["contract"]["id"].as_str().unwrap().to_owned();
+    let task_id = tasks["result"][0]["contract"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     wait_for_task_to_settle(&layout, &task_id);
     stop(&layout, daemon, chat);
 
@@ -2972,7 +3068,11 @@ fn date_in_days(days: i64) -> String {
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_index = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     format!("{year:04}-{month:02}-{day:02}")
 }
@@ -3079,7 +3179,15 @@ fn approving_a_hold_card_and_a_remove_card_holds_and_archives_once() {
     let ids = proposals_of(&page, &turn_id);
     assert_eq!(ids.len(), 3, "{page}");
     // `Chat` negotiates only the conversation capabilities, so projects are read by a client of their own.
-    assert_eq!(connect(&layout.data).projects_list().unwrap().as_array().unwrap().len(), 2);
+    assert_eq!(
+        connect(&layout.data)
+            .projects_list()
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 
     let held = resolve(&mut chat, &ids[1], "approve", "r-1");
     assert_eq!(held["result"]["proposal"]["state"], "executed", "{held}");
@@ -3091,8 +3199,15 @@ fn approving_a_hold_card_and_a_remove_card_holds_and_archives_once() {
         "{held}"
     );
     let removed = resolve(&mut chat, &ids[2], "approve", "r-2");
-    assert_eq!(removed["result"]["proposal"]["state"], "executed", "{removed}");
-    assert_eq!(removed["result"]["proposal"]["result_ref"], code.as_str(), "{removed}");
+    assert_eq!(
+        removed["result"]["proposal"]["state"], "executed",
+        "{removed}"
+    );
+    assert_eq!(
+        removed["result"]["proposal"]["result_ref"],
+        code.as_str(),
+        "{removed}"
+    );
 
     // The same key replays; a second key finds nothing pending.
     let replay = resolve(&mut chat, &ids[2], "approve", "r-2");

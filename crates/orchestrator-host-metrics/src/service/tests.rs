@@ -378,11 +378,10 @@ fn the_observer_does_not_block_snapshot() {
 fn an_observer_stuck_past_the_stale_threshold_makes_every_reading_stale() {
     let (entered_sender, entered) = mpsc::channel();
     let (release_sender, release) = mpsc::channel::<()>();
-    let metrics =
-        HostMetrics::start_observed(fixed(full_sample()), DEFAULT_INTERVAL, move |_| {
-            let _ = entered_sender.send(());
-            let _ = release.recv();
-        });
+    let metrics = HostMetrics::start_observed(fixed(full_sample()), DEFAULT_INTERVAL, move |_| {
+        let _ = entered_sender.send(());
+        let _ = release.recv();
+    });
     entered.recv_timeout(WAIT).unwrap();
 
     // The sampler thread is stuck in the observer, so no new sample replaces the cache.

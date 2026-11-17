@@ -261,9 +261,11 @@ fn connect_as_approver(data: &Path) -> Result<Client, IpcError> {
         .last()
         .cloned()
         .expect("a daemon was started with an approver secret");
-    let client =
-        Client::connect_with_approver(data, &Capability::ALL, CALL_TIMEOUT, Some(secret))?;
-    assert!(client.is_approver(), "the daemon did not accept the approver secret");
+    let client = Client::connect_with_approver(data, &Capability::ALL, CALL_TIMEOUT, Some(secret))?;
+    assert!(
+        client.is_approver(),
+        "the daemon did not accept the approver secret"
+    );
     Ok(client)
 }
 
@@ -328,7 +330,11 @@ impl Daemon {
             .env("AGENT_ORCH_PI_PROGRAM", env.work.join("no-such-agent"))
             .env(AGENT_ROLE, &env.pid_file)
             .env("AGENT_ORCH_ENV_PASSTHROUGH", AGENT_ROLE)
-            .stdin(if as_host { Stdio::piped() } else { Stdio::null() })
+            .stdin(if as_host {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(log.try_clone().unwrap())
             .stderr(log)
             .spawn()

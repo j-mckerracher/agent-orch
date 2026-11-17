@@ -53,7 +53,7 @@ fn task_with_sessions(api: &DaemonApi, sessions: &[(&str, &str)]) {
                 task_id: "task-1".into(),
                 attempt_number: 1,
                 state: AttemptState::Pending,
-                    failure_reason: None,
+                failure_reason: None,
             },
         )
         .unwrap();

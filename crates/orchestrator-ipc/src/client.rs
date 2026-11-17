@@ -320,7 +320,11 @@ impl Client {
 
     /// Lists the pending proposals of every conversation; see `actions.pending`.
     pub fn actions_pending(&mut self) -> Result<Value, IpcError> {
-        self.call_feature(Capability::OrchestratorActions, "actions.pending", Value::Null)
+        self.call_feature(
+            Capability::OrchestratorActions,
+            "actions.pending",
+            Value::Null,
+        )
     }
 
     /// Approves or rejects one proposed action; see `actions.resolve`.
@@ -451,11 +455,7 @@ impl Client {
 
     /// `monitoring.set`: changes the wake-up mode only (`on`, `quiet` or `off`). The
     /// daemon refuses a session that did not prove the approver secret.
-    pub fn monitoring_set(
-        &mut self,
-        mode: &str,
-        idempotency_key: &str,
-    ) -> Result<Value, IpcError> {
+    pub fn monitoring_set(&mut self, mode: &str, idempotency_key: &str) -> Result<Value, IpcError> {
         self.call_feature(
             Capability::Monitoring,
             "monitoring.set",

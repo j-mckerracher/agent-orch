@@ -63,7 +63,12 @@ fn request_approval(api: &DaemonApi, approval_id: &str, task_id: &str) {
     )
     .unwrap();
     api.store
-        .request_approval(approval_id, &action, &Actor::Agent("agent-1".into()), &allowlist())
+        .request_approval(
+            approval_id,
+            &action,
+            &Actor::Agent("agent-1".into()),
+            &allowlist(),
+        )
         .unwrap();
 }
 
@@ -169,7 +174,11 @@ fn a_revise_of_a_finished_task_fails_conflict() {
     let ids = propose(
         &api,
         "t1",
-        &[revise_action(&cancelled, INTENT), revise_action(&failed, INTENT)].join(", "),
+        &[
+            revise_action(&cancelled, INTENT),
+            revise_action(&failed, INTENT),
+        ]
+        .join(", "),
     );
 
     for (index, id) in ids.iter().enumerate() {
@@ -261,7 +270,11 @@ fn a_revise_rerun_after_the_new_task_exists_stops_and_links_once() {
     assert_eq!(api.store.get(&old).unwrap().state, TaskState::Cancelled);
     assert_eq!(task_count(&api), 2);
     assert_eq!(
-        api.store.task_lineage(&new).unwrap().unwrap().parent_task_id,
+        api.store
+            .task_lineage(&new)
+            .unwrap()
+            .unwrap()
+            .parent_task_id,
         old
     );
 }
@@ -280,8 +293,12 @@ fn a_failed_stop_of_the_old_task_cancels_the_new_one_and_fails_the_revise() {
     let key = idempotency::stable_id("action", &ids[0]);
     {
         let _held = api.idempotency_gate.lock().unwrap();
-        api.submit_task_inner(&chat_submit(&key, "Old objective plus the instruction"), &key, None)
-            .unwrap();
+        api.submit_task_inner(
+            &chat_submit(&key, "Old objective plus the instruction"),
+            &key,
+            None,
+        )
+        .unwrap();
     }
     let new = proposed_task_id(&ids[0]);
     assert_eq!(api.store.get(&new).unwrap().state, TaskState::Queued);
@@ -301,7 +318,10 @@ fn a_failed_lineage_write_after_the_stop_leaves_the_revise_for_a_retry() {
     let failed = lineage_write_error(StoreError::Io(std::io::Error::other("disk")));
     assert!(matches!(failed, ActionError::Retry), "{failed:?}");
     let refused = lineage_write_error(LineageError::SelfParent.into());
-    assert!(matches!(refused, ActionError::Rpc(RpcError::Conflict)), "{refused:?}");
+    assert!(
+        matches!(refused, ActionError::Rpc(RpcError::Conflict)),
+        "{refused:?}"
+    );
 }
 
 /// The combined objective is checked when the block is stored, so the user is never asked to
@@ -323,8 +343,14 @@ fn a_revise_whose_combined_objective_is_too_long_is_denied_at_the_card() {
     );
     // The same task with an instruction that still fits is not refused.
     let short = submit_queued(&api, "s-2", OLD_OBJECTIVE);
-    let fits = ReviseTask { task_id: short, added_intent: INTENT.to_owned() };
-    assert_eq!(super::projects_defaults::revise_denial(&api.store, &fits), None);
+    let fits = ReviseTask {
+        task_id: short,
+        added_intent: INTENT.to_owned(),
+    };
+    assert_eq!(
+        super::projects_defaults::revise_denial(&api.store, &fits),
+        None
+    );
 }
 
 #[test]
@@ -353,8 +379,18 @@ fn approving_a_hold_hides_the_decision_until_its_date() {
     let end_of_day = (day_number(3) + 1) * MS_PER_DAY - 1;
     let stored = api.store.active_decision_holds().unwrap();
     assert_eq!(stored[0].until_ms, end_of_day);
-    assert_eq!(api.store.decision_holds_in_force(end_of_day - 1).unwrap().len(), 1);
-    assert!(api.store.decision_holds_in_force(end_of_day).unwrap().is_empty());
+    assert_eq!(
+        api.store
+            .decision_holds_in_force(end_of_day - 1)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(api
+        .store
+        .decision_holds_in_force(end_of_day)
+        .unwrap()
+        .is_empty());
 
     // A replay of the same key holds once.
     assert_eq!(resolve(&api, &ids[0], "approve", "k-1").unwrap(), result);
@@ -483,7 +519,10 @@ fn approving_project_remove_archives_and_keeps_every_task() {
     let result = resolve(&api, &ids[0], "approve", "k-1").unwrap();
     assert_executed(&result, &code);
     assert!(api.store.project_is_archived(ALPHA).unwrap());
-    assert!(!api.store.project_is_archived("/private/canary-root/beta").unwrap());
+    assert!(!api
+        .store
+        .project_is_archived("/private/canary-root/beta")
+        .unwrap());
 
     // Every task and the project row stay. The project is hidden, not deleted.
     assert_eq!(task_count(&api), 2);
@@ -572,7 +611,11 @@ fn project_remove_is_named_by_code_and_never_shows_a_path() {
     let ids = propose(&api, "t1", &remove_action(&project_code(ALPHA)));
     let missing = propose(&api, "t2", &remove_action("p-00000000"));
     let mut seen = String::new();
-    seen.push_str(&call(&api, "actions.pending", json!({})).unwrap().to_string());
+    seen.push_str(
+        &call(&api, "actions.pending", json!({}))
+            .unwrap()
+            .to_string(),
+    );
     let archived = resolve(&api, &ids[0], "approve", "k-1").unwrap();
     assert_executed(&archived, &project_code(ALPHA));
     let unknown = resolve(&api, &missing[0], "approve", "k-2").unwrap();
@@ -638,7 +681,11 @@ fn a_restart_between_approve_and_execute_completes_a_hold_and_a_remove_once() {
         let until = date_in(5);
         request_approval(&api, "approval-1", &task);
         // The task belongs to ALPHA and has a pending approval, so only the hold can run.
-        let beta = propose(&api, "t0", &remove_action(&project_code("/private/canary-root/beta")));
+        let beta = propose(
+            &api,
+            "t0",
+            &remove_action(&project_code("/private/canary-root/beta")),
+        );
         let held = propose(&api, "t1", &hold_action(&task, &until));
         for id in beta.iter().chain(&held) {
             api.store.approve_action_proposal(id, "user").unwrap();

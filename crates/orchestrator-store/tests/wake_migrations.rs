@@ -25,7 +25,9 @@ fn runtime() -> tokio::runtime::Runtime {
 
 fn scalars(path: &Path, sql: &'static str) -> Vec<String> {
     runtime().block_on(async {
-        let options = SqliteConnectOptions::new().filename(path).foreign_keys(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
             .unwrap();
@@ -149,13 +151,22 @@ fn migrations_0040_and_0041_apply_on_a_copy_of_the_0039_schema() {
         (600, 60, 120)
     );
     assert_eq!(settings.wake_limits, WakeLimits::default());
-    assert_eq!(scalars(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM orchestrator_settings"), vec!["1"]);
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM orchestrator_settings"
+        ),
+        vec!["1"]
+    );
     assert_eq!(scalars(&path, PROPOSAL_DUMP), proposals);
 
     // The cursor starts at the newest event, so history is never replayed.
     assert_eq!(store.wake_cursor().unwrap(), 3);
     assert_eq!(
-        scalars(&path, "SELECT CAST(MAX(sequence) AS TEXT) FROM durable_events"),
+        scalars(
+            &path,
+            "SELECT CAST(MAX(sequence) AS TEXT) FROM durable_events"
+        ),
         vec!["3"]
     );
 

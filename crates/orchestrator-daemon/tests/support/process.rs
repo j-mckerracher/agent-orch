@@ -295,7 +295,10 @@ pub fn connect_as_approver(layout: &Layout) -> Client {
             Some(layout.approver()),
         ) {
             Ok(client) => {
-                assert!(client.is_approver(), "the daemon did not accept the approver");
+                assert!(
+                    client.is_approver(),
+                    "the daemon did not accept the approver"
+                );
                 return client;
             }
             Err(error) => {

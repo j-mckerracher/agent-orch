@@ -30,15 +30,22 @@ fn runtime() -> tokio::runtime::Runtime {
 /// Runs one statement on a second connection, as another process would.
 fn try_sql(path: &Path, sql: &'static str) -> Result<u64, sqlx::Error> {
     runtime().block_on(async {
-        let options = SqliteConnectOptions::new().filename(path).foreign_keys(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options).await?;
-        Ok(sqlx::query(sql).execute(&mut connection).await?.rows_affected())
+        Ok(sqlx::query(sql)
+            .execute(&mut connection)
+            .await?
+            .rows_affected())
     })
 }
 
 fn scalars(path: &Path, sql: &'static str) -> Vec<String> {
     runtime().block_on(async {
-        let options = SqliteConnectOptions::new().filename(path).foreign_keys(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
             .unwrap();
@@ -165,7 +172,10 @@ fn migration_0044_applies_to_a_0043_database_and_keeps_every_row() {
         ),
         vec![r#"["turn-old",0]"#]
     );
-    assert_eq!(scalars(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_reports"), vec!["0"]);
+    assert_eq!(
+        scalars(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_reports"),
+        vec!["0"]
+    );
     assert_eq!(store.orchestrator_settings().unwrap().load.cpu, 70);
     assert_eq!(store.task_report("anything").unwrap(), None);
 }
@@ -265,7 +275,10 @@ fn a_report_can_be_marked_relayed_once() {
 
     assert!(matches!(
         store.mark_task_report_relayed("t1", "2026-01-02T00:00:00Z"),
-        Err(StoreError::RecordNotFound { entity: "task report", .. })
+        Err(StoreError::RecordNotFound {
+            entity: "task report",
+            ..
+        })
     ));
     store
         .capture_task_report("t1", "a1", "finding", false, "2026-01-01T00:00:00Z")
@@ -322,7 +335,13 @@ fn a_report_survives_a_conversation_clear() {
         .capture_task_report("t1", "a1", "finding", false, "2026-01-01T00:00:00Z")
         .unwrap();
     store
-        .begin_conversation_turn(&ConversationTarget::Global, "turn-1", "hello", "test-runtime", "1.0.0")
+        .begin_conversation_turn(
+            &ConversationTarget::Global,
+            "turn-1",
+            "hello",
+            "test-runtime",
+            "1.0.0",
+        )
         .unwrap();
     store
         .finish_conversation_turn("turn-1", &TurnOutcome::Completed)
@@ -357,10 +376,15 @@ fn reports_list_by_project_and_by_workstream_without_their_text() {
         .mark_task_report_relayed("t1", "2026-01-04T00:00:00Z")
         .unwrap();
 
-    let in_project = store.list_task_reports(ReportScope::Project("p1"), 10).unwrap();
+    let in_project = store
+        .list_task_reports(ReportScope::Project("p1"), 10)
+        .unwrap();
     let ids: Vec<_> = in_project.iter().map(|r| r.task_id.as_str()).collect();
     assert_eq!(ids, ["t2", "t1"]);
-    assert_eq!(in_project[1].relayed_at.as_deref(), Some("2026-01-04T00:00:00Z"));
+    assert_eq!(
+        in_project[1].relayed_at.as_deref(),
+        Some("2026-01-04T00:00:00Z")
+    );
     assert_eq!(in_project[0].relayed_at, None);
 
     let in_workstream = store

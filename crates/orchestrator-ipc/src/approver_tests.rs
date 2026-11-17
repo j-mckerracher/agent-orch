@@ -364,14 +364,20 @@ fn every_user_only_method_is_refused_to_a_token_only_session() {
     for &method in USER_ONLY_METHODS {
         for proof in [None, Some(&wrong)] {
             let mut client = connect_for(dir.path(), method, proof);
-            assert!(!client.is_approver(), "{method}: the session was an approver");
+            assert!(
+                !client.is_approver(),
+                "{method}: the session was an approver"
+            );
             assert!(
                 matches!(client.call(method, json!({})), Err(IpcError::Forbidden)),
                 "{method} was not refused with Forbidden"
             );
         }
     }
-    assert!(recorder.calls().is_empty(), "a refused call reached the handler");
+    assert!(
+        recorder.calls().is_empty(),
+        "a refused call reached the handler"
+    );
     stop(dir.path(), daemon);
 }
 
@@ -383,7 +389,10 @@ fn every_user_only_method_reaches_the_handler_for_an_approver_session() {
     let daemon = serve(dir.path(), &recorder, Some(&approver));
     for &method in USER_ONLY_METHODS {
         let mut client = connect_for(dir.path(), method, Some(&approver));
-        assert!(client.is_approver(), "{method}: the session was not an approver");
+        assert!(
+            client.is_approver(),
+            "{method}: the session was not an approver"
+        );
         let result = client.call(method, json!({})).unwrap();
         assert_eq!(result["method"], method);
     }
@@ -667,7 +676,10 @@ fn the_secret_never_appears_in_a_welcome_an_error_or_a_debug_dump() {
     }
     for text in &seen {
         assert!(!text.contains(&secret), "output carried the secret");
-        assert!(!text.contains(&supplied), "output carried the supplied value");
+        assert!(
+            !text.contains(&supplied),
+            "output carried the supplied value"
+        );
     }
     stop(dir.path(), daemon);
 }
@@ -713,7 +725,11 @@ fn a_token_only_session_with_projects_cannot_set_defaults_but_reads_them() {
     let daemon = serve(dir.path(), &recorder, Some(&approver));
 
     // Both methods share the `projects` capability; only the write is user-only.
-    let mut token_only = connect(dir.path(), &[Capability::Health, Capability::Projects], None);
+    let mut token_only = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Projects],
+        None,
+    );
     assert!(token_only
         .projects_get_defaults(json!({"project_id": "project-1"}))
         .is_ok());

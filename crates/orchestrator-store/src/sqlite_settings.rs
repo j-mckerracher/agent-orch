@@ -162,8 +162,7 @@ impl SqliteStore {
             }
 
             let supervision = patch.supervision;
-            if supervision.base_interval_secs.is_some() || supervision.min_interval_secs.is_some()
-            {
+            if supervision.base_interval_secs.is_some() || supervision.min_interval_secs.is_some() {
                 let base = supervision
                     .base_interval_secs
                     .unwrap_or(current.supervision.base_interval_secs);
@@ -186,7 +185,9 @@ impl SqliteStore {
             }
             if let Some(minutes) = supervision.attempt_wall_minutes {
                 if !(5..=1440).contains(&minutes) {
-                    return Err(invalid_input("the attempt wall time must be from 5 to 1440 minutes"));
+                    return Err(invalid_input(
+                        "the attempt wall time must be from 5 to 1440 minutes",
+                    ));
                 }
                 named.push(("attempt_wall_minutes", Bound::Integer(i64::from(minutes))));
             }

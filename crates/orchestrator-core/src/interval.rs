@@ -157,7 +157,9 @@ mod tests {
     #[test]
     fn work_halves_the_interval_down_to_the_minimum() {
         let policy = IntervalPolicy::new(10 * MINUTE, MINUTE).unwrap();
-        let intervals: Vec<_> = (1..=5).map(|units| policy.interval(units).unwrap()).collect();
+        let intervals: Vec<_> = (1..=5)
+            .map(|units| policy.interval(units).unwrap())
+            .collect();
         assert_eq!(
             intervals,
             vec![secs(600), secs(300), secs(150), secs(75), secs(60)]

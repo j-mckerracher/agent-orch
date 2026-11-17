@@ -14,15 +14,15 @@ use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, HoldSubject, LineageError,
-    LineageRelation, ProposalState, ResolveError, TaskRecord, WorkstreamStoreError,
+    ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, GrantOutcome, HoldSubject,
+    LineageError, LineageRelation, ProposalState, ResolveError, TaskRecord, WorkstreamStoreError,
 };
 
+use super::projects_defaults::envelope_for;
 use super::workstreams::{
     AddObjectiveParams, CreateParams, GateParams, LinkTaskParams, ReviseObjectiveParams,
     UpdateParams,
 };
-use super::projects_defaults::envelope_for;
 use super::*;
 
 /// Event actor of every 1c transition: the approver the audit trail records.
@@ -34,6 +34,10 @@ const PROPOSAL_BYTES: usize = 256 * 1024;
 const TARGET_TITLE_BYTES: usize = 80;
 /// Failure code for a proposal the daemon will not run as stored.
 const INVALID: &str = "invalid";
+/// Failure codes of a proposal a grant approved but that did not start: the grant was revoked,
+/// or had expired, by then.
+pub(super) const GRANT_REVOKED: &str = "grant_revoked";
+const GRANT_EXPIRED: &str = "grant_expired";
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -175,7 +179,8 @@ impl Execution {
             Self::Retry(request) => serde_json::to_value(request),
             Self::Link(request) => serde_json::to_value(request),
             Self::ReviseTask(exec) => {
-                let submit = serde_json::to_value(&exec.task.submit).map_err(|_| RpcError::Internal)?;
+                let submit =
+                    serde_json::to_value(&exec.task.submit).map_err(|_| RpcError::Internal)?;
                 Ok(json!({
                     "task_id": exec.old_task_id,
                     "added_intent": exec.added_intent,
@@ -473,7 +478,10 @@ pub(super) fn promotion_denial(
     let source = propose.promote_from.as_deref()?;
     let scout_project = promotable_scout(store, source).ok().flatten();
     let same_project = scout_project
-        .zip(super::projects_defaults::project_id_for_code(store, &propose.project))
+        .zip(super::projects_defaults::project_id_for_code(
+            store,
+            &propose.project,
+        ))
         .is_some_and(|(scout, own)| scout == own);
     (!same_project || propose.task_kind != TaskKind::Implement)
         .then_some(orchestrator_core::task_envelope::Denial::Contract)
@@ -579,14 +587,16 @@ fn link_effect(api: &DaemonApi, request: &LinkTaskParams) -> Result<Option<Strin
 impl DaemonApi {
     /// The refusal a pending promotion meets on approve, against the scout as it is now.
     /// `None` for any other proposal. Local reads only.
-    fn recheck_promotion(
+    pub(super) fn recheck_promotion(
         &self,
         proposal: &ActionProposal,
     ) -> Result<Option<orchestrator_core::task_envelope::Denial>, RpcError> {
-        Ok(match serde_json::from_str::<Action>(&proposal.params_json) {
-            Ok(Action::TaskPropose(propose)) => promotion_denial(&self.store, &propose),
-            _ => None,
-        })
+        Ok(
+            match serde_json::from_str::<Action>(&proposal.params_json) {
+                Ok(Action::TaskPropose(propose)) => promotion_denial(&self.store, &propose),
+                _ => None,
+            },
+        )
     }
 
     /// `actions.resolve`. Any session that negotiated `orchestrator_actions` may
@@ -622,7 +632,8 @@ impl DaemonApi {
                     .store
                     .conversation_turn(&current.turn_id)
                     .map_err(|error| internal("actions", &format!("{error:?}")))?;
-                if turn.and_then(|turn| turn.permission_level) != Some(PermissionLevel::Restricted) {
+                if turn.and_then(|turn| turn.permission_level) != Some(PermissionLevel::Restricted)
+                {
                     return Err(RpcError::ProposalInvalid);
                 }
                 // Defense in depth and a changed setting: an approval of a pending task
@@ -779,8 +790,41 @@ impl DaemonApi {
         held: &MutexGuard<'_, ()>,
         proposal: &ActionProposal,
     ) -> Result<(), RpcError> {
+        self.execute_locked_at(held, proposal, crate::executor::unix_now_ms())
+    }
+
+    /// [`Self::execute_locked`] at the clock reading `now_ms`. The event actor is whoever
+    /// approved the proposal: `user`, or `grant:<id>`. A proposal a grant approved first
+    /// checks the grant: revoked or expired, it does not start and ends `failed`. The use
+    /// was spent when the grant approved, and the token budget blocks new uses only, so
+    /// neither stops a use that already exists.
+    pub(super) fn execute_locked_at(
+        &self,
+        held: &MutexGuard<'_, ()>,
+        proposal: &ActionProposal,
+        now_ms: u64,
+    ) -> Result<(), RpcError> {
+        let approver = self
+            .store
+            .proposal_approver(&proposal.id)
+            .map_err(map_store_error)?
+            .unwrap_or_else(|| APPROVER.to_owned());
+        let grant_id = approver.strip_prefix("grant:");
+        if let Some(code) = grant_id.and_then(|id| self.grant_stop_code(id, now_ms)) {
+            if let Some(id) = grant_id {
+                self.record_grant_outcome(id, proposal, GrantOutcome::Stopped { code }, now_ms)?;
+            }
+            let failed = ActionOutcome::Failed { error_code: code };
+            self.store
+                .record_action_outcome(&proposal.id, failed, &approver)
+                .map_err(map_resolve_error)?;
+            return Ok(());
+        }
         let parent = match &proposal.depends_on {
-            Some(parent) => self.store.action_proposal(parent).map_err(map_store_error)?,
+            Some(parent) => self
+                .store
+                .action_proposal(parent)
+                .map_err(map_store_error)?,
             None => None,
         };
         let key = idempotency::stable_id("action", &proposal.id);
@@ -794,10 +838,45 @@ impl DaemonApi {
             (None, Some(error_code)) => ActionOutcome::Failed { error_code },
             (None, None) => return Err(RpcError::Internal),
         };
+        // The grant's audit row first: a stop between the two writes leaves the proposal
+        // approved, and the rerun finds the key's outcome and closes it.
+        if let Some(id) = grant_id {
+            let closed = match outcome {
+                ActionOutcome::Executed { result_ref } => GrantOutcome::Executed {
+                    task_id: matches!(proposal.kind.as_str(), "task.propose" | "task.retry")
+                        .then_some(result_ref),
+                },
+                ActionOutcome::Failed { error_code } => GrantOutcome::Stopped { code: error_code },
+            };
+            self.record_grant_outcome(id, proposal, closed, now_ms)?;
+        }
         self.store
-            .record_action_outcome(&proposal.id, outcome, APPROVER)
+            .record_action_outcome(&proposal.id, outcome, &approver)
             .map_err(map_resolve_error)?;
         Ok(())
+    }
+
+    /// Why a grant no longer lets an approved proposal start, or `None` while it does.
+    fn grant_stop_code(&self, grant_id: &str, now_ms: u64) -> Option<&'static str> {
+        match self.store.standing_grant(grant_id) {
+            Ok(Some(grant)) if grant.revoked_at_ms.is_some() => Some(GRANT_REVOKED),
+            Ok(Some(grant)) if now_ms >= grant.expires_at_ms => Some(GRANT_EXPIRED),
+            Ok(Some(_)) => None,
+            // A grant that cannot be read fails closed, as a revoked one.
+            Ok(None) | Err(_) => Some(GRANT_REVOKED),
+        }
+    }
+
+    fn record_grant_outcome(
+        &self,
+        grant_id: &str,
+        proposal: &ActionProposal,
+        outcome: GrantOutcome<'_>,
+        now_ms: u64,
+    ) -> Result<(), RpcError> {
+        self.store
+            .record_grant_outcome(grant_id, &proposal.id, &proposal.digest, outcome, now_ms)
+            .map_err(|error| internal("grants", &error))
     }
 
     /// Builds the execution, then refuses one that reaches outside the workstream
@@ -1027,11 +1106,15 @@ impl DaemonApi {
                 return Err("internal");
             }
         };
-        let envelope = envelope_for(&self.store, Some(&old.contract.project_id), old.contract.kind)
-            .map_err(|error| {
-                internal("actions", &error);
-                "internal"
-            })?;
+        let envelope = envelope_for(
+            &self.store,
+            Some(&old.contract.project_id),
+            old.contract.kind,
+        )
+        .map_err(|error| {
+            internal("actions", &error);
+            "internal"
+        })?;
         if !envelope.delivery_grants(old.contract.delivery) {
             return Err("action_denied");
         }
@@ -1216,12 +1299,30 @@ impl DaemonApi {
             "result_ref": proposal.result_ref,
             "error_code": proposal.error_code,
             "denial": proposal.denial,
+            "grant_id": self.proposal_grant_id(proposal),
             "target": self.proposal_target(proposal),
             // Whether the turn that made the proposal was handed a scout report.
             "after_report": self.store.turn_read_report(&proposal.turn_id).unwrap_or(false),
             "created_at": proposal.created_at,
             "updated_at": proposal.updated_at,
         })
+    }
+
+    /// The grant that approved a proposal, for a card that shows it, or null. A proposal no
+    /// one approved has none. An unreadable store shows none.
+    fn proposal_grant_id(&self, proposal: &ActionProposal) -> Value {
+        if matches!(
+            proposal.state,
+            ProposalState::Pending | ProposalState::Superseded
+        ) {
+            return Value::Null;
+        }
+        self.store
+            .proposal_approver(&proposal.id)
+            .ok()
+            .flatten()
+            .and_then(|actor| actor.strip_prefix("grant:").map(str::to_owned))
+            .map_or(Value::Null, Value::String)
     }
 
     /// What the app needs to name a task proposal's subject, read now: the project's
@@ -1240,10 +1341,9 @@ impl DaemonApi {
                     .and_then(|id| project_name(&id).map(str::to_owned));
                 // A promotion shows the scout it comes from, by title.
                 let promoted_from_title = propose.promote_from.as_deref().and_then(|source| {
-                    self.store
-                        .get(source)
-                        .ok()
-                        .map(|task| cut_at_char(&task.contract.objective, TARGET_TITLE_BYTES).to_owned())
+                    self.store.get(source).ok().map(|task| {
+                        cut_at_char(&task.contract.objective, TARGET_TITLE_BYTES).to_owned()
+                    })
                 });
                 // Advisory: the gate as it is now, which can change before the user decides.
                 let machine_busy = self
@@ -1292,12 +1392,12 @@ pub(super) fn project_code(project_id: &str) -> String {
 }
 
 /// The last path component of a project id, which is its folder name.
-fn project_name(project_id: &str) -> Option<&str> {
+pub(super) fn project_name(project_id: &str) -> Option<&str> {
     project_id.rsplit(['/', '\\']).find(|part| !part.is_empty())
 }
 
 /// `text` cut to at most `limit` bytes, at a character boundary.
-fn cut_at_char(text: &str, limit: usize) -> &str {
+pub(super) fn cut_at_char(text: &str, limit: usize) -> &str {
     if text.len() <= limit {
         return text;
     }

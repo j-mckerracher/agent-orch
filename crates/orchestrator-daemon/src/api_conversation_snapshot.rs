@@ -16,9 +16,7 @@ use orchestrator_core::load_gate::{Reading, Unknown};
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
-use orchestrator_store::{
-    ConversationTarget, OpenTask, SqliteStore, Store, WorkstreamStoreError,
-};
+use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, Store, WorkstreamStoreError};
 
 use super::conversation_agent::sanitize;
 use super::load::LoadReading;
@@ -438,9 +436,10 @@ fn reports(store: &SqliteStore) -> Block {
         .iter()
         .filter(|summary| summary.relayed_at.is_none())
         .map(|summary| {
-            let title = store
-                .get(&summary.task_id)
-                .map_or_else(|_| String::new(), |task| report_title(&task.contract.objective));
+            let title = store.get(&summary.task_id).map_or_else(
+                |_| String::new(),
+                |task| report_title(&task.contract.objective),
+            );
             format!(
                 "- task {} '{}' (not yet relayed)",
                 field(&summary.task_id, TEXT_BYTES),
@@ -865,8 +864,17 @@ mod tests {
             "{snapshot}"
         );
         // A project with no row lists as before, with no mode.
-        assert!(snapshot.contains(&format!("- {}\n", project_label("plain"))), "{snapshot}");
-        for hidden in ["release-canary-9z", "canary-prefix", "token-canary-77", "cargo", "mode-root-4417"] {
+        assert!(
+            snapshot.contains(&format!("- {}\n", project_label("plain"))),
+            "{snapshot}"
+        );
+        for hidden in [
+            "release-canary-9z",
+            "canary-prefix",
+            "token-canary-77",
+            "cargo",
+            "mode-root-4417",
+        ] {
             assert!(!snapshot.contains(hidden), "{hidden}: {snapshot}");
         }
     }

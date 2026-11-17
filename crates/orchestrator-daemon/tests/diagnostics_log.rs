@@ -33,7 +33,10 @@ fn wait_for_event(layout: &Layout, event: &str) -> Value {
         {
             return found;
         }
-        assert!(Instant::now() < deadline, "no `{event}` event in daemon.log");
+        assert!(
+            Instant::now() < deadline,
+            "no `{event}` event in daemon.log"
+        );
         thread::sleep(Duration::from_millis(50));
     }
 }
@@ -64,7 +67,11 @@ fn submit_codex(client: &mut Client, project_id: &str) -> String {
 fn a_failed_launch_is_explained_in_the_log_without_the_credential() {
     let layout = Layout::new();
     seed::init_repo(&layout.repo);
-    let missing = layout.data.parent().unwrap().join(format!("token={SECRET}"));
+    let missing = layout
+        .data
+        .parent()
+        .unwrap()
+        .join(format!("token={SECRET}"));
     let token_file = layout.data.join("daemon.token");
 
     let daemon = Daemon::start_with_env(&layout, &[("AGENT_ORCH_CODEX_PROGRAM", &missing)]);
@@ -91,7 +98,10 @@ fn a_failed_launch_is_explained_in_the_log_without_the_credential() {
     drop(client);
     let mut client = connect(&layout.data);
     let task = client.tasks_get(&task_id).unwrap();
-    assert_eq!(task["state"], "Failed", "the failure is also in the task state");
+    assert_eq!(
+        task["state"], "Failed",
+        "the failure is also in the task state"
+    );
 
     let log = fs::read_to_string(&layout.log).unwrap();
     assert!(!log.contains(SECRET), "credential in daemon.log:\n{log}");

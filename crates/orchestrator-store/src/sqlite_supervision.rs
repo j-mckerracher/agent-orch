@@ -149,7 +149,10 @@ impl SqliteStore {
                 let count = u32::try_from(count).unwrap_or(u32::MAX);
                 total = total.saturating_add(count);
                 if let Some(id) = workstream_id {
-                    scopes.entry(ConversationTarget::Workstream(id).id()).or_default().0 = count;
+                    scopes
+                        .entry(ConversationTarget::Workstream(id).id())
+                        .or_default()
+                        .0 = count;
                 }
             }
             let waiting: Vec<String> = sqlx::query_scalar(
@@ -229,9 +232,7 @@ mod tests {
     use orchestrator_core::workstream::{Workstream, WorkstreamState};
 
     use super::*;
-    use crate::{
-        LoadPatch, SettingsPatch, Store, SupervisionPatch, WakeLimitsPatch,
-    };
+    use crate::{LoadPatch, SettingsPatch, Store, SupervisionPatch, WakeLimitsPatch};
     use orchestrator_core::supervision::{MonitoringMode, WakeLimits};
 
     fn open() -> (tempfile::TempDir, SqliteStore) {
@@ -355,7 +356,9 @@ mod tests {
                 },
             )
             .unwrap();
-        store.transition("pending", TaskEvent::ExecutionStarted).unwrap();
+        store
+            .transition("pending", TaskEvent::ExecutionStarted)
+            .unwrap();
         execute(
             &store,
             "UPDATE durable_events SET created_at = '2026-01-02 03:04:05' \
@@ -584,7 +587,13 @@ mod tests {
             })
             .unwrap_err();
         assert!(is_invalid_input(&refused));
-        assert_eq!(scalar(&store, "SELECT min_interval_secs FROM orchestrator_settings"), 60);
+        assert_eq!(
+            scalar(
+                &store,
+                "SELECT min_interval_secs FROM orchestrator_settings"
+            ),
+            60
+        );
     }
 
     #[test]
@@ -650,7 +659,9 @@ mod tests {
     #[test]
     fn a_settings_update_never_changes_the_wake_cursor() {
         let (_directory, store) = open();
-        store.record_wake_events(&[], MonitoringMode::On, 42).unwrap();
+        store
+            .record_wake_events(&[], MonitoringMode::On, 42)
+            .unwrap();
         assert_eq!(store.wake_cursor().unwrap(), 42);
         for patch in [
             SettingsPatch {

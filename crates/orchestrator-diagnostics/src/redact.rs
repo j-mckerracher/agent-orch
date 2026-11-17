@@ -54,9 +54,10 @@ pub fn is_sensitive_key(key: &str) -> bool {
                 .windows(marker.len())
                 .any(|window| window.eq_ignore_ascii_case(marker))
     });
-    hit && !NOT_SECRET_SUFFIXES
-        .iter()
-        .any(|suffix| key.len() >= suffix.len() && key.as_bytes()[key.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes()))
+    hit && !NOT_SECRET_SUFFIXES.iter().any(|suffix| {
+        key.len() >= suffix.len()
+            && key.as_bytes()[key.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
+    })
 }
 
 /// Replaces credential-shaped text with [`MASK`], and every secret registered
@@ -95,7 +96,8 @@ fn skip_blanks(bytes: &[u8], mut at: usize) -> usize {
 }
 
 fn is_authority_end(byte: u8) -> bool {
-    byte.is_ascii_whitespace() || matches!(byte, b'/' | b'?' | b'#' | b'"' | b'\'' | b'<' | b'>' | b')')
+    byte.is_ascii_whitespace()
+        || matches!(byte, b'/' | b'?' | b'#' | b'"' | b'\'' | b'<' | b'>' | b')')
 }
 
 fn redact_url_userinfo(input: &str) -> String {
@@ -159,7 +161,11 @@ fn quoted_value(bytes: &[u8], open: usize, depth: usize) -> (usize, usize, usize
         let run_end = skip_backslashes(bytes, stop);
         let run = run_end - stop;
         if run_end < bytes.len() && bytes[run_end] == quote {
-            let closes = if depth == 0 { run.is_multiple_of(2) } else { run == depth || run == 0 };
+            let closes = if depth == 0 {
+                run.is_multiple_of(2)
+            } else {
+                run == depth || run == 0
+            };
             if closes {
                 return (inner, stop, run_end + 1);
             }
@@ -174,7 +180,8 @@ fn quoted_value(bytes: &[u8], open: usize, depth: usize) -> (usize, usize, usize
 }
 
 fn is_value_end(byte: u8) -> bool {
-    byte.is_ascii_whitespace() || matches!(byte, b',' | b';' | b'&' | b'"' | b'\'' | b')' | b']' | b'}')
+    byte.is_ascii_whitespace()
+        || matches!(byte, b',' | b';' | b'&' | b'"' | b'\'' | b')' | b']' | b'}')
 }
 
 fn value_end(bytes: &[u8], mut at: usize) -> usize {
@@ -214,11 +221,7 @@ fn redact_key_values(input: &str) -> String {
         let separated = at < bytes.len() && matches!(bytes[at], b'=' | b':');
         if separated {
             at = skip_blanks(bytes, at + 1);
-        } else if !(word.starts_with('-')
-            && at > i
-            && !is_quote(bytes[i])
-            && bytes[i] != b'\\')
-        {
+        } else if !(word.starts_with('-') && at > i && !is_quote(bytes[i]) && bytes[i] != b'\\') {
             // Only a flag (`--token VALUE`) takes its value without a separator.
             continue;
         }
@@ -226,15 +229,16 @@ fn redact_key_values(input: &str) -> String {
             continue;
         }
         let escapes = skip_backslashes(bytes, at);
-        let (value_start, mut value_stop, resume) = if escapes < bytes.len()
-            && is_quote(bytes[escapes])
+        let (value_start, mut value_stop, resume) =
+            if escapes < bytes.len() && is_quote(bytes[escapes]) {
+                quoted_value(bytes, escapes, escapes - at)
+            } else {
+                let stop = value_end(bytes, at);
+                (at, stop, stop)
+            };
+        if value_stop == value_start
+            || bytes[value_start] == b'[' && input[value_start..].starts_with("[REDACTED")
         {
-            quoted_value(bytes, escapes, escapes - at)
-        } else {
-            let stop = value_end(bytes, at);
-            (at, stop, stop)
-        };
-        if value_stop == value_start || bytes[value_start] == b'[' && input[value_start..].starts_with("[REDACTED") {
             continue;
         }
         let first = &input[value_start..value_stop];
@@ -317,7 +321,9 @@ fn looks_like_credential(word: &str) -> bool {
     let bytes = word.as_bytes();
     let aws = bytes.len() == 20
         && (word.starts_with("AKIA") || word.starts_with("ASIA"))
-        && bytes.iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
     let google = word.starts_with("AIza") && bytes.len() >= 35;
     let jwt = word.starts_with("eyJ")
         && bytes.len() >= 30

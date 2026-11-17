@@ -9,7 +9,13 @@ fn a_turn_starts_unmarked_and_is_marked_once_and_for_good() {
     let directory = tempfile::tempdir().unwrap();
     let store = open(&directory);
     store
-        .begin_conversation_turn(&ConversationTarget::Global, "t1", "hello", "runtime", "1.0.0")
+        .begin_conversation_turn(
+            &ConversationTarget::Global,
+            "t1",
+            "hello",
+            "runtime",
+            "1.0.0",
+        )
         .unwrap();
     assert!(!store.turn_read_report("t1").unwrap());
     store.mark_turn_read_report("t1").unwrap();

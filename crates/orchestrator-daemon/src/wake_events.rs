@@ -82,7 +82,8 @@ fn redact_with(text: &str, tokens: bool) -> String {
 
 fn redact_word(word: &str, tokens: bool) -> String {
     let core = word.trim_matches(|c: char| !(c.is_alphanumeric() || matches!(c, '/' | '\\' | '~')));
-    let drive = core.len() > 2 && core.as_bytes()[1] == b':' && core.as_bytes()[0].is_ascii_alphabetic();
+    let drive =
+        core.len() > 2 && core.as_bytes()[1] == b':' && core.as_bytes()[0].is_ascii_alphabetic();
     // A word with one slash, such as a fraction, is not a path.
     let pathlike = core.starts_with(['/', '~'])
         || core.contains('\\')
@@ -240,7 +241,10 @@ mod tests {
     #[test]
     fn classify_maps_each_durable_event_to_its_kind() {
         let facts = facts("Fix the login bug");
-        let failed = classify(&event("task.transition", json!({"state": "Failed"})), Some(&facts));
+        let failed = classify(
+            &event("task.transition", json!({"state": "Failed"})),
+            Some(&facts),
+        );
         let failed = failed.unwrap();
         assert_eq!(failed.kind, WakeKind::TaskFailed);
         assert_eq!(failed.dedupe_key, "failed:t-12ab:41");
@@ -275,12 +279,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sign_in.kind, WakeKind::SignInNeeded);
-        assert_eq!(sign_in.notice, "Task t-12ab needs you to sign in to its agent.");
+        assert_eq!(
+            sign_in.notice,
+            "Task t-12ab needs you to sign in to its agent."
+        );
 
         let stall = stall_candidate("t-12ab", "a-1", Stall::NoEvents { quiet_ms: 600_000 }, None);
         assert_eq!(stall.kind, WakeKind::TaskStalled);
         assert_eq!(stall.dedupe_key, "stall:a-1:no_events");
-        let wall = stall_candidate("t-12ab", "a-1", Stall::OverWallTime { running_ms: 7_200_000 }, None);
+        let wall = stall_candidate(
+            "t-12ab",
+            "a-1",
+            Stall::OverWallTime {
+                running_ms: 7_200_000,
+            },
+            None,
+        );
         assert_eq!(wall.dedupe_key, "stall:a-1:wall_time");
     }
 
@@ -291,12 +305,22 @@ mod tests {
             ("task.transition", json!({"state": "Succeeded"})),
             ("session.created", json!({})),
             ("session.state_changed", json!({"state": "Failed"})),
-            ("approval.requested", json!({"approval_id": "a", "event": {"event": "approved"}})),
+            (
+                "approval.requested",
+                json!({"approval_id": "a", "event": {"event": "approved"}}),
+            ),
             // A failed attempt without the stable code is not a sign-in event.
-            ("attempt.state_changed", json!({"state": "Failed", "failure_reason_available": true})),
+            (
+                "attempt.state_changed",
+                json!({"state": "Failed", "failure_reason_available": true}),
+            ),
             ("attempt.state_changed", json!({"state": "Running"})),
         ] {
-            assert_eq!(classify(&event(kind, payload.clone()), None), None, "{kind} {payload}");
+            assert_eq!(
+                classify(&event(kind, payload.clone()), None),
+                None,
+                "{kind} {payload}"
+            );
         }
     }
 
@@ -306,13 +330,19 @@ mod tests {
         let objective =
             format!("Fix /Users/me/secret/repo and C:\\work\\x then ~/notes use {secret} ok");
         let facts = facts(&objective);
-        let notice = classify(&event("task.transition", json!({"state": "Failed"})), Some(&facts))
-            .unwrap()
-            .notice;
+        let notice = classify(
+            &event("task.transition", json!({"state": "Failed"})),
+            Some(&facts),
+        )
+        .unwrap()
+        .notice;
         for needle in ["/Users", "secret/repo", "C:\\", "~/", secret] {
             assert!(!notice.contains(needle), "{notice}");
         }
-        assert!(notice.contains("[path]") && notice.contains("[redacted]"), "{notice}");
+        assert!(
+            notice.contains("[path]") && notice.contains("[redacted]"),
+            "{notice}"
+        );
         // A path in a session event payload is never read.
         let session = event(
             "session.state_changed",
@@ -356,7 +386,10 @@ mod tests {
 
     #[test]
     fn redact_keeps_plain_words() {
-        assert_eq!(redact("Fix the login bug (urgent)"), "Fix the login bug (urgent)");
+        assert_eq!(
+            redact("Fix the login bug (urgent)"),
+            "Fix the login bug (urgent)"
+        );
         assert_eq!(redact("see /tmp/x now"), "see [path] now");
     }
 }

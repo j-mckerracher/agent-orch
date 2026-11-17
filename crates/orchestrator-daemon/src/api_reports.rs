@@ -132,9 +132,8 @@ impl DaemonApi {
                 self.conversations.require_target(&target)?;
                 let turn_id = idempotency::stable_id("report-relay-turn", &request.idempotency_key);
                 let short: String = request.task_id.chars().take(SHORT_ID_CHARS).collect();
-                let text = format!(
-                    "Relay the report of task {short} and list the decisions I must make."
-                );
+                let text =
+                    format!("Relay the report of task {short} and list the decisions I must make.");
                 let block = relay_block(&report.task_id, &report.body, report.truncated);
                 // A running user turn refuses the relay (`start_relay`), so that is known
                 // before anything is marked: a refused relay leaves the report unrelayed, and

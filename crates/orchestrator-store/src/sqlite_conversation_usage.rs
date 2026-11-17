@@ -97,7 +97,9 @@ impl SqliteStore {
         receipt: &ConversationUsageReceipt,
     ) -> Result<ReceiptOutcome, StoreError> {
         if receipt.conversation_id.is_empty() || receipt.turn_id.is_empty() {
-            return Err(invalid("chat usage receipt needs a conversation and turn id"));
+            return Err(invalid(
+                "chat usage receipt needs a conversation and turn id",
+            ));
         }
         if receipt.receipt_key.is_empty() || receipt.receipt_key.len() > MAX_RECEIPT_KEY_BYTES {
             return Err(invalid("usage receipt key must be 1 to 128 bytes"));
@@ -240,7 +242,11 @@ mod tests {
         (directory, store)
     }
 
-    fn receipt(turn_id: &str, trigger: TurnTrigger, reported_at_ms: u64) -> ConversationUsageReceipt {
+    fn receipt(
+        turn_id: &str,
+        trigger: TurnTrigger,
+        reported_at_ms: u64,
+    ) -> ConversationUsageReceipt {
         ConversationUsageReceipt {
             conversation_id: "conversation:global".into(),
             turn_id: turn_id.into(),
@@ -288,7 +294,10 @@ mod tests {
             store.record_conversation_usage(&first).unwrap(),
             ReceiptOutcome::Unchanged
         );
-        assert_eq!(store.wake_tokens_since("conversation:global", 0).unwrap(), 50 + 10);
+        assert_eq!(
+            store.wake_tokens_since("conversation:global", 0).unwrap(),
+            50 + 10
+        );
     }
 
     #[test]
@@ -310,7 +319,10 @@ mod tests {
         let outcome = store.clear_conversation_history(&target).unwrap();
         assert!(outcome.cleared);
         assert!(store.conversation_turn("turn-1").unwrap().is_none());
-        assert_eq!(store.wake_tokens_since("conversation:global", 0).unwrap(), before);
+        assert_eq!(
+            store.wake_tokens_since("conversation:global", 0).unwrap(),
+            before
+        );
     }
 
     #[test]
@@ -334,8 +346,23 @@ mod tests {
             store.record_conversation_usage(item).unwrap();
         }
         // wake-old is before the window; user and other scope are excluded.
-        assert_eq!(store.wake_tokens_since("conversation:global", 5_000).unwrap(), 12);
-        assert_eq!(store.wake_tokens_since("conversation:global", 1_000).unwrap(), 1_017);
-        assert_eq!(store.wake_tokens_since("conversation:global", 9_501).unwrap(), 0);
+        assert_eq!(
+            store
+                .wake_tokens_since("conversation:global", 5_000)
+                .unwrap(),
+            12
+        );
+        assert_eq!(
+            store
+                .wake_tokens_since("conversation:global", 1_000)
+                .unwrap(),
+            1_017
+        );
+        assert_eq!(
+            store
+                .wake_tokens_since("conversation:global", 9_501)
+                .unwrap(),
+            0
+        );
     }
 }

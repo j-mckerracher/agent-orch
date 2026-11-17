@@ -311,8 +311,15 @@ fn a_finished_scout_leaves_its_last_message_as_a_redacted_report_and_a_ship_leav
     let scout = submit_kind(&fixture, &api, "scout-1", "Investigate");
     wait_state(&api, &scout, "Verifying");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
-    let report = store.task_report(&scout).unwrap().expect("a scout leaves a report");
-    assert!(report.body.contains("The slow query is in the loader"), "{}", report.body);
+    let report = store
+        .task_report(&scout)
+        .unwrap()
+        .expect("a scout leaves a report");
+    assert!(
+        report.body.contains("The slow query is in the loader"),
+        "{}",
+        report.body
+    );
     assert!(!report.body.contains(secret), "{}", report.body);
     assert!(!report.truncated && report.relayed_at.is_none());
 
@@ -1360,7 +1367,10 @@ fn launch_failures_are_stored_on_their_attempt_and_survive_retry() {
 }
 
 /// The defaults row a project with a base branch `base_branch` and the prefix `team/` has.
-fn project_defaults_row(fixture: &Fixture, base_branch: &str) -> orchestrator_store::ProjectDefaultsRow {
+fn project_defaults_row(
+    fixture: &Fixture,
+    base_branch: &str,
+) -> orchestrator_store::ProjectDefaultsRow {
     orchestrator_store::ProjectDefaultsRow {
         project_id: fixture.project_id(),
         mode: "local-only".to_owned(),
@@ -1395,7 +1405,11 @@ fn a_task_is_created_from_the_projects_base_branch_and_prefix() {
         .into_iter()
         .find(|workspace| workspace.task_id == task_id)
         .unwrap();
-    assert!(workspace.branch.starts_with("team/"), "{}", workspace.branch);
+    assert!(
+        workspace.branch.starts_with("team/"),
+        "{}",
+        workspace.branch
+    );
     let tip = Command::new("git")
         .arg("-C")
         .arg(&fixture.repo)

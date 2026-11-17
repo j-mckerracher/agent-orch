@@ -13,16 +13,16 @@
 //! Updated: 2026-11-08T09:43:13Z.
 
 mod branch_prefix;
+pub mod delivery;
+pub mod delivery_reconcile;
 pub mod env_policy;
 mod error;
 mod git;
 mod git_path;
+pub mod reconcile;
 mod repository;
 pub mod verification;
 mod worktree;
-pub mod reconcile;
-pub mod delivery;
-pub mod delivery_reconcile;
 
 pub use branch_prefix::{
     is_safe_branch_name, BranchPrefix, BRANCH_PREFIX_FILE, DEFAULT_BRANCH_PREFIX,

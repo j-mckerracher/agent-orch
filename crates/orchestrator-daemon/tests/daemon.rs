@@ -190,7 +190,10 @@ fn the_approver_flag_without_a_secret_fails_startup() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
-    assert!(left.is_empty(), "the daemon created {left:?} without a secret");
+    assert!(
+        left.is_empty(),
+        "the daemon created {left:?} without a secret"
+    );
 }
 
 #[test]

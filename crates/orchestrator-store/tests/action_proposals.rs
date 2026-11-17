@@ -565,7 +565,12 @@ fn reject_fails_pending_dependents_with_events() {
     let rejected = store.reject_action_proposal(&parent, "user").unwrap();
     assert_eq!(rejected.state, ProposalState::Rejected);
     assert_eq!(
-        store.action_proposal_events(&parent).unwrap().last().unwrap().actor,
+        store
+            .action_proposal_events(&parent)
+            .unwrap()
+            .last()
+            .unwrap()
+            .actor,
         "user"
     );
 
@@ -582,7 +587,10 @@ fn reject_fails_pending_dependents_with_events() {
         vec![ProposalState::Pending, ProposalState::Failed]
     );
     assert_eq!(events[1].actor, "user");
-    assert_eq!(events[1].error_code.as_deref(), Some(DEPENDENCY_NOT_EXECUTED));
+    assert_eq!(
+        events[1].error_code.as_deref(),
+        Some(DEPENDENCY_NOT_EXECUTED)
+    );
 }
 
 #[test]
@@ -1085,7 +1093,9 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         // A turn holds at most ten actions (`idx BETWEEN 0 AND 9`), so the eleventh kind is
         // stored on a second turn, once the first has completed.
         if position == 10 {
-            store.complete_conversation_turn("t2", TurnBlock::None).unwrap();
+            store
+                .complete_conversation_turn("t2", TurnBlock::None)
+                .unwrap();
             begin(&store, &ConversationTarget::Global, "t3");
         }
         let turn = if position < 10 { "t2" } else { "t3" };
@@ -1101,7 +1111,12 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         "TASK.PROPOSE",
     ] {
         assert!(
-            try_sql(&path, RAW_KIND, &["raw-unknown", current, "9", unknown, DIGEST]).is_err(),
+            try_sql(
+                &path,
+                RAW_KIND,
+                &["raw-unknown", current, "9", unknown, DIGEST]
+            )
+            .is_err(),
             "{unknown}"
         );
     }

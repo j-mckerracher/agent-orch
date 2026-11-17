@@ -263,10 +263,12 @@ impl SqliteStore {
             validate(&merged)?;
 
             // The row exists with its defaults before the named columns are set.
-            sqlx::query("INSERT INTO project_defaults (project_id) VALUES (?) ON CONFLICT DO NOTHING")
-                .bind(&project_id)
-                .execute(&mut *transaction)
-                .await?;
+            sqlx::query(
+                "INSERT INTO project_defaults (project_id) VALUES (?) ON CONFLICT DO NOTHING",
+            )
+            .bind(&project_id)
+            .execute(&mut *transaction)
+            .await?;
             let assignments = named
                 .iter()
                 .map(|(column, _)| format!("{column} = ?"))

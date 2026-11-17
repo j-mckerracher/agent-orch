@@ -287,7 +287,10 @@ mod tests {
             let never = NEVER_GRANTABLE.contains(&kind.as_str());
             let allowed = GRANTABLE_KINDS.contains(&kind);
             let left_out = excluded.contains(&kind);
-            let lists = [never, allowed, left_out].into_iter().filter(|on| *on).count();
+            let lists = [never, allowed, left_out]
+                .into_iter()
+                .filter(|on| *on)
+                .count();
             assert_eq!(lists, 1, "{kind:?} must be on exactly one list");
             assert_eq!(kind.is_grantable(), !never, "{kind:?}");
             assert_eq!(check_kind(kind).is_ok(), allowed, "{kind:?}");
@@ -296,7 +299,12 @@ mod tests {
 
     #[test]
     fn the_four_never_grantable_kinds_are_refused_by_grant_validation() {
-        for name in ["project.remove", "delivery.merge", "task.cancel", "task.revise"] {
+        for name in [
+            "project.remove",
+            "delivery.merge",
+            "task.cancel",
+            "task.revise",
+        ] {
             assert_eq!(
                 check_kind_name(name),
                 Err(GrantRefusal::KindNeverGrantable),
@@ -357,7 +365,10 @@ mod tests {
             case(|t| t.scope = GrantScope::Workstream(String::new())),
             Err(GrantRefusal::ScopeInvalid)
         );
-        assert_eq!(case(|t| t.expires_in_secs = 59), Err(GrantRefusal::ExpiryOutOfRange));
+        assert_eq!(
+            case(|t| t.expires_in_secs = 59),
+            Err(GrantRefusal::ExpiryOutOfRange)
+        );
         assert_eq!(case(|t| t.expires_in_secs = 60), Ok(()));
         assert_eq!(
             case(|t| t.expires_in_secs = MAX_EXPIRY_SECS + 1),
@@ -365,9 +376,15 @@ mod tests {
         );
         assert_eq!(case(|t| t.expires_in_secs = MAX_EXPIRY_SECS), Ok(()));
         assert_eq!(case(|t| t.max_uses = 0), Err(GrantRefusal::UsesOutOfRange));
-        assert_eq!(case(|t| t.max_uses = 201), Err(GrantRefusal::UsesOutOfRange));
+        assert_eq!(
+            case(|t| t.max_uses = 201),
+            Err(GrantRefusal::UsesOutOfRange)
+        );
         assert_eq!(case(|t| t.max_uses = 200), Ok(()));
-        assert_eq!(case(|t| t.token_budget = 0), Err(GrantRefusal::BudgetOutOfRange));
+        assert_eq!(
+            case(|t| t.token_budget = 0),
+            Err(GrantRefusal::BudgetOutOfRange)
+        );
         assert_eq!(
             case(|t| t.token_budget = MAX_TOKEN_BUDGET + 1),
             Err(GrantRefusal::BudgetOutOfRange)

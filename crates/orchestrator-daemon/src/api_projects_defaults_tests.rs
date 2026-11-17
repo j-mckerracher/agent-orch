@@ -85,7 +85,12 @@ fn register_real_project(api: &DaemonApi) -> (tempfile::TempDir, String) {
     let repository = tempfile::tempdir().unwrap();
     let git = |args: &[&str]| {
         let status = std::process::Command::new("git")
-            .args(["-c", "user.name=test", "-c", "user.email=test@example.invalid"])
+            .args([
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+            ])
             .args(args)
             .current_dir(repository.path())
             .status()
@@ -132,7 +137,10 @@ fn a_project_with_no_defaults_behaves_exactly_as_before() {
             "merge_method": "squash",
         }})
     );
-    assert!(api.store.project_defaults(ALPHA).unwrap().is_none(), "a read writes nothing");
+    assert!(
+        api.store.project_defaults(ALPHA).unwrap().is_none(),
+        "a read writes nothing"
+    );
 
     let ids = propose(
         &api,
@@ -140,7 +148,11 @@ fn a_project_with_no_defaults_behaves_exactly_as_before() {
         &format!(
             "{}, {}",
             task_action(&code, "LocalReview"),
-            task_action_for(&code, "PullRequest", "Open a pull request for the retry module.")
+            task_action_for(
+                &code,
+                "PullRequest",
+                "Open a pull request for the retry module."
+            )
         ),
     );
     let approved = resolve(&api, &ids[0], "approve", "k-1").unwrap();
@@ -176,7 +188,11 @@ fn a_pr_mode_without_the_chat_setting_asks_for_local_review_and_says_so() {
         &format!(
             "{}, {}",
             task_action(&code, "LocalReview"),
-            task_action_for(&code, "PullRequest", "Open a pull request for the retry module.")
+            task_action_for(
+                &code,
+                "PullRequest",
+                "Open a pull request for the retry module."
+            )
         ),
     );
     let approved = resolve(&api, &ids[0], "approve", "k-1").unwrap();
@@ -208,7 +224,9 @@ fn a_pr_mode_with_the_chat_setting_allows_pull_request_delivery() {
     let approved = resolve(&api, &ids[0], "approve", "k-1").unwrap();
 
     assert_executed(&approved, &proposed_task_id(&ids[0]));
-    assert!(approved["proposal"]["target"].get("below_project_default").is_none());
+    assert!(approved["proposal"]["target"]
+        .get("below_project_default")
+        .is_none());
     let task = api.store.get(&proposed_task_id(&ids[0])).unwrap();
     assert_eq!(task.contract.delivery, DeliveryPolicy::PullRequest);
     assert_eq!(
@@ -298,7 +316,11 @@ fn projects_set_defaults_refuses_the_orchestrator_namespace() {
         let refused = call(
             &api,
             "projects.set_defaults",
-            set_params(ALPHA, &format!("s-{index}"), json!({"branch_prefix": prefix})),
+            set_params(
+                ALPHA,
+                &format!("s-{index}"),
+                json!({"branch_prefix": prefix}),
+            ),
         );
         assert_eq!(refused, Err(RpcError::InvalidParams), "{prefix}");
     }
@@ -321,7 +343,10 @@ fn projects_set_defaults_refuses_a_base_branch_that_does_not_exist() {
         );
         assert_eq!(refused, Err(RpcError::InvalidParams), "{branch}");
     }
-    assert!(api.store.project_defaults(&id).unwrap().is_none(), "nothing was written");
+    assert!(
+        api.store.project_defaults(&id).unwrap().is_none(),
+        "nothing was written"
+    );
 }
 
 #[test]
@@ -355,15 +380,27 @@ fn projects_set_defaults_stores_a_valid_row_once_and_get_returns_it() {
     assert!(listed[0].get("archived").is_none());
     // An unknown project is not found, and a bad mode is refused.
     assert_eq!(
-        call(&api, "projects.set_defaults", set_params("/no/such/project", "s-2", json!({}))),
+        call(
+            &api,
+            "projects.set_defaults",
+            set_params("/no/such/project", "s-2", json!({}))
+        ),
         Err(RpcError::NotFound)
     );
     assert_eq!(
-        call(&api, "projects.set_defaults", set_params(&id, "s-3", json!({"mode": "yolo"}))),
+        call(
+            &api,
+            "projects.set_defaults",
+            set_params(&id, "s-3", json!({"mode": "yolo"}))
+        ),
         Err(RpcError::InvalidParams)
     );
     assert_eq!(
-        call(&api, "projects.get_defaults", json!({"project_id": "/no/such/project"})),
+        call(
+            &api,
+            "projects.get_defaults",
+            json!({"project_id": "/no/such/project"})
+        ),
         Err(RpcError::NotFound)
     );
 }

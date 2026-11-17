@@ -1097,14 +1097,14 @@ fn actions_pending_stops_at_one_page_and_says_more() {
     let mut ids: Vec<String> = Vec::new();
     let mut targets = vec![ConversationTarget::Global];
     for number in 0..5 {
-        let workstream = create_workstream(&api, &format!("Scope {number}"), &format!("ws-{number}"));
+        let workstream =
+            create_workstream(&api, &format!("Scope {number}"), &format!("ws-{number}"));
         targets.push(ConversationTarget::Workstream(workstream));
     }
     for (index, target) in targets.iter().enumerate() {
         for turn in 0..20 {
-            let create = format!(
-                r#"{{"kind": "workstream.create", "title": "Pending {index} {turn}"}}"#
-            );
+            let create =
+                format!(r#"{{"kind": "workstream.create", "title": "Pending {index} {turn}"}}"#);
             ids.extend(propose_in(
                 &api,
                 target,
@@ -1116,7 +1116,12 @@ fn actions_pending_stops_at_one_page_and_says_more() {
     }
     let page = call(&api, "actions.pending", json!({})).unwrap();
     let listed = page["proposals"].as_array().unwrap();
-    assert_eq!(listed.len(), 100, "{} are pending, one page is 100", ids.len());
+    assert_eq!(
+        listed.len(),
+        100,
+        "{} are pending, one page is 100",
+        ids.len()
+    );
     assert_eq!(page["more"], true);
 }
 

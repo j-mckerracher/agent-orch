@@ -106,6 +106,15 @@ mod coordinator_review_tests;
 #[path = "event_stream_tests.rs"]
 mod event_stream_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "grants_tests.rs"]
+mod grants_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "history_tests.rs"]
+mod history_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "holds_tests.rs"]
+mod holds_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "host_tests.rs"]
 mod host_tests;
 #[cfg(all(test, any(unix, windows)))]
@@ -118,26 +127,17 @@ mod integration_tests;
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(all(test, any(unix, windows)))]
-#[path = "queue_tests.rs"]
-mod queue_tests;
-#[cfg(all(test, any(unix, windows)))]
-#[path = "workstreams_tests.rs"]
-mod workstreams_tests;
-#[cfg(all(test, any(unix, windows)))]
-#[path = "history_tests.rs"]
-mod history_tests;
-#[cfg(all(test, any(unix, windows)))]
 #[path = "monitoring_tests.rs"]
 mod monitoring_tests;
 #[cfg(all(test, any(unix, windows)))]
-#[path = "holds_tests.rs"]
-mod holds_tests;
-#[cfg(all(test, any(unix, windows)))]
-#[path = "grants_tests.rs"]
-mod grants_tests;
+#[path = "queue_tests.rs"]
+mod queue_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "reports_tests.rs"]
 mod reports_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "workstreams_tests.rs"]
+mod workstreams_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

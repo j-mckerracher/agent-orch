@@ -122,13 +122,17 @@ pub fn admit(limits: &WakeLimits, usage: &WakeUsage) -> Admission {
     if matches!(limits.hourly, Some(cap) if usage.hour_count >= cap) {
         return Admission::Paused {
             reason: PauseReason::Hourly,
-            until_ms: usage.oldest_hour_ms.map(|oldest| oldest.saturating_add(HOUR_MS)),
+            until_ms: usage
+                .oldest_hour_ms
+                .map(|oldest| oldest.saturating_add(HOUR_MS)),
         };
     }
     if matches!(limits.daily, Some(cap) if usage.day_count >= cap) {
         return Admission::Paused {
             reason: PauseReason::Daily,
-            until_ms: usage.oldest_day_ms.map(|oldest| oldest.saturating_add(DAY_MS)),
+            until_ms: usage
+                .oldest_day_ms
+                .map(|oldest| oldest.saturating_add(DAY_MS)),
         };
     }
     if matches!(limits.daily_tokens, Some(budget) if usage.day_tokens >= budget) {
@@ -194,10 +198,13 @@ impl Debounce {
     /// Adds a record id to the scope's window, opening it when none is open. A duplicate id is
     /// ignored.
     pub fn offer(&mut self, scope: &str, record_id: &str, now_ms: u64) {
-        let window = self.windows.entry(scope.to_owned()).or_insert_with(|| Window {
-            due_ms: now_ms.saturating_add(DEBOUNCE_MS),
-            ids: Vec::new(),
-        });
+        let window = self
+            .windows
+            .entry(scope.to_owned())
+            .or_insert_with(|| Window {
+                due_ms: now_ms.saturating_add(DEBOUNCE_MS),
+                ids: Vec::new(),
+            });
         if !window.ids.iter().any(|id| id == record_id) {
             window.ids.push(record_id.to_owned());
         }
@@ -318,7 +325,12 @@ mod tests {
         );
         // Silence counts from the start when the last event is older than the start.
         assert_eq!(
-            stalled(&activity(5_000_000, 0), 5_000_000 + 599_000, quiet_for, wall),
+            stalled(
+                &activity(5_000_000, 0),
+                5_000_000 + 599_000,
+                quiet_for,
+                wall
+            ),
             None
         );
     }
@@ -326,7 +338,10 @@ mod tests {
     #[test]
     fn the_quiet_floor_is_five_minutes() {
         assert_eq!(STALL_QUIET_FLOOR, Duration::from_secs(300));
-        assert_eq!(Duration::from_secs(60).max(STALL_QUIET_FLOOR), STALL_QUIET_FLOOR);
+        assert_eq!(
+            Duration::from_secs(60).max(STALL_QUIET_FLOOR),
+            STALL_QUIET_FLOOR
+        );
         assert_eq!(minutes(10).max(STALL_QUIET_FLOOR), minutes(10));
     }
 
@@ -486,7 +501,10 @@ mod tests {
         let id = wake_record_id("conversation:global", "failed:t1:7");
         assert_eq!(id, wake_record_id("conversation:global", "failed:t1:7"));
         assert_ne!(id, wake_record_id("conversation:global", "failed:t1:8"));
-        assert_ne!(id, wake_record_id("conversation:workstream:a", "failed:t1:7"));
+        assert_ne!(
+            id,
+            wake_record_id("conversation:workstream:a", "failed:t1:7")
+        );
         assert!(id.starts_with("wake-") && id.len() == 5 + 64);
     }
 }

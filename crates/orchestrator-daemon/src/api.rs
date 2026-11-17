@@ -77,6 +77,9 @@ pub(crate) struct DaemonApi {
     /// The wake scheduler (DPES-1105 phase 3). Absent without an executor, as in tests that
     /// build their own with a manual clock.
     wake: Option<Arc<wake::WakeService>>,
+    /// The standing-grant matcher thread (DPES-1105 phase 5). Started by `main` once the API is
+    /// in an `Arc`; stopped by `shutdown`.
+    grant_matcher: Mutex<Option<grant_matcher::GrantMatcherHandle>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -246,6 +249,7 @@ impl DaemonApi {
             conversations,
             catalog_cache,
             wake: None,
+            grant_matcher: Mutex::new(None),
         };
         api.reconcile_actions();
         Ok(api)
@@ -281,6 +285,7 @@ impl DaemonApi {
     }
 
     pub(crate) fn shutdown(&self) {
+        self.stop_grant_matcher();
         if let Some(wake) = &self.wake {
             wake.stop();
         }
@@ -335,6 +340,7 @@ impl RpcHandler for DaemonApi {
             Capability::Settings,
             Capability::Monitoring,
             Capability::Holds,
+            Capability::StandingApprovals,
         ]
     }
 
@@ -409,6 +415,9 @@ impl RpcHandler for DaemonApi {
             "holds.set" => self.holds_set(params),
             "holds.release" => self.holds_release(params),
             "holds.list" => self.holds_list(params),
+            "grants.create" => self.grants_create(params),
+            "grants.revoke" => self.grants_revoke(params),
+            "grants.list" => self.grants_list(params),
             "reports.list" => self.reports_list(params),
             "reports.get" => self.reports_get(params),
             "reports.relay" => {
@@ -1598,10 +1607,14 @@ mod conversation_snapshot;
 mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
-#[path = "api_host.rs"]
-mod host;
+#[path = "grant_matcher.rs"]
+mod grant_matcher;
+#[path = "api_grants.rs"]
+mod grants;
 #[path = "api_holds.rs"]
 mod holds;
+#[path = "api_host.rs"]
+mod host;
 #[path = "api_load.rs"]
 pub(crate) mod load;
 #[path = "api_models.rs"]
@@ -1612,10 +1625,10 @@ mod monitoring;
 mod projects_defaults;
 #[path = "api_queue.rs"]
 mod queue;
-#[path = "api_reports.rs"]
-mod reports;
 #[path = "report.rs"]
 pub(crate) mod report;
+#[path = "api_reports.rs"]
+mod reports;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
@@ -1649,14 +1662,20 @@ mod workstreams;
 mod review_tests;
 
 #[cfg(test)]
-#[path = "api_actions_task_tests.rs"]
-mod actions_task_tests;
-#[cfg(test)]
 #[path = "api_actions_phase4_tests.rs"]
 mod actions_phase4_tests;
 #[cfg(test)]
+#[path = "api_actions_task_tests.rs"]
+mod actions_task_tests;
+#[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
+#[cfg(test)]
+#[path = "grant_matcher_tests.rs"]
+mod grant_matcher_tests;
+#[cfg(test)]
+#[path = "api_grants_tests.rs"]
+mod grants_tests;
 #[cfg(test)]
 #[path = "api_projects_defaults_tests.rs"]
 mod projects_defaults_tests;

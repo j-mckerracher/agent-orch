@@ -146,7 +146,12 @@ fn refusal<T: Copy>(error: &StoreError, read: fn(&StoreError) -> Option<T>) -> O
 }
 
 /// A hold on the open approvals of task `t1`, ending `END_NOV_21`.
-fn hold_t1(store: &SqliteStore, id: &str, date: &str, end: i64) -> orchestrator_store::DecisionHold {
+fn hold_t1(
+    store: &SqliteStore,
+    id: &str,
+    date: &str,
+    end: i64,
+) -> orchestrator_store::DecisionHold {
     store
         .set_decision_hold(id, HoldSubject::Approval, "t1", date, end, NOW_NOV_17)
         .unwrap()
@@ -253,16 +258,34 @@ fn migration_0045_applies_to_a_0044_style_database_and_keeps_every_row() {
         vec!["1"]
     );
     assert_eq!(dump(&path), before);
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_lineage"), "0");
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"), "0");
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_lineage"),
+        "0"
+    );
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"),
+        "0"
+    );
 
     // The new tables work on the migrated rows.
     let link = store
-        .add_task_lineage("t-done", "t-old", LineageRelation::RevisedFrom, Some("go on"))
+        .add_task_lineage(
+            "t-done",
+            "t-old",
+            LineageRelation::RevisedFrom,
+            Some("go on"),
+        )
         .unwrap();
     assert_eq!(link.parent_task_id, "t-old");
     let hold = store
-        .set_decision_hold("h1", HoldSubject::Proposal, "proposal-old", "2026-11-18", END_NOV_18, NOW_NOV_17)
+        .set_decision_hold(
+            "h1",
+            HoldSubject::Proposal,
+            "proposal-old",
+            "2026-11-18",
+            END_NOV_18,
+            NOW_NOV_17,
+        )
         .unwrap();
     assert_eq!(hold.state, HoldState::Active);
     assert!(store.archive_project("other").unwrap());
@@ -280,14 +303,29 @@ fn a_hold_hides_until_its_date_and_comes_back_by_the_callers_clock() {
     assert_eq!(hold.state, HoldState::Active);
     assert_eq!(hold.released_at, None);
 
-    assert_eq!(store.decision_holds_in_force(NOW_NOV_17).unwrap(), vec![hold.clone()]);
-    assert_eq!(store.decision_holds_in_force(END_NOV_21 - 1).unwrap().len(), 1);
+    assert_eq!(
+        store.decision_holds_in_force(NOW_NOV_17).unwrap(),
+        vec![hold.clone()]
+    );
+    assert_eq!(
+        store.decision_holds_in_force(END_NOV_21 - 1).unwrap().len(),
+        1
+    );
     // The date passes by the caller's clock alone: nothing is written.
-    assert!(store.decision_holds_in_force(END_NOV_21).unwrap().is_empty());
-    assert!(store.decision_holds_in_force(END_NOV_21 + DAY_MS).unwrap().is_empty());
+    assert!(store
+        .decision_holds_in_force(END_NOV_21)
+        .unwrap()
+        .is_empty());
+    assert!(store
+        .decision_holds_in_force(END_NOV_21 + DAY_MS)
+        .unwrap()
+        .is_empty());
     assert_eq!(store.active_decision_holds().unwrap(), vec![hold]);
     assert_eq!(
-        scalars(&path, "SELECT json_array(state, released_at) FROM decision_holds"),
+        scalars(
+            &path,
+            "SELECT json_array(state, released_at) FROM decision_holds"
+        ),
         vec![r#"["active",null]"#]
     );
     // A hold never touches the decision it hides.
@@ -305,7 +343,10 @@ fn a_hold_can_be_replaced_and_cleared() {
     let first = hold_t1(&store, "h1", "2026-11-18", END_NOV_18);
     // The same date again is a repeat: the existing hold comes back, nothing is added.
     assert_eq!(hold_t1(&store, "h-repeat", "2026-11-18", END_NOV_18), first);
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"), "1");
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"),
+        "1"
+    );
 
     // A new date releases the old hold and adds a new one, so one stays active.
     let second = hold_t1(&store, "h2", "2026-11-21", END_NOV_21);
@@ -317,18 +358,37 @@ fn a_hold_can_be_replaced_and_cleared() {
         ),
         vec![r#"["h1","released"]"#, r#"["h2","active"]"#]
     );
-    assert_eq!(store.decision_hold("h1").unwrap().unwrap().state, HoldState::Released);
-    assert!(store.decision_hold("h1").unwrap().unwrap().released_at.is_some());
+    assert_eq!(
+        store.decision_hold("h1").unwrap().unwrap().state,
+        HoldState::Released
+    );
+    assert!(store
+        .decision_hold("h1")
+        .unwrap()
+        .unwrap()
+        .released_at
+        .is_some());
 
     // Clearing releases the active hold and returns it; clearing again finds nothing.
     let cleared = store
         .clear_decision_hold(HoldSubject::Approval, "t1")
         .unwrap()
         .unwrap();
-    assert_eq!((cleared.id.as_str(), cleared.state), ("h2", HoldState::Released));
-    assert!(store.decision_holds_in_force(NOW_NOV_17).unwrap().is_empty());
+    assert_eq!(
+        (cleared.id.as_str(), cleared.state),
+        ("h2", HoldState::Released)
+    );
+    assert!(store
+        .decision_holds_in_force(NOW_NOV_17)
+        .unwrap()
+        .is_empty());
     assert!(store.active_decision_holds().unwrap().is_empty());
-    assert_eq!(store.clear_decision_hold(HoldSubject::Approval, "t1").unwrap(), None);
+    assert_eq!(
+        store
+            .clear_decision_hold(HoldSubject::Approval, "t1")
+            .unwrap(),
+        None
+    );
 
     // Release by id is idempotent, and a new hold is allowed after a release.
     assert_eq!(store.release_decision_hold("h2").unwrap(), cleared);
@@ -340,7 +400,10 @@ fn a_hold_can_be_replaced_and_cleared() {
     );
     let missing = store.release_decision_hold("nope").unwrap_err();
     assert!(matches!(missing, StoreError::RecordNotFound { .. }));
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"), "3");
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM decision_holds"),
+        "3"
+    );
 }
 
 #[test]
@@ -367,27 +430,80 @@ fn a_hold_refuses_a_bad_date_a_past_date_and_a_settled_decision() {
         assert_eq!(reason(error), Some(HoldError::BadDate), "{date}");
     }
     // A day that has already ended by the caller's clock is refused.
-    let error = set("h", HoldSubject::Approval, "t1", "2026-11-18", END_NOV_18, END_NOV_18);
+    let error = set(
+        "h",
+        HoldSubject::Approval,
+        "t1",
+        "2026-11-18",
+        END_NOV_18,
+        END_NOV_18,
+    );
     assert_eq!(reason(error), Some(HoldError::NotInFuture));
-    let error = set("", HoldSubject::Approval, "t1", "2026-11-18", END_NOV_18, NOW_NOV_17);
+    let error = set(
+        "",
+        HoldSubject::Approval,
+        "t1",
+        "2026-11-18",
+        END_NOV_18,
+        NOW_NOV_17,
+    );
     assert_eq!(reason(error), Some(HoldError::BadId));
     // A task with no open approval, and a proposal that is not pending, have nothing to hold.
-    let error = set("h", HoldSubject::Approval, "t-none", "2026-11-18", END_NOV_18, NOW_NOV_17);
+    let error = set(
+        "h",
+        HoldSubject::Approval,
+        "t-none",
+        "2026-11-18",
+        END_NOV_18,
+        NOW_NOV_17,
+    );
     assert_eq!(reason(error), Some(HoldError::NothingOpen));
     add_conversation(&path);
     add_proposal(&path, "p-done", 0, "executed");
     add_proposal(&path, "p-open", 1, "pending");
-    let error = set("h", HoldSubject::Proposal, "p-done", "2026-11-18", END_NOV_18, NOW_NOV_17);
+    let error = set(
+        "h",
+        HoldSubject::Proposal,
+        "p-done",
+        "2026-11-18",
+        END_NOV_18,
+        NOW_NOV_17,
+    );
     assert_eq!(reason(error), Some(HoldError::NothingOpen));
     store
-        .set_decision_hold("h-open", HoldSubject::Proposal, "p-open", "2026-11-18", END_NOV_18, NOW_NOV_17)
+        .set_decision_hold(
+            "h-open",
+            HoldSubject::Proposal,
+            "p-open",
+            "2026-11-18",
+            END_NOV_18,
+            NOW_NOV_17,
+        )
         .unwrap();
     // An approval that settled after the hold was set cannot be held again once released.
-    sql(&path, "UPDATE approvals SET status = 'approved' WHERE id = 'a1'", &[]);
-    let error = set("h-late", HoldSubject::Approval, "t1", "2026-11-21", END_NOV_21, NOW_NOV_17);
+    sql(
+        &path,
+        "UPDATE approvals SET status = 'approved' WHERE id = 'a1'",
+        &[],
+    );
+    let error = set(
+        "h-late",
+        HoldSubject::Approval,
+        "t1",
+        "2026-11-21",
+        END_NOV_21,
+        NOW_NOV_17,
+    );
     assert_eq!(reason(error), Some(HoldError::NothingOpen));
     // An id in use by another hold is refused, and refusing it changes nothing.
-    let error = set("h-open", HoldSubject::Proposal, "p-open", "2026-11-21", END_NOV_21, NOW_NOV_17);
+    let error = set(
+        "h-open",
+        HoldSubject::Proposal,
+        "p-open",
+        "2026-11-21",
+        END_NOV_21,
+        NOW_NOV_17,
+    );
     assert_eq!(reason(error), Some(HoldError::IdInUse));
     assert_eq!(store.active_decision_holds().unwrap().len(), 1);
 }
@@ -400,7 +516,8 @@ fn the_database_refuses_a_hold_it_should_not_take_and_any_change_but_release() {
     add_approval(&path, "a2", "t2", "approved");
     hold_t1(&store, "h1", "2026-11-18", END_NOV_18);
 
-    let insert = "INSERT INTO decision_holds (id, subject_kind, subject_id, until_date, until_ms, set_by) \
+    let insert =
+        "INSERT INTO decision_holds (id, subject_kind, subject_id, until_date, until_ms, set_by) \
                   VALUES (?, 'approval', ?, ?, ?, 'user')";
     let end_18 = END_NOV_18.to_string();
     // A settled approval, a second active hold, a bad day end and a bad date are all refused.
@@ -417,11 +534,21 @@ fn the_database_refuses_a_hold_it_should_not_take_and_any_change_but_release() {
     .is_err());
 
     // Only release is an update; nothing is deleted; a released hold stays released.
-    assert!(try_sql(&path, "UPDATE decision_holds SET until_ms = until_ms + 86400000", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE decision_holds SET until_ms = until_ms + 86400000",
+        &[]
+    )
+    .is_err());
     assert!(try_sql(&path, "UPDATE decision_holds SET subject_id = 't2'", &[]).is_err());
     assert!(try_sql(&path, "DELETE FROM decision_holds", &[]).is_err());
     store.release_decision_hold("h1").unwrap();
-    assert!(try_sql(&path, "UPDATE decision_holds SET state = 'active', released_at = NULL", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE decision_holds SET state = 'active', released_at = NULL",
+        &[]
+    )
+    .is_err());
     assert!(try_sql(&path, "DELETE FROM decision_holds", &[]).is_err());
     assert_eq!(
         scalars(&path, "SELECT state FROM decision_holds"),
@@ -438,7 +565,14 @@ fn clearing_history_can_release_the_holds_of_the_proposals_it_scrubs() {
     add_proposal(&path, "p2", 1, "pending");
     for (hold, proposal) in [("h1", "p1"), ("h2", "p2")] {
         store
-            .set_decision_hold(hold, HoldSubject::Proposal, proposal, "2026-11-18", END_NOV_18, NOW_NOV_17)
+            .set_decision_hold(
+                hold,
+                HoldSubject::Proposal,
+                proposal,
+                "2026-11-18",
+                END_NOV_18,
+                NOW_NOV_17,
+            )
             .unwrap();
     }
     assert_eq!(store.release_proposal_holds(&["p1".to_owned()]).unwrap(), 1);
@@ -458,21 +592,38 @@ fn a_revise_lineage_has_one_parent_and_no_cycle() {
     let lineage_error = |error: StoreError| LineageError::of(&error);
 
     let link = store
-        .add_task_lineage("b", "a", LineageRelation::RevisedFrom, Some("also add tests"))
+        .add_task_lineage(
+            "b",
+            "a",
+            LineageRelation::RevisedFrom,
+            Some("also add tests"),
+        )
         .unwrap();
     assert_eq!(
-        (link.task_id.as_str(), link.parent_task_id.as_str(), link.relation),
+        (
+            link.task_id.as_str(),
+            link.parent_task_id.as_str(),
+            link.relation
+        ),
         ("b", "a", LineageRelation::RevisedFrom)
     );
     assert_eq!(link.added_intent.as_deref(), Some("also add tests"));
     // The same link again returns the stored row and writes nothing.
     assert_eq!(
         store
-            .add_task_lineage("b", "a", LineageRelation::RevisedFrom, Some("also add tests"))
+            .add_task_lineage(
+                "b",
+                "a",
+                LineageRelation::RevisedFrom,
+                Some("also add tests")
+            )
             .unwrap(),
         link
     );
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_lineage"), "1");
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM task_lineage"),
+        "1"
+    );
     assert_eq!(store.task_lineage("b").unwrap(), Some(link.clone()));
     assert_eq!(store.task_lineage("a").unwrap(), None);
 
@@ -482,7 +633,9 @@ fn a_revise_lineage_has_one_parent_and_no_cycle() {
         ("a", LineageRelation::PromotedFrom, Some("also add tests")),
         ("a", LineageRelation::RevisedFrom, None),
     ] {
-        let error = store.add_task_lineage("b", parent, relation, intent).unwrap_err();
+        let error = store
+            .add_task_lineage("b", parent, relation, intent)
+            .unwrap_err();
         assert_eq!(lineage_error(error), Some(LineageError::AlreadyLinked));
     }
     // No self parent, and no cycle through a chain (c -> b -> a, then a -> c or a -> b).
@@ -531,8 +684,18 @@ fn lineage_is_append_only_and_the_old_task_cannot_be_deleted() {
         .add_task_lineage("new", "old", LineageRelation::RevisedFrom, None)
         .unwrap();
 
-    assert!(try_sql(&path, "UPDATE task_lineage SET added_intent = 'changed'", &[]).is_err());
-    assert!(try_sql(&path, "UPDATE task_lineage SET parent_task_id = 'new', task_id = 'old'", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE task_lineage SET added_intent = 'changed'",
+        &[]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE task_lineage SET parent_task_id = 'new', task_id = 'old'",
+        &[]
+    )
+    .is_err());
     assert!(try_sql(&path, "DELETE FROM task_lineage", &[]).is_err());
     assert!(try_sql(&path, "DELETE FROM tasks WHERE id = 'old'", &[]).is_err());
     assert!(try_sql(
@@ -542,7 +705,10 @@ fn lineage_is_append_only_and_the_old_task_cannot_be_deleted() {
     )
     .is_err());
     assert_eq!(
-        scalars(&path, "SELECT json_array(task_id, parent_task_id, relation) FROM task_lineage"),
+        scalars(
+            &path,
+            "SELECT json_array(task_id, parent_task_id, relation) FROM task_lineage"
+        ),
         vec![r#"["new","old","revised_from"]"#]
     );
 }
@@ -560,15 +726,34 @@ fn a_project_with_a_running_task_cannot_be_archived() {
 
     // Queued and verifying work refuse too; a requested approval refuses; settled work does not.
     for state in ["Queued", "Verifying"] {
-        sql(&path, "UPDATE tasks SET state = ? WHERE id = 't-run'", &[&format!("\"{state}\"")]);
+        sql(
+            &path,
+            "UPDATE tasks SET state = ? WHERE id = 't-run'",
+            &[&format!("\"{state}\"")],
+        );
         let error = store.archive_project("p1").unwrap_err();
-        assert_eq!(ArchiveError::of(&error), Some(ArchiveError::ActiveTasks), "{state}");
+        assert_eq!(
+            ArchiveError::of(&error),
+            Some(ArchiveError::ActiveTasks),
+            "{state}"
+        );
     }
-    sql(&path, "UPDATE tasks SET state = '\"Succeeded\"' WHERE id = 't-run'", &[]);
+    sql(
+        &path,
+        "UPDATE tasks SET state = '\"Succeeded\"' WHERE id = 't-run'",
+        &[],
+    );
     add_approval(&path, "a1", "t-run", "requested");
     let error = store.archive_project("p1").unwrap_err();
-    assert_eq!(ArchiveError::of(&error), Some(ArchiveError::PendingApprovals));
-    sql(&path, "UPDATE approvals SET status = 'rejected' WHERE id = 'a1'", &[]);
+    assert_eq!(
+        ArchiveError::of(&error),
+        Some(ArchiveError::PendingApprovals)
+    );
+    sql(
+        &path,
+        "UPDATE approvals SET status = 'rejected' WHERE id = 'a1'",
+        &[],
+    );
 
     assert!(store.archive_project("p1").unwrap());
     assert!(store.project_is_archived("p1").unwrap());
@@ -628,7 +813,10 @@ fn archiving_keeps_every_task_and_history_row() {
     // The other project is untouched, even with a running task.
     assert!(!store.project_is_archived("p2").unwrap());
     assert_eq!(
-        scalars(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM projects WHERE archived_at IS NULL"),
+        scalars(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM projects WHERE archived_at IS NULL"
+        ),
         vec!["1"]
     );
 }
@@ -643,7 +831,10 @@ fn registering_the_same_path_clears_the_archive_marker() {
     assert!(!store.restore_project("p1").unwrap());
     assert!(store.archive_project("p1").unwrap());
     assert_eq!(
-        scalars(&path, "SELECT CAST(archived_at IS NOT NULL AS TEXT) FROM projects"),
+        scalars(
+            &path,
+            "SELECT CAST(archived_at IS NOT NULL AS TEXT) FROM projects"
+        ),
         vec!["1"]
     );
 
@@ -651,13 +842,19 @@ fn registering_the_same_path_clears_the_archive_marker() {
     assert!(!store.project_is_archived("p1").unwrap());
     assert!(store.archived_project_ids().unwrap().is_empty());
     assert_eq!(
-        scalars(&path, "SELECT CAST(archived_at IS NULL AS TEXT) FROM projects"),
+        scalars(
+            &path,
+            "SELECT CAST(archived_at IS NULL AS TEXT) FROM projects"
+        ),
         vec!["1"]
     );
     // Registering again repeats harmlessly, the task row stays, and the project can be
     // archived once more.
     assert!(!store.restore_project("p1").unwrap());
-    assert_eq!(count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM tasks"), "1");
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM tasks"),
+        "1"
+    );
     assert!(store.archive_project("p1").unwrap());
     let missing = store.restore_project("nope").unwrap_err();
     assert!(matches!(missing, StoreError::RecordNotFound { .. }));
@@ -674,7 +871,14 @@ fn holds_are_one_active_per_subject_and_kind() {
 
     hold_t1(&store, "h-approval", "2026-11-18", END_NOV_18);
     store
-        .set_decision_hold("h-proposal", HoldSubject::Proposal, "t1", "2026-11-18", END_NOV_18, NOW_NOV_17)
+        .set_decision_hold(
+            "h-proposal",
+            HoldSubject::Proposal,
+            "t1",
+            "2026-11-18",
+            END_NOV_18,
+            NOW_NOV_17,
+        )
         .unwrap();
     assert_eq!(store.active_decision_holds().unwrap().len(), 2);
     assert!(try_sql(

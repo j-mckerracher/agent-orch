@@ -35,7 +35,10 @@ fn a_registered_secret_split_across_lines_or_escaped_breaks_is_masked() {
         let text = format!("log {head}{sep}{tail} end");
         let out = redact(&text);
         assert!(!out.contains(head) && !out.contains(tail), "{sep:?}: {out}");
-        assert!(out.ends_with(" end") && out.starts_with("log "), "{sep:?}: {out}");
+        assert!(
+            out.ends_with(" end") && out.starts_with("log "),
+            "{sep:?}: {out}"
+        );
     }
 }
 
@@ -97,5 +100,9 @@ fn registered_secrets_do_not_make_redaction_quadratic() {
     register_secret("aaaaaaaaaaaaaaaaaaaaaaab");
     let started = std::time::Instant::now();
     let _ = redact(&"a".repeat(2_000_000));
-    assert!(started.elapsed().as_secs() < 20, "took {:?}", started.elapsed());
+    assert!(
+        started.elapsed().as_secs() < 20,
+        "took {:?}",
+        started.elapsed()
+    );
 }

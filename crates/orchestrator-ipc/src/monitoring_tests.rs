@@ -133,7 +133,11 @@ fn a_token_only_session_cannot_set_monitoring_but_reads_and_acks() {
     let approver = Arc::new(ApproverSecret::generate().unwrap());
     let daemon = serve(dir.path(), &recorder, &approver);
 
-    let mut token_only = connect(dir.path(), &[Capability::Health, Capability::Monitoring], None);
+    let mut token_only = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Monitoring],
+        None,
+    );
     assert!(token_only.monitoring_get().is_ok());
     assert!(matches!(
         token_only.monitoring_set("quiet", "key-1"),

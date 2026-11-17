@@ -60,7 +60,9 @@ fn runtime() -> tokio::runtime::Runtime {
 
 fn try_sql(path: &Path, sql: &'static str, binds: &[&str]) -> Result<(), sqlx::Error> {
     runtime().block_on(async {
-        let options = SqliteConnectOptions::new().filename(path).foreign_keys(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options).await?;
         let mut query = sqlx::query(sql);
         for value in binds {
@@ -77,7 +79,9 @@ fn run_sql(path: &Path, sql: &'static str, binds: &[&str]) {
 
 fn scalars(path: &Path, sql: &'static str) -> Vec<String> {
     runtime().block_on(async {
-        let options = SqliteConnectOptions::new().filename(path).foreign_keys(true);
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
             .unwrap();
@@ -97,7 +101,13 @@ fn open_with_turn(directory: &Path) -> (SqliteStore, std::path::PathBuf) {
     let path = directory.join("store.sqlite");
     let store = SqliteStore::new(&path).unwrap();
     store
-        .begin_conversation_turn(&ConversationTarget::Global, "t1", "hi", "test-runtime", "1.0.0")
+        .begin_conversation_turn(
+            &ConversationTarget::Global,
+            "t1",
+            "hi",
+            "test-runtime",
+            "1.0.0",
+        )
         .unwrap();
     (store, path)
 }
@@ -115,7 +125,16 @@ fn insert_task(
     run_sql(
         path,
         RAW_ROW,
-        &[id, &idx, "task.propose", &digest, state, error_code, "", depends_on],
+        &[
+            id,
+            &idx,
+            "task.propose",
+            &digest,
+            state,
+            error_code,
+            "",
+            depends_on,
+        ],
     );
 }
 
@@ -282,7 +301,12 @@ fn migration_0042_applies_to_a_0041_database_and_keeps_every_proposal_event_and_
         &[]
     )
     .is_err());
-    assert!(try_sql(&path, "UPDATE action_proposal_events SET actor = 'user'", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE action_proposal_events SET actor = 'user'",
+        &[]
+    )
+    .is_err());
     assert!(try_sql(&path, "DELETE FROM action_proposals", &[]).is_err());
 }
 
@@ -298,7 +322,11 @@ fn the_kind_check_lists_exactly_the_fourteen_design_kinds() {
     );
     // Seven kinds per turn keeps every index under the cap of ten.
     for (index, kind) in KINDS.into_iter().enumerate() {
-        let (id, idx, digest) = (format!("raw-{index}"), (index % 7).to_string(), digest(index));
+        let (id, idx, digest) = (
+            format!("raw-{index}"),
+            (index % 7).to_string(),
+            digest(index),
+        );
         let sql = if index < 7 {
             RAW_ROW
         } else {
@@ -308,7 +336,11 @@ fn the_kind_check_lists_exactly_the_fourteen_design_kinds() {
              VALUES (?, 'conversation:global', 't2', CAST(? AS INTEGER), ?, '{}', ?, 'x', ?, \
                      NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))"
         };
-        run_sql(&path, sql, &[&id, &idx, kind, &digest, "pending", "", "", ""]);
+        run_sql(
+            &path,
+            sql,
+            &[&id, &idx, kind, &digest, "pending", "", "", ""],
+        );
     }
     assert_eq!(
         scalars(
@@ -380,7 +412,10 @@ fn a_pending_proposal_can_be_denied_once_and_never_again() {
     }
     let after = store.action_proposal("parent").unwrap().unwrap();
     assert_eq!(after.denial.as_deref(), Some("below_project_default"));
-    assert_eq!(store.action_proposal_events("parent").unwrap().len(), before);
+    assert_eq!(
+        store.action_proposal_events("parent").unwrap().len(),
+        before
+    );
 
     // A missing proposal is not found, and the database refuses a rewrite of the reason.
     assert!(matches!(
@@ -418,8 +453,15 @@ fn a_settled_proposal_cannot_be_denied() {
         let row = store.action_proposal(state).unwrap().unwrap();
         assert_eq!(row.state, expected, "{state}");
         assert_eq!(row.denial, None, "{state}");
-        assert_eq!(row.error_code.as_deref().unwrap_or(""), error_code, "{state}");
-        assert!(store.action_proposal_events(state).unwrap().is_empty(), "{state}");
+        assert_eq!(
+            row.error_code.as_deref().unwrap_or(""),
+            error_code,
+            "{state}"
+        );
+        assert!(
+            store.action_proposal_events(state).unwrap().is_empty(),
+            "{state}"
+        );
     }
 }
 
@@ -458,7 +500,12 @@ fn the_denial_column_is_still_frozen_except_the_one_write() {
         &[],
     );
     assert_eq!(
-        store.action_proposal("pending").unwrap().unwrap().denial.as_deref(),
+        store
+            .action_proposal("pending")
+            .unwrap()
+            .unwrap()
+            .denial
+            .as_deref(),
         Some("a")
     );
 

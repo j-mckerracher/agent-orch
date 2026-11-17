@@ -202,7 +202,9 @@ pub enum Settle {
     Handled(WakeOutcome),
     Failed,
     /// Back to pending with no batch. `count_attempt` adds one to the attempt count (at most 2).
-    Requeue { count_attempt: bool },
+    Requeue {
+        count_attempt: bool,
+    },
     Skipped(SkipReason),
 }
 
@@ -265,10 +267,7 @@ fn decode_wake(row: SqliteRow) -> Result<WakeRecord, StoreError> {
     })
 }
 
-async fn load_wake(
-    connection: &mut SqliteConnection,
-    id: &str,
-) -> Result<WakeRecord, StoreError> {
+async fn load_wake(connection: &mut SqliteConnection, id: &str) -> Result<WakeRecord, StoreError> {
     let row = sqlx::query(concat!(
         "SELECT ",
         wake_columns!(),
@@ -595,7 +594,9 @@ impl SqliteStore {
                 Ok((windows[0].0, windows[0].1, windows[1].0, windows[1].1))
             })?;
         // Tokens use the same open edge as the counts: a receipt exactly a day old is out.
-        let day_start = now_ms.checked_sub(DAY_MS).map_or(0, |start| start.saturating_add(1));
+        let day_start = now_ms
+            .checked_sub(DAY_MS)
+            .map_or(0, |start| start.saturating_add(1));
         Ok(WakeUsage {
             hour_count,
             day_count,
@@ -803,7 +804,9 @@ mod tests {
     #[test]
     fn record_wake_events_rolls_back_with_the_cursor() {
         let (_directory, store) = open();
-        store.record_wake_events(&[], MonitoringMode::On, 3).unwrap();
+        store
+            .record_wake_events(&[], MonitoringMode::On, 3)
+            .unwrap();
         let mut bad = new_record(GLOBAL, WakeKind::TaskFailed, "failed:t2:9");
         bad.notice = String::new();
         let events = [new_record(GLOBAL, WakeKind::TaskFailed, "failed:t1:8"), bad];
@@ -860,14 +863,21 @@ mod tests {
         store
             .finish_conversation_turn("turn-1", &TurnOutcome::Completed)
             .unwrap();
-        let newest = store.conversation_page(&target, 0, 50).unwrap().latest_sequence;
+        let newest = store
+            .conversation_page(&target, 0, 50)
+            .unwrap()
+            .latest_sequence;
         assert!(newest >= begun.user_entry.sequence);
         let second = pending(&store, "failed:t1:2");
         assert_eq!(second.anchor_sequence, newest);
         // Another scope's empty transcript still anchors at 0.
         let other = store
             .record_wake_events(
-                &[new_record("conversation:workstream:w1", WakeKind::TaskFailed, "k")],
+                &[new_record(
+                    "conversation:workstream:w1",
+                    WakeKind::TaskFailed,
+                    "k",
+                )],
                 MonitoringMode::On,
                 3,
             )
@@ -883,14 +893,21 @@ mod tests {
         let ids = vec![a.id.clone(), b.id.clone()];
         let first = claim(&store, &ids, "batch-1", 1_000);
         assert_eq!(first.len(), 2);
-        assert!(first.iter().all(|record| record.state == WakeState::Running));
-        assert!(first.iter().all(|record| record.turn_id.as_deref() == Some("turn-batch-1")));
+        assert!(first
+            .iter()
+            .all(|record| record.state == WakeState::Running));
+        assert!(first
+            .iter()
+            .all(|record| record.turn_id.as_deref() == Some("turn-batch-1")));
         assert!(first.iter().all(|record| record.notify_reply));
 
         let second = claim(&store, &ids, "batch-1", 9_000);
         assert_eq!(second, first);
         assert_eq!(scalar(&store, "SELECT COUNT(*) FROM wake_turn_ledger"), 1);
-        assert_eq!(scalar(&store, "SELECT started_ms FROM wake_turn_ledger"), 1_000);
+        assert_eq!(
+            scalar(&store, "SELECT started_ms FROM wake_turn_ledger"),
+            1_000
+        );
 
         // A different batch for a scope that already runs one claims nothing.
         let c = pending(&store, "failed:t1:3");
@@ -910,12 +927,24 @@ mod tests {
 
         // A requeue puts the record back; the ledger row stays counted.
         let changed = store
-            .settle_wake_batch("batch-1", Settle::Requeue { count_attempt: true })
+            .settle_wake_batch(
+                "batch-1",
+                Settle::Requeue {
+                    count_attempt: true,
+                },
+            )
             .unwrap();
         assert_eq!(changed, 1);
         let back = store.pending_wake_records().unwrap();
         assert_eq!(back.len(), 1);
-        assert_eq!((back[0].attempts, back[0].batch_id.clone(), back[0].turn_id.clone()), (1, None, None));
+        assert_eq!(
+            (
+                back[0].attempts,
+                back[0].batch_id.clone(),
+                back[0].turn_id.clone()
+            ),
+            (1, None, None)
+        );
         assert_eq!(store.wake_usage(GLOBAL, 6_000).unwrap().hour_count, 1);
     }
 
@@ -931,7 +960,10 @@ mod tests {
             1
         );
         // Final: a second settle finds nothing running.
-        assert_eq!(store.settle_wake_batch("batch-1", Settle::Failed).unwrap(), 0);
+        assert_eq!(
+            store.settle_wake_batch("batch-1", Settle::Failed).unwrap(),
+            0
+        );
         let (records, more) = store.wake_records_page(GLOBAL, 10).unwrap();
         assert!(!more);
         assert_eq!(records[0].state, WakeState::Handled);
@@ -950,7 +982,12 @@ mod tests {
         // The attempt count stops at 2.
         for _ in 0..3 {
             store
-                .settle_wake_batch("batch-4", Settle::Requeue { count_attempt: true })
+                .settle_wake_batch(
+                    "batch-4",
+                    Settle::Requeue {
+                        count_attempt: true,
+                    },
+                )
                 .unwrap();
             let again = store.pending_wake_records().unwrap();
             assert!(again[0].attempts <= 2);
@@ -979,7 +1016,10 @@ mod tests {
                 "running" => "UPDATE wake_records SET state = 'running' WHERE id = ?",
                 _ => "UPDATE wake_records SET state = 'failed' WHERE id = ?",
             };
-            assert!(execute(&store, sql, &[noticed.id.as_str()]).is_err(), "noticed to {state}");
+            assert!(
+                execute(&store, sql, &[noticed.id.as_str()]).is_err(),
+                "noticed to {state}"
+            );
         }
         // pending to handled, pending to failed
         assert!(execute(
@@ -1025,10 +1065,18 @@ mod tests {
             "UPDATE wake_records SET event_kind = 'task_stalled' WHERE id = ?",
             "UPDATE wake_records SET anchor_sequence = 99 WHERE id = ?",
         ] {
-            assert!(execute(&store, sql, &[record.id.as_str()]).is_err(), "{sql}");
+            assert!(
+                execute(&store, sql, &[record.id.as_str()]).is_err(),
+                "{sql}"
+            );
         }
         // The fields that may change still do.
-        execute(&store, "UPDATE wake_records SET seen = 1 WHERE id = ?", &[record.id.as_str()]).unwrap();
+        execute(
+            &store,
+            "UPDATE wake_records SET seen = 1 WHERE id = ?",
+            &[record.id.as_str()],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1044,14 +1092,23 @@ mod tests {
         let record = pending(&store, "failed:t1:1");
         let other = store
             .record_wake_events(
-                &[new_record("conversation:workstream:w1", WakeKind::TaskFailed, "k")],
+                &[new_record(
+                    "conversation:workstream:w1",
+                    WakeKind::TaskFailed,
+                    "k",
+                )],
                 MonitoringMode::On,
                 2,
             )
             .unwrap()
             .remove(0);
         claim(&store, std::slice::from_ref(&record.id), "batch-1", 1_000);
-        assert!(execute(&store, "DELETE FROM wake_records WHERE id = ?", &[record.id.as_str()]).is_err());
+        assert!(execute(
+            &store,
+            "DELETE FROM wake_records WHERE id = ?",
+            &[record.id.as_str()]
+        )
+        .is_err());
 
         store.clear_conversation_history(&target).unwrap();
         let (left, _) = store.wake_records_page(GLOBAL, 10).unwrap();
@@ -1103,7 +1160,14 @@ mod tests {
         let (_directory, store) = open();
         let now = 2 * DAY_MS;
         // Started 25 h, 24 h exactly, 23 h, 1 h exactly, 59 min and 1 min ago.
-        let ages = [25 * HOUR_MS, DAY_MS, 23 * HOUR_MS, HOUR_MS, 59 * 60_000, 60_000];
+        let ages = [
+            25 * HOUR_MS,
+            DAY_MS,
+            23 * HOUR_MS,
+            HOUR_MS,
+            59 * 60_000,
+            60_000,
+        ];
         for (index, age) in ages.into_iter().enumerate() {
             let record = pending(&store, &format!("failed:t1:{index}"));
             claim(&store, &[record.id], &format!("b{index}"), now - age);
@@ -1146,7 +1210,10 @@ mod tests {
             .settle_wake_batch("b2", Settle::Handled(WakeOutcome::Quiet))
             .unwrap();
         // The notice and the announced reply count; the quiet outcome does not.
-        assert_eq!(store.unseen_wake_counts().unwrap(), vec![(GLOBAL.to_owned(), 2)]);
+        assert_eq!(
+            store.unseen_wake_counts().unwrap(),
+            vec![(GLOBAL.to_owned(), 2)]
+        );
         assert_eq!(store.ack_wake_records(GLOBAL).unwrap(), 3);
         assert!(store.unseen_wake_counts().unwrap().is_empty());
     }
@@ -1165,7 +1232,9 @@ mod tests {
         );
         let c = pending(&store, "failed:t1:3");
         assert_eq!(
-            store.skip_pending_wake_records(SkipReason::ModeOff).unwrap(),
+            store
+                .skip_pending_wake_records(SkipReason::ModeOff)
+                .unwrap(),
             vec![c.id]
         );
         assert!(store.pending_wake_records().unwrap().is_empty());
@@ -1180,7 +1249,10 @@ mod tests {
         }
         let (page, more) = store.wake_records_page(GLOBAL, 3).unwrap();
         assert!(more);
-        let keys: Vec<_> = page.iter().map(|record| record.dedupe_key.as_str()).collect();
+        let keys: Vec<_> = page
+            .iter()
+            .map(|record| record.dedupe_key.as_str())
+            .collect();
         assert_eq!(keys, vec!["failed:t1:2", "failed:t1:3", "failed:t1:4"]);
         assert!(!store.wake_records_page(GLOBAL, 5).unwrap().1);
     }

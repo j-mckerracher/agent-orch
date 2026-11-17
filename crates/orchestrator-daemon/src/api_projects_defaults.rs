@@ -119,7 +119,8 @@ pub(super) fn revise_denial(
         Err(_) => return Some(Denial::Delivery),
     };
     // An over-long objective is refused at the card, not after the user approves.
-    let objective = super::actions::revised_objective(&old.contract.objective, &revise.added_intent);
+    let objective =
+        super::actions::revised_objective(&old.contract.objective, &revise.added_intent);
     if objective.len() > orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES {
         return Some(Denial::Contract);
     }
@@ -215,8 +216,8 @@ impl DaemonApi {
                 }
                 if let Some(branch) = &request.base_branch {
                     // A local branch only: a tag or a commit id is not a base branch.
-                    let repository = Repository::new(Path::new(&project.root_path))
-                        .map_err(map_git_error)?;
+                    let repository =
+                        Repository::new(Path::new(&project.root_path)).map_err(map_git_error)?;
                     match repository.resolve_base_ref(&format!("refs/heads/{branch}")) {
                         Ok(_) => {}
                         Err(orchestrator_git::Error::InvalidBaseRef { .. }) => {
@@ -281,9 +282,12 @@ impl DaemonApi {
                     Err(StoreError::NotFound(_)) => return Ok(None),
                     Err(error) => return Err(map_store_error(error)),
                 };
-                let envelope =
-                    envelope_for(&self.store, Some(&old.contract.project_id), old.contract.kind)
-                        .map_err(map_store_error)?;
+                let envelope = envelope_for(
+                    &self.store,
+                    Some(&old.contract.project_id),
+                    old.contract.kind,
+                )
+                .map_err(map_store_error)?;
                 Ok((!envelope.delivery_grants(old.contract.delivery)).then_some(Denial::Delivery))
             }
             _ => Ok(None),

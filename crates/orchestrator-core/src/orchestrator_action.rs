@@ -42,8 +42,12 @@ pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// Wire names of the kinds no grant may ever cover. Names, not [`ActionKind`]
 /// values, so a kind that is planned but not parsed yet (`delivery.merge`, added
 /// with its merge worker) is already refused.
-pub const NEVER_GRANTABLE: [&str; 4] =
-    ["project.remove", "delivery.merge", "task.cancel", "task.revise"];
+pub const NEVER_GRANTABLE: [&str; 4] = [
+    "project.remove",
+    "delivery.merge",
+    "task.cancel",
+    "task.revise",
+];
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -549,7 +553,10 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             check(validate_id("task_id", &revise.task_id), "task_id")?;
             if revise.added_intent.trim().is_empty()
                 || revise.added_intent.len() > MAX_ADDED_INTENT_BYTES
-                || revise.added_intent.chars().any(is_disallowed_objective_char)
+                || revise
+                    .added_intent
+                    .chars()
+                    .any(is_disallowed_objective_char)
             {
                 return Err(BlockError::InvalidField("added_intent"));
             }
@@ -1754,7 +1761,9 @@ mod tests {
             _ => None,
         });
         assert_eq!(
-            (0..4).map(|index| by_envelope.denial(index)).collect::<Vec<_>>(),
+            (0..4)
+                .map(|index| by_envelope.denial(index))
+                .collect::<Vec<_>>(),
             (0..4).map(|index| same.denial(index)).collect::<Vec<_>>()
         );
     }
@@ -1845,7 +1854,12 @@ mod tests {
         // constant fails here until a person edits this pin in the same diff.
         assert_eq!(
             NEVER_GRANTABLE,
-            ["project.remove", "delivery.merge", "task.cancel", "task.revise"]
+            [
+                "project.remove",
+                "delivery.merge",
+                "task.cancel",
+                "task.revise"
+            ]
         );
         assert!(!ActionKind::ProjectRemove.is_grantable());
         assert!(!ActionKind::TaskCancel.is_grantable());
@@ -1973,14 +1987,23 @@ mod tests {
             );
         }
         let full = "y".repeat(MAX_ADDED_INTENT_BYTES);
-        let text = json!({"kind": "task.revise", "task_id": "task-1", "added_intent": full})
-            .to_string();
+        let text =
+            json!({"kind": "task.revise", "task_id": "task-1", "added_intent": full}).to_string();
         assert!(parse(&block(&text)).is_ok());
     }
 
     #[test]
     fn a_revise_with_an_invisible_character_is_refused() {
-        for c in ['\u{1b}', '\u{7f}', '\u{ad}', '\u{200b}', '\u{202e}', '\u{2066}', '\u{feff}', '\u{e0041}'] {
+        for c in [
+            '\u{1b}',
+            '\u{7f}',
+            '\u{ad}',
+            '\u{200b}',
+            '\u{202e}',
+            '\u{2066}',
+            '\u{feff}',
+            '\u{e0041}',
+        ] {
             let text = json!({
                 "kind": "task.revise",
                 "task_id": "task-1",
@@ -2004,7 +2027,13 @@ mod tests {
 
     #[test]
     fn a_remove_names_a_project_code_never_a_path() {
-        for bad in ["", "p-3fa9c1d", "P-3FA9C1D2", "/Users/someone/repo", "../repo"] {
+        for bad in [
+            "",
+            "p-3fa9c1d",
+            "P-3FA9C1D2",
+            "/Users/someone/repo",
+            "../repo",
+        ] {
             let text = json!({"kind": "project.remove", "project": bad}).to_string();
             assert_eq!(
                 parse(&block(&text)),
@@ -2017,11 +2046,18 @@ mod tests {
     #[test]
     fn a_hold_needs_a_date_shape_and_leaves_the_range_to_the_daemon() {
         for bad in [
-            "", "2026-1-01", "2026/12/01", "20261201", "2026-12-011", "2026-12-0a",
-            "tomorrow", "2026-12-01T00:00:00Z", " 2026-12-01",
+            "",
+            "2026-1-01",
+            "2026/12/01",
+            "20261201",
+            "2026-12-011",
+            "2026-12-0a",
+            "tomorrow",
+            "2026-12-01T00:00:00Z",
+            " 2026-12-01",
         ] {
-            let text = json!({"kind": "decision.hold", "task_id": "task-1", "until": bad})
-                .to_string();
+            let text =
+                json!({"kind": "decision.hold", "task_id": "task-1", "until": bad}).to_string();
             assert_eq!(
                 parse(&block(&text)),
                 Err(BlockError::InvalidField("until")),
@@ -2030,12 +2066,12 @@ mod tests {
         }
         // Shape only: a far or past date parses, and a bad task id still refuses.
         for ok in ["1999-01-01", "2999-12-31", "2026-13-45"] {
-            let text = json!({"kind": "decision.hold", "task_id": "task-1", "until": ok})
-                .to_string();
+            let text =
+                json!({"kind": "decision.hold", "task_id": "task-1", "until": ok}).to_string();
             assert!(parse(&block(&text)).is_ok(), "{ok}");
         }
-        let text = json!({"kind": "decision.hold", "task_id": "t 1", "until": "2026-12-01"})
-            .to_string();
+        let text =
+            json!({"kind": "decision.hold", "task_id": "t 1", "until": "2026-12-01"}).to_string();
         assert_eq!(
             parse(&block(&text)),
             Err(BlockError::InvalidField("task_id"))

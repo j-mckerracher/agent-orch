@@ -242,7 +242,11 @@ impl DaemonApi {
             &request,
             || {
                 let patch = SettingsPatch {
-                    load: request.load.as_ref().map(LoadParams::patch).unwrap_or_default(),
+                    load: request
+                        .load
+                        .as_ref()
+                        .map(LoadParams::patch)
+                        .unwrap_or_default(),
                     supervision: request
                         .supervision
                         .as_ref()
@@ -259,8 +263,18 @@ impl DaemonApi {
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
-                fields.extend(request.supervision.iter().flat_map(SupervisionParams::fields));
-                fields.extend(request.wake_limits.iter().flat_map(WakeLimitsParams::fields));
+                fields.extend(
+                    request
+                        .supervision
+                        .iter()
+                        .flat_map(SupervisionParams::fields),
+                );
+                fields.extend(
+                    request
+                        .wake_limits
+                        .iter()
+                        .flat_map(WakeLimitsParams::fields),
+                );
                 if let Some(value) = request.chat_pr_delivery {
                     fields.push(("chat_pr_delivery", value.to_string()));
                 }

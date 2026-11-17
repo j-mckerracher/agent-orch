@@ -41,7 +41,9 @@ impl Clock for SystemClock {
     fn now_ms(&self) -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+            .map_or(0, |elapsed| {
+                u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+            })
     }
 }
 use super::wake_events::{classify, proposal_notice, stall_candidate, Candidate};
@@ -83,7 +85,11 @@ pub(crate) fn target_of(scope: &str) -> Option<ConversationTarget> {
 /// A stable id: the same prefix and seed always give the same value.
 fn stable_id(prefix: &str, seed: &str) -> String {
     let digest = Sha256::digest(format!("{prefix}\n{seed}").as_bytes());
-    let hex: String = digest.iter().take(12).map(|byte| format!("{byte:02x}")).collect();
+    let hex: String = digest
+        .iter()
+        .take(12)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     format!("{prefix}-{hex}")
 }
 
@@ -206,7 +212,9 @@ impl WakeService {
                 Some(Ok(settle)) => settle,
                 Some(Err(())) => continue,
                 None if batch.records[0].attempts >= 1 => Settle::Failed,
-                None => Settle::Requeue { count_attempt: true },
+                None => Settle::Requeue {
+                    count_attempt: true,
+                },
             };
             self.settle(&batch.batch_id, settle)?;
         }
@@ -261,9 +269,8 @@ impl WakeService {
                 let Some(service) = weak.upgrade() else {
                     return;
                 };
-                let ticked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    service.tick()
-                }));
+                let ticked =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| service.tick()));
                 match ticked {
                     Ok(Ok(_)) => {}
                     Ok(Err(reason)) => {
@@ -272,9 +279,7 @@ impl WakeService {
                             .warn(LOG, "wake_tick_failed", &[("reason", &reason)]);
                     }
                     Err(_) => {
-                        service
-                            .diagnostics
-                            .error(LOG, "wake_tick_panicked", &[]);
+                        service.diagnostics.error(LOG, "wake_tick_panicked", &[]);
                     }
                 }
                 drop(service);
@@ -389,7 +394,9 @@ impl WakeService {
                 TurnState::Cancelled if !settings.mode.runs_wake_turns() => {
                     Settle::Skipped(SkipReason::ModeOff)
                 }
-                TurnState::Cancelled => Settle::Requeue { count_attempt: false },
+                TurnState::Cancelled => Settle::Requeue {
+                    count_attempt: false,
+                },
             };
             let requeue = matches!(settle, Settle::Requeue { .. });
             settled += self.settle(&batch.batch_id, settle)?;
@@ -524,7 +531,12 @@ impl WakeService {
             if let Some(stall @ Stall::OverWallTime { .. }) =
                 stalled(&activity, now, Duration::MAX, wall)
             {
-                found.push((attempt.scope.clone(), attempt.task_id.clone(), attempt.attempt_id.clone(), stall));
+                found.push((
+                    attempt.scope.clone(),
+                    attempt.task_id.clone(),
+                    attempt.attempt_id.clone(),
+                    stall,
+                ));
             }
         }
 
@@ -535,10 +547,7 @@ impl WakeService {
                 .last_check_ms
                 .retain(|scope, _| loads.iter().any(|l| &l.scope == scope && l.work_units >= 1));
             for load in loads.iter().filter(|load| load.work_units >= 1) {
-                let previous = *state
-                    .last_check_ms
-                    .entry(load.scope.clone())
-                    .or_insert(now);
+                let previous = *state.last_check_ms.entry(load.scope.clone()).or_insert(now);
                 let (Some(due), Some(interval)) = (
                     policy.due_ms(previous, load.work_units),
                     policy.interval(load.work_units),
@@ -650,8 +659,7 @@ impl WakeService {
                 Ok(Some(_)) | Err(_) => continue,
             }
             let ids = self.state().debounce.take(&scope);
-            let records: Vec<&WakeRecord> =
-                ids.iter().filter_map(|id| pending.get(id)).collect();
+            let records: Vec<&WakeRecord> = ids.iter().filter_map(|id| pending.get(id)).collect();
             let Some(first) = records.first() else {
                 continue;
             };
@@ -659,7 +667,8 @@ impl WakeService {
             // From here to the claim, an error puts the records back in a window.
             let settings = self.or_offer(self.settings(), &scope, &ids, now)?;
             if !settings.mode.runs_wake_turns() {
-                report.skipped += self.or_offer(self.skip(&ids, SkipReason::ModeOff), &scope, &ids, now)?;
+                report.skipped +=
+                    self.or_offer(self.skip(&ids, SkipReason::ModeOff), &scope, &ids, now)?;
                 continue;
             }
             let usage = self.or_offer(
@@ -671,7 +680,8 @@ impl WakeService {
                 now,
             )?;
             if let Admission::Paused { reason, .. } = admit(&settings.wake_limits, &usage) {
-                report.skipped += self.or_offer(self.skip(&ids, skip_reason(reason)), &scope, &ids, now)?;
+                report.skipped +=
+                    self.or_offer(self.skip(&ids, skip_reason(reason)), &scope, &ids, now)?;
                 continue;
             }
             // The turn count in the ledger joins the seed, so a batch that a user message
@@ -684,7 +694,14 @@ impl WakeService {
             let turn_id = stable_id("wake-turn", &batch_id);
             let claimed = self.or_offer(
                 self.store
-                    .claim_wake_batch(&scope, &ids, &batch_id, &turn_id, settings.mode.notifies(), now)
+                    .claim_wake_batch(
+                        &scope,
+                        &ids,
+                        &batch_id,
+                        &turn_id,
+                        settings.mode.notifies(),
+                        now,
+                    )
                     .map_err(|_| "cannot claim wake batch".to_owned()),
                 &scope,
                 &ids,
@@ -701,7 +718,12 @@ impl WakeService {
                 Ok(_) => report.started += 1,
                 Err(ConversationError::TurnRunning { .. }) => {
                     // A user turn slipped in: the records go back, no attempt is spent.
-                    self.settle(&batch_id, Settle::Requeue { count_attempt: false })?;
+                    self.settle(
+                        &batch_id,
+                        Settle::Requeue {
+                            count_attempt: false,
+                        },
+                    )?;
                     self.offer_again(&scope, &ids, now);
                 }
                 Err(_) => {

@@ -106,8 +106,12 @@ pub enum HoldError {
 impl fmt::Display for HoldError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::BadId => "the hold id and the subject id must be 1 to 128 and 1 to 160 characters",
-            Self::BadDate => "the hold date must be a real YYYY-MM-DD before 2100 with its UTC day end",
+            Self::BadId => {
+                "the hold id and the subject id must be 1 to 128 and 1 to 160 characters"
+            }
+            Self::BadDate => {
+                "the hold date must be a real YYYY-MM-DD before 2100 with its UTC day end"
+            }
             Self::NotInFuture => "the hold must end after now",
             Self::NothingOpen => "there is no open decision to hold",
             Self::IdInUse => "a hold with this id already exists",
@@ -153,7 +157,8 @@ impl SqliteStore {
         until_ms: i64,
         now_ms: i64,
     ) -> Result<DecisionHold, StoreError> {
-        if !(1..=128).contains(&id.chars().count()) || !(1..=160).contains(&subject_id.chars().count())
+        if !(1..=128).contains(&id.chars().count())
+            || !(1..=160).contains(&subject_id.chars().count())
         {
             return Err(HoldError::BadId.into());
         }
@@ -402,10 +407,13 @@ fn hold_from_row(row: &SqliteRow) -> Result<DecisionHold, StoreError> {
 /// The last millisecond of `date` (`YYYY-MM-DD`, a real calendar day) in UTC, or `None`.
 fn end_of_day_ms(date: &str) -> Option<i64> {
     let shaped = date.len() == 10
-        && date
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| if index == 4 || index == 7 { byte == b'-' } else { byte.is_ascii_digit() });
+        && date.bytes().enumerate().all(|(index, byte)| {
+            if index == 4 || index == 7 {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        });
     if !shaped {
         return None;
     }

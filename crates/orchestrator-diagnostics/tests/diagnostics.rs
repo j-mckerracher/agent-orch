@@ -11,7 +11,11 @@ fn parse(line: &str) -> serde_json::Value {
 #[test]
 fn event_lines_are_single_line_json_with_the_fixed_fields() {
     let diag = Diagnostics::memory();
-    diag.warn("daemon", "launch_failed", &[("task_id", "t-1"), ("error", "line one\nline two")]);
+    diag.warn(
+        "daemon",
+        "launch_failed",
+        &[("task_id", "t-1"), ("error", "line one\nline two")],
+    );
     let lines = diag.lines();
     assert_eq!(lines.len(), 1);
     assert!(!lines[0].contains('\n'));
@@ -38,7 +42,10 @@ fn field_values_are_redacted_and_credential_named_fields_are_masked() {
             ("event", "spoof"),
         ],
     );
-    assert!(!line.contains("pw12345") && !line.contains("plain-looking-value"), "{line}");
+    assert!(
+        !line.contains("pw12345") && !line.contains("plain-looking-value"),
+        "{line}"
+    );
     let value = parse(&line);
     assert_eq!(value["auth_token"], MASK);
     assert_eq!(value["event"], "x");

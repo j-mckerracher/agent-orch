@@ -43,7 +43,9 @@ fn registry() -> std::sync::MutexGuard<'static, Registry> {
 impl Registry {
     fn add(&mut self, value: &str) {
         let value = value.trim();
-        let inside_mask = MASK.to_ascii_lowercase().contains(&value.to_ascii_lowercase());
+        let inside_mask = MASK
+            .to_ascii_lowercase()
+            .contains(&value.to_ascii_lowercase());
         if value.len() < MIN_SECRET_LEN || inside_mask || self.values.iter().any(|v| v == value) {
             return;
         }
@@ -136,7 +138,11 @@ fn match_at(hay: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
                 at += 1;
                 break;
             }
-            let skip = if index == 0 { 0 } else { separator_len(&hay[at.min(hay.len())..]) };
+            let skip = if index == 0 {
+                0
+            } else {
+                separator_len(&hay[at.min(hay.len())..])
+            };
             if skip == 0 {
                 return None;
             }

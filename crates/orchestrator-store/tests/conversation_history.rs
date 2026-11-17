@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use orchestrator_core::orchestrator_action::{parse_block, proposal_id, BlockScope};
 use orchestrator_core::records::Project;
 use orchestrator_store::{
-    ConversationError, ConversationTarget, IdempotencyStart, ProposalState, SqliteStore,
-    TurnBlock, TurnOutcome,
+    ConversationError, ConversationTarget, IdempotencyStart, ProposalState, SqliteStore, TurnBlock,
+    TurnOutcome,
 };
 use serde_json::json;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -46,7 +46,13 @@ fn fingerprint(seed: u64) -> String {
 
 fn begin_global(store: &SqliteStore, turn: &str, text: &str) {
     store
-        .begin_conversation_turn(&ConversationTarget::Global, turn, text, "test-runtime", "1.0.0")
+        .begin_conversation_turn(
+            &ConversationTarget::Global,
+            turn,
+            text,
+            "test-runtime",
+            "1.0.0",
+        )
         .unwrap();
 }
 
@@ -83,7 +89,9 @@ fn raw_connect(path: &Path) -> sqlx::SqliteConnection {
         .filename(path)
         .create_if_missing(true)
         .foreign_keys(true);
-    runtime().block_on(sqlx::SqliteConnection::connect_with(&options)).unwrap()
+    runtime()
+        .block_on(sqlx::SqliteConnection::connect_with(&options))
+        .unwrap()
 }
 
 /// One text value read over a raw connection.
@@ -152,8 +160,16 @@ fn a_cleared_conversation_leaves_its_text_in_no_file_of_the_data_directory() {
         .unwrap();
 
     // Control: before the clear, the text is on disk, so the search below means something.
-    for marker in [GLOBAL_MESSAGE, GLOBAL_REPLY, COORDINATOR_NOTE, COORDINATOR_PROPOSAL] {
-        assert!(!files_containing(directory.path(), marker).is_empty(), "{marker} not on disk");
+    for marker in [
+        GLOBAL_MESSAGE,
+        GLOBAL_REPLY,
+        COORDINATOR_NOTE,
+        COORDINATOR_PROPOSAL,
+    ] {
+        assert!(
+            !files_containing(directory.path(), marker).is_empty(),
+            "{marker} not on disk"
+        );
     }
 
     store
@@ -161,7 +177,12 @@ fn a_cleared_conversation_leaves_its_text_in_no_file_of_the_data_directory() {
         .unwrap();
     store.clear_coordinator_history("p1").unwrap();
 
-    for marker in [GLOBAL_MESSAGE, GLOBAL_REPLY, COORDINATOR_NOTE, COORDINATOR_PROPOSAL] {
+    for marker in [
+        GLOBAL_MESSAGE,
+        GLOBAL_REPLY,
+        COORDINATOR_NOTE,
+        COORDINATOR_PROPOSAL,
+    ] {
         assert_eq!(
             files_containing(directory.path(), marker),
             Vec::<PathBuf>::new(),
@@ -191,7 +212,9 @@ fn a_clear_deletes_only_its_conversation_and_records_counts_without_content() {
     assert_eq!((outcome.entries_deleted, outcome.turns_deleted), (2, 1));
     assert_eq!(outcome.clear_generation, 1);
 
-    let page = store.conversation_page(&ConversationTarget::Global, 0, 100).unwrap();
+    let page = store
+        .conversation_page(&ConversationTarget::Global, 0, 100)
+        .unwrap();
     assert!(page.entries.is_empty());
     assert_eq!(page.clear_generation, 1);
     assert!(store.conversation_entry("t1:user").unwrap().is_none());
@@ -232,17 +255,21 @@ fn a_running_turn_refuses_the_clear_and_nothing_is_deleted() {
         refused,
         Err(ConversationError::TurnRunning { ref turn_id }) if turn_id == "t1"
     ));
-    let page = store.conversation_page(&ConversationTarget::Global, 0, 100).unwrap();
+    let page = store
+        .conversation_page(&ConversationTarget::Global, 0, 100)
+        .unwrap();
     assert_eq!(page.entries.len(), 1);
     assert!(store.conversation_audit().unwrap().is_empty());
 
     store
         .finish_conversation_turn("t1", &TurnOutcome::Completed)
         .unwrap();
-    assert!(store
-        .clear_conversation_history(&ConversationTarget::Global)
-        .unwrap()
-        .cleared);
+    assert!(
+        store
+            .clear_conversation_history(&ConversationTarget::Global)
+            .unwrap()
+            .cleared
+    );
 }
 
 #[test]
@@ -313,14 +340,23 @@ fn a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty() {
 
     let store = open(directory.path());
     assert!(store.coordinator_scope("p1").unwrap().removed);
-    assert_eq!(store.removed_coordinator_projects().unwrap(), vec!["p1".to_owned()]);
-    assert!(store.coordinator_entries_after("p1", 0, 100).unwrap().is_empty());
+    assert_eq!(
+        store.removed_coordinator_projects().unwrap(),
+        vec!["p1".to_owned()]
+    );
+    assert!(store
+        .coordinator_entries_after("p1", 0, 100)
+        .unwrap()
+        .is_empty());
     assert!(store.clear_coordinator_history("p1").is_err());
 
     let restored = store.restore_coordinator("p1").unwrap();
     assert!(restored.changed && !restored.removed);
     assert!(!store.coordinator_scope("p1").unwrap().removed);
-    assert!(store.coordinator_entries_after("p1", 0, 100).unwrap().is_empty());
+    assert!(store
+        .coordinator_entries_after("p1", 0, 100)
+        .unwrap()
+        .is_empty());
     assert!(!store.restore_coordinator("p1").unwrap().changed);
 
     let actions: Vec<String> = store
@@ -329,7 +365,10 @@ fn a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty() {
         .into_iter()
         .map(|record| format!("{}:{}", record.action, record.scope))
         .collect();
-    assert_eq!(actions, vec!["remove:coordinator:p1", "restore:coordinator:p1"]);
+    assert_eq!(
+        actions,
+        vec!["remove:coordinator:p1", "restore:coordinator:p1"]
+    );
     // The project and its registration are untouched.
     assert_eq!(store.get_project("p1").unwrap().id, "p1");
 }
@@ -373,11 +412,17 @@ fn history_rows_are_only_deleted_by_a_clear_and_audit_rows_never() {
     store.remove_coordinator("p1").unwrap();
     drop(store);
 
-    assert!(!accepted(&path, "UPDATE conversation_entries SET body = 'x'"));
+    assert!(!accepted(
+        &path,
+        "UPDATE conversation_entries SET body = 'x'"
+    ));
     assert!(!accepted(&path, "DELETE FROM conversation_entries"));
     assert!(!accepted(&path, "DELETE FROM conversation_turns"));
     assert!(!accepted(&path, "DELETE FROM coordinator_entries"));
-    assert!(!accepted(&path, "UPDATE conversation_audit SET action = 'clear'"));
+    assert!(!accepted(
+        &path,
+        "UPDATE conversation_audit SET action = 'clear'"
+    ));
     assert!(!accepted(&path, "DELETE FROM conversation_audit"));
 }
 
@@ -514,19 +559,24 @@ fn a_database_from_before_the_clear_migrations_is_migrated_and_its_replies_scrub
         store.conversation_entry("t1:user").unwrap().unwrap().body,
         "LEGACY-MESSAGE"
     );
-    assert_eq!(store.coordinator_entry("c1").unwrap().unwrap().body, "LEGACY-NOTE");
+    assert_eq!(
+        store.coordinator_entry("c1").unwrap().unwrap().body,
+        "LEGACY-NOTE"
+    );
     drop(store);
 
     let rt = runtime();
     let mut connection = raw_connect(&path);
     let results: Vec<String> = rt
         .block_on(
-            sqlx::query_scalar("SELECT result FROM idempotency_records")
-                .fetch_all(&mut connection),
+            sqlx::query_scalar("SELECT result FROM idempotency_records").fetch_all(&mut connection),
         )
         .unwrap();
     for result in results {
-        assert!(!result.contains("LEGACY-"), "a replay result still holds message text: {result}");
+        assert!(
+            !result.contains("LEGACY-"),
+            "a replay result still holds message text: {result}"
+        );
     }
 }
 
@@ -541,10 +591,12 @@ fn a_migrated_database_reaches_the_clear_path_with_its_pre_existing_rows() {
             .unwrap();
     }
     let store = open(directory.path());
-    assert!(store
-        .clear_conversation_history(&ConversationTarget::Global)
-        .unwrap()
-        .cleared);
+    assert!(
+        store
+            .clear_conversation_history(&ConversationTarget::Global)
+            .unwrap()
+            .cleared
+    );
     assert!(files_containing(directory.path(), GLOBAL_MESSAGE).is_empty());
     assert_eq!(
         store

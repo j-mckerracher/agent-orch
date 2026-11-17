@@ -62,6 +62,7 @@ fn run() -> Result<(), String> {
     let _lock = acquire_lock(&data_dir)?;
     let config = ExecutorConfig::for_data_dir(&data_dir);
     let handler = Arc::new(DaemonApi::with_executor(&data_dir, config)?);
+    handler.start_grant_matcher();
     let mut server = ServerConfig::new(data_dir, env!("CARGO_PKG_VERSION"));
     if let Some(secret) = approver {
         server = server.with_approver(secret);
@@ -79,9 +80,7 @@ fn acquire_lock(data_dir: &std::path::Path) -> Result<DataDirectoryLock, String>
 
 /// The data directory the command line named, if any, and whether the approver
 /// secret arrives on stdin. Each flag may appear once.
-fn parse_args(
-    mut args: impl Iterator<Item = OsString>,
-) -> Result<(Option<PathBuf>, bool), String> {
+fn parse_args(mut args: impl Iterator<Item = OsString>) -> Result<(Option<PathBuf>, bool), String> {
     let mut configured = None;
     let mut approver_stdin = false;
     while let Some(arg) = args.next() {
@@ -169,7 +168,10 @@ mod tests {
         ] {
             let error = read_approver(&mut bad.as_bytes()).expect_err("rejected");
             assert_eq!(error, APPROVER_REJECTED);
-            assert!(bad.is_empty() || !error.contains(&bad), "the input was echoed");
+            assert!(
+                bad.is_empty() || !error.contains(&bad),
+                "the input was echoed"
+            );
         }
     }
 

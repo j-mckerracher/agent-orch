@@ -54,13 +54,13 @@ pub use orchestrator_private_fs::{create_private_dir, create_private_file, restr
 pub mod sqlite;
 mod sqlite_actions;
 mod sqlite_approvals;
-mod sqlite_attempts;
 mod sqlite_archive;
+mod sqlite_attempts;
 mod sqlite_conversation_usage;
 mod sqlite_conversations;
 mod sqlite_delivery;
-mod sqlite_history;
 mod sqlite_grants;
+mod sqlite_history;
 mod sqlite_holds;
 mod sqlite_lineage;
 mod sqlite_ops;
@@ -72,38 +72,36 @@ mod sqlite_supervision;
 mod sqlite_verification;
 mod sqlite_wake;
 mod sqlite_workstreams;
+pub use sqlite_actions::{
+    ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
+    TurnBlock, DEPENDENCY_NOT_EXECUTED,
+};
+pub use sqlite_archive::ArchiveError;
+pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
 pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
     ConversationTurn, TurnOutcome, TurnPermission, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
 };
-pub use sqlite_actions::{
-    ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
-    TurnBlock, DEPENDENCY_NOT_EXECUTED,
-};
-pub use sqlite_archive::ArchiveError;
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
+pub use sqlite_grants::{GrantClaimError, GrantError, GrantEvent, GrantEventKind, GrantOutcome};
+pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_holds::{DecisionHold, HoldError, HoldState, HoldSubject};
 pub use sqlite_lineage::{LineageError, LineageRelation, TaskLineage};
-pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
-pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
-pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
-pub use sqlite_project_defaults::{
-    ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow,
-};
-pub use sqlite_grants::{GrantError, GrantEvent, GrantEventKind, GrantOutcome};
+pub use sqlite_project_defaults::{ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow};
 pub use sqlite_reports::{
     ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
 };
+pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_settings::{
     LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, SupervisionSettings,
     WakeLimitsPatch,
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
 pub use sqlite_wake::{
-    NewWakeRecord, Settle, SkipReason, StaleProposal, WakeKind, WakeOutcome, WakeRecord,
-    WakeState, WAKE_PAGE_SIZE,
+    NewWakeRecord, Settle, SkipReason, StaleProposal, WakeKind, WakeOutcome, WakeRecord, WakeState,
+    WAKE_PAGE_SIZE,
 };
 pub use sqlite_workstreams::{WorkstreamRevision, WorkstreamStoreError, WorkstreamTask};
 pub mod audit_envelope;
