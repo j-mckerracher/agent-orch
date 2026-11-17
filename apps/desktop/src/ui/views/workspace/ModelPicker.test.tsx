@@ -280,7 +280,8 @@ describe("ModelPicker saved choice (DPES-1105)", () => {
     );
     expect(await screen.findByRole("button", { name: "Model settings: GitHub Copilot · unavailable" })).toBeInTheDocument();
     expect(screen.getByText(/Your choice is unavailable\. Run copilot login, then try again\./)).toBeInTheDocument();
-    expect(onChoiceChange).toHaveBeenLastCalledWith(null);
+    // The sign-in answer arrives on its own tick; the picker then reports no choice.
+    await waitFor(() => expect(onChoiceChange).toHaveBeenLastCalledWith(null));
     expect(source.copilotSignInStatus).toHaveBeenCalled();
   });
 
