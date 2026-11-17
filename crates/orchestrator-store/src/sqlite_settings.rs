@@ -29,6 +29,8 @@ pub struct OrchestratorSettings {
     pub wake_limits: WakeLimits,
     /// Read and written only through `monitoring.*`.
     pub mode: MonitoringMode,
+    /// Phase 4b: chat may propose a task that ends in a pull request. Off by default.
+    pub chat_pr_delivery: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +85,7 @@ pub struct SettingsPatch {
     pub wake_limits: WakeLimitsPatch,
     /// `settings.set` never sets it; `monitoring.set` sets only it.
     pub mode: Option<MonitoringMode>,
+    pub chat_pr_delivery: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -106,7 +109,7 @@ impl Bound {
 
 const SETTINGS_COLUMNS: &str = "load_cpu_percent, load_memory_percent, load_disk_percent, \
     monitoring_mode, base_interval_secs, min_interval_secs, wake_hourly_cap, wake_daily_cap, \
-    wake_daily_token_budget, attempt_wall_minutes";
+    wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery";
 
 impl SqliteStore {
     /// The settings row. A new store holds the defaults: load limits 80, 85 and 90, mode on,
@@ -216,6 +219,9 @@ impl SqliteStore {
             if let Some(mode) = patch.mode {
                 named.push(("monitoring_mode", Bound::Text(mode.as_str())));
             }
+            if let Some(value) = patch.chat_pr_delivery {
+                named.push(("chat_pr_delivery", Bound::Integer(i64::from(value))));
+            }
 
             // Set only the columns the patch names. A write must never touch a column it was
             // not given, the wake cursor above all.
@@ -300,6 +306,7 @@ async fn read_settings(
         supervision,
         wake_limits,
         mode,
+        chat_pr_delivery: row.try_get::<i64, _>("chat_pr_delivery")? != 0,
     })
 }
 

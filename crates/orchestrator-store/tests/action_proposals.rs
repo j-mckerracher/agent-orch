@@ -861,6 +861,8 @@ fn migration_0038_applies_to_a_0037_database_with_proposals_and_keeps_them() {
         vec![
             "action_proposal_events_no_delete",
             "action_proposal_events_no_update",
+            // Added by 0042: the store opens every migration, so a 0037 database ends with it too.
+            "action_proposals_denial_once",
             "action_proposals_fixed_parameters",
             "action_proposals_gated_delete",
             "action_proposals_state_transitions",

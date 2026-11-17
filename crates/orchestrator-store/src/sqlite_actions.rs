@@ -339,12 +339,49 @@ impl SqliteStore {
                 ProposalState::Approved,
                 None,
                 None,
+                None,
                 &actor,
             )
             .await?;
             let approved = reload_proposal(&mut transaction, &id).await?;
             transaction.commit().await?;
             Ok(approved)
+        })
+    }
+
+    /// Moves a pending proposal to `failed` with `action_denied` and `denial`, in one
+    /// transaction, records the event, and fails its pending dependents. Used by the
+    /// approve-time envelope re-check. A proposal that is not pending is refused with
+    /// [`ResolveError::NotPending`] and nothing is written.
+    pub fn deny_action_proposal(
+        &self,
+        id: &str,
+        denial: &str,
+        actor: &str,
+    ) -> Result<ActionProposal, ResolveError> {
+        let (id, denial, actor) = (id.to_owned(), denial.to_owned(), actor.to_owned());
+        resolve_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let proposal = load_proposal(&mut transaction, &id)
+                .await?
+                .ok_or(ResolveError::NotFound)?;
+            if proposal.state != ProposalState::Pending {
+                return Err(ResolveError::NotPending(proposal.state));
+            }
+            move_state(
+                &mut transaction,
+                &proposal,
+                ProposalState::Failed,
+                None,
+                Some(ACTION_DENIED),
+                Some(denial.as_str()),
+                &actor,
+            )
+            .await?;
+            fail_pending_dependents(&mut transaction, &id, &actor).await?;
+            let denied = reload_proposal(&mut transaction, &id).await?;
+            transaction.commit().await?;
+            Ok(denied)
         })
     }
 
@@ -367,6 +404,7 @@ impl SqliteStore {
                 &mut transaction,
                 &proposal,
                 ProposalState::Rejected,
+                None,
                 None,
                 None,
                 &actor,
@@ -417,6 +455,7 @@ impl SqliteStore {
                 to,
                 result_ref.as_deref(),
                 error_code.as_deref(),
+                None,
                 &actor,
             )
             .await?;
@@ -445,28 +484,51 @@ where
 
 /// Moves `proposal` from its current state to `to` by compare-and-set, and appends its
 /// event in the same transaction. The update touches only the state, the outcome and
-/// `updated_at`, which migration 0037 allows.
+/// `updated_at`, which migration 0037 allows. `denial` is written only by an approve-time
+/// denial; the other statement leaves the column out, because a trigger fires on a column
+/// named in `SET` even when its value is unchanged.
 async fn move_state(
     connection: &mut SqliteConnection,
     proposal: &ActionProposal,
     to: ProposalState,
     result_ref: Option<&str>,
     error_code: Option<&str>,
+    denial: Option<&str>,
     actor: &str,
 ) -> Result<(), ResolveError> {
     let from = proposal.state;
-    let updated = sqlx::query(
-        "UPDATE action_proposals \
-         SET state = ?, result_ref = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP \
-         WHERE id = ? AND state = ?",
-    )
-    .bind(to.as_str())
-    .bind(result_ref)
-    .bind(error_code)
-    .bind(&proposal.id)
-    .bind(from.as_str())
-    .execute(&mut *connection)
-    .await?;
+    let updated = match denial {
+        Some(denial) => {
+            sqlx::query(
+                "UPDATE action_proposals \
+                 SET state = ?, result_ref = ?, error_code = ?, denial = ?, \
+                     updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ? AND state = ?",
+            )
+            .bind(to.as_str())
+            .bind(result_ref)
+            .bind(error_code)
+            .bind(denial)
+            .bind(&proposal.id)
+            .bind(from.as_str())
+            .execute(&mut *connection)
+            .await?
+        }
+        None => {
+            sqlx::query(
+                "UPDATE action_proposals \
+                 SET state = ?, result_ref = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ? AND state = ?",
+            )
+            .bind(to.as_str())
+            .bind(result_ref)
+            .bind(error_code)
+            .bind(&proposal.id)
+            .bind(from.as_str())
+            .execute(&mut *connection)
+            .await?
+        }
+    };
     // The row was read in this same immediate transaction, so this only fails if
     // another writer changed it in between, which the transaction rules out.
     if updated.rows_affected() != 1 {
@@ -513,6 +575,7 @@ async fn fail_pending_dependents(
             ProposalState::Failed,
             None,
             Some(DEPENDENCY_NOT_EXECUTED),
+            None,
             actor,
         )
         .await?;
