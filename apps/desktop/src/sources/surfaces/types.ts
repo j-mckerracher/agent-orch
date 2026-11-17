@@ -35,16 +35,16 @@
  * - Every adapter result carries an observation. Non-ok observations date the status
  *   attempt, not a successful data read; they never imply retained data is fresh.
  * - The derived mutations are D10 `send` (`coordinator.send_message` or
- *   `conversations.send`), `cancel` (`conversations.cancel`) and D9 `workstreams.*`
- *   writes. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
+ *   `conversations.send`), `cancel` (`conversations.cancel`), D9 `workstreams.*`
+ *   writes and D17 `settings.set`. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
-import type { ApprovalState, CopilotSignInRecord, TaskState } from "../../daemon/types";
+import type { ApprovalState, CopilotSignInRecord, LoadMeterName, TaskState } from "../../daemon/types";
 import type { UsageTokenWarningsWire } from "../../daemon/usageWire";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
 
 export type { Provenance, SimulatedReceipt, SourceId };
 
-export type SurfaceId = Extract<SourceId, "D9" | "D10" | "D11" | "D12" | "D13" | "D14" | "D15" | "D16">;
+export type SurfaceId = Extract<SourceId, "D9" | "D10" | "D11" | "D12" | "D13" | "D14" | "D15" | "D16" | "D17">;
 
 export type SurfaceStatus = "ok" | "unavailable" | "unsupported" | "unknown";
 
@@ -162,6 +162,8 @@ export type ConversationTarget =
   | { kind: "project"; projectId: string }
   /** M7-24: a daemon workstream (`conversations.*`), distinct from a project coordinator. */
   | { kind: "workstream"; workstreamId: string };
+/** A target that has a daemon conversation: Global or a workstream. */
+export type LiveConversationTarget = Exclude<ConversationTarget, { kind: "project" }>;
 export interface ConversationEntry {
   id: string;
   /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. */
@@ -175,6 +177,10 @@ export interface ConversationEntry {
   errorCode?: string;
   /** True while the daemon has not recorded the end of this reply. */
   streaming?: boolean;
+  /** `wake` on the opening entry of an automatic turn: it is event lines, not something the user wrote (DPES-1105). */
+  origin?: "wake";
+  /** The daemon's transcript sequence (a reply: its last chunk). A wake record is placed by it. Live targets only. */
+  sequence?: number;
 }
 /** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
 export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
@@ -203,7 +209,35 @@ export interface ActionProposal {
   /** The record the executed action created or changed; null until it runs. */
   resultRef: string | null;
   errorCode: string | null;
+  /** The envelope's reason when `errorCode` is "action_denied"; null otherwise. */
+  denial: string | null;
+  /** Who approved it: a user, or a standing approval by id. Absent from older daemons and null until approved. */
+  approvedBy?: { kind: "user" } | { kind: "grant"; grantId: string } | null;
+  /** Display facts the daemon read live; null for kinds that need none. No paths. */
+  target: ProposalTarget | null;
   updatedAt: string;
+}
+
+/** What the daemon read when it listed a task proposal: the project's folder name, or the task's title and state now. */
+export interface ProposalTarget {
+  projectName?: string | null;
+  taskTitle?: string;
+  taskState?: string;
+  /** True when the task asks for less than the project's default delivery (DPES-1105). */
+  belowProjectDefault?: boolean;
+  /** The project's mode string; sent with `belowProjectDefault`. */
+  projectMode?: string;
+  /** Only on a `project.remove` card: the tasks kept in history, and how many of them are running now. */
+  taskCount?: number;
+  runningTasks?: number;
+  /** Only on a `delivery.merge` card: the pull request as the daemon last read it. */
+  pull?: PullFacts;
+}
+
+/** A pending proposal and the conversation that holds its card (DPES-1105). */
+export interface ProposalItem {
+  proposal: ActionProposal;
+  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string };
 }
 
 /** Outcome of approve or reject. `simulated` receipts changed nothing; `proposal` is what the daemon confirmed. */
@@ -226,6 +260,8 @@ export interface ConversationTurnInfo {
   verified: boolean;
   /** The action block outcome of this turn's reply (DPES-1105). Absent when the daemon did not send it. */
   actionBlock?: ActionBlock | null;
+  /** `wake` for an automatic turn the user did not ask for. Absent from an older daemon (DPES-1105). */
+  trigger?: "user" | "wake";
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -245,6 +281,19 @@ export interface ConversationTranscript {
    * pending card is missing; only older executed, rejected or failed ones may be (DPES-1105).
    */
   proposalsMore: boolean;
+  /** The scope's wake records, oldest first (DPES-1105). Absent when the daemon did not send them. */
+  wake?: WakeRecord[];
+  /** True when the daemon held older wake records than it sent. */
+  wakeMore?: boolean;
+  /** Workstream targets only: tasks the global conversation routed here, newest first (DPES-1105). Absent when none. */
+  routedIn?: RoutedIn[];
+}
+/** A task routed to a workstream by the global conversation (DPES-1105). Titles only: no path, token or output. */
+export interface RoutedIn {
+  taskId: string;
+  title: string;
+  routedAt: string;
+  state: string;
 }
 export interface SendReceipt {
   /** True for fixture receipts: nothing was recorded anywhere. */
@@ -602,6 +651,8 @@ export interface ActionSupport {
 }
 export interface DecisionQueue {
   items: DecisionItem[];
+  /** Pending proposed actions (DPES-1105). The user decides on the card in the conversation; the queue only links to it. */
+  proposals: ProposalItem[];
   /** Approve and reject belong to the review screen; these extra actions have no daemon decision type. */
   actions: Record<"postpone" | "dismiss" | "escalate", ActionSupport>;
 }
@@ -611,6 +662,397 @@ export interface DecisionQueueSource {
   /** Fixture only; derived adapters reject. */
   simulatePostpone(id: string): Promise<SurfaceReceipt>;
   simulateDismiss(id: string): Promise<SurfaceReceipt>;
+}
+
+// D17 -- SettingsSource. Derived: settings.get / settings.set (capability `settings`), the machine load limits and the gate they feed.
+/** The three limits as whole percents from 50 to 100; 100 turns that meter's check off. */
+export type LoadLimits = Record<LoadMeterName, number>;
+/** What the gate knows of one meter: a 60 second mean, nothing yet, or a check that is off. */
+export type LoadReading =
+  | { state: "mean"; meanPercent: number }
+  | { state: "unknown"; reason: "warming_up" | "unavailable" }
+  | { state: "off" };
+/** The meter that holds new task starts back, and the mean at which it lets them go again. */
+export interface LoadHold {
+  meter: LoadMeterName;
+  meanPercent: number;
+  limitPercent: number;
+  reopenPercent: number;
+}
+/** Phase 3 stall-check settings. Absent from a daemon that cannot change them. */
+export interface SupervisionSettings {
+  baseIntervalSecs: number;
+  minIntervalSecs: number;
+  attemptWallMinutes: number;
+}
+/** Phase 3 limits on automatic replies per conversation. `null` is no limit. */
+export interface WakeLimitSettings {
+  hourlyCap: number | null;
+  dailyCap: number | null;
+  dailyTokenBudget: number | null;
+}
+/** What `settings.set` sends for the two Phase 3 groups. A key left out is unchanged; `null` clears a wake limit. */
+export interface GroupsPatch {
+  supervision?: Partial<SupervisionSettings>;
+  wakeLimits?: Partial<WakeLimitSettings>;
+  /** Whether chat may propose tasks that end in a pull request. */
+  chatPrDelivery?: boolean;
+  /** Whether the orchestrator chat gets the read-only task tools. */
+  mcpEnabled?: boolean;
+}
+export interface SettingsSnapshot {
+  limits: LoadLimits;
+  supervision?: SupervisionSettings;
+  wakeLimits?: WakeLimitSettings;
+  /** Absent from a daemon that cannot change it. */
+  chatPrDelivery?: boolean;
+  /** Absent from a daemon that cannot change it. */
+  mcpEnabled?: boolean;
+  gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
+  /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
+  feed: "sampler" | "disabled_by_environment";
+}
+export interface SettingsReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** What the daemon holds after the change; for a simulated receipt, the fixture as it was. */
+  snapshot: SettingsSnapshot;
+}
+export interface SettingsSource {
+  readonly provenance: Provenance;
+  get(): Promise<SurfaceResult<SettingsSnapshot>>;
+  /** Sends only the fields in `patch`. Derived: `settings.set`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  set(patch: Partial<LoadLimits>): Promise<SettingsReceipt>;
+  /** Phase 3: sends only the supervision and wake-limit fields in `patch`. Same rules as `set`. */
+  setGroups(patch: GroupsPatch): Promise<SettingsReceipt>;
+}
+
+// Monitoring (DPES-1105 Phase 3). Derived: monitoring.get / monitoring.set / monitoring.ack (capability `monitoring`).
+/** The modes the user can choose. The daemon's own word stays a string in `MonitoringState`. */
+export type MonitoringMode = "on" | "quiet" | "off" | "away";
+export interface WakeRecord {
+  id: string;
+  event: string;
+  subject: string;
+  notice: string;
+  /** `noticed`, `pending`, `running`, `handled`, `skipped` or `failed`; kept as the daemon's string. */
+  state: string;
+  /** `replied` or `quiet`; null until handled. */
+  outcome: string | null;
+  /** `mode_off`, `limit_hourly`, `limit_daily` or `limit_tokens`; null unless skipped. */
+  skipReason: string | null;
+  turnId: string | null;
+  anchorSequence: number;
+  /** True when the record counts toward the badge. */
+  notify: boolean;
+  seen: boolean;
+  createdAt: string;
+}
+export interface PausedTarget {
+  target: LiveConversationTarget;
+  /** `hourly`, `daily` or `tokens`; an unknown word is kept. */
+  reason: string;
+  /** RFC 3339 instant the pause is expected to end; null for a token budget. */
+  until: string | null;
+}
+export interface UnseenTarget {
+  target: LiveConversationTarget;
+  count: number;
+}
+export interface MonitoringState {
+  /** The daemon's word. Anything but on, quiet or off is shown as unknown. */
+  mode: string;
+  paused: PausedTarget[];
+  unseen: UnseenTarget[];
+}
+export interface MonitoringReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  state: MonitoringState;
+}
+export interface MonitoringSource {
+  readonly provenance: Provenance;
+  get(): Promise<SurfaceResult<MonitoringState>>;
+  /** Derived: `monitoring.set`, a user-only method; it rejects on failure. Fixture: changes the in-memory mode only. */
+  set(mode: MonitoringMode): Promise<MonitoringReceipt>;
+  /** Derived: `monitoring.ack`. Fixture: nothing. */
+  ack(target: LiveConversationTarget): Promise<void>;
+  /** Derived: `monitoring.brief` (capability `standing_approvals`). Null data: no brief is due. Fixture: one brief. */
+  brief(): Promise<SurfaceResult<Brief | null>>;
+  /** Derived: `monitoring.brief_ack`, which only marks the brief seen. Fixture: nothing is saved and `simulated` is true. */
+  briefAck(): Promise<{ simulated: boolean }>;
+}
+
+// Return brief (DPES-1105 Phase 5b). Counts, ids, short titles and state words only; never text an agent wrote.
+export interface BriefCounts {
+  tasksSucceeded: number;
+  tasksFailed: number;
+  tasksStalled: number;
+  tasksRunning: number;
+  proposalsApprovedByUser: number;
+  proposalsApprovedByGrant: number;
+  executedByGrant: number;
+  failedUnderGrant: number;
+  proposalsWaiting: number;
+  deliveriesWaiting: number;
+  decisionsHeld: number;
+  grantUses: number;
+  grantsExpired: number;
+  grantsRevoked: number;
+  quietUpdates: number;
+  repliesPausedByLimit: number;
+}
+
+export interface BriefGrant {
+  id: string;
+  scopeKind: string;
+  /** A project code or a cut workstream title. */
+  scopeLabel: string;
+  usesInWindow: number;
+  usesUsed: number;
+  maxUses: number;
+  status: string;
+}
+
+export interface BriefItem {
+  /** `proposal_waiting`, `delivery_waiting`, `task_failed`, `task_stalled` or `sign_in_needed`; an unknown word is kept. */
+  kind: string;
+  id: string;
+  title: string;
+  state: string;
+  project: string | null;
+  atMs: number;
+}
+
+export interface Brief {
+  fromMs: number;
+  toMs: number;
+  /** True while the user is still away: the window ends now. */
+  open: boolean;
+  counts: BriefCounts;
+  grants: BriefGrant[];
+  waiting: BriefItem[];
+  attention: BriefItem[];
+}
+
+// Holds (DPES-1105 Phase 4d). Derived: holds.list / holds.set / holds.release (capability `holds`).
+/** What a hold hides: all pending approvals of a task (`approval`, the subject id is the task id) or one action card (`proposal`). */
+export type HoldSubjectKind = "approval" | "proposal";
+
+/** One hold in force. The kind and state stay the daemon's strings so an unknown value is never coerced. */
+export interface HoldItem {
+  id: string;
+  subjectKind: string;
+  subjectId: string;
+  /** `YYYY-MM-DD`: the day the decision comes back. */
+  untilDate: string;
+  state: string;
+}
+
+export interface HoldReceipt {
+  /** True fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was changed." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  hold: HoldItem;
+}
+
+// Pull requests (DPES-1105 Phase 4c). Derived: pulls.list / pulls.refresh (capability `landing`), read only.
+/** One check of a pull request. `name` is remote text: show it as plain text only. */
+export interface PullCheck {
+  name: string;
+  /** The host's word for the outcome, as sent. */
+  result: string;
+}
+
+/** The facts a merge card and a list row share. */
+export interface PullFacts {
+  mergeMethod: string;
+  requiredTotal: number;
+  requiredPassed: number;
+  requiredFailed: number;
+  checks: PullCheck[];
+  observedAgeSecs: number;
+  /** The refusal code a merge would meet now (for example `checks_red`); null when it would be allowed. */
+  refusal: string | null;
+}
+
+/** One watched pull request. `title`, `branch` and `baseBranch` are remote text: show them as plain text only. */
+export interface PullItem {
+  taskId: string;
+  number: number;
+  /** open, merged or closed; kept as the daemon's string so an unknown value is never coerced. */
+  state: string;
+  /** The full 40 character commit. */
+  headSha: string;
+  baseBranch: string;
+  branch: string;
+  mergeable: "yes" | "no" | "unknown";
+  requiredTotal: number;
+  requiredPassed: number;
+  requiredFailed: number;
+  checks: PullCheck[];
+  title: string;
+  observedAgeSecs: number;
+  /** The task's merge request, when one was made; null otherwise. */
+  merge: { state: string; refusal: string | null } | null;
+}
+
+export interface PullsSource {
+  readonly provenance: Provenance;
+  /** The watched pull requests. Derived: `pulls.list`. Fixture: sample rows. */
+  list(): Promise<SurfaceResult<PullItem[]>>;
+  /** Derived: `pulls.refresh`, a read the daemon rate limits per task; it rejects on failure. Fixture: the row as it was. */
+  refresh(taskId: string): Promise<PullItem>;
+}
+
+export interface HoldsSource {
+  readonly provenance: Provenance;
+  /** The holds in force now. Derived: `holds.list`. Fixture: one held decision. */
+  list(): Promise<SurfaceResult<HoldItem[]>>;
+  /** Derived: `holds.set`, a user-only method; it rejects on failure. Fixture: changes in-memory holds only. */
+  set(subjectKind: HoldSubjectKind, subjectId: string, until: string): Promise<HoldReceipt>;
+  /** Derived: `holds.release`, user-only. Fixture: changes in-memory holds only. */
+  release(holdId: string): Promise<HoldReceipt>;
+}
+
+// Project defaults (DPES-1105 Phase 4). Derived: projects.get_defaults / projects.set_defaults (capability `projects`).
+/** A project's delivery defaults. The mode and merge method stay the daemon's strings; the form offers the known ones. */
+export interface ProjectDefaults {
+  /** `local-only`, `direct-pr` or `no-mistakes`. */
+  mode: string;
+  baseBranch: string | null;
+  branchPrefix: string | null;
+  /** Argument arrays; a command never reaches a shell. */
+  checks: string[][];
+  /** `merge`, `squash` or `rebase`. */
+  mergeMethod: string;
+}
+export interface ProjectDefaultsReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** What the daemon holds after the change; for a simulated receipt, what was typed. */
+  defaults: ProjectDefaults;
+}
+export interface ProjectDefaultsSource {
+  readonly provenance: Provenance;
+  get(projectId: string): Promise<SurfaceResult<ProjectDefaults>>;
+  /** Derived: `projects.set_defaults`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  set(projectId: string, defaults: ProjectDefaults): Promise<ProjectDefaultsReceipt>;
+}
+
+// Standing approvals (DPES-1105 Phase 5). Derived: grants.list / grants.create / grants.revoke (capability `standing_approvals`).
+/** One standing approval. The status stays the daemon's string so a newer state is shown as unknown, never coerced. */
+export interface GrantItem {
+  id: string;
+  /** `project` (the id is a short code) or `workstream`. */
+  scopeKind: string;
+  scopeId: string;
+  /** A project's folder name or a workstream's title; never a path. Null when the daemon sent none. */
+  scopeLabel: string | null;
+  kinds: string[];
+  createdAtMs: number;
+  expiresAtMs: number;
+  maxUses: number;
+  usesUsed: number;
+  tokenBudget: number;
+  /** Tokens reported so far by the tasks the grant started; tasks that report none count zero. */
+  tokensSpent: number;
+  /** `active`, `expired`, `revoked`, `exhausted` or `budget_exhausted`. */
+  status: string;
+  revokedAtMs: number | null;
+  /** Merge grant only: the head branch must start with this. Null on any other grant. */
+  branchPrefix?: string | null;
+}
+
+/** The limits of an unattended merge grant (N8). A limit the daemon did not send is undefined and the form falls back to the core's. */
+export interface MergePolicy {
+  defaultUses?: number;
+  maxUses?: number;
+  maxExpiryHours?: number;
+}
+
+/** The kinds and limits the daemon allows; the form offers nothing else. */
+export interface GrantPolicy {
+  mergePolicy?: MergePolicy | null;
+  grantableKinds: string[];
+  defaultExpiresInSecs: number;
+  maxExpiresInSecs: number;
+  minExpiresInSecs: number;
+  defaultMaxUses: number;
+  maxMaxUses: number;
+  maxTokenBudget: number;
+}
+
+export interface GrantsSnapshot {
+  grants: GrantItem[];
+  policy: GrantPolicy;
+}
+
+/** What the form sends. The scope id is a project code or a workstream id. */
+export interface GrantTerms {
+  scopeKind: "project" | "workstream";
+  scopeId: string;
+  kinds: string[];
+  expiresInSecs: number;
+  maxUses: number;
+  tokenBudget: number;
+  /** Merge grant only: the person ticked the danger confirmation. */
+  confirmUnattendedMerge?: boolean;
+  /** Merge grant only: empty text is not sent. */
+  branchPrefix?: string | null;
+}
+
+export interface GrantReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  grant: GrantItem;
+  /** Revoke only: approved actions that had not started and were stopped. */
+  stopped: number;
+}
+
+export interface GrantsSource {
+  readonly provenance: Provenance;
+  /** The grants (ended ones included) and the policy. Derived: `grants.list`. Fixture: one fixture grant and the daemon's limits. */
+  list(): Promise<SurfaceResult<GrantsSnapshot>>;
+  /** Derived: `grants.create`, a user-only method; it rejects on failure. Fixture: saves nothing. */
+  create(terms: GrantTerms): Promise<GrantReceipt>;
+  /** Derived: `grants.revoke`, user-only. Fixture: saves nothing. */
+  revoke(grantId: string): Promise<GrantReceipt>;
+}
+
+// Orchestrator notes (DPES-1105 5b). Derived: notes.list / notes.set (capability `standing_approvals`).
+/** One scope's notes in order and the limits the editor must respect. `scope` is `global` or `workstream:` plus an id. */
+export interface NotesSnapshot {
+  scope: string;
+  notes: string[];
+  maxNotes: number;
+  maxBytes: number;
+}
+
+export interface NotesReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  /** The list as the daemon holds it now. Fixture: the list as sent, which was not saved. */
+  snapshot: NotesSnapshot;
+}
+
+export interface NotesSource {
+  readonly provenance: Provenance;
+  /** Derived: `notes.list`. Fixture: two sample notes, or none for the `empty` scenario. */
+  list(scope: string): Promise<SurfaceResult<NotesSnapshot>>;
+  /** Derived: `notes.set`, a user-only method that replaces the whole list; it rejects on failure. Fixture: saves nothing. */
+  set(scope: string, notes: string[]): Promise<NotesReceipt>;
 }
 
 export interface SurfaceSources {
@@ -623,4 +1065,11 @@ export interface SurfaceSources {
   models: ModelCatalogSource;
   search: SearchSource;
   decisions: DecisionQueueSource;
+  settings: SettingsSource;
+  monitoring: MonitoringSource;
+  holds: HoldsSource;
+  pulls: PullsSource;
+  projectDefaults: ProjectDefaultsSource;
+  grants: GrantsSource;
+  notes: NotesSource;
 }

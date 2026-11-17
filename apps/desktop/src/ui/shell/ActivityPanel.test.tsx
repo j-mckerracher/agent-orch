@@ -354,6 +354,31 @@ describe("workspace activity popover", () => {
     expect(trigger).toHaveAccessibleName(/1 require attention/);
   });
 
+  it("the_count_is_unchanged_while_the_holds_have_not_loaded", async () => {
+    const fake = liveDaemon();
+    // The holds read never answers, so nothing is known to be held.
+    fake.stub("holds.list", () => new Promise(() => undefined));
+    const { panel } = await mountPanel(fake, { open: false });
+    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
+    await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+  });
+
+  it("the_nav_the_top_bar_and_the_badge_agree_when_something_is_held", async () => {
+    const fake = liveDaemon();
+    fake.approvals = [mkApproval("a1", "t1"), mkApproval("a3", "t2")];
+    fake.stub("holds.list", () => ({
+      holds: [{ id: "h1", subject_kind: "approval", subject_id: "t1", until_date: "2099-01-01", state: "active" }],
+    }));
+    const { panel } = await mountPanel(fake, { open: false });
+    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
+    await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+  });
+
   it("closes on Escape and returns focus to the trigger", async () => {
     const { panel, user } = await mountPanel(null, { open: false });
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
@@ -407,5 +432,101 @@ describe("workspace activity popover", () => {
     await expandSection(user, panel, "Attention");
     expect(within(panel).getByText("Nothing needs attention.")).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Review all decisions" })).toBeInTheDocument();
+  });
+});
+
+describe("pending decision count", () => {
+  const pendingWire = (id: string) => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    scope: { kind: "global" },
+  });
+
+  /** One pending approval (a1) plus `count` pending proposed actions the test can shorten later. */
+  function daemonWithProposals(count: number, more = false) {
+    const fake = liveDaemon();
+    let list = Array.from({ length: count }, (_, index) => pendingWire(`proposal-${index + 1}`));
+    fake.stub("actions.pending", () => ({ proposals: list, more }));
+    return { fake, keep: (kept: number) => (list = list.slice(0, kept)) };
+  }
+
+  it("nav_top_bar_and_activity_badge_show_pending_approvals_plus_proposed_actions_as_one_number", async () => {
+    const { fake } = daemonWithProposals(2);
+    const { panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("3");
+    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/3 require attention/);
+    await waitFor(() => expect(within(panel).getByTestId("activity-status")).toHaveTextContent("3 require attention"));
+  });
+
+  it("the_count_drops_in_all_three_places_when_a_proposal_is_decided_and_the_list_is_read_again", async () => {
+    const { fake, keep } = daemonWithProposals(2);
+    const { services, panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
+    keep(1);
+    await act(async () => services.data.refreshProposals());
+    await waitFor(() => {
+      expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
+      expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
+      expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
+    });
+  });
+
+  it("the_activity_panel_and_the_default_slots_read_n_plus_when_more_proposals_are_waiting", async () => {
+    const { fake } = daemonWithProposals(2, true);
+    fake.approvals = [];
+    const { panel, user } = await mountPanel(fake);
+    await expandSection(user, panel, "Attention");
+    await waitFor(() =>
+      expect(within(panel).getByTestId("activity-attention-proposals")).toHaveTextContent(
+        "2+ proposed actions wait for a decision on their cards.",
+      ),
+    );
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2+");
+    expect(within(panel).getByTestId("activity-status")).toHaveTextContent("2+ require attention");
+    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/2\+ require attention/);
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2+");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("2+ pending decisions: 0 approvals, 2+ proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("2+ require attention");
+  });
+
+  it("all_three_places_show_a_dash_while_the_proposals_list_has_not_loaded_though_approvals_have", async () => {
+    const { fake } = daemonWithProposals(1);
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 20);
+    const { services, panel } = await mountPanel(fake, { open: false });
+    await waitFor(() => {
+      expect(services.data.getSnapshot().approvals.status).toBe("ready");
+      expect(services.data.getSnapshot().proposals.status).toBe("error");
+    });
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("pending decisions: not available");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—");
+  });
+
+  it("the_attention_section_names_pending_proposed_actions_and_does_not_claim_that_nothing_needs_attention", async () => {
+    const { fake } = daemonWithProposals(1);
+    fake.approvals = [];
+    const { panel, user } = await mountPanel(fake);
+    await expandSection(user, panel, "Attention");
+    await waitFor(() =>
+      expect(within(panel).getByTestId("activity-attention-proposals")).toHaveTextContent("1 proposed action waits for a decision on its card."),
+    );
+    expect(within(panel).getByTestId("activity-attention")).not.toHaveTextContent("Nothing needs attention.");
+    expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("1");
   });
 });

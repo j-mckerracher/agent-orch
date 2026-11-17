@@ -9,14 +9,22 @@
 //! Failure diagnostics: the daemon's stdout and stderr go to `daemon.log`;
 //! its tail, and the elapsed time of every call made through `timed!`, are
 //! printed when the test panics.
+//!
+//! Approver: a `Layout` owns the approver secret. The daemon is started with
+//! `--approver-stdin` and the secret written to its stdin, which is then
+//! closed, exactly as the desktop host starts it. `connect` presents nothing, so
+//! it is the session an agent holding only the token would have;
+//! `connect_as_approver` is the desktop's.
 
 #![allow(dead_code)]
 
-use orchestrator_ipc::{Capability, Client};
+use orchestrator_ipc::{ApproverSecret, Capability, Client};
 use std::cell::RefCell;
 use std::fs::{self, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -80,6 +88,7 @@ pub struct Layout {
     pub repo: PathBuf,
     pub worktrees: PathBuf,
     pub log: PathBuf,
+    approver: Arc<ApproverSecret>,
 }
 
 impl Layout {
@@ -97,14 +106,23 @@ impl Layout {
             repo: root.path().join("r"),
             worktrees: root.path().join("w"),
             log: root.path().join("daemon.log"),
+            approver: Arc::new(ApproverSecret::generate().unwrap()),
             _root: root,
         }
+    }
+
+    /// The secret every `Daemon::start*` for this layout is given on stdin.
+    pub fn approver(&self) -> Arc<ApproverSecret> {
+        self.approver.clone()
     }
 }
 
 pub struct Daemon {
     child: Child,
     log: PathBuf,
+    /// Held open for a daemon started without `--approver-stdin`: it must not
+    /// read stdin, so an input that never ends is no reason for it to wait.
+    _stdin: Option<ChildStdin>,
 }
 
 impl Daemon {
@@ -120,24 +138,58 @@ impl Daemon {
         layout: &Layout,
         env: &[(&str, V)],
     ) -> Self {
+        Self::spawn(layout, env, Some(&*layout.approver))
+    }
+
+    /// Starts the daemon with `secret` instead of the layout's own, as a host that
+    /// started it again would: a restart brings another secret.
+    pub fn start_with_secret(layout: &Layout, secret: &ApproverSecret) -> Self {
+        Self::spawn(layout, &[] as &[(&str, &str)], Some(secret))
+    }
+
+    /// Starts the daemon without `--approver-stdin`, as the CLI or a person at a
+    /// terminal does: no session can be an approver.
+    pub fn start_without_approver(layout: &Layout) -> Self {
+        Self::spawn(layout, &[] as &[(&str, &str)], None)
+    }
+
+    fn spawn<V: AsRef<std::ffi::OsStr> + Copy>(
+        layout: &Layout,
+        env: &[(&str, V)],
+        approver: Option<&ApproverSecret>,
+    ) -> Self {
         TIMINGS.with(|timings| timings.borrow_mut().clear());
         let log = File::options()
             .create(true)
             .append(true)
             .open(&layout.log)
             .unwrap();
-        let child = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
-            .arg("--data-dir")
-            .arg(&layout.data)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
+        command.arg("--data-dir").arg(&layout.data);
+        if approver.is_some() {
+            command.arg("--approver-stdin");
+        }
+        let mut child = command
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .envs(env.iter().copied())
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())
             .stderr(log)
             .spawn()
             .unwrap();
+        let mut stdin = child.stdin.take();
+        if let Some(secret) = approver {
+            let pipe = stdin.take().unwrap();
+            if let Err(error) = write_secret(pipe, secret) {
+                kill_tree(&mut child);
+                panic!("cannot give the daemon its approver secret: {error}");
+            }
+        }
         let mut daemon = Self {
             child,
             log: layout.log.clone(),
+            _stdin: stdin,
         };
         daemon.wait_ready(&layout.data);
         daemon
@@ -181,6 +233,11 @@ impl Daemon {
     }
 }
 
+/// Writes the secret and closes the pipe: the end of input the daemon reads to.
+fn write_secret(mut pipe: ChildStdin, secret: &ApproverSecret) -> std::io::Result<()> {
+    pipe.write_all(secret.to_wire().as_bytes())
+}
+
 /// Kills the daemon and, on Windows, every process it started. The tree must
 /// be walked before the daemon dies: once it is gone its children no longer
 /// name it as their parent, and a failed test would leave an agent behind.
@@ -218,6 +275,32 @@ pub fn connect(data: &Path) -> Client {
     loop {
         match connect_all(data) {
             Ok(client) => return client,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "cannot connect: {error:?}");
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+/// Connects with every capability and `CALL_TIMEOUT` as the approver, the session
+/// the desktop host opens, retrying briefly.
+pub fn connect_as_approver(layout: &Layout) -> Client {
+    let deadline = Instant::now() + READY;
+    loop {
+        match Client::connect_with_approver(
+            &layout.data,
+            &Capability::ALL,
+            CALL_TIMEOUT,
+            Some(layout.approver()),
+        ) {
+            Ok(client) => {
+                assert!(
+                    client.is_approver(),
+                    "the daemon did not accept the approver"
+                );
+                return client;
+            }
             Err(error) => {
                 assert!(Instant::now() < deadline, "cannot connect: {error:?}");
                 thread::sleep(Duration::from_millis(50));

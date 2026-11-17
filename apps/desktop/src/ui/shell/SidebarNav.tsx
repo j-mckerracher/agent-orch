@@ -40,6 +40,12 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
       isCurrent: globalItem("review"),
       trailing: reviewCount,
     },
+    {
+      label: "Settings",
+      icon: "⚙",
+      to: { name: "global", view: "settings" },
+      isCurrent: globalItem("settings"),
+    },
   ];
   return (
     <nav aria-label="Primary views" className="shell-nav">

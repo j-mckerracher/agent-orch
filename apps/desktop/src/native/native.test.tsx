@@ -67,7 +67,7 @@ describe("Tauri host connector", () => {
     const fake = new FakeDaemon();
     const host = new FakeHost(fake);
     const opened = await createTauriConnector(host).open(["health", "events"]);
-    expect(opened.welcome).toEqual({ version: 1, capabilities: ["health", "events"], journal_epoch: "epoch-1" });
+    expect(opened.welcome).toEqual({ version: 1, capabilities: ["health", "events"], journal_epoch: "epoch-1", approver: true });
     const replies: unknown[] = [];
     opened.channel.onMessage((message) => replies.push(message));
     opened.channel.send({ jsonrpc: "2.0", id: 1, method: "health" });

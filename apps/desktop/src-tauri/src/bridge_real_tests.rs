@@ -19,7 +19,7 @@ use super::*;
 use orchestrator_ipc::Client;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::OnceLock;
 use tempfile::TempDir;
@@ -179,22 +179,7 @@ impl Fixture {
     }
 
     fn open(&self, window: &str, capabilities: &[Capability]) -> (Opened, Frames) {
-        let (sender, receiver) = mpsc::channel();
-        let sender = Mutex::new(sender);
-        let emit = move |payload| sender.lock().unwrap().send(payload).is_ok();
-        let opened = self
-            .bridge
-            .open(window, capabilities, emit)
-            .unwrap_or_else(|error| panic!("the host could not open the daemon: {error:?}"));
-        (
-            opened,
-            Frames {
-                receiver,
-                window: window.to_owned(),
-                next_id: 1,
-                seen: Vec::new(),
-            },
-        )
+        open_on(&self.bridge, window, capabilities)
     }
 
     fn token(&self) -> String {
@@ -219,21 +204,42 @@ impl Fixture {
     }
 }
 
+/// Opens a connection for `window` on `bridge`; the first host and a second one use it alike.
+fn open_on(bridge: &Bridge, window: &str, capabilities: &[Capability]) -> (Opened, Frames) {
+    let (sender, receiver) = mpsc::channel();
+    let sender = Mutex::new(sender);
+    let emit = move |payload| sender.lock().unwrap().send(payload).is_ok();
+    let opened = bridge
+        .open(window, capabilities, emit)
+        .unwrap_or_else(|error| panic!("the host could not open the daemon: {error:?}"));
+    (
+        opened,
+        Frames {
+            receiver,
+            window: window.to_owned(),
+            next_id: 1,
+            seen: Vec::new(),
+        },
+    )
+}
+
+/// Stops the daemon over `data` through a plain client, and waits for the token to go
+/// away so the directory can be removed.
+fn stop_daemon(data: &Path) {
+    if let Ok(mut client) = Client::connect_with_timeout(data, &[Capability::Health], STOP) {
+        let _ = client.shutdown();
+    }
+    let deadline = Instant::now() + STOP;
+    while data.join("daemon.token").exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
-        // The host never stops the daemon, so the test does, over a plain
-        // client, and waits for the token to go away so the directory can be
-        // removed.
+        // The host never stops the daemon, so the test does.
         let token = fs::read_to_string(self.data.join("daemon.token")).unwrap_or_default();
-        if let Ok(mut client) =
-            Client::connect_with_timeout(&self.data, &[Capability::Health], STOP)
-        {
-            let _ = client.shutdown();
-        }
-        let deadline = Instant::now() + STOP;
-        while self.data.join("daemon.token").exists() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(20));
-        }
+        stop_daemon(&self.data);
         if thread::panicking() {
             let log = fs::read_to_string(self.data.join(launch::DAEMON_LOG)).unwrap_or_default();
             let log = if token.is_empty() {
@@ -355,6 +361,7 @@ const FORBIDDEN: i64 = -32012;
 const CONFLICT: i64 = -32011;
 const NOT_FOUND: i64 = -32010;
 const NOT_NEGOTIATED: i64 = -32004;
+const PROPOSAL_NOT_FOUND: i64 = -32021;
 
 #[test]
 fn the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery() {
@@ -366,6 +373,7 @@ fn the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery() {
 
     let (opened, mut frames) = fixture.open("main", &Capability::ALL);
     assert!(opened.launched_by_host, "the host starts the daemon itself");
+    assert_eq!(opened.welcome["approver"], true);
     assert_eq!(opened.welcome["version"], 1);
     let negotiated = opened.welcome["capabilities"].as_array().unwrap();
     for capability in [
@@ -508,6 +516,7 @@ fn the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery() {
     bridge.close_window("main");
     let (reopened, mut frames) = fixture.open("main", &Capability::ALL);
     assert!(!reopened.launched_by_host);
+    assert_eq!(reopened.welcome["approver"], true, "a reopened window keeps the role");
     let state = frames.result(
         bridge,
         reopened.connection_id,
@@ -524,6 +533,7 @@ fn the_host_drives_reject_and_request_changes_through_the_real_daemon() {
     let bridge = &fixture.bridge;
     let (opened, mut frames) = fixture.open("main", &Capability::ALL);
     assert!(opened.launched_by_host);
+    assert_eq!(opened.welcome["approver"], true);
     let connection = opened.connection_id;
 
     let rejected_task = &fixture.seeded[0];
@@ -701,6 +711,248 @@ fn the_host_forwards_capability_and_token_gating_from_the_real_daemon() {
         ),
         NOT_FOUND,
         "an unknown task is refused by the daemon, not answered from a fixture"
+    );
+    bridge.close_window("main");
+}
+
+// The approver role: only the host that started the daemon can decide, and only the host
+// holds the secret that proves it. The webview sees one boolean.
+
+/// `actions.resolve` for a proposal that does not exist. Only the daemon's gate tells an
+/// approver (not found) from a session that holds the token alone (forbidden).
+fn resolve_unknown_proposal() -> Value {
+    json!({
+        "proposal_id": "no-such-proposal",
+        "decision": "approve",
+        "digest": "0".repeat(64),
+        "idempotency_key": "gate-1",
+    })
+}
+
+/// A daemon the test starts itself, without `--approver-stdin`, as the CLI does. The host
+/// did not start it, so no secret the host holds is one it accepts.
+struct OtherDaemon(Option<Child>);
+
+impl OtherDaemon {
+    /// Starts it over `data` once the daemon that was there has let go of the data-directory
+    /// lock, and returns when it serves.
+    fn start(data: &Path) -> Self {
+        let deadline = Instant::now() + wait();
+        loop {
+            let log = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(data.join(launch::DAEMON_LOG))
+                .unwrap();
+            let mut child = Command::new(&binaries().daemon)
+                .arg("--data-dir")
+                .arg(data)
+                .stdin(Stdio::null())
+                .stdout(log.try_clone().unwrap())
+                .stderr(log)
+                .spawn()
+                .unwrap();
+            // Serving, or gone: a daemon that lost the lock to the one still stopping exits.
+            while child.try_wait().unwrap().is_none() {
+                if Client::connect_with_timeout(data, &[Capability::Health], STOP).is_ok() {
+                    return Self(Some(child));
+                }
+                assert!(Instant::now() < deadline, "the second daemon did not start");
+                thread::sleep(Duration::from_millis(50));
+            }
+            assert!(Instant::now() < deadline, "the second daemon kept exiting");
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    fn stop(mut self, data: &Path) {
+        stop_daemon(data);
+        let status = self.0.take().unwrap().wait().unwrap();
+        assert!(status.success(), "the second daemon exited with {status}");
+    }
+}
+
+impl Drop for OtherDaemon {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+#[test]
+fn a_daemon_the_host_launched_gives_its_sessions_the_approver_role() {
+    let fixture = Fixture::new(&[]);
+    let bridge = &fixture.bridge;
+    let (opened, mut frames) = fixture.open("main", &Capability::ALL);
+    assert!(opened.launched_by_host);
+    assert_eq!(opened.welcome["approver"], true);
+    assert_eq!(
+        frames.error_code(
+            bridge,
+            opened.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        PROPOSAL_NOT_FOUND,
+        "an approver reaches the proposal lookup"
+    );
+
+    // A second window of this host process is an approver too.
+    let (window, mut window_frames) = fixture.open("other", &Capability::ALL);
+    assert!(!window.launched_by_host);
+    assert_eq!(window.welcome["approver"], true);
+    assert_eq!(
+        window_frames.error_code(
+            bridge,
+            window.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        PROPOSAL_NOT_FOUND
+    );
+
+    // The webview never sees the secret the host holds, and neither does the log.
+    let secret = bridge
+        .approver()
+        .clone()
+        .expect("the host holds the secret of the daemon it started")
+        .to_wire();
+    assert_eq!(secret.len(), 64);
+    assert!(!opened.welcome.to_string().contains(&secret));
+    assert!(frames.seen.iter().all(|frame| !frame.contains(&secret)));
+    assert!(window_frames.seen.iter().all(|frame| !frame.contains(&secret)));
+    let log = fs::read_to_string(fixture.data.join(launch::DAEMON_LOG)).unwrap_or_default();
+    assert!(!log.contains(&secret));
+    bridge.close_window("main");
+    bridge.close_window("other");
+}
+
+#[test]
+fn a_second_host_that_did_not_launch_the_daemon_is_refused_user_only_methods() {
+    let fixture = Fixture::new(&[]);
+    let first = &fixture.bridge;
+    let (opened, mut frames) = fixture.open("main", &Capability::ALL);
+    assert!(opened.launched_by_host);
+
+    // A second host process finds the daemon running. It holds no secret for it and sends none,
+    // and with no daemon program it could not start another.
+    let second = Bridge::new(Some(fixture.data.clone()), None);
+    let (reached, mut second_frames) = open_on(&second, "main", &Capability::ALL);
+    assert!(!reached.launched_by_host);
+    assert!(second.approver().is_none());
+    assert_eq!(reached.welcome["approver"], false);
+    assert_eq!(
+        second_frames.error_code(
+            &second,
+            reached.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        FORBIDDEN
+    );
+    assert_eq!(
+        second_frames.error_code(
+            &second,
+            reached.connection_id,
+            "approvals.resolve",
+            json!({
+                "approval_id": "no-such-approval",
+                "decision": "approve",
+                "idempotency_key": "gate-2"
+            }),
+        ),
+        FORBIDDEN
+    );
+    // Reads are not user-only.
+    second_frames.result(&second, reached.connection_id, "approvals.list", Value::Null);
+
+    // The first host still decides on the same daemon.
+    assert_eq!(
+        frames.error_code(
+            first,
+            opened.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        PROPOSAL_NOT_FOUND
+    );
+    second.close_window("main");
+    first.close_window("main");
+}
+
+#[test]
+fn a_host_with_a_stale_secret_stays_connected_to_a_daemon_it_did_not_start() {
+    let fixture = Fixture::new(&[]);
+    let bridge = &fixture.bridge;
+    let (opened, _frames) = fixture.open("main", &Capability::ALL);
+    assert!(opened.launched_by_host);
+    assert_eq!(opened.welcome["approver"], true);
+    bridge.close_window("main");
+
+    // The daemon the host started stops, and something else starts one without a secret.
+    stop_daemon(&fixture.data);
+    let other = OtherDaemon::start(&fixture.data);
+
+    // The host still presents its old secret: the handshake holds and the role is gone.
+    assert!(bridge.approver().is_some());
+    let (reopened, mut frames) = fixture.open("main", &Capability::ALL);
+    assert!(!reopened.launched_by_host);
+    assert_eq!(reopened.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "the stale secret is dropped");
+    assert_eq!(
+        frames.error_code(
+            bridge,
+            reopened.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        FORBIDDEN
+    );
+    let listed = frames.result(bridge, reopened.connection_id, "approvals.list", Value::Null);
+    assert_eq!(listed, json!([]));
+    bridge.close_window("main");
+    other.stop(&fixture.data);
+}
+
+#[test]
+fn a_secret_the_daemon_refuses_is_not_presented_again() {
+    let fixture = Fixture::new(&[]);
+    let bridge = &fixture.bridge;
+    let (opened, _frames) = fixture.open("main", &Capability::ALL);
+    assert!(opened.launched_by_host);
+    assert!(bridge.approver().is_some());
+    bridge.close_window("main");
+
+    stop_daemon(&fixture.data);
+    let other = OtherDaemon::start(&fixture.data);
+
+    // The first open offers the old secret and this daemon refuses it. The handshake reads the
+    // secret only from the host's own state, so a cleared state is a secret never sent again.
+    let (first, _first_frames) = fixture.open("main", &Capability::ALL);
+    assert_eq!(first.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "a refused secret was kept");
+    let (second, _second_frames) = fixture.open("other", &Capability::ALL);
+    assert_eq!(second.welcome["approver"], false);
+    assert!(bridge.approver().is_none(), "a refused secret came back");
+    bridge.close_window("main");
+    bridge.close_window("other");
+    other.stop(&fixture.data);
+
+    // A daemon the host starts again gets a new secret, and the role returns with it.
+    let (relaunched, mut frames) = fixture.open("main", &Capability::ALL);
+    assert!(relaunched.launched_by_host);
+    assert_eq!(relaunched.welcome["approver"], true);
+    assert!(bridge.approver().is_some());
+    assert_eq!(
+        frames.error_code(
+            bridge,
+            relaunched.connection_id,
+            "actions.resolve",
+            resolve_unknown_proposal(),
+        ),
+        PROPOSAL_NOT_FOUND
     );
     bridge.close_window("main");
 }

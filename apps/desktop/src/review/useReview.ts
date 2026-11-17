@@ -372,6 +372,7 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
 
   const ctx: ActionContext = {
     connected,
+    approver: connection.approver,
     loading: contextLoading,
     stale,
     refreshRequired: false,

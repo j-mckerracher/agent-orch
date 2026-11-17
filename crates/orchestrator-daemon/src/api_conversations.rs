@@ -23,25 +23,29 @@
 use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
-    ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget,
-    ConversationTurn, MAX_CONVERSATION_MESSAGE_BYTES,
+    ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
+    TurnTrigger, MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
+use super::conversation_snapshot::{state_tag, task_title};
+use super::monitoring::{quiet_turn_ids, wake_record_wire};
 use super::*;
 
 const CONVERSATION_PAGE_SIZE: usize = 100;
 const MAX_CHOICE_AGENT_BYTES: usize = 64;
+/// Tasks the global orchestrator routed to a workstream, listed on `conversations.get`.
+const ROUTED_IN_ROWS: usize = 5;
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum TargetParam {
+pub(super) enum TargetParam {
     Global {},
     Workstream { workstream_id: String },
 }
 
 impl TargetParam {
-    fn to_store(&self) -> ConversationTarget {
+    pub(super) fn to_store(&self) -> ConversationTarget {
         match self {
             Self::Global {} => ConversationTarget::Global,
             Self::Workstream { workstream_id } => {
@@ -223,6 +227,10 @@ impl DaemonApi {
             || {
                 let target = request.target.to_store();
                 self.conversations.require_target(&target)?;
+                // The user's own action is never blocked by a turn the user did not ask for.
+                self.conversations
+                    .cancel_wake_turn(&target, None)
+                    .map_err(map_conversation_error)?;
                 let outcome = self
                     .store
                     .clear_conversation_history(&target)
@@ -240,7 +248,13 @@ impl DaemonApi {
         )
     }
 
-    pub(super) fn conversations_get(&self, params: Value) -> Result<Value, RpcError> {
+    /// `actions` is the session's negotiated `orchestrator_actions`: only then does a
+    /// workstream target carry `routed_in`, because only then can the user act on it.
+    pub(super) fn conversations_get(
+        &self,
+        params: Value,
+        actions: bool,
+    ) -> Result<Value, RpcError> {
         let request: ConversationGetParams = parse_params(params)?;
         let epoch = self.store.store_epoch().map_err(map_store_error)?;
         if request.epoch.as_ref().is_some_and(|given| *given != epoch) {
@@ -252,11 +266,20 @@ impl DaemonApi {
         }
         let target = request.target.to_store();
         self.conversations.require_target(&target)?;
-        let (proposals, proposals_more) = self.proposals_page(&target)?;
+        // The page (and with it the latest turn) is read FIRST. A turn and its proposals commit in
+        // one transaction, so a page that shows a completed turn is followed by a proposals read
+        // that holds that turn's proposals; the other order could pair a completed turn with the
+        // proposals read just before it committed.
         let mut page = self
             .store
             .conversation_page(&target, cursor, CONVERSATION_PAGE_SIZE + 1)
             .map_err(map_conversation_error)?;
+        let (proposals, proposals_more) = self.proposals_page(&target)?;
+        let (records, wake_records_more) = self.wake_records(&target)?;
+        // A quiet wake turn replied with the quiet token alone: its reply entries stay out of
+        // the wire and the record carries the collapsed line instead.
+        let quiet_turns = quiet_turn_ids(&records);
+        let wake_records: Vec<Value> = records.iter().map(wake_record_wire).collect();
         if cursor > page.latest_sequence {
             return Err(RpcError::ReplayGap);
         }
@@ -266,9 +289,12 @@ impl DaemonApi {
         let entries = page
             .entries
             .iter()
+            .filter(|entry| {
+                entry.kind != "reply_chunk" || !quiet_turns.contains(entry.turn_id.as_str())
+            })
             .map(|entry| entry_wire(&self.store, entry))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({
+        let mut result = json!({
             "authority": "none",
             "target": request.target,
             "entries": entries,
@@ -279,8 +305,40 @@ impl DaemonApi {
             "turn": page.latest_turn.as_ref().map(|turn| self.turn_wire(turn)),
             "proposals": proposals,
             "proposals_more": proposals_more,
+            "wake_records": wake_records,
+            "wake_records_more": wake_records_more,
             "epoch": epoch
-        }))
+        });
+        if let (true, ConversationTarget::Workstream(workstream_id)) = (actions, &target) {
+            let routed = self.routed_in_wire(workstream_id)?;
+            if !routed.is_empty() {
+                result["routed_in"] = Value::Array(routed);
+            }
+        }
+        Ok(result)
+    }
+
+    /// The newest tasks the global orchestrator routed to a workstream, as ids, a bounded
+    /// title, the execute time and the task state. Never a path, token or session output.
+    fn routed_in_wire(&self, workstream_id: &str) -> Result<Vec<Value>, RpcError> {
+        let routed = self
+            .store
+            .routed_in(workstream_id, ROUTED_IN_ROWS)
+            .map_err(map_store_error)?;
+        let mut rows = Vec::new();
+        for row in routed {
+            // A routed task that is gone from the store is not listed.
+            let Ok(task) = self.store.get(&row.task_id) else {
+                continue;
+            };
+            rows.push(json!({
+                "task_id": row.task_id,
+                "title": task_title(&task.contract.objective),
+                "routed_at": row.routed_at,
+                "state": state_tag(task.state),
+            }));
+        }
+        Ok(rows)
     }
 
     pub(super) fn conversations_cancel(&self, params: Value) -> Result<Value, RpcError> {
@@ -339,7 +397,7 @@ pub(super) fn reference_str<'a>(reference: &'a Value, field: &str) -> Result<&'a
         .ok_or(RpcError::Internal)
 }
 
-fn map_conversation_error(error: ConversationError) -> RpcError {
+pub(super) fn map_conversation_error(error: ConversationError) -> RpcError {
     match error {
         ConversationError::Store(error) => map_store_error(error),
         ConversationError::TurnRunning { .. } | ConversationError::TurnNotRunning(_) => {
@@ -374,7 +432,8 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
     let mut value = entry_json(entry);
     let is_version_mismatch = entry.error_code.as_deref() == Some("version_mismatch");
     let is_completed = entry.kind == "turn_completed";
-    if is_version_mismatch || is_completed {
+    let is_opening = entry.kind == "user_message";
+    if is_version_mismatch || is_completed || is_opening {
         let turn = store
             .conversation_turn(&entry.turn_id)
             .map_err(map_conversation_error)?;
@@ -386,6 +445,11 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
             if let (true, Some(block)) = (is_completed, turn.action_block) {
                 value["action_block"] = json!(block.as_str());
             }
+            // The opening entry of a wake turn is stored as a user message, but the wire
+            // never calls it one (DPES-1105).
+            if is_opening && turn.trigger == TurnTrigger::Wake {
+                value["origin"] = json!("wake");
+            }
         }
     }
     Ok(value)
@@ -395,7 +459,7 @@ impl DaemonApi {
     /// A turn as the wire shows it. `verified` says whether the version the turn
     /// recorded is one the daemon has verified; the desktop warns once per version
     /// when it is not (DPES-1106). The version itself is always recorded.
-    fn turn_wire(&self, turn: &ConversationTurn) -> Value {
+    pub(super) fn turn_wire(&self, turn: &ConversationTurn) -> Value {
         let identity = RuntimeIdentity {
             name: turn.runtime_name.clone(),
             version: turn.runtime_version.clone(),
@@ -419,6 +483,7 @@ fn turn_json(turn: &ConversationTurn) -> Value {
         "permission_profile": turn.permission_profile,
         // What became of the turn's action block (DPES-1105). Null when it had none.
         "action_block": turn.action_block.map(ActionBlockOutcome::as_str),
+        "trigger": turn.trigger.as_str(),
         "created_at": turn.created_at,
         "updated_at": turn.updated_at
     })

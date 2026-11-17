@@ -67,6 +67,20 @@ describe("real M5-02 daemon: handshake", () => {
     await expect(bad.open(M5_03_CAPABILITIES)).rejects.toMatchObject({ kind: "auth" });
   });
 
+  it("welcomes a session that holds only the token as a non-approver and refuses it a user-only method", async () => {
+    const tokenOnly = new NodeConnector(daemon.dataDir);
+    tokenOnly.presentApprover = false;
+    const session = new DaemonSession(await tokenOnly.open(["health", "approvals"]));
+    expect(session.welcome.approver).toBe(false);
+    await expect(session.request("approvals.resolve", { approval_id: "none", decision: "approve", idempotency_key: "k" })).rejects.toMatchObject({
+      kind: "forbidden",
+    });
+    session.close();
+    const approver = new DaemonSession(await connector.open(["health", "approvals"]));
+    expect(approver.welcome.approver).toBe(true);
+    approver.close();
+  });
+
   it("rejects an unsupported protocol version", async () => {
     const bad = new NodeConnector(daemon.dataDir);
     bad.versions = [99];

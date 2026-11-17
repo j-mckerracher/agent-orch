@@ -11,6 +11,7 @@ fn chooses_highest_common_version_and_rejects_unknown_capability_safely() {
         token: Some(token.clone()),
         versions: vec![3, 1, 2],
         capabilities: vec!["health".into()],
+        approver: None,
     };
     assert_eq!(
         authenticate(&secret, &accepted, &Capability::ALL)
@@ -22,6 +23,7 @@ fn chooses_highest_common_version_and_rejects_unknown_capability_safely() {
         token: Some(token.clone()),
         versions: vec![1],
         capabilities: vec!["attacker-controlled-capability".into()],
+        approver: None,
     };
     let error = authenticate(&secret, &rejected, &Capability::ALL).unwrap_err();
     assert!(matches!(&error, AuthError::UnsupportedCapability));
@@ -38,6 +40,7 @@ fn absent_token_is_authentication_failure() {
         token: None,
         versions: vec![1],
         capabilities: vec![],
+        approver: None,
     };
     assert!(matches!(
         authenticate(&secret, &handshake, &Capability::ALL),
@@ -73,6 +76,7 @@ fn reports_no_common_version() {
         token: Some(token),
         versions: vec![2, 3],
         capabilities: vec![],
+        approver: None,
     };
     assert!(matches!(
         authenticate(&secret, &handshake, &Capability::ALL),

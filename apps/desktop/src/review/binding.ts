@@ -2,6 +2,7 @@
 // the exact approval, candidate, action, digest and workspace being reviewed;
 // fixture evidence can never enable Accept or delivery.
 import { isFixtureId } from "../daemon/api";
+import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 import type { Approval, DeliveryActionName, TaskRecord } from "../daemon/types";
 import type { ReviewEvidenceResult } from "./sources";
 
@@ -14,6 +15,8 @@ export type DiffState =
 
 export interface ActionContext {
   connected: boolean;
+  /** False when this session is not the approver; Accept and Reject need it (DPES-1105). */
+  approver: boolean;
   loading: boolean;
   /** A task event arrived (or a mutation failed) since the context loaded. */
   stale: boolean;
@@ -100,6 +103,7 @@ export function evidenceBlockers(ctx: ActionContext): string[] {
 
 export function acceptBlockers(ctx: ActionContext): string[] {
   const blockers = commonBlockers(ctx);
+  if (ctx.connected && !ctx.approver) blockers.push(APPROVER_REQUIRED_NOTICE);
   if (ctx.approval && ctx.approval.state.state !== "requested") {
     blockers.push("This decision is no longer pending.");
   }
@@ -112,6 +116,7 @@ export function acceptBlockers(ctx: ActionContext): string[] {
 /** Reject is protective, so it does not require real evidence. */
 export function rejectBlockers(ctx: ActionContext): string[] {
   const blockers = commonBlockers(ctx);
+  if (ctx.connected && !ctx.approver) blockers.push(APPROVER_REQUIRED_NOTICE);
   if (ctx.approval && ctx.approval.state.state !== "requested") {
     blockers.push("This decision is no longer pending.");
   }

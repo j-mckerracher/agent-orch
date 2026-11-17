@@ -1,4 +1,6 @@
-use super::{read, write, FrameError, RpcId, RpcRequest, HEADER_LEN, MAX_BODY, VERSION};
+use super::{
+    read, write, FrameError, Handshake, RpcId, RpcRequest, Welcome, HEADER_LEN, MAX_BODY, VERSION,
+};
 use serde_json::{json, Value};
 use std::io::{self, Cursor, Read};
 
@@ -81,4 +83,44 @@ fn json_rpc_string_request_ids_are_supported() {
     }))
     .unwrap();
     assert_eq!(request.id, RpcId::String("health-request".into()));
+}
+#[test]
+fn a_handshake_with_and_without_an_approver_field_parses() {
+    let without: Handshake = serde_json::from_value(json!({
+        "token": "t", "versions": [1], "capabilities": ["health"]
+    }))
+    .unwrap();
+    assert!(without.approver.is_none());
+    // Absent is left out, so a daemon that refuses unknown fields still accepts it.
+    assert!(serde_json::to_value(&without)
+        .unwrap()
+        .get("approver")
+        .is_none());
+
+    let with: Handshake = serde_json::from_value(json!({
+        "token": "t", "versions": [1], "capabilities": [], "approver": "proof"
+    }))
+    .unwrap();
+    assert_eq!(with.approver.as_deref(), Some("proof"));
+    assert_eq!(serde_json::to_value(&with).unwrap()["approver"], "proof");
+
+    // Only `approver` was added: an unknown sibling is still refused.
+    assert!(serde_json::from_value::<Handshake>(json!({
+        "token": "t", "versions": [1], "capabilities": [], "approvers": "proof"
+    }))
+    .is_err());
+}
+
+#[test]
+fn a_welcome_without_an_approver_field_reads_as_not_an_approver() {
+    let older: Welcome = serde_json::from_value(json!({
+        "version": 1, "capabilities": ["health"]
+    }))
+    .unwrap();
+    assert!(!older.approver);
+    let granted: Welcome = serde_json::from_value(json!({
+        "version": 1, "capabilities": ["health"], "approver": true
+    }))
+    .unwrap();
+    assert!(granted.approver);
 }

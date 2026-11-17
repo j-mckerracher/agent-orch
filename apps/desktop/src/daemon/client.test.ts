@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DaemonApi, isFixtureId } from "./api";
-import { DaemonError } from "./errors";
+import { DaemonError, isMissingFeature } from "./errors";
 import { IdempotencyTracker } from "./idempotency";
 import { DaemonSession } from "./session";
 import { M5_03_CAPABILITIES, type DaemonEvent } from "./types";
@@ -135,6 +135,18 @@ describe("DaemonSession", () => {
     });
     expect(seen).toEqual([]);
   });
+
+  it("a_welcome_with_approver_true_makes_the_session_an_approver", async () => {
+    const fake = new FakeDaemon();
+    fake.approver = true;
+    expect((await open(fake)).isApprover).toBe(true);
+  });
+
+  it("a_welcome_without_approver_is_not_an_approver", async () => {
+    const fake = new FakeDaemon();
+    fake.approver = null;
+    expect((await open(fake)).isApprover).toBe(false);
+  });
 });
 
 describe("DaemonApi placeholder-id guard", () => {
@@ -196,6 +208,96 @@ describe("DaemonApi placeholder-id guard", () => {
     });
     await api.agentsCatalog();
     expect(fake.callsTo("agents.catalog")).toHaveLength(1);
+  });
+});
+
+describe("DaemonApi actionsPending", () => {
+  const listed = {
+    proposals: [
+      {
+        id: "proposal-1",
+        turn_id: "turn-1",
+        index: 0,
+        kind: "task.propose",
+        params: { kind: "task.propose", project: "p-1", objective: "Add unit tests", agent: "codex" },
+        digest: "d".repeat(64),
+        depends_on: null,
+        state: "pending",
+        result_ref: null,
+        error_code: null,
+        denial: null,
+        target: { project_name: "alpha" },
+        created_at: "2026-11-10T21:00:00Z",
+        updated_at: "2026-11-10T21:00:00Z",
+        scope: { kind: "global" },
+      },
+    ],
+    more: false,
+  };
+
+  it("actions_pending_sends_an_empty_request_and_returns_what_the_daemon_listed", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("actions.pending", listed);
+    await expect(new DaemonApi(await open(fake)).actionsPending()).resolves.toEqual(listed);
+    expect(fake.callsTo("actions.pending")).toEqual([{ method: "actions.pending", params: {} }]);
+  });
+
+  it("actions_pending_reads_a_daemon_without_the_method_as_nothing_pending", async () => {
+    const api = new DaemonApi(await open(new FakeDaemon()));
+    await expect(api.actionsPending()).resolves.toEqual({ proposals: [], more: false });
+  });
+
+  it("actions_pending_reads_a_session_without_orchestrator_actions_as_nothing_pending", async () => {
+    const fake = new FakeDaemon();
+    const api = new DaemonApi(new DaemonSession(await fake.open(["health"])));
+    await expect(api.actionsPending()).resolves.toEqual({ proposals: [], more: false });
+  });
+
+  it("actions_pending_still_rejects_a_failure_that_is_not_a_missing_feature", async () => {
+    const fake = new FakeDaemon();
+    fake.failNext("actions.pending", { code: -32603, message: "store busy" });
+    await expect(new DaemonApi(await open(fake)).actionsPending()).rejects.toMatchObject({ kind: "internal" });
+  });
+
+  const settings = {
+    load: { cpu_percent: 80, memory_percent: 85, disk_percent: 90 },
+    gate: {
+      state: "closed",
+      hold: { meter: "cpu", mean_percent: 91, limit_percent: 80, reopen_percent: 70 },
+      meters: [
+        { meter: "cpu", state: "mean", mean_percent: 91 },
+        { meter: "memory", state: "mean", mean_percent: 62 },
+        { meter: "disk", state: "unknown", reason: "warming_up" },
+      ],
+    },
+  };
+
+  it("settings_get_sends_an_empty_request_and_returns_the_limits_and_the_gate_state", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("settings.get", settings);
+    await expect(new DaemonApi(await open(fake)).settingsGet()).resolves.toEqual(settings);
+    expect(fake.callsTo("settings.get")).toEqual([{ method: "settings.get", params: {} }]);
+  });
+
+  it("settings_get_on_a_session_without_the_settings_capability_is_a_missing_feature_and_sends_nothing", async () => {
+    const fake = new FakeDaemon();
+    const api = new DaemonApi(new DaemonSession(await fake.open(["health"])));
+    const failure = await api.settingsGet().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(DaemonError);
+    expect(isMissingFeature(failure as DaemonError)).toBe(true);
+    expect(fake.callsTo("settings.get")).toEqual([]);
+  });
+
+  it("settings_set_sends_the_request_key_and_only_the_limits_it_was_given", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("settings.set", settings);
+    await expect(new DaemonApi(await open(fake)).settingsSet({ cpu_percent: 85, disk_percent: 100 }, "key-1")).resolves.toEqual(settings);
+    expect(fake.callsTo("settings.set")).toEqual([
+      { method: "settings.set", params: { idempotency_key: "key-1", load: { cpu_percent: 85, disk_percent: 100 } } },
+    ]);
   });
 });
 

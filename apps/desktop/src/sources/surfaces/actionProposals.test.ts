@@ -54,6 +54,8 @@ describe("action proposals (DPES-1105)", () => {
         state: "pending",
         resultRef: null,
         errorCode: null,
+        denial: null,
+        target: null,
         updatedAt: at,
       },
     ]);
@@ -237,6 +239,11 @@ describe("action proposals (DPES-1105)", () => {
 });
 
 describe("mapProposal", () => {
+  it("grants_the_daemons_top_level_grant_id_reads_as_an_approval_by_a_standing_grant", () => {
+    expect(mapProposal(proposal({ grant_id: "grant-7" })).approvedBy).toEqual({ kind: "grant", grantId: "grant-7" });
+    expect(mapProposal(proposal({ grant_id: null })).approvedBy).toBeUndefined();
+  });
+
   it("copies every field and leaves an unknown kind or state as it arrived", () => {
     const mapped = mapProposal(proposal({ kind: "future.kind", state: "paused", depends_on: "proposal-0", result_ref: "ref-1", error_code: "x" }));
     expect(mapped).toEqual({
@@ -250,7 +257,33 @@ describe("mapProposal", () => {
       state: "paused",
       resultRef: "ref-1",
       errorCode: "x",
+      denial: null,
+      target: null,
       updatedAt: at,
     });
+  });
+
+  it("reads a denial and the display facts a daemon sends with a task proposal", () => {
+    const denied = mapProposal(
+      proposal({
+        kind: "task.propose",
+        state: "failed",
+        error_code: "action_denied",
+        denial: "delivery_not_authorized",
+        target: { project_name: "alpha" },
+      }),
+    );
+    expect(denied).toMatchObject({
+      kind: "task.propose",
+      errorCode: "action_denied",
+      denial: "delivery_not_authorized",
+      target: { projectName: "alpha" },
+    });
+
+    const cancel = mapProposal(
+      proposal({ kind: "task.cancel", target: { task_title: "Add refresh-token expiry", task_state: "Running" } }),
+    );
+    expect(cancel.target).toEqual({ taskTitle: "Add refresh-token expiry", taskState: "Running" });
+    expect(mapProposal(proposal({ kind: "task.retry", target: null })).target).toBeNull();
   });
 });

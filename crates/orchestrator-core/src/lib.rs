@@ -19,15 +19,25 @@ pub mod authorization;
 pub mod contract;
 pub mod decomposition;
 pub mod identity;
+pub mod interval;
+pub mod landing;
+pub mod load_gate;
+pub mod notes;
 pub mod orchestrator_action;
 pub mod permission;
+pub mod project_mode;
 pub mod records;
 pub mod retry;
+pub mod return_brief;
 pub mod scheduler;
+pub mod standing_grant;
+pub mod supervision;
 pub mod task;
+pub mod task_envelope;
 pub mod workstream;
 
 pub use identity::ProcessIdentity;
+pub use project_mode::{DefaultsError, MergeMethod, ProjectDefaults, ProjectMode};
 pub use records::{Artifact, Project, VerificationRun, Workspace};
 
 pub use contract::{

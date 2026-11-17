@@ -5,7 +5,7 @@
  * placeholder id can never reach a real daemon mutation even if a caller wires
  * a fixture record into a real action by mistake.
  */
-import { DaemonError } from "./errors";
+import { DaemonError, asDaemonError, isMissingFeature } from "./errors";
 import { parseQueueSnapshot, type QueueSnapshotWire } from "./queue";
 import type { DaemonSession } from "./session";
 import type {
@@ -26,6 +26,8 @@ import type {
   DeliveryRequest,
   DeliveryResult,
   ProjectRow,
+  ProjectDefaultsResultWire,
+  ProjectDefaultsWire,
   ResolveDecision,
   ReviewApprovalRequest,
   ReviewApprovalResult,
@@ -46,12 +48,30 @@ import type {
   WorkstreamTaskLinkWire,
   WorkstreamUpdateRequest,
   WorkstreamWire,
+  ActionsPendingWire,
   ActionsResolveWire,
   ClearedEntryReference,
   ConversationClearResult,
   CoordinatorChangeResult,
   CoordinatorClearResult,
   CopilotSignInRecord,
+  LoadLimitsWire,
+  SettingsWire,
+  SettingsPatchWire,
+  MonitoringWire,
+  MonitoringAckWire,
+  BriefAckWire,
+  BriefResultWire,
+  GrantCreateResultWire,
+  GrantRevokeResultWire,
+  GrantsCreateParams,
+  GrantsListWire,
+  NotesSetWire,
+  NotesWire,
+  HoldResultWire,
+  HoldsListWire,
+  PullsListWire,
+  PullsRefreshWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -68,6 +88,12 @@ function realId(id: string): string {
     throw new DaemonError("invalid-params", "placeholder ids cannot be sent to the daemon");
   }
   return id;
+}
+
+/** A notes scope is `global` or `workstream:` plus an id; the id must not be a placeholder. */
+function realScope(scope: string): string {
+  if (scope.startsWith("workstream:")) realId(scope.slice("workstream:".length));
+  return scope;
 }
 
 /**
@@ -103,6 +129,24 @@ export class DaemonApi {
 
   projectsRegister(path: string): Promise<ProjectRow> {
     return this.session.request("projects.register", { path });
+  }
+
+  /** DPES-1105. A project's delivery defaults; `local-only` when none are saved. A daemon without the method rejects as a missing feature. */
+  async projectsGetDefaults(projectId: string): Promise<ProjectDefaultsResultWire> {
+    return this.session.request("projects.get_defaults", { project_id: realId(projectId) });
+  }
+
+  /** DPES-1105. Replaces a project's delivery defaults. A user-only method: the daemon refuses it without the approver secret. */
+  async projectsSetDefaults(
+    projectId: string,
+    defaults: ProjectDefaultsWire,
+    idempotencyKey: string,
+  ): Promise<ProjectDefaultsResultWire> {
+    return this.session.request("projects.set_defaults", {
+      project_id: realId(projectId),
+      ...defaults,
+      idempotency_key: idempotencyKey,
+    });
   }
 
   tasksList(): Promise<TaskRecord[]> {
@@ -467,6 +511,124 @@ export class DaemonApi {
       digest,
       idempotency_key: idempotencyKey,
     });
+  }
+
+  /**
+   * DPES-1105. Every pending proposal across all conversations, newest first. A read only: nothing is decided here.
+   * An older daemon has no such method or capability, so that reads as nothing pending, never as a failure.
+   */
+  async actionsPending(): Promise<ActionsPendingWire> {
+    try {
+      return await this.session.request("actions.pending", {});
+    } catch (error) {
+      if (isMissingFeature(asDaemonError(error))) return { proposals: [], more: false };
+      throw error;
+    }
+  }
+
+  /**
+   * DPES-1105. The machine load limits and the live state of the gate that holds new task starts. A read only.
+   * A daemon without the `settings` capability rejects it as a missing feature, which callers read as "not available".
+   */
+  settingsGet(): Promise<SettingsWire> {
+    return this.session.request("settings.get", {});
+  }
+
+  /**
+   * DPES-1105. Changes some of the load limits and answers with `settings.get` as it now stands. A user-only method:
+   * the daemon refuses it unless this session proved the approver secret. The new limits apply from the next sample.
+   */
+  settingsSet(patch: Partial<LoadLimitsWire>, idempotencyKey: string): Promise<SettingsWire> {
+    return this.session.request("settings.set", { idempotency_key: idempotencyKey, load: patch });
+  }
+
+  /**
+   * DPES-1105 Phase 3. Changes the supervision or wake-limit groups. Only the groups present are sent: a group
+   * must name at least one field. User-only, like `settingsSet`.
+   */
+  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp">, idempotencyKey: string): Promise<SettingsWire> {
+    return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
+  }
+
+  /** DPES-1105 Phase 3. Monitoring mode, paused scopes and unseen counts. A read; needs the `monitoring` capability. */
+  monitoringGet(): Promise<MonitoringWire> {
+    return this.session.request("monitoring.get", {});
+  }
+
+  /** DPES-1105 Phase 3. Sets the monitoring mode and answers with `monitoring.get` as it now stands. User-only. */
+  monitoringSet(mode: string, idempotencyKey: string): Promise<MonitoringWire> {
+    return this.session.request("monitoring.set", { idempotency_key: idempotencyKey, mode });
+  }
+
+  /** DPES-1105 Phase 3. Marks a scope's wake records seen. Changes no decision, so it is not user-only. */
+  async monitoringAck(target: ConversationWireTarget, idempotencyKey: string): Promise<MonitoringAckWire> {
+    return this.session.request("monitoring.ack", { idempotency_key: idempotencyKey, target: realTarget(target) });
+  }
+
+  /** DPES-1105 Phase 5b. The return brief for the away window, or `brief: null`. A read; needs `standing_approvals`. */
+  briefGet(): Promise<BriefResultWire> {
+    return this.session.request("monitoring.brief", {});
+  }
+
+  /** DPES-1105 Phase 5b. Marks the closed brief seen. Changes no decision and deletes no data, so it is not user-only. */
+  briefAck(idempotencyKey: string): Promise<BriefAckWire> {
+    return this.session.request("monitoring.brief_ack", { idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 Phase 4. Hides one decision until a date (`YYYY-MM-DD`). User-only; needs the `holds` capability. */
+  async holdsSet(subjectKind: string, subjectId: string, until: string, idempotencyKey: string): Promise<HoldResultWire> {
+    return this.session.request("holds.set", {
+      subject_kind: subjectKind,
+      subject_id: realId(subjectId),
+      until,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1105 Phase 4. Ends a hold before its date. User-only. */
+  async holdsRelease(holdId: string, idempotencyKey: string): Promise<HoldResultWire> {
+    return this.session.request("holds.release", { hold_id: realId(holdId), idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 Phase 4. The holds in force now. A read. */
+  async holdsList(): Promise<HoldsListWire> {
+    return this.session.request("holds.list", {});
+  }
+
+  /** DPES-1105 Phase 4c. The pull requests the daemon watches. A read; needs `landing`. */
+  async pullsList(): Promise<PullsListWire> {
+    return this.session.request("pulls.list", {});
+  }
+
+  /** DPES-1105 Phase 4c. Reads one task's pull request again. A read; the daemon allows it once per 10 seconds per task. */
+  async pullsRefresh(taskId: string): Promise<PullsRefreshWire> {
+    return this.session.request("pulls.refresh", { task_id: realId(taskId) });
+  }
+
+  /** DPES-1105 Phase 5. The standing approvals and the limits for a new one. A read; needs `standing_approvals`. */
+  async grantsList(includeEnded = true): Promise<GrantsListWire> {
+    return this.session.request("grants.list", { include_ended: includeEnded, limit: 50 });
+  }
+
+  /** DPES-1105 Phase 5. Creates one standing approval. User-only. */
+  async grantsCreate(params: GrantsCreateParams, idempotencyKey: string): Promise<GrantCreateResultWire> {
+    realId(params.scope.id);
+    return this.session.request("grants.create", { ...params, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 Phase 5. Ends a standing approval now. User-only. */
+  async grantsRevoke(grantId: string, idempotencyKey: string): Promise<GrantRevokeResultWire> {
+    return this.session.request("grants.revoke", { grant_id: realId(grantId), idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 5b. One scope's orchestrator notes and their limits. A read; needs `standing_approvals`. */
+  async notesList(scope: string): Promise<NotesWire> {
+    return this.session.request("notes.list", { scope: realScope(scope) });
+  }
+
+  /** DPES-1105 5b. Replaces one scope's whole list of notes. User-only. */
+  async notesSet(scope: string, notes: string[], idempotencyKey: string): Promise<NotesSetWire> {
+    return this.session.request("notes.set", { scope: realScope(scope), notes, idempotency_key: idempotencyKey });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

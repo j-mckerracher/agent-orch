@@ -1,3 +1,4 @@
+use crate::approver::ApproverSecret;
 use crate::auth::Secret;
 use crate::session::{self, State};
 use crate::transport::{Listener, TransportError};
@@ -15,6 +16,7 @@ pub struct ServerConfig {
     package_version: String,
     idle_timeout: Duration,
     stream_timeout: Duration,
+    approver: Option<Arc<ApproverSecret>>,
 }
 
 impl ServerConfig {
@@ -24,7 +26,16 @@ impl ServerConfig {
             package_version: package_version.into(),
             idle_timeout: Duration::from_secs(60),
             stream_timeout: Duration::from_secs(2),
+            approver: None,
         }
+    }
+
+    /// Sessions that present this secret in the handshake may call the
+    /// user-only methods. Without it no session can, even one that presents a
+    /// value.
+    pub fn with_approver(mut self, secret: ApproverSecret) -> Self {
+        self.approver = Some(Arc::new(secret));
+        self
     }
 
     pub fn with_idle_timeout(mut self, timeout: Duration) -> Self {
@@ -69,6 +80,7 @@ impl Server {
             config.idle_timeout,
             config.stream_timeout,
             handler,
+            config.approver,
         ));
         let mut workers: Vec<JoinHandle<()>> = Vec::new();
         let mut failure = None;

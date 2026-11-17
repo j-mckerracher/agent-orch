@@ -132,6 +132,8 @@ export class FakeDaemon implements DaemonConnector {
   openRequests: Capability[][] = [];
   /** Journal identity advertised in the Welcome; null omits it, as an older daemon would. */
   journalEpoch: string | null = "epoch-1";
+  /** Approver flag advertised in the Welcome; null omits it, as an older daemon would. */
+  approver: boolean | null = true;
   openFailures: DaemonError[] = [];
   openError: DaemonError | null = null;
   calls: Array<{ method: string; params: unknown }> = [];
@@ -180,6 +182,7 @@ export class FakeDaemon implements DaemonConnector {
         version: 1,
         capabilities: this.capabilitiesOverride ?? [...requested],
         ...(this.journalEpoch === null ? {} : { journal_epoch: this.journalEpoch }),
+        ...(this.approver === null ? {} : { approver: this.approver }),
       },
     };
   }

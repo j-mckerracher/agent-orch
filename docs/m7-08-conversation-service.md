@@ -60,22 +60,36 @@ Names are proposals so concurrent daemon work does not collide; no new
   `action_block`: `null`, `accepted`, `rejected` or `stripped`. A
   `turn_completed` entry carries the same `action_block` when its turn has one,
   and omits the field when it has none, so a client can keep a per-turn notice
-  after later messages arrive.
+  after later messages arrive. Every proposal also carries `denial` (the reason the
+  envelope refused a task, otherwise `null`) and `target` (display data read at
+  response time). `target` is `{"project_name": …}` for a task proposal,
+  `{"task_title": …, "task_state": …}` for a cancel, retry or link, and `null` for
+  the other kinds or a task that no longer exists. Neither holds a path. See "Task
+  proposals" below.
 - `actions.resolve {proposal_id, decision, digest, idempotency_key}` — `decision`
   is `approve` or `reject`. `digest` is the lowercase hex digest the proposal shows;
   a value that does not match the stored digest is `proposal_invalid` and changes
   nothing, so an approval binds the parameters the user saw. A proposal from a
   turn that did not run at `restricted` is also `proposal_invalid`. Needs the
   `orchestrator_actions` capability; a session without it gets `-32004`, the
-  capability-not-negotiated error. The daemon has no caller identity on the wire
-  today: `resolve` checks the configured approver against the approval allowlist,
-  and the desktop is the only client that sends `actions.resolve`. How a wire
-  caller is identified is open. Returns `{"proposal": …}`, the proposal as it
-  stands after the call. An approved proposal runs in the same call. A run that
+  capability-not-negotiated error. It also needs the approver credential: a
+  session that did not prove it gets `-32012` (`Forbidden`) before any lookup
+  runs, see "Approver credential" below. `resolve` then checks the configured
+  approver against the approval allowlist, and the desktop is the only client that
+  sends `actions.resolve`. Returns `{"proposal": …}`, the proposal as it stands
+  after the call. An approved proposal runs in the same call. A run that
   fails still returns success, with `state` `failed` and an `error_code`. Codes:
   `proposal_not_found` (-32021), `proposal_not_pending` (-32022) and
   `proposal_invalid` (-32023), plus the usual `invalid_params` and
   `idempotency_in_progress`. See "Action approval and execution" below.
+- `actions.pending {}` — read only (DPES-1105, phase 2). Returns
+  `{"proposals": […], "more": false}`: the `pending` proposals of every
+  conversation, newest first, at most 100 and at most 256 KiB of JSON. `more` is
+  `true` when a pending proposal was left out. Each entry is a proposal as
+  `conversations.get` shows it, plus `scope`: `{"kind":"global"}` or
+  `{"kind":"workstream","workstream_id":"…"}`. Needs the `orchestrator_actions`
+  capability; a session without it gets `-32004`. It changes nothing, so it is not
+  a user-only method: a session that holds the token alone may call it.
 - `conversations.cancel {target, turn_id, idempotency_key}` — scoped to the
   target's conversation (otherwise `NotFound`). Finishes the turn `cancelled`,
   then asks the runtime to stop (best effort). `cancel_applied=false` when the
@@ -238,8 +252,9 @@ no flag.
   later step. Only a Restricted turn from a session that negotiated
   `orchestrator_actions` gets a parse, and only that turn's instructions name
   the block format. At Auto and Full the agent has a shell and could reach the
-  daemon's local token, and the daemon has no caller identity, so those turns
-  get no actions (DPES-1105). Any other turn strips the block, records
+  daemon's local token. A shell can edit the store or replace the daemon, which
+  no credential stops, so those turns get no actions (DPES-1105). Any other turn
+  strips the block, records
   `action_block` `stripped`, and creates no proposals. A block that does not
   pass is recorded as `rejected`, and a block in a canceled or failed turn is
   ignored.
@@ -358,7 +373,8 @@ which is append-only: `UPDATE` and `DELETE` both abort. Each clear, remove and
 restore writes one row with its action, its scope (`conversation:global`,
 `conversation:workstream:<id>` or `coordinator:<project_id>`), its actor, the
 number of entries and turns deleted, and a timestamp. The row never holds content.
-The actor is always NULL, because the daemon has no caller identity today. The
+The actor is always NULL. The row does not yet record which session made the
+call; the approver credential decides only whether the call is allowed. The
 clear is not written to `durable_events`, which requires a task id.
 
 **Idempotency and text.** Migration `0034_idempotency_scrub.sql` rewrites every
@@ -493,7 +509,9 @@ policy is applied; history is kept until someone clears it.
 **Who may propose.** Actions exist only for turns at `restricted`, whatever the
 chat level is set to: the chat level does not widen authority. At `auto` and
 `full` the agent has a shell, so it could read the daemon's local token and call
-`actions.resolve` itself, and the daemon has no caller identity to refuse it.
+`actions.resolve` itself. The approver credential refuses that call from a
+session that does not hold the secret, but it is not a sandbox, so those turns
+still get no actions. See "Approver credential" below.
 
 **States.** A proposal moves `pending` to `approved` (approve) or `rejected`
 (reject), then `approved` to `executed` or `failed`. A pending proposal can
@@ -534,7 +552,8 @@ action record the actor `action:<proposal id>` in the revision history.
   does a replay of that key.
 - The approval allowlist refuses an agent actor, with nothing changed. That is a
   unit-level check (`the_approval_allowlist_refuses_an_agent_actor`), not a wire
-  guarantee, because the daemon has no caller identity today.
+  guarantee. Every wire session acts as the local user, so on the wire the
+  approver credential decides who may call `actions.resolve`.
 - A digest that does not match refuses with `proposal_invalid` and changes
   nothing.
 
@@ -585,6 +604,320 @@ and an update and a revise whose effect committed before a stop.
 the real daemon, including the capability refusal (`-32004`), the snapshot
 outcome, a restart between approve and execute, and the same outcome at each
 permission level.
+
+### Approver credential
+
+Without the approver credential, any process that held `daemon.token` and the
+socket could call `actions.resolve`, and an Auto or Full chat turn has a shell.
+The approver credential closes that protocol path. It is not a sandbox.
+
+The desktop host creates the secret and gives it to the daemon it starts. Only a
+session that presents the secret is an approver.
+
+- The host generates 32 random bytes from the OS random source. It starts the
+  daemon with `--approver-stdin`, writes the secret as 64 hex characters to the
+  daemon's stdin pipe, and closes the pipe.
+- The daemon reads the secret once, before it creates any server resource, and
+  keeps it in memory only. It is never written to disk, an argument, an
+  environment variable or a log. The daemon does not read stdin again.
+- The host presents the secret in the `approver` field of the handshake, and only
+  to a daemon it spawned itself. The daemon compares it in constant time.
+- The welcome carries `approver: true` or `approver: false`. The webview never
+  receives the secret.
+- A missing, wrong or malformed `approver` does not fail the handshake. The
+  session connects as a non-approver and keeps read access. A session cannot
+  become an approver later, because a second handshake is refused.
+- A daemon started without `--approver-stdin` has no secret, so every session on
+  it is a non-approver.
+
+The gate refuses the methods in `USER_ONLY_METHODS` to a session that is not an
+approver. The list is `actions.resolve` and `approvals.resolve`. The refusal is
+`Forbidden` (-32012). It comes before any handler runs and before the idempotency
+lookup, so a non-approver cannot replay a key to read a cached approval. A session
+that did not negotiate the capability still gets `-32004` first. Later phases add
+`settings.set` (phase 2), `monitoring.set` (phase 3), `projects.set_defaults`,
+`holds.set`, `holds.release`, `reports.get` and `reports.relay` (phase 4), and
+`grants.create` and `grants.revoke` (phase 5), each in the same change that routes
+the method.
+
+The Restricted-only rule is unchanged. The credential does not enable actions at
+Auto or Full.
+
+What it does not stop. A process of the same user can still:
+
+- edit `store.sqlite` directly, and mark a proposal approved without any RPC;
+- kill the daemon and start its own on the same data directory, with its own
+  secret;
+- call `shutdown`, which any token holder may do (the host forbids it for the
+  webview);
+- harvest the secret by swapping the socket the host connects to. A fix needs a
+  server nonce, and that is deferred;
+- on Windows, read the memory of the daemon or the host.
+
+The token also still opens `tasks.submit`, `tasks.cancel`, `tasks.retry` and
+`workstreams.*`, including gate changes. So the proposal approval gates only
+Restricted chat proposals. No wire path lets a process that holds only the token
+approve or decide for the user.
+
+A host that did not spawn the running daemon is not an approver. This happens,
+for example, after an app upgrade while the old daemon still runs. That session
+can still read and cancel, but it cannot approve or reject. The daemon exits
+about 60 seconds after its last client leaves. A daemon that a host then spawns
+is an approver. The host has no command yet to restart such a daemon. On Windows
+the app exits with its last window, so the secret is lost while the daemon keeps
+running. The action card and the Review view say so in plain words.
+
+## Task proposals (DPES-1105, phase 2)
+
+Phase 2 adds four kinds to the action block, a fixed envelope that a proposed
+task must pass, and the read method `actions.pending`. Everything above holds
+unchanged: actions exist only for a Restricted turn, nothing happens until the
+user approves the card, and the approver decides on the card only.
+
+### The four kinds
+
+A block may mix these with the workstream and objective kinds, at most ten actions
+in all. A field the kind does not list rejects the whole block.
+
+| Kind | Parameters | What approval does |
+| --- | --- | --- |
+| `task.propose` | `project`, `objective`, `agent`, `task_kind`, `delivery`, and optionally `workstream_id` or `workstream_ref`, and `objective_id` | Creates one task and queues it. When a workstream is named, links the task to it, and to the objective when `objective_id` is set. |
+| `task.cancel` | `task_id` | Cancels a created or queued task at once. A running task ends the proposal `executed` with the text "Cancellation requested", because the task stops when its agent confirms. A finished task fails `conflict`. |
+| `task.retry` | `task_id` | Queues one new attempt of a failed or verification-failed task. A running or queued task fails `conflict`, and a running attempt is never cancelled or restarted. |
+| `workstream.link_task` | `workstream_id`, `task_id`, and optionally `objective_id` | Links an existing task to the workstream. A task linked elsewhere fails `conflict`. |
+
+The `task.propose` fields:
+
+- `project` is the `p-` code the snapshot shows after a project's folder name, `p-`
+  and eight lowercase hex digits. The daemon turns it into a project when the card
+  is approved: no project is `not_found`, two projects with one code are `conflict`.
+  A path is never accepted and never stored.
+- `objective` is at most 8 KiB of text with no control characters other than tab
+  and line breaks.
+- `agent` is `codex` or `claude-code`.
+- `task_kind` is `Implement` or `Investigate` and defaults to `Implement`.
+- `delivery` is `ReportOnly` or `LocalReview` and defaults to `LocalReview`.
+  `PullRequest` parses, so the envelope can refuse it and the user can see why.
+- `workstream_id` names an existing workstream. `workstream_ref` names a
+  `workstream.create` earlier in the same block, and the task then depends on that
+  card as an `objective.add` does. A block names at most one of the two, and
+  `objective_id` needs `workstream_id`.
+
+Both defaults are written into the stored parameters, so the card shows what would
+run and a request that omits `delivery` matches one that says `LocalReview`. A
+proposal never names autonomy, verification, permission, attempt limits,
+dependencies or a parent task. The envelope and the daemon fix them.
+
+### The chat envelope
+
+A task proposed from chat may ask for no more than the fixed `chat_task_envelope()`
+in `orchestrator-core`:
+
+- Autonomy `ApprovalRequired`, taken from the envelope, never from the agent.
+- Verification `None`: no verification commands run from chat.
+- Delivery `ReportOnly` or `LocalReview`. `PullRequest` is not granted. The user can
+  still submit one by hand in the Agents view.
+- One retry and one repair, the desktop form's defaults, and no dependencies.
+- No permission is set, so the task takes the daemon default, Restricted. Chat can
+  never raise autonomy, verification or permission.
+
+`ReplySink::block` checks each `task.propose` against the envelope when the turn
+completes: after the block parses and the scope checks pass, it calls
+`ActionBlock::checked(&chat_task_envelope())`. The store never learns policy; it
+reads the verdict for each action. Today the envelope is a constant. When it comes
+from settings, `actions.resolve` must check a task again on approve.
+
+### A denied proposal
+
+A task the envelope refuses is stored at once as a `failed` proposal with
+`error_code` `action_denied` and a `denial` key:
+
+| `denial` | Why |
+| --- | --- |
+| `autonomy_not_authorized` | The proposal asks for more autonomy than the envelope grants. |
+| `verification_not_authorized` | The proposal asks for verification the envelope does not grant. |
+| `delivery_not_authorized` | The delivery is outside the envelope, such as `PullRequest`. |
+| `contract_invalid` | The task contract does not validate, such as an empty objective. |
+
+The agent chooses neither autonomy nor verification, so a real block can only reach
+the delivery key and the contract key. The other two keys are tested with synthetic
+envelopes in `orchestrator-core`.
+
+A denied proposal is a record, not a decision:
+
+- It is terminal. `actions.resolve` on it returns `proposal_not_pending`
+  (-32022), and execution only ever runs from `approved`, so it never creates a
+  task. There is no new state and no new RPC error.
+- It gets two events: created `pending`, then `pending` to `failed` with the
+  error code. The actor is `agent`, because the events table allows only `agent`,
+  `user` and `grant:*`.
+- It is never pending, so it matches no card and `actions.pending` never lists it.
+  A repeat of the same refused request is a second `failed` card.
+- The desktop shows it as "Denied", with the reason and no buttons.
+
+### Scope in a workstream conversation
+
+In a workstream conversation a block may change only that workstream's tasks:
+
+- `task.propose` must name that workstream by `workstream_id`, not by a ref, so a
+  task proposed there is always linked to it.
+- `workstream.link_task` must name that workstream.
+- `task.cancel` and `task.retry` must name a task linked to that workstream. The
+  daemon checks the link in the store (`ReplySink::targets_in_scope`), as it does
+  for `objective.revise`. A task linked elsewhere, or not linked at all, rejects the
+  whole block (`action_block` is `rejected`).
+
+In the global conversation all four kinds are allowed, and the user approves each.
+`actions.resolve` checks the same scope again when it runs a card.
+
+### Execution and errors
+
+Approval runs through `*_inner` functions that the public handlers also use, under
+the held idempotency gate and the key `action-` followed by the hash of the proposal
+id. The public methods keep their behavior. A failure becomes the proposal's
+`error_code`, one of the codes under "Failure codes" above, plus `forbidden` (the
+refusal of a read-only task, which a chat proposal cannot reach). A restart finishes
+an approved proposal once. A crash after the task is created and before it is
+queued, or before it is linked, is finished by the same reconcile.
+
+### Snapshot and prompt
+
+The snapshot line `Action kinds:` lists all eight kinds. Each recent proposal is one
+line with its kind, state and outcome, then what it is about:
+
+```text
+- task.propose pending: project p-3fa9c1d2: Add unit tests for the retry module.
+- task.propose failed (action_denied: delivery_not_authorized): project p-3fa9c1d2: Ship it.
+- task.cancel pending: task-0123abcd
+- workstream.link_task pending: task-4567ef01 to workstream-0123abcd
+```
+
+A task proposal shows its project code and the objective cut to 80 bytes. A cancel or
+retry names its task id, and a link names its task and workstream ids, which the task
+lines already show. A denied task also shows its reason. No line holds a path, token,
+environment, credential, diff or session output, and a project is named by its code
+only. The task lines of the snapshot do not change in phase 2.
+
+The preamble lists the four kinds and their fields and says that `delivery` is
+`ReportOnly` or `LocalReview`. It keeps its rule that nothing happens until the user
+approves and its rule that the snapshot is data, and it stays within the 3 KiB cap.
+
+Tests: core (`orchestrator_action.rs`, `task_envelope.rs`), store
+(`tests/action_proposals.rs`), the daemon unit tests of `api_actions_tests.rs`, and
+the process tests of `tests/conversation_runtime.rs`. The process tests run a
+scripted `task.propose` to a pending card, a pull-request delivery to a denied card
+that cannot be approved, an Auto or Full turn that gets no card, a double approval
+that creates one task, a restart between approve and execute, a repeated request,
+a cancel of a foreign task in a workstream conversation, and `actions.pending` for a
+session that holds only the token.
+
+## Project defaults, reports and holds (DPES-1105, phase 4)
+
+Phase 4 adds per-project defaults, scout reports, promotion, holds, task lineage,
+a soft archive, and the action kinds `task.revise`, `decision.hold` and
+`project.remove`. Actions still run only at Restricted, and every mutation still
+needs a per-action approval.
+
+- **Project modes.** A project's mode is `LocalOnly` (the default), `DirectPr` or
+  `NoMistakes`. Pull request delivery needs a mode that allows it and the chat
+  setting `chat_pr_delivery`. That setting is off by default and is set only by the
+  user through `settings.set`. The project defaults are set only by the user through
+  `projects.set_defaults`. Approval checks the proposal against the project's
+  current defaults, so a change made after the proposal was made applies.
+- **Scout reports.** A scout's report is stored after its run, capped at 16 KiB and
+  marked when cut. Credential shapes are masked. Paths are kept in the stored copy.
+  A report is never deleted in this phase.
+- **Relay.** A relay is started only by the user, from a button on the notice. It
+  runs as a Restricted chat turn. The copy handed to the model goes through the same
+  word-level redactor as the wake service: paths become `[path]`, and token-like
+  words become `[redacted]`. The model receives it as labelled data. Automatic relay
+  is not built.
+- **Methods.** `reports.get` and `reports.relay` are user-only. `reports.list` returns
+  metadata only and is open.
+- **Promotion.** A scout promotes to a ship only after its report has been relayed,
+  which sets `relayed_at`.
+- **Holds.** `decision.hold` puts a hold on a decision. `holds.set` and `holds.release` are
+  user-only. The hold date is from today to 60 days ahead by the daemon clock, and
+  the hold lasts until the end of that day in UTC.
+- **Lineage.** A task created by `task.revise` or by promotion links to the task it
+  came from. A link is written once, never changed, and never deleted. The store
+  refuses a link that would close a cycle.
+- **`task.revise`.** Asks the old task to stop and admits a new task with the
+  instruction added to the objective. The load gate and the worker limits still
+  apply. Never grantable.
+- **Soft archive.** `project.remove` sets `projects.archived_at`. No row is deleted.
+  `projects.register` for the same root clears the marker. Never grantable.
+
+## Standing approvals (DPES-1105, phase 5)
+
+A standing approval, or grant, lets the daemon run a matching proposal without a
+per-action card. Only the user creates one. An agent never creates, changes or
+revokes a grant.
+
+- **Creation and revoke.** `grants.create` takes one scope, a set of kinds, an expiry,
+  a use count and a token budget. `grants.revoke` takes effect at once. Both are
+  user-only. `grants.list` is open. A grant is never edited: to change its terms,
+  revoke it and create another.
+- **Scope.** One project or one workstream, never all projects. A workstream grant
+  covers a task on any of its member projects, even one not linked to the workstream.
+- **Grantable kinds.** The code's `GRANTABLE_KINDS` list has six kinds:
+  `workstream.update` (title and summary only, never a change of `state`),
+  `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
+  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold` and
+  `workstream.create` are not grantable in this build.
+- **Never grantable.** The code's `NEVER_GRANTABLE` list has three entries:
+  `project.remove`, `task.cancel` and `task.revise`. `delivery.merge` is covered only by
+  a merge grant, which may name no other kind (see `orchestrator-actions.md`).
+- **Expiry.** Required. Default 8 hours, maximum 7 days, minimum 60 seconds.
+- **Uses.** Default 20, maximum 200.
+- **Token budget.** Required, from 1 to 1,000,000,000 tokens. It counts the tokens
+  that usage receipts report for tasks the grant started, from the grant's creation.
+  A figure that was never reported counts as 0. A reached budget or use limit blocks
+  new uses only. It never cancels a running task.
+- **Matching.** The matcher checks for new proposals every 2 seconds. A grant never
+  matches a proposal made before the grant was created.
+- **Use.** A match is approved with the actor `grant:<id>`. The use is consumed in
+  the same transaction as the approval. Each use writes an audit event with the grant
+  id and the proposal digest. The approval runs the same re-check against the current
+  defaults and the same execution as a user approval.
+- **Revoke and expiry.** A revoke is immediate. An execution under a grant stops before
+  it starts if the grant is revoked, expired, out of uses or out of budget at that
+  moment. A use already spent is not refunded.
+- **Merge grant (N8).** The unattended merge grant is built with the pull request
+  poller and the merge action (phase 4c). Its rules and the checks that still need a
+  live `gh` are in `orchestrator-actions.md`, "Pull request watching and merge".
+
+### Away mode and the return brief
+
+- Away is a monitoring mode, set by the user through `monitoring.set`. It adds no
+  authority. Grants apply in every monitoring mode, and proposals still need a card
+  unless a grant matches.
+- The return brief covers the window from the moment away mode started to now. It
+  holds counts, ids, short titles, states and project codes. It never holds free text
+  from an agent, and it is never put in a prompt.
+- The brief is kept until the user acknowledges it with `monitoring.brief_ack`. That
+  method is open to any session and only marks the brief as seen.
+
+## Orchestrator notes (DPES-1105, phase 6)
+
+Notes are short reminders the user writes for the orchestrator, such as a branch
+name or a standing fact. The backend and the desktop editor are built.
+
+- Only the user writes a note. No action kind writes one, and `notes.set` is
+  user-only.
+- A scope holds up to 10 notes. The scopes are the global conversation and one
+  workstream. Each note is at most 200 bytes.
+- A note is refused, not stripped, when it is empty, too long, has a control
+  character, or looks sensitive. Sensitive means a path, a URL with credentials, or a
+  token-shaped string. The check is a pattern list, not a guarantee. The snapshot
+  redactor is a second layer.
+- The snapshot shows the notes as a delimited block of data, never as instructions.
+  A workstream conversation sees its own notes, then the global notes.
+- Wake turns do not see notes.
+- A notes change touches no autonomy, grant or approval.
+- Clearing a conversation's history deletes that scope's notes. Clearing the global
+  conversation deletes the global notes, which every workstream conversation lists.
+- The `notes.set` reply carries no note text, because replies are cached.
 
 ## Not covered here
 

@@ -12,6 +12,7 @@ import activityFixture from "../../fixtures/ui/activity.json";
 import conversationFixture from "../../fixtures/ui/conversation.json";
 import decisionFixture from "../../fixtures/ui/decision-queue.json";
 import modelFixture from "../../fixtures/ui/model-catalog.json";
+import settingsFixture from "../../fixtures/ui/settings.json";
 import metricsFixture from "../../fixtures/ui/system-metrics.json";
 import usageFixture from "../../fixtures/ui/usage.json";
 import localToolsFixture from "../../fixtures/ui/local-tools.json";
@@ -21,6 +22,10 @@ import { countStates, measured, notOk, observation, okResult } from "./result";
 import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
+import { createFixtureGrants } from "./grants";
+import { createFixtureNotes } from "./notes";
+import { createFixturePulls } from "./pulls";
+import { createFixtureHolds } from "./holds";
 import type {
   ActionProposal,
   ActivitySnapshot,
@@ -38,8 +43,18 @@ import type {
   ModelCatalogSource,
   Decision,
   Provenance,
+  ProposalItem,
   ResolveReceipt,
   SendReceipt,
+  Brief,
+  MonitoringMode,
+  MonitoringSource,
+  MonitoringState,
+  ProjectDefaults,
+  ProjectDefaultsSource,
+  SettingsSource,
+  WakeRecord,
+  SettingsSnapshot,
   SurfaceId,
   SurfaceReceipt,
   SurfaceResult,
@@ -83,6 +98,8 @@ export interface SurfaceFixtureOptions {
   now?: () => number;
   /** Other AI tools' state at start. Defaults to opted out. The opt-in control changes it in memory. */
   localTools?: LocalToolsFixtureState;
+  /** Whether the settings fixture shows the machine load gate open (the default) or closed. */
+  settingsGate?: "open" | "closed";
 }
 
 type ProviderSet = "priced" | "one_unpriced" | "no_calls" | "not_run";
@@ -204,9 +221,133 @@ function notMutable(): Promise<never> {
   return Promise.reject(new DaemonError("method-unavailable", "Fixture workstreams cannot be changed; nothing was sent to the daemon."));
 }
 
+/** One deterministic notice and the automatic reply it led to, in the Global fixture transcript (DPES-1105). */
+const FIXTURE_WAKE_TURN = "fixture:wake-turn-1";
+const FIXTURE_WAKE_ENTRIES: ConversationEntry[] = [
+  {
+    id: "fixture:wake-msg-1",
+    kind: "message",
+    role: "user",
+    text: "Task fixture:t-12ab (Fix the login bug) failed.",
+    at: "2026-01-01T10:00:00Z",
+    turnId: FIXTURE_WAKE_TURN,
+    origin: "wake",
+    sequence: 3,
+  },
+  {
+    id: `${FIXTURE_WAKE_TURN}:reply`,
+    kind: "message",
+    role: "coordinator",
+    text: "The login task failed on a missing test fixture. Retrying it after the fixture is restored should work.",
+    at: "2026-01-01T10:00:05Z",
+    turnId: FIXTURE_WAKE_TURN,
+    sequence: 4,
+  },
+];
+const FIXTURE_WAKE_RECORDS: WakeRecord[] = [
+  {
+    id: "fixture:wake-1",
+    event: "task_failed",
+    subject: "fixture:t-12ab",
+    notice: "Task fixture:t-12ab (Fix the login bug) failed.",
+    state: "handled",
+    outcome: "replied",
+    skipReason: null,
+    turnId: FIXTURE_WAKE_TURN,
+    anchorSequence: 2,
+    notify: true,
+    seen: false,
+    createdAt: "2026-01-01T10:00:00Z",
+  },
+];
+
+type ConversationData = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
+
+type TaskCardFields = Pick<ActionProposal, "kind" | "params" | "target"> & Partial<Pick<ActionProposal, "state" | "errorCode" | "denial">>;
+
+/** A Global card on the fixture reply's turn, after the two workstream cards. */
+function taskCard(index: number, fields: TaskCardFields): ActionProposal {
+  return {
+    id: `fixture:proposal-${index + 1}`,
+    turnId: "fixture:turn-1",
+    index,
+    digest: String(index + 1).repeat(64),
+    dependsOn: null,
+    state: "pending",
+    resultRef: null,
+    errorCode: null,
+    denial: null,
+    updatedAt: "2026-01-01T09:00:05Z",
+    ...fields,
+  };
+}
+
+/** One card per task kind, and one the app denied (DPES-1105). Their ids and titles match the fixture tasks. */
+const TASK_CARDS: ActionProposal[] = [
+  taskCard(2, {
+    kind: "task.propose",
+    params: {
+      project: "p-3fa9c1d2",
+      objective: "Add unit tests for the retry module.\nRun them locally and report what failed.",
+      agent: "codex",
+      task_kind: "Implement",
+      delivery: "LocalReview",
+    },
+    target: { projectName: "alpha" },
+  }),
+  taskCard(3, {
+    kind: "task.cancel",
+    params: { task_id: "fixture:task-auth-2" },
+    target: { taskTitle: "Add refresh-token expiry", taskState: "Running" },
+  }),
+  taskCard(4, {
+    kind: "task.retry",
+    params: { task_id: "fixture:task-docs-1" },
+    target: { taskTitle: "Rewrite the install guide", taskState: "Failed" },
+  }),
+  taskCard(5, {
+    kind: "workstream.link_task",
+    params: { workstream_id: "fixture:ws-docs", task_id: "fixture:task-auth-3" },
+    target: { taskTitle: "Document the session model", taskState: "Queued" },
+  }),
+  taskCard(6, {
+    kind: "task.propose",
+    params: {
+      project: "p-3fa9c1d2",
+      objective: "Fix the flaky login test and open a pull request.",
+      agent: "claude-code",
+      task_kind: "Implement",
+      delivery: "PullRequest",
+    },
+    target: { projectName: "alpha" },
+    state: "failed",
+    errorCode: "action_denied",
+    denial: "delivery_not_authorized",
+  }),
+  taskCard(7, {
+    kind: "task.revise",
+    params: { task_id: "fixture:task-auth-2", added_intent: "Also cover the refresh token that expires during a request." },
+    target: { taskTitle: "Add refresh-token expiry", taskState: "Running" },
+  }),
+  taskCard(8, {
+    kind: "decision.hold",
+    params: { task_id: "fixture:task-auth-1", until: "2026-01-09" },
+    target: { taskTitle: "Fix the login bug", taskState: "Running" },
+  }),
+  taskCard(9, {
+    kind: "project.remove",
+    params: { project: "p-3fa9c1d2" },
+    target: { projectName: "alpha", taskCount: 4, runningTasks: 0 },
+  }),
+];
+
+/** The Global conversation's cards. The JSON holds the workstream cards, written before a card had `denial` or `target`. */
+function conversationProposals(data: ConversationData): ActionProposal[] {
+  return [...data.proposals.map((proposal) => ({ ...proposal, denial: proposal.denial ?? null, target: proposal.target ?? null })), ...TASK_CARDS];
+}
+
 function conversationSource(ctx: Ctx): ConversationSource {
-  type Data = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
-  const envelope = conversationFixture as unknown as Envelope<Data>;
+  const envelope = conversationFixture as unknown as Envelope<ConversationData>;
   const counter = { n: 0 };
   // Simulated clears (DPES-1105) empty a fixture transcript for the rest of the session only.
   const cleared = new Set<string>();
@@ -217,17 +358,24 @@ function conversationSource(ctx: Ctx): ConversationSource {
       ? null
       : {
           target,
-          entries: cleared.has(keyOf(target)) ? [] : entries,
+          // Fixture transcript sequences are positions; the Global fixture ends with one automatic update.
+          entries: cleared.has(keyOf(target))
+            ? []
+            : target.kind === "global"
+              ? [...entries.map((entry, index) => ({ ...entry, sequence: index + 1 })), ...FIXTURE_WAKE_ENTRIES]
+              : entries,
           repliesExpected: true,
           truncated: false,
           proposals: target.kind === "global" && !cleared.has(keyOf(target)) ? proposals : [],
           proposalsMore: false,
+          wake: target.kind === "global" && !cleared.has(keyOf(target)) ? FIXTURE_WAKE_RECORDS : [],
+          wakeMore: false,
         };
   return {
     provenance: provenance("D10", envelope),
     transcript: (target: ConversationTarget) =>
       resolve<
-        Data,
+        ConversationData,
         {
           target: ConversationTarget;
           entries: ConversationEntry[];
@@ -235,12 +383,14 @@ function conversationSource(ctx: Ctx): ConversationSource {
           truncated: boolean;
           proposals: ActionProposal[];
           proposalsMore: boolean;
+          wake: WakeRecord[];
+          wakeMore: boolean;
         }
       >(
         "D10",
         envelope,
         ctx,
-        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], data.proposals),
+        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], conversationProposals(data)),
         () => transcriptOf(target, []),
       ),
     // DPES-1105. Fixture cards stay pending: nothing is sent and the daemon is never asked.
@@ -404,21 +554,150 @@ function modelSource(ctx: Ctx): ModelCatalogSource {
   };
 }
 
+/** The Global conversation's pending cards, as the queue lists them. The fixture has no workstream conversations. */
+function pendingProposals(): ProposalItem[] {
+  const { data } = (conversationFixture as unknown as Envelope<ConversationData>).scenarios.success;
+  return conversationProposals(data)
+    .filter((proposal) => proposal.state === "pending")
+    .map((proposal): ProposalItem => ({ proposal, scope: { kind: "global" } }));
+}
+
 function decisionSource(ctx: Ctx): DecisionQueueSource {
-  const envelope = decisionFixture as unknown as Envelope<DecisionQueue>;
+  const envelope = decisionFixture as unknown as Envelope<Omit<DecisionQueue, "proposals">>;
   const counter = { n: 0 };
   return {
     provenance: provenance("D16", envelope),
     queue: () =>
-      resolve<DecisionQueue, DecisionQueue>(
+      resolve<Omit<DecisionQueue, "proposals">, DecisionQueue>(
         "D16",
         envelope,
         ctx,
-        (data) => data,
-        (data) => ({ ...data, items: [] }),
+        (data) => ({ ...data, proposals: pendingProposals() }),
+        (data) => ({ ...data, items: [], proposals: [] }),
       ),
     simulatePostpone: (id) => Promise.resolve(receipt("D16", envelope, ctx, counter, `postpone of ${id}`)),
     simulateDismiss: (id) => Promise.resolve(receipt("D16", envelope, ctx, counter, `dismissal of ${id}`)),
+  };
+}
+
+/**
+ * DPES-1105. Fixture mode shows the open gate, or the closed-gate example when asked, and saves nothing.
+ * It never reaches a daemon, so a typed limit changes only what the page holds.
+ */
+function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
+  const envelope = settingsFixture as unknown as Envelope<Record<"open" | "closed", SettingsSnapshot>>;
+  // The Phase 3 groups are the daemon's defaults (10 minutes, 1 minute, 120 minutes; 6 and 40 replies, no budget).
+  const snapshotOf = (data: Record<"open" | "closed", SettingsSnapshot>): SettingsSnapshot => ({
+    ...data[gate],
+    supervision: { baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 },
+    wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
+    chatPrDelivery: false,
+    mcpEnabled: false,
+  });
+  const simulated = () =>
+    Promise.resolve({
+      simulated: true,
+      provenance: provenance("D17", envelope),
+      snapshot: snapshotOf(envelope.scenarios.success.data),
+    });
+  return {
+    provenance: provenance("D17", envelope),
+    get: () =>
+      resolve<Record<"open" | "closed", SettingsSnapshot>, SettingsSnapshot>("D17", envelope, ctx, snapshotOf, snapshotOf),
+    set: simulated,
+    setGroups: simulated,
+  };
+}
+
+/** Fixture monitoring: the mode lives in memory for the session, and nothing reaches a daemon. */
+function monitoringSource(ctx: Ctx): MonitoringSource {
+  const envelope = conversationFixture as unknown as Envelope<ConversationData>;
+  const prov = provenance("D10", envelope);
+  const state: MonitoringState = { mode: "on", paused: [], unseen: [{ target: { kind: "global" }, count: 1 }] };
+  // One window for the session, so an acknowledged fixture brief does not come back as a new one.
+  let brief: Brief | null = null;
+  return {
+    provenance: prov,
+    get: () => resolve<ConversationData, MonitoringState>("D10", envelope, ctx, () => ({ ...state }), () => ({ ...state, unseen: [] })),
+    set: (mode: MonitoringMode) => {
+      state.mode = mode;
+      return Promise.resolve({ simulated: true, provenance: prov, state: { ...state } });
+    },
+    ack: () => {
+      state.unseen = [];
+      return Promise.resolve();
+    },
+    brief: () =>
+      resolve<ConversationData, Brief | null>("D10", envelope, ctx, (_data, nowMs) => (brief ??= fixtureBrief(nowMs)), () => null),
+    // A fixture saves nothing; the panel says so.
+    briefAck: () => Promise.resolve({ simulated: true }),
+  };
+}
+
+/** The one fixture brief: a closed window of the last four hours. */
+function fixtureBrief(nowMs: number): Brief {
+  const hour = 3600 * 1000;
+  return {
+    fromMs: nowMs - 4 * hour,
+    toMs: nowMs,
+    open: false,
+    counts: {
+      tasksSucceeded: 3,
+      tasksFailed: 1,
+      tasksStalled: 0,
+      tasksRunning: 2,
+      proposalsApprovedByUser: 0,
+      proposalsApprovedByGrant: 4,
+      executedByGrant: 4,
+      failedUnderGrant: 0,
+      proposalsWaiting: 2,
+      deliveriesWaiting: 1,
+      decisionsHeld: 0,
+      grantUses: 4,
+      grantsExpired: 0,
+      grantsRevoked: 0,
+      quietUpdates: 5,
+      repliesPausedByLimit: 0,
+    },
+    grants: [{ id: "fixture:grant-1", scopeKind: "project", scopeLabel: "p-00000000", usesInWindow: 4, usesUsed: 4, maxUses: 20, status: "active" }],
+    waiting: [{ kind: "proposal_waiting", id: "fixture:proposal-1", title: "workstream.update", state: "pending", project: "p-00000000", atMs: nowMs - hour }],
+    attention: [{ kind: "task_failed", id: "fixture:task-1", title: "Sample failed task", state: "Failed", project: "p-00000000", atMs: nowMs - 2 * hour }],
+  };
+}
+
+/** One fixture project per mode. A fixture id not listed here reads as `local-only`, like a daemon project with no row. */
+export const FIXTURE_PROJECT_DEFAULTS: Readonly<Record<string, ProjectDefaults>> = {
+  "fixture:project-alpha": { mode: "local-only", baseBranch: null, branchPrefix: null, checks: [], mergeMethod: "squash" },
+  "fixture:project-beta": {
+    mode: "direct-pr",
+    baseBranch: "main",
+    branchPrefix: "moa/",
+    checks: [["cargo", "test"]],
+    mergeMethod: "squash",
+  },
+  "fixture:project-gamma": {
+    mode: "no-mistakes",
+    baseBranch: "main",
+    branchPrefix: "bot/",
+    checks: [["cargo", "test"], ["cargo", "clippy"]],
+    mergeMethod: "rebase",
+  },
+};
+
+/** Fixture project defaults: never reaches a daemon, so a save changes nothing and says so. */
+function projectDefaultsSource(ctx: Ctx): ProjectDefaultsSource {
+  const provenance: Provenance = { kind: "fixture", id: "D2", fixture: "project-defaults" };
+  const local: ProjectDefaults = { mode: "local-only", baseBranch: null, branchPrefix: null, checks: [], mergeMethod: "squash" };
+  return {
+    provenance,
+    get: (projectId) => {
+      if (ctx.scenario === "loading") return new Promise(() => undefined);
+      if (ctx.scenario === "unavailable" || ctx.scenario === "unsupported" || ctx.scenario === "unknown") {
+        return Promise.resolve(notOk(provenance, ctx.scenario, `Fixture scenario: project defaults are ${ctx.scenario}.`, observation(ctx.now())));
+      }
+      return Promise.resolve(okResult(provenance, FIXTURE_PROJECT_DEFAULTS[projectId] ?? local, observation(ctx.now())));
+    },
+    set: (_projectId, defaults) => Promise.resolve({ simulated: true, provenance, defaults }),
   };
 }
 
@@ -436,5 +715,12 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     models: modelSource(ctx),
     search: createSearchSource(workstreams, decisions, ctx.now),
     decisions,
+    settings: settingsSource(ctx, options.settingsGate ?? "open"),
+    monitoring: monitoringSource(ctx),
+    holds: createFixtureHolds(ctx.scenario, ctx.now),
+    pulls: createFixturePulls(ctx.scenario, ctx.now),
+    projectDefaults: projectDefaultsSource(ctx),
+    grants: createFixtureGrants(ctx.scenario, ctx.now),
+    notes: createFixtureNotes(ctx.scenario, ctx.now),
   };
 }

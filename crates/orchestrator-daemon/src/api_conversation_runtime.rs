@@ -20,19 +20,36 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
-use orchestrator_agents::SelectionReason;
+use orchestrator_agents::{SelectionReason, UsageReport};
 use orchestrator_core::orchestrator_action::{
     parse_block, Action, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
 };
 use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTED};
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
-    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnBlock,
-    TurnOutcome, TurnPermission, TurnState, MAX_REPLY_CHUNK_BYTES,
+    BegunTurn, ConversationError, ConversationTarget, ConversationTurn, ConversationUsageReceipt,
+    SqliteStore, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger,
+    MAX_REPLY_CHUNK_BYTES,
 };
 
-use super::conversation_snapshot::build_snapshot;
+use super::actions::promotion_denial;
+use super::conversation_snapshot::build_snapshot_with_notes;
+use super::landing_api::{merge_denial, with_project_merge_methods};
+use super::load::LoadHandle;
+use super::projects_defaults::{denial_of, revise_denial};
+use super::wake_events::redact_snapshot;
+use crate::executor::unix_now_ms;
+use crate::mcp_server::McpView;
+
+/// A wake turn that has nothing for the user replies with exactly this (DPES-1105).
+pub(crate) const QUIET_TOKEN: &str = "MCAO_QUIET";
+/// Marks a wake exchange in the history the next turn is shown.
+const WAKE_HISTORY_PREFIX: &str = "[automatic update] ";
+/// Most event lines, and bytes per line, in the opening text of a wake turn.
+const WAKE_BRIEF_LINES: usize = 20;
+const WAKE_BRIEF_LINE_BYTES: usize = 200;
 
 /// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
@@ -60,6 +77,23 @@ pub(crate) struct HistoryTurn {
     pub reply: String,
 }
 
+/// The events a wake turn reports: the daemon's own notice lines, never agent text.
+pub(crate) struct WakeBrief {
+    pub events: Vec<String>,
+}
+
+impl WakeBrief {
+    /// The opening entry of the turn: the lines, at most 20 of at most 200 bytes.
+    fn opening_text(&self) -> String {
+        self.events
+            .iter()
+            .take(WAKE_BRIEF_LINES)
+            .map(|line| truncate_to(line, WAKE_BRIEF_LINE_BYTES))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 /// What a runtime is asked to answer.
 pub(crate) struct TurnRequest {
     pub target: ConversationTarget,
@@ -81,6 +115,13 @@ pub(crate) struct TurnRequest {
     /// The session negotiated `orchestrator_actions`, so the agent is told the
     /// action block format (DPES-1105).
     pub actions: bool,
+    /// Set only for a wake turn (DPES-1105): the prompt then says the message is an
+    /// automatic update.
+    pub wake: Option<WakeBrief>,
+    /// Set only when the read-only tools may be offered to this turn (see [`turn_mcp`]).
+    /// The runtime starts the server only for Claude when its CLI offers the flag, and
+    /// clears the field when it did not start one. The view has no write method.
+    pub mcp: Option<Arc<McpView>>,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -221,6 +262,8 @@ impl WorkstreamDirectory for NoWorkstreams {
 
 struct Shared {
     store: Arc<SqliteStore>,
+    /// Read for the snapshot's machine load line. A closed gate never holds a turn.
+    load: Arc<LoadHandle>,
     controls: Mutex<HashMap<String, Box<dyn TurnControl>>>,
 }
 
@@ -267,10 +310,18 @@ impl Shared {
 
 /// Whether a turn may carry action proposals (DPES-1105). Only a session that
 /// negotiated `orchestrator_actions` and a turn at `Restricted` qualify. Above
-/// Restricted the agent has a shell, so it could read the daemon's token and call
-/// `actions.resolve` itself, and the daemon has no caller identity to refuse it.
+/// Restricted the agent has a shell. The approver secret keeps a session that only
+/// holds the token from calling `actions.resolve`, but a shell can still edit the
+/// store or replace the daemon, and no credential stops that.
 pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
     negotiated && level == PermissionLevel::Restricted
+}
+
+/// Whether a turn is offered the read-only MCP server (DPES-1105 phase 6b): the setting is
+/// on, the turn is at Restricted and it is not a wake turn. Auto, Full and task runs never
+/// get it, whatever the setting says.
+pub(crate) fn turn_mcp(enabled: bool, level: PermissionLevel, wake: bool) -> bool {
+    enabled && level == PermissionLevel::Restricted && !wake
 }
 
 /// The reply channel for one turn. Cloneable and safe to use from any thread.
@@ -282,6 +333,8 @@ pub(crate) struct ReplySink {
     /// The session negotiated `orchestrator_actions`. Without it a held block is
     /// stripped, never parsed.
     actions: bool,
+    /// What opened the turn. Recorded on each usage receipt.
+    trigger: TurnTrigger,
     /// Holds back an action block as it streams in. Shared by clones, so the
     /// order of output is the order of the lock.
     filter: Arc<Mutex<ReplyFilter>>,
@@ -322,6 +375,30 @@ impl ReplySink {
         Ok(())
     }
 
+    /// Records provider-reported usage for this turn. A failure is logged and never
+    /// fails or delays the turn. Works after the turn closed, since the tokens were spent.
+    pub(crate) fn usage(&self, reports: Vec<UsageReport>) {
+        for report in reports {
+            let receipt = ConversationUsageReceipt {
+                conversation_id: super::wake::scope_of(&self.target),
+                turn_id: self.turn_id.clone(),
+                trigger: self.trigger,
+                receipt_key: report.receipt_key,
+                reported_at_ms: unix_now_ms(),
+                input_tokens: report.input_tokens,
+                cache_read_tokens: report.cache_read_tokens,
+                cache_write_tokens: report.cache_write_tokens,
+                output_tokens: report.output_tokens,
+                reasoning_tokens: report.reasoning_tokens,
+                cost: report.cost.map(|cost| (cost.nanos, cost.currency)),
+                model: report.model,
+            };
+            if let Err(error) = self.shared.store.record_conversation_usage(&receipt) {
+                eprintln!("orchestrator-daemon: cannot record chat usage: {error}");
+            }
+        }
+    }
+
     fn filter(&self) -> MutexGuard<'_, ReplyFilter> {
         self.filter
             .lock()
@@ -344,7 +421,9 @@ impl ReplySink {
         self.shared.complete(&self.turn_id, block);
     }
 
-    /// Decides what the held block, if any, does to the turn.
+    /// Decides what the held block, if any, does to the turn. An accepted block
+    /// has each `task.propose` checked against the chat envelope: a refused task
+    /// is stored as a failed card, never a pending one.
     fn block(&self, held: Option<HeldBlock>) -> TurnBlock {
         let text = match held {
             None => return TurnBlock::None,
@@ -357,27 +436,56 @@ impl ReplySink {
             ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
         };
         match parse_block(&text, scope) {
-            Ok(block) if self.revisions_in_scope(&block) => TurnBlock::Accepted(block),
+            // Each `task.propose` is checked against its own project's envelope as it is
+            // now. `resolve_as` checks a task again on approve, because the project's mode
+            // or `chat_pr_delivery` may change before the user decides (DPES-1105).
+            Ok(block) if self.targets_in_scope(&block) => {
+                let store = &*self.shared.store;
+                // A merge without a method gets the project's method now, so the card shows
+                // and the digest binds the method that will run.
+                let block = with_project_merge_methods(store, block);
+                TurnBlock::Accepted(block.checked_with(|action| match action {
+                    Action::TaskPropose(propose) => {
+                        denial_of(store, propose).or_else(|| promotion_denial(store, propose))
+                    }
+                    Action::TaskRevise(revise) => revise_denial(store, revise),
+                    // A merge for a pull request the app has not read, at another head, or that
+                    // would be refused now is stored already `failed`, never approvable.
+                    Action::DeliveryMerge(merge) => merge_denial(
+                        store,
+                        merge,
+                        i64::try_from(crate::executor::unix_now_ms()).unwrap_or(i64::MAX),
+                    ),
+                    _ => None,
+                }))
+            }
             _ => TurnBlock::Rejected,
         }
     }
 
-    /// An objective revision in a workstream conversation must name one of that
-    /// workstream's objectives. The lookup needs the store, so it is checked here.
-    fn revisions_in_scope(&self, block: &ActionBlock) -> bool {
+    /// In a workstream conversation, an objective revision must name one of that
+    /// workstream's objectives, and a task cancel or retry one of its tasks. The
+    /// lookups need the store, so they are checked here.
+    fn targets_in_scope(&self, block: &ActionBlock) -> bool {
         let ConversationTarget::Workstream(workstream_id) = &self.target else {
             return true;
         };
-        block
-            .actions()
-            .iter()
-            .filter_map(Action::revised_objective)
-            .all(|objective_id| {
-                self.shared
-                    .store
+        let store = &self.shared.store;
+        block.actions().iter().all(|action| {
+            let objective_in_scope = action.revised_objective().is_none_or(|objective_id| {
+                store
                     .get_objective(objective_id)
                     .is_ok_and(|objective| objective.workstream_id == *workstream_id)
-            })
+            });
+            let task_in_scope = action.target_task().is_none_or(|task_id| {
+                store
+                    .workstream_task_link(task_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|link| link.workstream_id == *workstream_id)
+            });
+            objective_in_scope && task_in_scope
+        })
     }
 
     pub(crate) fn fail(&self, failure: RuntimeFailure) {
@@ -420,7 +528,9 @@ const MAX_HISTORY_BYTES: usize = 12 * 1024;
 /// How many of the newest transcript entries are scanned for history.
 const HISTORY_SCAN_ENTRIES: i64 = 400;
 
-/// Starts, tracks and cancels turns for both conversation scopes.
+/// Starts, tracks and cancels turns for both conversation scopes. Cloning shares the
+/// running-turn registry, so the wake service drives the same turns the API does.
+#[derive(Clone)]
 pub(crate) struct ConversationService {
     shared: Arc<Shared>,
     runtime: Arc<dyn ConversationRuntime>,
@@ -436,10 +546,12 @@ impl ConversationService {
         runtime: Arc<dyn ConversationRuntime>,
         workstreams: Arc<dyn WorkstreamDirectory>,
         pinned: bool,
+        load: Arc<LoadHandle>,
     ) -> Self {
         Self {
             shared: Arc::new(Shared {
                 store,
+                load,
                 controls: Mutex::new(HashMap::new()),
             }),
             runtime,
@@ -491,6 +603,9 @@ impl ConversationService {
     /// turn that never launched records none. `actions` is the session's
     /// negotiated `orchestrator_actions`; it counts only at `Restricted`
     /// (`turn_actions`).
+    ///
+    /// A user message that meets a running wake turn cancels that turn first, so the
+    /// user's turn always wins (DPES-1105). Any other running turn still refuses it.
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
@@ -500,24 +615,121 @@ impl ConversationService {
         level: PermissionLevel,
         negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
+        self.start_as(target, turn_id, text, choice, level, negotiated, None, None)
+    }
+
+    /// Starts a wake turn: Restricted always, the daemon's default model choice, actions
+    /// allowed (a block becomes pending proposals, which need the user's approval like any
+    /// other). `turn_id` is stable per batch, so a second call returns the stored turn
+    /// (`created == false`). A turn already running in the conversation is an error, never
+    /// cancelled: a wake never takes a turn from the user.
+    pub(crate) fn start_wake(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        brief: &WakeBrief,
+    ) -> Result<BegunTurn, ConversationError> {
+        let text = brief.opening_text();
+        self.start_as(
+            target,
+            turn_id,
+            &text,
+            None,
+            PermissionLevel::Restricted,
+            true,
+            Some(brief),
+            None,
+        )
+    }
+
+    /// Starts the turn of a user's relay of a scout report (DPES-1105 phase 4a): Restricted
+    /// always and the daemon's default model choice, whatever the chat was last set to, so
+    /// the turn can only propose. `block` is the report inside its delimiters, handed to this
+    /// one turn as data in its context; the stored opening text is `text`, written by the
+    /// daemon, never the report. The turn is marked as one that read a report, so a proposal
+    /// it makes says so. `turn_id` is stable per request, so a second call returns the stored
+    /// turn (`created == false`). Like a user message it cancels a running wake turn.
+    pub(crate) fn start_relay(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+        block: &str,
+        negotiated: bool,
+    ) -> Result<BegunTurn, ConversationError> {
+        self.start_as(
+            target,
+            turn_id,
+            text,
+            None,
+            PermissionLevel::Restricted,
+            negotiated,
+            None,
+            Some(block),
+        )
+    }
+
+    /// The one start path. A `wake` brief makes the turn a wake turn and forces the level
+    /// to Restricted whatever the caller passed, so no other level is reachable. A `relay`
+    /// block (a scout report, already delimited) does the same and drops the caller's model
+    /// choice, so a turn that read a report always runs at the least authority.
+    #[allow(clippy::too_many_arguments)]
+    fn start_as(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+        choice: Option<&Choice>,
+        level: PermissionLevel,
+        negotiated: bool,
+        wake: Option<&WakeBrief>,
+        relay: Option<&str>,
+    ) -> Result<BegunTurn, ConversationError> {
+        let level = if wake.is_some() || relay.is_some() {
+            PermissionLevel::Restricted
+        } else {
+            level
+        };
+        let choice = if relay.is_some() { None } else { choice };
+        let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
         let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);
-        let begun = store.begin_conversation_turn(
-            target,
-            turn_id,
-            text,
-            &identity.name,
-            &identity.version,
-        )?;
+        let begin = || {
+            store.begin_conversation_turn_as(
+                target,
+                turn_id,
+                text,
+                &identity.name,
+                &identity.version,
+                trigger,
+            )
+        };
+        let begun = match begin() {
+            Err(ConversationError::TurnRunning { turn_id: running })
+                if trigger == TurnTrigger::User =>
+            {
+                if !self.cancel_wake_turn(target, Some(&running))? {
+                    return Err(ConversationError::TurnRunning { turn_id: running });
+                }
+                begin()?
+            }
+            other => other?,
+        };
         if !begun.created {
             return Ok(begun);
         }
+        // The mark comes before the launch, so a proposal of this turn always says it read a
+        // report. A turn that cannot be marked never launches.
+        let unmarked = relay.is_some() && store.mark_turn_read_report(turn_id).is_err();
         let failure = match permission {
+            _ if unmarked => Some(RuntimeFailure::Failed),
             Err(failure) => Some(failure),
             Ok(permission) => self
-                .launch(&identity, choice, level, target, turn_id, text, actions)
+                .launch(
+                    &identity, choice, level, target, turn_id, text, actions, wake, relay,
+                )
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
                 }),
@@ -535,6 +747,25 @@ impl ConversationService {
         Ok(BegunTurn { turn, ..begun })
     }
 
+    /// Cancels the running turn of `target` when it is a wake turn (`only` names the turn
+    /// the caller saw, when it knows one). Returns true when nothing is left running that
+    /// blocks the caller: no turn, or a wake turn this call closed. A running user turn is
+    /// left alone and gives false.
+    pub(crate) fn cancel_wake_turn(
+        &self,
+        target: &ConversationTarget,
+        only: Option<&str>,
+    ) -> Result<bool, ConversationError> {
+        let Some(turn) = self.shared.store.running_conversation_turn(target)? else {
+            return Ok(true);
+        };
+        if turn.trigger != TurnTrigger::Wake || only.is_some_and(|id| id != turn.id) {
+            return Ok(false);
+        }
+        self.cancel(target, &turn.id)?;
+        Ok(true)
+    }
+
     /// Start the runtime for a begun turn. A failure code means the turn must
     /// be closed as failed; a store error while registering the control is one
     /// too, so no turn is left running with nothing to finish it.
@@ -548,6 +779,8 @@ impl ConversationService {
         turn_id: &str,
         text: &str,
         actions: bool,
+        wake: Option<&WakeBrief>,
+        relay: Option<&str>,
     ) -> Option<RuntimeFailure> {
         if let Some(failure) = self.pin_failure(choice) {
             return Some(failure);
@@ -559,14 +792,38 @@ impl ConversationService {
             choice: choice.cloned(),
             level,
             history: self.history(target, turn_id),
-            context: Some(build_snapshot(&self.shared.store, target, actions)),
+            context: Some({
+                let snapshot = build_snapshot_with_notes(
+                    &self.shared.store,
+                    target,
+                    actions,
+                    &self.shared.load.read(Instant::now()),
+                    wake.is_none(),
+                );
+                // A turn nobody asked for sees no path or token a task title may hold.
+                let snapshot = if wake.is_some() {
+                    redact_snapshot(&snapshot)
+                } else {
+                    snapshot
+                };
+                // The relayed report follows the snapshot, inside its own delimiters.
+                match relay {
+                    Some(block) => format!("{snapshot}\n\n{block}"),
+                    None => snapshot,
+                }
+            }),
             actions,
+            wake: wake.map(|brief| WakeBrief {
+                events: brief.events.clone(),
+            }),
+            mcp: self.mcp_view(level, wake.is_some(), relay.is_some()),
         };
         let sink = ReplySink {
             shared: self.shared.clone(),
             turn_id: turn_id.to_owned(),
             target: target.clone(),
             actions,
+            trigger: wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake),
             filter: Arc::new(Mutex::new(ReplyFilter::default())),
         };
         match self.runtime.start_turn(request, sink) {
@@ -576,6 +833,20 @@ impl ConversationService {
                 .map(|_| RuntimeFailure::Failed),
             Err(failure) => Some(failure),
         }
+    }
+
+    /// The read-only view for a turn that may be offered the MCP server. One read of the
+    /// settings; a read error means off. A turn that relays a scout report is never
+    /// offered it: it already runs at the least authority.
+    fn mcp_view(&self, level: PermissionLevel, wake: bool, relay: bool) -> Option<Arc<McpView>> {
+        let enabled = !relay
+            && self
+                .shared
+                .store
+                .orchestrator_settings()
+                .map(|settings| settings.mcp.enabled)
+                .unwrap_or(false);
+        turn_mcp(enabled, level, wake).then(|| Arc::new(McpView::new(self.shared.store.clone())))
     }
 
     /// Refuses a selected agent only when the daemon has no pins at all. A
@@ -625,6 +896,20 @@ impl ConversationService {
             if reply.is_empty() {
                 continue;
             }
+            let wake = store
+                .conversation_turn(&id)
+                .ok()
+                .flatten()
+                .is_some_and(|turn| turn.trigger == TurnTrigger::Wake);
+            // A quiet wake turn said nothing, so the next turn is not shown it.
+            if wake && reply.trim() == QUIET_TOKEN {
+                continue;
+            }
+            let user = if wake {
+                format!("{WAKE_HISTORY_PREFIX}{user}")
+            } else {
+                user
+            };
             let reply = truncate_to(&reply, MAX_HISTORY_REPLY_BYTES);
             bytes += user.len() + reply.len();
             if kept.len() >= MAX_HISTORY_TURNS || bytes > MAX_HISTORY_BYTES {
@@ -708,5 +993,31 @@ impl ConversationService {
             .conversation_turn(turn_id)?
             .ok_or(ConversationError::TurnNotFound)?;
         Ok((turn, applied))
+    }
+}
+
+#[cfg(test)]
+mod mcp_gate_tests {
+    use super::*;
+
+    #[test]
+    fn turn_mcp_is_true_only_for_a_user_turn_at_restricted_with_the_setting_on() {
+        for level in [
+            PermissionLevel::Restricted,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+            PermissionLevel::Extended,
+        ] {
+            for wake in [false, true] {
+                for enabled in [false, true] {
+                    let expected = enabled && !wake && level == PermissionLevel::Restricted;
+                    assert_eq!(
+                        turn_mcp(enabled, level, wake),
+                        expected,
+                        "{level:?} wake={wake} enabled={enabled}"
+                    );
+                }
+            }
+        }
     }
 }

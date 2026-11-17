@@ -6,9 +6,18 @@
 //! sends `shutdown` or a second `handshake` on the webview's behalf; and a
 //! connection ending is reported as a connection event, never inferred to be a
 //! daemon or agent state.
+//!
+//! The host also holds the approver secret of the daemon it started. The webview
+//! never sees it either: the welcome carries only whether the proof held. The
+//! host holds a secret only after it launched a daemon itself, and sends it in
+//! the `approver` field of a connection's own handshake, never in a second one
+//! on that connection. It clears the secret when a daemon refuses it: a welcome
+//! with `approver: false`, or an older daemon's protocol error for the unknown
+//! field, after which that open is repeated once without the secret. A daemon
+//! this host did not start is therefore offered the secret once, never again.
 
 use crate::launch;
-use orchestrator_ipc::{Capability, Relay, RelayError, RelayEvent};
+use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayError, RelayEvent};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -69,6 +78,11 @@ struct Inner {
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, Connection>>,
     launch_gate: Mutex<()>,
+    /// Secret of the daemon this host process started, set only after that
+    /// start succeeded and replaced by the next one. Every connection
+    /// presents it, so a reopened window keeps the role, until a daemon
+    /// refuses it and it is cleared. Never formatted.
+    approver: Mutex<Option<Arc<ApproverSecret>>>,
 }
 
 #[derive(Clone)]
@@ -92,6 +106,7 @@ impl Bridge {
                 next_id: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),
                 launch_gate: Mutex::new(()),
+                approver: Mutex::new(None),
             }),
         }
     }
@@ -141,8 +156,29 @@ impl Bridge {
             })
         };
         let attempt = |sink: &Sink| {
-            let sink = sink.clone();
-            Relay::open(data_dir, requested, move |event| sink(event))
+            let presented = self.approver().clone();
+            let open = |approver: Option<&ApproverSecret>| {
+                let sink = sink.clone();
+                Relay::open_with_approver(data_dir, requested, approver, move |event| sink(event))
+            };
+            let mut opened = open(presented.as_deref());
+            if let Some(presented) = &presented {
+                if matches!(opened, Err(RelayError::Protocol)) {
+                    // An older daemon refuses the unknown `approver` field, which the relay
+                    // reports as a protocol error. Connect again without it: a non-approver
+                    // keeps read access, where an error would lose the connection. The
+                    // secret is dropped only when that works, so any other protocol error
+                    // does not cost the role.
+                    opened = open(None);
+                    if opened.is_ok() {
+                        self.forget_approver(presented);
+                    }
+                } else if matches!(&opened, Ok((_, welcome)) if welcome["approver"] != true) {
+                    // This daemon is not the one the secret was made for.
+                    self.forget_approver(presented);
+                }
+            }
+            opened
         };
 
         let (relay, welcome, launched_by_host) = match attempt(&sink) {
@@ -189,12 +225,24 @@ impl Bridge {
                 "no daemon is running and the daemon executable was not found next to the app",
             )
         })?;
-        let mut child = launch::spawn(program, data_dir).map_err(|error| {
-            HostError::unavailable(launch::explain_with_log(
-                format!("could not start the daemon ({:?}: {error})", error.kind()),
-                data_dir,
-            ))
+        // No daemon starts without a secret, and the secret is masked in any text
+        // this host shows or logs before the daemon can echo it.
+        let approver = ApproverSecret::generate()
+            .map_err(|_| HostError::unavailable("could not create the approval credential"))?;
+        orchestrator_diagnostics::register_secret(&approver.to_wire());
+        let mut child = launch::spawn(program, data_dir, &approver).map_err(|error| {
+            let message = if error.kind() == std::io::ErrorKind::BrokenPipe {
+                // It had already closed its input: it exited before it was given the secret.
+                format!(
+                    "the daemon exited right after starting; see {}",
+                    data_dir.join(launch::DAEMON_LOG).display()
+                )
+            } else {
+                format!("could not start the daemon ({:?}: {error})", error.kind())
+            };
+            HostError::unavailable(launch::explain_with_log(message, data_dir))
         })?;
+        *self.approver() = Some(Arc::new(approver));
         let deadline = Instant::now() + LAUNCH_WAIT;
         loop {
             match attempt(sink) {
@@ -208,6 +256,8 @@ impl Bridge {
                 Err(error) => return Err(error.into()),
             }
             if let Ok(Some(status)) = child.try_wait() {
+                // That daemon is gone, and so is what its secret was for.
+                *self.approver() = None;
                 return Err(HostError::unavailable(launch::explain_with_log(
                     format!(
                         "the daemon exited right after starting ({status}); see {}",
@@ -283,6 +333,25 @@ impl Bridge {
             .connections
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn approver(&self) -> MutexGuard<'_, Option<Arc<ApproverSecret>>> {
+        self.inner
+            .approver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A secret its daemon refused is stale: stop presenting it, unless a newer
+    /// launch has already replaced it.
+    fn forget_approver(&self, refused: &Arc<ApproverSecret>) {
+        let mut stored = self.approver();
+        if stored
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, refused))
+        {
+            *stored = None;
+        }
     }
 }
 

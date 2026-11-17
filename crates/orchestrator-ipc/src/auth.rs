@@ -263,7 +263,7 @@ pub(crate) fn authenticate(
     Ok((version, capabilities))
 }
 
-fn encode(bytes: &[u8; 32]) -> String {
+pub(crate) fn encode(bytes: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(64);
     for byte in bytes {
@@ -273,7 +273,7 @@ fn encode(bytes: &[u8; 32]) -> String {
     result
 }
 
-fn decode(input: &str) -> Option<[u8; 32]> {
+pub(crate) fn decode(input: &str) -> Option<[u8; 32]> {
     if input.len() != 64 || !input.is_ascii() {
         return None;
     }

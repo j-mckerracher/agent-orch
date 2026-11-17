@@ -12,6 +12,7 @@
 //! Incoming bytes are reassembled across polls, so a timeout in the middle of
 //! a frame cannot corrupt framing.
 
+use crate::approver::ApproverSecret;
 use crate::client::read_token;
 use crate::protocol::{
     self, Handshake, RpcId, RpcRequest, RpcResponse, HEADER_LEN, MAX_BODY, VERSION,
@@ -113,11 +114,25 @@ pub struct Relay {
 
 impl Relay {
     /// Connects, authenticates and starts relaying. Returns the relay and the
-    /// handshake `result` (version, capabilities, optional `journal_epoch`).
-    /// `on_event` runs on the relay's worker thread; it must not block for long.
+    /// handshake `result` (version, capabilities, optional `journal_epoch`,
+    /// and `approver`, which is false here). `on_event` runs on the relay's
+    /// worker thread; it must not block for long.
     pub fn open(
         data_dir: impl AsRef<Path>,
         requested: &[Capability],
+        on_event: impl FnMut(RelayEvent) + Send + 'static,
+    ) -> Result<(Self, Value), RelayError> {
+        Self::open_with_approver(data_dir, requested, None, on_event)
+    }
+
+    /// Like `open`, presenting the approver secret in the handshake. The
+    /// returned welcome says `approver: true` only when the daemon accepted it;
+    /// a wrong or stale secret still connects, as a non-approver. The secret
+    /// stays in this module: only the welcome flag reaches the caller.
+    pub fn open_with_approver(
+        data_dir: impl AsRef<Path>,
+        requested: &[Capability],
+        approver: Option<&ApproverSecret>,
         on_event: impl FnMut(RelayEvent) + Send + 'static,
     ) -> Result<(Self, Value), RelayError> {
         let data_dir = data_dir.as_ref();
@@ -143,6 +158,7 @@ impl Relay {
                     .iter()
                     .map(|capability| capability.as_str().to_owned())
                     .collect(),
+                approver: approver.map(ApproverSecret::to_wire),
             })
             .map_err(|_| RelayError::Protocol)?,
         };

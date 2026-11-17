@@ -1,10 +1,21 @@
 import { useEffect, useId, useRef } from "react";
 import type { DaemonError } from "../../../daemon/errors";
 import type { ActionProposal, Decision } from "../../../sources/surfaces/types";
+import type { Route } from "../../router";
 import { NavLink } from "../../shell/NavLink";
 import { Badge, Button, Pill } from "../../theme";
 import { Notice } from "../../widgets";
-import { actionPhrase, cardTitle, fieldsOf, openWorkstreamId, requestErrorText, viewOf, type WorkstreamNames } from "./actionCardModel";
+import {
+  actionPhrase,
+  approvedByText,
+  cardTitle,
+  fieldsOf,
+  openTaskId,
+  openWorkstreamId,
+  requestErrorText,
+  viewOf,
+  type WorkstreamNames,
+} from "./actionCardModel";
 import "./ActionCard.css";
 
 export interface ActionCardProps {
@@ -13,8 +24,14 @@ export interface ActionCardProps {
   names: WorkstreamNames;
   /** The workstream this conversation belongs to; null for Global. */
   scope: string | null;
+  /** Where a task's page is, or null while the app has not listed that task. A project id is needed, and the card holds none. */
+  taskRoute: (taskId: string) => Route | null;
   live: boolean;
   canDecide: boolean;
+  /** False while the daemon session is down, so the card asks the user to reconnect. */
+  connected: boolean;
+  /** False when this session is not the approver (DPES-1105). */
+  approver: boolean;
   deciding: boolean;
   /** A fixture receipt. Nothing was sent. */
   notice: string | null;
@@ -28,8 +45,11 @@ export function ActionCard({
   parent,
   names,
   scope,
+  taskRoute,
   live,
   canDecide,
+  connected,
+  approver,
   deciding,
   notice,
   error,
@@ -40,9 +60,12 @@ export function ActionCard({
   const messageId = useId();
   const articleRef = useRef<HTMLElement>(null);
   const wasDeciding = useRef(false);
-  const view = viewOf(proposal, parent, { canDecide, deciding, names });
+  const view = viewOf(proposal, parent, { canDecide, connected, approver, deciding, names });
   const phrase = actionPhrase(proposal, names);
   const link = view.state === "executed" ? openWorkstreamId(proposal, parent, scope) : null;
+  const taskId = view.state === "executed" ? openTaskId(proposal) : null;
+  const taskLink = taskId !== null ? taskRoute(taskId) : null;
+  const approvedBy = approvedByText(proposal);
 
   // The buttons leave the page once the state settles, so keep focus on the card instead of letting it fall to the body.
   useEffect(() => {
@@ -95,6 +118,7 @@ export function ActionCard({
       <Notice id={messageId} tone={view.message.tone}>
         {view.message.text}
       </Notice>
+      {approvedBy !== null && <p className="ws-action-approver">{approvedBy}</p>}
       {notice !== null && <Notice tone="info">{notice}</Notice>}
       {error !== null && <Notice tone="bad">{requestErrorText(error, parent)}</Notice>}
       {view.state === "pending" && (
@@ -119,11 +143,18 @@ export function ActionCard({
           </Button>
         </div>
       )}
-      {link !== null && (
+      {(taskLink !== null || link !== null) && (
         <div className="ws-action-buttons">
-          <NavLink to={{ name: "global", view: "workstreams", workstreamId: link }} className="ws-chip-link">
-            Open workstream
-          </NavLink>
+          {taskLink !== null && (
+            <NavLink to={taskLink} className="ws-chip-link">
+              Open task
+            </NavLink>
+          )}
+          {link !== null && (
+            <NavLink to={{ name: "global", view: "workstreams", workstreamId: link }} className="ws-chip-link">
+              Open workstream
+            </NavLink>
+          )}
         </div>
       )}
     </article>

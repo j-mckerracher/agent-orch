@@ -10,9 +10,11 @@
 //!   `{ as_of_sequence, epoch, limits{max_concurrent_workers,
 //!   max_workers_per_project}, dispatch_blocked, running[{task_id, project_id,
 //!   agent}], queued[{task_id, project_id, position|null, waiting_reason,
-//!   waiting_on|null, waiting_detail|null}] }`.
-//! * `waiting_reason` is `dependency`, `global_cap`, `project_cap`, `approval`
-//!   or `other`; it comes from a real scheduler pass over the same task
+//!   waiting_on|null, waiting_detail|null, load?}] }`.
+//! * `waiting_reason` is `dependency`, `global_cap`, `project_cap`, `approval`,
+//!   `load` or `other`. `load` means the machine load gate is closed; the entry
+//!   then also carries `load: {meter, mean_percent, limit_percent,
+//!   reopen_percent}` (whole percents, no path). It comes from a real scheduler pass over the same task
 //!   records and the daemon's real limits, so it matches what the executor
 //!   decides. Only `Queued` tasks appear; `Created` tasks are not admitted.
 //! * `position` is the 1-based "up next" order: tasks the scheduler starts on
@@ -31,8 +33,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use std::time::Instant;
+
+use orchestrator_core::load_gate::LoadHold;
 use orchestrator_core::scheduler::{
-    RejectionReason, SchedulerLimits, SchedulerSnapshot, WaitingReason,
+    RejectionReason, SchedulerLimits, SchedulerSnapshot, StartGate, WaitingReason,
 };
 use orchestrator_store::TaskRecord;
 
@@ -61,6 +66,28 @@ struct QueuedEntry {
     waiting_reason: &'static str,
     waiting_on: Option<String>,
     waiting_detail: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    load: Option<LoadWait>,
+}
+
+/// The meter that holds new starts back, in whole percents.
+#[derive(Serialize)]
+struct LoadWait {
+    meter: &'static str,
+    mean_percent: u8,
+    limit_percent: u8,
+    reopen_percent: u8,
+}
+
+impl From<LoadHold> for LoadWait {
+    fn from(hold: LoadHold) -> Self {
+        Self {
+            meter: hold.meter.as_str(),
+            mean_percent: hold.mean_percent,
+            limit_percent: hold.limit_percent,
+            reopen_percent: hold.reopen_percent(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -101,6 +128,7 @@ impl DaemonApi {
             self.config.limits,
             cursor.as_deref(),
             dispatch_blocked,
+            self.config.load.start_gate(Instant::now()),
             &authorization,
         )?;
         serde_json::to_value(snapshot).map_err(|_| RpcError::Internal)
@@ -148,6 +176,7 @@ pub(super) fn build_snapshot(
     limits: SchedulerLimits,
     cursor: Option<&str>,
     dispatch_blocked: bool,
+    gate: StartGate,
     authorization: &dyn Fn(&str, &str) -> bool,
 ) -> Result<QueueSnapshot, RpcError> {
     let snapshots: Vec<_> = reading
@@ -163,7 +192,7 @@ pub(super) fn build_snapshot(
                 .find(|workspace| workspace.task_id == task.contract.id),
         })
         .collect();
-    let plan_with = |limits: SchedulerLimits| {
+    let plan_with = |limits: SchedulerLimits, gate: StartGate| {
         Scheduler::new(
             SchedulerSnapshot {
                 tasks: &snapshots,
@@ -171,13 +200,18 @@ pub(super) fn build_snapshot(
             },
             limits,
         )
-        .map(|scheduler| scheduler.schedule(Some(&authorization)))
+        .map(|scheduler| {
+            scheduler
+                .with_start_gate(gate)
+                .schedule(Some(&authorization))
+        })
         .map_err(|_| RpcError::Internal)
     };
-    let real = plan_with(limits)?;
+    let real = plan_with(limits, gate)?;
     let unbounded =
         SchedulerLimits::new(Some(usize::MAX), Some(usize::MAX)).map_err(|_| RpcError::Internal)?;
-    let order = plan_with(unbounded)?;
+    // Positions stay the fair order while the load gate is closed.
+    let order = plan_with(unbounded, StartGate::Open)?;
 
     // Tasks that start now come first; capacity-blocked ones follow in the
     // fair order they would start once capacity frees up.
@@ -216,12 +250,12 @@ pub(super) fn build_snapshot(
         .filter(|task| task.state == TaskState::Queued)
         .map(|task| {
             let task_id = task.contract.id.as_str();
-            let (reason, waiting_on, detail) = match rejections.get(task_id) {
+            let (reason, waiting_on, detail, load) = match rejections.get(task_id) {
                 Some(rejection) => explain(rejection),
                 None if pending.contains(task_id) && dispatch_blocked => {
-                    (WaitingReason::Other, None, Some("dispatch_blocked"))
+                    (WaitingReason::Other, None, Some("dispatch_blocked"), None)
                 }
-                None => (WaitingReason::Other, None, Some("dispatch_pending")),
+                None => (WaitingReason::Other, None, Some("dispatch_pending"), None),
             };
             QueuedEntry {
                 task_id: task.contract.id.clone(),
@@ -230,6 +264,7 @@ pub(super) fn build_snapshot(
                 waiting_reason: reason.as_str(),
                 waiting_on,
                 waiting_detail: detail,
+                load,
             }
         })
         .collect();
@@ -252,21 +287,30 @@ pub(super) fn build_snapshot(
     })
 }
 
-fn explain(reason: &RejectionReason) -> (WaitingReason, Option<String>, Option<&'static str>) {
+type Explained = (
+    WaitingReason,
+    Option<String>,
+    Option<&'static str>,
+    Option<LoadWait>,
+);
+
+fn explain(reason: &RejectionReason) -> Explained {
     let category = reason.waiting_reason();
     match reason {
         RejectionReason::DependencyNotSucceeded { dependency_id } => {
-            (category, Some(dependency_id.clone()), None)
+            (category, Some(dependency_id.clone()), None, None)
         }
-        RejectionReason::Unauthorized => (category, None, Some("project_not_registered")),
+        RejectionReason::Unauthorized => (category, None, Some("project_not_registered"), None),
         RejectionReason::WorktreeOwned { owner_task_id, .. } => (
             category,
             Some(owner_task_id.clone()),
             Some("worktree_owned"),
+            None,
         ),
-        RejectionReason::TaskNotQueued { .. } => (category, None, Some("not_queued")),
+        RejectionReason::TaskNotQueued { .. } => (category, None, Some("not_queued"), None),
         RejectionReason::GlobalLimitReached | RejectionReason::ProjectLimitReached => {
-            (category, None, None)
+            (category, None, None, None)
         }
+        RejectionReason::LoadGateClosed(hold) => (category, None, None, Some((*hold).into())),
     }
 }

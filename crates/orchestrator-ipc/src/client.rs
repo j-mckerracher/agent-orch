@@ -2,6 +2,7 @@
 //! that arrive before its response (for example a replay in flight), so the
 //! connection stays in sync; the daemon pages replay and bounds live lag.
 //! Updated: 2026-11-08T18:09:45+00:00.
+use crate::approver::ApproverSecret;
 use crate::protocol::{
     self, Capability, Handshake, IncomingMessage, RpcId, RpcRequest, RpcResponse, Welcome,
 };
@@ -14,6 +15,7 @@ use std::io::Read;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// I/O timeout `Client::connect` uses for the handshake and each call.
@@ -31,6 +33,11 @@ pub struct Client {
     cursor_epoch: Option<String>,
     events: VecDeque<Result<IpcEvent, IpcError>>,
     io_timeout: Duration,
+    /// Presented in every handshake, `reconnect()` included, so a reconnect
+    /// keeps the role. Never formatted or logged.
+    approver: Option<Arc<ApproverSecret>>,
+    /// What the welcome said: true only when the daemon accepted the proof.
+    approver_granted: bool,
 }
 
 impl Client {
@@ -54,6 +61,19 @@ impl Client {
         requested: &[Capability],
         io_timeout: Duration,
     ) -> Result<Self, IpcError> {
+        Self::connect_with_approver(data_dir, requested, io_timeout, None)
+    }
+
+    /// Like `connect_with_timeout`, presenting the approver secret in the
+    /// handshake. A daemon that does not accept it still connects; the session
+    /// is then not an approver (see `is_approver`). `reconnect()` presents it
+    /// again.
+    pub fn connect_with_approver(
+        data_dir: impl AsRef<Path>,
+        requested: &[Capability],
+        io_timeout: Duration,
+        approver: Option<Arc<ApproverSecret>>,
+    ) -> Result<Self, IpcError> {
         let data_dir = data_dir.as_ref();
         let token = read_token(data_dir)?;
         let mut stream = connect_local(data_dir).map_err(|_| IpcError::Operation)?;
@@ -71,6 +91,7 @@ impl Client {
                     .iter()
                     .map(|capability| capability.as_str().to_owned())
                     .collect(),
+                approver: approver.as_deref().map(ApproverSecret::to_wire),
             })
             .map_err(|_| IpcError::Operation)?,
         };
@@ -104,7 +125,15 @@ impl Client {
             cursor_epoch: None,
             events: VecDeque::new(),
             io_timeout,
+            approver,
+            approver_granted: welcome.approver,
         })
+    }
+
+    /// True when the daemon accepted this session's approver secret, so it may
+    /// call the user-only methods (`actions.resolve`, `approvals.resolve`).
+    pub fn is_approver(&self) -> bool {
+        self.approver_granted
     }
 
     pub fn health(&mut self) -> Result<Health, IpcError> {
@@ -141,6 +170,17 @@ impl Client {
             "projects.register",
             json!({"path": path}),
         )
+    }
+
+    /// `projects.get_defaults`: the defaults of one project (open to every session).
+    pub fn projects_get_defaults(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Projects, "projects.get_defaults", params)
+    }
+
+    /// `projects.set_defaults`: changes one project's defaults. The daemon refuses a
+    /// session that did not prove the approver secret.
+    pub fn projects_set_defaults(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Projects, "projects.set_defaults", params)
     }
 
     pub fn tasks_submit(&mut self, params: Value) -> Result<Value, IpcError> {
@@ -278,6 +318,15 @@ impl Client {
         )
     }
 
+    /// Lists the pending proposals of every conversation; see `actions.pending`.
+    pub fn actions_pending(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::OrchestratorActions,
+            "actions.pending",
+            Value::Null,
+        )
+    }
+
     /// Approves or rejects one proposed action; see `actions.resolve`.
     pub fn actions_resolve(
         &mut self,
@@ -357,6 +406,22 @@ impl Client {
         )
     }
 
+    /// `reports.list`: the newest scout reports, without their text.
+    pub fn reports_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.list", params)
+    }
+
+    /// `reports.get`: one scout report with its text.
+    pub fn reports_get(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.get", params)
+    }
+
+    /// `reports.relay`: asks the orchestrator to read one scout report in a new Restricted
+    /// turn of the global conversation.
+    pub fn reports_relay(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Coordinator, "reports.relay", params)
+    }
+
     pub fn review_request_approval(&mut self, params: Value) -> Result<Value, IpcError> {
         self.call_feature(Capability::Review, "review.request_approval", params)
     }
@@ -365,6 +430,145 @@ impl Client {
     /// `docs/host-metrics.md`.
     pub fn host_metrics(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Host, "host.metrics", Value::Null)
+    }
+
+    /// `settings.get`: the machine load limits and the live state of the load gate.
+    pub fn settings_get(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Settings, "settings.get", json!({}))
+    }
+
+    /// `settings.set`: changes some load limits (`load` holds `cpu_percent`,
+    /// `memory_percent` and `disk_percent` as wanted). The daemon refuses a session
+    /// that did not prove the approver secret.
+    pub fn settings_set(&mut self, load: Value, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Settings,
+            "settings.set",
+            json!({"idempotency_key": idempotency_key, "load": load}),
+        )
+    }
+
+    /// `monitoring.get`: the wake-up mode, the paused scopes and the unseen counts.
+    pub fn monitoring_get(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Monitoring, "monitoring.get", json!({}))
+    }
+
+    /// `monitoring.set`: changes the wake-up mode only (`on`, `quiet` or `off`). The
+    /// daemon refuses a session that did not prove the approver secret.
+    pub fn monitoring_set(&mut self, mode: &str, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Monitoring,
+            "monitoring.set",
+            json!({"idempotency_key": idempotency_key, "mode": mode}),
+        )
+    }
+
+    /// `monitoring.ack`: marks the records of one scope seen. `target` is the
+    /// `conversations.get` target shape.
+    pub fn monitoring_ack(
+        &mut self,
+        target: Value,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Monitoring,
+            "monitoring.ack",
+            json!({"idempotency_key": idempotency_key, "target": target}),
+        )
+    }
+
+    /// `holds.set`: places a hold on one subject until the given day. The daemon
+    /// refuses a session that did not prove the approver secret.
+    pub fn holds_set(
+        &mut self,
+        subject_kind: &str,
+        subject_id: &str,
+        until: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Holds,
+            "holds.set",
+            json!({
+                "subject_kind": subject_kind,
+                "subject_id": subject_id,
+                "until": until,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
+    /// `holds.release`: removes one hold. The daemon refuses a session that did not
+    /// prove the approver secret.
+    pub fn holds_release(
+        &mut self,
+        hold_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Holds,
+            "holds.release",
+            json!({"hold_id": hold_id, "idempotency_key": idempotency_key}),
+        )
+    }
+
+    /// `monitoring.brief`: the return brief for the away window, or `null` when none is due.
+    pub fn monitoring_brief(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "monitoring.brief", json!({}))
+    }
+
+    /// `monitoring.brief_ack`: marks the closed brief seen. Idempotent.
+    pub fn monitoring_brief_ack(&mut self, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::StandingApprovals,
+            "monitoring.brief_ack",
+            json!({"idempotency_key": idempotency_key}),
+        )
+    }
+
+    /// `grants.create`: creates one standing grant from `params` (scope, kinds, expiry, use
+    /// limit, token budget and an idempotency key). The daemon refuses a session that did
+    /// not prove the approver secret.
+    pub fn grants_create(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.create", params)
+    }
+
+    /// `grants.revoke`: revokes one standing grant, taking `grant_id` and an idempotency key
+    /// from `params`. The daemon refuses a session that did not prove the approver secret.
+    pub fn grants_revoke(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.revoke", params)
+    }
+
+    /// `grants.list`: the standing grants and the policy limits.
+    pub fn grants_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "grants.list", params)
+    }
+
+    /// `notes.list`: one scope's notes and the note limits, from `params` (`scope`).
+    pub fn notes_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "notes.list", params)
+    }
+
+    /// `pulls.list`: the watched pull requests, from `params` (`project_id`, optional).
+    pub fn pulls_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Landing, "pulls.list", params)
+    }
+
+    /// `pulls.refresh`: one fresh read of one task's pull request, from `params` (`task_id`).
+    /// The daemon rate limits it per task.
+    pub fn pulls_refresh(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Landing, "pulls.refresh", params)
+    }
+
+    /// `notes.set`: replaces one scope's notes, from `params` (`scope`, `notes`, an idempotency
+    /// key). The daemon refuses a session that did not prove the approver secret.
+    pub fn notes_set(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "notes.set", params)
+    }
+
+    /// `holds.list`: the holds in place.
+    pub fn holds_list(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Holds, "holds.list", json!({}))
     }
 
     pub fn review_evidence(
@@ -483,8 +687,12 @@ impl Client {
     pub fn reconnect(&mut self) -> Result<(), IpcError> {
         let cursor = self.last_event_sequence;
         let cursor_epoch = self.cursor_epoch.clone();
-        let mut fresh =
-            Self::connect_with_timeout(&self.data_dir, &self.requested, self.io_timeout)?;
+        let mut fresh = Self::connect_with_approver(
+            &self.data_dir,
+            &self.requested,
+            self.io_timeout,
+            self.approver.clone(),
+        )?;
         let resumed = match cursor {
             Some(cursor) => fresh
                 .events_subscribe_in_epoch(Some(cursor), cursor_epoch.as_deref())
@@ -707,6 +915,8 @@ pub(crate) fn map_remote(code: i32) -> IpcError {
         -32021 => IpcError::ProposalNotFound,
         -32022 => IpcError::ProposalNotPending,
         -32023 => IpcError::ProposalInvalid,
+        -32024 => IpcError::GrantNotFound,
+        -32025 => IpcError::GrantInvalid,
         _ => IpcError::Operation,
     }
 }

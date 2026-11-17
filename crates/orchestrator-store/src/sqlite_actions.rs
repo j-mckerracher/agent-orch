@@ -6,9 +6,13 @@
 //! inside the transaction that completes the turn, so a turn never completes
 //! without the proposals its block produced.
 //!
-//! Migration 0037 holds the rules that outside callers cannot break: a
+//! Migrations 0037 and 0038 hold the rules that outside callers cannot break: a
 //! proposal's parameters are fixed, a proposal is deleted only by a history
 //! clear, and events are append-only.
+//!
+//! The store holds no policy. A task the envelope refused arrives from the block
+//! with its denial already decided, and is stored as a terminal `failed` card that
+//! no one can approve.
 //!
 //! A pending proposal moves only through [`SqliteStore::approve_action_proposal`],
 //! [`SqliteStore::reject_action_proposal`] and [`SqliteStore::record_action_outcome`].
@@ -17,6 +21,7 @@
 use std::future::Future;
 
 use orchestrator_core::orchestrator_action::{digest_hex, proposal_id, ActionBlock, ActionKind};
+use orchestrator_core::task_envelope::{Denial, ACTION_DENIED};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
@@ -26,7 +31,7 @@ use crate::{SqliteStore, StoreError};
 macro_rules! proposal_columns {
     () => {
         "id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on, state, \
-         result_ref, error_code, created_at, updated_at"
+         result_ref, error_code, denial, created_at, updated_at"
     };
 }
 
@@ -35,7 +40,8 @@ macro_rules! proposal_columns {
 pub enum ActionBlockOutcome {
     /// The block parsed, and its actions are pending proposals.
     Accepted,
-    /// The block was malformed or out of scope, so nothing was stored.
+    /// The block was malformed, out of scope, or would have left the conversation over
+    /// its limit of pending proposals, so nothing was stored.
     Rejected,
     /// The session did not negotiate actions, so the block was dropped unparsed.
     Stripped,
@@ -69,7 +75,9 @@ pub enum TurnBlock {
     Stripped,
     /// A block was present and refused. Nothing is stored.
     Rejected,
-    /// A block was present and valid. Its actions become pending proposals.
+    /// A block was present and valid. Its actions become pending proposals, unless that
+    /// would leave the conversation over its limit: then nothing is stored and the turn
+    /// records [`ActionBlockOutcome::Rejected`].
     Accepted(ActionBlock),
 }
 
@@ -132,6 +140,9 @@ pub struct ActionProposal {
     pub state: ProposalState,
     pub result_ref: Option<String>,
     pub error_code: Option<String>,
+    /// Why the envelope refused a task proposal: set, once, exactly when `error_code`
+    /// is [`ACTION_DENIED`]. Null for every other proposal.
+    pub denial: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -155,6 +166,13 @@ pub struct ProposalEvent {
 
 /// Event `error_code` of a pending proposal failed because its parent did not execute.
 pub const DEPENDENCY_NOT_EXECUTED: &str = "dependency_not_executed";
+
+/// Most pending proposals one conversation may hold. A block that would leave its
+/// conversation above this stores nothing, and its turn records
+/// [`ActionBlockOutcome::Rejected`]. A pending card is at most about 17 KiB, so 20 of
+/// them stay under the 1 MiB IPC body limit, and the user can always open the
+/// conversation and reject.
+const MAX_PENDING_PROPOSALS_PER_SCOPE: usize = 20;
 
 /// Why a resolve call was refused. A refused call writes nothing.
 #[derive(Debug)]
@@ -187,6 +205,14 @@ pub enum ActionOutcome<'a> {
     Failed { error_code: &'a str },
 }
 
+/// A task the global conversation routed to a workstream, read from the proposal ledger.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutedTask {
+    pub task_id: String,
+    /// When the proposal executed (`updated_at`).
+    pub routed_at: String,
+}
+
 impl ActionProposal {
     /// The workstream id of a workstream-scoped proposal.
     pub fn scope_workstream(&self) -> Option<&str> {
@@ -210,6 +236,62 @@ impl SqliteStore {
                 " FROM action_proposals WHERE scope = ? ORDER BY rowid DESC LIMIT ?"
             ))
             .bind(scope)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(decode_proposal)
+                .collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Tasks the GLOBAL conversation proposed against `workstream_id` that have executed,
+    /// newest first, at most `limit`. Derived from the proposal ledger: nothing is stored.
+    /// A history clear of the global conversation deletes these rows.
+    pub fn routed_in(
+        &self,
+        workstream_id: &str,
+        limit: usize,
+    ) -> Result<Vec<RoutedTask>, StoreError> {
+        let workstream_id = workstream_id.to_owned();
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT p.result_ref, p.updated_at FROM action_proposals p \
+                 JOIN workstream_tasks w ON w.task_id = p.result_ref AND w.workstream_id = ? \
+                 WHERE p.scope = 'conversation:global' AND p.kind = 'task.propose' \
+                 AND p.state = 'executed' AND p.result_ref IS NOT NULL \
+                 AND json_extract(p.params_json, '$.workstream_id') = w.workstream_id \
+                 ORDER BY p.updated_at DESC, p.rowid DESC LIMIT ?",
+            )
+            .bind(workstream_id)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(|row| -> Result<RoutedTask, StoreError> {
+                    Ok(RoutedTask {
+                        task_id: row.try_get("result_ref")?,
+                        routed_at: row.try_get("updated_at")?,
+                    })
+                })
+                .collect()
+        })
+    }
+
+    /// Pending proposals of every conversation, newest first, at most `limit` of them.
+    pub fn pending_action_proposals(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ActionProposal>, StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let rows = sqlx::query(concat!(
+                "SELECT ",
+                proposal_columns!(),
+                " FROM action_proposals WHERE state = 'pending' \
+                 ORDER BY created_at DESC, rowid DESC LIMIT ?"
+            ))
             .bind(limit)
             .fetch_all(&pool)
             .await?;
@@ -254,6 +336,82 @@ impl SqliteStore {
         })
     }
 
+    /// Pending proposals no grant matcher has tried yet, oldest first, at most `limit`, each
+    /// with the sequence of its creation event. Only proposals created after event sequence
+    /// `min_floor` are listed, so nothing that existed before the oldest open grant is read.
+    pub fn untried_pending_proposals(
+        &self,
+        min_floor: i64,
+        limit: usize,
+    ) -> Result<Vec<(ActionProposal, i64)>, StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let mut connection = pool.acquire().await?;
+            let created = sqlx::query(
+                "SELECT proposal_id, sequence FROM action_proposal_events \
+                 WHERE from_state IS NULL AND sequence > ? AND proposal_id IN \
+                   (SELECT id FROM action_proposals WHERE state = 'pending' AND grant_tried = 0) \
+                 ORDER BY sequence LIMIT ?",
+            )
+            .bind(min_floor)
+            .bind(limit)
+            .fetch_all(&mut *connection)
+            .await?;
+            let mut found = Vec::with_capacity(created.len());
+            for row in created {
+                let id: String = row.try_get("proposal_id")?;
+                let sequence: i64 = row.try_get("sequence")?;
+                if let Some(proposal) = load_proposal(&mut connection, &id).await? {
+                    found.push((proposal, sequence));
+                }
+            }
+            Ok(found)
+        })
+    }
+
+    /// Marks one proposal as tried by the grant matcher, so it is never tried again.
+    pub fn mark_grant_tried(&self, id: &str) -> Result<(), StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            sqlx::query("UPDATE action_proposals SET grant_tried = 1 WHERE id = ?")
+                .bind(id)
+                .execute(&pool)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// The actor that approved one proposal (`user`, or `grant:<id>`), or `None` while it
+    /// has not been approved.
+    pub fn proposal_approver(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            let actor: Option<String> = sqlx::query_scalar(
+                "SELECT actor FROM action_proposal_events \
+                 WHERE proposal_id = ? AND to_state = 'approved' ORDER BY sequence DESC LIMIT 1",
+            )
+            .bind(id)
+            .fetch_optional(&pool)
+            .await?;
+            Ok(actor)
+        })
+    }
+
+    /// Approved proposals a grant approved, in the order stored, each with the grant id.
+    pub fn approved_by_grant(&self) -> Result<Vec<(ActionProposal, String)>, StoreError> {
+        let mut found = Vec::new();
+        for proposal in self.approved_action_proposals()? {
+            let approver = self.proposal_approver(&proposal.id)?;
+            if let Some(grant_id) = approver
+                .as_deref()
+                .and_then(|actor| actor.strip_prefix("grant:"))
+            {
+                found.push((proposal, grant_id.to_owned()));
+            }
+        }
+        Ok(found)
+    }
+
     /// Approved proposals, in the order they were stored. Startup reconcile executes
     /// these; a pending proposal is never returned.
     pub fn approved_action_proposals(&self) -> Result<Vec<ActionProposal>, StoreError> {
@@ -271,6 +429,36 @@ impl SqliteStore {
         })
     }
 
+    /// Moves one pending proposal to `superseded` and records the event, as a newer card of
+    /// the same subject does. Returns whether it moved: a proposal that is not pending, or not
+    /// stored, is left alone. The pull request poller uses it when the head a merge card was
+    /// bound to is no longer the head.
+    pub fn supersede_pending_action_proposal(&self, id: &str) -> Result<bool, StoreError> {
+        let id = id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let moved = match load_proposal(&mut transaction, &id).await? {
+                Some(proposal) if proposal.state == ProposalState::Pending => {
+                    supersede(
+                        &mut transaction,
+                        &proposal.scope,
+                        &proposal.id,
+                        &proposal.digest,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        ConversationError::Store(error) => error,
+                        other => corrupt(other.to_string()),
+                    })?;
+                    true
+                }
+                _ => false,
+            };
+            transaction.commit().await?;
+            Ok(moved)
+        })
+    }
+
     /// Moves a pending proposal to `approved`. A parent it depends on must already be
     /// `executed`.
     pub fn approve_action_proposal(
@@ -284,27 +472,45 @@ impl SqliteStore {
             let proposal = load_proposal(&mut transaction, &id)
                 .await?
                 .ok_or(ResolveError::NotFound)?;
+            let approved = approve_pending(&mut transaction, &proposal, &actor).await?;
+            transaction.commit().await?;
+            Ok(approved)
+        })
+    }
+
+    /// Moves a pending proposal to `failed` with `action_denied` and `denial`, in one
+    /// transaction, records the event, and fails its pending dependents. Used by the
+    /// approve-time envelope re-check. A proposal that is not pending is refused with
+    /// [`ResolveError::NotPending`] and nothing is written.
+    pub fn deny_action_proposal(
+        &self,
+        id: &str,
+        denial: &str,
+        actor: &str,
+    ) -> Result<ActionProposal, ResolveError> {
+        let (id, denial, actor) = (id.to_owned(), denial.to_owned(), actor.to_owned());
+        resolve_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let proposal = load_proposal(&mut transaction, &id)
+                .await?
+                .ok_or(ResolveError::NotFound)?;
             if proposal.state != ProposalState::Pending {
                 return Err(ResolveError::NotPending(proposal.state));
-            }
-            if let Some(parent_id) = &proposal.depends_on {
-                let parent = load_proposal(&mut transaction, parent_id).await?;
-                if parent.map(|parent| parent.state) != Some(ProposalState::Executed) {
-                    return Err(ResolveError::ParentNotExecuted);
-                }
             }
             move_state(
                 &mut transaction,
                 &proposal,
-                ProposalState::Approved,
+                ProposalState::Failed,
                 None,
-                None,
+                Some(ACTION_DENIED),
+                Some(denial.as_str()),
                 &actor,
             )
             .await?;
-            let approved = reload_proposal(&mut transaction, &id).await?;
+            fail_pending_dependents(&mut transaction, &id, &actor).await?;
+            let denied = reload_proposal(&mut transaction, &id).await?;
             transaction.commit().await?;
-            Ok(approved)
+            Ok(denied)
         })
     }
 
@@ -327,6 +533,7 @@ impl SqliteStore {
                 &mut transaction,
                 &proposal,
                 ProposalState::Rejected,
+                None,
                 None,
                 None,
                 &actor,
@@ -377,6 +584,7 @@ impl SqliteStore {
                 to,
                 result_ref.as_deref(),
                 error_code.as_deref(),
+                None,
                 &actor,
             )
             .await?;
@@ -392,7 +600,7 @@ impl SqliteStore {
 
 /// Runs one resolve transaction. Refusals are the closure's own `Err`; storage
 /// failures arrive as [`ResolveError::Store`].
-fn resolve_call<T, F, Fut>(store: &SqliteStore, operation: F) -> Result<T, ResolveError>
+pub(crate) fn resolve_call<T, F, Fut>(store: &SqliteStore, operation: F) -> Result<T, ResolveError>
 where
     T: Send + 'static,
     F: FnOnce(SqlitePool) -> Fut + Send + 'static,
@@ -403,30 +611,106 @@ where
         .map_err(ResolveError::Store)?
 }
 
+/// Moves the pending `proposal`, read in the caller's transaction, to `approved` by `actor`.
+/// A parent it depends on must already be `executed`. The caller commits.
+pub(crate) async fn approve_pending(
+    connection: &mut SqliteConnection,
+    proposal: &ActionProposal,
+    actor: &str,
+) -> Result<ActionProposal, ResolveError> {
+    if proposal.state != ProposalState::Pending {
+        return Err(ResolveError::NotPending(proposal.state));
+    }
+    if let Some(parent_id) = &proposal.depends_on {
+        let parent = load_proposal(connection, parent_id).await?;
+        if parent.map(|parent| parent.state) != Some(ProposalState::Executed) {
+            return Err(ResolveError::ParentNotExecuted);
+        }
+    }
+    move_state(
+        connection,
+        proposal,
+        ProposalState::Approved,
+        None,
+        None,
+        None,
+        actor,
+    )
+    .await?;
+    reload_proposal(connection, &proposal.id).await
+}
+
+/// Moves the `approved` `proposal`, read in the caller's transaction, to `failed` with
+/// `error_code` and fails its pending dependents. The caller commits.
+pub(crate) async fn fail_approved(
+    connection: &mut SqliteConnection,
+    proposal: &ActionProposal,
+    error_code: &str,
+    actor: &str,
+) -> Result<(), ResolveError> {
+    if proposal.state != ProposalState::Approved {
+        return Err(ResolveError::NotPending(proposal.state));
+    }
+    move_state(
+        connection,
+        proposal,
+        ProposalState::Failed,
+        None,
+        Some(error_code),
+        None,
+        actor,
+    )
+    .await?;
+    fail_pending_dependents(connection, &proposal.id, actor).await
+}
+
 /// Moves `proposal` from its current state to `to` by compare-and-set, and appends its
 /// event in the same transaction. The update touches only the state, the outcome and
-/// `updated_at`, which migration 0037 allows.
+/// `updated_at`, which migration 0037 allows. `denial` is written only by an approve-time
+/// denial; the other statement leaves the column out, because a trigger fires on a column
+/// named in `SET` even when its value is unchanged.
 async fn move_state(
     connection: &mut SqliteConnection,
     proposal: &ActionProposal,
     to: ProposalState,
     result_ref: Option<&str>,
     error_code: Option<&str>,
+    denial: Option<&str>,
     actor: &str,
 ) -> Result<(), ResolveError> {
     let from = proposal.state;
-    let updated = sqlx::query(
-        "UPDATE action_proposals \
-         SET state = ?, result_ref = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP \
-         WHERE id = ? AND state = ?",
-    )
-    .bind(to.as_str())
-    .bind(result_ref)
-    .bind(error_code)
-    .bind(&proposal.id)
-    .bind(from.as_str())
-    .execute(&mut *connection)
-    .await?;
+    let updated = match denial {
+        Some(denial) => {
+            sqlx::query(
+                "UPDATE action_proposals \
+                 SET state = ?, result_ref = ?, error_code = ?, denial = ?, \
+                     updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ? AND state = ?",
+            )
+            .bind(to.as_str())
+            .bind(result_ref)
+            .bind(error_code)
+            .bind(denial)
+            .bind(&proposal.id)
+            .bind(from.as_str())
+            .execute(&mut *connection)
+            .await?
+        }
+        None => {
+            sqlx::query(
+                "UPDATE action_proposals \
+                 SET state = ?, result_ref = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ? AND state = ?",
+            )
+            .bind(to.as_str())
+            .bind(result_ref)
+            .bind(error_code)
+            .bind(&proposal.id)
+            .bind(from.as_str())
+            .execute(&mut *connection)
+            .await?
+        }
+    };
     // The row was read in this same immediate transaction, so this only fails if
     // another writer changed it in between, which the transaction rules out.
     if updated.rows_affected() != 1 {
@@ -473,6 +757,7 @@ async fn fail_pending_dependents(
             ProposalState::Failed,
             None,
             Some(DEPENDENCY_NOT_EXECUTED),
+            None,
             actor,
         )
         .await?;
@@ -480,7 +765,7 @@ async fn fail_pending_dependents(
     Ok(())
 }
 
-async fn load_proposal(
+pub(crate) async fn load_proposal(
     connection: &mut SqliteConnection,
     id: &str,
 ) -> Result<Option<ActionProposal>, StoreError> {
@@ -509,12 +794,29 @@ async fn reload_proposal(
 /// Stores the proposals of an accepted block, inside the transaction that completes
 /// its turn. Returns the effective id of each action in block order: an action that
 /// matches a pending card gets that card's id and writes nothing.
+///
+/// An action the envelope refused (`block.denial`) is stored already `failed`, with
+/// `error_code = action_denied` and its denial key, and gets two events: created
+/// `pending`, then `pending` to `failed`. It is never pending, so it matches no card
+/// and a repeat of the same refused request is a second `failed` card. It supersedes
+/// nothing: a pending card with the same subject stays pending.
+///
+/// A block is stored whole or not at all. If it would leave more than
+/// [`MAX_PENDING_PROPOSALS_PER_SCOPE`] cards pending in `scope`, counted after its own
+/// supersedes, everything it wrote is undone (cards, supersedes and events) and the
+/// result is `None`. The transaction goes on, so the caller can still complete the
+/// turn and record the block as [`ActionBlockOutcome::Rejected`].
 pub(crate) async fn insert_block_proposals(
     connection: &mut SqliteConnection,
     scope: &str,
     turn_id: &str,
     block: &ActionBlock,
-) -> Result<Vec<String>, ConversationError> {
+) -> Result<Option<Vec<String>>, ConversationError> {
+    // The cap can only be counted after the last insert, so an over-cap block is undone
+    // back to here, including the cards it superseded.
+    sqlx::query("SAVEPOINT block_proposals")
+        .execute(&mut *connection)
+        .await?;
     let mut effective: Vec<String> = Vec::with_capacity(block.actions().len());
     for (index, action) in block.actions().iter().enumerate() {
         let parent = block
@@ -529,30 +831,41 @@ pub(crate) async fn insert_block_proposals(
         let canonical = action.canonical(parent.as_deref());
         let kind = action.kind();
         let digest = digest_hex(&canonical.digest);
-        let existing: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM action_proposals \
-             WHERE scope = ? AND kind = ? AND digest = ? AND state = 'pending'",
-        )
-        .bind(scope)
-        .bind(kind.as_str())
-        .bind(&digest)
-        .fetch_optional(&mut *connection)
-        .await?;
+        let denial = block.denial(index);
+        let existing: Option<String> = if denial.is_some() {
+            None
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM action_proposals \
+                 WHERE scope = ? AND kind = ? AND digest = ? AND state = 'pending'",
+            )
+            .bind(scope)
+            .bind(kind.as_str())
+            .bind(&digest)
+            .fetch_optional(&mut *connection)
+            .await?
+        };
         if let Some(existing) = existing {
             effective.push(existing);
             continue;
         }
         // Every pending card found here differs from this action, because identical
-        // ones were matched above. A changed request replaces them.
-        let stale = sqlx::query(
-            "SELECT id, digest FROM action_proposals \
-             WHERE scope = ? AND kind = ? AND subject = ? AND state = 'pending'",
-        )
-        .bind(scope)
-        .bind(kind.as_str())
-        .bind(&canonical.subject)
-        .fetch_all(&mut *connection)
-        .await?;
+        // ones were matched above. A changed request replaces them. A denied card
+        // replaces nothing: it can never be approved, so it must not take away a
+        // card the user still can.
+        let stale = if denial.is_some() {
+            Vec::new()
+        } else {
+            sqlx::query(
+                "SELECT id, digest FROM action_proposals \
+                 WHERE scope = ? AND kind = ? AND subject = ? AND state = 'pending'",
+            )
+            .bind(scope)
+            .bind(kind.as_str())
+            .bind(&canonical.subject)
+            .fetch_all(&mut *connection)
+            .await?
+        };
         for row in stale {
             let old_id: String = row.try_get("id")?;
             let old_digest: String = row.try_get("digest")?;
@@ -574,10 +887,15 @@ pub(crate) async fn insert_block_proposals(
             }
         }
         let id = proposal_id(turn_id, index);
+        let (state, error_code) = match denial {
+            Some(_) => (ProposalState::Failed, Some(ACTION_DENIED)),
+            None => (ProposalState::Pending, None),
+        };
         sqlx::query(
             "INSERT INTO action_proposals \
-             (id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on, \
+              state, error_code, denial) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(scope)
@@ -588,6 +906,9 @@ pub(crate) async fn insert_block_proposals(
         .bind(&digest)
         .bind(&canonical.subject)
         .bind(parent.as_deref())
+        .bind(state.as_str())
+        .bind(error_code)
+        .bind(denial.map(Denial::as_str))
         .execute(&mut *connection)
         .await?;
         record_event(
@@ -597,11 +918,39 @@ pub(crate) async fn insert_block_proposals(
             None,
             ProposalState::Pending,
             &digest,
+            None,
         )
         .await?;
+        if state == ProposalState::Failed {
+            record_event(
+                connection,
+                &id,
+                scope,
+                Some(ProposalState::Pending),
+                ProposalState::Failed,
+                &digest,
+                error_code,
+            )
+            .await?;
+        }
         effective.push(id);
     }
-    Ok(effective)
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM action_proposals WHERE scope = ? AND state = 'pending'",
+    )
+    .bind(scope)
+    .fetch_one(&mut *connection)
+    .await?;
+    let over = usize::try_from(pending).unwrap_or(usize::MAX) > MAX_PENDING_PROPOSALS_PER_SCOPE;
+    if over {
+        sqlx::query("ROLLBACK TO block_proposals")
+            .execute(&mut *connection)
+            .await?;
+    }
+    sqlx::query("RELEASE block_proposals")
+        .execute(&mut *connection)
+        .await?;
+    Ok((!over).then_some(effective))
 }
 
 /// Deletes one conversation's proposals. Runs in the clear transaction with the gate
@@ -640,14 +989,15 @@ async fn supersede(
             Some(ProposalState::Pending),
             ProposalState::Superseded,
             digest,
+            None,
         )
         .await?;
     }
     Ok(())
 }
 
-/// Appends one agent event: creation or supersession. Resolve events go through
-/// `move_state`, which also records the user's actor and outcome.
+/// Appends one agent event: creation, supersession or denial (`error_code`). Resolve
+/// events go through `move_state`, which also records the user's actor and outcome.
 async fn record_event(
     connection: &mut SqliteConnection,
     id: &str,
@@ -655,23 +1005,25 @@ async fn record_event(
     from: Option<ProposalState>,
     to: ProposalState,
     digest: &str,
+    error_code: Option<&str>,
 ) -> Result<(), StoreError> {
     sqlx::query(
         "INSERT INTO action_proposal_events \
-         (proposal_id, scope, from_state, to_state, actor, digest) \
-         VALUES (?, ?, ?, ?, 'agent', ?)",
+         (proposal_id, scope, from_state, to_state, actor, digest, error_code) \
+         VALUES (?, ?, ?, ?, 'agent', ?, ?)",
     )
     .bind(id)
     .bind(scope)
     .bind(from.map(ProposalState::as_str))
     .bind(to.as_str())
     .bind(digest)
+    .bind(error_code)
     .execute(connection)
     .await?;
     Ok(())
 }
 
-fn decode_proposal(row: SqliteRow) -> Result<ActionProposal, StoreError> {
+pub(crate) fn decode_proposal(row: SqliteRow) -> Result<ActionProposal, StoreError> {
     let id: String = row.try_get("id")?;
     let idx: i64 = row.try_get("idx")?;
     let kind: String = row.try_get("kind")?;
@@ -689,6 +1041,7 @@ fn decode_proposal(row: SqliteRow) -> Result<ActionProposal, StoreError> {
         depends_on: row.try_get("depends_on")?,
         result_ref: row.try_get("result_ref")?,
         error_code: row.try_get("error_code")?,
+        denial: row.try_get("denial")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
         id,

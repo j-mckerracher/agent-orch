@@ -2,9 +2,21 @@
 // layout and selects the tab the queue list shows (OX-R2).
 import { useRef, type KeyboardEvent } from "react";
 import type { ReviewState } from "../../../review/useReview";
-import { TABS, filterByTab, type TabId } from "./queue";
+import { filterByTab, tabsFor, type TabId } from "./queue";
+import type { HoldsModel } from "./useHolds";
 
-export function DecisionTabs({ state, tab, onTab }: { state: ReviewState; tab: TabId; onTab: (tab: TabId) => void }) {
+export function DecisionTabs({
+  state,
+  tab,
+  onTab,
+  holds,
+}: {
+  state: ReviewState;
+  tab: TabId;
+  onTab: (tab: TabId) => void;
+  holds: HoldsModel;
+}) {
+  const TABS = tabsFor(holds.supported);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -23,7 +35,14 @@ export function DecisionTabs({ state, tab, onTab }: { state: ReviewState; tab: T
   return (
     <div role="tablist" aria-label="Decision filters" className="rd-tabs" onKeyDown={onKeyDown}>
       {TABS.map((t) => {
-        const count = t.unsupported ? null : filterByTab(t.id, state.items).length;
+        // Held counts the holds in force, as the Held tab lists them; it needs the holds read to have answered.
+        const count = t.unsupported
+          ? null
+          : t.id === "held"
+            ? holds.loading || holds.unavailable !== null
+              ? null
+              : holds.items.length
+            : filterByTab(t.id, state.items, holds.held).length;
         return (
           <button
             key={t.id}

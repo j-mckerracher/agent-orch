@@ -7,8 +7,9 @@
 //! wrong-version, malformed-JSON, and I/O failures. Malformed-JSON errors carry
 //! no parser detail or input text. JSON-RPC 2.0 `handshake` is the first
 //! request on each stream. Request IDs accept strings and numbers. Its params
-//! have a lowercase 64-character hex token, supported versions, and requested
-//! capabilities. Server picks the highest common version and compares the
+//! have a lowercase 64-character hex token, supported versions, requested
+//! capabilities, and an optional lowercase 64-character hex `approver`. Server
+//! picks the highest common version and compares the
 //! token in constant time. It negotiates only implemented, requested
 //! capabilities; `capabilities` reports that set. `health` returns package
 //! version, uptime seconds, and data directory. `shutdown` remains lifecycle
@@ -43,7 +44,23 @@
 //! check before method dispatch. Other targets use the typed `Unsupported`
 //! transport.
 //!
+//! Approver credential (DPES-1105). Only the desktop host holds the 32-byte
+//! approver secret: it generates it, passes it to the daemon it spawns over an
+//! inherited pipe, and presents it in the `approver` field of its handshakes,
+//! until a daemon refuses it and it clears the secret. The proof is compared in
+//! constant time once, at handshake. The welcome always carries `approver`
+//! (true only when the proof held; a daemon that predates it omits the field,
+//! which reads as false). A missing, malformed or wrong value does not fail the
+//! handshake: the session connects as a non-approver. A non-approver calling a
+//! user-only method (`actions.resolve`, `approvals.resolve`,
+//! `review.request_approval`, `review.request_changes`) gets `Forbidden`,
+//! code -32012, after the capability check and before the handler runs. This
+//! closes the protocol-level hole (token plus socket is enough to approve); it
+//! is not a sandbox. The secret never appears in errors, logs or debug output.
+//!
 
+#[cfg(any(unix, windows))]
+mod approver;
 #[cfg(any(unix, windows))]
 mod auth;
 mod protocol;
@@ -66,23 +83,40 @@ mod server;
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(any(unix, windows))]
+pub use approver::{ApproverSecret, USER_ONLY_METHODS};
+#[cfg(any(unix, windows))]
 pub use client::{Client, DEFAULT_IO_TIMEOUT};
 #[cfg(any(unix, windows))]
 pub use relay::{CloseReason, Relay, RelayError, RelayEvent};
 #[cfg(any(unix, windows))]
 pub use server::{Server, ServerConfig};
 #[cfg(not(any(unix, windows)))]
-pub use unsupported::{Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
+pub use unsupported::{ApproverSecret, Client, Server, ServerConfig, DEFAULT_IO_TIMEOUT};
 
 #[cfg(all(test, any(unix, windows)))]
 #[path = "actions_tests.rs"]
 mod actions_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "approver_tests.rs"]
+mod approver_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "brief_tests.rs"]
+mod brief_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "coordinator_review_tests.rs"]
 mod coordinator_review_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "event_stream_tests.rs"]
 mod event_stream_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "grants_tests.rs"]
+mod grants_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "history_tests.rs"]
+mod history_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "holds_tests.rs"]
+mod holds_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "host_tests.rs"]
 mod host_tests;
@@ -92,18 +126,27 @@ mod idle_subscription_tests;
 #[cfg(all(test, unix))]
 #[path = "integration_tests.rs"]
 mod integration_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "landing_tests.rs"]
+mod landing_tests;
 #[cfg(all(test, unix))]
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "monitoring_tests.rs"]
+mod monitoring_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "notes_tests.rs"]
+mod notes_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "queue_tests.rs"]
 mod queue_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "reports_tests.rs"]
+mod reports_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "workstreams_tests.rs"]
 mod workstreams_tests;
-#[cfg(all(test, any(unix, windows)))]
-#[path = "history_tests.rs"]
-mod history_tests;
 
 /// One path-free durable event returned by the authenticated daemon stream.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -145,6 +188,10 @@ pub enum RpcError {
     ProposalNotPending,
     /// The action proposal cannot run now, such as before its parent executed (DPES-1105).
     ProposalInvalid,
+    /// No standing grant has this id (DPES-1105).
+    GrantNotFound,
+    /// The standing grant's terms are refused, such as a kind no grant may cover (DPES-1105).
+    GrantInvalid,
     Internal,
 }
 
@@ -166,6 +213,8 @@ impl RpcError {
             Self::ProposalNotFound => -32021,
             Self::ProposalNotPending => -32022,
             Self::ProposalInvalid => -32023,
+            Self::GrantNotFound => -32024,
+            Self::GrantInvalid => -32025,
             Self::Internal => -32603,
         }
     }
@@ -189,6 +238,8 @@ impl RpcError {
             Self::ProposalNotFound => "action proposal was not found",
             Self::ProposalNotPending => "action proposal is no longer pending",
             Self::ProposalInvalid => "action proposal cannot be approved now",
+            Self::GrantNotFound => "standing grant was not found",
+            Self::GrantInvalid => "standing grant terms are not allowed",
             Self::Internal => "internal operation failed",
         }
     }
@@ -306,6 +357,10 @@ pub enum IpcError {
     ProposalNotPending,
     #[error("RPC action proposal cannot be approved now")]
     ProposalInvalid,
+    #[error("RPC standing grant was not found")]
+    GrantNotFound,
+    #[error("RPC standing grant terms are not allowed")]
+    GrantInvalid,
     #[error("event subscription is not active")]
     NoSubscription,
     #[error("local IPC operation failed")]

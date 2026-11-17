@@ -28,6 +28,7 @@ use orchestrator_git::delivery::{
     self, ApprovalCheck, CallbackError, DeliveryAction, DeliveryCallbacks, DeliveryOutcome,
     DeliveryRequest, DeliveryStep, VerificationCheck,
 };
+use orchestrator_git::github::GitHub;
 use orchestrator_git::Repository;
 use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
@@ -74,6 +75,19 @@ pub(crate) struct DaemonApi {
     conversations: conversation_runtime::ConversationService,
     /// Short-lived reuse of definitive agent catalog reads (see `api_models`).
     catalog_cache: Arc<models::CatalogCache>,
+    /// The wake scheduler (DPES-1105 phase 3). Absent without an executor, as in tests that
+    /// build their own with a manual clock.
+    wake: Option<Arc<wake::WakeService>>,
+    /// The standing-grant matcher thread (DPES-1105 phase 5). Started by `main` once the API is
+    /// in an `Arc`; stopped by `shutdown`.
+    grant_matcher: Mutex<Option<grant_matcher::GrantMatcherHandle>>,
+    grant_try_state: Mutex<grant_matcher::TryState>,
+    /// The only door to a remote forge (DPES-1105 phase 4c). `GhCli` in the daemon; every test
+    /// passes a `FakeGitHub`.
+    github: Arc<dyn GitHub>,
+    /// The pull request poller and merge worker: its thread, its signal and its in-memory
+    /// schedule. Started by `main`; stopped by `shutdown`.
+    landing: landing::LandingState,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -110,6 +124,15 @@ struct TaskSubmission {
 #[serde(deny_unknown_fields)]
 struct RegisterProjectParams {
     path: String,
+}
+
+/// An archived project (`project.remove`) is left out of `projects.list` unless the
+/// caller asks for it.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectsListParams {
+    #[serde(default)]
+    include_archived: bool,
 }
 
 #[derive(Deserialize)]
@@ -188,14 +211,32 @@ impl DaemonApi {
     /// Opens the store without launching anything.
     #[cfg(test)]
     pub(crate) fn new(data_dir: &Path) -> Result<Self, String> {
-        Self::with_config(data_dir, ExecutorConfig::for_data_dir(data_dir))
+        Self::with_github(
+            data_dir,
+            Arc::new(orchestrator_git::github_fake::FakeGitHub::new()),
+        )
     }
 
-    fn with_config(data_dir: &Path, config: ExecutorConfig) -> Result<Self, String> {
+    /// [`Self::new`] with the GitHub double a test scripts. No test builds a real `GhCli`.
+    #[cfg(test)]
+    pub(crate) fn with_github(data_dir: &Path, github: Arc<dyn GitHub>) -> Result<Self, String> {
+        Self::with_config(data_dir, ExecutorConfig::for_data_dir(data_dir), github)
+    }
+
+    fn with_config(
+        data_dir: &Path,
+        config: ExecutorConfig,
+        github: Arc<dyn GitHub>,
+    ) -> Result<Self, String> {
         let store = Arc::new(
             SqliteStore::new(&data_dir.join("store.sqlite"))
                 .map_err(|_| "cannot open daemon store".to_owned())?,
         );
+        // The saved limits apply before anything can start a task.
+        let settings = store
+            .orchestrator_settings()
+            .map_err(|_| "cannot read orchestrator settings".to_owned())?;
+        config.load.set_limits(settings.load);
         let approval_actor = Actor::User(LOCAL_USER.to_owned());
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
@@ -212,8 +253,11 @@ impl DaemonApi {
             Arc::new(runtime),
             Arc::new(conversation_agent::StoreWorkstreams(store.clone())),
             pinned,
+            config.load.clone(),
         );
         conversations.recover()?;
+        let feed = config.load_feed.then(|| config.load.clone());
+        let host = host::HostService::new(data_dir, feed);
         let api = Self {
             store,
             config,
@@ -221,10 +265,15 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
-            host: host::HostService::new(data_dir),
+            host,
             local_usage: usage_local::start_local_usage(data_dir),
             conversations,
             catalog_cache,
+            wake: None,
+            grant_matcher: Mutex::new(None),
+            grant_try_state: Mutex::new(grant_matcher::TryState::default()),
+            github,
+            landing: landing::LandingState::default(),
         };
         api.reconcile_actions();
         Ok(api)
@@ -238,13 +287,34 @@ impl DaemonApi {
         conversation_orphans::reap(
             &conversation_agent::ConversationConfig::for_data_dir(data_dir).agents,
         );
-        let mut api = Self::with_config(data_dir, config.clone())?;
-        api.executor = Some(Executor::start(api.store.clone(), config)?);
+        let github: Arc<dyn GitHub> = Arc::new(orchestrator_git::github::GhCli::from_env());
+        let mut api = Self::with_config(data_dir, config.clone(), github)?;
+        let executor = Executor::start(api.store.clone(), config)?;
+        // Recovery settles the batches a crash left running before the loop starts, so a
+        // restart never makes a second turn for one record.
+        let wake = Arc::new(wake::WakeService::new(
+            api.store.clone(),
+            api.conversations.clone(),
+            executor.pulse(),
+            Arc::new(wake::SystemClock),
+            api.config.load.clone(),
+            api.config.diagnostics.clone(),
+        ));
+        // A transient store error is logged inside and does not stop startup.
+        let _ = wake.recover();
+        wake.start();
+        api.executor = Some(executor);
+        api.wake = Some(wake);
         api.host.start();
         Ok(api)
     }
 
     pub(crate) fn shutdown(&self) {
+        self.stop_landing();
+        self.stop_grant_matcher();
+        if let Some(wake) = &self.wake {
+            wake.stop();
+        }
         if let Some(executor) = &self.executor {
             executor.shutdown();
         }
@@ -293,6 +363,11 @@ impl RpcHandler for DaemonApi {
             Capability::ConversationSelection,
             Capability::PermissionLevels,
             Capability::OrchestratorActions,
+            Capability::Settings,
+            Capability::Monitoring,
+            Capability::Holds,
+            Capability::StandingApprovals,
+            Capability::Landing,
         ]
     }
 
@@ -309,6 +384,8 @@ impl RpcHandler for DaemonApi {
         let result = self.report_internal(|| match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
+            "projects.get_defaults" => self.projects_get_defaults(params),
+            "projects.set_defaults" => self.projects_set_defaults(params),
             "tasks.submit" => self.submit_task(params),
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
@@ -334,13 +411,22 @@ impl RpcHandler for DaemonApi {
             "conversations.send" => {
                 self.conversations_send(params, context.negotiated(Capability::OrchestratorActions))
             }
-            "conversations.get" => self.conversations_get(params),
+            "conversations.get" => {
+                self.conversations_get(params, context.negotiated(Capability::OrchestratorActions))
+            }
             "conversations.cancel" => self.conversations_cancel(params),
             "conversations.clear" => self.conversations_clear(params),
             "review.request_approval" => self.review_request_approval(params),
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
             "host.metrics" => self.host_metrics(params),
+            "settings.get" => self.settings_get(params),
+            "settings.set" => self.settings_set(params),
+            "monitoring.get" => self.monitoring_get(params),
+            "monitoring.set" => self.monitoring_set(params),
+            "monitoring.ack" => self.monitoring_ack(params),
+            "monitoring.brief" => self.monitoring_brief(params),
+            "monitoring.brief_ack" => self.monitoring_brief_ack(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
             "usage.localTools" => self.local_usage_read(params),
@@ -356,6 +442,22 @@ impl RpcHandler for DaemonApi {
             "workstreams.link_task" => self.workstreams_link_task(params),
             "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             "actions.resolve" => self.actions_resolve(params),
+            "actions.pending" => self.actions_pending(params),
+            "holds.set" => self.holds_set(params),
+            "holds.release" => self.holds_release(params),
+            "holds.list" => self.holds_list(params),
+            "grants.create" => self.grants_create(params),
+            "grants.revoke" => self.grants_revoke(params),
+            "grants.list" => self.grants_list(params),
+            "notes.list" => self.notes_list(params),
+            "notes.set" => self.notes_set(params),
+            "reports.list" => self.reports_list(params),
+            "reports.get" => self.reports_get(params),
+            "reports.relay" => {
+                self.reports_relay(params, context.negotiated(Capability::OrchestratorActions))
+            }
+            "pulls.list" => self.pulls_list(params),
+            "pulls.refresh" => self.pulls_refresh(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -413,7 +515,16 @@ impl RpcHandler for DaemonApi {
 
 impl DaemonApi {
     fn projects_list(&self, params: Value) -> Result<Value, RpcError> {
-        require_empty_params(&params)?;
+        let request: ProjectsListParams = if params.is_null() {
+            ProjectsListParams::default()
+        } else {
+            parse_params(params)?
+        };
+        let archived = if request.include_archived {
+            Vec::new()
+        } else {
+            self.store.archived_project_ids().map_err(map_store_error)?
+        };
         let projects = self.store.list_projects().map_err(map_store_error)?;
         // `coordinator_active` is false while a project's coordinator is removed
         // (DPES-1105). The project itself is listed either way.
@@ -421,12 +532,31 @@ impl DaemonApi {
             .store
             .removed_coordinator_projects()
             .map_err(map_store_error)?;
+        // `mode` appears only for a project that has a defaults row, and `archived` only
+        // (as true) for an archived one, so a project that never set a default lists as before.
+        let modes: std::collections::HashMap<String, String> = self
+            .store
+            .list_project_defaults()
+            .map_err(map_store_error)?
+            .into_iter()
+            .map(|row| (row.project_id, row.mode))
+            .collect();
+        let archived_all = self.store.archived_project_ids().map_err(map_store_error)?;
         Ok(Value::Array(
             projects
                 .into_iter()
+                .filter(|project| !archived.contains(&project.id))
                 .map(|project| {
                     let coordinator_active = !removed.contains(&project.id);
-                    json!({"id": project.id, "coordinator_active": coordinator_active})
+                    let mut row =
+                        json!({"id": project.id, "coordinator_active": coordinator_active});
+                    if let Some(mode) = modes.get(&project.id) {
+                        row["mode"] = json!(mode);
+                    }
+                    if archived_all.contains(&project.id) {
+                        row["archived"] = json!(true);
+                    }
+                    row
                 })
                 .collect(),
         ))
@@ -451,7 +581,10 @@ impl DaemonApi {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         match self.store.get_project(&root) {
-            Ok(project) if project.root_path == root => {}
+            // Registering a removed project again is the undo of `project.remove`.
+            Ok(project) if project.root_path == root => {
+                self.store.restore_project(&root).map_err(map_store_error)?;
+            }
             Ok(_) => return Err(RpcError::Conflict),
             Err(StoreError::RecordNotFound { .. }) => self
                 .store
@@ -485,80 +618,95 @@ impl DaemonApi {
             "tasks.submit",
             &key,
             &request,
-            || {
-                // The executor always launches a writing agent, so a policy
-                // that denies workspace writes cannot be honored. Refuse it
-                // rather than run an agent with more access than requested.
-                if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
-                    return Err(RpcError::Forbidden);
-                }
-                let permission = request.contract.permission.unwrap_or_default();
-                // A level the agent has no task mapping for is refused, so no task is
-                // created for it. Restricted always takes the existing path, so an
-                // agent with no launcher still fails at launch, as before.
-                if permission != PermissionLevel::Restricted
-                    && orchestrator_agents::permission::task_profile(
-                        &request.contract.agent,
-                        permission,
-                    )
-                    .is_none()
-                {
-                    self.config.diagnostics.warn(
-                        "api",
-                        orchestrator_core::permission::PERMISSION_LEVEL_UNSUPPORTED,
-                        &[
-                            ("agent", &request.contract.agent),
-                            ("permission", permission.as_str()),
-                        ],
-                    );
-                    return Err(RpcError::InvalidParams);
-                }
-                let contract = TaskContract {
-                    id: idempotency::stable_id("task", &key),
-                    project_id: request.contract.project_id.clone(),
-                    parent_id: request.contract.parent_id.clone(),
-                    objective: request.contract.objective.clone(),
-                    kind: request.contract.kind,
-                    agent: request.contract.agent.clone(),
-                    dependencies: request.contract.dependencies.clone(),
-                    verification: request.contract.verification.clone(),
-                    delivery: request.contract.delivery,
-                    autonomy: request.contract.autonomy,
-                    max_retries: request.contract.max_retries,
-                    max_repairs: request.contract.max_repairs,
-                    model_selection: request.contract.model_selection.clone(),
-                    permission,
-                };
-                self.store
-                    .get_project(&contract.project_id)
-                    .map_err(map_store_error)?;
-                contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
-                if let Some(parent_id) = &contract.parent_id {
-                    match self.store.get(parent_id) {
-                        Ok(_) => {}
-                        Err(StoreError::NotFound(_) | StoreError::InvalidTaskId(_)) => {
-                            return Err(RpcError::ParentNotFound);
-                        }
-                        Err(error) => return Err(map_store_error(error)),
-                    }
-                }
-                self.check_agent_command_line(&contract)?;
-                if let Some(selection) = &contract.model_selection {
-                    // `contract::validate` has accepted the selection, so the
-                    // pre-gate read was made for it.
-                    let catalog = selection_catalog.as_ref().ok_or(RpcError::Internal)?;
-                    self.check_selection(catalog, selection)?;
-                }
-                self.validate_scheduler(&contract)?;
-                self.store.create(&contract).map_err(map_store_error)?;
-                self.store
-                    .transition(&contract.id, TaskEvent::Admit)
-                    .map_err(map_store_error)?;
-                self.wake_executor();
-                serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.submit_task_inner(&request, &key, selection_catalog.as_ref()),
         )
+    }
+
+    /// The submit write, shared with action execution. `key` seeds the task id, and the
+    /// caller holds the idempotency gate. `selection_catalog` is the catalog read the caller
+    /// made before taking the gate; it is `None` when the request names no model selection.
+    fn submit_task_inner(
+        &self,
+        request: &TaskSubmitParams,
+        key: &str,
+        selection_catalog: Option<&orchestrator_agents::AgentCatalog>,
+    ) -> Result<Value, RpcError> {
+        // The executor always launches a writing agent, so a policy
+        // that denies workspace writes cannot be honored. Refuse it
+        // rather than run an agent with more access than requested.
+        if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
+            return Err(RpcError::Forbidden);
+        }
+        let permission = request.contract.permission.unwrap_or_default();
+        // A level the agent has no task mapping for is refused, so no task is
+        // created for it. Restricted always takes the existing path, so an
+        // agent with no launcher still fails at launch, as before.
+        if permission != PermissionLevel::Restricted
+            && orchestrator_agents::permission::task_profile(&request.contract.agent, permission)
+                .is_none()
+        {
+            self.config.diagnostics.warn(
+                "api",
+                orchestrator_core::permission::PERMISSION_LEVEL_UNSUPPORTED,
+                &[
+                    ("agent", &request.contract.agent),
+                    ("permission", permission.as_str()),
+                ],
+            );
+            return Err(RpcError::InvalidParams);
+        }
+        let contract = TaskContract {
+            id: idempotency::stable_id("task", key),
+            project_id: request.contract.project_id.clone(),
+            parent_id: request.contract.parent_id.clone(),
+            objective: request.contract.objective.clone(),
+            kind: request.contract.kind,
+            agent: request.contract.agent.clone(),
+            dependencies: request.contract.dependencies.clone(),
+            verification: request.contract.verification.clone(),
+            delivery: request.contract.delivery,
+            autonomy: request.contract.autonomy,
+            max_retries: request.contract.max_retries,
+            max_repairs: request.contract.max_repairs,
+            model_selection: request.contract.model_selection.clone(),
+            permission,
+        };
+        self.store
+            .get_project(&contract.project_id)
+            .map_err(map_store_error)?;
+        // A removed project takes no new task until it is registered again.
+        if self
+            .store
+            .project_is_archived(&contract.project_id)
+            .map_err(map_store_error)?
+        {
+            return Err(RpcError::Conflict);
+        }
+        contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
+        if let Some(parent_id) = &contract.parent_id {
+            match self.store.get(parent_id) {
+                Ok(_) => {}
+                Err(StoreError::NotFound(_) | StoreError::InvalidTaskId(_)) => {
+                    return Err(RpcError::ParentNotFound);
+                }
+                Err(error) => return Err(map_store_error(error)),
+            }
+        }
+        self.check_agent_command_line(&contract)?;
+        if let Some(selection) = &contract.model_selection {
+            // `contract::validate` has accepted the selection, so the
+            // pre-gate read was made for it.
+            let catalog = selection_catalog.ok_or(RpcError::Internal)?;
+            self.check_selection(catalog, selection)?;
+        }
+        self.validate_scheduler(&contract)?;
+        self.store.create(&contract).map_err(map_store_error)?;
+        self.store
+            .transition(&contract.id, TaskEvent::Admit)
+            .map_err(map_store_error)?;
+        self.wake_executor();
+        serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     /// Queues a new attempt for a `Failed` or `VerificationFailed` task. The
@@ -575,24 +723,35 @@ impl DaemonApi {
             "tasks.retry",
             &key,
             &request,
-            || {
-                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
-                let bound = match task.state {
-                    TaskState::Failed => task.contract.max_retries,
-                    TaskState::VerificationFailed => task.contract.max_repairs,
-                    _ => return Err(RpcError::Conflict),
-                };
-                if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
-                    return Err(RpcError::Conflict);
-                }
-                self.store
-                    .transition(&request.task_id, TaskEvent::RetryRequested)
-                    .map_err(map_store_error)?;
-                self.wake_executor();
-                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.retry_task_inner(&request.task_id),
         )
+    }
+
+    /// The retry write, shared with action execution. The caller holds the idempotency gate.
+    pub(super) fn retry_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
+        let task = self.store.get(task_id).map_err(map_store_error)?;
+        // A removed project takes no new work, as `tasks.submit` refuses.
+        if self
+            .store
+            .project_is_archived(&task.contract.project_id)
+            .map_err(map_store_error)?
+        {
+            return Err(RpcError::Conflict);
+        }
+        let bound = match task.state {
+            TaskState::Failed => task.contract.max_retries,
+            TaskState::VerificationFailed => task.contract.max_repairs,
+            _ => return Err(RpcError::Conflict),
+        };
+        if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
+            return Err(RpcError::Conflict);
+        }
+        self.store
+            .transition(task_id, TaskEvent::RetryRequested)
+            .map_err(map_store_error)?;
+        self.wake_executor();
+        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     /// Reports each known agent family: whether its executable is installed
@@ -779,12 +938,16 @@ impl DaemonApi {
             "tasks.cancel",
             &key,
             &request,
-            || {
-                self.cancel_task_record(&request.task_id)?;
-                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.cancel_task_inner(&request.task_id),
         )
+    }
+
+    /// The cancel write, shared with action execution. The caller holds the idempotency gate.
+    /// A running task only has its cancellation requested; the owner confirms later.
+    pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
+        self.cancel_task_record(task_id)?;
+        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     fn cancel_task_record(&self, task_id: &str) -> Result<(), RpcError> {
@@ -1464,6 +1627,9 @@ thread_local! {
 
 #[path = "api_actions.rs"]
 mod actions;
+use actions::project_code;
+#[path = "api_brief.rs"]
+mod brief;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]
@@ -1478,19 +1644,47 @@ mod conversation_snapshot;
 mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "grant_matcher.rs"]
+mod grant_matcher;
+#[path = "api_grants.rs"]
+mod grants;
+#[path = "api_holds.rs"]
+mod holds;
 #[path = "api_host.rs"]
 mod host;
+#[path = "landing.rs"]
+mod landing;
+#[path = "api_landing.rs"]
+mod landing_api;
+#[path = "api_load.rs"]
+pub(crate) mod load;
 #[path = "api_models.rs"]
 mod models;
+#[path = "api_monitoring.rs"]
+mod monitoring;
+#[path = "api_notes.rs"]
+mod notes;
+#[path = "api_projects_defaults.rs"]
+mod projects_defaults;
 #[path = "api_queue.rs"]
 mod queue;
+#[path = "report.rs"]
+pub(crate) mod report;
+#[path = "api_reports.rs"]
+mod reports;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_settings.rs"]
+mod settings;
 #[path = "api_usage.rs"]
 mod usage;
 #[path = "api_usage_local.rs"]
 mod usage_local;
+#[path = "wake.rs"]
+pub(crate) mod wake;
+#[path = "wake_events.rs"]
+pub(crate) mod wake_events;
 
 #[cfg(test)]
 #[path = "api_usage_tests.rs"]
@@ -1499,6 +1693,10 @@ mod usage_tests;
 #[cfg(test)]
 #[path = "api_queue_tests.rs"]
 mod queue_tests;
+
+#[cfg(test)]
+#[path = "api_settings_tests.rs"]
+mod settings_tests;
 #[path = "api_workstreams.rs"]
 mod workstreams;
 
@@ -1507,8 +1705,38 @@ mod workstreams;
 mod review_tests;
 
 #[cfg(test)]
+#[path = "api_actions_phase4_tests.rs"]
+mod actions_phase4_tests;
+#[cfg(test)]
+#[path = "api_actions_task_tests.rs"]
+mod actions_task_tests;
+#[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
+#[cfg(test)]
+#[path = "grant_matcher_tests.rs"]
+mod grant_matcher_tests;
+#[cfg(test)]
+#[path = "api_grants_tests.rs"]
+mod grants_tests;
+#[cfg(test)]
+#[path = "api_landing_merge_tests.rs"]
+mod landing_merge_tests;
+#[cfg(test)]
+#[path = "api_landing_tests.rs"]
+mod landing_tests;
+#[cfg(test)]
+#[path = "api_notes_tests.rs"]
+mod notes_tests;
+#[cfg(test)]
+#[path = "api_projects_defaults_tests.rs"]
+mod projects_defaults_tests;
+#[cfg(test)]
+#[path = "api_reports_tests.rs"]
+mod reports_tests;
+#[cfg(test)]
+#[path = "api_routing_tests.rs"]
+mod routing_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

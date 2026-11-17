@@ -15,12 +15,13 @@ const legacy: Route[] = [
 ];
 
 describe("global routes", () => {
-  it("formats the four global views as #/<view>", () => {
+  it("formats the five global views as #/<view>", () => {
     expect(GLOBAL_VIEWS.map((view) => formatRoute({ name: "global", view }))).toEqual([
       "#/workspace",
       "#/workstreams",
       "#/agents",
       "#/review",
+      "#/settings",
     ]);
   });
 

@@ -123,7 +123,11 @@ struct Evidence {
 static EVIDENCE: Mutex<Option<Evidence>> = Mutex::new(None);
 
 fn evidence(update: impl FnOnce(&mut Option<Evidence>)) {
-    update(&mut EVIDENCE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
+    update(
+        &mut EVIDENCE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
 }
 
 /// Panics with `what` plus everything needed to explain it without a rerun:
@@ -152,20 +156,37 @@ fn diagnostics() -> String {
 
 fn raw_diagnostics() -> String {
     use std::fmt::Write;
-    let guard = EVIDENCE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let guard = EVIDENCE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(evidence) = guard.as_ref() else {
         return "no diagnostics: the scenario had not started".to_owned();
     };
     let data = evidence.base.join("data");
     let mut out = String::from("--- lifecycle diagnostics ---\n");
-    let _ = writeln!(out, "base: {} ({} chars)", evidence.base.display(), evidence.base.as_os_str().len());
-    let _ = writeln!(out, "daemon log {}:\n{}", evidence.daemon_log.display(), tail(&evidence.daemon_log));
+    let _ = writeln!(
+        out,
+        "base: {} ({} chars)",
+        evidence.base.display(),
+        evidence.base.as_os_str().len()
+    );
+    let _ = writeln!(
+        out,
+        "daemon log {}:\n{}",
+        evidence.daemon_log.display(),
+        tail(&evidence.daemon_log)
+    );
     for extension in ["launch", "err"] {
         let file = evidence.base.join("agent").with_extension(extension);
         let _ = writeln!(out, "agent.{extension}: {}", tail(&file));
     }
     let (longest, count) = longest_path(&evidence.base);
-    let _ = writeln!(out, "longest path under base ({} chars of {count} entries): {}", longest.as_os_str().len(), longest.display());
+    let _ = writeln!(
+        out,
+        "longest path under base ({} chars of {count} entries): {}",
+        longest.as_os_str().len(),
+        longest.display()
+    );
     let _ = writeln!(out, "worktrees: {:?}", list(&data.join("worktrees")));
     match connect(&data) {
         Err(error) => {
@@ -174,7 +195,11 @@ fn raw_diagnostics() -> String {
         Ok(mut client) => {
             if let Some(task_id) = &evidence.task_id {
                 let _ = writeln!(out, "tasks.get: {:?}", client.tasks_get(task_id));
-                let _ = writeln!(out, "sessions.list: {:?}", client.sessions_list(Some(task_id)));
+                let _ = writeln!(
+                    out,
+                    "sessions.list: {:?}",
+                    client.sessions_list(Some(task_id))
+                );
             } else {
                 let _ = writeln!(out, "tasks.list: {:?}", client.tasks_list());
             }
@@ -186,7 +211,11 @@ fn raw_diagnostics() -> String {
 fn tail(file: &Path) -> String {
     match fs::read_to_string(file) {
         Ok(text) => {
-            let start = text.char_indices().rev().nth(8000).map_or(0, |(index, _)| index);
+            let start = text
+                .char_indices()
+                .rev()
+                .nth(8000)
+                .map_or(0, |(index, _)| index);
             text[start..].to_owned()
         }
         Err(error) => format!("<unreadable: {error}>"),
@@ -347,6 +376,8 @@ fn scenario(base: &Path) {
         Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")
             .arg(&data)
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .env("AGENT_ORCH_CODEX_PROGRAM", &agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)

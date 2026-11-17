@@ -55,10 +55,26 @@ pub enum Capability {
     /// pending proposals (DPES-1105). Not advertised by an older daemon, which
     /// never parses a reply.
     OrchestratorActions,
+    /// `settings.get` and the user-only `settings.set`: the machine load limits and the
+    /// live state of the load gate (DPES-1105).
+    Settings,
+    /// `monitoring.get` and `monitoring.ack` (open) and the user-only `monitoring.set`: the
+    /// wake-up mode and the paused and unseen state of each scope (DPES-1105).
+    Monitoring,
+    /// `holds.list` (open) and the user-only `holds.set` and `holds.release` (DPES-1105).
+    Holds,
+    /// `grants.list` (open) and the user-only `grants.create` and `grants.revoke`: standing
+    /// approvals, plus the open `monitoring.brief` and `monitoring.brief_ack` return brief and
+    /// the open `notes.list` with the user-only `notes.set` (DPES-1105). Not advertised by an older daemon.
+    StandingApprovals,
+    /// `pulls.list` and `pulls.refresh` (both open, read-only): the pull requests the daemon
+    /// watches. Merging is not a method: it is the `delivery.merge` action kind, resolved through
+    /// `actions.resolve` (DPES-1105). Not advertised by an older daemon.
+    Landing,
 }
 
 impl Capability {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 23] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -77,6 +93,11 @@ impl Capability {
         Self::ConversationSelection,
         Self::PermissionLevels,
         Self::OrchestratorActions,
+        Self::Settings,
+        Self::Monitoring,
+        Self::Holds,
+        Self::StandingApprovals,
+        Self::Landing,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -99,6 +120,11 @@ impl Capability {
             Self::ConversationSelection => "conversation_selection",
             Self::PermissionLevels => "permission_levels",
             Self::OrchestratorActions => "orchestrator_actions",
+            Self::Settings => "settings",
+            Self::Monitoring => "monitoring",
+            Self::Holds => "holds",
+            Self::StandingApprovals => "standing_approvals",
+            Self::Landing => "landing",
         }
     }
 
@@ -156,12 +182,17 @@ pub(crate) struct RpcFailure {
     pub(crate) message: String,
 }
 
+/// No `Debug`: `token` and `approver` are secrets.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Handshake {
     pub(crate) token: Option<String>,
     pub(crate) versions: Vec<u16>,
     pub(crate) capabilities: Vec<String>,
+    /// Proof of the approver secret. Left out when absent, so a daemon that
+    /// predates it (and refuses unknown fields) still accepts the handshake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) approver: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -170,6 +201,10 @@ pub(crate) struct Welcome {
     pub(crate) capabilities: Vec<Capability>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) journal_epoch: Option<String>,
+    /// True when this session proved the approver secret. A daemon that
+    /// predates it omits the field, which reads as false.
+    #[serde(default)]
+    pub(crate) approver: bool,
 }
 
 pub(crate) fn read<T: for<'de> Deserialize<'de>>(stream: &mut impl Read) -> Result<T, FrameError> {

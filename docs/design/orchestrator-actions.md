@@ -125,13 +125,13 @@ Decided by the user (N12): the orchestrator and every sub-orchestrator respect t
 
 A firstmate secondmate is a persistent mate with a written scope, its own backlog, and a parent channel. The MCAO analogue is a workstream: a cross-project initiative with a summary, objectives, gates, and its own conversation target. The user's "create a sub-orchestrator for post-MVP work" is a `workstream.create` proposal. Phase 1 delivers it.
 
-Missing for full parity, by phase: workstream conversations propose tasks inside their scope (2); the workstream reports up to Global when a gate or task changes (3); the Global orchestrator routes work by scope (6). Depth stays flat: a workstream conversation cannot create workstreams. Remote hosts are phase 6 and design only. The IPC is a local socket with a token handshake, so a remote daemon needs an authenticated network transport and a new threat model. No date is promised.
+Phase 2 delivers proposals inside a workstream's scope. Phase 3 reports task events up to Global with a deterministic copy. Phase 6a routes work by scope: the Global orchestrator proposes `task.propose` with a workstream id, the user approves it, and the workstream conversation sees it as routed here and gets a task list scoped to it. Gate changes are not pushed to Global: its snapshot shows gate counts every turn. Depth stays flat: a workstream conversation cannot create workstreams or propose into another workstream. Remote hosts are phase 6 and design only. The IPC is a local socket with a token handshake, so a remote daemon needs an authenticated network transport and a new threat model. No date is promised.
 
 ### Shapes, modes, landing, backlog, recovery
 
 - **Scout and ship.** Ship is `Implement` with local review or PR delivery. Scout is `Investigate` with `ReportOnly`. Phase 4 adds the report relay and promotion.
 - **Project modes.** Phase 4 adds a per-project default: `no-mistakes` maps to full verification and PR delivery, `direct-PR` to PR delivery with the project's checks, `local-only` to local review. A proposal that drops below the default shows the drop on the card.
-- **Landing.** Delivery writes a review ref and opens PRs but never merges. Phase 4 adds a PR state poller and a merge action bound to the head commit, per-action approval only.
+- **Landing.** Delivery writes a review ref. The user opens the pull request by hand: the code watches pull requests and never opens one. Phase 4 adds a PR state poller and a merge action bound to the head commit, per-action approval only.
 - **Backlog and holds.** Tasks with dependencies are the queue. Phase 4 adds held decisions with an until date in Review and Decisions.
 - **Stuck recovery.** Phase 3 detects, phase 4 proposes.
 - **Bearings and captain holds.** Phase 1 answers status from the snapshot. Phase 3 adds the return catch-up.
@@ -141,11 +141,11 @@ Missing for full parity, by phase: workstream conversations propose tasks inside
 
 | Option | Claude | Codex | Copilot | Fit with daemon authority |
 | --- | --- | --- | --- | --- |
-| 1. Daemon MCP server per turn | `--mcp-config` with `--strict-mcp-config`. `--tools ""` at Restricted; whether it also hides MCP tools is unverified, and `dontAsk` would deny unlisted tools | `-c mcp_servers.NAME...` (generic `-c` in help). Chat does not pass `--ignore-user-config`, so user servers load too. MCP approval under `exec` is unverified | `--additional-mcp-config`, tool named `NAME(tool)` in `--allow-tool`. `-p` denies tools no rule allows | Tools would call the daemon. Mutating tools must still become proposals. Changes the "no MCP below Full" hard limit |
+| 1. Daemon MCP server per turn | `--mcp-config` with `--strict-mcp-config`. `--tools ""` at Restricted; whether it also hides MCP tools is unverified, and `dontAsk` would deny unlisted tools | `-c mcp_servers.NAME...` (generic `-c` in help). Chat does not pass `--ignore-user-config`, so user servers load too. MCP approval under `exec` is unverified | `--additional-mcp-config`, tool named `NAME(tool)` in `--allow-tool`. `-p` denies tools no rule allows | Tools would call the daemon. Mutating tools must still become proposals. Phase 6b adds only read-only tools, off by default behind a user setting, Restricted chats only. Mutations stay action blocks. Records one exception to the "no MCP below Full" hard limit |
 | 2. Action block parsed by the daemon | Works at every level, no tool | Same | Same | Proposals by construction. Fits coordinator proposals and approval integrity |
 | 3. Shell to `agent-orch` | Needs Bash: not at Restricted | Needs a sandbox that allows the socket | Shell denied at Restricted | Shell can do anything else. Rejected |
 
-Recommendation: option 2 for phases 1 to 5. The prior holds; nothing in the code or the help text argues against it. Two help-text facts help later: Claude has `--json-schema` and Codex `exec` has `--output-schema` for a structured final response. They could enforce the block shape on two of three CLIs, but they make the whole reply JSON, which breaks streaming of the visible text. Evaluate them after the live check. Option 1 follows in phase 6 for read-only tools (task detail, session events, a report), so the agent can read more than the snapshot holds.
+Recommendation: option 2 for phases 1 to 5. The prior holds; nothing in the code or the help text argues against it. Two help-text facts help later: Claude has `--json-schema` and Codex `exec` has `--output-schema` for a structured final response. They could enforce the block shape on two of three CLIs, but they make the whole reply JSON, which breaks streaming of the visible text. Evaluate them after the live check. Option 1 follows in phase 6b as three read-only tools (task detail, a state-only session timeline, the stored report), off by default behind a user setting, offered only to Restricted user chats. The tools return ids, short titles, states, counts and stored report text; never paths, secrets, diffs or session output.
 
 ### Machinery to add
 
@@ -153,7 +153,7 @@ The existing machinery cannot hold the new kinds (findings 3 and 4), so the desi
 
 - `action_proposals`: id, conversation id, turn id, index in the block, kind, canonical parameters (JSON), parameter digest (SHA-256, as `ParameterDigest`), state, result reference, error code, timestamps. States: `pending`, `approved`, `executed`, `failed`, `rejected`, `superseded`, `expired`.
 - `action_proposal_events`: append-only, with no-update and no-delete triggers like `conversation_audit`. One row per transition with actor (`user`, or `grant:` plus grant id in phase 5) and the digest.
-- Approval reuses `ApproverAllowlist` and `Actor`, so an agent identity can never approve. The approval binds the digest. Any change to parameters is a new proposal.
+- Approval reuses `ApproverAllowlist` and `Actor`. Every wire session acts as the same local user, so the wire check is the approver credential (see `m7-08-conversation-service.md`, "Approver credential"). No wire path lets a process that holds only the daemon token approve or decide for the user. The approval binds the digest. Any change to parameters is a new proposal.
 - Execution calls the same internal functions as `workstreams.create`, `workstreams.add_objective` and the others, with an idempotency key derived from the proposal id.
 - Task proposals (phase 2) build a `TaskProposal` and run `contract::validate_proposal` against an envelope built from the user's settings. A denial shows on the card and the Approve button is disabled. This wires the envelope check that exists but is unused.
 
@@ -216,7 +216,7 @@ The snapshot is built by the conversation service, which already builds workstre
 
 ### Permission levels
 
-The chat level decides what the CLI may touch in its run directory. It does not change action authority. A proposal from a Full turn needs the same approval as one from a Restricted turn. Limit, stated honestly: at Auto and Full the agent has a shell and runs as the user, so it could read the desktop's IPC token and call the daemon directly. Restricted removes that path. Auto depends on the CLI's sandbox or classifier blocking access to the socket and token (unverified). Full is outside the guarantee.
+The chat level decides what the CLI may touch in its run directory. It does not widen action authority, and actions exist only at Restricted: an Auto or Full turn gets no action block format, a block it emits is stripped, and `actions.resolve` refuses a proposal that came from a non-Restricted turn (decided by the user in Phase 1, because those turns have a shell). Limit, stated honestly: at Auto and Full the agent has a shell and runs as the user, so it could read the daemon's token and call the daemon directly. The approver credential (see `m7-08-conversation-service.md`, "Approver credential") refuses `actions.resolve` and `approvals.resolve` to any session that does not hold the secret the desktop host gives the daemon, so the token alone is not enough. That closes the protocol path, not the machine: a shell can still edit the store or replace the daemon. Restricted removes the shell. Auto depends on the CLI's sandbox or classifier blocking access to the socket and token (unverified). Full is outside the guarantee.
 
 ## Standing approvals
 
@@ -235,13 +235,54 @@ Firstmate's `+yolo`, away mode and captain-approved autonomy become explicit gra
 
 The daemon matches each new proposal against active grants. A full match executes and the card says "Approved by standing approval", with a revoke link. Anything outside the scope gets a normal card.
 
-Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N7). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N7). `delivery.merge` is covered only by the merge grant in the next section. The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+
+## Pull request watching and merge
+
+The poller reads pull requests and the merge action merges one. The code never opens, closes,
+comments on or edits a pull request. The user opens the pull request by hand. The poller finds it
+by its head branch name (`gh pr list --head`). A pull request from a fork is refused (`cross_repo`)
+and is never bound to a task.
+
+- **Reads.** The poller checks each bound task on an interval: 120 seconds while work is busy, 600
+  seconds when idle, at most 20 calls per tick, and a backoff capped at 15 minutes. A rate-limit
+  answer pauses it for 15 minutes. `pulls.list` is read only. `pulls.refresh` is read only and
+  capped at 20 reads per minute across all tasks, with at least 10 seconds between reads of one task.
+- **The `delivery.merge` card.** Only a Restricted chat turn may propose it. The user approves it
+  per action from an approver session. The card binds the head commit and the merge method,
+  both fixed when the proposal is made. The task must have succeeded with pull request delivery.
+  The code re-reads the pull request at execution. It writes a claim to the ledger before the host
+  call, so a restart cannot merge the same proposal twice. A merge is recorded as merged only when
+  a fresh read shows the bound head merged. A red, pending or missing required check refuses. The
+  host call is `gh pr merge --match-head-commit <sha>` with one of `--merge`, `--squash` or
+  `--rebase`. It never passes `--admin` or `--auto`.
+
+### Unattended merge grant
+
+A merge grant is the only way `delivery.merge` runs without a card. It follows the standing
+approval rules above, with these differences:
+
+- Project scope only, and the merge kind alone. Only the user creates it, with an explicit
+  confirmation.
+- A branch prefix is required. A grant without one is refused.
+- Expiry defaults to 8 hours and is at most 24 hours. Uses default to 5 and are at most 20. The
+  token budget is still required by the form, but a merge starts no task, so it never counts.
+- A use needs the same conditions as a click, checked on a fresh read: the head is the bound one,
+  the pull request is from the same repository, every required check passed, the head branch
+  matches the prefix, the task is in the state above, and the repository is not MCAO's own upstream
+  (refused by name and by owner and name).
+- Each use writes an audit row with the proposal digest and the head commit.
+- Off until the user creates one.
+
+Migrations `0051_pull_requests.sql` and `0052_merge_grants.sql` hold the pull request state and the
+grant columns.
 
 ## Human control and safety
 
 - **Idempotency.** `conversations.send` is idempotent per key, so a resend does not start a second turn. Proposal ids are stable per turn and index. Approve and reject go through `actions.resolve` with the shared idempotency executor, so a double click executes once. Execution uses `stable_id("action", proposal_id)` as its key, so a crash between approve and execute completes once on retry. A new message that yields the same kind and digest as a pending proposal in the same conversation returns the existing card instead of a second one. The snapshot lists existing workstreams, so the agent sees what already exists.
 - **Daemon-confirmed results only.** The card shows store state. "Created" appears only after the execution event exists, with a link to the record.
-- **Prompt injection.** Promised: no mutating action runs without a per-action approval or a matching standing grant, whatever the agent read. Not promised: that the agent never proposes something harmful, or that a user never approves a misleading card. Mitigations: the card shows the canonical parameters, not the agent's prose; a proposal made after reading a report is labeled with the source; destructive kinds are never grantable; proposals are rate-capped per turn.
+- **Who can approve.** Approval needs the approver credential. The desktop host creates it and gives it to the daemon it starts. No wire path lets a process that holds only the daemon token approve or decide for the user. The token alone still opens direct task and workstream calls, so the approval gate covers proposals from Restricted chat turns, not every change the daemon can make. The credential does not stop a same-user process from editing the store or replacing the daemon. See `m7-08-conversation-service.md`, "Approver credential".
+- **Prompt injection.** Promised: no action proposed in an agent's reply runs without a per-action approval or a matching standing grant, whatever the agent read. Not promised: that the agent never proposes something harmful, or that a user never approves a misleading card. Mitigations: the card shows the canonical parameters, not the agent's prose; a proposal made after reading a report is labeled with the source; destructive kinds are never grantable; proposals are rate-capped per turn.
 - **Level does not widen authority.** See "Permission levels".
 - **Audit.** `action_proposal_events` records proposed, approved or rejected (with actor), executed (with result) and failed (with code). Clearing a conversation scrubs proposal parameters and keeps events with digests only, matching migration `0034_idempotency_scrub`. Projecting action events into `mcao.audit-envelope.v1` needs a change to the released AEC contract, whose `data` object is closed. That is a separate item.
 
@@ -283,13 +324,15 @@ Daemon tests with the fake CLI harness in `crates/orchestrator-daemon/tests/conv
 - Injection: a workstream title in the snapshot carrying a block or an instruction yields no execution without approval.
 - Approval: approve executes once; the same key twice returns the cached result; two keys for one proposal give `proposal_not_pending`; reject then approve conflicts; approve after clear gives `proposal_not_found`; a daemon restart between approve and execute completes once.
 - Duplicates: the same request twice gives one pending card.
-- Levels: the outcome is the same at Restricted, Auto and Full.
+- Levels: at Restricted a valid block becomes cards; at Auto and Full the block is stripped, no card exists and `actions.resolve` refuses a proposal from such a turn.
 - Settings: with no default level set, a new chat starts at Auto; a saved default survives a daemon restart (never Full); with no wake limits set, no cap applies and a set limit pauses wake turns with "Monitoring paused: limit reached".
 - Supervision: a task with no session event and no worktree change for one effective interval raises a stall notice with no model turn; a task whose change set did not grow since the last check costs no scope-check turn; a changed setting takes effect at the next check without a restart; a finding never cancels or revises a task without an approved proposal.
 - Workload scaling: with base 10 minutes and minimum 1 minute, work of 1, 2, 3, 4 and 5 units gives 10 minutes, 5 minutes, 2 minutes 30 seconds, 75 seconds and 60 seconds, and more work stays at 60 seconds; a sub-orchestrator counts as one unit besides its tasks; with minimum equal to base the interval never shrinks; the due time is recomputed when the work count changes, so a rise in work brings the next check earlier and a drop pushes it later; zero units schedules no check; event-driven wakes and the wall-time bound are not delayed.
 - Load gate: a meter's 60 second mean at its threshold closes the gate and it opens only when every gated mean is 10 points under its threshold; one CPU spike inside the window does not close it; an `unavailable` meter is ignored and shown as unknown; a closed gate leaves tasks `Queued`, defers wake turns and does not block chat turns; opening triggers a scheduler pass; a threshold of 100 turns that meter off; a task proposal card made while the gate is closed says the task will queue.
 - Store: migrations apply on a copy of the previous schema; event tables refuse update and delete.
 - Phase 2: an envelope denial disables approval and records the reason.
+- 6a: a task routed to a workstream shows in its snapshot and conversation view; a workstream conversation cannot create a workstream or route a task elsewhere.
+- 6b: with the setting off, no flag or server exists; on, only Restricted user chats get the server; the tools return no path, token, diff or session output (fake agent only).
 
 Vitest: the card renders the exact parameters; Approve calls `actions.resolve` with a stable key and disables while in flight; each state renders; fixture mode labels and creates nothing; accessible names and live-region announcements; no cards without the capability.
 
@@ -301,11 +344,51 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 
 ## Conflicts with other designs
 
-- `agent-permission-levels.md`, hard limit 2 ("No web, memory, MCP servers or repository instructions" below Full). Option 1 in phase 6 needs an exception for a daemon-owned read-only server.
+- `agent-permission-levels.md`, hard limit 2 ("No web, memory, MCP servers or repository instructions" below Full). Resolved in phase 6b by one named exception for the daemon-owned read-only server, off by default and Restricted chats only; that document records it.
 - `agent-permission-levels.md` says Codex chat runs with `--ignore-user-config` at Restricted and Auto. The code does not pass it for chat (finding 8). One of them must change.
 - `agent-permission-levels.md` makes Auto the chat default. This design runs wake turns at Restricted. Not a contradiction, but a second rule.
 - `agent-permission-levels.md` (O4) resets Auto, Extended and Full to Auto on restart. N3 adds a user-set default chat level that persists. Full never persists, so Full cannot be the default.
 - `m7-08-conversation-service.md` says reply text "is never parsed into methods". This design parses it into proposals. Proposals still carry no authority until approval, so the safety intent holds, but the sentence must change in the same PR as 1b.
+
+## Residual risks, stated honestly
+
+- **Merges are unverified against a live `gh`.** The `gh` JSON field names, `isCrossRepository`,
+  `headRepositoryOwner`, the output of `gh pr checks --required`, the `--repo github.com/owner/name`
+  form, the stderr texts the code matches and `--match-head-commit` on a moved head are not checked
+  against a live `gh`. The user must run the checklist below on a throwaway repository before
+  creating any merge grant or approving any merge. A required check that never reported is invisible
+  to `gh pr checks --required`, so host branch protection is the backstop.
+- **Report relay redaction is word-based.** Emails, IP addresses, short secrets and secrets split by spaces can survive it. The relay turn is Restricted and can only propose, and every proposal needs a user approval. A proposal made after a relay is labelled "Made after reading a report".
+- **`projects.register` restores an archived project.** It clears the archive marker, so a token-only session that knows the root path can un-archive it. The archive is soft and no row is lost. Such a session can already register any path and submit tasks, so it gains no authority.
+- **A workstream grant covers a task on any member project,** even when the task is not linked to the workstream.
+- **The workstream snapshot keeps the global `Open tasks` block.** The MCP server hides tasks of other workstreams, so the two views differ.
+- **Five connections without a valid hello disable the optional tools for a turn.** The MCP listener closes for that turn. An unauthenticated local process can cause this. It fails closed.
+- **The approver token opens direct `tasks.*` and `workstreams.*` calls.** It is not a sandbox against a same-user process, which can still edit the store or replace the daemon.
+- **`monitoring.brief_ack` is open to a token-only session.** It only marks a brief as seen and grants no authority.
+- **The per-turn MCP secret is visible in the process list.** It sits in the Claude `--mcp-config` argv, so a same-user process can read it for the life of the turn. It opens three read-only tools on a loopback port. The 0600 secret-file variant is a later hardening.
+- **The note check is a pattern list.** A sensitive-looking note can pass it. The snapshot redactor is a second layer, not a guarantee.
+
+## Before you enable merges on a real repository
+
+Run each item on a throwaway repository. Do this before creating any merge grant or approving any
+merge.
+
+- The `gh pr view`, `gh pr list` and `gh pr checks` JSON field names the code reads.
+- `isCrossRepository` on a fork pull request, and `headRepositoryOwner` (an object with `login`)
+  for a fork whose owner was deleted.
+- How `gh pr checks --required` reports a required check that never started. Such a check may be
+  absent from the output, so the verdict can read green.
+- That `gh` accepts `--repo github.com/owner/name`.
+- The stderr texts the code matches to classify errors (`classify` in `crates/orchestrator-git/src/github.rs`).
+- That `--match-head-commit` refuses when the head moved after the read.
+- Host branch protection on the default branch: every required check is enforced, including for
+  administrators.
+
+## Not built
+
+- **Codex and Copilot MCP wiring.** Only Claude is wired. The other two forms stay design text in `agent-permission-levels.md`.
+- **Automatic scout report relay** (`report_relay_auto`), and the wake events `scout_report_ready` and `pr_changed`. Relay is user-triggered only.
+- **`delivery.request` and `project.register` actions.** Deferred.
 
 ## Not verified
 
@@ -314,3 +397,4 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 - Whether the Auto sandbox or classifier blocks reading the IPC token or connecting to the socket.
 - The worktree cleanup rule for unlanded work.
 - Whether real models follow the block format.
+- The phase 6b wiring forms for each CLI (see `agent-permission-levels.md`).

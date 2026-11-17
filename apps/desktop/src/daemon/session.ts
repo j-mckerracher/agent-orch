@@ -45,6 +45,8 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   health: "health",
   "projects.list": "projects",
   "projects.register": "projects",
+  "projects.get_defaults": "projects",
+  "projects.set_defaults": "projects",
   "tasks.submit": "tasks",
   "tasks.list": "tasks",
   "tasks.get": "tasks",
@@ -87,6 +89,24 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "conversations.get": "coordinator",
   "conversations.cancel": "coordinator",
   "actions.resolve": "orchestrator_actions",
+  "actions.pending": "orchestrator_actions",
+  "settings.get": "settings",
+  "settings.set": "settings",
+  "monitoring.get": "monitoring",
+  "monitoring.set": "monitoring",
+  "monitoring.ack": "monitoring",
+  "monitoring.brief": "standing_approvals",
+  "monitoring.brief_ack": "standing_approvals",
+  "holds.set": "holds",
+  "holds.release": "holds",
+  "holds.list": "holds",
+  "pulls.list": "landing",
+  "pulls.refresh": "landing",
+  "grants.create": "standing_approvals",
+  "grants.revoke": "standing_approvals",
+  "grants.list": "standing_approvals",
+  "notes.list": "standing_approvals",
+  "notes.set": "standing_approvals",
 };
 
 interface Pending {
@@ -125,6 +145,10 @@ export class DaemonSession {
 
   hasCapability(capability: Capability): boolean {
     return this.welcome.capabilities.includes(capability);
+  }
+
+  get isApprover(): boolean {
+    return this.welcome.approver === true;
   }
 
   onClose(listener: (reason: DaemonError | null) => void): void {

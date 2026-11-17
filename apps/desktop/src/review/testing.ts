@@ -108,11 +108,12 @@ export interface TestClient extends ReviewClient {
   setHandler(method: string, handler: Handler): void;
   emit(notice: ReviewNotice): void;
   setStatus(status: ReviewConnection["status"]): void;
+  setApprover(approver: boolean): void;
 }
 
 export function makeClient(handlers: Record<string, Handler>, provenance: "daemon" | "fixture" = "daemon"): TestClient {
   const listeners = new Set<(n: ReviewNotice) => void>();
-  let state: ReviewConnection = { status: "connected", historyIncomplete: false };
+  let state: ReviewConnection = { status: "connected", historyIncomplete: false, approver: true };
   const table = { ...handlers };
   const client: TestClient = {
     provenance,
@@ -135,6 +136,10 @@ export function makeClient(handlers: Record<string, Handler>, provenance: "daemo
     emit: (notice) => listeners.forEach((l) => l(notice)),
     setStatus(status) {
       state = { ...state, status };
+      client.emit({ type: "connection", state });
+    },
+    setApprover(approver) {
+      state = { ...state, approver };
       client.emit({ type: "connection", state });
     },
   };

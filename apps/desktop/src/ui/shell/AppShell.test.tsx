@@ -56,6 +56,7 @@ const GLOBAL_ROUTES: Array<[string, Route, string]> = [
   ["workstreams", { name: "global", view: "workstreams" }, "Workstreams"],
   ["agents", { name: "global", view: "agents" }, "Agents & Sessions"],
   ["review", { name: "global", view: "review" }, "Review & Decisions"],
+  ["settings", { name: "global", view: "settings" }, "Settings"],
 ];
 
 const LEGACY_ROUTES: Array<[string, Route]> = [
@@ -202,6 +203,7 @@ describe("navigation", () => {
       expect.stringContaining("Orchestrator Workspace"),
       expect.stringContaining("Agents & Sessions"),
       expect.stringContaining("Review & Decisions"),
+      expect.stringContaining("Settings"),
     ]);
     links[0].focus();
     for (const link of links.slice(1)) {
@@ -224,10 +226,11 @@ describe("navigation", () => {
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(within(nav).getByRole("link", { name: /Review & Decisions/ })).toHaveAttribute("href", "#/review");
     expect(within(nav).getByRole("link", { name: /Agents & Sessions/ })).toHaveAttribute("href", "#/agents");
+    expect(within(nav).getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "#/settings");
     expect(screen.getByRole("link", { name: /^Workstreams/ })).toHaveAttribute("href", "#/workstreams");
   });
 
-  it("has exactly four persistent destinations: three primary views and the Workstreams tree heading", async () => {
+  it("has exactly five persistent destinations: four primary views and the Workstreams tree heading", async () => {
     await mount(daemon());
     const primary = within(screen.getByRole("navigation", { name: "Primary views" })).getAllByRole("link");
     const tree = within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getAllByRole("link", { name: /^Workstreams/ });
@@ -235,6 +238,7 @@ describe("navigation", () => {
       expect.stringContaining("Orchestrator Workspace"),
       expect.stringContaining("Agents & Sessions"),
       expect.stringContaining("Review & Decisions"),
+      expect.stringContaining("Settings"),
       expect.stringContaining("Workstreams"),
     ]);
     expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
@@ -306,7 +310,7 @@ describe("counts and placeholders", () => {
   it("derives the review count and top-bar counts from the same lists", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1"));
-    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending approvals");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
     const counts = screen.getByTestId("top-counts");
     expect(counts).toHaveTextContent("2 tasks");
     expect(counts).toHaveTextContent("1 running");
@@ -428,7 +432,7 @@ describe("responsive behavior", () => {
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(nav).toBeVisible();
     expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
-    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
     expect(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeVisible();
 
     const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });

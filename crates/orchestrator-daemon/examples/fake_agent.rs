@@ -62,6 +62,7 @@ const CLAUDE_FLAGS: &[&str] = &[
     "--permission-prompts",
     "--restricted",
     "--strict-mcp-config",
+    "--mcp-config",
     "--no-session-persistence",
     "--tools",
     "--allowedTools",
@@ -180,7 +181,16 @@ fn piece(dialect: Dialect, text: &str) {
 
 fn finished(dialect: Dialect, whole: &str) {
     match dialect {
-        Dialect::Codex => emit(r#"{"type":"turn.completed","usage":{"input_tokens":1}}"#),
+        Dialect::Codex => {
+            // Budget tests set the figure; the default stays 1.
+            let tokens = std::env::var("FAKE_AGENT_INPUT_TOKENS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(1);
+            emit(&format!(
+                r#"{{"type":"turn.completed","usage":{{"input_tokens":{tokens}}}}}"#
+            ));
+        }
         Dialect::Claude => emit(&format!(
             r#"{{"type":"result","subtype":"success","is_error":false,"result":{}}}"#,
             serde_json::Value::String(whole.to_owned())

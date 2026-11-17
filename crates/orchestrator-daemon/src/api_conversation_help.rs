@@ -74,6 +74,12 @@ pub(crate) fn missing_flag(help: &HashSet<String>, required: &[String]) -> Optio
     required.iter().find(|flag| !help.contains(*flag)).cloned()
 }
 
+/// Whether the help was read and lists `flag`. A help that could not be read offers
+/// nothing, so an optional feature built on the flag stays off (never a refusal).
+pub(crate) fn offered_flag(help: &Help, flag: &str) -> bool {
+    matches!(help, Help::Listed(listed) if listed.contains(flag))
+}
+
 /// The flag words a help text names, long (`--flag`) and short (`-f`). Help lists
 /// `--flag <VALUE>` and `-f, --flag`; each word is split on whitespace, commas and
 /// `=`, so a flag is found wherever it is named, in either form.
@@ -226,6 +232,14 @@ mod tests {
             required_flags(CODEX, PermissionLevel::Auto).contains(&"--approve-for-me".to_owned())
         );
         assert!(!required_flags(CODEX, PermissionLevel::Full).contains(&"--sandbox".to_owned()));
+    }
+
+    #[test]
+    fn a_flag_is_offered_only_by_a_help_that_was_read_and_lists_it() {
+        let listed = Help::Listed(listed_flags("  --mcp-config <configs...>\n  --model <m>"));
+        assert!(offered_flag(&listed, "--mcp-config"));
+        assert!(!offered_flag(&listed, "--allowedTools"));
+        assert!(!offered_flag(&Help::Unreadable, "--mcp-config"));
     }
 
     #[test]

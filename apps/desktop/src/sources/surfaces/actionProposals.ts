@@ -7,14 +7,24 @@ import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type { ActionProposalWire } from "../../daemon/types";
 import { isFixtureLikeId } from "./fixtureIds";
+import { mapPullFacts } from "./pulls";
 import type { ActionProposal, Decision, Provenance, ResolveReceipt } from "./types";
 
 export const RESOLVE_METHOD = "actions.resolve" as const;
+
+/** Reads who approved a proposal. A bare `grant:<id>` event actor reads as a grant; anything else unknown is left out. */
+function approverOf(wire: ActionProposalWire["approved_by"]): ActionProposal["approvedBy"] {
+  if (wire === null || wire === undefined) return null;
+  if (typeof wire === "string") return wire.startsWith("grant:") ? { kind: "grant", grantId: wire.slice("grant:".length) } : null;
+  if (wire.kind === "grant") return typeof wire.grant_id === "string" ? { kind: "grant", grantId: wire.grant_id } : null;
+  return wire.kind === "user" ? { kind: "user" } : null;
+}
 
 /** Copies a proposal from the wire. The daemon's `params` carry `kind`; the view reads it from `kind`, so it is dropped here. */
 export function mapProposal(wire: ActionProposalWire): ActionProposal {
   const params: Record<string, unknown> = { ...wire.params };
   delete params.kind;
+  const approvedBy = typeof wire.grant_id === "string" ? ({ kind: "grant", grantId: wire.grant_id } as const) : approverOf(wire.approved_by);
   return {
     id: wire.id,
     turnId: wire.turn_id,
@@ -26,6 +36,22 @@ export function mapProposal(wire: ActionProposalWire): ActionProposal {
     state: wire.state,
     resultRef: wire.result_ref,
     errorCode: wire.error_code,
+    // An older daemon sends neither field.
+    denial: wire.denial ?? null,
+    // Left out when nobody approved yet, so a card read from an older daemon has the shape it always had.
+    ...(approvedBy !== null && { approvedBy }),
+    target: wire.target
+      ? {
+          projectName: wire.target.project_name,
+          taskTitle: wire.target.task_title,
+          taskState: wire.target.task_state,
+          belowProjectDefault: wire.target.below_project_default,
+          projectMode: wire.target.project_mode,
+          taskCount: wire.target.task_count,
+          runningTasks: wire.target.running_tasks,
+          pull: wire.target.pull === undefined ? undefined : mapPullFacts(wire.target.pull),
+        }
+      : null,
     updatedAt: wire.updated_at,
   };
 }

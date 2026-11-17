@@ -81,7 +81,8 @@ impl SqliteStore {
             }
             let entries = count_coordinator_entries(&mut transaction, &project_id).await?;
             if entries == 0 {
-                let clear_generation = coordinator_generation(&mut transaction, &project_id).await?;
+                let clear_generation =
+                    coordinator_generation(&mut transaction, &project_id).await?;
                 transaction.commit().await?;
                 return Ok(ClearOutcome {
                     cleared: false,
@@ -122,7 +123,8 @@ impl SqliteStore {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             require_project(&mut transaction, &project_id).await?;
             if coordinator_removed(&mut transaction, &project_id).await? {
-                let clear_generation = coordinator_generation(&mut transaction, &project_id).await?;
+                let clear_generation =
+                    coordinator_generation(&mut transaction, &project_id).await?;
                 transaction.commit().await?;
                 return Ok(CoordinatorChange {
                     changed: false,
@@ -355,20 +357,24 @@ pub(crate) async fn tombstone_coordinator_messages(
     Ok(())
 }
 
-async fn require_project(connection: &mut SqliteConnection, project_id: &str) -> Result<(), StoreError> {
+async fn require_project(
+    connection: &mut SqliteConnection,
+    project_id: &str,
+) -> Result<(), StoreError> {
     let found: Option<i64> = sqlx::query_scalar("SELECT 1 FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_optional(&mut *connection)
         .await?;
-    found
-        .map(|_| ())
-        .ok_or_else(|| StoreError::RecordNotFound {
-            entity: "project",
-            id: project_id.to_owned(),
-        })
+    found.map(|_| ()).ok_or_else(|| StoreError::RecordNotFound {
+        entity: "project",
+        id: project_id.to_owned(),
+    })
 }
 
-async fn coordinator_removed(connection: &mut SqliteConnection, project_id: &str) -> Result<bool, StoreError> {
+async fn coordinator_removed(
+    connection: &mut SqliteConnection,
+    project_id: &str,
+) -> Result<bool, StoreError> {
     let removed: Option<i64> =
         sqlx::query_scalar("SELECT removed FROM coordinator_scopes WHERE project_id = ?")
             .bind(project_id)
@@ -377,7 +383,10 @@ async fn coordinator_removed(connection: &mut SqliteConnection, project_id: &str
     Ok(removed == Some(1))
 }
 
-async fn coordinator_generation(connection: &mut SqliteConnection, project_id: &str) -> Result<i64, StoreError> {
+async fn coordinator_generation(
+    connection: &mut SqliteConnection,
+    project_id: &str,
+) -> Result<i64, StoreError> {
     let generation: Option<i64> =
         sqlx::query_scalar("SELECT clear_generation FROM coordinator_scopes WHERE project_id = ?")
             .bind(project_id)
@@ -386,16 +395,23 @@ async fn coordinator_generation(connection: &mut SqliteConnection, project_id: &
     Ok(generation.unwrap_or(0))
 }
 
-async fn count_coordinator_entries(connection: &mut SqliteConnection, project_id: &str) -> Result<u64, StoreError> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM coordinator_entries WHERE project_id = ?")
-        .bind(project_id)
-        .fetch_one(&mut *connection)
-        .await?;
+async fn count_coordinator_entries(
+    connection: &mut SqliteConnection,
+    project_id: &str,
+) -> Result<u64, StoreError> {
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM coordinator_entries WHERE project_id = ?")
+            .bind(project_id)
+            .fetch_one(&mut *connection)
+            .await?;
     Ok(u64::try_from(count).unwrap_or(0))
 }
 
 /// Deletes a coordinator's messages and proposals with the gate open. Returns the count.
-async fn wipe_coordinator(connection: &mut SqliteConnection, project_id: &str) -> Result<u64, StoreError> {
+async fn wipe_coordinator(
+    connection: &mut SqliteConnection,
+    project_id: &str,
+) -> Result<u64, StoreError> {
     set_clear_gate(&mut *connection, true).await?;
     tombstone_coordinator_messages(&mut *connection, project_id).await?;
     let deleted = sqlx::query("DELETE FROM coordinator_entries WHERE project_id = ?")

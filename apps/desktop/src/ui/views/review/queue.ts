@@ -1,9 +1,10 @@
 // Pure queue logic for the Review & Decisions view: tabs, filtering, and the join of
 // daemon approvals with the D16 metadata (priority, latest response time).
 import type { Approval } from "../../../daemon/types";
+import type { HeldSets } from "../../../sources/surfaces/holds";
 import type { DecisionItem } from "../../../sources/surfaces/types";
 
-export type TabId = "actionable" | "approvals" | "verification" | "candidates" | "delivery" | "resolved";
+export type TabId = "actionable" | "approvals" | "verification" | "candidates" | "delivery" | "resolved" | "held";
 
 export interface TabDef {
   id: TabId;
@@ -27,18 +28,27 @@ export const TABS: readonly TabDef[] = [
   { id: "candidates", label: "Candidates", description: "Approvals that merge or open a candidate (local review, pull request)." },
   { id: "delivery", label: "Delivery", description: "Approved this session: delivery is a separate request and has not been made by approving." },
   { id: "resolved", label: "Resolved", description: "Approved, rejected or superseded in this session. The daemon lists pending approvals only." },
+  { id: "held", label: "Held", description: "Decisions you postponed. Each returns on its date." },
 ];
+
+/** The tabs to show. A daemon without the `holds` capability has no Held tab. */
+export function tabsFor(heldSupported: boolean): readonly TabDef[] {
+  return heldSupported ? TABS : TABS.filter((tab) => tab.id !== "held");
+}
 
 export function approvalKind(approval: Approval): string {
   const kind = approval.action.kind;
   return kind.type === "delivery" ? kind.kind : kind.type;
 }
 
-export function matchesTab(tab: TabId, approval: Approval): boolean {
+/** Every pending approval of a held task is held with it, so a held approval is out of Actionable and in Held. */
+export function matchesTab(tab: TabId, approval: Approval, held: HeldSets): boolean {
   const state = approval.state.state;
   switch (tab) {
     case "actionable":
-      return state === "requested";
+      return state === "requested" && !held.tasks.has(approval.action.task_id);
+    case "held":
+      return state === "requested" && held.tasks.has(approval.action.task_id);
     case "approvals":
       return true;
     case "verification":
@@ -52,8 +62,8 @@ export function matchesTab(tab: TabId, approval: Approval): boolean {
   }
 }
 
-export function filterByTab(tab: TabId, items: readonly Approval[]): Approval[] {
-  return items.filter((item) => matchesTab(tab, item));
+export function filterByTab(tab: TabId, items: readonly Approval[], held: HeldSets): Approval[] {
+  return items.filter((item) => matchesTab(tab, item, held));
 }
 
 export const STATE_LABEL: Record<Approval["state"]["state"], string> = {

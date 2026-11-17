@@ -2,6 +2,7 @@ use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
 use orchestrator_core::records::Project;
+use orchestrator_core::task::{TaskEvent, TaskState};
 use orchestrator_core::workstream::{
     AcceptanceGate, GateState, Objective, Workstream, WorkstreamRuleError, WorkstreamState,
 };
@@ -427,4 +428,34 @@ fn concurrent_writers_cannot_both_win_the_same_revision() {
         .iter()
         .any(|r| matches!(r, Err(WorkstreamStoreError::Stale { .. }))));
     assert_eq!(store.get_workstream("w1").unwrap().revision, 2);
+}
+
+#[test]
+fn workstream_task_overview_lists_only_linked_tasks_newest_first_with_terminal_ones() {
+    let (_directory, store) = seeded();
+    for id in ["t3", "t4"] {
+        store.create(&contract(id, "p1")).unwrap();
+    }
+    store.link_task("w1", "t1", None).unwrap();
+    store.link_task("w1", "t3", None).unwrap();
+    store.link_task("w1", "t4", None).unwrap();
+    // t2 stays unlinked. t3 finishes as cancelled: it must still show.
+    store.transition("t3", TaskEvent::CancelRequested).unwrap();
+
+    let overview = store.workstream_task_overview("w1", 2).unwrap();
+    assert_eq!(
+        overview.counts,
+        vec![(TaskState::Created, 2), (TaskState::Cancelled, 1)]
+    );
+    let ids: Vec<&str> = overview.newest.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t4", "t3"]);
+    assert_eq!(overview.newest[1].state, TaskState::Cancelled);
+    assert!(overview
+        .newest
+        .iter()
+        .all(|t| t.workstream_id.as_deref() == Some("w1")));
+    assert_eq!(overview.newest[0].objective, "work for t4");
+
+    let empty = store.workstream_task_overview("w-missing", 5).unwrap();
+    assert!(empty.counts.is_empty() && empty.newest.is_empty());
 }

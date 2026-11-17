@@ -1,10 +1,10 @@
 /**
- * Daemon-derived D9-D16 adapters. D9 uses workstreams.list/get and tasks.list;
+ * Daemon-derived D9-D17 adapters. D9 uses workstreams.list/get and tasks.list;
  * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
  * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
  * approvals.list. D12 uses usage.summary and the usage.localTools methods; D13 uses host.metrics; D14 uses
- * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list.
- * D15 indexes D9 and D16 locally. No daemon method is added here.
+ * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list and adds actions.pending;
+ * D17 uses settings.get and settings.set. D15 indexes D9 and D16 locally. No daemon method is added here.
  *
  * Failed reads retain daemon provenance and never fall back to fixtures. Missing
  * methods are unsupported; other failures are unavailable. Unobserved metadata
@@ -15,8 +15,9 @@ import type { ConnectionManager } from "../../daemon/connection";
 import { isFixtureLikeId } from "./fixtureIds";
 import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import { IdempotencyTracker } from "../../daemon/idempotency";
-import type { Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
+import type { ActionsPendingWire, Approval, CoordinatorEntry, CoordinatorPage, TaskRecord } from "../../daemon/types";
 import { createDerivedActivity } from "./activity";
+import { mapProposal } from "./actionProposals";
 import {
   createLiveConversation,
   HistoryChanged,
@@ -28,6 +29,13 @@ import { createLiveMetrics } from "./liveMetrics";
 import { createLiveModels, MODELS_METHODS } from "./modelCatalogLive";
 import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
+import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
+import { createLiveGrants, GRANTS_METHODS } from "./grants";
+import { createLiveNotes, NOTES_METHODS } from "./notes";
+import { createLivePulls, PULLS_METHODS } from "./pulls";
+import { createLiveHolds, HOLDS_METHODS } from "./holds";
+import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
+import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
 import { createLiveLocalToolsSource } from "./localToolsLive";
 import { createLiveUsageSource } from "./usageLive";
 import { createLiveWorkstreams } from "./workstreamsLive";
@@ -40,6 +48,7 @@ import type {
   DecisionQueueSource,
   ModelCatalogSource,
   Provenance,
+  ProposalItem,
   SurfaceId,
   SurfaceResult,
   SurfaceSources,
@@ -80,6 +89,14 @@ function approvalKind(approval: Approval): string {
 
 function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
   return new Map(tasks.map((task) => [task.contract.id, task.contract.project_id]));
+}
+
+/** A pending proposal and the conversation that holds its card, from `actions.pending`. */
+function proposalItemOf(wire: ActionsPendingWire["proposals"][number]): ProposalItem {
+  return {
+    proposal: mapProposal(wire),
+    scope: wire.scope.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.scope.workstream_id },
+  };
 }
 
 export function createDerivedSurfaces(connection: ConnectionManager, now: () => number = Date.now): SurfaceSources {
@@ -245,13 +262,14 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const modelsProvenance = prov("D14", MODELS_METHODS);
   const models: ModelCatalogSource = createLiveModels(connection, modelsProvenance, now);
 
-  const decisionProvenance = prov("D16", ["approvals.list", "tasks.list"]);
+  const decisionProvenance = prov("D16", ["approvals.list", "tasks.list", "actions.pending"]);
   const decisions: DecisionQueueSource = {
     provenance: decisionProvenance,
     queue: () =>
       guarded(decisionProvenance, now, async () => {
         const api = connection.api();
-        const [approvals, tasks] = await Promise.all([api.approvalsList(), api.tasksList()]);
+        // `actionsPending` answers an older daemon with an empty list, so the queue never fails for the missing method.
+        const [approvals, tasks, pending] = await Promise.all([api.approvalsList(), api.tasksList(), api.actionsPending()]);
         const projects = projectOf(tasks);
         const reason = "The daemon has no decision for this action; use approve or reject on the review screen.";
         return {
@@ -265,6 +283,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
             priority: "unknown",
             latestResponseAt: null,
           })),
+          proposals: pending.proposals.map<ProposalItem>(proposalItemOf),
           actions: {
             postpone: { available: false, reason },
             dismiss: { available: false, reason },
@@ -276,6 +295,16 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     simulateDismiss: () => Promise.reject(fixtureOnly("dismissal")),
   };
 
+  const settings = createLiveSettings(connection, prov("D17", SETTINGS_METHODS), keys, now);
+  // Monitoring belongs to the conversations, so it carries their id (D10) rather than a new surface id.
+  const monitoring = createLiveMonitoring(connection, prov("D10", MONITORING_METHODS), keys, now);
+  // Holds hide decisions, so they carry the decision queue's id (D16).
+  const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
+  const pulls = createLivePulls(connection, prov("D16", PULLS_METHODS), now);
+  const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
+  const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
+  const notes = createLiveNotes(connection, prov("D17", NOTES_METHODS), keys, now);
+
   return {
     workstreams,
     conversation,
@@ -286,5 +315,12 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     models,
     search: createSearchSource(workstreams, decisions, now),
     decisions,
+    settings,
+    monitoring,
+    holds,
+    pulls,
+    projectDefaults,
+    grants,
+    notes,
   };
 }

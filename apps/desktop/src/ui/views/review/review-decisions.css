@@ -419,3 +419,23 @@
   color: var(--subtle);
   font-size: 12px;
 }
+
+/* Held decisions (DPES-1105 Phase 4d). State is always text; these rules only lay the controls out. */
+.rd-hold-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.rd-hold-form .rd-reason {
+  flex-basis: 100%;
+  max-width: none;
+}
+
+.rd-held-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}

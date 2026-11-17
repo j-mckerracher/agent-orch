@@ -1,4 +1,5 @@
 import type { Approval, Session, SessionEntry, TaskRecord, TaskState } from "../daemon/types";
+import { NO_HELD, type HeldSets } from "../sources/surfaces/holds";
 import type { TaskFilter } from "./router";
 
 /** Display name only; the full project id (canonical path) is always shown too. */
@@ -43,6 +44,33 @@ export const FILTER_LABELS: Array<{ filter: TaskFilter; label: string }> = [
 
 export function pendingApprovals(approvals: readonly Approval[]): Approval[] {
   return approvals.filter((approval) => approval.state.state === "requested");
+}
+
+/** Proposed actions (DPES-1105) still waiting for a decision. A decided one never counts, whatever list it is in. */
+export function pendingProposals<T extends { state: string }>(proposals: readonly T[]): T[] {
+  return proposals.filter((proposal) => proposal.state === "pending");
+}
+
+/**
+ * Pending approvals plus pending proposed actions: one number nav, top bar activity badge show. A held decision
+ * (the user postponed it) is not counted, so it matches the Actionable tab; with no `held` every decision counts.
+ */
+export function pendingDecisionCount(
+  approvals: readonly Approval[],
+  proposals: readonly { id?: string; state: string }[],
+  held: HeldSets = NO_HELD,
+): number {
+  const approvalCount = pendingApprovals(approvals).filter((approval) => !held.tasks.has(approval.action.task_id)).length;
+  const proposalCount = pendingProposals(proposals).filter((proposal) => proposal.id === undefined || !held.proposals.has(proposal.id)).length;
+  return approvalCount + proposalCount;
+}
+
+/**
+ * A pending count as text. `more` means the daemon held more pending proposed actions than it sent (it caps the list),
+ * so the count is a lower bound and reads "100+"; every place that shows the count uses this, so they cannot disagree.
+ */
+export function decisionCountText(count: number, more: boolean): string {
+  return more ? `${count}+` : String(count);
 }
 
 /**

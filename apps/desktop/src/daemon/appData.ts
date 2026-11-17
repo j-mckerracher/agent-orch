@@ -8,10 +8,13 @@
  * trusted (M5-02 D3).
  */
 import type { ConnectionManager } from "./connection";
-import { DaemonError, asDaemonError } from "./errors";
+import { DaemonError, asDaemonError, isMissingFeature } from "./errors";
+import { mapHold } from "../sources/surfaces/holds";
+import type { HoldItem } from "../sources/surfaces/types";
 import { IdempotencyTracker } from "./idempotency";
 import { Store } from "./store";
 import type {
+  ActionsPendingWire,
   Approval,
   DaemonEvent,
   ProjectRow,
@@ -25,6 +28,15 @@ export interface Loadable<T> {
   data: T | null;
   error: DaemonError | null;
 }
+
+/** `actions.pending` slice: the list as a `Loadable`, plus whether the daemon held more pending than it sent. */
+export interface ProposalsSlice extends Loadable<ActionsPendingWire["proposals"]> {
+  /** True when the daemon capped the list, so the pending count is a lower bound ("100+"). Kept through a failed read. */
+  more: boolean;
+}
+
+/** `holds.list`: the holds in force now. Only the decision count reads it, to leave out held decisions. */
+export type HoldsSlice = Loadable<HoldItem[]>;
 
 export interface Timeline {
   taskId: string;
@@ -43,6 +55,13 @@ export interface AppDataSnapshot {
   tasks: Loadable<TaskRecord[]>;
   sessions: Loadable<SessionEntry[]>;
   approvals: Loadable<Approval[]>;
+  /**
+   * `actions.pending`: the proposed actions waiting for a decision (DPES-1105). A daemon without the method
+   * gives an empty loaded list, never an error, so the nav count falls back to the approvals alone.
+   */
+  proposals: ProposalsSlice;
+  /** `holds.list` (DPES-1105): a daemon without the method gives an empty loaded list, never an error. */
+  holds: HoldsSlice;
   timelines: Record<string, Timeline>;
   /** `tasks.get` per watched task id. */
   taskDetails: Record<string, Loadable<TaskRecord>>;
@@ -59,6 +78,12 @@ export type MutationResult<T> = { ok: true; value: T } | { ok: false; error: Dae
 
 const idle = <T>(): Loadable<T> => ({ status: "idle", data: null, error: null });
 
+/**
+ * No event tells the app that a turn ended with a new proposal, so while the window is visible the pending
+ * proposals are read again at this interval (decisions-2 Q12).
+ */
+export const PROPOSALS_REFRESH_MS = 30_000;
+
 export const timelineKey = (taskId: string, sessionId: string): string => `${taskId}/${sessionId}`;
 
 export interface AppDataOptions {
@@ -72,9 +97,12 @@ export class AppData extends Store<AppDataSnapshot> {
   private refreshing = false;
   private dirty = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private proposalsTimer: ReturnType<typeof setInterval> | null = null;
   private readonly detach: Array<() => void> = [];
   private readonly watched = new Map<string, () => Promise<void>>();
   private readonly timelineLoads = new Map<string, number>();
+  private proposalsLoads = 0;
+  private holdsLoads = 0;
 
   constructor(
     private readonly connection: ConnectionManager,
@@ -85,6 +113,8 @@ export class AppData extends Store<AppDataSnapshot> {
       tasks: idle(),
       sessions: idle(),
       approvals: idle(),
+      proposals: { status: "idle", data: null, error: null, more: false },
+      holds: idle(),
       timelines: {},
       taskDetails: {},
       taskSessions: {},
@@ -99,12 +129,23 @@ export class AppData extends Store<AppDataSnapshot> {
       }),
       connection.onEvent((event) => this.onEvent(event)),
     );
+    // One interval per instance. It keeps running while the window is hidden but does nothing then, so a window
+    // that is shown again reads the list within one interval. Without a document (a node run) there is no window.
+    if (typeof document !== "undefined") {
+      this.proposalsTimer = setInterval(() => {
+        if (document.hidden || this.refreshing) return;
+        void this.refreshProposals();
+        void this.refreshHolds();
+      }, PROPOSALS_REFRESH_MS);
+    }
   }
 
   dispose(): void {
     for (const off of this.detach) off();
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    if (this.proposalsTimer !== null) clearInterval(this.proposalsTimer);
+    this.proposalsTimer = null;
   }
 
   /** Refetches every snapshot; overlapping calls collapse into one rerun. */
@@ -122,11 +163,60 @@ export class AppData extends Store<AppDataSnapshot> {
           this.load("tasks", (api) => api.tasksList()),
           this.load("sessions", (api) => api.sessionsList(null)),
           this.load("approvals", (api) => api.approvalsList()),
+          this.loadProposals(),
+          this.loadHolds(),
           ...[...this.watched.values()].map((reload) => reload()),
         ]);
       } while (this.dirty);
     } finally {
       this.refreshing = false;
+    }
+  }
+
+  /** Reads the pending proposed actions again. While disconnected nothing is sent; the next connect reads them. */
+  async refreshProposals(): Promise<void> {
+    if (this.connection.getSnapshot().status !== "connected") return;
+    await this.loadProposals();
+  }
+
+  /** Reads the holds in force again. While disconnected nothing is sent; the next connect reads them. */
+  async refreshHolds(): Promise<void> {
+    if (this.connection.getSnapshot().status !== "connected") return;
+    await this.loadHolds();
+  }
+
+  /** Same newest-read-wins guard as `loadProposals`. A daemon without holds reads as nothing held. */
+  private async loadHolds(): Promise<void> {
+    const generation = ++this.holdsLoads;
+    const stale = () => this.holdsLoads !== generation;
+    const previous = this.getSnapshot().holds;
+    this.update({ holds: { ...previous, status: "loading", error: null } });
+    try {
+      const { holds } = await this.connection.api().holdsList();
+      if (!stale()) this.update({ holds: { status: "ready", data: holds.map(mapHold), error: null } });
+    } catch (error) {
+      const failure = asDaemonError(error);
+      if (stale()) return;
+      if (isMissingFeature(failure)) this.update({ holds: { status: "ready", data: [], error: null } });
+      else this.update({ holds: { status: "error", data: previous.data, error: failure } });
+    }
+  }
+
+  /**
+   * Only the newest started read may write the slice, so a slow read that began before a decision cannot finish
+   * after the post-decision read and put the old list back; an older answer is dropped, as for `timelineLoads`.
+   */
+  private async loadProposals(): Promise<void> {
+    const generation = ++this.proposalsLoads;
+    const stale = () => this.proposalsLoads !== generation;
+    const previous = this.getSnapshot().proposals;
+    this.update({ proposals: { ...previous, status: "loading", error: null } });
+    try {
+      const { proposals, more } = await this.connection.api().actionsPending();
+      if (!stale()) this.update({ proposals: { status: "ready", data: proposals, error: null, more } });
+    } catch (error) {
+      const failure = asDaemonError(error);
+      if (!stale()) this.update({ proposals: { status: "error", data: previous.data, error: failure, more: previous.more } });
     }
   }
 

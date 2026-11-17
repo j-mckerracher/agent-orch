@@ -88,6 +88,8 @@ impl Fixture {
             diagnostics: orchestrator_diagnostics::Diagnostics::memory(),
             catalog_timeout: Duration::from_secs(5),
             catalog_wait: Duration::from_secs(5),
+            load: Default::default(),
+            load_feed: false,
         }
     }
 
@@ -257,6 +259,76 @@ fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
     api.shutdown();
 }
 
+/// A scripted agent that prints one final message before it finishes, in the event shape the
+/// codex adapter reads its `last_message` from.
+fn messaging_agent(fixture: &Fixture, message: &str) -> PathBuf {
+    let event = format!(
+        r#"{{"type":"item.completed","item":{{"id":"item_0","type":"agent_message","text":"{message}"}}}}"#
+    );
+    fixture.script(
+        "messaging-agent",
+        &format!("{THREAD_STARTED}printf '%s\\n' '{event}'\n{TURN_COMPLETED}"),
+    )
+}
+
+/// `kind` of the contract `Fixture::submit_full` builds is fixed to `Implement`; a scout needs
+/// the other kind, so this submits the same contract with `Investigate`.
+fn submit_kind(fixture: &Fixture, api: &DaemonApi, key: &str, kind: &str) -> String {
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({
+                "idempotency_key": key,
+                "contract": {
+                    "project_id": fixture.project_id(),
+                    "parent_id": null,
+                    "objective": format!("objective of {key}"),
+                    "kind": kind,
+                    "agent": "codex",
+                    "dependencies": [],
+                    "verification": "None",
+                    "delivery": "ReportOnly",
+                    "autonomy": "WorkspaceWrites",
+                    "max_retries": 0,
+                    "max_repairs": 0
+                }
+            }),
+        )
+        .unwrap();
+    task["contract"]["id"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn a_finished_scout_leaves_its_last_message_as_a_redacted_report_and_a_ship_leaves_none() {
+    let fixture = Fixture::new();
+    // A credential shape the diagnostics redactor masks; a bare long word is masked only in the
+    // copy a relay hands a model (`report::relay_block`), not in the stored report.
+    let secret = "SECRETVALUE1234";
+    let api = fixture.api(&messaging_agent(
+        &fixture,
+        &format!("The slow query is in the loader, password={secret}"),
+    ));
+    let scout = submit_kind(&fixture, &api, "scout-1", "Investigate");
+    wait_state(&api, &scout, "Verifying");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let report = store
+        .task_report(&scout)
+        .unwrap()
+        .expect("a scout leaves a report");
+    assert!(
+        report.body.contains("The slow query is in the loader"),
+        "{}",
+        report.body
+    );
+    assert!(!report.body.contains(secret), "{}", report.body);
+    assert!(!report.truncated && report.relayed_at.is_none());
+
+    let ship = submit_kind(&fixture, &api, "ship-1", "Implement");
+    wait_state(&api, &ship, "Verifying");
+    assert_eq!(store.task_report(&ship).unwrap(), None);
+    api.shutdown();
+}
+
 #[test]
 fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
     let fixture = Fixture::new();
@@ -411,6 +483,60 @@ fn scheduler_limits_hold_and_a_finished_task_releases_its_slot() {
     fs::write(&release, "go").unwrap();
     wait_state(&api, &first, "Verifying");
     wait_state(&api, &second, "Verifying");
+    api.shutdown();
+}
+
+#[test]
+fn a_closed_load_gate_keeps_a_queued_task_queued_and_leaves_a_running_task_alone() {
+    use crate::api::load::tests::close_gate;
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let load = Arc::new(crate::api::load::LoadHandle::default());
+    let shared = load.clone();
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), move |config| {
+        config.load = shared;
+    });
+    let running = fixture.submit(&api, "load-running", 0);
+    wait_state(&api, &running, "Running");
+
+    close_gate(&load);
+    let queued = fixture.submit(&api, "load-queued", 0);
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+    assert_eq!(task(&api, &running)["state"], "Running");
+
+    // The running task finishes as usual; the closed gate still holds the queued one.
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &running, "Verifying");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+    api.shutdown();
+}
+
+#[test]
+fn opening_the_load_gate_starts_a_queued_task_without_waiting_for_the_poll() {
+    use crate::api::load::tests::{at, close_gate, cpu};
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let load = Arc::new(crate::api::load::LoadHandle::default());
+    let shared = load.clone();
+    // The poll is far longer than the wait below, so only the wake can start the task.
+    let last = close_gate(&load);
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), move |config| {
+        config.load = shared;
+        config.poll = Duration::from_secs(60);
+    });
+    let queued = fixture.submit(&api, "load-wake", 0);
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+
+    for n in 1..=8 {
+        load.record(cpu(0.0), at(last, n));
+    }
+
+    wait_state(&api, &queued, "Running");
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &queued, "Verifying");
     api.shutdown();
 }
 
@@ -1237,6 +1363,134 @@ fn launch_failures_are_stored_on_their_attempt_and_survive_retry() {
     );
     assert_ne!(attempts[0]["failure_reason"], attempts[1]["failure_reason"]);
     assert_eq!(retried["sessions"][0]["attempt_id"], attempts[1]["id"]);
+    api.shutdown();
+}
+
+/// The defaults row a project with a base branch `base_branch` and the prefix `team/` has.
+fn project_defaults_row(
+    fixture: &Fixture,
+    base_branch: &str,
+) -> orchestrator_store::ProjectDefaultsRow {
+    orchestrator_store::ProjectDefaultsRow {
+        project_id: fixture.project_id(),
+        mode: "local-only".to_owned(),
+        base_branch: Some(base_branch.to_owned()),
+        branch_prefix: Some("team/".to_owned()),
+        checks: Vec::new(),
+        merge_method: "squash".to_owned(),
+        updated_at: String::new(),
+    }
+}
+
+#[test]
+fn a_task_is_created_from_the_projects_base_branch_and_prefix() {
+    let fixture = Fixture::new();
+    // `release-1` is one commit ahead of `main`, and `main` stays checked out.
+    run_git(&fixture.repo, &["checkout", "-q", "-b", "release-1"]);
+    fs::write(fixture.repo.join("release.txt"), "release\n").unwrap();
+    run_git(&fixture.repo, &["add", "release.txt"]);
+    run_git(&fixture.repo, &["commit", "-q", "-m", "release"]);
+    run_git(&fixture.repo, &["checkout", "-q", "main"]);
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "release-1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-1", 0);
+
+    wait_state(&api, &task_id, "Verifying");
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    assert!(
+        workspace.branch.starts_with("team/"),
+        "{}",
+        workspace.branch
+    );
+    let tip = Command::new("git")
+        .arg("-C")
+        .arg(&fixture.repo)
+        .args(["rev-parse", "release-1"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        workspace.base_commit,
+        String::from_utf8(tip.stdout).unwrap().trim()
+    );
+    api.shutdown();
+}
+
+#[test]
+fn a_missing_base_branch_fails_the_attempt_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    // No agent can start: the worktree fails first.
+    let api = fixture.api(&fixture.root.path().join("missing-codex"));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "deleted-branch"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-2", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["failure_reason"], BASE_BRANCH_MISSING);
+    assert!(!BASE_BRANCH_MISSING.contains("deleted-branch"));
+    assert_eq!(failed["sessions"], json!([]));
+    api.shutdown();
+}
+
+#[test]
+fn a_tag_with_the_base_branchs_name_never_decides_the_base() {
+    let fixture = Fixture::new();
+    run_git(&fixture.repo, &["checkout", "-q", "-b", "release-1"]);
+    fs::write(fixture.repo.join("release.txt"), "release\n").unwrap();
+    run_git(&fixture.repo, &["add", "release.txt"]);
+    run_git(&fixture.repo, &["commit", "-q", "-m", "release"]);
+    run_git(&fixture.repo, &["checkout", "-q", "main"]);
+    // The tag has the branch's name but points at the older commit on `main`.
+    run_git(&fixture.repo, &["tag", "release-1", "main"]);
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "release-1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-3", 0);
+
+    wait_state(&api, &task_id, "Verifying");
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    let tip = Command::new("git")
+        .arg("-C")
+        .arg(&fixture.repo)
+        .args(["rev-parse", "refs/heads/release-1"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        workspace.base_commit,
+        String::from_utf8(tip.stdout).unwrap().trim()
+    );
+    api.shutdown();
+}
+
+#[test]
+fn an_unsafe_stored_base_branch_fails_the_attempt_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&fixture.root.path().join("missing-codex"));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "main~1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-4", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["failure_reason"], BASE_BRANCH_MISSING);
+    assert_eq!(failed["sessions"], json!([]));
     api.shutdown();
 }
 

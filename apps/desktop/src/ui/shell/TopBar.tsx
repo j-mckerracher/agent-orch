@@ -1,4 +1,5 @@
-import { matchesFilter, pendingApprovals } from "../format";
+import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
+import { heldSets } from "../../sources/surfaces/holds";
 import { useGate, useServices, useStore, useSurface } from "../services";
 import { Badge } from "../theme";
 import type { GlobalView } from "../router";
@@ -26,7 +27,16 @@ const ITEMS: Array<{ key: keyof CountValues; label: string; view: GlobalView }> 
   { key: "attention", label: "require attention", view: "review" },
 ];
 
-function CountsLine({ values, placeholder }: { values: CountValues; placeholder: string | null }) {
+/** `attentionMore`: the daemon held more pending proposed actions than it sent, so the attention count reads "N+". */
+function CountsLine({
+  values,
+  placeholder,
+  attentionMore = false,
+}: {
+  values: CountValues;
+  placeholder: string | null;
+  attentionMore?: boolean;
+}) {
   return (
     <p className="top-counts" data-testid="top-counts">
       {ITEMS.map(({ key, label, view }, index) => {
@@ -40,7 +50,7 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
             )}
             <NavLink to={{ name: "global", view }}>
               {typeof value === "number" ? (
-                `${value} ${label}`
+                `${key === "attention" ? decisionCountText(value, attentionMore) : value} ${label}`
               ) : (
                 <>
                   <span aria-hidden="true">— {label}</span>
@@ -66,10 +76,10 @@ function CountsLine({ values, placeholder }: { values: CountValues; placeholder:
 const surfaceCount = (status: string, value: number | undefined): Count =>
   value ?? (status === "loading" ? "loading" : "unavailable");
 
-/** Same task and approval lists as the nav, lists and Review count, so the numbers cannot drift. */
+/** Same task, approval and proposal lists as the nav, lists and Review count, so the numbers cannot drift. */
 function LiveCounts() {
   const { data, surfaces } = useServices();
-  const { tasks, approvals } = useStore(data);
+  const { tasks, approvals, proposals, holds } = useStore(data);
   const gate = useGate();
   const taskList = tasks.data;
   // The daemon emits no workstream events, so D9 re-reads when a workstream mutation lands
@@ -87,13 +97,18 @@ function LiveCounts() {
   return (
     <CountsLine
       placeholder={null}
+      attentionMore={proposals.more}
       values={{
         workstreams: surfaceCount(workstreams.status, workstreams.status === "ok" ? workstreams.data.length : undefined),
         tasks: taskList ? taskList.length : pendingRead(tasks.status),
         running: taskList
           ? taskList.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length
           : pendingRead(tasks.status),
-        attention: approvals.data ? pendingApprovals(approvals.data).length : pendingRead(approvals.status),
+        // Pending approvals plus pending proposed actions, the number the Review nav and the activity badge show.
+        attention:
+          approvals.data && proposals.data
+            ? pendingDecisionCount(approvals.data, proposals.data, heldSets(holds.data ?? []))
+            : pendingRead(approvals.data ? proposals.status : approvals.status),
       }}
     />
   );

@@ -13,6 +13,8 @@ import { FakeDaemon } from "../test/fakeDaemon";
  */
 const FX = "fixture:placeholder-id";
 const REAL = "real-id-1";
+const GRANT_PARAMS = { kinds: ["task.propose"], expires_in_secs: 3600, max_uses: 5, token_budget: 1000 };
+const DEFAULTS_WIRE = { mode: "local-only", base_branch: null, branch_prefix: null, checks: [], merge_method: "squash" };
 const DIGEST = "0".repeat(64);
 
 type Row = { method: keyof DaemonApi; wire: string; bad: (api: DaemonApi) => Promise<unknown>; good: (api: DaemonApi) => Promise<unknown> };
@@ -85,6 +87,26 @@ const ROWS: Row[] = [
   row("conversationsGet", "conversations.get", (a) => a.conversationsGet({ kind: "workstream", workstream_id: FX }), (a) => a.conversationsGet({ kind: "global" })),
   row("conversationsCancel", "conversations.cancel", (a) => a.conversationsCancel({ kind: "global" }, FX, "k"), (a) => a.conversationsCancel({ kind: "global" }, "turn-1", "k")),
   row("conversationsClear", "conversations.clear", (a) => a.conversationsClear({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.conversationsClear({ kind: "workstream", workstream_id: "ws-1" }, "k")),
+  row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
+  row("holdsSet", "holds.set", (a) => a.holdsSet("approval", FX, "2026-11-21", "k"), (a) => a.holdsSet("approval", REAL, "2026-11-21", "k")),
+  row("holdsRelease", "holds.release", (a) => a.holdsRelease(FX, "k"), (a) => a.holdsRelease(REAL, "k")),
+  row("pullsRefresh", "pulls.refresh", (a) => a.pullsRefresh(FX), (a) => a.pullsRefresh(REAL)),
+  row("notesList", "notes.list", (a) => a.notesList(`workstream:${FX}`), (a) => a.notesList("workstream:ws-1")),
+  row("notesSet", "notes.set", (a) => a.notesSet(`workstream:${FX}`, ["a"], "k"), (a) => a.notesSet("workstream:ws-1", ["a"], "k")),
+  row("grantsRevoke", "grants.revoke", (a) => a.grantsRevoke(FX, "k"), (a) => a.grantsRevoke(REAL, "k")),
+  row(
+    "grantsCreate",
+    "grants.create",
+    (a) => a.grantsCreate({ ...GRANT_PARAMS, scope: { kind: "workstream", id: FX } }, "k"),
+    (a) => a.grantsCreate({ ...GRANT_PARAMS, scope: { kind: "workstream", id: "ws-1" } }, "k"),
+  ),
+  row("projectsGetDefaults", "projects.get_defaults", (a) => a.projectsGetDefaults(FX), (a) => a.projectsGetDefaults(REAL)),
+  row(
+    "projectsSetDefaults",
+    "projects.set_defaults",
+    (a) => a.projectsSetDefaults(FX, DEFAULTS_WIRE, "k"),
+    (a) => a.projectsSetDefaults(REAL, DEFAULTS_WIRE, "k"),
+  ),
   row("actionsResolve", "actions.resolve", (a) => a.actionsResolve(FX, "approve", DIGEST, "k"), (a) => a.actionsResolve(REAL, "approve", DIGEST, "k")),
   row("agentsValidateSelection", "agents.validate_selection", (a) => a.agentsValidateSelection(FX, { model: "m" }), (a) => a.agentsValidateSelection("codex", { model: "m" })),
 ];
@@ -107,6 +129,17 @@ const NO_ID_METHODS = new Set<string>([
   "workstreamsCreate",
   "agentsCatalog",
   "agentsCopilotSignInCheck",
+  "actionsPending",
+  "settingsGet",
+  "settingsSet",
+  "settingsSetGroups",
+  "monitoringGet",
+  "monitoringSet",
+  "briefGet",
+  "briefAck",
+  "holdsList",
+  "pullsList",
+  "grantsList",
 ]);
 
 async function api(fake: FakeDaemon) {

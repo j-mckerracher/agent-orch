@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 import type { Approval } from "../daemon/types";
 import { PlaceholderTag } from "./EvidencePanel";
 import type { ChangeRequestHistory, ChangeRequestReceipt, ChangeRequestSource } from "./sources";
@@ -8,7 +9,16 @@ import type { ChangeRequestHistory, ChangeRequestReceipt, ChangeRequestSource } 
  * ChangeRequestSource; it has no access to the ReviewClient, so a change
  * request can never be sent as an approvals.resolve decision.
  */
-export function ChangeRequestPanel({ source, approval }: { source: ChangeRequestSource; approval: Approval | null }) {
+export function ChangeRequestPanel({
+  source,
+  approval,
+  approver = true,
+}: {
+  source: ChangeRequestSource;
+  approval: Approval | null;
+  /** False when this session did not prove the approver secret; sending needs it (DPES-1105). */
+  approver?: boolean;
+}) {
   const [history, setHistory] = useState<ChangeRequestHistory | null>(null);
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -70,13 +80,23 @@ export function ChangeRequestPanel({ source, approval }: { source: ChangeRequest
       <p id="request-additional-checks-reason" className="rd-reason">
         The daemon has no method to request more checks.
       </p>
+      {!approver && (
+        <p id="change-request-approver-reason" className="rd-reason">
+          {APPROVER_REQUIRED_NOTICE}
+        </p>
+      )}
       {open && (
         <div>
           <label>
             Feedback <PlaceholderTag show={fixture} />
             <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3} />
           </label>
-          <button type="button" disabled={busy || feedback.trim() === ""} onClick={() => void submit()}>
+          <button
+            type="button"
+            disabled={busy || !approver || feedback.trim() === ""}
+            aria-describedby={approver ? undefined : "change-request-approver-reason"}
+            onClick={() => void submit()}
+          >
             {source.labels.submitAction}
           </button>
         </div>

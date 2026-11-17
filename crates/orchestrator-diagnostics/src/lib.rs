@@ -156,11 +156,18 @@ pub fn install_panic_hook(diagnostics: Diagnostics, component: &'static str) {
             .location()
             .map(|l| format!("{}:{}", l.file(), l.line()))
             .unwrap_or_default();
-        let thread = std::thread::current().name().unwrap_or("unnamed").to_owned();
+        let thread = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .to_owned();
         diagnostics.error(
             component,
             "panic",
-            &[("message", &message), ("location", &location), ("thread", &thread)],
+            &[
+                ("message", &message),
+                ("location", &location),
+                ("thread", &thread),
+            ],
         );
     }));
 }

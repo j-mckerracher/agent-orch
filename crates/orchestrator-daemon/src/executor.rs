@@ -25,31 +25,35 @@
 //! its task `Running` until the next daemon start reconciles it, and agent
 //! output is consumed but not persisted beyond the lifecycle events.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
 };
-use orchestrator_core::contract::ModelSelection;
+use orchestrator_core::contract::{ModelSelection, TaskKind};
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
-use orchestrator_git::{create_task_worktree, BranchPrefix, Error as GitError, Repository};
+use orchestrator_git::{
+    create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository,
+};
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
     UsageReceipt, UsageSource,
 };
+
+use crate::api::load::LoadHandle;
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -90,6 +94,12 @@ pub(crate) struct ExecutorConfig {
     /// timeout. The read itself continues in the background and fills the
     /// cache for the retry.
     pub(crate) catalog_wait: Duration,
+    /// The machine load gate the scheduler pass asks before it starts a task.
+    pub(crate) load: Arc<LoadHandle>,
+    /// Whether the host sampler feeds `load`. Off in unit tests, and off when the
+    /// daemon starts with `AGENT_ORCH_LOAD_GATE=off`, so a spawned test daemon
+    /// does not read the real machine's load.
+    pub(crate) load_feed: bool,
 }
 
 /// No client waits on a launch, so its catalog check can wait for a slow CLI.
@@ -145,8 +155,20 @@ impl ExecutorConfig {
     }
 }
 
+/// Whether the host sampler feeds the load gate. Read once, from the daemon's own
+/// environment, which an agent process cannot set (DPES-1105 Q17).
+pub(crate) fn load_feed_enabled(setting: Option<&str>, under_test: bool) -> bool {
+    !under_test && setting != Some("off")
+}
+
 impl ExecutorConfig {
     pub(crate) fn for_data_dir(data_dir: &Path) -> Self {
+        let diagnostics = Diagnostics::stderr();
+        let load_setting = std::env::var("AGENT_ORCH_LOAD_GATE").ok();
+        let load_feed = load_feed_enabled(load_setting.as_deref(), cfg!(test));
+        if !cfg!(test) && !load_feed {
+            diagnostics.warn(LOG, "load_gate_feed_disabled", &[("source", "environment")]);
+        }
         Self {
             worktrees_root: data_dir.join("worktrees"),
             data_dir: data_dir.to_path_buf(),
@@ -163,10 +185,39 @@ impl ExecutorConfig {
             wait_for_exit_before_identity: false,
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
-            diagnostics: Diagnostics::stderr(),
+            diagnostics,
             catalog_timeout: Duration::from_millis(1500),
             catalog_wait: Duration::from_millis(1100),
+            load: Arc::default(),
+            load_feed,
         }
+    }
+}
+
+/// Last time each running session produced an agent event, in Unix ms. In memory only:
+/// agent output is not persisted (see the module note), so a restart empties it and every
+/// running attempt gets a fresh quiet period. The wake scheduler's stall check reads it
+/// (DPES-1105).
+#[derive(Default)]
+pub(crate) struct SessionPulse {
+    last: Mutex<HashMap<String, u64>>,
+}
+
+impl SessionPulse {
+    pub(crate) fn touch(&self, session_id: &str) {
+        self.touch_at(session_id, unix_now_ms());
+    }
+
+    pub(crate) fn touch_at(&self, session_id: &str, now_ms: u64) {
+        lock(&self.last).insert(session_id.to_owned(), now_ms);
+    }
+
+    pub(crate) fn last_event_ms(&self, session_id: &str) -> Option<u64> {
+        lock(&self.last).get(session_id).copied()
+    }
+
+    pub(crate) fn forget(&self, session_id: &str) {
+        lock(&self.last).remove(session_id);
     }
 }
 
@@ -187,6 +238,8 @@ struct Inner {
     /// Project that received the last start; mirrors the loop's fairness
     /// cursor so read models order the queue as the next pass would.
     cursor: Mutex<Option<String>>,
+    /// Liveness of running sessions, touched by `monitor_agent`.
+    pulse: Arc<SessionPulse>,
 }
 
 impl Executor {
@@ -199,6 +252,14 @@ impl Executor {
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
+            pulse: Arc::new(SessionPulse::default()),
+        });
+        // A weak reference: the gate outlives the executor and must not keep it alive.
+        let weak = Arc::downgrade(&inner);
+        inner.config.load.on_open(move || {
+            if let Some(inner) = weak.upgrade() {
+                inner.request_pass();
+            }
         });
         let worker = inner.clone();
         let handle = thread::Builder::new()
@@ -209,6 +270,11 @@ impl Executor {
             inner,
             scheduler: Mutex::new(Some(handle)),
         })
+    }
+
+    /// The registry the wake scheduler's stall check reads.
+    pub(crate) fn pulse(&self) -> Arc<SessionPulse> {
+        self.inner.pulse.clone()
     }
 
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
@@ -448,6 +514,8 @@ impl Inner {
         // Authorization: the authenticated IPC session already authorized the
         // submission; a task may start only while its project is registered.
         let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
+        // A closed load gate leaves every task Queued; running tasks are not touched.
+        let scheduler = scheduler.with_start_gate(self.config.load.start_gate(Instant::now()));
         let plan = scheduler.schedule(Some(&authorization));
         *last_started_project = plan.last_started_project;
         for task_id in &plan.started {
@@ -491,12 +559,37 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
-        let worktree = Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
-            std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
-            let root = std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
-            let prefix = BranchPrefix::read(&self.config.data_dir)?;
-            create_task_worktree(&repository, &task_id, "HEAD", &root, &prefix)
-        });
+        let worktree =
+            Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
+                std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
+                let root =
+                    std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
+                // A project's own base branch and prefix win over HEAD and the machine-wide
+                // prefix (DPES-1105). A task already running keeps the worktree it has.
+                let defaults = store
+                    .project_defaults(&task.contract.project_id)
+                    .map_err(|error| GitError::Io(std::io::Error::other(error.to_string())))?;
+                let prefix = match defaults
+                    .as_ref()
+                    .and_then(|row| row.branch_prefix.as_deref())
+                {
+                    Some(value) => BranchPrefix::parse_for_project(value)?,
+                    None => BranchPrefix::read(&self.config.data_dir)?,
+                };
+                // The stored value passed a looser database check, so it is re-checked here, and
+                // named under `refs/heads/` so a tag of the same name cannot decide the base.
+                let base_ref = match defaults.as_ref().and_then(|row| row.base_branch.as_deref()) {
+                    Some(branch) if is_safe_branch_name(branch) => format!("refs/heads/{branch}"),
+                    Some(branch) => {
+                        return Err(GitError::InvalidBaseRef {
+                            refspec: branch.to_owned(),
+                            detail: "not a safe branch name".to_owned(),
+                        })
+                    }
+                    None => "HEAD".to_owned(),
+                };
+                create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)
+            });
         store
             .add_attempt(
                 &task_id,
@@ -628,6 +721,9 @@ fn preserved_work(job: &Job) -> (String, String) {
     (worktree, uncommitted)
 }
 
+/// Attempt failure reason when the project's base branch no longer resolves.
+pub(crate) const BASE_BRANCH_MISSING: &str = "The project's base branch no longer exists. Set a base branch that exists in the project defaults, or clear it, then retry.";
+
 /// User-facing worktree failure reasons must never copy paths or raw Git
 /// output from the daemon log into task records.
 fn worktree_failure_reason(error: &GitError) -> &'static str {
@@ -635,6 +731,8 @@ fn worktree_failure_reason(error: &GitError) -> &'static str {
         GitError::InvalidBaseRef { refspec, .. } if refspec == "HEAD" => {
             "The repository has no commit at HEAD. Create an initial commit in the registered repository, then retry."
         }
+        // Only a project's base branch reaches here: the reason never names it.
+        GitError::InvalidBaseRef { .. } => BASE_BRANCH_MISSING,
         GitError::CreationFailed { source, .. } => worktree_failure_reason(source),
         _ => "The daemon could not prepare a task worktree. Check the daemon log for details, then retry.",
     }
@@ -937,7 +1035,9 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
-    let monitored = monitor_agent(handle, store, &owner, job).await;
+    let pulse = Some(inner.pulse.as_ref());
+    let monitored = monitor_agent_with(handle, store, &owner, job, pulse).await;
+    inner.pulse.forget(&job.session_id);
     if let (COPILOT_AGENT, Ok(outcome)) = (job.agent.as_str(), &monitored) {
         inner.config.copilot_sign_in.record_run(&outcome.exit);
     }
@@ -1030,7 +1130,7 @@ fn record_usage(
     }
 }
 
-fn unix_now_ms() -> u64 {
+pub(crate) fn unix_now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| {
@@ -1041,11 +1141,23 @@ fn unix_now_ms() -> u64 {
 /// Drives the agent to exit. A cancellation request is consumed at most once,
 /// and `cancellation_succeeded` is set only after the handle's cancel returned
 /// Ok. Neither depends on any client connection.
+#[cfg(test)]
 async fn monitor_agent(
+    handle: Box<dyn AgentHandle>,
+    store: &SqliteStore,
+    owner: &CancellationOwner,
+    job: &Job,
+) -> Result<MonitorOutcome, String> {
+    monitor_agent_with(handle, store, owner, job, None).await
+}
+
+/// `pulse`, when given, is touched at the start and on every agent event.
+async fn monitor_agent_with(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
     job: &Job,
+    pulse: Option<&SessionPulse>,
 ) -> Result<MonitorOutcome, String> {
     let requested_model = requested_codex_model(job);
     let requested_model = requested_model.as_deref();
@@ -1056,6 +1168,9 @@ async fn monitor_agent(
     let mut supervision_error = None;
     let mut request_unreadable_logged = false;
     let started_ms = unix_now_ms();
+    if let Some(pulse) = pulse {
+        pulse.touch_at(&job.session_id, started_ms);
+    }
 
     loop {
         if !attempted {
@@ -1134,6 +1249,9 @@ async fn monitor_agent(
                 });
             }
             Some(Ok(Some(_))) => {
+                if let Some(pulse) = pulse {
+                    pulse.touch(&job.session_id);
+                }
                 record_usage(&mut *handle, store, owner, started_ms, requested_model)
             }
             Some(Ok(None)) => {
@@ -1259,7 +1377,10 @@ fn finish(
         return close(resolution);
     }
     match monitored.exit {
-        AgentExit::Completed { code: Some(0), .. } => {
+        AgentExit::Completed {
+            code: Some(0),
+            ref last_message,
+        } => {
             store
                 .update_session_state(&job.task_id, &job.session_id, SessionState::Exited)
                 .map_err(|error| format!("cannot mark session exited: {error}"))?;
@@ -1295,12 +1416,62 @@ fn finish(
                 .map_err(|error| format!("cannot record candidate: {error}"))?;
             job.diag
                 .info(LOG, "candidate_ready", &job.event_fields(&[]));
+            capture_report(store, job, last_message.as_deref());
             close(resolution)
         }
         _ => {
             fail_after_agent_exit(store, job);
             close(resolution)
         }
+    }
+}
+
+/// Keeps a finished scout's last message as its report (DPES-1105 phase 4a). Only an
+/// `Investigate` task leaves one, and only when the agent wrote a message. The text is
+/// untrusted agent output: it is redacted and capped before it is stored, and nothing here
+/// puts it in a log line. A failure to store it is logged without the text and never
+/// fails the task, which has already succeeded.
+fn capture_report(store: &SqliteStore, job: &Job, last_message: Option<&str>) {
+    record_report(
+        store,
+        &job.diag,
+        &job.task_id,
+        &job.attempt_id,
+        last_message,
+    );
+}
+
+/// The body of [`capture_report`], without the job, so a test can run it.
+pub(crate) fn record_report(
+    store: &SqliteStore,
+    diag: &Diagnostics,
+    task_id: &str,
+    attempt_id: &str,
+    last_message: Option<&str>,
+) {
+    let Some(text) = last_message.map(str::trim).filter(|text| !text.is_empty()) else {
+        return;
+    };
+    let scout = store
+        .get(task_id)
+        .is_ok_and(|task| task.contract.kind == TaskKind::Investigate);
+    if !scout {
+        return;
+    }
+    let (body, truncated) = crate::api::report::report_body(text);
+    if body.trim().is_empty() {
+        return;
+    }
+    let captured_at = crate::api::report::utc_text(unix_now_ms());
+    if store
+        .capture_task_report(task_id, attempt_id, &body, truncated, &captured_at)
+        .is_err()
+    {
+        diag.error(
+            LOG,
+            "report_record_failed",
+            &[("task_id", task_id), ("attempt_id", attempt_id)],
+        );
     }
 }
 

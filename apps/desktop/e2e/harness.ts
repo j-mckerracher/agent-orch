@@ -6,6 +6,7 @@
  * exercised here; they need native Windows proof.
  */
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { homedir } from "node:os";
@@ -15,6 +16,12 @@ import type { DaemonConnector, OpenedChannel, RpcChannel } from "../src/daemon/s
 import type { Capability, Welcome } from "../src/daemon/types";
 
 const VERSION = 1;
+
+/**
+ * The approver secret of the daemon last started on each data directory, as the desktop host holds it
+ * (DPES-1105). A restart replaces it, so a connector reads it again on every open. Memory only.
+ */
+const approverSecrets = new Map<string, string>();
 
 export function daemonBinary(): string {
   const path = process.env.ORCH_DAEMON_BIN;
@@ -103,6 +110,8 @@ export class NodeConnector implements DaemonConnector {
   tokenOverride: string | null = null;
   /** Test hook: overrides the versions offered, to prove incompatible handling. */
   versions: number[] = [VERSION];
+  /** Test hook: false connects with the token only, as a process that lacks the approver secret would. */
+  presentApprover = true;
 
   constructor(private readonly dataDir: string) {}
 
@@ -126,7 +135,7 @@ export class NodeConnector implements DaemonConnector {
         jsonrpc: "2.0",
         id: 0,
         method: "handshake",
-        params: { token, versions: this.versions, capabilities: requested },
+        params: { token, versions: this.versions, capabilities: requested, ...this.approverParam() },
       });
     }).catch((error) => {
       channel.close();
@@ -134,6 +143,11 @@ export class NodeConnector implements DaemonConnector {
     });
     // The handshake listener stays attached; the session ignores id 0 responses.
     return { channel, welcome };
+  }
+
+  private approverParam(): { approver?: string } {
+    const secret = this.presentApprover ? approverSecrets.get(this.dataDir) : undefined;
+    return secret === undefined ? {} : { approver: secret };
   }
 }
 
@@ -236,10 +250,17 @@ async function launch(
   dataDir: string,
   env: Record<string, string>,
 ): Promise<{ child: ChildProcess; stderr: () => string }> {
-  const child = spawn(daemonBinary(), ["--data-dir", dataDir], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ...env },
+  // The daemon takes its approver secret on stdin, as the desktop host gives it (DPES-1105); a new one per start.
+  const secret = randomBytes(32).toString("hex");
+  const child = spawn(daemonBinary(), ["--data-dir", dataDir, "--approver-stdin"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+    env: { ...process.env, ...env, AGENT_ORCH_LOAD_GATE: env.AGENT_ORCH_LOAD_GATE ?? "off" },
   });
+  // A daemon that exits before it reads its stdin must surface through the early-exit check below, not as EPIPE.
+  child.stdin?.on("error", () => undefined);
+  child.stdin?.end(secret);
+  approverSecrets.set(dataDir, secret);
   let stderr = "";
   child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
   const deadline = Date.now() + 15_000;

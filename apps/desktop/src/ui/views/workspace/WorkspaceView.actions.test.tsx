@@ -86,6 +86,24 @@ function proposal(over: Partial<ActionProposalWire> = {}): ActionProposalWire {
   };
 }
 
+/** One proposed task in the Global conversation's first turn, as the daemon lists it. */
+function taskProposal(over: Partial<ActionProposalWire> = {}): ActionProposalWire {
+  return proposal({
+    kind: "task.propose",
+    params: {
+      kind: "task.propose",
+      project: "p-3fa9c1d2",
+      objective: "Add unit tests for the retry module.\nRun them locally.",
+      agent: "codex",
+      task_kind: "Implement",
+      delivery: "LocalReview",
+    },
+    denial: null,
+    target: { project_name: "alpha" },
+    ...over,
+  });
+}
+
 /** Sends one message in Global and waits for the stubbed reply, so the proposals sit under it. */
 async function sendAndReply(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
@@ -433,5 +451,220 @@ describe("orchestrator action cards over the daemon stub", () => {
     await waitFor(() => expect(document.querySelector(".ws-feedback")).toHaveTextContent("Fixture data: nothing was created."));
     expect(within(card).getByText("Fixture data: nothing was created.")).toBeInTheDocument();
     expect(pillOf(card)).toHaveTextContent("Pending approval");
+  });
+
+  it("renders a proposed task as a card with its exact parameters, one list entry per objective line and the fixed policy rows", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [taskProposal()];
+    stubActionsResolve(fake, state);
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    const reply = await sendAndReply(user);
+
+    const card = cardNamed("Proposed: Create task");
+    const row = (label: string) =>
+      Array.from(card.querySelectorAll("dt")).find((term) => term.textContent === label)?.nextElementSibling?.textContent;
+    expect(Array.from(card.querySelectorAll("dt")).map((term) => term.textContent)).toEqual([
+      "Project",
+      "Task",
+      "Agent",
+      "Task kind",
+      "Delivery",
+      "Autonomy",
+      "Verification",
+    ]);
+    expect(row("Project")).toBe("alpha (p-3fa9c1d2)");
+    expect(row("Agent")).toBe("codex");
+    expect(row("Delivery")).toBe("LocalReview");
+    expect(row("Autonomy")).toBe("Approval required, fixed by the app");
+    expect(row("Verification")).toBe("None, fixed by the app");
+    expect(within(card).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Add unit tests for the retry module.",
+      "Run them locally.",
+    ]);
+    expect(pillOf(card)).toHaveTextContent("Pending approval");
+    expect(within(card).getByRole("button", { name: "Approve: create task Add unit tests for the retry module. Run them locally." })).toBeEnabled();
+    expect(within(card).getByRole("button", { name: "Reject: create task Add unit tests for the retry module. Run them locally." })).toBeEnabled();
+    expect(reply.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("approves a proposed task once with a key, disables both buttons while in flight and then says Queued", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [taskProposal()];
+    stubActionsResolve(fake, state);
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+    const release = gateResolve(services);
+    const approve = "Approve: create task Add unit tests for the retry module. Run them locally.";
+
+    await user.click(await screen.findByRole("button", { name: approve }));
+    expect(screen.getByRole("button", { name: approve })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Reject: create task/ })).toBeDisabled();
+    expect(screen.getByText("Sending your decision…")).toBeInTheDocument();
+    expect(fake.callsTo("actions.resolve")).toHaveLength(0);
+
+    release();
+    await waitFor(() => expect(pillOf(cardNamed("Proposed: Create task"))).toHaveTextContent("Queued"));
+    expect(fake.callsTo("actions.resolve")).toHaveLength(1);
+    const params = fake.callsTo("actions.resolve")[0]!.params as Record<string, unknown>;
+    expect(params).toMatchObject({ proposal_id: "proposal-1", decision: "approve", digest: "digest-1" });
+    expect(typeof params.idempotency_key).toBe("string");
+    expect(within(cardNamed("Proposed: Create task")).queryAllByRole("button")).toHaveLength(0);
+    expect(
+      within(cardNamed("Proposed: Create task")).getByText(
+        "Created and queued task “Add unit tests for the retry module. Run them locally.”. Open the task to follow it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("announces a task approval once in the polite region and keeps focus on the card", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [taskProposal()];
+    stubActionsResolve(fake, state);
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+
+    await user.click(await screen.findByRole("button", { name: /^Approve: create task/ }));
+    await waitFor(() =>
+      expect(document.querySelector(".ws-feedback")).toHaveTextContent(
+        "Created and queued task “Add unit tests for the retry module. Run them locally.”. Open the task to follow it.",
+      ),
+    );
+    expect(document.querySelector(".ws-feedback")?.querySelectorAll("[role=status]")).toHaveLength(1);
+    expect(document.querySelector(".ws-feedback")?.getAttribute("aria-live")).toBe("polite");
+    expect(cardNamed("Proposed: Create task").getAttribute("aria-live")).toBe("off");
+    await waitFor(() => expect(cardNamed("Proposed: Create task")).toHaveFocus());
+  });
+
+  it("says Cancellation requested, never Cancelled, once a task cancel is approved", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [
+      proposal({
+        kind: "task.cancel",
+        params: { kind: "task.cancel", task_id: "t-run" },
+        target: { task_title: "Add refresh-token expiry", task_state: "Running" },
+      }),
+    ];
+    stubActionsResolve(fake, state);
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+
+    await user.click(await screen.findByRole("button", { name: "Approve: cancel task Add refresh-token expiry" }));
+    await waitFor(() => expect(pillOf(cardNamed("Proposed: Cancel task"))).toHaveTextContent("Cancellation requested"));
+    const card = cardNamed("Proposed: Cancel task");
+    expect(within(card).getByText("Cancellation requested for “Add refresh-token expiry”. The task stops when its agent confirms.")).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/cancelled/i);
+    expect(document.querySelector(".ws-feedback")).toHaveTextContent("Cancellation requested for “Add refresh-token expiry”.");
+  });
+
+  it("links Open task to the task's page once the tasks list holds it, and shows no link before that", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [
+      proposal({
+        id: "p-cancelled",
+        kind: "task.cancel",
+        state: "executed",
+        params: { kind: "task.cancel", task_id: "t-run" },
+        target: { task_title: "Document the session model", task_state: "Running" },
+      }),
+      taskProposal({ id: "p-unlisted", index: 1, state: "executed", result_ref: "task-not-listed" }),
+    ];
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+
+    const stopped = await screen.findByRole("article", { name: "Proposed: Cancel task" });
+    const link = await within(stopped).findByRole("link", { name: "Open task" });
+    expect(link.getAttribute("href")).toBe("#/project/%2Frepos%2Falpha/task/t-run");
+    expect(within(cardNamed("Proposed: Create task")).queryByRole("link", { name: "Open task" })).toBeNull();
+  });
+
+  it("shows Denied with the reason and no buttons for a proposal the app refused", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    state.proposals = [
+      taskProposal({
+        state: "failed",
+        error_code: "action_denied",
+        denial: "delivery_not_authorized",
+        params: {
+          kind: "task.propose",
+          project: "p-3fa9c1d2",
+          objective: "Fix the flaky login test and open a pull request.",
+          agent: "codex",
+          task_kind: "Implement",
+          delivery: "PullRequest",
+        },
+      }),
+    ];
+    stubActionsResolve(fake, state);
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+
+    const card = await screen.findByRole("article", { name: "Proposed: Create task" });
+    expect(pillOf(card)).toHaveTextContent("Denied");
+    expect(card.textContent).not.toMatch(/Failed/);
+    expect(
+      within(card).getByText(
+        "This task asks for a delivery the app does not allow from chat. Nothing was created. Ask the orchestrator for local review or a report only.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("PullRequest")).toBeInTheDocument();
+    expect(within(card).queryAllByRole("button")).toHaveLength(0);
+    expect(fake.callsTo("actions.resolve")).toHaveLength(0);
+  });
+
+  it("falls back to the project code when an older daemon sends no target or denial", async () => {
+    const fake = liveDaemon();
+    const state = stubConversation(fake, "completed");
+    const { denial: _denial, target: _target, ...older } = taskProposal();
+    state.proposals = [older];
+    const services = track(build({ fake }));
+    const user = await mountLive(services);
+    await pickGlobal(user);
+    await sendAndReply(user);
+
+    const card = await screen.findByRole("article", { name: "Proposed: Create task" });
+    const project = Array.from(card.querySelectorAll("dt")).find((term) => term.textContent === "Project");
+    expect(project?.nextElementSibling).toHaveTextContent(/^p-3fa9c1d2$/);
+    expect(pillOf(card)).toHaveTextContent("Pending approval");
+  });
+
+  it("fixture mode renders a card for each task kind and a denied card, and Approve says nothing was created", async () => {
+    const services = track(build());
+    render(
+      <ServicesProvider services={services}>
+        <WorkspaceView />
+      </ServicesProvider>,
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("article", { name: "Proposed: Create workstream" });
+    const created = screen.getAllByRole("article", { name: "Proposed: Create task" });
+    expect(created).toHaveLength(2);
+    expect(pillOf(created[0]!)).toHaveTextContent("Pending approval");
+    expect(pillOf(created[1]!)).toHaveTextContent("Denied");
+    expect(within(created[1]!).queryAllByRole("button")).toHaveLength(0);
+    expect(within(created[1]!).getByText("Fixture data")).toBeInTheDocument();
+    for (const name of ["Proposed: Cancel task", "Proposed: Retry task", "Proposed: Link task"]) cardNamed(name);
+
+    const cancel = cardNamed("Proposed: Cancel task");
+    await user.click(within(cancel).getByRole("button", { name: "Approve: cancel task Add refresh-token expiry" }));
+    await waitFor(() => expect(within(cancel).getByText("Fixture data: nothing was created.")).toBeInTheDocument());
+    expect(pillOf(cancel)).toHaveTextContent("Pending approval");
   });
 });

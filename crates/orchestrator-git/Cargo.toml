@@ -8,6 +8,10 @@ publish = false
 
 [dependencies]
 thiserror = "=2.0.21"
+# The merge method and the pull request and check states are pure core types.
+orchestrator-core = { path = "../orchestrator-core" }
+# GitHub JSON from `gh` is read as untyped values; the same pin as orchestrator-core.
+serde_json = "=1.0.154"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

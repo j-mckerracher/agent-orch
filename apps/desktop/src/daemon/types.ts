@@ -25,7 +25,12 @@ export type Capability =
   | "conversation_history"
   | "conversation_selection"
   | "permission_levels"
-  | "orchestrator_actions";
+  | "orchestrator_actions"
+  | "settings"
+  | "monitoring"
+  | "holds"
+  | "landing"
+  | "standing_approvals";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -46,6 +51,11 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "permission_levels",
   "orchestrator_actions",
+  "settings",
+  "monitoring",
+  "holds",
+  "landing",
+  "standing_approvals",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -64,6 +74,11 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "permission_levels",
   "orchestrator_actions",
+  "settings",
+  "monitoring",
+  "holds",
+  "landing",
+  "standing_approvals",
 ];
 
 export interface Welcome {
@@ -71,6 +86,8 @@ export interface Welcome {
   capabilities: Capability[];
   /** Names the durable journal; absent from daemons without a store epoch. */
   journal_epoch?: string;
+  /** True when this session proved the approver secret; absent from older daemons. */
+  approver?: boolean;
 }
 
 export type TaskState =
@@ -144,6 +161,27 @@ export interface ProjectRow {
   id: string;
   /** False while the project's coordinator is removed (DPES-1105). Absent from older daemons, where it is active. */
   coordinator_active?: boolean;
+  /** The project's delivery mode; present only for a project with saved defaults (DPES-1105). */
+  mode?: string;
+  /** True only for an archived project. The daemon already hides those from the list. */
+  archived?: true;
+}
+
+/** A project's delivery defaults on the wire (`projects.get_defaults` and `projects.set_defaults`, DPES-1105). */
+export interface ProjectDefaultsWire {
+  /** `local-only`, `direct-pr` or `no-mistakes`; kept a string so a newer mode survives. */
+  mode: string;
+  base_branch: string | null;
+  branch_prefix: string | null;
+  /** Argument arrays, never a shell string. */
+  checks: string[][];
+  /** `merge`, `squash` or `rebase`. */
+  merge_method: string;
+}
+
+/** `projects.get_defaults` and `projects.set_defaults` result. */
+export interface ProjectDefaultsResultWire {
+  defaults: ProjectDefaultsWire;
 }
 
 export interface SessionEntry {
@@ -554,6 +592,8 @@ export interface ConversationWireEntry {
   action_block?: ActionBlockWire | null;
   /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
   runtime?: { name: string; version: string };
+  /** `wake` on the opening entry of an automatic turn only. Absent otherwise and from older daemons. */
+  origin?: string;
   created_at: string;
 }
 
@@ -575,6 +615,8 @@ export interface ConversationWireTurn {
   permission_profile?: string | null;
   /** The outcome of the action block in this turn's reply (DPES-1105). Absent from older daemons. */
   action_block?: ActionBlockWire | null;
+  /** `wake` for an automatic turn, `user` otherwise. Absent from older daemons. */
+  trigger?: string;
 }
 
 /**
@@ -609,13 +651,40 @@ export interface ConversationSendResult {
 }
 
 /** An action proposal's kind on the wire (DPES-1105). Unknown kinds arrive as strings and render as unknown. */
-export type ActionKindWire = "workstream.create" | "workstream.update" | "objective.add" | "objective.revise";
+export type ActionKindWire =
+  | "workstream.create"
+  | "workstream.update"
+  | "objective.add"
+  | "objective.revise"
+  | "task.propose"
+  | "task.cancel"
+  | "task.retry"
+  | "workstream.link_task"
+  | "task.revise"
+  | "decision.hold"
+  | "project.remove";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
 export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
 
 /** What the orchestrator's action block in one reply became (DPES-1105). */
 export type ActionBlockWire = "accepted" | "rejected" | "stripped";
+
+/** Display facts the daemon read live for a task proposal: a project's folder name, or a task's title and state now. */
+export interface ProposalTargetWire {
+  project_name?: string | null;
+  task_title?: string;
+  task_state?: string;
+  /** Present only on a `task.propose` card; true when the task asks for less than the project's default. */
+  below_project_default?: boolean;
+  /** The project's mode string; sent with `below_project_default`. */
+  project_mode?: string;
+  /** Present only on a `project.remove` card: the tasks kept in history and the ones still running. */
+  task_count?: number;
+  running_tasks?: number;
+  /** Present only on a `delivery.merge` card: the pull request as the daemon last read it. */
+  pull?: PullFactsWire;
+}
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
 export interface ActionProposalWire {
@@ -629,6 +698,17 @@ export interface ActionProposalWire {
   state: ProposalStateWire | (string & {});
   result_ref: string | null;
   error_code: string | null;
+  /** The envelope's reason when `error_code` is "action_denied"; null otherwise. Absent from older daemons. */
+  denial?: string | null;
+  /** Null for kinds that need no display facts. Absent from older daemons. */
+  target?: ProposalTargetWire | null;
+  /**
+   * Who approved it (DPES-1105 Phase 5): `{ kind: "user" }`, or a standing grant with its id. Null until approved.
+   * Absent from older daemons. A bare `grant:<id>` event actor is read the same way.
+   */
+  approved_by?: { kind: "user" } | { kind: "grant"; grant_id: string } | string | null;
+  /** The daemon sends the approving grant's id here (null when a person approved or nobody has). */
+  grant_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -636,6 +716,355 @@ export interface ActionProposalWire {
 /** `actions.resolve` result: the proposal as the daemon now holds it (DPES-1105). */
 export interface ActionsResolveWire {
   proposal: ActionProposalWire;
+}
+
+/** The conversation that holds a proposal's card. */
+export type ProposalScopeWire = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+
+/** `actions.pending` result: pending proposals only, newest first. `more` is true when any were left out. */
+export interface ActionsPendingWire {
+  proposals: Array<ActionProposalWire & { scope: ProposalScopeWire }>;
+  more: boolean;
+}
+
+/** One machine meter that gates new task starts (capability `settings`, DPES-1105). GPU is never gated. */
+export type LoadMeterName = "cpu" | "memory" | "disk";
+
+/** The three machine load limits as whole percents from 50 to 100; 100 turns that meter's check off. */
+export interface LoadLimitsWire {
+  cpu_percent: number;
+  memory_percent: number;
+  disk_percent: number;
+}
+
+/** What the gate knows of one meter: a 60 second mean (whole percent), nothing yet, or a check that is off. */
+export type LoadMeterWire =
+  | { meter: LoadMeterName; state: "mean"; mean_percent: number }
+  | { meter: LoadMeterName; state: "unknown"; reason: "warming_up" | "unavailable" }
+  | { meter: LoadMeterName; state: "off" };
+
+/** The meter that holds new starts back, with the mean that closed it and the mean at which it reopens. */
+export interface LoadHoldWire {
+  meter: LoadMeterName;
+  mean_percent: number;
+  limit_percent: number;
+  reopen_percent: number;
+}
+
+/** `settings.get` and `settings.set` result. `feed` is `disabled_by_environment` only for a test daemon. */
+export interface SettingsWire {
+  load: LoadLimitsWire;
+  gate: { state: "open" | "closed"; hold: LoadHoldWire | null; meters: LoadMeterWire[] };
+  feed?: "sampler" | "disabled_by_environment";
+  /** Phase 3 groups. Absent from a daemon that cannot change them (DPES-1105). */
+  supervision?: SupervisionWire;
+  wake_limits?: WakeLimitsWire;
+  /** Whether chat may propose tasks that end in a pull request. Absent from an older daemon (DPES-1105). */
+  chat_pr_delivery?: boolean;
+  /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
+  mcp?: McpWire;
+}
+
+/** `settings.get` mcp group: whether the read-only task tools are on. Off by default. */
+export interface McpWire {
+  enabled: boolean;
+}
+
+/** `settings.get` supervision group: the stall-check intervals in seconds and the attempt wall-time bound in minutes. */
+export interface SupervisionWire {
+  base_interval_secs: number;
+  min_interval_secs: number;
+  attempt_wall_minutes: number;
+}
+
+/** `settings.get` wake_limits group. `null` is no limit. */
+export interface WakeLimitsWire {
+  hourly_cap: number | null;
+  daily_cap: number | null;
+  daily_token_budget: number | null;
+}
+
+/** `settings.set` patch: only the groups and fields that change; `null` in a wake limit clears it. */
+export interface SettingsPatchWire {
+  load?: Partial<LoadLimitsWire>;
+  supervision?: Partial<SupervisionWire>;
+  wake_limits?: Partial<WakeLimitsWire>;
+  chat_pr_delivery?: boolean;
+  mcp?: McpWire;
+}
+
+/** Where a wake record or a monitoring count belongs; the same shape as a conversation target. */
+export type MonitoringTargetWire = ConversationWireTarget;
+
+/** One wake record inside `conversations.get`. `state`, `outcome` and `skip_reason` stay strings so unknown values survive. */
+export interface WakeRecordWire {
+  id: string;
+  event: string;
+  subject: string;
+  notice: string;
+  state: string;
+  outcome: string | null;
+  skip_reason: string | null;
+  turn_id: string | null;
+  anchor_sequence: number;
+  notify: boolean;
+  seen: boolean;
+  created_at: string;
+}
+
+/** `monitoring.get` result, and the result of `monitoring.set`. `mode` and `reason` stay strings so unknown values survive. */
+export interface MonitoringWire {
+  authority: "none";
+  mode: string;
+  paused: Array<{ target: MonitoringTargetWire; reason: string; until: string | null }>;
+  unseen: Array<{ target: MonitoringTargetWire; count: number }>;
+  epoch: string;
+  /** Phase 5b: set while the mode is `away`. Absent from a daemon without `standing_approvals`. */
+  away_since_ms?: number | null;
+  brief_pending?: boolean;
+}
+
+/** Totals for the return brief window (capability `standing_approvals`, DPES-1105 Phase 5b). */
+export interface BriefCountsWire {
+  tasks_succeeded: number;
+  tasks_failed: number;
+  tasks_stalled: number;
+  tasks_running: number;
+  proposals_approved_by_user: number;
+  proposals_approved_by_grant: number;
+  executed_by_grant: number;
+  failed_under_grant: number;
+  proposals_waiting: number;
+  deliveries_waiting: number;
+  decisions_held: number;
+  grant_uses: number;
+  grants_expired: number;
+  grants_revoked: number;
+  quiet_updates: number;
+  replies_paused_by_limit: number;
+}
+
+/** A standing approval used, expired or revoked in the window. `scope_label` is a project code or a cut title. */
+export interface BriefGrantWire {
+  id: string;
+  scope_kind: "project" | "workstream" | (string & {});
+  scope_label: string;
+  uses_in_window: number;
+  uses_used: number;
+  max_uses: number;
+  status: string;
+}
+
+/** One decision or problem in the brief. `kind` and `state` stay strings so a newer word survives. */
+export interface BriefItemWire {
+  kind: string;
+  id: string;
+  title: string;
+  state: string;
+  project: string | null;
+  at_ms: number;
+}
+
+export interface BriefWire {
+  from_ms: number;
+  to_ms: number;
+  /** True while the user is still away: the window ends now. */
+  open: boolean;
+  counts: BriefCountsWire;
+  grants: BriefGrantWire[];
+  waiting: BriefItemWire[];
+  attention: BriefItemWire[];
+}
+
+/** `monitoring.brief` result: the brief, or `null` when none is due. */
+export interface BriefResultWire {
+  authority: "none";
+  brief: BriefWire | null;
+}
+
+/** `monitoring.brief_ack` result. */
+export interface BriefAckWire {
+  authority: "none";
+  brief_pending: boolean;
+}
+
+/** `monitoring.ack` result. */
+export interface MonitoringAckWire {
+  authority: "none";
+  acked: number;
+}
+
+/** One decision hold (capability `holds`). `subject_kind` is `approval` (subject id is the task id) or `proposal`; both stay strings. */
+export interface HoldWire {
+  id: string;
+  subject_kind: string;
+  subject_id: string;
+  /** `YYYY-MM-DD`: the day the decision returns. */
+  until_date: string;
+  state: string;
+}
+
+/** `holds.set` and `holds.release` result. */
+export interface HoldResultWire {
+  hold: HoldWire;
+}
+
+/** `holds.list` result: the holds in force now. */
+export interface HoldsListWire {
+  holds: HoldWire[];
+}
+
+/** One check of a pull request. `name` is remote text; `result` is the host's word for the outcome (pass, fail, pending). */
+export interface PullCheckWire {
+  name: string;
+  result: string;
+}
+
+/** What `merge_verdict` and the merge worker last said of a task's merge request; null when none was made. */
+export interface PullMergeWire {
+  state: string;
+  refusal: string | null;
+}
+
+/** The facts of a pull request the daemon last read, shared by a `pulls.*` row and a `delivery.merge` card's `target.pull`. */
+export interface PullFactsWire {
+  merge_method: string;
+  required_total: number;
+  required_passed: number;
+  required_failed: number;
+  checks: PullCheckWire[];
+  observed_age_secs: number;
+  /** The refusal code `merge_verdict` gives now (for example `checks_red`); null when a merge would be allowed. */
+  refusal?: string | null;
+}
+
+/** One watched pull request (capability `landing`). `state` is open, merged or closed; `title`, `branch` and `base_branch` are remote text. */
+export interface PullWire {
+  task_id: string;
+  number: number;
+  state: string;
+  /** The full 40 character commit. */
+  head_sha: string;
+  base_branch: string;
+  branch: string;
+  /** A boolean or the host's word; read by one mapping function. */
+  mergeable: boolean | string | null;
+  required_total: number;
+  required_passed: number;
+  required_failed: number;
+  checks: PullCheckWire[];
+  title: string;
+  observed_age_secs: number;
+  merge: PullMergeWire | null;
+}
+
+/** `pulls.list` result. */
+export interface PullsListWire {
+  pulls: PullWire[];
+}
+
+/** `pulls.refresh` result: the one row, after a fresh read. */
+export type PullsRefreshWire = PullWire;
+
+/** What a standing approval is bound to: one project (by its short code) or one workstream. `label` is a folder name or a title, never a path. */
+export interface GrantScopeWire {
+  kind: "project" | "workstream" | (string & {});
+  id: string;
+  label?: string;
+}
+
+/** One standing approval (capability `standing_approvals`, DPES-1105 Phase 5). `status` stays a string so a newer state survives. */
+export interface GrantWire {
+  id: string;
+  scope: GrantScopeWire;
+  kinds: string[];
+  created_at_ms: number;
+  expires_at_ms: number;
+  max_uses: number;
+  uses_used: number;
+  token_budget: number;
+  /** Tokens the tasks started under the grant reported so far; tasks that report none count zero. */
+  tokens_spent: number;
+  status: "active" | "revoked" | "expired" | "exhausted" | "budget_exhausted" | (string & {});
+  revoked_at_ms: number | null;
+  /** N8 merge grant only: the head branch must start with this. Null on any other grant. */
+  branch_prefix?: string | null;
+  /** True for an unattended merge grant. Absent from older daemons. */
+  confirm_unattended_merge?: boolean;
+}
+
+/** The limits and the kinds a grant may name; the form offers nothing else. */
+export interface GrantPolicyWire {
+  grantable_kinds: string[];
+  default_expires_in_secs: number;
+  max_expires_in_secs: number;
+  min_expires_in_secs: number;
+  default_max_uses: number;
+  max_max_uses: number;
+  max_token_budget: number;
+  /** N8: true when the daemon takes an unattended merge grant. The merge kind is never in `grantable_kinds`. */
+  merge_kind_available?: boolean;
+  merge_default_max_uses?: number;
+  merge_max_max_uses?: number;
+  merge_max_expires_in_secs?: number;
+}
+
+/** `grants.list` result. */
+export interface GrantsListWire {
+  grants: GrantWire[];
+  more: boolean;
+  policy: GrantPolicyWire;
+}
+
+/** `grants.create` params (user-only). `token_budget` is required. */
+export interface GrantsCreateParams {
+  scope: { kind: "project" | "workstream"; id: string };
+  kinds: string[];
+  expires_in_secs: number;
+  max_uses: number;
+  token_budget: number;
+  /** Sent as true only for an unattended merge grant (`delivery.merge`). */
+  confirm_unattended_merge?: boolean;
+  branch_prefix?: string;
+}
+
+/** `grants.create` result. */
+export interface GrantCreateResultWire {
+  grant: GrantWire;
+}
+
+/** `grants.revoke` result (user-only). `stopped` counts approved actions that had not started and were failed. */
+export interface GrantRevokeResultWire {
+  grant: GrantWire;
+  stopped: number;
+}
+
+/** One orchestrator note on the wire (capability `standing_approvals`, DPES-1105 5b). */
+export interface NoteWire {
+  position: number;
+  body: string;
+}
+
+/** `notes.list` and `notes.set` result: one scope's notes in order and the limits the editor must respect. */
+export interface NotesWire {
+  /** `global`, or `workstream:` plus a workstream id. */
+  scope: string;
+  notes: NoteWire[];
+  limits: { max_notes: number; max_bytes: number };
+}
+
+/** `notes.set` result: the scope and how many notes it now holds. It carries no note text (the reply is cached). */
+export interface NotesSetWire {
+  scope: string;
+  count: number;
+}
+
+/** A task the global conversation routed to this workstream (DPES-1105 6a). `title` is the daemon's short objective. */
+export interface ConversationRoutedInWire {
+  task_id: string;
+  title: string;
+  routed_at: string;
+  state: string;
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */
@@ -654,6 +1083,11 @@ export interface ConversationWirePage {
   proposals?: ActionProposalWire[];
   /** True when the daemon held more decided proposals than it sent (count or byte budget). Pending ones are always sent. Absent from older daemons. */
   proposals_more?: boolean;
+  /** The scope's newest wake records, oldest first. Absent from daemons without `monitoring`. */
+  wake_records?: WakeRecordWire[];
+  wake_records_more?: boolean;
+  /** Workstream target only: tasks the global conversation routed here, newest first. Absent or empty otherwise (DPES-1105). */
+  routed_in?: ConversationRoutedInWire[];
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */

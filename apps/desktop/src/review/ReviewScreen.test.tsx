@@ -12,6 +12,7 @@ import {
   type ReviewEvidenceSource,
 } from "./sources";
 import { DIFF, approval, evidenceFor, evidenceSource, fail, makeClient, taskRecord, type TestClient } from "./testing";
+import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 import type { Approval } from "../daemon/types";
 
 interface Setup {
@@ -276,6 +277,16 @@ describe("Accept / Reject", () => {
     await waitFor(() => expect(reject().disabled).toBe(false));
     await userEvent.click(accept());
     expect(client.callsOf("approvals.resolve")).toEqual([]);
+  });
+
+  it("a session that is not the approver cannot Accept or Reject, and the plain-words notice says why", async () => {
+    const { client } = setup();
+    await ready();
+    client.setApprover(false);
+    await waitFor(() => expect(accept().disabled).toBe(true));
+    expect(reject().disabled).toBe(true);
+    // The notice shows once with the decision blockers and once in the Request changes panel.
+    expect(screen.getAllByText(APPROVER_REQUIRED_NOTICE).length).toBeGreaterThan(0);
   });
 
   it("never lets the real D7 fixture enable Accept (default fixtures in real mode)", async () => {

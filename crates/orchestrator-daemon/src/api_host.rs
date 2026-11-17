@@ -14,21 +14,26 @@
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use orchestrator_host_metrics::{HostMetrics, SysinfoProbe, DEFAULT_INTERVAL};
 
+use super::load::{sample_of, LoadHandle};
 use super::*;
 
 pub(super) struct HostService {
     data_dir: PathBuf,
     metrics: OnceLock<HostMetrics>,
+    /// The load gate each sample is handed to, when the sampler feeds one.
+    feed: Option<Arc<LoadHandle>>,
 }
 
 impl HostService {
-    pub(super) fn new(data_dir: &Path) -> Self {
+    pub(super) fn new(data_dir: &Path, feed: Option<Arc<LoadHandle>>) -> Self {
         Self {
             data_dir: data_dir.to_owned(),
             metrics: OnceLock::new(),
+            feed,
         }
     }
 
@@ -38,7 +43,17 @@ impl HostService {
 
     fn metrics(&self) -> &HostMetrics {
         self.metrics.get_or_init(|| {
-            HostMetrics::start(SysinfoProbe::new(self.data_dir.clone()), DEFAULT_INTERVAL)
+            let probe = SysinfoProbe::new(self.data_dir.clone());
+            match &self.feed {
+                // The observer runs on the sampler thread: it only records the sample.
+                Some(load) => {
+                    let load = load.clone();
+                    HostMetrics::start_observed(probe, DEFAULT_INTERVAL, move |meters| {
+                        load.record(sample_of(meters), Instant::now());
+                    })
+                }
+                None => HostMetrics::start(probe, DEFAULT_INTERVAL),
+            }
         })
     }
 }

@@ -4,7 +4,8 @@
 
 use crate::client::map_remote;
 use crate::{
-    CallContext, Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig,
+    ApproverSecret, CallContext, Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler,
+    Server, ServerConfig, DEFAULT_IO_TIMEOUT,
 };
 use serde_json::{json, Value};
 use std::path::Path;
@@ -70,23 +71,35 @@ fn orchestrator_actions_is_named_and_round_trips() {
 
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
-fn serve(dir: &Path) -> JoinHandle<()> {
+fn serve(dir: &Path, approver: &Arc<ApproverSecret>) -> JoinHandle<()> {
     let dir = dir.to_path_buf();
+    // `ApproverSecret` is deliberately not `Clone`; the server gets its own copy.
+    let approver = ApproverSecret::from_wire(&approver.to_wire()).unwrap();
     thread::spawn(move || {
         Server::serve_with_handler(
             ServerConfig::new(dir, "actions-test")
                 .with_idle_timeout(Duration::from_secs(30))
-                .with_stream_timeout(Duration::from_secs(5)),
+                .with_stream_timeout(Duration::from_secs(5))
+                .with_approver(approver),
             Arc::new(Echo),
         )
         .unwrap();
     })
 }
 
-fn connect(dir: &Path, capabilities: &[Capability]) -> Client {
+fn connect(
+    dir: &Path,
+    capabilities: &[Capability],
+    approver: Option<&Arc<ApproverSecret>>,
+) -> Client {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        match Client::connect_with_capabilities(dir, capabilities) {
+        match Client::connect_with_approver(
+            dir,
+            capabilities,
+            DEFAULT_IO_TIMEOUT,
+            approver.cloned(),
+        ) {
             Ok(client) => return client,
             Err(error) => {
                 assert!(Instant::now() < deadline, "daemon not ready: {error}");
@@ -99,8 +112,9 @@ fn connect(dir: &Path, capabilities: &[Capability]) -> Client {
 #[test]
 fn actions_resolve_needs_orchestrator_actions() {
     let dir = TempDir::new().unwrap();
-    let daemon = serve(dir.path());
-    let mut without = connect(dir.path(), &[Capability::Health]);
+    let approver = Arc::new(ApproverSecret::generate().unwrap());
+    let daemon = serve(dir.path(), &approver);
+    let mut without = connect(dir.path(), &[Capability::Health], None);
     assert!(matches!(
         without.actions_resolve("proposal-1", "approve", DIGEST, "key-1"),
         Err(IpcError::UnsupportedCapability)
@@ -112,9 +126,11 @@ fn actions_resolve_needs_orchestrator_actions() {
     ));
     drop(without);
 
+    // An approver, so a refusal here could only be the capability gate.
     let mut with = connect(
         dir.path(),
         &[Capability::Health, Capability::OrchestratorActions],
+        Some(&approver),
     );
     let result = with
         .actions_resolve("proposal-1", "approve", DIGEST, "key-1")

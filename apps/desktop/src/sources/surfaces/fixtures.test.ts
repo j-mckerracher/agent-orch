@@ -73,7 +73,7 @@ describe("fixture surfaces (D9-D16)", () => {
     const s = createFixtureSurfaces({ now: clock });
     const global = await s.conversation.transcript({ kind: "global" });
     const project = await s.conversation.transcript({ kind: "project", projectId: "fixture:project-alpha" });
-    expect(global.status === "ok" && global.data.entries.map((e) => e.id)).toEqual(["fixture:msg-1", "fixture:msg-2"]);
+    expect(global.status === "ok" && global.data.entries.map((e) => e.id)).toEqual(["fixture:msg-1", "fixture:msg-2", "fixture:wake-msg-1", "fixture:wake-turn-1:reply"]);
     expect(project.status === "ok" && project.data.entries.map((e) => e.kind)).toEqual(["message", "proposal"]);
   });
 
@@ -84,7 +84,60 @@ describe("fixture surfaces (D9-D16)", () => {
     const reject = await s.conversation.resolve("fixture:proposal-1", "reject", "0".repeat(64));
     expect(reject).toMatchObject({ simulated: true, proposal: null, notice: "Fixture data: nothing was changed." });
     const global = await s.conversation.transcript({ kind: "global" });
-    expect(global.status === "ok" && global.data.proposals?.map((item) => item.state)).toEqual(["pending", "pending"]);
+    expect(global.status === "ok" && global.data.proposals?.map((item) => item.state)).toEqual([
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "pending",
+      "failed",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+  });
+
+  it("holds one fixture card per task kind and one denied task, all on the reply's turn", async () => {
+    const s = createFixtureSurfaces({ now: clock });
+    const global = await s.conversation.transcript({ kind: "global" });
+    const proposals = global.status === "ok" ? (global.data.proposals ?? []) : [];
+    expect(proposals.map((item) => item.kind)).toEqual([
+      "workstream.create",
+      "objective.add",
+      "task.propose",
+      "task.cancel",
+      "task.retry",
+      "workstream.link_task",
+      "task.propose",
+      "task.revise",
+      "decision.hold",
+      "project.remove",
+    ]);
+    expect(new Set(proposals.map((item) => item.turnId))).toEqual(new Set(["fixture:turn-1"]));
+    expect(new Set(proposals.map((item) => item.digest)).size).toBe(proposals.length);
+    expect(proposals.map((item) => item.denial)).toEqual([null, null, null, null, null, null, "delivery_not_authorized", null, null, null]);
+    expect(proposals.filter((item) => item.errorCode === "action_denied")).toHaveLength(1);
+  });
+
+  it("lists every pending fixture card in the decision queue, in Global scope, and none when the scenario is empty", async () => {
+    const queue = await createFixtureSurfaces({ now: clock }).decisions.queue();
+    const items = queue.status === "ok" ? queue.data.proposals : [];
+    expect(items.map((item) => item.proposal.id)).toEqual([
+      "fixture:proposal-1",
+      "fixture:proposal-2",
+      "fixture:proposal-3",
+      "fixture:proposal-4",
+      "fixture:proposal-5",
+      "fixture:proposal-6",
+      "fixture:proposal-8",
+      "fixture:proposal-9",
+      "fixture:proposal-10",
+    ]);
+    expect(items.every((item) => item.proposal.state === "pending" && item.scope.kind === "global")).toBe(true);
+
+    const empty = await createFixtureSurfaces({ scenario: "empty", now: clock }).decisions.queue();
+    expect(empty.status === "ok" && empty.data.proposals).toEqual([]);
   });
 
   it("keeps workstream transcripts unknown instead of showing project notes", async () => {

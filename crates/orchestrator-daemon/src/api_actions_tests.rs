@@ -12,27 +12,33 @@ use super::*;
 const CREATE: &str = r#"{"kind": "workstream.create", "ref": "w1", "title": "Alpha"}"#;
 const PLAN: &str = r#"{"kind": "objective.add", "workstream_ref": "w1", "title": "Plan"}"#;
 
-fn new_api() -> (tempfile::TempDir, DaemonApi) {
+pub(super) fn new_api() -> (tempfile::TempDir, DaemonApi) {
     let directory = tempfile::tempdir().unwrap();
     let api = DaemonApi::new(directory.path()).unwrap();
     (directory, api)
 }
 
-fn call(api: &DaemonApi, method: &str, params: Value) -> Result<Value, RpcError> {
+pub(super) fn call(api: &DaemonApi, method: &str, params: Value) -> Result<Value, RpcError> {
     api.dispatch(method, params)
 }
 
 /// Stores one accepted block as the proposals of a global turn run at `level`, as a
 /// finished reply does.
 fn propose_at(api: &DaemonApi, turn: &str, level: PermissionLevel, actions: &str) -> Vec<String> {
+    propose_in(api, &ConversationTarget::Global, turn, level, actions)
+}
+
+/// `propose_at` for a turn of any conversation. The block is parsed as a global one, so it
+/// may hold actions that a workstream conversation would have refused when parsing.
+pub(super) fn propose_in(
+    api: &DaemonApi,
+    target: &ConversationTarget,
+    turn: &str,
+    level: PermissionLevel,
+    actions: &str,
+) -> Vec<String> {
     api.store
-        .begin_conversation_turn(
-            &ConversationTarget::Global,
-            turn,
-            "hi",
-            "test-runtime",
-            "1.0.0",
-        )
+        .begin_conversation_turn(target, turn, "hi", "test-runtime", "1.0.0")
         .unwrap();
     api.store
         .record_conversation_turn_permission(
@@ -52,12 +58,17 @@ fn propose_at(api: &DaemonApi, turn: &str, level: PermissionLevel, actions: &str
 }
 
 /// The proposals of a turn at `Restricted`, the only level that carries them.
-fn propose(api: &DaemonApi, turn: &str, actions: &str) -> Vec<String> {
+pub(super) fn propose(api: &DaemonApi, turn: &str, actions: &str) -> Vec<String> {
     propose_at(api, turn, PermissionLevel::Restricted, actions)
 }
 
 /// Resolves with the digest the proposal is stored under, as the desktop sends it.
-fn resolve(api: &DaemonApi, id: &str, decision: &str, key: &str) -> Result<Value, RpcError> {
+pub(super) fn resolve(
+    api: &DaemonApi,
+    id: &str,
+    decision: &str,
+    key: &str,
+) -> Result<Value, RpcError> {
     let digest = proposal(api, id).digest;
     call(
         api,
@@ -66,11 +77,11 @@ fn resolve(api: &DaemonApi, id: &str, decision: &str, key: &str) -> Result<Value
     )
 }
 
-fn proposal(api: &DaemonApi, id: &str) -> ActionProposal {
+pub(super) fn proposal(api: &DaemonApi, id: &str) -> ActionProposal {
     api.store.action_proposal(id).unwrap().unwrap()
 }
 
-fn create_workstream(api: &DaemonApi, title: &str, key: &str) -> String {
+pub(super) fn create_workstream(api: &DaemonApi, title: &str, key: &str) -> String {
     let created = call(
         api,
         "workstreams.create",
@@ -547,6 +558,8 @@ fn a_turn_above_restricted_never_gets_the_block_format() {
             history: Vec::new(),
             context: None,
             actions,
+            wake: None,
+            mcp: None,
         };
         let prompt = build_prompt(&request);
         assert!(!prompt.instructions.contains("mcao-actions"), "{level:?}");

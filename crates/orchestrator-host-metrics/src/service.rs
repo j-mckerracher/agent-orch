@@ -3,6 +3,7 @@
 
 use crate::model::{rfc3339_utc, shape, Meter, MeterState, Snapshot, ALL_METERS};
 use crate::SCHEMA_VERSION;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -55,7 +56,36 @@ pub struct HostMetrics {
 impl HostMetrics {
     /// Starts sampling `probe` immediately and then every `interval`
     /// (raised to [`MIN_INTERVAL`] when shorter).
-    pub fn start(mut probe: impl Probe, interval: Duration) -> Self {
+    pub fn start(probe: impl Probe, interval: Duration) -> Self {
+        Self::start_observed(probe, interval, |_| {})
+    }
+
+    /// Like [`HostMetrics::start`], and also calls `observer` once per sample, on
+    /// the sampler thread, with the same normalized readings the cache holds: the
+    /// fixed order cpu, memory, disk, gpu, and a meter that is `unavailable` or
+    /// `unsupported` carries its state and reason and no `value` or `total`. The
+    /// readings have no `observed_at` and a zero `sample_interval_ms` (those are
+    /// filled in when a snapshot is served), so an observer that needs a time takes
+    /// its own. Nothing is delivered before the first sample completes, and a sample
+    /// that finishes after the handle is dropped is not delivered (a delivery that
+    /// has already started is not recalled).
+    ///
+    /// The observer runs after the cache holds the sample and with no lock held, so
+    /// a slow observer never makes [`HostMetrics::snapshot`] wait or delays dropping
+    /// the handle. It does run on the sampler thread, so the next sample waits for
+    /// it. A cache not refreshed within [`STALE_AFTER_INTERVALS`] intervals goes
+    /// stale: `snapshot` then reports every meter that was `ok` as `unavailable`
+    /// until the sampler completes another sample. An observer that blocks that
+    /// long therefore blinds `host.metrics`, and the observer must do a short,
+    /// non-blocking hand-off only (push the readings to a queue or channel and
+    /// return) and never wait on a lock, a file, the network or another thread. A
+    /// panic inside it is caught and the sampler goes on; the observer is called
+    /// again with the next sample.
+    pub fn start_observed(
+        mut probe: impl Probe,
+        interval: Duration,
+        mut observer: impl FnMut(&[Meter]) + Send + 'static,
+    ) -> Self {
         let interval = interval.max(MIN_INTERVAL);
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
@@ -70,14 +100,23 @@ impl HostMetrics {
             .spawn(move || loop {
                 let meters = normalize(probe.sample());
                 let observed = SystemTime::now();
-                let mut state = worker.lock();
-                if state.stop {
-                    return;
+                {
+                    let mut state = worker.lock();
+                    state.cached = Some(Cached {
+                        observed,
+                        meters: meters.clone(),
+                    });
+                    // Read last, just before the delivery: a handle dropped while the probe
+                    // ran gets none. A drop after this read does not recall the call.
+                    if state.stop {
+                        return;
+                    }
                 }
-                state.cached = Some(Cached { observed, meters });
+                // No lock is held here, and a panicking observer must not end the sampler.
+                let _ = catch_unwind(AssertUnwindSafe(|| observer(&meters)));
                 let (state, _) = worker
                     .wake
-                    .wait_timeout_while(state, interval, |state| !state.stop)
+                    .wait_timeout_while(worker.lock(), interval, |state| !state.stop)
                     .unwrap_or_else(|error| error.into_inner());
                 if state.stop {
                     return;

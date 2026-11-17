@@ -1,0 +1,54 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import type { WakeRecord } from "../../../sources/surfaces/types";
+import { WakeLines, WakeNotice, WakeRecords } from "./WakeNotice";
+
+afterEach(cleanup);
+
+const record = (extra: Partial<WakeRecord> = {}): WakeRecord => ({
+  id: "wake-1",
+  event: "task_failed",
+  subject: "t-1",
+  notice: "Task t-1 (Fix the login bug) failed.",
+  state: "noticed",
+  outcome: null,
+  skipReason: null,
+  turnId: null,
+  anchorSequence: 1,
+  notify: true,
+  seen: false,
+  createdAt: "2026-11-16T10:00:00Z",
+  ...extra,
+});
+
+describe("WakeNotice", () => {
+  it("wake_notice_shows_the_exact_label_and_the_event_line", () => {
+    render(<WakeNotice record={record()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Update, not a reply to you");
+    expect(screen.getByText("Task t-1 (Fix the login bug) failed.")).toBeInTheDocument();
+    render(<WakeLines text="Task t-2 failed." />);
+    expect(screen.getAllByText("Update, not a reply to you")).toHaveLength(2);
+  });
+
+  it("wake_notice_a_skipped_record_names_the_reason_in_words", () => {
+    render(<WakeNotice record={record({ state: "skipped", skipReason: "mode_off" })} />);
+    expect(screen.getByText("Monitoring was off")).toBeInTheDocument();
+  });
+
+  it("wake_notice_a_deferred_record_adds_no_words_beyond_its_notice", () => {
+    const { container } = render(<WakeNotice record={record({ state: "pending" })} />);
+    expect(container.querySelector(".ws-wake-note")).toBeNull();
+  });
+
+  it("wake_notice_a_quiet_record_collapses_to_one_line_and_hides_its_notice", () => {
+    const quiet = (id: string) => record({ id, state: "handled", outcome: "quiet", notify: false, notice: `secret ${id}` });
+    render(<WakeRecords records={[quiet("a"), quiet("b")]} />);
+    expect(screen.getByText("Checked 2 updates. Nothing needs you.")).toBeInTheDocument();
+    expect(screen.queryByText(/secret/)).not.toBeInTheDocument();
+  });
+
+  it("wake_notice_state_is_in_words_not_colour", () => {
+    render(<WakeNotice record={record({ state: "failed" })} />);
+    expect(screen.getByText("The automatic reply failed.")).toBeInTheDocument();
+  });
+});

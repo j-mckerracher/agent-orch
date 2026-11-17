@@ -71,3 +71,9 @@
   margin: 0;
   font: 600 13px/1.3 var(--font-sans);
 }
+
+.ws-action-approver {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}

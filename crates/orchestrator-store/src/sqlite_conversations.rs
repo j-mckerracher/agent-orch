@@ -41,9 +41,12 @@ use sqlx::SqlitePool;
 use crate::sqlite_actions::{
     delete_scope_proposals, insert_block_proposals, ActionBlockOutcome, TurnBlock,
 };
+use crate::sqlite_conversation_usage::TurnTrigger;
 use crate::sqlite_history::{
     record_audit, set_clear_gate, tombstone_conversation_sends, ClearOutcome,
 };
+use crate::sqlite_notes::delete_scope_notes;
+use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
 
 /// Largest accepted user message, in bytes.
@@ -71,6 +74,14 @@ impl ConversationTarget {
         match self {
             Self::Global => "conversation:global".to_owned(),
             Self::Workstream(id) => format!("conversation:workstream:{id}"),
+        }
+    }
+
+    /// The `orchestrator_notes` scope of this conversation (migration 0050).
+    pub(crate) fn notes_scope(&self) -> String {
+        match self {
+            Self::Global => "global".to_owned(),
+            Self::Workstream(id) => format!("workstream:{id}"),
         }
     }
 
@@ -176,6 +187,8 @@ pub struct ConversationTurn {
     /// What the reply's action block did. `None` when the reply had no block, or the
     /// turn predates migration 0037.
     pub action_block: Option<ActionBlockOutcome>,
+    /// What opened the turn: a user message, or an automatic wake (DPES-1105 phase 3).
+    pub trigger: TurnTrigger,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -261,7 +274,7 @@ macro_rules! entry_columns {
 macro_rules! turn_columns {
     () => {
         "id, conversation_id, state, error_code, runtime_name, runtime_version, reply_bytes, \
-         permission_level, permission_profile, action_block, created_at, updated_at"
+         permission_level, permission_profile, action_block, trigger_kind, created_at, updated_at"
     };
 }
 
@@ -278,6 +291,28 @@ impl SqliteStore {
         text: &str,
         runtime_name: &str,
         runtime_version: &str,
+    ) -> Result<BegunTurn, ConversationError> {
+        self.begin_conversation_turn_as(
+            target,
+            turn_id,
+            text,
+            runtime_name,
+            runtime_version,
+            TurnTrigger::User,
+        )
+    }
+
+    /// Like [`Self::begin_conversation_turn`], and records what opened the turn. A wake
+    /// turn (DPES-1105 phase 3) stores its opening text, written by the daemon, as the
+    /// opening entry and is marked by [`TurnTrigger::Wake`].
+    pub fn begin_conversation_turn_as(
+        &self,
+        target: &ConversationTarget,
+        turn_id: &str,
+        text: &str,
+        runtime_name: &str,
+        runtime_version: &str,
+        trigger: TurnTrigger,
     ) -> Result<BegunTurn, ConversationError> {
         target.validate()?;
         if turn_id.is_empty() || runtime_name.is_empty() || runtime_version.is_empty() {
@@ -325,13 +360,14 @@ impl SqliteStore {
             }
             sqlx::query(
                 "INSERT INTO conversation_turns \
-                 (id, conversation_id, state, runtime_name, runtime_version) \
-                 VALUES (?, ?, 'running', ?, ?)",
+                 (id, conversation_id, state, runtime_name, runtime_version, trigger_kind) \
+                 VALUES (?, ?, 'running', ?, ?, ?)",
             )
             .bind(&turn_id)
             .bind(&conversation_id)
             .bind(&runtime_name)
             .bind(&runtime_version)
+            .bind(trigger.as_str())
             .execute(&mut *transaction)
             .await?;
             let user_entry = insert_entry(
@@ -446,6 +482,39 @@ impl SqliteStore {
         })
     }
 
+    /// Marks a turn as one the user's relay handed a scout report to (DPES-1105 phase 4a,
+    /// column `read_report` of migration 0044), so a proposal made in it can say so. Safe
+    /// to repeat. A turn that does not exist fails with `TurnNotFound`.
+    pub fn mark_turn_read_report(&self, turn_id: &str) -> Result<(), ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let result = sqlx::query("UPDATE conversation_turns SET read_report = 1 WHERE id = ?")
+                .bind(&turn_id)
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            if result.rows_affected() == 1 {
+                Ok(())
+            } else {
+                Err(ConversationError::TurnNotFound)
+            }
+        })
+    }
+
+    /// Whether the turn was handed a scout report. `false` for a turn that does not exist.
+    pub fn turn_read_report(&self, turn_id: &str) -> Result<bool, ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let flag: Option<i64> =
+                sqlx::query_scalar("SELECT read_report FROM conversation_turns WHERE id = ?")
+                    .bind(&turn_id)
+                    .fetch_optional(&pool)
+                    .await?;
+            Ok(flag.is_some_and(|flag| flag != 0))
+        })
+    }
+
     /// End a running turn. Returns the terminal entry, or `None` when the turn
     /// was already terminal (the first terminal state wins).
     pub fn finish_conversation_turn(
@@ -487,6 +556,11 @@ impl SqliteStore {
     /// the effective proposal id of each action comes back in block order. An action
     /// that matches a pending card returns that card's id.
     ///
+    /// A block is stored whole or not at all. One that would leave the conversation with
+    /// more than 20 pending proposals stores nothing and is recorded as
+    /// [`ActionBlockOutcome::Rejected`], and the list that comes back is empty, as it is
+    /// for a block refused before it got here. The turn still completes.
+    ///
     /// This is a trusted-caller API. It does not check the session's negotiated
     /// capabilities. The daemon applies the `orchestrator_actions` gate, and a caller
     /// must pass [`TurnBlock::Stripped`] when the session did not negotiate it.
@@ -513,14 +587,20 @@ impl SqliteStore {
                 TurnBlock::Stripped => (Some(ActionBlockOutcome::Stripped), Vec::new()),
                 TurnBlock::Rejected => (Some(ActionBlockOutcome::Rejected), Vec::new()),
                 TurnBlock::Accepted(action_block) => {
-                    let effective = insert_block_proposals(
+                    let stored = insert_block_proposals(
                         &mut transaction,
                         &turn.conversation_id,
                         &turn_id,
                         &action_block,
                     )
                     .await?;
-                    (Some(ActionBlockOutcome::Accepted), effective)
+                    // `None`: the block would have left the conversation over its limit of
+                    // pending proposals. Nothing of it was kept, so the turn records it as
+                    // rejected here, in the same transaction that completes the turn.
+                    match stored {
+                        Some(effective) => (Some(ActionBlockOutcome::Accepted), effective),
+                        None => (Some(ActionBlockOutcome::Rejected), Vec::new()),
+                    }
                 }
             };
             if let Some(outcome) = outcome {
@@ -569,6 +649,64 @@ impl SqliteStore {
         conversation_call(self, move |pool| async move {
             let mut connection = pool.acquire().await?;
             Ok(load_turn(&mut connection, &turn_id).await?)
+        })
+    }
+
+    /// The turn of `target` that is running now, if any.
+    pub fn running_conversation_turn(
+        &self,
+        target: &ConversationTarget,
+    ) -> Result<Option<ConversationTurn>, ConversationError> {
+        target.validate()?;
+        let conversation_id = target.id();
+        conversation_call(self, move |pool| async move {
+            let mut connection = pool.acquire().await?;
+            Ok(sqlx::query(concat!(
+                "SELECT ",
+                turn_columns!(),
+                " FROM conversation_turns WHERE conversation_id = ? AND state = 'running'"
+            ))
+            .bind(&conversation_id)
+            .fetch_optional(&mut *connection)
+            .await?
+            .map(decode_turn)
+            .transpose()?)
+        })
+    }
+
+    /// The reply text of a turn, cut to at most `max_bytes` on a character boundary: its
+    /// `reply_chunk` entries joined in order. Empty when the turn wrote no reply. The daemon
+    /// uses it to recognize the quiet token without reading a whole reply.
+    pub fn turn_reply_text(
+        &self,
+        turn_id: &str,
+        max_bytes: usize,
+    ) -> Result<String, ConversationError> {
+        let turn_id = turn_id.to_owned();
+        conversation_call(self, move |pool| async move {
+            let mut connection = pool.acquire().await?;
+            let chunks: Vec<String> = sqlx::query_scalar(
+                "SELECT body FROM conversation_entries \
+                 WHERE turn_id = ? AND kind = 'reply_chunk' ORDER BY sequence",
+            )
+            .bind(&turn_id)
+            .fetch_all(&mut *connection)
+            .await?;
+            let mut reply = String::new();
+            for chunk in chunks {
+                if reply.len() >= max_bytes {
+                    break;
+                }
+                reply.push_str(&chunk);
+            }
+            if reply.len() > max_bytes {
+                let mut end = max_bytes;
+                while !reply.is_char_boundary(end) {
+                    end -= 1;
+                }
+                reply.truncate(end);
+            }
+            Ok(reply)
         })
     }
 
@@ -647,8 +785,8 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
-    /// Permanently delete one conversation's messages, replies, turns and action
-    /// proposals (DPES-1105).
+    /// Permanently delete one conversation's messages, replies, turns, action
+    /// proposals and the user's notes for it (DPES-1105).
     ///
     /// A running turn refuses the clear with [`ConversationError::TurnRunning`], and
     /// nothing is deleted. The check and the delete share one `BEGIN IMMEDIATE`
@@ -662,6 +800,7 @@ impl SqliteStore {
         let conversation_id = target.id();
         let (kind, workstream_id) = target.parts();
         let (kind, workstream_id) = (kind, workstream_id.map(str::to_owned));
+        let notes_scope = target.notes_scope();
         let outcome = conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let running: Option<String> = sqlx::query_scalar(
@@ -673,6 +812,9 @@ impl SqliteStore {
             if let Some(turn_id) = running {
                 return Err(ConversationError::TurnRunning { turn_id });
             }
+            // The user's notes for this conversation go with its history, even when the
+            // history is already empty. Grants and their events stay.
+            delete_scope_notes(&mut transaction, &notes_scope).await?;
             let entries: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?",
             )
@@ -685,7 +827,12 @@ impl SqliteStore {
             .bind(&conversation_id)
             .fetch_one(&mut *transaction)
             .await?;
-            if entries == 0 && turns == 0 {
+            let wake_records: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM wake_records WHERE scope = ?")
+                    .bind(&conversation_id)
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            if entries == 0 && turns == 0 && wake_records == 0 {
                 let clear_generation: Option<i64> =
                     sqlx::query_scalar("SELECT clear_generation FROM conversations WHERE id = ?")
                         .bind(&conversation_id)
@@ -703,6 +850,9 @@ impl SqliteStore {
             let turns = u64::try_from(turns).unwrap_or(0);
             set_clear_gate(&mut transaction, true).await?;
             delete_scope_proposals(&mut transaction, &conversation_id).await?;
+            // The wake turn ledger and the usage receipts stay: they hold no text, and a
+            // clear must not reset a cap or the token budget.
+            delete_scope_wake_records(&mut transaction, &conversation_id).await?;
             tombstone_conversation_sends(&mut transaction, &conversation_id).await?;
             sqlx::query("DELETE FROM conversation_entries WHERE conversation_id = ?")
                 .bind(&conversation_id)
@@ -911,6 +1061,7 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
     let action_block = action_block
         .map(|name| ActionBlockOutcome::parse(&name))
         .transpose()?;
+    let trigger: String = row.try_get("trigger_kind")?;
     Ok(ConversationTurn {
         id: row.try_get("id")?,
         conversation_id: row.try_get("conversation_id")?,
@@ -922,6 +1073,7 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
         permission_level,
         permission_profile: row.try_get("permission_profile")?,
         action_block,
+        trigger: TurnTrigger::from_column(&trigger)?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })

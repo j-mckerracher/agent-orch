@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { Approval } from "../../../daemon/types";
@@ -173,6 +173,7 @@ describe("tabs", () => {
       "Candidates",
       "Delivery",
       "Resolved",
+      "Held",
     ]);
     screen.getByRole("tab", { name: /Actionable/ }).focus();
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
@@ -180,7 +181,7 @@ describe("tabs", () => {
     expect(verification).toHaveAttribute("aria-selected", "true");
     expect(verification).toHaveFocus();
     expect(screen.getByRole("tabpanel")).toHaveTextContent(/no separate verification decision/i);
-    await userEvent.keyboard("{End}");
+    await userEvent.keyboard("{End}{ArrowLeft}");
     expect(screen.getByRole("tab", { name: /Resolved/ })).toHaveAttribute("aria-selected", "true");
     expect(within(screen.getByRole("tabpanel")).getByText("Nothing in this tab")).toBeTruthy();
   });
@@ -534,5 +535,67 @@ describe("fixture mode", () => {
 describe("registration", () => {
   it("registers only the #/review global view", () => {
     expect(Object.keys(reviewGlobalViews)).toEqual(["review"]);
+  });
+});
+
+describe("proposed actions", () => {
+  const pendingWire = (id: string, objective: string) => ({
+    id,
+    turn_id: "turn-1",
+    index: 0,
+    kind: "task.propose",
+    params: { kind: "task.propose", project: "p-1", objective, agent: "codex" },
+    digest: "d".repeat(64),
+    depends_on: null,
+    state: "pending",
+    result_ref: null,
+    error_code: null,
+    denial: null,
+    target: { project_name: "alpha" },
+    created_at: "2026-11-10T21:00:00Z",
+    updated_at: "2026-11-10T21:00:00Z",
+    scope: { kind: "global" },
+  });
+  const cardLink = (objective: string) => ({ name: `Open the card: create task ${objective}` });
+
+  it("the_review_view_lists_proposed_actions_above_the_decision_queue_with_links_and_no_decision_buttons", async () => {
+    liveSetup();
+    const proposed = await screen.findByRole("region", { name: "Proposed actions" });
+    expect((await within(proposed).findAllByRole("link")).length).toBeGreaterThan(0);
+    expect(proposed.compareDocumentPosition(queue()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(proposed).queryAllByRole("button")).toEqual([]);
+    expect(within(proposed).getAllByText("Fixture data").length).toBeGreaterThan(0);
+  });
+
+  it("the_proposed_actions_list_follows_the_proposals_slice_without_leaving_the_view", async () => {
+    const fake = new FakeDaemon();
+    let list = [pendingWire("proposal-1", "First task")];
+    fake.stub("actions.pending", () => ({ proposals: list, more: false }));
+    const services = createServices({ connector: fake, connection: { backoffMs: [5], requestTimeoutMs: 250 }, data: { coalesceMs: 10 } });
+    services.connection.start();
+    try {
+      await until(() => services.data.getSnapshot().proposals.status === "ready", "proposals slice");
+      const client = makeClient({ "approvals.list": () => [], "tasks.list": () => [] });
+      render(
+        <ServicesProvider services={services}>
+          <ReviewDecisionsView client={client} />
+        </ServicesProvider>,
+      );
+      expect(await screen.findByRole("link", cardLink("First task"))).toBeInTheDocument();
+
+      list = [...list, pendingWire("proposal-2", "Second task")];
+      await act(async () => services.data.refreshProposals());
+      expect(await screen.findByRole("link", cardLink("Second task"))).toBeInTheDocument();
+      expect(screen.getByTestId("proposed-actions-status")).toHaveTextContent("2 proposed actions are waiting for a decision.");
+
+      list = list.slice(1);
+      await act(async () => services.data.refreshProposals());
+      await waitFor(() => expect(screen.queryByRole("link", cardLink("First task"))).toBeNull());
+      expect(screen.getByRole("link", cardLink("Second task"))).toBeInTheDocument();
+      expect(screen.getByTestId("proposed-actions-status")).toHaveTextContent("1 proposed action is waiting for a decision.");
+    } finally {
+      services.connection.stop();
+      services.data.dispose();
+    }
   });
 });

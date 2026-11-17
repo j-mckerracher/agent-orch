@@ -14,7 +14,11 @@ const ROUNDS: usize = 10;
 fn concurrent_first_opens_all_succeed_and_record_each_migration_once() {
     let migrator = sqlx::migrate!("./migrations");
     let expected_count = migrator.iter().count() as i64;
-    let expected_version = migrator.iter().map(|migration| migration.version).max().unwrap();
+    let expected_version = migrator
+        .iter()
+        .map(|migration| migration.version)
+        .max()
+        .unwrap();
 
     for round in 0..ROUNDS {
         let directory = tempfile::tempdir().expect("temporary data directory");
@@ -26,7 +30,9 @@ fn concurrent_first_opens_all_succeed_and_record_each_migration_once() {
                 let barrier = Arc::clone(&barrier);
                 thread::spawn(move || {
                     barrier.wait();
-                    SqliteStore::new(&path).map(drop).map_err(|error| error.to_string())
+                    SqliteStore::new(&path)
+                        .map(drop)
+                        .map_err(|error| error.to_string())
                 })
             })
             .collect();
@@ -38,7 +44,10 @@ fn concurrent_first_opens_all_succeed_and_record_each_migration_once() {
             );
         }
         let (count, version) = recorded_migrations(&path);
-        assert_eq!(count, expected_count, "round {round}: migrations recorded once each");
+        assert_eq!(
+            count, expected_count,
+            "round {round}: migrations recorded once each"
+        );
         assert_eq!(version, expected_version, "round {round}: schema version");
     }
 }
