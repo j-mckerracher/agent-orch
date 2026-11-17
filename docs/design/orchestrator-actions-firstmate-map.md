@@ -14,7 +14,6 @@ Status values:
 - **HAVE.** MCAO delivers the outcome today. The cell names the crate, method or screen.
 - **PARTIAL.** Part of the outcome exists. The cell says what is missing and the phase that adds it.
 - **GAP.** No MCAO mechanism yet. The cell names the MCAO-native design and its phase.
-- **NEEDS USER DECISION.** The outcome is in scope, but how to deliver it has a cost only the user can weigh. See the decisions list in the main document.
 
 Phases are the ones in the main document: 1 context and workstream proposals, 2 task lifecycle proposals, 3 wake-up loop, 4 shapes, modes and landing, 5 standing approvals and away mode, 6 fleet.
 
@@ -24,8 +23,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- |
 | HAVE | 17 |
 | PARTIAL | 19 |
-| GAP | 31 |
-| NEEDS USER DECISION | 1 |
+| GAP | 32 |
 | Total | 68 |
 
 ## Dispatch and supervision
@@ -147,9 +145,9 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
-| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N5, approved: the MCAO repository is registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) is a per-action approval, never grantable. |
+| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7: not now. The orchestrator gets no self-patching or self-publishing support. |
 | M3 | Curate durable operational memory (stow) | GAP | Phase 5: user-visible orchestrator notes the snapshot includes, editable and deletable. |
-| M4 | Unattended push to a protected branch | NEEDS USER DECISION | Decision N6: a scoped standing approval, not a hard no. |
+| M4 | Unattended push to a protected branch | GAP | Phase 5: a per-project setting the user turns on, built as a merge-kind standing approval (decision N8). Off until set. Green required checks only. |
 
 ## Firstmate rules and what they protect
 
@@ -160,7 +158,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | Hard rule 3: never tear down unlanded work | Work that exists nowhere else | No action kind discards a worktree or branch in phases 1 to 5. |
 | Hard rule 4: workers never address the user | One interface | Task agents have no conversation write path. Their results reach the user through the orchestrator and daemon-confirmed records. |
 | Hard rule 5: report outcomes faithfully | Trust in the summary | The UI shows only daemon-confirmed results. The preamble forbids early claims. |
-| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Decision N5. |
+| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Nothing is built for self-publishing (N7). Publishing to MCAO's own upstream is never grantable. |
 | "Evidence is never authorization" | Action from a report or recommendation alone | A report produces proposals, never execution. |
 | "Away never changes the authority set" | Silent widening while nobody watches | Away is a preset of grants the user made. It adds none. |
 | "Standing autonomy is scoped consent per project" | Unbounded delegation | Standing approvals have scope, kinds, expiry, count and spend limits, a visible indicator, revoke and an audit entry per use. |
