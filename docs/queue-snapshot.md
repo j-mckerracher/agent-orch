@@ -87,10 +87,24 @@ the reported wait reason and a next step. The workspace activity queue uses
 the same explanations and labels queue order as **First in queue**, not a
 launch promise. Disk-load holds tell the operator to free space on the daemon
 host and show the reopen threshold, even while usage is below the trigger
-limit. Task details refresh on daemon events, reconnection,
-window focus, every 15 seconds, and through **Refresh queue status** (which
-also reloads the task). Failed reads and missing queue support are shown
-explicitly rather than interpreted as an empty queue or successful launch.
+limit. Task details re-read the snapshot whenever any task changes state, on
+reconnection, on window focus, every 15 seconds, and through **Refresh queue
+status** (which also reloads the task). A re-read keeps the current explanation
+on screen until the new answer arrives. Failed reads and missing queue support
+are shown explicitly rather than interpreted as an empty queue or successful
+launch.
+
+Task lists show a short wait reason beside each Queued task's state, so the
+explanation does not depend on opening the task or finding the activity
+sidebar: the project task list, the Coordinator's related tasks, the
+Workstreams task table and **Activity** tab, and the **Queued** tab of Agents &
+Sessions. Examples are "Waiting for disk space (89% used)", "All 2 worker slots
+in use", "Waiting for t-q" and "Restart gate blocking launches". A list reads
+`queue.snapshot` only while it shows a Queued row and never for fixture data,
+and re-reads on the same triggers as task details. A failed or disconnected
+read removes the summaries rather than leaving a stale reason, and a daemon
+without `queue.snapshot` shows "Wait reason unavailable". The summaries are not
+live regions; the task page gives the full reason and next step.
 
 The snapshot describes scheduler eligibility, not a launch guarantee.
 `dispatch_pending` therefore does not promise that the next pass will launch

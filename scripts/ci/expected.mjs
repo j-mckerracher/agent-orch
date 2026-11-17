@@ -242,7 +242,7 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Project replies extend running-turn and cancellation cases to project coordinators.
 // Full local run after integrating main's notification tests: 124 files, 2264 tests.
 // Queued-task feedback, including the reported disk hold: full `npm --prefix apps/desktop test` measured 124 files and 2276 tests.
-export const VITEST = { files: 124, tests: 2276 };
+export const VITEST = { files: 124, tests: 2287 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

@@ -27,11 +27,13 @@ function Probe({ load, refresh }: { load: () => Promise<SurfaceResult<string>>; 
 
 function mountProbe(load: () => Promise<SurfaceResult<string>>, refresh?: SurfaceRefresh) {
   const services = { connection: new StubConnection() } as unknown as Services;
-  return render(
+  const tree = (next?: SurfaceRefresh) => (
     <ServicesProvider services={services}>
-      <Probe load={load} refresh={refresh} />
-    </ServicesProvider>,
+      <Probe load={load} refresh={next} />
+    </ServicesProvider>
   );
+  const view = render(tree(refresh));
+  return { ...view, setRefresh: (next?: SurfaceRefresh) => view.rerender(tree(next)) };
 }
 
 const advance = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
@@ -103,5 +105,24 @@ describe("useSurface refresh", () => {
     await act(async () => pending[1]!(ok("newer")));
     await act(async () => pending[0]!(ok("older")));
     expect(screen.getByTestId("out")).toHaveTextContent("newer");
+  });
+
+  it("reloads in place when reloadOn changes, keeping the previous answer instead of showing loading", async () => {
+    let value = "first";
+    const load = vi.fn(async () => ok(value));
+    const view = mountProbe(load, { reloadOn: "a" });
+    await advance(0);
+    expect(screen.getByTestId("out")).toHaveTextContent("first");
+
+    value = "second";
+    view.setRefresh({ reloadOn: "a" });
+    await advance(0);
+    expect(load).toHaveBeenCalledTimes(1);
+
+    view.setRefresh({ reloadOn: "b" });
+    expect(screen.getByTestId("out")).toHaveTextContent("first");
+    await advance(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("out")).toHaveTextContent("second");
   });
 });

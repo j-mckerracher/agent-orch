@@ -41,9 +41,9 @@ describe("live D11 activity adapter", () => {
     expect(data.slots).toMatchObject({ status: "ok", value: { used: 2, limit: 2 } });
     expect(data.running.map((entry) => entry.taskId)).toEqual(["r1", "r2"]);
     const queued = Object.fromEntries(data.queued.map((entry) => [entry.taskId, entry.waiting]));
-    expect(queued.q1).toMatchObject({ reason: "capacity", detail: "All 2 worker slots are in use." });
+    expect(queued.q1).toMatchObject({ reason: "capacity", summary: "All 2 worker slots in use", detail: "All 2 worker slots are in use." });
     expect(queued.q2).toMatchObject({ reason: "capacity" });
-    expect(queued.q3).toMatchObject({ reason: "dependency", detail: "Waiting for r1." });
+    expect(queued.q3).toMatchObject({ reason: "dependency", summary: "Waiting for r1", detail: "Waiting for r1." });
     expect(data.queued.map((entry) => entry.taskId)).toEqual(["q1", "q2", "q3"]);
     expect(data.upNext).toMatchObject({ status: "ok", value: "q1" });
   });
@@ -54,7 +54,7 @@ describe("live D11 activity adapter", () => {
     fake.tasks = [mkTask("r1", ALPHA, { state: "Running" }), mkTask("q1", ALPHA, { state: "Queued" })];
     const data = await okActivity(fake);
     expect(data.slots).toMatchObject({ status: "ok", value: { used: 1, limit: 4 } });
-    expect(data.queued[0]!.waiting).toMatchObject({ reason: "capacity" });
+    expect(data.queued[0]!.waiting).toMatchObject({ reason: "capacity", summary: "Project worker limit reached" });
     expect(data.queued[0]!.waiting!.detail).toMatch(/per-project limit/);
   });
 
@@ -84,6 +84,15 @@ describe("live D11 activity adapter", () => {
     const data = await okActivity(fake);
     const waiting = data.queued.map((entry) => entry.waiting!);
     expect(waiting.map((wait) => wait.reason)).toEqual(["approval", "approval", "unknown", "unknown", "unknown", "unknown", "unknown"]);
+    expect(waiting.map((wait) => wait.summary)).toEqual([
+      "Start authorization withheld",
+      "Project not registered",
+      "Shared worktree in use",
+      "Restart gate blocking launches",
+      "No longer queued",
+      "No reason reported",
+      "Unrecognized wait reason",
+    ]);
     expect(waiting[1]!.detail).toMatch(/not registered/);
     expect(waiting[2]!.detail).toMatch(/worktree/);
     expect(waiting[6]!.detail).toMatch(/something_new/);
@@ -93,11 +102,12 @@ describe("live D11 activity adapter", () => {
 
   it("a_load_wait_reads_as_waiting_for_machine_capacity_with_the_meter_mean_and_limit", async () => {
     const fake = new FakeDaemon();
-    fake.tasks = ["a", "b", "c"].map((id) => mkTask(id, ALPHA, { state: "Queued" }));
+    fake.tasks = ["a", "b", "c", "d"].map((id) => mkTask(id, ALPHA, { state: "Queued" }));
     const loads = [
       { meter: "cpu", mean_percent: 91, limit_percent: 80, reopen_percent: 70 },
       { meter: "memory", mean_percent: 90, limit_percent: 85, reopen_percent: 75 },
       { meter: "gpu", mean_percent: 99, limit_percent: 95, reopen_percent: 85 },
+      { meter: "disk", mean_percent: 89, limit_percent: 90, reopen_percent: 80 },
     ];
     withSnapshot(fake, (wire) => ({
       ...wire,
@@ -113,9 +123,26 @@ describe("live D11 activity adapter", () => {
     }));
     const data = await okActivity(fake);
     expect(data.queued.map((entry) => entry.waiting)).toMatchObject([
-      { reason: "capacity", detail: "Waiting for machine capacity: CPU 91 percent, limit 80. New launches wait for a rolling average of 70 percent or lower." },
-      { reason: "capacity", detail: "Waiting for machine capacity: memory 90 percent, limit 85. New launches wait for a rolling average of 75 percent or lower." },
-      { reason: "capacity", detail: "Waiting for machine capacity: gpu 99 percent, limit 95. New launches wait for a rolling average of 85 percent or lower." },
+      {
+        reason: "capacity",
+        summary: "Waiting for CPU capacity (91% used)",
+        detail: "Waiting for machine capacity: CPU 91 percent, limit 80. New launches wait for a rolling average of 70 percent or lower.",
+      },
+      {
+        reason: "capacity",
+        summary: "Waiting for free memory (90% used)",
+        detail: "Waiting for machine capacity: memory 90 percent, limit 85. New launches wait for a rolling average of 75 percent or lower.",
+      },
+      {
+        reason: "capacity",
+        summary: "Waiting for gpu capacity (99% used)",
+        detail: "Waiting for machine capacity: gpu 99 percent, limit 95. New launches wait for a rolling average of 85 percent or lower.",
+      },
+      {
+        reason: "capacity",
+        summary: "Waiting for disk space (89% used)",
+        detail: "Waiting for machine capacity: disk 89 percent, limit 90. New launches wait for a rolling average of 80 percent or lower.",
+      },
     ]);
   });
 
@@ -234,6 +261,7 @@ describe("live D11 activity adapter", () => {
       expect(data.running.map((entry) => entry.taskId).sort()).toEqual(["r1", "v1"]);
       expect(data.queued.map((entry) => entry.taskId).sort()).toEqual(["q1", "q2"]);
       expect(data.queued.every((entry) => entry.waiting?.reason === "unknown")).toBe(true);
+      expect(data.queued.every((entry) => entry.waiting?.summary === "Wait reason unavailable")).toBe(true);
       expect(data.attention.map((item) => [item.approvalId, item.taskId, item.projectId])).toEqual([["a1", "q1", ALPHA]]);
       expect(data.upNext).toMatchObject({ status: "unknown" });
       expect(data.slots).toMatchObject({ status: "unsupported" });

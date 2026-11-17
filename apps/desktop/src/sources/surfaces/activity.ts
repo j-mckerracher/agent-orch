@@ -33,6 +33,7 @@ import type {
   Observation,
   Provenance,
   QueueEntry,
+  QueueWait,
   SurfaceResult,
   WaitingReason,
 } from "./types";
@@ -137,27 +138,37 @@ async function read(connection: ConnectionManager): Promise<ReadResult> {
 }
 
 const LOAD_METER_NAME: Record<string, string> = { cpu: "CPU", memory: "memory", disk: "disk" };
+const LOAD_RESOURCE: Record<string, string> = { cpu: "CPU capacity", memory: "free memory", disk: "disk space" };
 const CHECK_DISPATCH = "If the task stays queued, check the daemon log for scheduler or launch errors. Check the selected agent's CLI sign-in and provider usage limits; queue status does not establish whether quota is exhausted.";
 const WAIT_FOR_LOAD = "Reduce machine load or wait for capacity to recover. The daemon checks again automatically; do not resubmit the task.";
 
-function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNullable<QueueEntry["waiting"]> {
+function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): QueueWait {
   const on = entry.waiting_on;
-  const wait = (reason: WaitingReason, detail: string, nextStep: string) => ({ reason, detail, nextStep });
+  const wait = (reason: WaitingReason, summary: string, detail: string, nextStep: string): QueueWait => ({
+    reason,
+    summary,
+    detail,
+    nextStep,
+  });
   switch (entry.waiting_reason) {
     case "dependency":
-      return wait("dependency", on ? `Waiting for ${on}.` : "Waiting for a dependency.",
+      return wait("dependency", on ? `Waiting for ${on}` : "Waiting for a dependency",
+        on ? `Waiting for ${on}.` : "Waiting for a dependency.",
         "Check the dependency task's status. This task can start only after its dependencies succeed.");
     case "global_cap":
-      return wait("capacity", `All ${snapshot.limits.max_concurrent_workers} worker slots are in use.`,
+      return wait("capacity", `All ${snapshot.limits.max_concurrent_workers} worker slots in use`,
+        `All ${snapshot.limits.max_concurrent_workers} worker slots are in use.`,
         "Wait for a running task to finish, or review worker limits in Settings. The daemon checks again automatically.");
     case "project_cap":
-      return wait("capacity", `This project already runs ${snapshot.limits.max_workers_per_project} workers, its per-project limit.`,
+      return wait("capacity", "Project worker limit reached",
+        `This project already runs ${snapshot.limits.max_workers_per_project} workers, its per-project limit.`,
         "Wait for a task in this project to finish, or review the per-project worker limit in Settings.");
     case "load": {
       const { load } = entry;
-      if (!load) return wait("capacity", "Waiting for machine capacity.", WAIT_FOR_LOAD);
+      if (!load) return wait("capacity", "Waiting for machine capacity", "Waiting for machine capacity.", WAIT_FOR_LOAD);
       const held = `Waiting for machine capacity: ${LOAD_METER_NAME[load.meter] ?? load.meter} ${load.mean_percent} percent, limit ${load.limit_percent}.`;
       return wait("capacity",
+        `Waiting for ${LOAD_RESOURCE[load.meter] ?? `${load.meter} capacity`} (${load.mean_percent}% used)`,
         `${held} New launches wait for a rolling average of ${load.reopen_percent} percent or lower.`,
         load.meter === "disk"
           ? "Free disk space on the machine running the daemon. The daemon checks again automatically; do not resubmit the task."
@@ -165,25 +176,30 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): NonNul
     }
     case "approval":
       return entry.waiting_detail === "project_not_registered"
-        ? wait("approval", "The project is not registered.", "Register the project before this task can start.")
-        : wait("approval", "Start authorization is withheld.", "Check pending decisions in Review & Decisions and the project's start authorization.");
+        ? wait("approval", "Project not registered", "The project is not registered.", "Register the project before this task can start.")
+        : wait("approval", "Start authorization withheld", "Start authorization is withheld.",
+          "Check pending decisions in Review & Decisions and the project's start authorization.");
     case "other":
       switch (entry.waiting_detail) {
         case "worktree_owned":
-          return wait("unknown", on ? `Waiting for ${on} to release the shared worktree.` : "Waiting for a shared worktree to be released.",
+          return wait("unknown", on ? `Worktree in use by ${on}` : "Shared worktree in use",
+            on ? `Waiting for ${on} to release the shared worktree.` : "Waiting for a shared worktree to be released.",
             "Check the task using this worktree and wait for it to finish. Do not delete an active task's worktree.");
         case "dispatch_pending":
-          return wait("unknown", "The scheduler reports no blocker, but an agent launch is not confirmed.", CHECK_DISPATCH);
+          return wait("unknown", "No blocker reported",
+            "The scheduler reports no blocker, but an agent launch is not confirmed.", CHECK_DISPATCH);
         case "dispatch_blocked":
-          return wait("unknown", "The daemon's restart gate is blocking all launches.",
+          return wait("unknown", "Restart gate blocking launches", "The daemon's restart gate is blocking all launches.",
             "Check the daemon log for recovery_gate_blocked and resolve the reported recovery issue. The daemon checks again automatically; do not resubmit the task.");
         case "not_queued":
-          return wait("unknown", "The daemon no longer lists this task as queued.", "Refresh task status to see its current state.");
+          return wait("unknown", "No longer queued", "The daemon no longer lists this task as queued.",
+            "Refresh task status to see its current state.");
         default:
-          return wait("unknown", "The daemon reports no further reason.", CHECK_DISPATCH);
+          return wait("unknown", "No reason reported", "The daemon reports no further reason.", CHECK_DISPATCH);
       }
     default:
-      return wait("unknown", `The daemon reported a wait reason this app does not recognize: ${entry.waiting_reason}.`, CHECK_DISPATCH);
+      return wait("unknown", "Unrecognized wait reason",
+        `The daemon reported a wait reason this app does not recognize: ${entry.waiting_reason}.`, CHECK_DISPATCH);
   }
 }
 
@@ -283,6 +299,7 @@ function taskListSnapshotOf(reading: Extract<Reading, { source: "tasks.list" }>)
       state: "Queued",
       waiting: {
         reason: "unknown",
+        summary: "Wait reason unavailable",
         detail: "Queue order and wait reason are unavailable without queue.snapshot.",
         nextStep: `Update the daemon to a version that supports queue diagnostics. ${CHECK_DISPATCH}`,
       },

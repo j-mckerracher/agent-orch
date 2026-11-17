@@ -3,6 +3,8 @@
  * state what they count: tasks for Active and Queued, sessions for Failed. Unavailable data is never a number.
  */
 import { useId, useRef, useState, type KeyboardEvent } from "react";
+import type { QueueWait } from "../../../sources/surfaces/types";
+import { QueueWaitNote, useQueueWaits } from "../../QueueWaitNote";
 import { Button, EmptyState, Pill } from "../../theme";
 import { LoadRegion, PlaceholderMark, StatePill } from "./common";
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
@@ -157,6 +159,7 @@ export function SessionList({
                   <TaskRows
                     tab={tab}
                     rows={rows}
+                    live={live}
                     query={query}
                     selectedId={selectedId}
                     onSelect={onSelect}
@@ -174,18 +177,21 @@ export function SessionList({
 function TaskRows({
   tab,
   rows,
+  live,
   query,
   selectedId,
   onSelect,
 }: {
   tab: "active" | "queued";
   rows: WorkRow[];
+  live: boolean;
   query: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
   const all = tabRows(tab, rows);
   const list = all.filter((row) => matchesQuery(row, query));
+  const waits = useQueueWaits(live && list.some((row) => row.origin === "real" && row.state === "Queued"));
   if (all.length === 0) return <EmptyState title={EMPTY_TEXT[tab]} />;
   if (list.length === 0) return <EmptyState title="No tasks match the filter." />;
   return (
@@ -198,6 +204,7 @@ function TaskRows({
             row={row}
             selected={selectedId === row.id}
             onSelect={onSelect}
+            wait={row.origin === "real" ? waits.get(row.id) : undefined}
             detail={`Agent ${agentDisplayName(row.agent)}; ${attemptText(row)}; ${sessionsText(row)}; provider and model: not available`}
           />
         ))}
@@ -284,11 +291,13 @@ function TaskButton({
   selected,
   onSelect,
   detail,
+  wait,
 }: {
   row: WorkRow;
   selected: boolean;
   onSelect: (id: string) => void;
   detail: string;
+  wait?: QueueWait;
 }) {
   return (
     <li>
@@ -296,6 +305,7 @@ function TaskButton({
         <span className="agents-row-main">
           <code>{row.id}</code>
           <span>{row.objective}</span>
+          <QueueWaitNote state={row.state} wait={wait} />
           <span className="agents-sub">{detail}</span>
         </span>
         <span className="agents-row-state">

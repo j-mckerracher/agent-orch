@@ -277,6 +277,18 @@ describe("live data", () => {
     expect(screen.getByTestId("task-row")).toHaveTextContent("None until dispatched");
   });
 
+  it("shows why a queued task has not started in the task table and the activity list", async () => {
+    const fake = daemon();
+    fake.queue.dispatch_blocked = true;
+    const { user } = await mount(fake, { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    const row = await screen.findByTestId("task-row");
+    expect(await within(row).findByTestId("queue-wait")).toHaveTextContent("Restart gate blocking launches");
+    await user.click(screen.getByRole("tab", { name: "Activity" }));
+    expect(within(screen.getByTestId("ws-activity-row")).getByTestId("queue-wait")).toHaveTextContent(
+      "Restart gate blocking launches",
+    );
+  });
+
   it("selecting another workstream swaps the table and the objectives", async () => {
     const { user } = await mount(daemon());
     await screen.findAllByTestId("task-row");
@@ -934,6 +946,16 @@ describe("fixture mode", () => {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     expect(screen.queryByRole("button", { name: /Apply to/ })).not.toBeInTheDocument();
+  });
+
+  it("shows no wait reasons beside fixture tasks and reads no queue diagnostics", async () => {
+    const fake = daemon();
+    await mount(fake, { fixtureOverBridge: true });
+    const rows = await screen.findAllByTestId("task-row");
+    expect(rows.some((row) => row.textContent?.includes("Queued"))).toBe(true);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.queryAllByTestId("queue-wait")).toHaveLength(0);
+    expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
   });
 
   it("simulates creation with a receipt and sends nothing to the daemon, even when one is connected", async () => {

@@ -1,21 +1,17 @@
 import { useState } from "react";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
-import { useGate, useServices, useSurface } from "./services";
+import { QUEUE_RECHECK_MS, useQueueActivity } from "./QueueWaitNote";
+import { useGate, useServices } from "./services";
 import { Button } from "./theme";
 import { Notice } from "./widgets";
 
 /** Queue diagnostics are observations, not proof of an agent launch or provider quota. */
 export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: string }) {
-  const { surfaces, data } = useServices();
+  const { data } = useServices();
   const gate = useGate();
   const [revision, setRevision] = useState(0);
-  const source = surfaces.activity;
-  const activity = useSurface(
-    () => source.activity(),
-    `task-queue:${taskId}:${gate.connection.lastSequence}:${revision}`,
-    source.provenance,
-    { pollMs: 15_000, onFocus: true },
-  );
+  // A manual refresh changes the key and shows "Checking"; automatic re-reads keep the last answer on screen.
+  const activity = useQueueActivity(`task-queue:${taskId}:${revision}`);
   const live = activity.status !== "loading" && activity.provenance.kind === "daemon";
   const waiting = activity.status === "ok" && live
     ? activity.data.queued.find((entry) => entry.taskId === taskId)?.waiting
@@ -63,7 +59,7 @@ export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: stri
         {activity.status === "ok" && live && gate.connected && (
           <span className="muted">
             Last checked: <time dateTime={activity.observedAt}>{new Date(activity.observedAt).toLocaleTimeString()}</time>.
-            {" "}Checks again every 15 seconds.
+            {" "}Checks again every {QUEUE_RECHECK_MS / 1000} seconds.
           </span>
         )}
       </div>
