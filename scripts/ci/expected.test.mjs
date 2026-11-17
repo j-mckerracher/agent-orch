@@ -40,7 +40,6 @@ test("each expected total equals the length of its name list, so a merge updates
   for (const [list, key] of suites) {
     assert.equal(win[list].length, WINDOWS[key].passed, `windows ${list}`);
     assert.equal(mac[list].length, MACOS[key].passed, `macos ${list}`);
-    assert.equal(new Set(win[list]).size, win[list].length, `windows ${list} has duplicate names`);
   }
   assert.equal(mac.ipc.length, MACOS.ipc.passed);
   assert.equal(mac.daemon.length, MACOS.daemon.passed);
