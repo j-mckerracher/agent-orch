@@ -1,9 +1,11 @@
 // Every expected count and baseline in the native gates, in one place.
 //
-// When a merge adds or removes tests, or moves the baseline clippy sites, edit THIS file and the
-// matching name list (windows-test-names.json / macos-test-names.json), then run
-// `node --test "scripts/**/*.test.mjs"`: expected.test.mjs checks that the numbers agree with each
-// other and with the name lists. Never edit a value to fit a run without a reason in the commit.
+// When a merge adds or removes tests, or moves the baseline clippy sites, run
+// `node scripts/ci/sync-expected.mjs <gate-evidence-dir>...` on the evidence of a CI run (the
+// `gate-evidence-*` artifacts), or edit THIS file and the matching name list (windows-test-names.json /
+// macos-test-names.json) by hand. Then run `node --test "scripts/**/*.test.mjs"`: expected.test.mjs checks
+// that the numbers agree with each other and with the name lists. Never edit a value to fit a run without a
+// reason in the commit.
 
 // Windows: the published Priority 11r3 runbook's derived values (not yet measured on a runner).
 // `sequence` is the `running N tests` series, one entry per test binary, in order.
@@ -196,7 +198,8 @@ export const MACOS = {
 // is the sum, and CI measures the real value.
 // 137 = 132 + the 3 tests of release-please.test.mjs and the 2 added to publish.test.mjs (DPES-1106, release-please, PR #100).
 // Measured by `node --test "scripts/**/*.test.mjs"` on main and by the macOS node-self-tests gate in CI run 43968335824.
-export const NODE_SELF_TESTS = { passed: 137 };
+// 142 = 137 + the 5 tests of sync-expected.test.mjs, counted by `node --test "scripts/**/*.test.mjs"`.
+export const NODE_SELF_TESTS = { passed: 142 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
@@ -208,8 +211,7 @@ export const NODE_SELF_TESTS = { passed: 137 };
 // The ambient background is on by default (DPES-1105): 9 tests replace 5, so 1626 becomes 1630 (same 76 files), as a full
 // `vitest run --reporter=json` of apps/desktop measured them.
 // The composer permission cleanup (DPES-1105) moves the level into the model picker's chip and panel and adds 6 label-state
-// tests: it adds 8 tests to that base with no file added or removed, so 1630 becomes 1638. The merged name list in
-// desktop-test-names.json holds 1638 titles across 76 files. CI measures the real total.
+// tests: it adds 8 tests to that base with no file added or removed, so 1630 becomes 1638. CI measures the real total.
 // DPES-1123 adds two files and 14 tests to main: 78 files and 1652 tests.
 // WI-DPES-747: One additional boundary test file and ten frontend regression cases.
 // DPES-1105 usage controls (PR #97) adds one file (UsagePill.headline.test.tsx, 5 tests) and renames two titles: 80 files and

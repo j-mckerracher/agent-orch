@@ -160,9 +160,18 @@ survivor is reported) instead of waiting for the job timeout; a timeout kill end
 
 ### Changing a count or the baseline
 
-Edit `scripts/ci/expected.mjs` and the matching list in `scripts/ci/windows-test-names.json` /
-`macos-test-names.json` together; `node --test "scripts/**/*.test.mjs"` fails when a total, a
-sequence and a name list disagree. Measure on the platform; do not edit to fit a run. The two
+After a CI run reports a count mismatch, download its evidence and let the tool rewrite the pins:
+
+```sh
+gh run download <run-id> -D /tmp/evidence
+node scripts/ci/sync-expected.mjs /tmp/evidence/gate-evidence-* --dry-run   # then again without --dry-run
+```
+
+It updates `scripts/ci/expected.mjs` and the matching list in `scripts/ci/windows-test-names.json` /
+`macos-test-names.json` from the measured output, reads only gates that exited 0 with no failed test, and
+refuses a run with fewer tests than the pins unless `--allow-removals` is given. Windows counts come from the
+Windows artifacts, macOS counts from `gate-evidence-macos`; run it on both. `node --test "scripts/**/*.test.mjs"`
+still fails when a total, a sequence and a name list disagree. Measure on the platform; do not edit to fit a run. The two
 `single_match` baseline lines in `supervisor.rs` are `CLIPPY_BASELINE` there: they are
 `#[cfg(windows)]` code, so only the Windows `clippy-scoped` gate can show them as new.
 

@@ -40,7 +40,7 @@ export const testOutcomes = (text) => {
   return outcomes;
 };
 
-const isNamed = (full, expected) => full === expected || full.endsWith(`::${expected}`);
+export const isNamed = (full, expected) => full === expected || full.endsWith(`::${expected}`);
 
 export const checkTests = ({ stdout, expect = [], passed, ignored, runningSequence: sequence, filteredOut }) => {
   const problems = [];

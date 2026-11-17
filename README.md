@@ -134,7 +134,7 @@ The workflows are in `.github/workflows`:
 | `catalog-validate.yml` | pull requests, pushes to `main` | Validates the Port service catalog file. |
 | `release.yml` | `v*` tags, manual | Builds the installers. A publish job creates the GitHub release after approval. |
 
-A gate passes only when its command exits 0 and its output has the expected shape: test counts and names. The expected values are in `scripts/ci/expected.mjs`, and the matching name lists are in `scripts/ci/*-test-names.json`. When a change adds or removes tests, update those values in the same pull request, taking them from real CI logs. Do not estimate them.
+A gate passes only when its command exits 0 and its output has the expected shape: test counts and names. The expected values are in `scripts/ci/expected.mjs`, and the matching name lists are in `scripts/ci/windows-test-names.json` and `macos-test-names.json`. When a change adds or removes tests, run `node scripts/ci/sync-expected.mjs` on the `gate-evidence-*` artifacts of a CI run (see `docs/release-ci.md`) and commit the result in the same pull request. Do not estimate the values.
 
 `node scripts/ci/run-gates.mjs --list` prints the gates for your platform. A pull request that changes only `docs/**` or the root Markdown files runs only the Windows harness job.
 
