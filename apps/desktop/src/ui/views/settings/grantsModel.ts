@@ -4,13 +4,14 @@
  * sees a message before sending; the daemon stays the authority and its refusal is shown as the daemon's.
  */
 import { presentError, type DaemonError } from "../../../daemon/errors";
+import { PREFIX_ERROR, isSafePrefix } from "../../../sources/surfaces/projectDefaults";
 import type { GrantItem, GrantPolicy, GrantTerms } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 
 export const SECTION_TITLE = "Standing approvals";
 export const INTRO_TEXT =
   "A standing approval lets the orchestrator run certain kinds of actions without asking each time, only inside the project or workstream, time, count and token limits you set. You can revoke it at any time. Nothing is on until you create one.";
-export const NEVER_GRANTED_TEXT = "These always need your approval: cancel a task, revise a task, remove a project, merge.";
+export const NEVER_GRANTED_TEXT = "These always need your approval: cancel a task, revise a task, remove a project.";
 export const TOKEN_NOTE =
   "The most tokens the tasks started under this approval may use. It counts the tokens reported so far, and tasks whose agent reports none count as zero. It blocks only new uses. It does not stop a task that is already running.";
 export const UPDATE_NOTE = "Updating a workstream covers its title and summary only.";
@@ -33,12 +34,35 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   "task.retry": "Retry a task",
   "workstream.link_task": "Link a task to a workstream",
   "decision.hold": "Hold a decision",
+  "delivery.merge": "Merge pull requests without asking",
 };
 
 /** Mirrors the core's never-grantable list: never a control, whatever the daemon lists. */
 const NEVER_GRANTABLE: readonly string[] = ["project.remove", "delivery.merge", "task.cancel", "task.revise"];
 
 export const kindLabel = (kind: string): string => KIND_LABELS[kind] ?? kind;
+
+export const MERGE_KIND = "delivery.merge";
+export const MERGE_TITLE = "Allow unattended merges";
+export const MERGE_BADGE = "Unattended merge";
+export const MERGE_CONFIRM_TEXT =
+  "I understand this merges pull requests without asking me each time, only when every required check has passed and the head commit is the one that was checked. A merge cannot be undone from this app.";
+export const MERGE_INTRO_TEXT =
+  "Danger. While this approval is on, the orchestrator merges pull requests for one project without asking you each time. Nothing is on until you save it.";
+export const MERGE_INVALID_REASON = "Choose a project, tick the confirmation, and keep the limits within the ranges shown.";
+
+/** What the merge form falls back to for a daemon that lists the kind but sends no limits. */
+const MERGE_LIMITS = { defaultHours: 8, defaultUses: 5, maxUses: 20, maxHours: 24 };
+
+/** The merge form is offered only when the daemon lists the merge kind as grantable. */
+export const mergeOffered = (policy: GrantPolicy): boolean => policy.grantableKinds.includes(MERGE_KIND);
+
+export const mergeLimits = (policy: GrantPolicy) => ({
+  defaultHours: Math.min(MERGE_LIMITS.defaultHours, policy.mergePolicy?.maxExpiryHours ?? MERGE_LIMITS.maxHours),
+  defaultUses: policy.mergePolicy?.defaultUses ?? MERGE_LIMITS.defaultUses,
+  maxUses: policy.mergePolicy?.maxUses ?? MERGE_LIMITS.maxUses,
+  maxHours: policy.mergePolicy?.maxExpiryHours ?? MERGE_LIMITS.maxHours,
+});
 
 /** The kinds the form shows as checkboxes: the daemon's grantable list, minus anything never grantable or unknown to this app. */
 export function offeredKinds(policy: GrantPolicy): string[] {
@@ -217,4 +241,78 @@ export function revokedText(stopped: number): string {
 export function createdText(grant: GrantItem): string {
   const until = new Date(grant.expiresAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return `${CREATED_TEXT} It covers ${scopeText(grant)} until ${until}.`;
+}
+
+/** What the merge form holds: text as typed and the danger confirmation. */
+export interface MergeDraft {
+  scopeId: string;
+  prefix: string;
+  hours: string;
+  uses: string;
+  budget: string;
+  confirmed: boolean;
+}
+
+export interface MergeErrors {
+  scope: string | null;
+  prefix: string | null;
+  hours: string | null;
+  uses: string | null;
+  budget: string | null;
+  confirmed: string | null;
+}
+
+export function initialMergeDraft(policy: GrantPolicy): MergeDraft {
+  const limits = mergeLimits(policy);
+  return { scopeId: "", prefix: "", hours: String(limits.defaultHours), uses: String(limits.defaultUses), budget: "", confirmed: false };
+}
+
+export function validateMerge(draft: MergeDraft, policy: GrantPolicy): MergeErrors {
+  const limits = mergeLimits(policy);
+  const hours = parseWhole(draft.hours);
+  const uses = parseWhole(draft.uses);
+  const budget = parseWhole(draft.budget);
+  const prefix = draft.prefix.trim();
+  return {
+    scope: draft.scopeId === "" ? "Choose one project." : null,
+    prefix: prefix === "" || isSafePrefix(prefix) ? null : PREFIX_ERROR,
+    hours: hours === null || hours < 1 || hours > limits.maxHours ? `Enter a whole number of hours from 1 to ${limits.maxHours}.` : null,
+    uses: uses === null || uses < 1 || uses > limits.maxUses ? `Enter a whole number of uses from 1 to ${limits.maxUses}.` : null,
+    budget:
+      budget === null || budget < 1 || budget > policy.maxTokenBudget
+        ? `Enter a whole number of tokens from 1 to ${policy.maxTokenBudget.toLocaleString("en-US")}.`
+        : null,
+    confirmed: draft.confirmed ? null : "Tick the box to confirm.",
+  };
+}
+
+export const hasMergeErrors = (errors: MergeErrors): boolean => Object.values(errors).some((message) => message !== null);
+
+/** What Save sends for a merge grant: the project, the one merge kind, the confirmation, the prefix and the limits. Call only for a draft with no errors. */
+export function mergeTermsOf(draft: MergeDraft): GrantTerms {
+  const prefix = draft.prefix.trim();
+  return {
+    scopeKind: "project",
+    scopeId: draft.scopeId,
+    kinds: [MERGE_KIND],
+    expiresInSecs: (parseWhole(draft.hours) ?? 0) * HOUR_SECS,
+    maxUses: parseWhole(draft.uses) ?? 0,
+    tokenBudget: parseWhole(draft.budget) ?? 0,
+    confirmUnattendedMerge: draft.confirmed,
+    branchPrefix: prefix === "" ? null : prefix,
+  };
+}
+
+export const isMergeGrant = (grant: GrantItem): boolean => grant.kinds.includes(MERGE_KIND);
+
+/** The prefix line of a merge grant in the list. */
+export const branchPrefixText = (grant: GrantItem): string =>
+  grant.branchPrefix ? `Only branches starting with ${grant.branchPrefix}` : "Any branch";
+
+/** Plain words for a refused merge grant. The daemon is the authority, so its refusal is explained, not second-guessed. */
+export function mergeCreateFailureText(error: DaemonError): string {
+  if (error.kind === "grant-invalid" || error.kind === "invalid-params") {
+    return "The daemon refused this unattended merge approval. Check the project, the branch prefix, the limits and the confirmation. Nothing was changed.";
+  }
+  return createFailureText(error);
 }

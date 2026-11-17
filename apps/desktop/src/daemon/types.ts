@@ -987,6 +987,17 @@ export interface GrantWire {
   tokens_spent: number;
   status: "active" | "revoked" | "expired" | "exhausted" | "budget_exhausted" | (string & {});
   revoked_at_ms: number | null;
+  /** N8 merge grant only: the head branch must start with this. Absent or null covers any branch. */
+  branch_prefix?: string | null;
+  /** True for an unattended merge grant. Absent from older daemons. */
+  confirm_unattended_merge?: boolean;
+}
+
+/** The limits of an unattended merge grant (N8), listed only by a daemon that knows the merge kind. */
+export interface MergePolicyWire {
+  default_uses: number;
+  max_uses: number;
+  max_expiry_hours: number;
 }
 
 /** The limits and the kinds a grant may name; the form offers nothing else. */
@@ -998,6 +1009,7 @@ export interface GrantPolicyWire {
   default_max_uses: number;
   max_max_uses: number;
   max_token_budget: number;
+  merge_policy?: MergePolicyWire;
 }
 
 /** `grants.list` result. */
@@ -1014,6 +1026,9 @@ export interface GrantsCreateParams {
   expires_in_secs: number;
   max_uses: number;
   token_budget: number;
+  /** Sent as true only for an unattended merge grant (`delivery.merge`). */
+  confirm_unattended_merge?: boolean;
+  branch_prefix?: string;
 }
 
 /** `grants.create` result. */

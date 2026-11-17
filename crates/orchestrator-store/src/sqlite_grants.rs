@@ -30,7 +30,8 @@ use crate::sqlite_conversations::corrupt;
 use crate::{SqliteStore, StoreError};
 
 const COLUMNS: &str = "id, scope_kind, scope_id, kinds, created_at_ms, expires_at_ms, max_uses, \
-                       uses_used, token_budget, proposal_floor, revoked_at_ms";
+                       uses_used, token_budget, proposal_floor, revoked_at_ms, \
+                       confirm_unattended_merge, branch_prefix";
 const EVENT_COLUMNS: &str = "sequence, grant_id, event, proposal_id, digest, task_id, code, at_ms";
 
 /// What one audit row records.
@@ -228,8 +229,9 @@ impl SqliteStore {
                     .await?;
             sqlx::query(
                 "INSERT INTO standing_grants (id, scope_kind, scope_id, kinds, created_at_ms, \
-                 expires_at_ms, max_uses, token_budget, proposal_floor) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 expires_at_ms, max_uses, token_budget, proposal_floor, \
+                 confirm_unattended_merge, branch_prefix) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&id)
             .bind(terms.scope.kind_str())
@@ -240,6 +242,8 @@ impl SqliteStore {
             .bind(i64::from(terms.max_uses))
             .bind(to_i64(terms.token_budget)?)
             .bind(floor)
+            .bind(terms.confirm_unattended_merge)
+            .bind(terms.branch_prefix.as_deref())
             .execute(&mut *transaction)
             .await?;
             insert_event(
@@ -725,6 +729,8 @@ fn same_terms(stored: &StandingGrant, terms: &GrantTerms) -> bool {
         && stored.token_budget == terms.token_budget
         && stored.expires_at_ms.saturating_sub(stored.created_at_ms)
             == terms.expires_in_secs.saturating_mul(1000)
+        && stored.confirm_unattended_merge == terms.confirm_unattended_merge
+        && stored.branch_prefix == terms.branch_prefix
 }
 
 async fn read_grant(
@@ -818,6 +824,8 @@ fn grant_from_row(row: &SqliteRow) -> Result<StandingGrant, StoreError> {
             })
             .transpose()?,
         proposal_floor: row.try_get("proposal_floor")?,
+        confirm_unattended_merge: row.try_get("confirm_unattended_merge")?,
+        branch_prefix: row.try_get("branch_prefix")?,
     })
 }
 

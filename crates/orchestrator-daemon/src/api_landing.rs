@@ -23,6 +23,13 @@
 //! pending check, or a moved head, ends the card `failed` with a stable code and is never
 //! retried by the daemon; the user proposes again.
 //!
+//! A merge grant (N8) is the one other authority. The matcher approves a `delivery.merge`
+//! proposal under it with no click, and the same steps run under [`MergePolicy::GrantGreenOnly`],
+//! which adds, on the fresh read and in this order: `stale_head`, `checks_not_green`,
+//! `branch_not_covered`, `own_upstream`, then the rule of [`merge_verdict`]. Each refusal ends
+//! the card `failed` with that code and the grant records `stopped`. The merge still goes out
+//! once, bound to the head, and the ledger decides that, not the grant.
+//!
 //! Remote text (a title, a check name) is plain, redacted and cut before it leaves the daemon.
 
 use std::collections::BTreeMap;
@@ -35,11 +42,12 @@ use orchestrator_core::orchestrator_action::{
     Action, ActionKind as ProposalKind, MergePullRequest,
 };
 use orchestrator_core::project_mode::ProjectMode;
+use orchestrator_core::standing_grant::{GrantScope, StandingGrant};
 use orchestrator_core::task_envelope::Denial;
-use orchestrator_git::github::{GitHubError, PullRequestView};
+use orchestrator_git::github::{GitHubError, PullRequestView, RepoRef};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, MergeAttempt, MergeClaim, MergeState, PullRequestRow,
-    ResolveError,
+    ActionOutcome, ActionProposal, GrantError, GrantOutcome, MergeAttempt, MergeClaim, MergeState,
+    PullRequestRow, ResolveError,
 };
 
 use super::actions::{cut_at_char, map_resolve_error};
@@ -58,12 +66,60 @@ const UNCONFIRMED: &str = "unconfirmed";
 /// The proposal's failure code for it.
 const MERGE_UNCONFIRMED: &str = "merge_unconfirmed";
 const INVALID: &str = "invalid";
+/// The name of MCAO's own repository, whatever its owner. A merge grant never merges here.
+const OWN_UPSTREAM_REPO_NAME: &str = "motif-mcao";
+
+/// Who stands behind a merge, read from the proposal's approver.
+pub(super) enum MergePolicy {
+    /// The user approved this card. The merge rule alone decides.
+    PerAction,
+    /// A merge grant approved it. Green required checks on the bound head only, a covered
+    /// branch, never MCAO's own repository.
+    GrantGreenOnly { grant_id: String },
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ListParams {
     #[serde(default)]
     project_id: Option<String>,
+}
+
+/// Whether `repo` is MCAO's own upstream. Decided by the repository NAME alone, case
+/// insensitive and for every owner, so a fork or a moved repository is covered too. A project
+/// that happens to hold another repository with that name is refused as well: refusing too
+/// much is the safe side here.
+fn is_own_upstream(repo: &RepoRef) -> bool {
+    repo.name().eq_ignore_ascii_case(OWN_UPSTREAM_REPO_NAME)
+}
+
+/// The refusal a merge grant adds to a fresh read, or `None`. In this order: the head is not
+/// the bound one, a required check is missing or not green, the head branch is outside the
+/// grant's prefix, the repository is MCAO's own. No clock, no I/O.
+fn grant_refusal(
+    grant: &StandingGrant,
+    merge: &MergePullRequest,
+    view: &PullRequestView,
+    repo: &RepoRef,
+) -> Option<&'static str> {
+    if view.head_sha != merge.head_sha {
+        return Some("stale_head");
+    }
+    if view.checks.is_empty()
+        || view
+            .checks
+            .iter()
+            .any(|check| check.state != CheckState::Passed)
+    {
+        return Some("checks_not_green");
+    }
+    if !grant.covers_branch(&view.head_branch) {
+        return Some("branch_not_covered");
+    }
+    if is_own_upstream(repo) {
+        return Some("own_upstream");
+    }
+    None
 }
 
 /// What a merge needs to know of its task's project.
@@ -403,7 +459,10 @@ impl DaemonApi {
             .filter(|proposal| proposal.kind == ProposalKind::DeliveryMerge)
             .collect();
         for proposal in &merges {
-            if self.merge_inner(proposal, now_ms).is_err() {
+            let run = self
+                .merge_policy(proposal)
+                .and_then(|policy| self.merge_inner(proposal, &policy, now_ms));
+            if run.is_err() {
                 self.config.diagnostics.warn(LOG, "merge_failed", &[]);
             }
         }
@@ -411,12 +470,33 @@ impl DaemonApi {
         merges.len()
     }
 
-    /// Runs one approved `delivery.merge` proposal. Safe to call again for the same proposal,
-    /// after a restart or while a reply is lost: the ledger decides what is left to do, and the
-    /// host's `merge` is called at most once per proposal, ever.
+    /// The policy a proposal's approver stands for: a grant actor is a merge grant, anyone
+    /// else a user approval.
+    pub(super) fn merge_policy(&self, proposal: &ActionProposal) -> Result<MergePolicy, RpcError> {
+        let approver = self
+            .store
+            .proposal_approver(&proposal.id)
+            .map_err(map_store_error)?;
+        Ok(
+            match approver
+                .as_deref()
+                .and_then(|actor| actor.strip_prefix("grant:"))
+            {
+                Some(grant_id) => MergePolicy::GrantGreenOnly {
+                    grant_id: grant_id.to_owned(),
+                },
+                None => MergePolicy::PerAction,
+            },
+        )
+    }
+
+    /// Runs one approved `delivery.merge` proposal under `policy`. Safe to call again for the
+    /// same proposal, after a restart or while a reply is lost: the ledger decides what is
+    /// left to do, and the host's `merge` is called at most once per proposal, ever.
     pub(super) fn merge_inner(
         &self,
         proposal: &ActionProposal,
+        policy: &MergePolicy,
         now_ms: u64,
     ) -> Result<(), RpcError> {
         let Ok(Action::DeliveryMerge(merge)) =
@@ -444,28 +524,12 @@ impl DaemonApi {
                 },
             );
         }
-        // No grant can approve a merge. A proposal that says it did not start.
-        let approver = self
-            .store
-            .proposal_approver(&proposal.id)
-            .map_err(map_store_error)?;
-        if approver
-            .as_deref()
-            .is_some_and(|actor| actor.starts_with("grant:"))
-        {
-            return self.finish_merge(
-                Some(proposal),
-                ActionOutcome::Failed {
-                    error_code: "forbidden",
-                },
-            );
-        }
         if let Some(attempt) = self
             .store
             .pull_request_merge(&proposal.id)
             .map_err(map_store_error)?
         {
-            return self.continue_attempt(proposal, &merge, &attempt, now_ms);
+            return self.continue_attempt(proposal, &merge, &attempt, policy, now_ms);
         }
         let job = match self.merge_job(&merge) {
             Ok(job) => job,
@@ -493,10 +557,10 @@ impl DaemonApi {
             Err(error) => return Err(map_store_error(error)),
         };
         match claim {
-            MergeClaim::Claimed(_) => self.run_claimed(proposal, &merge, &job, now_ms),
+            MergeClaim::Claimed(_) => self.run_claimed(proposal, &merge, &job, policy, now_ms),
             // A second approval, or a replay: the first claim owns the merge.
             MergeClaim::Existing(attempt) => {
-                self.continue_attempt(proposal, &merge, &attempt, now_ms)
+                self.continue_attempt(proposal, &merge, &attempt, policy, now_ms)
             }
             // Another proposal is already merging this pull request.
             MergeClaim::Busy(_) => self.finish_merge(
@@ -541,20 +605,69 @@ impl DaemonApi {
         })
     }
 
+    /// The merge grant behind a proposal, if it may still start this merge, else the stable
+    /// refusal. The grant must be unrevoked and unexpired, still name `delivery.merge` for the
+    /// project of the task, and the task's stored pull request must be the card's: a grant
+    /// merges only the pull request the project tracks.
+    fn grant_for_merge(
+        &self,
+        grant_id: &str,
+        merge: &MergePullRequest,
+        job: &MergeJob,
+        now_ms: u64,
+    ) -> Result<Result<StandingGrant, &'static str>, RpcError> {
+        if let Some(code) = self.grant_stop_code(grant_id, now_ms)? {
+            return Ok(Err(code));
+        }
+        let Some(grant) = self
+            .store
+            .standing_grant(grant_id)
+            .map_err(|error| internal("grants", &error))?
+        else {
+            return Ok(Err(super::actions::GRANT_REVOKED));
+        };
+        let in_project = matches!(
+            &grant.scope,
+            GrantScope::Project(code) if *code == project_code(&job.project_id)
+        );
+        if !grant.covers(ProposalKind::DeliveryMerge) || !in_project {
+            return Ok(Err("project_not_covered"));
+        }
+        let tracked = self
+            .store
+            .pull_request(&merge.task_id)
+            .map_err(map_store_error)?;
+        if tracked.is_none_or(|row| row.number != merge.pr_number) {
+            return Ok(Err("pr_not_tracked"));
+        }
+        Ok(Ok(grant))
+    }
+
     /// Steps 3 to 5 for an attempt in state `claimed`. Nothing has reached the host yet, so a
     /// failure before `issued` refuses the attempt and a store failure leaves it `claimed`,
-    /// to run again from the read.
+    /// to run again from the read. Under a merge grant the grant is checked first and the
+    /// grant's own refusals run on the fresh read before the merge rule.
     fn run_claimed(
         &self,
         proposal: &ActionProposal,
         merge: &MergePullRequest,
         job: &MergeJob,
+        policy: &MergePolicy,
         now_ms: u64,
     ) -> Result<(), RpcError> {
         let id = proposal.id.as_str();
         let refuse = |code: &str| -> Result<(), RpcError> {
             self.advance_merge(id, MergeState::Refused, Some(code), None)?;
             self.finish_merge(Some(proposal), ActionOutcome::Failed { error_code: code })
+        };
+        let grant = match policy {
+            MergePolicy::PerAction => None,
+            MergePolicy::GrantGreenOnly { grant_id } => {
+                match self.grant_for_merge(grant_id, merge, job, now_ms)? {
+                    Ok(grant) => Some(grant),
+                    Err(code) => return refuse(code),
+                }
+            }
         };
         let repo = match self.repo_for_project(&job.project_id) {
             Ok(repo) => repo,
@@ -564,6 +677,20 @@ impl DaemonApi {
             Ok(view) => view,
             Err(error) => return refuse(host_code(error)),
         };
+        if let Some(grant) = &grant {
+            if let Some(code) = grant_refusal(grant, merge, &view, &repo) {
+                return refuse(code);
+            }
+            // The read is the pull request the project tracks, not another one by number.
+            let same_branch = self
+                .store
+                .pull_request(&merge.task_id)
+                .map_err(map_store_error)?
+                .is_some_and(|row| row.branch == view.head_branch);
+            if !same_branch {
+                return refuse("pr_not_tracked");
+            }
+        }
         // The rule runs on THIS read, never on a stored row.
         let seen = observation_of(&view, to_i64(now_ms));
         if let Err(refusal) = merge_verdict(
@@ -618,6 +745,7 @@ impl DaemonApi {
         proposal: &ActionProposal,
         merge: &MergePullRequest,
         attempt: &MergeAttempt,
+        policy: &MergePolicy,
         now_ms: u64,
     ) -> Result<(), RpcError> {
         match attempt.state {
@@ -634,7 +762,7 @@ impl DaemonApi {
                 },
             ),
             MergeState::Claimed => match self.merge_job(merge) {
-                Ok(job) => self.run_claimed(proposal, merge, &job, now_ms),
+                Ok(job) => self.run_claimed(proposal, merge, &job, policy, now_ms),
                 Err(code) => {
                     self.advance_merge(&proposal.id, MergeState::Refused, Some(code), None)?;
                     self.finish_merge(Some(proposal), ActionOutcome::Failed { error_code: code })
@@ -795,6 +923,29 @@ impl DaemonApi {
             .idempotency_gate
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        // The grant's audit row first, as for every kind: a stop between the two writes leaves
+        // the proposal approved, and the rerun closes it. The merged task is not named, so the
+        // grant's token budget never counts a merge.
+        if let Some(grant_id) = approver.strip_prefix("grant:") {
+            let closed = match outcome {
+                ActionOutcome::Executed { .. } => GrantOutcome::Executed { task_id: None },
+                ActionOutcome::Failed { error_code } => GrantOutcome::Stopped { code: error_code },
+            };
+            let at = crate::executor::unix_now_ms();
+            // An approval by a grant that never recorded a use (no claim made it) has no audit
+            // row to close; the proposal still ends.
+            match self.store.record_grant_outcome(
+                grant_id,
+                &proposal.id,
+                &proposal.digest,
+                closed,
+                at,
+            ) {
+                Ok(()) => {}
+                Err(error) if GrantError::of(&error) == Some(GrantError::NotUsed) => {}
+                Err(error) => return Err(internal("grants", &error)),
+            }
+        }
         match self
             .store
             .record_action_outcome(&proposal.id, outcome, &approver)

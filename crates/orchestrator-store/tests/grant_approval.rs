@@ -29,6 +29,8 @@ fn terms(max_uses: u32) -> GrantTerms {
         expires_in_secs: 3600,
         max_uses,
         token_budget: 1000,
+        confirm_unattended_merge: false,
+        branch_prefix: None,
     }
 }
 
@@ -308,4 +310,49 @@ fn a_claim_whose_approval_write_fails_rolls_back_the_use_and_its_event() {
         ProposalState::Pending
     );
     assert_eq!(store.proposal_approver(&id).unwrap(), None);
+}
+
+const MERGE: &str = r#"{"kind": "delivery.merge", "task_id": "task-1", "pr_number": 42, "head_sha": "0123456789abcdef0123456789abcdef01234567"}"#;
+
+#[test]
+fn a_merge_grant_claim_approves_a_merge_proposal_and_spends_one_use_in_one_transaction() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let mut asked = terms(2);
+    asked.kinds = vec![ActionKind::DeliveryMerge];
+    asked.confirm_unattended_merge = true;
+    let grant = store
+        .create_standing_grant("merge-grant", &asked, NOW)
+        .unwrap();
+    let (id, digest) = pending(&store, "t1", MERGE);
+
+    let approved = store
+        .approve_action_proposal_by_grant(&id, &digest, &grant.id, NOW + 1)
+        .unwrap();
+    // The same proposal never takes a second use.
+    let again = store.approve_action_proposal_by_grant(&id, &digest, &grant.id, NOW + 2);
+
+    assert_eq!(approved.state, ProposalState::Approved);
+    assert!(matches!(
+        again,
+        Err(GrantClaimError::Proposal(ResolveError::NotPending(
+            ProposalState::Approved
+        )))
+    ));
+    assert_eq!(
+        store
+            .standing_grant("merge-grant")
+            .unwrap()
+            .unwrap()
+            .uses_used,
+        1
+    );
+    assert_eq!(
+        event_kinds(&store, "merge-grant"),
+        [GrantEventKind::Created, GrantEventKind::Used]
+    );
+    assert_eq!(
+        store.proposal_approver(&id).unwrap().as_deref(),
+        Some("grant:merge-grant")
+    );
 }

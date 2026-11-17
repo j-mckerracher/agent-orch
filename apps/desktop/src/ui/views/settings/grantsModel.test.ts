@@ -5,7 +5,10 @@ import { approvedByText, failureText } from "../workspace/actionCardModel";
 import {
   createFailureText,
   initialDraft,
+  initialMergeDraft,
   isActive,
+  mergeTermsOf,
+  validateMerge,
   offeredKinds,
   revokedText,
   statusChip,
@@ -154,5 +157,34 @@ describe("grant label on a card", () => {
   it("grants_card_failure_codes_read_in_plain_words", () => {
     expect(failureText({ ...CARD, state: "failed", errorCode: "grant_revoked" })).toMatch(/standing approval was revoked before this ran/);
     expect(failureText({ ...CARD, state: "failed", errorCode: "grant_expired" })).toMatch(/standing approval had expired before this ran/);
+  });
+});
+
+describe("unattended merge model", () => {
+  const MERGE: GrantPolicy = { ...POLICY, grantableKinds: [...POLICY.grantableKinds, "delivery.merge"], mergePolicy: { defaultUses: 5, maxUses: 20, maxExpiryHours: 24 } };
+
+  it("mergegrant_model_defaults_and_limits_come_from_the_merge_policy", () => {
+    const draft = { ...initialMergeDraft(MERGE), scopeId: "p-1a2b3c4d", budget: "1000", confirmed: true };
+    expect(draft.hours).toBe("8");
+    expect(draft.uses).toBe("5");
+    expect(Object.values(validateMerge(draft, MERGE)).every((message) => message === null)).toBe(true);
+    expect(validateMerge({ ...draft, hours: "25" }, MERGE).hours).not.toBeNull();
+    expect(validateMerge({ ...draft, uses: "21" }, MERGE).uses).not.toBeNull();
+    expect(validateMerge({ ...draft, confirmed: false }, MERGE).confirmed).not.toBeNull();
+    expect(validateMerge({ ...draft, prefix: "no-slash" }, MERGE).prefix).not.toBeNull();
+  });
+
+  it("mergegrant_model_terms_name_only_the_merge_kind_in_a_project", () => {
+    const terms = mergeTermsOf({ scopeId: "p-1a2b3c4d", prefix: " moa/ ", hours: "2", uses: "3", budget: "500", confirmed: true });
+    expect(terms).toEqual({
+      scopeKind: "project",
+      scopeId: "p-1a2b3c4d",
+      kinds: ["delivery.merge"],
+      expiresInSecs: 7200,
+      maxUses: 3,
+      tokenBudget: 500,
+      confirmUnattendedMerge: true,
+      branchPrefix: "moa/",
+    });
   });
 });

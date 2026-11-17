@@ -395,10 +395,17 @@ impl DaemonApi {
                 found.projects.insert(code);
                 found.workstreams.insert(link.workstream_id.clone());
             }
+            // A merge is covered only by a merge grant, which names one project. The host reads
+            // that decide the rest (head, checks, branch, repository) run at execution.
+            Action::DeliveryMerge(merge) => {
+                let Some(code) = self.task_project_code(&merge.task_id)? else {
+                    return Ok(None);
+                };
+                found.projects.insert(code);
+            }
             Action::WorkstreamCreate(_)
             | Action::TaskCancel(_)
             | Action::TaskRevise(_)
-            | Action::DeliveryMerge(_)
             | Action::ProjectRemove(_)
             | Action::DecisionHold(_) => return Ok(None),
         }

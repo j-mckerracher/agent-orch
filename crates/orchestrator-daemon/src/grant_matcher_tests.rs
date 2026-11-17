@@ -202,18 +202,26 @@ fn a_grant_never_covers_a_never_grantable_kind() {
                 "idempotency_key": format!("walk-{}", kind.as_str()),
             }),
         );
-        if GRANTABLE_KINDS.contains(&kind) {
+        if kind == ActionKind::DeliveryMerge {
+            // Grantable only through a merge grant: alone, confirmed.
+            assert_eq!(created.unwrap_err(), RpcError::GrantInvalid, "{kind:?}");
+        } else if GRANTABLE_KINDS.contains(&kind) {
             assert!(created.is_ok(), "{kind:?}");
         } else {
             assert_eq!(created.unwrap_err(), RpcError::GrantInvalid, "{kind:?}");
         }
     }
     // And a proposal of such a kind stays a pending card under a grant that covers every
-    // grantable kind in its project.
+    // ordinary grantable kind in its project (the merge kind cannot share a grant).
+    let ordinary: Vec<&str> = GRANTABLE_KINDS
+        .iter()
+        .filter(|kind| **kind != ActionKind::DeliveryMerge)
+        .map(|kind| kind.as_str())
+        .collect();
     let grant = grant_with(
         &api,
         json!({"kind": "project", "id": code}),
-        json!(GRANTABLE_KINDS.map(|kind| kind.as_str())),
+        json!(ordinary),
         "g-all",
         json!({}),
     );

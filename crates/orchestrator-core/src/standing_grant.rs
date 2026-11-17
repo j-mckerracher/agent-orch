@@ -25,18 +25,29 @@ pub const MAX_USES_CEILING: u32 = 200;
 pub const MAX_TOKEN_BUDGET: u64 = 1_000_000_000;
 /// Most kinds one grant may name.
 pub const MAX_KINDS: usize = 16;
+/// Uses of a merge grant that names no limit.
+pub const MERGE_DEFAULT_MAX_USES: u32 = 5;
+/// Most uses a merge grant may allow.
+pub const MERGE_MAX_USES_CEILING: u32 = 20;
+/// Longest life of a merge grant, in seconds (24 hours). Migration 0052 enforces the same limit.
+pub const MERGE_MAX_EXPIRY_SECS: u64 = 24 * 3600;
+/// Longest head-branch prefix a merge grant may name, in characters.
+pub const MAX_BRANCH_PREFIX_CHARS: usize = 64;
 
 /// Kinds a grant may name. Fail closed: a kind that is on no list is not grantable, and the
 /// walk test fails until a person classifies it. `decision.hold` is left out by least
 /// authority until its parameters are reviewed; `workstream.create` is left out because it
-/// names no project or workstream to bind a grant to.
-pub const GRANTABLE_KINDS: [ActionKind; 6] = [
+/// names no project or workstream to bind a grant to. `delivery.merge` is listed, but a grant
+/// may name it only as the one kind, on a project, with the unattended-merge confirmation:
+/// [`GrantTerms::validate`] holds those rules.
+pub const GRANTABLE_KINDS: [ActionKind; 7] = [
     ActionKind::WorkstreamUpdate,
     ActionKind::ObjectiveAdd,
     ActionKind::ObjectiveRevise,
     ActionKind::TaskPropose,
     ActionKind::TaskRetry,
     ActionKind::WorkstreamLinkTask,
+    ActionKind::DeliveryMerge,
 ];
 
 /// What a grant is bound to. The string is the stored id: a project id or a workstream id.
@@ -80,6 +91,11 @@ pub struct GrantTerms {
     pub expires_in_secs: u64,
     pub max_uses: u32,
     pub token_budget: u64,
+    /// The user's explicit consent to merge with no per-action click. Required for a merge
+    /// grant; meaningless for any other.
+    pub confirm_unattended_merge: bool,
+    /// Head-branch prefix a merge grant covers. `None` covers every branch of the project.
+    pub branch_prefix: Option<String>,
 }
 
 /// Why validation refused. Stable codes for the wire `reason` and for tests.
@@ -98,6 +114,14 @@ pub enum GrantRefusal {
     ExpiryOutOfRange,
     UsesOutOfRange,
     BudgetOutOfRange,
+    /// A grant that names `delivery.merge` names no other kind.
+    MergeKindNotAlone,
+    /// A merge grant is scoped to one project, never a workstream.
+    MergeKindNeedsProject,
+    /// A merge grant needs `confirm_unattended_merge`.
+    MergeNeedsConfirmation,
+    /// The branch prefix is malformed, or the grant is not a merge grant.
+    BranchPrefixInvalid,
 }
 
 impl GrantRefusal {
@@ -114,6 +138,10 @@ impl GrantRefusal {
             Self::ExpiryOutOfRange => "expiry_out_of_range",
             Self::UsesOutOfRange => "uses_out_of_range",
             Self::BudgetOutOfRange => "budget_out_of_range",
+            Self::MergeKindNotAlone => "merge_kind_not_alone",
+            Self::MergeKindNeedsProject => "merge_kind_needs_project",
+            Self::MergeNeedsConfirmation => "merge_needs_confirmation",
+            Self::BranchPrefixInvalid => "branch_prefix_invalid",
         }
     }
 }
@@ -140,9 +168,26 @@ pub fn check_kind(kind: ActionKind) -> Result<(), GrantRefusal> {
     Ok(())
 }
 
+/// Whether `prefix` may name the head branches of a merge grant: 1 to 64 characters of
+/// letters, digits, `/`, `-`, `_` and `.`, with no `..`.
+pub fn valid_branch_prefix(prefix: &str) -> bool {
+    (1..=MAX_BRANCH_PREFIX_CHARS).contains(&prefix.chars().count())
+        && prefix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'))
+        && !prefix.contains("..")
+}
+
 impl GrantTerms {
+    /// Whether these terms are a merge grant: they name `delivery.merge`.
+    pub fn is_merge(&self) -> bool {
+        self.kinds.contains(&ActionKind::DeliveryMerge)
+    }
+
     /// Checks the terms. The first failure wins, in this order: kinds (empty, too many,
-    /// duplicate, then each kind), scope, expiry, uses, budget.
+    /// duplicate, then each kind), the merge rules (alone, project scope, confirmation),
+    /// scope, expiry, uses, budget, branch prefix. A merge grant has a shorter life (24
+    /// hours) and fewer uses (20) than any other.
     pub fn validate(&self) -> Result<(), GrantRefusal> {
         if self.kinds.is_empty() {
             return Err(GrantRefusal::NoKinds);
@@ -158,17 +203,39 @@ impl GrantTerms {
         for kind in &self.kinds {
             check_kind(*kind)?;
         }
+        let merge = self.is_merge();
+        if merge {
+            if self.kinds.len() != 1 {
+                return Err(GrantRefusal::MergeKindNotAlone);
+            }
+            if !matches!(self.scope, GrantScope::Project(_)) {
+                return Err(GrantRefusal::MergeKindNeedsProject);
+            }
+            if !self.confirm_unattended_merge {
+                return Err(GrantRefusal::MergeNeedsConfirmation);
+            }
+        }
         if !(1..=128).contains(&self.scope.id().chars().count()) {
             return Err(GrantRefusal::ScopeInvalid);
         }
-        if !(MIN_EXPIRY_SECS..=MAX_EXPIRY_SECS).contains(&self.expires_in_secs) {
+        let (max_expiry, max_uses) = if merge {
+            (MERGE_MAX_EXPIRY_SECS, MERGE_MAX_USES_CEILING)
+        } else {
+            (MAX_EXPIRY_SECS, MAX_USES_CEILING)
+        };
+        if !(MIN_EXPIRY_SECS..=max_expiry).contains(&self.expires_in_secs) {
             return Err(GrantRefusal::ExpiryOutOfRange);
         }
-        if !(1..=MAX_USES_CEILING).contains(&self.max_uses) {
+        if !(1..=max_uses).contains(&self.max_uses) {
             return Err(GrantRefusal::UsesOutOfRange);
         }
         if !(1..=MAX_TOKEN_BUDGET).contains(&self.token_budget) {
             return Err(GrantRefusal::BudgetOutOfRange);
+        }
+        if let Some(prefix) = &self.branch_prefix {
+            if !merge || !valid_branch_prefix(prefix) {
+                return Err(GrantRefusal::BranchPrefixInvalid);
+            }
         }
         Ok(())
     }
@@ -216,6 +283,10 @@ pub struct StandingGrant {
     /// Creation sequence of the newest proposal event when the grant was made. A proposal
     /// matches only if its own creation sequence is above it (no retroactive consent).
     pub proposal_floor: i64,
+    /// Set only on a merge grant: the user confirmed merging with no per-action click.
+    pub confirm_unattended_merge: bool,
+    /// Head-branch prefix a merge grant covers. `None` covers every branch.
+    pub branch_prefix: Option<String>,
 }
 
 impl StandingGrant {
@@ -243,9 +314,23 @@ impl StandingGrant {
     }
 
     /// Whether the grant names `kind`. A kind that is never grantable is never covered, even
-    /// when a row names it.
+    /// when a row names it. `delivery.merge` is covered only by a grant that names it alone,
+    /// on a project, with the confirmation, whatever else a row says.
     pub fn covers(&self, kind: ActionKind) -> bool {
-        check_kind(kind).is_ok() && self.kinds.contains(&kind)
+        if check_kind(kind).is_err() || !self.kinds.contains(&kind) {
+            return false;
+        }
+        kind != ActionKind::DeliveryMerge
+            || (self.kinds.len() == 1
+                && self.confirm_unattended_merge
+                && matches!(self.scope, GrantScope::Project(_)))
+    }
+
+    /// Whether a merge grant covers a pull request whose head branch is `head_branch`.
+    pub fn covers_branch(&self, head_branch: &str) -> bool {
+        self.branch_prefix
+            .as_deref()
+            .is_none_or(|prefix| head_branch.starts_with(prefix))
     }
 }
 
@@ -260,6 +345,17 @@ mod tests {
             expires_in_secs: DEFAULT_EXPIRY_SECS,
             max_uses: DEFAULT_MAX_USES,
             token_budget: 1000,
+            confirm_unattended_merge: false,
+            branch_prefix: None,
+        }
+    }
+
+    fn merge_terms() -> GrantTerms {
+        GrantTerms {
+            kinds: vec![ActionKind::DeliveryMerge],
+            max_uses: MERGE_DEFAULT_MAX_USES,
+            confirm_unattended_merge: true,
+            ..terms()
         }
     }
 
@@ -275,6 +371,8 @@ mod tests {
             token_budget: 100,
             revoked_at_ms: None,
             proposal_floor: 0,
+            confirm_unattended_merge: false,
+            branch_prefix: None,
         }
     }
 
@@ -298,13 +396,8 @@ mod tests {
     }
 
     #[test]
-    fn the_four_never_grantable_kinds_are_refused_by_grant_validation() {
-        for name in [
-            "project.remove",
-            "delivery.merge",
-            "task.cancel",
-            "task.revise",
-        ] {
+    fn the_three_never_grantable_kinds_are_refused_by_grant_validation() {
+        for name in ["project.remove", "task.cancel", "task.revise"] {
             assert_eq!(
                 check_kind_name(name),
                 Err(GrantRefusal::KindNeverGrantable),
@@ -389,7 +482,98 @@ mod tests {
             case(|t| t.token_budget = MAX_TOKEN_BUDGET + 1),
             Err(GrantRefusal::BudgetOutOfRange)
         );
-        assert_eq!(case(|t| t.kinds = GRANTABLE_KINDS.to_vec()), Ok(()));
+        let ordinary: Vec<ActionKind> = GRANTABLE_KINDS
+            .into_iter()
+            .filter(|kind| *kind != ActionKind::DeliveryMerge)
+            .collect();
+        let mut with_ordinary = terms();
+        with_ordinary.kinds = ordinary;
+        assert_eq!(with_ordinary.validate(), Ok(()));
+    }
+
+    #[test]
+    fn merge_grant_validation_applies_each_rule() {
+        let case = |change: fn(&mut GrantTerms)| {
+            let mut changed = merge_terms();
+            change(&mut changed);
+            changed.validate()
+        };
+        assert_eq!(merge_terms().validate(), Ok(()));
+        assert_eq!(
+            case(|t| t.kinds = vec![ActionKind::DeliveryMerge, ActionKind::TaskPropose]),
+            Err(GrantRefusal::MergeKindNotAlone)
+        );
+        assert_eq!(
+            case(|t| t.kinds = vec![ActionKind::TaskPropose, ActionKind::DeliveryMerge]),
+            Err(GrantRefusal::MergeKindNotAlone)
+        );
+        assert_eq!(
+            case(|t| t.scope = GrantScope::Workstream("w-1".to_owned())),
+            Err(GrantRefusal::MergeKindNeedsProject)
+        );
+        assert_eq!(
+            case(|t| t.confirm_unattended_merge = false),
+            Err(GrantRefusal::MergeNeedsConfirmation)
+        );
+        assert_eq!(
+            GrantRefusal::MergeNeedsConfirmation.code(),
+            "merge_needs_confirmation"
+        );
+        assert_eq!(case(|t| t.max_uses = 20), Ok(()));
+        assert_eq!(case(|t| t.max_uses = 21), Err(GrantRefusal::UsesOutOfRange));
+        assert_eq!(case(|t| t.expires_in_secs = 24 * 3600), Ok(()));
+        assert_eq!(
+            case(|t| t.expires_in_secs = 24 * 3600 + 1),
+            Err(GrantRefusal::ExpiryOutOfRange)
+        );
+        assert_eq!(
+            case(|t| t.expires_in_secs = 59),
+            Err(GrantRefusal::ExpiryOutOfRange)
+        );
+        assert_eq!(MERGE_DEFAULT_MAX_USES, 5);
+    }
+
+    #[test]
+    fn a_branch_prefix_is_for_a_merge_grant_and_must_be_plain() {
+        let mut with_prefix = merge_terms();
+        with_prefix.branch_prefix = Some("moa/".to_owned());
+        assert_eq!(with_prefix.validate(), Ok(()));
+        let too_long = "a".repeat(65);
+        for bad in ["", "a b", "moa/../x", "moa/\u{7f}", too_long.as_str()] {
+            with_prefix.branch_prefix = Some(bad.to_owned());
+            assert_eq!(
+                with_prefix.validate(),
+                Err(GrantRefusal::BranchPrefixInvalid),
+                "{bad:?}"
+            );
+        }
+        let mut ordinary = terms();
+        ordinary.branch_prefix = Some("moa/".to_owned());
+        assert_eq!(ordinary.validate(), Err(GrantRefusal::BranchPrefixInvalid));
+    }
+
+    #[test]
+    fn a_stored_merge_grant_covers_merge_only_when_alone_confirmed_and_on_a_project() {
+        let mut stored = grant();
+        stored.kinds = vec![ActionKind::DeliveryMerge];
+        assert!(!stored.covers(ActionKind::DeliveryMerge), "no confirmation");
+        stored.confirm_unattended_merge = true;
+        assert!(stored.covers(ActionKind::DeliveryMerge));
+        stored.kinds.push(ActionKind::TaskPropose);
+        assert!(!stored.covers(ActionKind::DeliveryMerge), "not alone");
+        stored.kinds = vec![ActionKind::DeliveryMerge];
+        stored.scope = GrantScope::Workstream("w-1".to_owned());
+        assert!(!stored.covers(ActionKind::DeliveryMerge), "not a project");
+    }
+
+    #[test]
+    fn a_branch_prefix_covers_only_the_branches_that_start_with_it() {
+        let mut stored = grant();
+        assert!(stored.covers_branch("anything"));
+        stored.branch_prefix = Some("moa/".to_owned());
+        assert!(stored.covers_branch("moa/add-tests"));
+        assert!(!stored.covers_branch("feature/moa/add-tests"));
+        assert!(!stored.covers_branch("moa"));
     }
 
     #[test]

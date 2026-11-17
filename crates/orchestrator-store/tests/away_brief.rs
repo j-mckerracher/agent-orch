@@ -309,6 +309,8 @@ fn a_grant_used_or_ended_in_the_window_is_listed_with_its_status() {
         expires_in_secs: 3600,
         max_uses: 5,
         token_budget: 1000,
+        confirm_unattended_merge: false,
+        branch_prefix: None,
     };
     store.create_standing_grant("g-1", &terms, FROM).unwrap();
     store

@@ -175,11 +175,118 @@ fn grants_create_replays_by_key_and_list_shows_the_policy() {
     assert_eq!(policy["max_expires_in_secs"], 604800);
     assert_eq!(policy["default_max_uses"], 20);
     assert_eq!(policy["max_max_uses"], 200);
-    assert_eq!(policy["merge_kind_available"], false);
+    assert_eq!(policy["merge_kind_available"], true);
+    assert_eq!(policy["merge_default_max_uses"], 5);
+    assert_eq!(policy["merge_max_max_uses"], 20);
+    assert_eq!(policy["merge_max_expires_in_secs"], 86400);
+    assert_eq!(
+        policy["never_grantable_kinds"],
+        json!(["project.remove", "task.cancel", "task.revise"])
+    );
     let one = call(&api, "grants.list", json!({"limit": 1})).unwrap();
     assert_eq!(one["grants"].as_array().unwrap().len(), 1);
     assert_eq!(one["more"], true);
     assert!(!listed.to_string().contains("canary-root"), "{listed}");
+}
+
+fn merge_params(key: &str) -> Value {
+    let mut params = create_params(alpha_scope(), json!(["delivery.merge"]), key);
+    params["confirm_unattended_merge"] = json!(true);
+    params
+}
+
+#[test]
+fn grants_create_for_a_merge_needs_the_confirmation_one_project_and_no_other_kind() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let workstream = create_workstream(&api, "Ship M7", "w-1");
+    let refused = |params: Value| call(&api, "grants.create", params).unwrap_err();
+    let changed = |name: &str, value: Value, key: &str| {
+        let mut params = merge_params(key);
+        params[name] = value;
+        params
+    };
+
+    // Without the confirmation, or with it false: refused, and nothing is written.
+    let mut missing = merge_params("m-missing");
+    missing
+        .as_object_mut()
+        .unwrap()
+        .remove("confirm_unattended_merge");
+    assert_eq!(refused(missing), RpcError::GrantInvalid);
+    assert_eq!(
+        refused(changed("confirm_unattended_merge", json!(false), "m-false")),
+        RpcError::GrantInvalid
+    );
+    // Not alone, in either order.
+    for (index, kinds) in [
+        json!(["delivery.merge", "task.propose"]),
+        json!(["task.propose", "delivery.merge"]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            refused(changed("kinds", kinds, &format!("m-kinds-{index}"))),
+            RpcError::GrantInvalid
+        );
+    }
+    // A workstream scope, too many uses, too long a life, a malformed prefix.
+    assert_eq!(
+        refused(changed(
+            "scope",
+            json!({"kind": "workstream", "id": workstream}),
+            "m-workstream"
+        )),
+        RpcError::GrantInvalid
+    );
+    assert_eq!(
+        refused(changed("max_uses", json!(21), "m-uses")),
+        RpcError::GrantInvalid
+    );
+    assert_eq!(
+        refused(changed("expires_in_secs", json!(24 * 3600 + 1), "m-life")),
+        RpcError::GrantInvalid
+    );
+    assert_eq!(
+        refused(changed("branch_prefix", json!("a b"), "m-prefix")),
+        RpcError::GrantInvalid
+    );
+    // A prefix belongs to a merge grant alone.
+    let mut ordinary = create_params(alpha_scope(), json!(["task.propose"]), "m-ordinary");
+    ordinary["branch_prefix"] = json!("moa/");
+    assert_eq!(refused(ordinary), RpcError::GrantInvalid);
+    assert!(api
+        .store
+        .standing_grants(true, crate::executor::unix_now_ms(), 10)
+        .unwrap()
+        .is_empty());
+
+    let mut params = merge_params("m-ok");
+    params["branch_prefix"] = json!("moa/");
+    let created = call(&api, "grants.create", params.clone()).unwrap();
+    assert_eq!(call(&api, "grants.create", params).unwrap(), created);
+    let grant = &created["grant"];
+    assert_eq!(grant["kinds"], json!(["delivery.merge"]));
+    assert_eq!(grant["confirm_unattended_merge"], true);
+    assert_eq!(grant["branch_prefix"], "moa/");
+    assert_eq!(grant["max_uses"], 5, "the default of a merge grant");
+    assert_eq!(grant["status"], "active");
+    // The limits are inclusive.
+    let mut limits = merge_params("m-limits");
+    limits["max_uses"] = json!(20);
+    limits["expires_in_secs"] = json!(24 * 3600);
+    assert!(call(&api, "grants.create", limits).is_ok());
+    // An ordinary grant shows neither.
+    let plain = call(
+        &api,
+        "grants.create",
+        create_params(alpha_scope(), json!(["task.propose"]), "m-plain"),
+    )
+    .unwrap();
+    assert_eq!(plain["grant"]["confirm_unattended_merge"], false);
+    assert_eq!(plain["grant"]["branch_prefix"], Value::Null);
+    assert_eq!(plain["grant"]["max_uses"], 20);
 }
 
 #[test]

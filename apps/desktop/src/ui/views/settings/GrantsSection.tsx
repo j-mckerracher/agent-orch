@@ -3,7 +3,7 @@ import { useId, useRef, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors";
 import { basename } from "../../format";
 import { notOk, observation } from "../../../sources/surfaces/result";
-import type { GrantItem, GrantPolicy, GrantsSnapshot, Workstream } from "../../../sources/surfaces/types";
+import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 import { Badge, Button, Pill } from "../../theme";
 import { Notice } from "../../widgets";
@@ -11,6 +11,11 @@ import {
   FIXTURE_TEXT,
   INTRO_TEXT,
   INVALID_REASON,
+  MERGE_BADGE,
+  MERGE_CONFIRM_TEXT,
+  MERGE_INTRO_TEXT,
+  MERGE_INVALID_REASON,
+  MERGE_TITLE,
   NEVER_GRANTED_TEXT,
   NOT_CONNECTED_REASON,
   REVOKE_LOCKED_NOTE,
@@ -19,11 +24,19 @@ import {
   UPDATE_NOTE,
   createFailureText,
   createdText,
+  branchPrefixText,
   hasErrors,
+  hasMergeErrors,
   initialDraft,
+  initialMergeDraft,
   isActive,
+  isMergeGrant,
   kindLabel,
   maxHours,
+  mergeCreateFailureText,
+  mergeLimits,
+  mergeOffered,
+  mergeTermsOf,
   offeredKinds,
   revokeFailureText,
   revokedText,
@@ -35,7 +48,9 @@ import {
   tokensText,
   usesLeftText,
   validateDraft,
+  validateMerge,
   type GrantDraft,
+  type MergeDraft,
 } from "./grantsModel";
 import { projectCode } from "./projectCode";
 
@@ -43,6 +58,7 @@ import { projectCode } from "./projectCode";
 export const GRANTS_POLL_MS = 15_000;
 
 type Field = "scope" | "kinds" | "hours" | "uses" | "budget";
+type MergeField = "scope" | "prefix" | "hours" | "uses" | "budget" | "confirmed";
 
 const describedBy = (...ids: Array<string | false | null | undefined>) => ids.filter(Boolean).join(" ") || undefined;
 
@@ -55,9 +71,12 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
   const [touched, setTouched] = useState<ReadonlySet<Field>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+  const [mergeTyped, setMergeTyped] = useState<MergeDraft | null>(null);
+  const [mergeTouched, setMergeTouched] = useState<ReadonlySet<MergeField>>(new Set());
   const rows = useRef(new Map<string, HTMLLIElement>());
   const working = useRef(false);
   const ids = { reason: useId(), scope: useId(), kinds: useId(), hours: useId(), uses: useId(), budget: useId(), select: useId() };
+  const mergeIds = { reason: useId(), select: useId(), prefix: useId(), hours: useId(), uses: useId(), budget: useId(), confirm: useId() };
 
   const draft = typed ?? initialDraft(policy);
   const errors = validateDraft(draft, policy);
@@ -71,6 +90,16 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
     setTouched((current) => new Set(current).add(field));
   };
   const offered = offeredKinds(policy);
+  const mergeDraft = mergeTyped ?? initialMergeDraft(policy);
+  const mergeErrors = validateMerge(mergeDraft, policy);
+  const mergeLimit = mergeLimits(policy);
+  const mergeReason =
+    live && !gate.connected ? NOT_CONNECTED_REASON : locked ? APPROVER_REQUIRED_NOTICE : hasMergeErrors(mergeErrors) ? MERGE_INVALID_REASON : null;
+  const mergeShown = (field: MergeField) => (mergeTouched.has(field) ? mergeErrors[field] : null);
+  const updateMerge = (patch: Partial<MergeDraft>, field: MergeField) => {
+    setMergeTyped({ ...mergeDraft, ...patch });
+    setMergeTouched((current) => new Set(current).add(field));
+  };
   const nowMs = Date.now();
 
   // Workstreams are read only once the person asks for that scope.
@@ -93,28 +122,39 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
 
   const finish = (kind: "ok" | "bad", text: string) => setAnnouncement({ kind, text });
 
-  const create = async () => {
-    if (reason !== null || working.current) return;
+  /** One create for both forms: `blocked` is the form's disabled reason, `reset` clears the form once the grant is saved. */
+  const submit = async (blocked: string | null, busyKey: string, terms: GrantTerms, reset: () => void, failure: typeof createFailureText) => {
+    if (blocked !== null || working.current) return;
     working.current = true;
-    setBusy("create");
+    setBusy(busyKey);
     setAnnouncement(null);
     try {
-      const receipt = await source.create(termsOf(draft, policy));
+      const receipt = await source.create(terms);
       if (receipt.simulated) {
         finish("ok", receipt.notice ?? FIXTURE_TEXT);
       } else {
         finish("ok", createdText(receipt.grant));
-        setTyped(null);
-        setTouched(new Set());
+        reset();
         reload();
       }
     } catch (error) {
-      finish("bad", createFailureText(asDaemonError(error)));
+      finish("bad", failure(asDaemonError(error)));
     } finally {
       working.current = false;
       setBusy(null);
     }
   };
+
+  const create = () =>
+    submit(reason, "create", termsOf(draft, policy), () => {
+      setTyped(null);
+      setTouched(new Set());
+    }, createFailureText);
+  const createMerge = () =>
+    submit(mergeReason, "merge", mergeTermsOf(mergeDraft), () => {
+      setMergeTyped(null);
+      setMergeTouched(new Set());
+    }, mergeCreateFailureText);
 
   const revoke = async (grant: GrantItem) => {
     if (locked || working.current) return;
@@ -264,6 +304,125 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
         </div>
       </form>
 
+      {mergeOffered(policy) && (
+        <form
+          noValidate
+          aria-label={MERGE_TITLE}
+          aria-disabled={locked || undefined}
+          className="settings-danger"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createMerge();
+          }}
+        >
+          <fieldset className="settings-fieldset" disabled={locked || busy !== null}>
+            <legend>{MERGE_TITLE}</legend>
+            <Notice tone="warn">{MERGE_INTRO_TEXT}</Notice>
+            <div className="settings-row">
+              <label htmlFor={mergeIds.select} className="settings-label">
+                Project for unattended merges
+              </label>
+              <select
+                id={mergeIds.select}
+                value={mergeDraft.scopeId}
+                aria-invalid={mergeShown("scope") ? "true" : undefined}
+                aria-describedby={describedBy(mergeShown("scope") && `${mergeIds.select}-error`)}
+                onChange={(event) => updateMerge({ scopeId: event.target.value }, "scope")}
+              >
+                <option value="">{projectOptions.length === 0 ? "No projects to choose" : "Choose a project"}</option>
+                {projectOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {mergeShown("scope") && (
+                <p id={`${mergeIds.select}-error`} role="alert" className="settings-error">
+                  {mergeErrors.scope}
+                </p>
+              )}
+            </div>
+            <div className="settings-row">
+              <label htmlFor={mergeIds.prefix}>Branch prefix (optional)</label>
+              <input
+                id={mergeIds.prefix}
+                type="text"
+                autoComplete="off"
+                value={mergeDraft.prefix}
+                aria-invalid={mergeShown("prefix") ? "true" : undefined}
+                aria-describedby={describedBy(`${mergeIds.prefix}-hint`, mergeShown("prefix") && `${mergeIds.prefix}-error`)}
+                onChange={(event) => updateMerge({ prefix: event.target.value }, "prefix")}
+              />
+              <p id={`${mergeIds.prefix}-hint`} className="settings-hint">
+                Merge only pull requests whose branch starts with this, for example moa/. Leave empty to cover any branch of the project.
+              </p>
+              {mergeShown("prefix") && (
+                <p id={`${mergeIds.prefix}-error`} role="alert" className="settings-error">
+                  {mergeErrors.prefix}
+                </p>
+              )}
+            </div>
+            <NumberField
+              id={mergeIds.hours}
+              label="Merge approval expires in (hours)"
+              hint={`Default ${mergeLimit.defaultHours}, at most ${mergeLimit.maxHours}. The approval ends then.`}
+              value={mergeDraft.hours}
+              error={mergeShown("hours")}
+              onChange={(hours) => updateMerge({ hours }, "hours")}
+            />
+            <NumberField
+              id={mergeIds.uses}
+              label="Merge approval uses"
+              hint={`Default ${mergeLimit.defaultUses}, at most ${mergeLimit.maxUses}. Each merge is one use.`}
+              value={mergeDraft.uses}
+              error={mergeShown("uses")}
+              onChange={(uses) => updateMerge({ uses }, "uses")}
+            />
+            <NumberField
+              id={mergeIds.budget}
+              label="Merge approval token budget"
+              hint={TOKEN_NOTE}
+              value={mergeDraft.budget}
+              error={mergeShown("budget")}
+              onChange={(budget) => updateMerge({ budget }, "budget")}
+            />
+            <div className="settings-row">
+              <label className="settings-choice">
+                <input
+                  type="checkbox"
+                  checked={mergeDraft.confirmed}
+                  aria-invalid={mergeShown("confirmed") ? "true" : undefined}
+                  aria-describedby={describedBy(mergeShown("confirmed") && `${mergeIds.confirm}-error`)}
+                  onChange={(event) => updateMerge({ confirmed: event.target.checked }, "confirmed")}
+                />
+                {MERGE_CONFIRM_TEXT}
+              </label>
+              {mergeShown("confirmed") && (
+                <p id={`${mergeIds.confirm}-error`} role="alert" className="settings-error">
+                  {mergeErrors.confirmed}
+                </p>
+              )}
+            </div>
+          </fieldset>
+          <div className="settings-actions">
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={mergeReason !== null || busy !== null}
+              aria-busy={busy === "merge"}
+              aria-describedby={mergeReason === null ? undefined : mergeIds.reason}
+            >
+              Save unattended merge approval
+            </Button>
+            {mergeReason !== null && (
+              <p id={mergeIds.reason} className="settings-reason">
+                {mergeReason}
+              </p>
+            )}
+          </div>
+        </form>
+      )}
+
       <h3 className="settings-subhead">Your standing approvals</h3>
       {grants.length === 0 ? (
         <p className="settings-hint">None yet. Nothing runs without your approval.</p>
@@ -285,9 +444,11 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
                 <span className="settings-grant-title">
                   {scopeText(grant)} <span className="settings-hint">{shortGrantId(grant.id)}</span>
                   <Pill tone={chip.tone}>{chip.text}</Pill>
+                  {isMergeGrant(grant) && <Pill tone="bad">{MERGE_BADGE}</Pill>}
                   {fixture && <Badge tone="placeholder">Fixture data</Badge>}
                 </span>
                 <span className="settings-hint">{grant.kinds.map(kindLabel).join(", ")}</span>
+                {isMergeGrant(grant) && <span className="settings-hint">{branchPrefixText(grant)}</span>}
                 <span className="settings-hint">
                   {usesLeftText(grant)} · {timeLeftText(grant, nowMs)} · {tokensText(grant)}
                 </span>

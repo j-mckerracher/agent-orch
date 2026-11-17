@@ -44,13 +44,9 @@ pub const MAX_PULL_REQUEST_NUMBER: u64 = 999_999;
 pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// Wire names of the kinds no grant may ever cover. Names, not [`ActionKind`]
 /// values, so a kind that is planned but not parsed yet is already refused.
-/// `delivery.merge` is parsed now and stays here: each merge needs its own approval.
-pub const NEVER_GRANTABLE: [&str; 4] = [
-    "project.remove",
-    "delivery.merge",
-    "task.cancel",
-    "task.revise",
-];
+/// `delivery.merge` is not here: only a merge grant covers it (see `standing_grant`), and
+/// that grant may name no other kind.
+pub const NEVER_GRANTABLE: [&str; 3] = ["project.remove", "task.cancel", "task.revise"];
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -1905,22 +1901,18 @@ mod tests {
         // constant fails here until a person edits this pin in the same diff.
         assert_eq!(
             NEVER_GRANTABLE,
-            [
-                "project.remove",
-                "delivery.merge",
-                "task.cancel",
-                "task.revise"
-            ]
+            ["project.remove", "task.cancel", "task.revise"]
         );
         assert!(!ActionKind::ProjectRemove.is_grantable());
         assert!(!ActionKind::TaskCancel.is_grantable());
         assert!(!ActionKind::TaskRevise.is_grantable());
-        // `delivery.merge` parses and is never grantable: only a per-action approval merges.
+        // `delivery.merge` parses and is grantable only through a merge grant, whose rules
+        // (alone, one project, confirmed) `GrantTerms::validate` holds.
         assert_eq!(
             ActionKind::parse("delivery.merge"),
             Some(ActionKind::DeliveryMerge)
         );
-        assert!(!ActionKind::DeliveryMerge.is_grantable());
+        assert!(ActionKind::DeliveryMerge.is_grantable());
     }
 
     #[test]

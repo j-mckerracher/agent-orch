@@ -879,7 +879,7 @@ impl DaemonApi {
     /// Why a grant no longer lets an approved proposal start, or `None` while it does. A grant
     /// that cannot be read is an error, not a revoke: the proposal stays `approved` and the
     /// next reconcile pass checks again.
-    fn grant_stop_code(
+    pub(super) fn grant_stop_code(
         &self,
         grant_id: &str,
         now_ms: u64,
@@ -903,7 +903,7 @@ impl DaemonApi {
         }
     }
 
-    fn record_grant_outcome(
+    pub(super) fn record_grant_outcome(
         &self,
         grant_id: &str,
         proposal: &ActionProposal,

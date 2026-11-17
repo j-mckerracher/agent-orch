@@ -2393,6 +2393,65 @@ fn grants_create_and_revoke_are_refused_to_a_token_only_session_on_a_real_daemon
 }
 
 #[test]
+fn merge_grant_create_is_refused_to_a_token_only_session_on_a_real_daemon() {
+    use sha2::{Digest, Sha256};
+
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::negotiate(&layout, &Capability::ALL);
+    let registered = chat.call(
+        "projects.register",
+        json!({"path": layout.repo.to_str().unwrap()}),
+    );
+    let project_id = registered["result"]["id"].as_str().unwrap().to_owned();
+    let hash = Sha256::digest(project_id.as_bytes());
+    let code = format!(
+        "p-{}",
+        hash[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let create = json!({
+        "scope": {"kind": "project", "id": code},
+        "kinds": ["delivery.merge"],
+        "token_budget": 1000,
+        "confirm_unattended_merge": true,
+        "idempotency_key": "m-1",
+    });
+
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("grants.create", create.clone());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    let listed = bare.call("grants.list", json!({}));
+    assert_eq!(listed["result"]["grants"], json!([]), "{listed}");
+
+    // The user's session needs the confirmation too.
+    let mut unconfirmed = create.clone();
+    unconfirmed["confirm_unattended_merge"] = json!(false);
+    unconfirmed["idempotency_key"] = json!("m-2");
+    let refused = chat.call("grants.create", unconfirmed);
+    assert!(refused.get("result").is_none(), "{refused}");
+    assert_ne!(refused["error"]["code"], FORBIDDEN, "{refused}");
+
+    let accepted = chat.call("grants.create", create);
+    assert_eq!(
+        accepted["result"]["grant"]["kinds"],
+        json!(["delivery.merge"])
+    );
+    assert_eq!(
+        accepted["result"]["grant"]["confirm_unattended_merge"],
+        true
+    );
+    assert_eq!(accepted["result"]["grant"]["max_uses"], 5, "{accepted}");
+    bare.relay.close();
+    stop(&layout, daemon, chat);
+}
+
+#[test]
 fn notes_set_is_refused_to_a_token_only_session_on_a_real_daemon() {
     let layout = Layout::new();
     seed::init_repo(&layout.repo);

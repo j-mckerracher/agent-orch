@@ -82,6 +82,8 @@ fn terms(max_uses: u32) -> GrantTerms {
         expires_in_secs: 3600,
         max_uses,
         token_budget: 1000,
+        confirm_unattended_merge: false,
+        branch_prefix: None,
     }
 }
 
@@ -809,4 +811,269 @@ fn the_grant_list_shows_open_grants_and_all_grants_newest_first() {
         .is_empty());
     assert_eq!(store.standing_grants(true, now(), 1).unwrap().len(), 1);
     assert!(store.standing_grant("missing").unwrap().is_none());
+}
+
+fn merge_terms(max_uses: u32) -> GrantTerms {
+    GrantTerms {
+        kinds: vec![ActionKind::DeliveryMerge],
+        confirm_unattended_merge: true,
+        branch_prefix: Some("moa/".to_owned()),
+        expires_in_secs: 3600,
+        ..terms(max_uses)
+    }
+}
+
+#[test]
+fn migration_0052_rebuilds_the_grant_table_keeping_rows_and_triggers_and_allows_the_merge_kind() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let legacy_dir = directory.path().join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let version: u32 = entry
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split('_')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        if version < 52 {
+            fs::copy(&entry, legacy_dir.join(entry.file_name().unwrap())).unwrap();
+        }
+    }
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        let newest: i64 = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(newest, 51);
+        connection.close().await.unwrap();
+    });
+    for id in ["old-1", "old-2"] {
+        sql(
+            &path,
+            "INSERT INTO standing_grants (id, scope_kind, scope_id, kinds, created_at_ms, \
+             expires_at_ms, max_uses, token_budget, proposal_floor) \
+             VALUES (?, 'project', 'p1', '[\"task.propose\"]', 1000, 2000, 5, 10, 3)",
+            &[id],
+        );
+        sql(
+            &path,
+            "INSERT INTO standing_grant_events (grant_id, event, at_ms) VALUES (?, 'created', 1000)",
+            &[id],
+        );
+    }
+    sql(
+        &path,
+        "UPDATE standing_grants SET uses_used = 1 WHERE id = 'old-2'",
+        &[],
+    );
+    let dump = |path: &Path| {
+        scalars(
+            path,
+            "SELECT json_array(rowid, id, scope_kind, scope_id, kinds, created_at_ms, expires_at_ms, \
+             max_uses, uses_used, token_budget, proposal_floor, revoked_at_ms) \
+             FROM standing_grants ORDER BY rowid",
+        )
+    };
+    let before = dump(&path);
+    assert_eq!(before.len(), 2);
+
+    let store = SqliteStore::new(&path).unwrap();
+
+    assert_eq!(dump(&path), before);
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT CAST(success AS TEXT) FROM _sqlx_migrations WHERE version = 52"
+        ),
+        vec!["1"]
+    );
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT json_array(confirm_unattended_merge, branch_prefix) FROM standing_grants \
+             ORDER BY rowid"
+        ),
+        vec!["[0,null]", "[0,null]"]
+    );
+    assert_eq!(
+        count(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grant_events"
+        ),
+        "2"
+    );
+    // The triggers are back, and they still hold.
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'standing_grants' \
+             ORDER BY name"
+        ),
+        vec![
+            "standing_grants_fixed_terms",
+            "standing_grants_no_delete",
+            "standing_grants_revoke_once",
+            "standing_grants_use_counter"
+        ]
+    );
+    assert!(try_sql(&path, "DELETE FROM standing_grants", &[]).is_err());
+    assert!(try_sql(&path, "UPDATE standing_grants SET max_uses = 9", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE standing_grants SET uses_used = 4 WHERE id = 'old-1'",
+        &[]
+    )
+    .is_err());
+    // The old grants still list newest first by their original order, and a merge grant now works.
+    assert_eq!(store.standing_grants(true, 1500, 10).unwrap().len(), 2);
+    let merge = store
+        .create_standing_grant("merge-1", &merge_terms(3), now())
+        .unwrap();
+    assert!(merge.confirm_unattended_merge);
+    assert_eq!(merge.branch_prefix.as_deref(), Some("moa/"));
+}
+
+#[test]
+fn a_merge_grant_is_stored_whole_and_the_database_holds_its_rules() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, path) = store_at(directory.path());
+
+    let created = store
+        .create_standing_grant("merge-1", &merge_terms(3), now())
+        .unwrap();
+    assert_eq!(created.kinds, vec![ActionKind::DeliveryMerge]);
+    assert!(created.confirm_unattended_merge);
+    assert_eq!(created.branch_prefix.as_deref(), Some("moa/"));
+    assert!(created.covers(ActionKind::DeliveryMerge));
+    // The same terms again return the stored grant; another prefix is another grant.
+    let again = store
+        .create_standing_grant("merge-1", &merge_terms(3), now() + 5)
+        .unwrap();
+    assert_eq!(again, created);
+    let mut other = merge_terms(3);
+    other.branch_prefix = None;
+    let error = store
+        .create_standing_grant("merge-1", &other, now())
+        .unwrap_err();
+    assert_eq!(refusal(&error), Some(GrantError::IdInUse));
+    assert_eq!(store.standing_grant("merge-1").unwrap().unwrap(), created);
+
+    // The core rules refuse before any write.
+    for (change, wanted) in [
+        (
+            (|t: &mut GrantTerms| t.kinds.push(ActionKind::TaskPropose)) as fn(&mut GrantTerms),
+            GrantRefusal::MergeKindNotAlone,
+        ),
+        (
+            |t: &mut GrantTerms| t.scope = GrantScope::Workstream("w1".to_owned()),
+            GrantRefusal::MergeKindNeedsProject,
+        ),
+        (
+            |t: &mut GrantTerms| t.confirm_unattended_merge = false,
+            GrantRefusal::MergeNeedsConfirmation,
+        ),
+        (
+            |t: &mut GrantTerms| t.max_uses = 21,
+            GrantRefusal::UsesOutOfRange,
+        ),
+        (
+            |t: &mut GrantTerms| t.expires_in_secs = 24 * 3600 + 1,
+            GrantRefusal::ExpiryOutOfRange,
+        ),
+    ] {
+        let mut asked = merge_terms(3);
+        change(&mut asked);
+        let error = store
+            .create_standing_grant("merge-bad", &asked, now())
+            .unwrap_err();
+        assert_eq!(
+            refusal(&error),
+            Some(GrantError::Invalid(wanted)),
+            "{wanted:?}"
+        );
+    }
+    assert_eq!(
+        count(&path, "SELECT CAST(COUNT(*) AS TEXT) FROM standing_grants"),
+        "1"
+    );
+
+    // The database refuses the same shapes from another writer. `raw-ok` proves the statement
+    // itself is sound: only the named rule differs in each refused row.
+    let insert = |id: &str,
+                  kinds: &str,
+                  scope: &str,
+                  confirm: &str,
+                  uses: &str,
+                  expires: &str,
+                  prefix: &str| {
+        try_sql(
+            &path,
+            "INSERT INTO standing_grants (id, scope_kind, scope_id, kinds, created_at_ms, \
+             expires_at_ms, max_uses, token_budget, proposal_floor, confirm_unattended_merge, \
+             branch_prefix) VALUES (?, ?, 'p1', ?, 1000, ?, ?, 10, 0, ?, NULLIF(?, ''))",
+            &[id, scope, kinds, expires, uses, confirm, prefix],
+        )
+    };
+    let merge = "[\"delivery.merge\"]";
+    let two = "[\"delivery.merge\",\"task.propose\"]";
+    assert!(insert("raw-ok", merge, "project", "1", "5", "3601000", "moa/").is_ok());
+    assert!(insert("raw-1", two, "project", "1", "5", "3601000", "").is_err());
+    assert!(insert("raw-2", merge, "workstream", "1", "5", "3601000", "").is_err());
+    assert!(insert("raw-3", merge, "project", "0", "5", "3601000", "").is_err());
+    assert!(insert("raw-4", merge, "project", "1", "21", "3601000", "").is_err());
+    assert!(insert("raw-5", merge, "project", "1", "5", "86401001", "").is_err());
+    assert!(insert(
+        "raw-6",
+        "[\"task.propose\"]",
+        "project",
+        "0",
+        "5",
+        "3601000",
+        "moa/"
+    )
+    .is_err());
+    assert!(insert(
+        "raw-7",
+        "[\"task.propose\"]",
+        "project",
+        "0",
+        "5",
+        "3601000",
+        ""
+    )
+    .is_ok());
+    assert!(insert("raw-8", merge, "project", "2", "5", "3601000", "").is_err());
+    // The confirmation and the prefix are fixed terms.
+    assert!(try_sql(
+        &path,
+        "UPDATE standing_grants SET confirm_unattended_merge = 0 WHERE id = 'merge-1'",
+        &[]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE standing_grants SET branch_prefix = NULL WHERE id = 'merge-1'",
+        &[]
+    )
+    .is_err());
 }

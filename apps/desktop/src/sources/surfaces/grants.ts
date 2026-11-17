@@ -11,7 +11,7 @@
 import type { ConnectionManager } from "../../daemon/connection";
 import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
-import type { GrantPolicyWire, GrantWire } from "../../daemon/types";
+import type { GrantPolicyWire, GrantWire, GrantsCreateParams } from "../../daemon/types";
 import type { SurfaceFixtureScenario } from "./fixtures";
 import { liveRead } from "./liveSupport";
 import { notOk, observation, okResult } from "./result";
@@ -36,6 +36,7 @@ export function mapGrant(wire: GrantWire): GrantItem {
     tokensSpent: wire.tokens_spent,
     status: wire.status,
     revokedAtMs: wire.revoked_at_ms,
+    branchPrefix: wire.branch_prefix ?? null,
   };
 }
 
@@ -48,6 +49,23 @@ export function mapPolicy(wire: GrantPolicyWire): GrantPolicy {
     defaultMaxUses: wire.default_max_uses,
     maxMaxUses: wire.max_max_uses,
     maxTokenBudget: wire.max_token_budget,
+    mergePolicy:
+      wire.merge_policy === undefined
+        ? null
+        : { defaultUses: wire.merge_policy.default_uses, maxUses: wire.merge_policy.max_uses, maxExpiryHours: wire.merge_policy.max_expiry_hours },
+  };
+}
+
+/** The `grants.create` params for terms; the merge fields travel only with a merge grant. */
+export function createParams(terms: GrantTerms): GrantsCreateParams {
+  return {
+    scope: { kind: terms.scopeKind, id: terms.scopeId },
+    kinds: terms.kinds,
+    expires_in_secs: terms.expiresInSecs,
+    max_uses: terms.maxUses,
+    token_budget: terms.tokenBudget,
+    ...(terms.confirmUnattendedMerge === undefined ? {} : { confirm_unattended_merge: terms.confirmUnattendedMerge }),
+    ...(terms.branchPrefix ? { branch_prefix: terms.branchPrefix } : {}),
   };
 }
 
@@ -77,13 +95,7 @@ export function createLiveGrants(
         return { grants: result.grants.map(mapGrant), policy: mapPolicy(result.policy) };
       }),
     async create(terms) {
-      const params = {
-        scope: { kind: terms.scopeKind, id: terms.scopeId },
-        kinds: terms.kinds,
-        expires_in_secs: terms.expiresInSecs,
-        max_uses: terms.maxUses,
-        token_budget: terms.tokenBudget,
-      };
+      const params = createParams(terms);
       const result = await write("grants:create", JSON.stringify(params), (key) => connection.api().grantsCreate(params, key));
       return { simulated: false, provenance, notice: null, grant: mapGrant(result.grant), stopped: 0 };
     },
@@ -146,6 +158,7 @@ export function createFixtureGrants(scenario: SurfaceFixtureScenario, now: () =>
         usesUsed: 0,
         tokenBudget: terms.tokenBudget,
         tokensSpent: 0,
+        branchPrefix: terms.branchPrefix ?? null,
       };
       return Promise.resolve({ simulated: true, provenance, notice: FIXTURE_GRANT_NOTICE, grant, stopped: 0 });
     },

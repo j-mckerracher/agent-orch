@@ -7,11 +7,12 @@
 //! `p-xxxxxxxx` code, or one workstream, never every project. Nothing here, on the wire or in
 //! the store, holds a path: the code is a hash of the project id.
 
+use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::orchestrator_action::NEVER_GRANTABLE;
 use orchestrator_core::standing_grant::{
     check_kind_name, GrantRefusal, GrantScope, GrantTerms, StandingGrant, DEFAULT_EXPIRY_SECS,
     DEFAULT_MAX_USES, GRANTABLE_KINDS, MAX_EXPIRY_SECS, MAX_TOKEN_BUDGET, MAX_USES_CEILING,
-    MIN_EXPIRY_SECS,
+    MERGE_DEFAULT_MAX_USES, MERGE_MAX_EXPIRY_SECS, MERGE_MAX_USES_CEILING, MIN_EXPIRY_SECS,
 };
 use orchestrator_store::{GrantError, WorkstreamStoreError};
 
@@ -42,6 +43,13 @@ struct CreateParams {
     #[serde(default)]
     max_uses: Option<u32>,
     token_budget: u64,
+    /// Required `true` for a merge grant: the user's consent to merging with no per-action
+    /// click. Absent means `false`.
+    #[serde(default)]
+    confirm_unattended_merge: bool,
+    /// Head-branch prefix a merge grant covers. Merge grants only.
+    #[serde(default)]
+    branch_prefix: Option<String>,
     idempotency_key: String,
 }
 
@@ -162,12 +170,20 @@ impl DaemonApi {
             },
             _ => return Err(self.grant_refused(GrantRefusal::ScopeInvalid)),
         };
+        // A merge grant has fewer uses by default than any other.
+        let default_uses = if kinds.contains(&ActionKind::DeliveryMerge) {
+            MERGE_DEFAULT_MAX_USES
+        } else {
+            DEFAULT_MAX_USES
+        };
         let terms = GrantTerms {
             scope,
             kinds,
             expires_in_secs: request.expires_in_secs.unwrap_or(DEFAULT_EXPIRY_SECS),
-            max_uses: request.max_uses.unwrap_or(DEFAULT_MAX_USES),
+            max_uses: request.max_uses.unwrap_or(default_uses),
             token_budget: request.token_budget,
+            confirm_unattended_merge: request.confirm_unattended_merge,
+            branch_prefix: request.branch_prefix.clone(),
         };
         terms
             .validate()
@@ -211,7 +227,8 @@ impl DaemonApi {
             "id": grant.id,
             "scope": {"kind": grant.scope.kind_str(), "id": grant.scope.id(), "label": label},
             "kinds": grant.kinds.iter().map(|kind| kind.as_str()).collect::<Vec<_>>(),
-            "branch_prefix": null,
+            "branch_prefix": grant.branch_prefix,
+            "confirm_unattended_merge": grant.confirm_unattended_merge,
             "created_at_ms": grant.created_at_ms,
             "expires_at_ms": grant.expires_at_ms,
             "max_uses": grant.max_uses,
@@ -227,7 +244,12 @@ impl DaemonApi {
 /// The limits a create form offers, so the desktop never keeps its own copy of the list.
 fn grant_policy() -> Value {
     json!({
-        "grantable_kinds": GRANTABLE_KINDS.iter().map(|kind| kind.as_str()).collect::<Vec<_>>(),
+        // The merge kind is not in this list: it has its own form, and no ordinary grant may name it.
+        "grantable_kinds": GRANTABLE_KINDS
+            .iter()
+            .filter(|kind| **kind != ActionKind::DeliveryMerge)
+            .map(|kind| kind.as_str())
+            .collect::<Vec<_>>(),
         "never_grantable_kinds": NEVER_GRANTABLE,
         "default_expires_in_secs": DEFAULT_EXPIRY_SECS,
         "max_expires_in_secs": MAX_EXPIRY_SECS,
@@ -235,6 +257,9 @@ fn grant_policy() -> Value {
         "default_max_uses": DEFAULT_MAX_USES,
         "max_max_uses": MAX_USES_CEILING,
         "max_token_budget": MAX_TOKEN_BUDGET,
-        "merge_kind_available": false,
+        "merge_kind_available": true,
+        "merge_default_max_uses": MERGE_DEFAULT_MAX_USES,
+        "merge_max_max_uses": MERGE_MAX_USES_CEILING,
+        "merge_max_expires_in_secs": MERGE_MAX_EXPIRY_SECS,
     })
 }

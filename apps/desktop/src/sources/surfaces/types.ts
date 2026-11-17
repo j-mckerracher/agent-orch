@@ -965,10 +965,20 @@ export interface GrantItem {
   /** `active`, `expired`, `revoked`, `exhausted` or `budget_exhausted`. */
   status: string;
   revokedAtMs: number | null;
+  /** Merge grant only: the head branch must start with this. Null or absent covers any branch. */
+  branchPrefix?: string | null;
+}
+
+/** The limits of an unattended merge grant (N8). */
+export interface MergePolicy {
+  defaultUses: number;
+  maxUses: number;
+  maxExpiryHours: number;
 }
 
 /** The kinds and limits the daemon allows; the form offers nothing else. */
 export interface GrantPolicy {
+  mergePolicy?: MergePolicy | null;
   grantableKinds: string[];
   defaultExpiresInSecs: number;
   maxExpiresInSecs: number;
@@ -991,6 +1001,10 @@ export interface GrantTerms {
   expiresInSecs: number;
   maxUses: number;
   tokenBudget: number;
+  /** Merge grant only: the person ticked the danger confirmation. */
+  confirmUnattendedMerge?: boolean;
+  /** Merge grant only: empty text is not sent. */
+  branchPrefix?: string | null;
 }
 
 export interface GrantReceipt {
