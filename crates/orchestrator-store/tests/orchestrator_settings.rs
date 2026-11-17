@@ -500,3 +500,48 @@ fn an_update_changes_only_the_supplied_columns() {
     }
     assert_eq!(stored(&store), (60, 70, 95));
 }
+
+#[test]
+fn the_home_directory_is_unset_by_default_and_changes_only_by_a_patch_that_names_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    assert_eq!(store.orchestrator_settings().unwrap().home_directory, None);
+
+    let set = |value: Option<&str>| SettingsPatch {
+        home_directory: Some(value.map(str::to_owned)),
+        ..SettingsPatch::default()
+    };
+    let saved = store
+        .update_orchestrator_settings(&set(Some("/Users/me/Code")))
+        .unwrap();
+    assert_eq!(saved.home_directory.as_deref(), Some("/Users/me/Code"));
+
+    // A patch that does not name it leaves it alone.
+    store.update_orchestrator_settings(&cpu(60)).unwrap();
+    let kept = store.orchestrator_settings().unwrap();
+    assert_eq!(kept.home_directory.as_deref(), Some("/Users/me/Code"));
+    assert_eq!(kept.load.cpu, 60);
+
+    for bad in ["", "bad\0path", &"x".repeat(4097)] {
+        let error = store
+            .update_orchestrator_settings(&set(Some(bad)))
+            .unwrap_err();
+        assert!(is_invalid_input(&error), "{bad:?}");
+    }
+    assert_eq!(
+        store
+            .orchestrator_settings()
+            .unwrap()
+            .home_directory
+            .as_deref(),
+        Some("/Users/me/Code")
+    );
+
+    assert_eq!(
+        store
+            .update_orchestrator_settings(&set(None))
+            .unwrap()
+            .home_directory,
+        None
+    );
+}

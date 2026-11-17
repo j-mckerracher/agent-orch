@@ -735,6 +735,8 @@ export interface GroupsPatch {
   chatPrDelivery?: boolean;
   /** Whether the orchestrator chat gets the read-only task tools. */
   mcpEnabled?: boolean;
+  /** The folder a task runs in when no project is clear. `null` clears it; a key left out leaves it alone. */
+  homeDirectory?: string | null;
 }
 export interface SettingsSnapshot {
   limits: LoadLimits;
@@ -744,6 +746,8 @@ export interface SettingsSnapshot {
   chatPrDelivery?: boolean;
   /** Absent from a daemon that cannot change it. */
   mcpEnabled?: boolean;
+  /** The folder a task runs in when no project is clear; `null` while none is set. Absent from a daemon that cannot change it. */
+  homeDirectory?: string | null;
   gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
   /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
   feed: "sampler" | "disabled_by_environment";

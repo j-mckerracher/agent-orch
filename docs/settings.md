@@ -22,6 +22,12 @@ Canceling a task, revising a task, and removing a project always need your appro
 
 Notes are your own reminders, global or per workstream. The orchestrator reads them as data, not as instructions. Do not put passwords, tokens, or file paths in them, and the daemon refuses notes that look like these.
 
+## Home directory
+
+The home directory is the folder a task runs in when it is not clear which project the task belongs to, such as a task you start from the global orchestrator. Enter the full path of a folder on this machine, for example `~/Code`, and click Save home directory. The folder must already exist. Leave the field empty to set none, and the orchestrator then asks where to run instead.
+
+A task in the home directory runs in that folder itself, not in a separate worktree. An Implement task there can write to the folder directly. The task only reports back: nothing is reviewed or landed afterwards, and its Delivery is fixed to ReportOnly. Tasks started there at the same time share the folder. The folder is listed on the Projects page.
+
 ## Chat options
 
 - "Let the orchestrator propose tasks that end in a pull request": you still approve each task.

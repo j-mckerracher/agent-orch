@@ -371,10 +371,12 @@ impl ProposeExec {
             return Ok(self.link.clone());
         }
         let workstream = api.global_tasks_workstream()?;
-        Ok((workstream.state != WorkstreamState::Archived).then(|| LinkTarget {
-            workstream_id: workstream.id,
-            objective_id: None,
-        }))
+        Ok(
+            (workstream.state != WorkstreamState::Archived).then_some(LinkTarget {
+                workstream_id: workstream.id,
+                objective_id: None,
+            }),
+        )
     }
 
     /// Whether the task exists, which means a stopped run got that far. The steps it

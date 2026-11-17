@@ -37,6 +37,10 @@ npm test
 
 Squash, Merge commit, or Rebase. This is the method used when a pull request is merged.
 
+## The home directory
+
+The [home directory](settings.md#home-directory) is a project whose tasks run in its folder, with no worktree and nothing to review or land. These defaults do not apply to it, and its tasks take ReportOnly delivery only.
+
 ## When the form is locked
 
 The form is read-only if the running daemon was not started by this app. Close the app and reopen it once the daemon has stopped, about a minute after running work finishes.
