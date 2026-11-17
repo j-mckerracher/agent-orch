@@ -356,6 +356,79 @@
   outline-offset: 2px;
 }
 
+/* Monitoring chip (DPES-1105 Phase 3). It sits in the header, so its menu opens downward. */
+.ws-monitoring {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.ws-monitoring-menu {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.ws-monitoring-paused {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ws-monitoring-paused:empty {
+  display: none;
+}
+
+.ws-monitoring-item {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--ink);
+  font: 500 13px/1.3 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The mark repeats what aria-checked says; the words and the mark carry the state, not the colour. */
+.ws-monitoring-item[aria-checked="true"]::before {
+  content: "\2713  ";
+}
+
+.ws-monitoring-item[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Updates the orchestrator wrote on its own (DPES-1105 Phase 3). The label says what they are; the dashed edge is only a cue. */
+.ws-wake {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.ws-wake p {
+  margin: 0;
+}
+
+.ws-wake-label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ws-wake-note,
+.ws-wake-quiet {
+  color: var(--muted);
+}
+
+.ws-badge-unseen {
+  margin-left: 6px;
+}
+
 /* The shell stacks the activity column below 961px; tighten the top padding when stacked. */
 @media (max-width: 960px) {
   .ws-conversation {

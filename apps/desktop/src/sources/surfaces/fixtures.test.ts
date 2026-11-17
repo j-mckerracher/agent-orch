@@ -73,7 +73,7 @@ describe("fixture surfaces (D9-D16)", () => {
     const s = createFixtureSurfaces({ now: clock });
     const global = await s.conversation.transcript({ kind: "global" });
     const project = await s.conversation.transcript({ kind: "project", projectId: "fixture:project-alpha" });
-    expect(global.status === "ok" && global.data.entries.map((e) => e.id)).toEqual(["fixture:msg-1", "fixture:msg-2"]);
+    expect(global.status === "ok" && global.data.entries.map((e) => e.id)).toEqual(["fixture:msg-1", "fixture:msg-2", "fixture:wake-msg-1", "fixture:wake-turn-1:reply"]);
     expect(project.status === "ok" && project.data.entries.map((e) => e.kind)).toEqual(["message", "proposal"]);
   });
 

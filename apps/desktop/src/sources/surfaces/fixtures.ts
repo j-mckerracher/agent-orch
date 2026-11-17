@@ -42,7 +42,11 @@ import type {
   ProposalItem,
   ResolveReceipt,
   SendReceipt,
+  MonitoringMode,
+  MonitoringSource,
+  MonitoringState,
   SettingsSource,
+  WakeRecord,
   SettingsSnapshot,
   SurfaceId,
   SurfaceReceipt,
@@ -210,6 +214,46 @@ function notMutable(): Promise<never> {
   return Promise.reject(new DaemonError("method-unavailable", "Fixture workstreams cannot be changed; nothing was sent to the daemon."));
 }
 
+/** One deterministic notice and the automatic reply it led to, in the Global fixture transcript (DPES-1105). */
+const FIXTURE_WAKE_TURN = "fixture:wake-turn-1";
+const FIXTURE_WAKE_ENTRIES: ConversationEntry[] = [
+  {
+    id: "fixture:wake-msg-1",
+    kind: "message",
+    role: "user",
+    text: "Task fixture:t-12ab (Fix the login bug) failed.",
+    at: "2026-01-01T10:00:00Z",
+    turnId: FIXTURE_WAKE_TURN,
+    origin: "wake",
+    sequence: 3,
+  },
+  {
+    id: `${FIXTURE_WAKE_TURN}:reply`,
+    kind: "message",
+    role: "coordinator",
+    text: "The login task failed on a missing test fixture. Retrying it after the fixture is restored should work.",
+    at: "2026-01-01T10:00:05Z",
+    turnId: FIXTURE_WAKE_TURN,
+    sequence: 4,
+  },
+];
+const FIXTURE_WAKE_RECORDS: WakeRecord[] = [
+  {
+    id: "fixture:wake-1",
+    event: "task_failed",
+    subject: "fixture:t-12ab",
+    notice: "Task fixture:t-12ab (Fix the login bug) failed.",
+    state: "handled",
+    outcome: "replied",
+    skipReason: null,
+    turnId: FIXTURE_WAKE_TURN,
+    anchorSequence: 2,
+    notify: true,
+    seen: false,
+    createdAt: "2026-01-01T10:00:00Z",
+  },
+];
+
 type ConversationData = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
 
 type TaskCardFields = Pick<ActionProposal, "kind" | "params" | "target"> & Partial<Pick<ActionProposal, "state" | "errorCode" | "denial">>;
@@ -292,11 +336,18 @@ function conversationSource(ctx: Ctx): ConversationSource {
       ? null
       : {
           target,
-          entries: cleared.has(keyOf(target)) ? [] : entries,
+          // Fixture transcript sequences are positions; the Global fixture ends with one automatic update.
+          entries: cleared.has(keyOf(target))
+            ? []
+            : target.kind === "global"
+              ? [...entries.map((entry, index) => ({ ...entry, sequence: index + 1 })), ...FIXTURE_WAKE_ENTRIES]
+              : entries,
           repliesExpected: true,
           truncated: false,
           proposals: target.kind === "global" && !cleared.has(keyOf(target)) ? proposals : [],
           proposalsMore: false,
+          wake: target.kind === "global" && !cleared.has(keyOf(target)) ? FIXTURE_WAKE_RECORDS : [],
+          wakeMore: false,
         };
   return {
     provenance: provenance("D10", envelope),
@@ -310,6 +361,8 @@ function conversationSource(ctx: Ctx): ConversationSource {
           truncated: boolean;
           proposals: ActionProposal[];
           proposalsMore: boolean;
+          wake: WakeRecord[];
+          wakeMore: boolean;
         }
       >(
         "D10",
@@ -511,22 +564,43 @@ function decisionSource(ctx: Ctx): DecisionQueueSource {
  */
 function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
   const envelope = settingsFixture as unknown as Envelope<Record<"open" | "closed", SettingsSnapshot>>;
+  // The Phase 3 groups are the daemon's defaults (10 minutes, 1 minute, 120 minutes; 6 and 40 replies, no budget).
+  const snapshotOf = (data: Record<"open" | "closed", SettingsSnapshot>): SettingsSnapshot => ({
+    ...data[gate],
+    supervision: { baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 },
+    wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
+  });
+  const simulated = () =>
+    Promise.resolve({
+      simulated: true,
+      provenance: provenance("D17", envelope),
+      snapshot: snapshotOf(envelope.scenarios.success.data),
+    });
   return {
     provenance: provenance("D17", envelope),
     get: () =>
-      resolve<Record<"open" | "closed", SettingsSnapshot>, SettingsSnapshot>(
-        "D17",
-        envelope,
-        ctx,
-        (data) => data[gate],
-        (data) => data[gate],
-      ),
-    set: () =>
-      Promise.resolve({
-        simulated: true,
-        provenance: provenance("D17", envelope),
-        snapshot: envelope.scenarios.success.data[gate],
-      }),
+      resolve<Record<"open" | "closed", SettingsSnapshot>, SettingsSnapshot>("D17", envelope, ctx, snapshotOf, snapshotOf),
+    set: simulated,
+    setGroups: simulated,
+  };
+}
+
+/** Fixture monitoring: the mode lives in memory for the session, and nothing reaches a daemon. */
+function monitoringSource(ctx: Ctx): MonitoringSource {
+  const envelope = conversationFixture as unknown as Envelope<ConversationData>;
+  const prov = provenance("D10", envelope);
+  const state: MonitoringState = { mode: "on", paused: [], unseen: [{ target: { kind: "global" }, count: 1 }] };
+  return {
+    provenance: prov,
+    get: () => resolve<ConversationData, MonitoringState>("D10", envelope, ctx, () => ({ ...state }), () => ({ ...state, unseen: [] })),
+    set: (mode: MonitoringMode) => {
+      state.mode = mode;
+      return Promise.resolve({ simulated: true, provenance: prov, state: { ...state } });
+    },
+    ack: () => {
+      state.unseen = [];
+      return Promise.resolve();
+    },
   };
 }
 
@@ -545,5 +619,6 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     search: createSearchSource(workstreams, decisions, ctx.now),
     decisions,
     settings: settingsSource(ctx, options.settingsGate ?? "open"),
+    monitoring: monitoringSource(ctx),
   };
 }

@@ -312,6 +312,7 @@ describe("Settings page, refresh", () => {
       provenance: FIXTURE,
       get,
       set: () => Promise.reject(new Error("not used")),
+      setGroups: () => Promise.reject(new Error("not used")),
     };
     return { state, get, services: createServices({ surfaces: { ...createFixtureSurfaces(), settings: source } }) };
   }
@@ -390,7 +391,7 @@ describe("Settings page, refresh", () => {
   });
 
   it("settings_page_shows_loading_settings_until_the_first_read_answers", async () => {
-    const source: SettingsSource = { provenance: FIXTURE, get: () => new Promise(() => undefined), set: () => Promise.reject(new Error("not used")) };
+    const source: SettingsSource = { provenance: FIXTURE, get: () => new Promise(() => undefined), set: () => Promise.reject(new Error("not used")), setGroups: () => Promise.reject(new Error("not used")) };
     page(createServices({ surfaces: { ...createFixtureSurfaces(), settings: source } }));
     await advance(0);
     expect(screen.getByRole("status")).toHaveTextContent("Loading settings");

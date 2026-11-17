@@ -85,6 +85,7 @@ const ROWS: Row[] = [
   row("conversationsGet", "conversations.get", (a) => a.conversationsGet({ kind: "workstream", workstream_id: FX }), (a) => a.conversationsGet({ kind: "global" })),
   row("conversationsCancel", "conversations.cancel", (a) => a.conversationsCancel({ kind: "global" }, FX, "k"), (a) => a.conversationsCancel({ kind: "global" }, "turn-1", "k")),
   row("conversationsClear", "conversations.clear", (a) => a.conversationsClear({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.conversationsClear({ kind: "workstream", workstream_id: "ws-1" }, "k")),
+  row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("actionsResolve", "actions.resolve", (a) => a.actionsResolve(FX, "approve", DIGEST, "k"), (a) => a.actionsResolve(REAL, "approve", DIGEST, "k")),
   row("agentsValidateSelection", "agents.validate_selection", (a) => a.agentsValidateSelection(FX, { model: "m" }), (a) => a.agentsValidateSelection("codex", { model: "m" })),
 ];
@@ -110,6 +111,9 @@ const NO_ID_METHODS = new Set<string>([
   "actionsPending",
   "settingsGet",
   "settingsSet",
+  "settingsSetGroups",
+  "monitoringGet",
+  "monitoringSet",
 ]);
 
 async function api(fake: FakeDaemon) {

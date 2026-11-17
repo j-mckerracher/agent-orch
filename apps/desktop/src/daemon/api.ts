@@ -55,6 +55,9 @@ import type {
   CopilotSignInRecord,
   LoadLimitsWire,
   SettingsWire,
+  SettingsPatchWire,
+  MonitoringWire,
+  MonitoringAckWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -499,6 +502,29 @@ export class DaemonApi {
    */
   settingsSet(patch: Partial<LoadLimitsWire>, idempotencyKey: string): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, load: patch });
+  }
+
+  /**
+   * DPES-1105 Phase 3. Changes the supervision or wake-limit groups. Only the groups present are sent: a group
+   * must name at least one field. User-only, like `settingsSet`.
+   */
+  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits">, idempotencyKey: string): Promise<SettingsWire> {
+    return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
+  }
+
+  /** DPES-1105 Phase 3. Monitoring mode, paused scopes and unseen counts. A read; needs the `monitoring` capability. */
+  monitoringGet(): Promise<MonitoringWire> {
+    return this.session.request("monitoring.get", {});
+  }
+
+  /** DPES-1105 Phase 3. Sets the monitoring mode and answers with `monitoring.get` as it now stands. User-only. */
+  monitoringSet(mode: string, idempotencyKey: string): Promise<MonitoringWire> {
+    return this.session.request("monitoring.set", { idempotency_key: idempotencyKey, mode });
+  }
+
+  /** DPES-1105 Phase 3. Marks a scope's wake records seen. Changes no decision, so it is not user-only. */
+  async monitoringAck(target: ConversationWireTarget, idempotencyKey: string): Promise<MonitoringAckWire> {
+    return this.session.request("monitoring.ack", { idempotency_key: idempotencyKey, target: realTarget(target) });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

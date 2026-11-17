@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { Badge } from "../../theme";
+import { badgeLabel, targetNameWithBadge } from "./monitoringModel";
 import { filterTargets, type TargetOption } from "./targets";
 import { usePopover } from "../../usePopover";
 
@@ -12,6 +13,8 @@ export interface ConversationTargetPickerProps {
    * set the entry is shown disabled and does nothing.
    */
   addCoordinator?: { onAdd: () => void; reason: string | null };
+  /** Unseen automatic updates in the Global conversation (DPES-1105 Phase 3); the Global option shows a badge when above 0. */
+  globalUnseen?: number;
 }
 
 const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
@@ -28,7 +31,7 @@ const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
  * always-mounted status region, because a live region that appears together with its text is not
  * reliably announced.
  */
-export function ConversationTargetPicker({ options, selectedKey, onSelect, addCoordinator }: ConversationTargetPickerProps) {
+export function ConversationTargetPicker({ options, selectedKey, onSelect, addCoordinator, globalUnseen = 0 }: ConversationTargetPickerProps) {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -112,10 +115,13 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
             arrowing.current = false;
           }}
         >
-          {shown.map((option) => (
+          {shown.map((option) => {
+            const unseen = option.target.kind === "global" ? globalUnseen : 0;
+            return (
             <label key={option.key} className="ws-target-option">
               <input
                 type="radio"
+                aria-label={unseen > 0 ? targetNameWithBadge(option.label, unseen) : undefined}
                 name={`${ids}-target`}
                 checked={option.key === selectedKey}
                 onChange={() => {
@@ -139,10 +145,17 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
                     <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>
                   </>
                 )}
+                {unseen > 0 && (
+                  <>
+                    {" "}
+                    <Badge tone="info">{badgeLabel(unseen)}</Badge>
+                  </>
+                )}
                 {option.target.kind === "project" && <span className="ws-target-note"> · notes, no reply</span>}
               </span>
             </label>
-          ))}
+            );
+          })}
         </div>
         <p id={statusId} role="status" className="ws-target-status">
           {status}

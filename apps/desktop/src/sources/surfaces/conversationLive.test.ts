@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { stubConversation } from "../../test/m724Stubs";
 import type { ConversationWireEntry } from "../../daemon/types";
-import { mapEntries, turnInfo, unverifiedWarning } from "./conversationLive";
+import { mapEntries, mapWakeRecord, turnInfo, unverifiedWarning } from "./conversationLive";
 import { connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
@@ -418,5 +418,41 @@ describe("unverified-version warning (DPES-1106)", () => {
     expect(first.warning).toBe("Codex 0.169.0 has not been verified with MCAO. Replies may fail.");
     expect(second.notice).not.toMatch(/has not been verified/);
     expect(second.warning).toBeUndefined();
+  });
+});
+
+describe("wake mapping", () => {
+  it("conversation_live_maps_wake_records_trigger_and_origin_and_unknown_strings_survive", () => {
+    const opening = { ...wire(3, "w1", "user_message", "Task t-1 failed."), origin: "wake" };
+    const [entry] = mapEntries([opening]);
+    expect(entry).toMatchObject({ origin: "wake", sequence: 3, role: "user" });
+    expect(mapEntries([wire(1, "t1", "user_message", "hi")])[0]!.origin).toBeUndefined();
+    const turn = {
+      id: "w1",
+      state: "running" as const,
+      error_code: null,
+      runtime: { name: "codex", version: "1" },
+      reply_bytes: 0,
+      created_at: "x",
+      updated_at: "x",
+    };
+    expect(turnInfo({ ...turn, trigger: "wake" }).trigger).toBe("wake");
+    expect(turnInfo(turn).trigger).toBeUndefined();
+    expect(
+      mapWakeRecord({
+        id: "wake-1",
+        event: "brand_new_event",
+        subject: "t-1",
+        notice: "n",
+        state: "waiting_room",
+        outcome: null,
+        skip_reason: "limit_weekly",
+        turn_id: null,
+        anchor_sequence: 41,
+        notify: true,
+        seen: false,
+        created_at: "2026-11-16 02:10:03",
+      }),
+    ).toMatchObject({ event: "brand_new_event", state: "waiting_room", skipReason: "limit_weekly", anchorSequence: 41 });
   });
 });

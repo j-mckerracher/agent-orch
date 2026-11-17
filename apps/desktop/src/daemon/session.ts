@@ -90,6 +90,9 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "actions.pending": "orchestrator_actions",
   "settings.get": "settings",
   "settings.set": "settings",
+  "monitoring.get": "monitoring",
+  "monitoring.set": "monitoring",
+  "monitoring.ack": "monitoring",
 };
 
 interface Pending {

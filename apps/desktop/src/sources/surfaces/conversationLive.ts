@@ -24,6 +24,7 @@ import type {
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
+  WakeRecordWire,
 } from "../../daemon/types";
 import { RESOLVE_METHOD, createLiveResolve, mapProposal } from "./actionProposals";
 import { liveRead } from "./liveSupport";
@@ -39,6 +40,7 @@ import type {
   PermissionLevel,
   Provenance,
   SendReceipt,
+  WakeRecord,
 } from "./types";
 
 export const MAX_LIVE_CONVERSATION_PAGES = 50;
@@ -135,6 +137,24 @@ export function toWireTarget(target: LiveTarget): ConversationWireTarget {
   return target.kind === "global" ? { kind: "global" } : { kind: "workstream", workstream_id: target.workstreamId };
 }
 
+/** Copies a wake record from the wire. State, outcome and reason stay the daemon's strings, so an unknown one shows as unknown. */
+export function mapWakeRecord(wire: WakeRecordWire): WakeRecord {
+  return {
+    id: wire.id,
+    event: wire.event,
+    subject: wire.subject,
+    notice: wire.notice,
+    state: wire.state,
+    outcome: wire.outcome,
+    skipReason: wire.skip_reason,
+    turnId: wire.turn_id,
+    anchorSequence: wire.anchor_sequence,
+    notify: wire.notify,
+    seen: wire.seen,
+    createdAt: wire.created_at,
+  };
+}
+
 export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
   return {
     id: turn.id,
@@ -145,6 +165,8 @@ export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
     // A daemon from before the verified field (DPES-1106) is not warned about.
     verified: turn.verified ?? true,
     actionBlock: turn.action_block ?? null,
+    // An older daemon has no wake turns; an unknown word is not a wake turn either.
+    ...(turn.trigger === "wake" ? { trigger: "wake" as const } : turn.trigger === "user" ? { trigger: "user" as const } : {}),
   };
 }
 
@@ -184,11 +206,21 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
     const reply = replies.get(entry.turn_id);
     switch (entry.kind) {
       case "user_message":
-        out.push({ id: entry.id, kind: "message", role: "user", text: entry.body, at: entry.created_at, turnId: entry.turn_id });
+        out.push({
+          id: entry.id,
+          kind: "message",
+          role: "user",
+          text: entry.body,
+          at: entry.created_at,
+          turnId: entry.turn_id,
+          sequence: entry.sequence,
+          ...(entry.origin === "wake" ? { origin: "wake" as const } : {}),
+        });
         break;
       case "reply_chunk":
         if (reply) {
           reply.text += entry.body;
+          reply.sequence = entry.sequence;
         } else {
           const created: ConversationEntry = {
             id: `${entry.turn_id}:reply`,
@@ -197,6 +229,7 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
             text: entry.body,
             at: entry.created_at,
             turnId: entry.turn_id,
+            sequence: entry.sequence,
             streaming: true,
           };
           replies.set(entry.turn_id, created);
@@ -282,6 +315,8 @@ export function createLiveConversation(
           // Every page carries the scope's proposals; the last page read is the newest (DPES-1105).
           let proposals: ActionProposalWire[] | undefined;
           let proposalsMore: boolean | undefined;
+          let wakeRecords: WakeRecordWire[] | undefined;
+          let wakeMore: boolean | undefined;
           let jumpedTo: number | null = null;
           // The first read starts at the beginning and learns `latest_sequence`. A long log is then
           // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
@@ -297,6 +332,8 @@ export function createLiveConversation(
             turn = result.turn;
             proposals = result.proposals;
             proposalsMore = result.proposals_more;
+            wakeRecords = result.wake_records;
+            wakeMore = result.wake_records_more;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
@@ -319,6 +356,8 @@ export function createLiveConversation(
             proposals: mapped,
             proposalsMore: proposalsMore ?? false,
             actionBlocks: actionBlocksOf(entries, turn),
+            ...(wakeRecords ? { wake: wakeRecords.map(mapWakeRecord) } : {}),
+            wakeMore: wakeMore ?? false,
           };
       };
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));

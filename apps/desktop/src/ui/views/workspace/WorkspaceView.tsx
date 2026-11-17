@@ -21,14 +21,18 @@ import { useWorkstreamsVersion } from "../workstreams/model";
 import { ActionCard } from "./ActionCard";
 import { AddCoordinatorDialog, ConversationActions, historyActionReason } from "./ConversationActions";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
+import { MonitoringChip } from "./MonitoringChip";
 import { ModelPicker } from "./ModelPicker";
+import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTurnIds, unseenFor } from "./monitoringModel";
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
 import { formatAt } from "./time";
 import { useActionDecisions } from "./useActionDecisions";
+import { useMonitoring, type MonitoringModel } from "./useMonitoring";
 import { useRetained } from "./useRetained";
+import { WakeLabel, WakeLines, WakeRecords } from "./WakeNotice";
 import "./workspace.css";
 
 const globalOption = (live: boolean): TargetOption => ({
@@ -52,6 +56,7 @@ export function WorkspaceView() {
   const snapshot = useStore(drafts);
   const { projects: projectList, tasks: taskList } = useStore(data);
   const gate = useGate();
+  const monitoring = useMonitoring();
   const live = surfaces.conversation.provenance.kind === "daemon";
   // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
   // notes only); fixtures derive project targets from the placeholder workstreams.
@@ -186,6 +191,7 @@ export function WorkspaceView() {
         workstreamNames={workstreamNames}
         taskRoute={taskRoute}
         live={live}
+        monitoring={monitoring}
         draft={drafts.workspaceDraft(resolved)}
         simulated={simulated[resolved] ?? []}
         onSelect={(next) => drafts.setWorkspaceTarget(next.key)}
@@ -301,6 +307,8 @@ interface ConversationProps {
   workstreamNames: ReadonlyMap<string, string>;
   taskRoute: (taskId: string) => Route | null;
   live: boolean;
+  /** Monitoring mode and counts, read by the Workspace view (DPES-1105 Phase 3). */
+  monitoring: MonitoringModel;
   draft: string;
   simulated: readonly SimulatedEntry[];
   onSelect: (option: TargetOption) => void;
@@ -319,6 +327,7 @@ function Conversation({
   workstreamNames,
   taskRoute,
   live,
+  monitoring,
   draft,
   simulated,
   onSelect,
@@ -382,6 +391,9 @@ function Conversation({
   // The daemon has no push stream: read again while the latest turn is still running.
   const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
   const running = live && turn?.state === "running";
+  // A wake turn is the orchestrator's own: sending is allowed and the daemon cancels it first (DPES-1105 Phase 3).
+  const wakeRunning = running && turn?.trigger === "wake";
+  const userRunning = running && !wakeRunning;
   useEffect(() => {
     if (turn?.state === "running") return;
     setFeedback((current) => {
@@ -401,6 +413,42 @@ function Conversation({
     const timer = setTimeout(() => setNonce((value) => value + 1), POLL_MS);
     return () => clearTimeout(timer);
   }, [running, awaitingDaemon, nonce]);
+
+  // Mark this conversation's updates seen once it is on screen and rendered (debounced 1 s), then read the counts again.
+  const unseenHere = target.kind !== "project" && monitoring.supported ? unseenFor(monitoring.state, target) : 0;
+  const transcriptShown = transcript.status === "ok";
+  const ackedMark = useRef<string | null>(null);
+  const { ack } = monitoring;
+  useEffect(() => {
+    if (unseenHere === 0) ackedMark.current = null;
+    if (unseenHere === 0 || !transcriptShown || target.kind === "project") return;
+    const mark = `${option.key}:${unseenHere}`;
+    if (ackedMark.current === mark) return;
+    const timer = setTimeout(() => {
+      ackedMark.current = mark;
+      ack(target).catch(() => undefined);
+    }, 1_000);
+    return () => clearTimeout(timer);
+    // `target` is derived from `option.key`; re-running on the key is the contract.
+  }, [option.key, unseenHere, transcriptShown, ack]);
+
+  // The daemon pushes nothing: a rise in this conversation's unseen count means a record arrived, so read it now.
+  const lastUnseen = useRef(unseenHere);
+  useEffect(() => {
+    if (unseenHere > lastUnseen.current) setNonce((value) => value + 1);
+    lastUnseen.current = unseenHere;
+  }, [unseenHere]);
+
+  // Announce a new notifying update, never on first load and never for quiet ones.
+  const notifying = transcript.status === "ok" ? notifyingCount(transcript.data.wake ?? []) : null;
+  const seenNotifying = useRef<{ key: string; count: number } | null>(null);
+  const [announced, setAnnounced] = useState(0);
+  useEffect(() => {
+    if (notifying === null) return;
+    const before = seenNotifying.current;
+    if (before?.key === option.key && notifying > before.count) setAnnounced((value) => value + 1);
+    seenNotifying.current = { key: option.key, count: notifying };
+  }, [notifying, option.key]);
 
   // An older daemon has no permission levels and runs chats read-only, so the level reads Restricted (DPES-1105).
   const olderDaemon = live && gate.connected && !gate.can("permission_levels");
@@ -428,7 +476,7 @@ function Conversation({
     else if (choiceOnWire !== undefined && !gate.can("conversation_selection"))
       blocked =
         'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
-    else if (running) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
+    else if (userRunning) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
   const canSend = blocked === null && !empty && !busy;
@@ -588,13 +636,20 @@ function Conversation({
         {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
         {target.kind === "project" && <Badge tone="neutral">Notes, no reply</Badge>}
         <p className="ws-scope">{option.scope}</p>
+        {target.kind !== "project" && (
+          <MonitoringChip
+            model={monitoring}
+            target={target}
+            canChange={!live || (gate.can("monitoring") && gate.connection.approver)}
+          />
+        )}
         {target.kind !== "workstream" && (
           <ConversationActions
             option={option}
             live={live}
             connected={gate.connected}
             supported={gate.can("conversation_history")}
-            running={running}
+            running={userRunning}
             busy={busy}
             onClear={() => void clearHistory()}
             onRemove={
@@ -629,7 +684,12 @@ function Conversation({
           message but cannot produce a reply right now.
         </p>
       )}
-      {running && (
+      {wakeRunning && (
+        <p role="status" className="ws-note ws-runtime">
+          {WAKE_RUNNING_TEXT}
+        </p>
+      )}
+      {userRunning && (
         <p role="status" className="ws-note ws-runtime">
           Waiting for the orchestrator&apos;s reply…{" "}
           {surfaces.conversation.cancel && (
@@ -674,6 +734,7 @@ function Conversation({
             selectedKey={option.key}
             onSelect={onSelect}
             addCoordinator={addCoordinator}
+            globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
           />
           <ModelPicker
             catalog={modelCatalog}
@@ -713,6 +774,10 @@ function Conversation({
           </p>
         )}
       </form>
+      {/* A changing trailing space makes a repeat of the same sentence read again. */}
+      <p role="status" aria-live="polite" className="ws-visually-hidden">
+        {announced > 0 ? `${NEW_UPDATE_TEXT}${announced % 2 === 0 ? "\u00a0" : ""}` : ""}
+      </p>
       <div aria-live="polite" className="ws-feedback">
         {notice && <p role="status">{notice}</p>}
         {error && (
@@ -788,8 +853,14 @@ function TranscriptBody({
     );
   }
   if (transcript.status !== "ok") return <>{sim}</>;
-  const { entries, truncated, repliesExpected, proposalsMore } = transcript.data;
-  if (entries.length === 0 && sim.length === 0 && !leading) {
+  const { truncated, repliesExpected, proposalsMore } = transcript.data;
+  const wake = transcript.data.wake ?? [];
+  // A quiet record shows one collapsed line, so its turn's own entries are not shown (DPES-1105 Phase 3).
+  const quiet = quietTurnIds(wake);
+  const entries = transcript.data.entries.filter((entry) => entry.turnId === undefined || !quiet.has(entry.turnId));
+  const wakeTurns = new Set(entries.flatMap((entry) => (entry.origin === "wake" && entry.turnId ? [entry.turnId] : [])));
+  const placement = placeWake(entries, wake);
+  if (entries.length === 0 && sim.length === 0 && !leading && wake.length === 0) {
     return (
       <EmptyState
         title="No messages yet"
@@ -802,10 +873,12 @@ function TranscriptBody({
       {truncated && <p className="ws-small">Older messages are not shown: the log was cut off.</p>}
       {proposalsMore && <p className="ws-small">Older proposals are not shown.</p>}
       {leading}
+      <WakeRecords records={placement.before} />
       {entries.map((entry, index) => (
         <Fragment key={entry.id}>
-          <EntryBubble entry={entry} label={label} />
+          <EntryBubble entry={entry} label={label} wakeTurn={entry.turnId !== undefined && wakeTurns.has(entry.turnId)} />
           {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
+          <WakeRecords records={placement.after.get(entry.id) ?? []} />
         </Fragment>
       ))}
       {sim}
@@ -813,7 +886,9 @@ function TranscriptBody({
   );
 }
 
-function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string }) {
+function EntryBubble({ entry, label, wakeTurn }: { entry: ConversationEntry; label: string; wakeTurn: boolean }) {
+  // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
+  if (entry.origin === "wake") return <WakeLines text={entry.text} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator.
   if (entry.kind === "status") {
@@ -823,7 +898,7 @@ function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string
       </p>
     );
   }
-  return (
+  const bubble = (
     <Bubble
       from={human ? "human" : "coordinator"}
       author={human ? "You" : label}
@@ -847,5 +922,14 @@ function EntryBubble({ entry, label }: { entry: ConversationEntry; label: string
     >
       {entry.text}
     </Bubble>
+  );
+  // A reply to an automatic turn says it is an update, so it is never read as an answer to the user's last message.
+  return wakeTurn && !human ? (
+    <div className="ws-wake-reply">
+      <WakeLabel />
+      {bubble}
+    </div>
+  ) : (
+    bubble
   );
 }

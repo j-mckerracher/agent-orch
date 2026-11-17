@@ -29,6 +29,7 @@ import {
   parseLimit,
   readingText,
 } from "./settingsModel";
+import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
 import "./SettingsView.css";
 
@@ -214,6 +215,7 @@ export function SettingsView() {
         <p className="settings-intro">{INTRO_TEXT}</p>
         <MachineLoad model={model} />
       </section>
+      <SupervisionSections model={model} />
     </div>
   );
 }

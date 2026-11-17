@@ -26,7 +26,8 @@ export type Capability =
   | "conversation_selection"
   | "permission_levels"
   | "orchestrator_actions"
-  | "settings";
+  | "settings"
+  | "monitoring";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -48,6 +49,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "permission_levels",
   "orchestrator_actions",
   "settings",
+  "monitoring",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -67,6 +69,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "permission_levels",
   "orchestrator_actions",
   "settings",
+  "monitoring",
 ];
 
 export interface Welcome {
@@ -559,6 +562,8 @@ export interface ConversationWireEntry {
   action_block?: ActionBlockWire | null;
   /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
   runtime?: { name: string; version: string };
+  /** `wake` on the opening entry of an automatic turn only. Absent otherwise and from older daemons. */
+  origin?: string;
   created_at: string;
 }
 
@@ -580,6 +585,8 @@ export interface ConversationWireTurn {
   permission_profile?: string | null;
   /** The outcome of the action block in this turn's reply (DPES-1105). Absent from older daemons. */
   action_block?: ActionBlockWire | null;
+  /** `wake` for an automatic turn, `user` otherwise. Absent from older daemons. */
+  trigger?: string;
 }
 
 /**
@@ -700,6 +707,64 @@ export interface SettingsWire {
   load: LoadLimitsWire;
   gate: { state: "open" | "closed"; hold: LoadHoldWire | null; meters: LoadMeterWire[] };
   feed?: "sampler" | "disabled_by_environment";
+  /** Phase 3 groups. Absent from a daemon that cannot change them (DPES-1105). */
+  supervision?: SupervisionWire;
+  wake_limits?: WakeLimitsWire;
+}
+
+/** `settings.get` supervision group: the stall-check intervals in seconds and the attempt wall-time bound in minutes. */
+export interface SupervisionWire {
+  base_interval_secs: number;
+  min_interval_secs: number;
+  attempt_wall_minutes: number;
+}
+
+/** `settings.get` wake_limits group. `null` is no limit. */
+export interface WakeLimitsWire {
+  hourly_cap: number | null;
+  daily_cap: number | null;
+  daily_token_budget: number | null;
+}
+
+/** `settings.set` patch: only the groups and fields that change; `null` in a wake limit clears it. */
+export interface SettingsPatchWire {
+  load?: Partial<LoadLimitsWire>;
+  supervision?: Partial<SupervisionWire>;
+  wake_limits?: Partial<WakeLimitsWire>;
+}
+
+/** Where a wake record or a monitoring count belongs; the same shape as a conversation target. */
+export type MonitoringTargetWire = ConversationWireTarget;
+
+/** One wake record inside `conversations.get`. `state`, `outcome` and `skip_reason` stay strings so unknown values survive. */
+export interface WakeRecordWire {
+  id: string;
+  event: string;
+  subject: string;
+  notice: string;
+  state: string;
+  outcome: string | null;
+  skip_reason: string | null;
+  turn_id: string | null;
+  anchor_sequence: number;
+  notify: boolean;
+  seen: boolean;
+  created_at: string;
+}
+
+/** `monitoring.get` result, and the result of `monitoring.set`. `mode` and `reason` stay strings so unknown values survive. */
+export interface MonitoringWire {
+  authority: "none";
+  mode: string;
+  paused: Array<{ target: MonitoringTargetWire; reason: string; until: string | null }>;
+  unseen: Array<{ target: MonitoringTargetWire; count: number }>;
+  epoch: string;
+}
+
+/** `monitoring.ack` result. */
+export interface MonitoringAckWire {
+  authority: "none";
+  acked: number;
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */
@@ -718,6 +783,9 @@ export interface ConversationWirePage {
   proposals?: ActionProposalWire[];
   /** True when the daemon held more decided proposals than it sent (count or byte budget). Pending ones are always sent. Absent from older daemons. */
   proposals_more?: boolean;
+  /** The scope's newest wake records, oldest first. Absent from daemons without `monitoring`. */
+  wake_records?: WakeRecordWire[];
+  wake_records_more?: boolean;
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */

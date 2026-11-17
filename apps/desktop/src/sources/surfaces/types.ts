@@ -162,6 +162,8 @@ export type ConversationTarget =
   | { kind: "project"; projectId: string }
   /** M7-24: a daemon workstream (`conversations.*`), distinct from a project coordinator. */
   | { kind: "workstream"; workstreamId: string };
+/** A target that has a daemon conversation: Global or a workstream. */
+export type LiveConversationTarget = Exclude<ConversationTarget, { kind: "project" }>;
 export interface ConversationEntry {
   id: string;
   /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. */
@@ -175,6 +177,10 @@ export interface ConversationEntry {
   errorCode?: string;
   /** True while the daemon has not recorded the end of this reply. */
   streaming?: boolean;
+  /** `wake` on the opening entry of an automatic turn: it is event lines, not something the user wrote (DPES-1105). */
+  origin?: "wake";
+  /** The daemon's transcript sequence (a reply: its last chunk). A wake record is placed by it. Live targets only. */
+  sequence?: number;
 }
 /** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
 export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
@@ -243,6 +249,8 @@ export interface ConversationTurnInfo {
   verified: boolean;
   /** The action block outcome of this turn's reply (DPES-1105). Absent when the daemon did not send it. */
   actionBlock?: ActionBlock | null;
+  /** `wake` for an automatic turn the user did not ask for. Absent from an older daemon (DPES-1105). */
+  trigger?: "user" | "wake";
 }
 export interface ConversationTranscript {
   target: ConversationTarget;
@@ -262,6 +270,10 @@ export interface ConversationTranscript {
    * pending card is missing; only older executed, rejected or failed ones may be (DPES-1105).
    */
   proposalsMore: boolean;
+  /** The scope's wake records, oldest first (DPES-1105). Absent when the daemon did not send them. */
+  wake?: WakeRecord[];
+  /** True when the daemon held older wake records than it sent. */
+  wakeMore?: boolean;
 }
 export interface SendReceipt {
   /** True for fixture receipts: nothing was recorded anywhere. */
@@ -647,8 +659,27 @@ export interface LoadHold {
   limitPercent: number;
   reopenPercent: number;
 }
+/** Phase 3 stall-check settings. Absent from a daemon that cannot change them. */
+export interface SupervisionSettings {
+  baseIntervalSecs: number;
+  minIntervalSecs: number;
+  attemptWallMinutes: number;
+}
+/** Phase 3 limits on automatic replies per conversation. `null` is no limit. */
+export interface WakeLimitSettings {
+  hourlyCap: number | null;
+  dailyCap: number | null;
+  dailyTokenBudget: number | null;
+}
+/** What `settings.set` sends for the two Phase 3 groups. A key left out is unchanged; `null` clears a wake limit. */
+export interface GroupsPatch {
+  supervision?: Partial<SupervisionSettings>;
+  wakeLimits?: Partial<WakeLimitSettings>;
+}
 export interface SettingsSnapshot {
   limits: LoadLimits;
+  supervision?: SupervisionSettings;
+  wakeLimits?: WakeLimitSettings;
   gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
   /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
   feed: "sampler" | "disabled_by_environment";
@@ -665,6 +696,61 @@ export interface SettingsSource {
   get(): Promise<SurfaceResult<SettingsSnapshot>>;
   /** Sends only the fields in `patch`. Derived: `settings.set`, a user-only method; it rejects on failure. Fixture: saves nothing. */
   set(patch: Partial<LoadLimits>): Promise<SettingsReceipt>;
+  /** Phase 3: sends only the supervision and wake-limit fields in `patch`. Same rules as `set`. */
+  setGroups(patch: GroupsPatch): Promise<SettingsReceipt>;
+}
+
+// Monitoring (DPES-1105 Phase 3). Derived: monitoring.get / monitoring.set / monitoring.ack (capability `monitoring`).
+/** The modes the user can choose. The daemon's own word stays a string in `MonitoringState`. */
+export type MonitoringMode = "on" | "quiet" | "off";
+export interface WakeRecord {
+  id: string;
+  event: string;
+  subject: string;
+  notice: string;
+  /** `noticed`, `pending`, `running`, `handled`, `skipped` or `failed`; kept as the daemon's string. */
+  state: string;
+  /** `replied` or `quiet`; null until handled. */
+  outcome: string | null;
+  /** `mode_off`, `limit_hourly`, `limit_daily` or `limit_tokens`; null unless skipped. */
+  skipReason: string | null;
+  turnId: string | null;
+  anchorSequence: number;
+  /** True when the record counts toward the badge. */
+  notify: boolean;
+  seen: boolean;
+  createdAt: string;
+}
+export interface PausedTarget {
+  target: LiveConversationTarget;
+  /** `hourly`, `daily` or `tokens`; an unknown word is kept. */
+  reason: string;
+  /** RFC 3339 instant the pause is expected to end; null for a token budget. */
+  until: string | null;
+}
+export interface UnseenTarget {
+  target: LiveConversationTarget;
+  count: number;
+}
+export interface MonitoringState {
+  /** The daemon's word. Anything but on, quiet or off is shown as unknown. */
+  mode: string;
+  paused: PausedTarget[];
+  unseen: UnseenTarget[];
+}
+export interface MonitoringReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  state: MonitoringState;
+}
+export interface MonitoringSource {
+  readonly provenance: Provenance;
+  get(): Promise<SurfaceResult<MonitoringState>>;
+  /** Derived: `monitoring.set`, a user-only method; it rejects on failure. Fixture: changes the in-memory mode only. */
+  set(mode: MonitoringMode): Promise<MonitoringReceipt>;
+  /** Derived: `monitoring.ack`. Fixture: nothing. */
+  ack(target: LiveConversationTarget): Promise<void>;
 }
 
 export interface SurfaceSources {
@@ -678,4 +764,5 @@ export interface SurfaceSources {
   search: SearchSource;
   decisions: DecisionQueueSource;
   settings: SettingsSource;
+  monitoring: MonitoringSource;
 }

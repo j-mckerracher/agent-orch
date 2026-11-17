@@ -12,9 +12,9 @@
 import type { ConnectionManager } from "../../daemon/connection";
 import { asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
-import type { LoadLimitsWire, LoadMeterWire, SettingsWire } from "../../daemon/types";
+import type { LoadLimitsWire, LoadMeterWire, SettingsPatchWire, SettingsWire } from "../../daemon/types";
 import { liveRead } from "./liveSupport";
-import type { LoadLimits, LoadReading, Provenance, SettingsSource, SettingsSnapshot } from "./types";
+import type { GroupsPatch, LoadLimits, LoadReading, Provenance, SettingsSource, SettingsSnapshot } from "./types";
 
 export const SETTINGS_METHODS = ["settings.get", "settings.set"] as const;
 
@@ -38,6 +38,25 @@ export function mapSettings(wire: SettingsWire): SettingsSnapshot {
       readings: { cpu: readingOf(meters.get("cpu")), memory: readingOf(meters.get("memory")), disk: readingOf(meters.get("disk")) },
     },
     feed: wire.feed ?? "sampler",
+    // An older daemon sends neither group; the page then says it cannot change them.
+    ...(wire.supervision
+      ? {
+          supervision: {
+            baseIntervalSecs: wire.supervision.base_interval_secs,
+            minIntervalSecs: wire.supervision.min_interval_secs,
+            attemptWallMinutes: wire.supervision.attempt_wall_minutes,
+          },
+        }
+      : {}),
+    ...(wire.wake_limits
+      ? {
+          wakeLimits: {
+            hourlyCap: wire.wake_limits.hourly_cap,
+            dailyCap: wire.wake_limits.daily_cap,
+            dailyTokenBudget: wire.wake_limits.daily_token_budget,
+          },
+        }
+      : {}),
   };
 }
 
@@ -46,6 +65,26 @@ function patchOf(patch: Partial<LoadLimits>): Partial<LoadLimitsWire> {
     ...(patch.cpu === undefined ? {} : { cpu_percent: patch.cpu }),
     ...(patch.memory === undefined ? {} : { memory_percent: patch.memory }),
     ...(patch.disk === undefined ? {} : { disk_percent: patch.disk }),
+  };
+}
+
+/** Only the fields present are sent, and a group with no field is left out: the daemon refuses an empty group. */
+export function groupsPatchOf(patch: GroupsPatch): Pick<SettingsPatchWire, "supervision" | "wake_limits"> {
+  const { supervision: s, wakeLimits: w } = patch;
+  const supervision = {
+    ...(s?.baseIntervalSecs === undefined ? {} : { base_interval_secs: s.baseIntervalSecs }),
+    ...(s?.minIntervalSecs === undefined ? {} : { min_interval_secs: s.minIntervalSecs }),
+    ...(s?.attemptWallMinutes === undefined ? {} : { attempt_wall_minutes: s.attemptWallMinutes }),
+  };
+  // `null` is kept: it clears a cap. `undefined` is dropped: it leaves the cap alone.
+  const wake_limits = {
+    ...(w?.hourlyCap === undefined ? {} : { hourly_cap: w.hourlyCap }),
+    ...(w?.dailyCap === undefined ? {} : { daily_cap: w.dailyCap }),
+    ...(w?.dailyTokenBudget === undefined ? {} : { daily_token_budget: w.dailyTokenBudget }),
+  };
+  return {
+    ...(Object.keys(supervision).length === 0 ? {} : { supervision }),
+    ...(Object.keys(wake_limits).length === 0 ? {} : { wake_limits }),
   };
 }
 
@@ -63,6 +102,18 @@ export function createLiveSettings(
       const key = keys.keyFor(scope, JSON.stringify(patch));
       try {
         const wire = await connection.api().settingsSet(patchOf(patch), key);
+        keys.settle(scope, null);
+        return { simulated: false, provenance, snapshot: mapSettings(wire) };
+      } catch (error) {
+        keys.settle(scope, asDaemonError(error));
+        throw error;
+      }
+    },
+    async setGroups(patch) {
+      const scope = "settings:set-groups";
+      const key = keys.keyFor(scope, JSON.stringify(patch));
+      try {
+        const wire = await connection.api().settingsSetGroups(groupsPatchOf(patch), key);
         keys.settle(scope, null);
         return { simulated: false, provenance, snapshot: mapSettings(wire) };
       } catch (error) {
