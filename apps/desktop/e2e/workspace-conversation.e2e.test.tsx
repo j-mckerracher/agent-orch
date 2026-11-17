@@ -400,6 +400,9 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      // Actions exist only at Restricted: an Auto turn gets no action block, so the chat must be switched first.
+      await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
+      await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
       // user-event reads "[[" as a literal "[".
       await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:script] plan the post-MVP work");
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
@@ -416,6 +419,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
       expect(titled).toHaveLength(1);
     } finally {
+      window.localStorage.removeItem(RESTRICTED_PREFERENCE_KEY);
       await t.stop();
       rmSync(dir, { recursive: true, force: true });
     }
