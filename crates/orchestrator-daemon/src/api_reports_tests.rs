@@ -351,7 +351,8 @@ fn reports_relay_runs_a_restricted_turn_even_when_the_chat_is_at_auto() {
     assert_eq!(relayed["turn"]["state"], "completed");
     let seen = runtime.seen.lock().unwrap();
     assert_eq!(seen[0].level, PermissionLevel::Auto);
-    assert!(!seen[0].actions);
+    // Auto is the default chat level and carries actions; the relay still forces Restricted.
+    assert!(seen[0].actions);
     assert_eq!(seen[1].level, PermissionLevel::Restricted);
     assert_eq!(seen[1].choice, None);
     // A Restricted turn on a session that negotiated actions may carry a block.

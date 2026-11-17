@@ -511,12 +511,12 @@ fn an_update_and_a_revise_whose_effect_committed_are_found_not_rerun_at_startup(
     );
 }
 
-/// A proposal on a turn that ran above Restricted is refused, even though the turn
+/// A proposal on a turn that ran at Extended or Full is refused, even though the turn
 /// stored it. Nothing executes and the card stays pending.
 #[test]
-fn a_proposal_on_a_non_restricted_turn_is_refused_and_never_executes() {
+fn a_proposal_on_a_full_or_extended_turn_is_refused_and_never_executes() {
     let (_directory, api) = new_api();
-    for (position, level) in [PermissionLevel::Auto, PermissionLevel::Full]
+    for (position, level) in [PermissionLevel::Extended, PermissionLevel::Full]
         .into_iter()
         .enumerate()
     {
@@ -532,17 +532,15 @@ fn a_proposal_on_a_non_restricted_turn_is_refused_and_never_executes() {
     assert!(api.store.list_workstreams(None).unwrap().is_empty());
 }
 
-/// Only a Restricted turn in a session that negotiated the capability gets the block
-/// format. Auto and Full never do, so their preamble cannot ask for proposals.
+/// Only a Restricted or Auto turn in a session that negotiated the capability gets the
+/// block format. Extended and Full never do, so their preamble cannot ask for proposals.
 #[test]
-fn a_turn_above_restricted_never_gets_the_block_format() {
-    assert!(turn_actions(true, PermissionLevel::Restricted));
-    assert!(!turn_actions(false, PermissionLevel::Restricted));
-    for level in [
-        PermissionLevel::Extended,
-        PermissionLevel::Auto,
-        PermissionLevel::Full,
-    ] {
+fn a_turn_above_auto_never_gets_the_block_format() {
+    for level in [PermissionLevel::Restricted, PermissionLevel::Auto] {
+        assert!(turn_actions(true, level), "{level:?}");
+        assert!(!turn_actions(false, level), "{level:?}");
+    }
+    for level in [PermissionLevel::Extended, PermissionLevel::Full] {
         // Even with the capability negotiated.
         let actions = turn_actions(true, level);
         assert!(!actions, "{level:?}");

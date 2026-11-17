@@ -409,18 +409,24 @@ describe("orchestrator action cards over the daemon stub", () => {
     expect(screen.getByText("Hello from the runtime.")).toBeInTheDocument();
   });
 
-  it("shows the Restricted-only note at Auto, and not at Restricted or in fixture mode", async () => {
-    const note = "Action proposals work only at Restricted. At Auto and Full the orchestrator can answer but cannot propose changes.";
+  it("shows the actions note at Full only, not at Auto, Restricted or in fixture mode", async () => {
+    const note = "Action proposals work only at Restricted and Auto. At Full the orchestrator can answer but cannot propose changes.";
     window.localStorage.clear();
     const fake = liveDaemon();
     stubConversation(fake, "completed");
     const services = track(build({ fake }));
     const user = await mountLive(services);
     await pickGlobal(user);
-    expect(await screen.findByText(note)).toBeInTheDocument();
+    expect(screen.queryByText(note)).toBeNull();
 
     const button = screen.getByRole("button", { name: /^Model settings/ });
     if (button.getAttribute("aria-expanded") !== "true") await user.click(button);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Full");
+    await user.click(await screen.findByRole("button", { name: "Use Full" }));
+    expect(await screen.findByText(note)).toBeInTheDocument();
+
+    const reopened = screen.getByRole("button", { name: /^Model settings/ });
+    if (reopened.getAttribute("aria-expanded") !== "true") await user.click(reopened);
     await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
     expect(screen.queryByText(note)).toBeNull();
 
