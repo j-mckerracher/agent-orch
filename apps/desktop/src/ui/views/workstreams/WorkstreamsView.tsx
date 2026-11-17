@@ -1,7 +1,9 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import type { Provenance } from "../../../sources/types";
+import type { QueueWait } from "../../../sources/surfaces/types";
 import { TASK_STATES, basename, stateLabel } from "../../format";
+import { QueueWaitNote, useQueueWaits } from "../../QueueWaitNote";
 import { useGate, useServices, useStore } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -385,7 +387,7 @@ function DependencyDetail({ group, reasonId }: { group: WsGroup; reasonId: strin
   );
 }
 
-function ActivityPane({ group }: { group: WsGroup }) {
+function ActivityPane({ group, waits }: { group: WsGroup; waits: ReadonlyMap<string, QueueWait> }) {
   if (group.unreadReason !== null) return <p role="status">Activity unknown: tasks could not be read.</p>;
   if (group.tasks.length === 0) return <EmptyState title="No activity" description="This workstream has no tasks yet." />;
   return (
@@ -398,6 +400,7 @@ function ActivityPane({ group }: { group: WsGroup }) {
           <li key={task.id} data-testid="ws-activity-row">
             <strong>{taskLabelOf(task)}</strong> <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>{" "}
             <span className="ws-subtle">{assignment(task)}</span>
+            <QueueWaitNote state={task.state} wait={waits.get(task.id)} />
           </li>
         ))}
       </ul>
@@ -459,6 +462,7 @@ function Detail({
 }) {
   const decision = group.tasks.find((task) => task.pendingDecision);
   const evidence = useReviewEvidence(group.tasks, !fixture);
+  const waits = useQueueWaits(!fixture && group.tasks.some((task) => task.state === "Queued"));
   const objectives = group.objectives.status === "ok" ? group.objectives.value : [];
   const counts = group.counts.status === "ok" ? group.counts.value : null;
   return (
@@ -599,6 +603,7 @@ function Detail({
                     </td>
                     <td>
                       <Pill tone={STATE_TONE[task.state]}>{task.state}</Pill>
+                      <QueueWaitNote state={task.state} wait={waits.get(task.id)} />
                     </td>
                     <td>{assignment(task)}</td>
                     <td>{evidence.get(task.id) ?? task.requiredEvidence}</td>
@@ -646,7 +651,7 @@ function Detail({
                 <DependencyGraph tasks={group.tasks} />
               ),
           },
-          { id: "activity", label: "Activity", content: <ActivityPane group={group} /> },
+          { id: "activity", label: "Activity", content: <ActivityPane group={group} waits={waits} /> },
         ]}
       />
     </section>

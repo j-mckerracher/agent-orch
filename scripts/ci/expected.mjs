@@ -254,7 +254,9 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // The home directory setting adds HomeDirectorySection.test.tsx (8 tests), 1 in screens1.test.tsx and 2 title tests in
 // model.test.ts: 125 files, 2275 tests, as a full `npx vitest run` counted them.
 // Dispatch defaults add five tests in existing files: 2275 becomes 2280.
-export const VITEST = { files: 125, tests: 2280 };
+// Queued-task feedback, with the reported disk hold and wait reasons in task lists, adds 23 tests in existing files. A full
+// `npm --prefix apps/desktop test` after integrating main measured 125 files and 2303 tests.
+export const VITEST = { files: 125, tests: 2303 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

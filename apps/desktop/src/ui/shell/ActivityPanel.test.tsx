@@ -105,7 +105,7 @@ describe("fixture mode", () => {
     expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
     const queue = within(panel).getByTestId("activity-queue");
     expect(within(queue).getByText("Add refresh-token expiry")).toBeInTheDocument();
-    expect(within(queue).getByText("Next to dispatch")).toBeInTheDocument();
+    expect(within(queue).getByText("First in queue")).toBeInTheDocument();
   });
 
   it("simulates Stop and Pause without calling any daemon", async () => {
@@ -164,7 +164,7 @@ describe("live mode", () => {
     expect(within(within(panel).getByTestId("activity-queue-running")).getByTestId("activity-task-t1")).toBeInTheDocument();
     const upNext = within(panel).getByTestId("activity-queue-up-next");
     expect(within(upNext).getByTestId("activity-task-t2")).toBeInTheDocument();
-    expect(within(upNext).getByText("Next to dispatch")).toBeInTheDocument();
+    expect(within(upNext).getByText("First in queue")).toBeInTheDocument();
   });
 
   it("shows real slot limits and capacity reasons when more tasks are queued than slots", async () => {

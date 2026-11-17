@@ -3,6 +3,7 @@ import { Crumbs } from "./ConnectionStrip";
 import { FILTER_LABELS, basename, latestSession, matchesFilter, stateLabel } from "./format";
 import type { TaskFilter } from "./router";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
+import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { LoadableRegion, SourceSection, StateText, TableWrap } from "./widgets";
@@ -21,6 +22,8 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   const approvalsUnread = approvals.data === null ? unread(approvals.status) : null;
   // Without approvals, review membership is unknown: the review filter does not narrow the rows.
   const unfiltered = filter === "review" && approvals.data === null;
+  const rows = unfiltered ? own : own.filter((task) => matchesFilter(task, filter, own, approvalList));
+  const waits = useQueueWaits(rows.some((task) => task.state === "Queued"));
 
   return (
     <main className="ps-page">
@@ -68,7 +71,6 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
         onRetry={() => void data.refreshAll()}
       >
         {() => {
-          const rows = unfiltered ? own : own.filter((task) => matchesFilter(task, filter, own, approvalList));
           if (rows.length === 0) return <p>No tasks match this filter.</p>;
           return (
             <TableWrap>
@@ -94,6 +96,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
                         <td>{task.contract.objective}</td>
                         <td>
                           <StateText state={task.state} />
+                          <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
                         </td>
                         <td>{agentDisplayName(task.contract.agent)}</td>
                         <td>{session ? `${session.id} (${stateLabel(session.state)})` : "none recorded"}</td>

@@ -439,6 +439,20 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.getByText(/Queued tab lists every queued task, blocked ones included/)).toBeInTheDocument();
   });
 
+  it("shows why each queued task has not started in the Queued tab", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-a", REPO, { state: "Queued" }),
+      mkTask("t-b", REPO, { state: "Queued", contract: { dependencies: ["t-a"] } }),
+    ];
+    fake.queue.dispatch_blocked = true;
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Queued (2)" }));
+    const list = screen.getByRole("list", { name: "queued tasks" });
+    expect(await within(list).findByRole("button", { name: /t-a.*Restart gate blocking launches/ })).toBeInTheDocument();
+    expect(within(list).getByRole("button", { name: /t-b.*Waiting for t-a/ })).toBeInTheDocument();
+  });
+
   it("shows a retryable error when the task list cannot load", async () => {
     const fake = seeded();
     fake.failNext("tasks.list", { code: -32603, message: "list failed" }, 50);

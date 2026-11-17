@@ -359,6 +359,15 @@
   overflow-wrap: anywhere;
 }
 
+/* Why a queued task has not started, beside its state in task lists (QueueWaitNote). */
+.queue-wait-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--amber);
+  overflow-wrap: anywhere;
+}
+
 /* Notices --------------------------------------------------------------------------------- */
 .ps-notice {
   display: flex;

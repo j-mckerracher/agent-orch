@@ -1,9 +1,10 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DaemonError } from "../daemon/errors";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
+import { fakeQueueSnapshot } from "../test/queueSnapshot";
 
 const tasksRoute = (filter: "all" | "queued" | "running" | "blocked" | "review" | "terminal" = "all") =>
   ({ name: "tasks", projectId: REPO, filter }) as const;
@@ -137,9 +138,239 @@ describe("S3 task list", () => {
     expect(screen.getByRole("table", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByTestId("stale-tasks")).toBeInTheDocument();
   });
+
+  it("shows why each queued row has not started beside its state", async () => {
+    const fake = seeded();
+    fake.stub("queue.snapshot", () => ({
+      ...fakeQueueSnapshot(fake.tasks, fake.queue),
+      queued: [
+        {
+          task_id: "t-q", project_id: REPO, position: 1,
+          waiting_reason: "load", waiting_on: null, waiting_detail: null,
+          load: { meter: "disk", mean_percent: 89, limit_percent: 90, reopen_percent: 80 },
+        },
+        { task_id: "t-b", project_id: REPO, position: null, waiting_reason: "dependency", waiting_on: "t-q", waiting_detail: null },
+      ],
+    }));
+    await mount(fake, { route: tasksRoute() });
+    const table = await screen.findByRole("table", { name: "Tasks" });
+    const row = (id: string) => within(table).getByText(id).closest("tr")!;
+    expect(await within(row("t-q")).findByTestId("queue-wait")).toHaveTextContent("Waiting for disk space (89% used)");
+    expect(within(row("t-b")).getByTestId("queue-wait")).toHaveTextContent("Waiting for t-q");
+    expect(within(row("t-r")).queryByTestId("queue-wait")).not.toBeInTheDocument();
+    expect(within(row("t-d")).queryByTestId("queue-wait")).not.toBeInTheDocument();
+  });
+
+  it("reads queue diagnostics only while a queued row is shown", async () => {
+    const fake = seeded();
+    const { user } = await mount(fake, { route: tasksRoute("terminal") });
+    expect(within(await screen.findByRole("table", { name: "Tasks" })).getByText("t-d")).toBeInTheDocument();
+    expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Queued (2/4)" }));
+    expect(await screen.findAllByTestId("queue-wait")).toHaveLength(2);
+    expect(fake.callsTo("queue.snapshot").length).toBeGreaterThan(0);
+  });
+
+  it("removes wait reasons when a re-read fails and restores them on the next check", async () => {
+    const fake = seeded();
+    await mount(fake, { route: tasksRoute("queued") });
+    expect(await screen.findAllByTestId("queue-wait")).toHaveLength(2);
+    fake.failNext("queue.snapshot", { code: -32603, message: "boom" }, 1);
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(screen.queryAllByTestId("queue-wait")).toHaveLength(0));
+    act(() => void window.dispatchEvent(new Event("focus")));
+    expect(await screen.findAllByTestId("queue-wait")).toHaveLength(2);
+  });
+
+  it("keeps the current wait reason on screen while re-reading after a task changes state", async () => {
+    const fake = seeded();
+    vi.useFakeTimers();
+    try {
+      await mount(fake, { route: tasksRoute("queued"), waitConnected: false });
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      const note = () =>
+        within(within(screen.getByRole("table", { name: "Tasks" })).getByText("t-q").closest("tr")!).getByTestId("queue-wait");
+      expect(note()).toHaveTextContent("All 2 worker slots in use");
+      expect(fake.callsTo("events.subscribe")).toHaveLength(1);
+      const reads = fake.callsTo("queue.snapshot").length;
+      fake.delayNext("queue.snapshot", 150);
+      fake.tasks = fake.tasks.map((task) => (task.contract.id === "t-r" ? { ...task, state: "Succeeded" } : task));
+      act(() => fake.emit(mkEvent(1, "t-r", "s1", "SessionExited")));
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(fake.callsTo("queue.snapshot").length).toBeGreaterThan(reads);
+      expect(note()).toHaveTextContent("All 2 worker slots in use");
+      await act(() => vi.advanceTimersByTimeAsync(200));
+      expect(note()).toHaveTextContent("No blocker reported");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the wait reason is unavailable when the daemon has no queue diagnostics", async () => {
+    const fake = seeded();
+    fake.unknownCapabilities = ["queue"];
+    await mount(fake, { route: tasksRoute("queued") });
+    const notes = await screen.findAllByTestId("queue-wait");
+    expect(notes.map((note) => note.textContent)).toEqual(["Wait reason unavailable", "Wait reason unavailable"]);
+  });
 });
 
 describe("S4 task and session detail", () => {
+  it("explains a queued task's launch blocker on the task page", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO, { contract: { kind: "Investigate", agent: "codex" } })];
+    fake.queue.dispatch_blocked = true;
+    await mount(fake, { route: taskRoute("t-q"), daemonSources: true });
+    expect(await within(screen.getByRole("main")).findByText(/restart gate is blocking all launches/)).toBeInTheDocument();
+    const status = screen.getByRole("region", { name: "Queue status" });
+    expect(within(status).getByRole("status")).toHaveTextContent("restart gate");
+    expect(status).toHaveTextContent("recovery_gate_blocked");
+    expect(status).toHaveTextContent("do not resubmit");
+    expect(status).toHaveTextContent("Selected agent: Codex");
+  });
+
+  it.each([
+    ["dependency", "t-dependency", null, /Waiting for t-dependency/, /dependencies succeed/],
+    ["global_cap", null, null, /All 2 worker slots/, /running task to finish/],
+    ["approval", null, "project_not_registered", /project is not registered/, /Register the project/],
+    ["other", "t-owner", "worktree_owned", /t-owner to release the shared worktree/, /Do not delete/],
+    ["future_reason", null, null, /does not recognize: future_reason/, /check the daemon log/],
+  ] as const)("shows %s queue feedback with a next step", async (reason, on, detail, message, action) => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO)];
+    fake.stub("queue.snapshot", () => ({
+      ...fakeQueueSnapshot(fake.tasks, fake.queue),
+      queued: [{
+        task_id: "t-q", project_id: REPO, position: null,
+        waiting_reason: reason, waiting_on: on, waiting_detail: detail,
+      }],
+    }));
+    await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    expect(await within(status).findByText(message)).toBeInTheDocument();
+    expect(status).toHaveTextContent(action);
+  });
+
+  it("does not promise a launch or infer exhausted quota when no scheduler blocker is reported", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO, { contract: { agent: "codex" } })];
+    await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    expect(await within(status).findByText(/scheduler reports no blocker/)).toBeInTheDocument();
+    expect(status).toHaveTextContent("an agent launch is not confirmed");
+    expect(status).toHaveTextContent("does not establish whether quota is exhausted");
+    expect(status).not.toHaveTextContent("the next scheduling pass starts this task");
+  });
+
+  it("explains the disk-space hold even below the trigger limit and names the recovery threshold", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO, { contract: { agent: "codex" } })];
+    fake.stub("queue.snapshot", () => ({
+      ...fakeQueueSnapshot(fake.tasks, fake.queue),
+      queued: [{
+        task_id: "t-q", project_id: REPO, position: 1,
+        waiting_reason: "load", waiting_on: null, waiting_detail: null,
+        load: { meter: "disk", mean_percent: 89, limit_percent: 90, reopen_percent: 80 },
+      }],
+    }));
+    await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    expect(await within(status).findByText(/disk 89 percent, limit 90/)).toBeInTheDocument();
+    expect(status).toHaveTextContent("rolling average of 80 percent or lower");
+    expect(status).toHaveTextContent("Free disk space on the machine running the daemon");
+    expect(status).toHaveTextContent("checks again automatically");
+    expect(status).not.toHaveTextContent("quota is exhausted");
+  });
+
+  it("refreshes queue feedback without launching or resubmitting and removes it when the task runs", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO)];
+    fake.queue.dispatch_blocked = true;
+    const { user } = await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    await within(status).findByText(/restart gate/);
+    fake.queue.dispatch_blocked = false;
+    await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
+    expect(await within(status).findByText(/scheduler reports no blocker/)).toBeInTheDocument();
+    fake.tasks[0]!.state = "Running";
+    fake.emit(mkEvent(1, "t-q", null, "ExecutionStarted"));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Queue status" })).not.toBeInTheDocument());
+    expect(fake.callsTo("tasks.submit")).toHaveLength(0);
+    expect(fake.callsTo("tasks.retry")).toHaveLength(0);
+    expect(fake.callsTo("tasks.cancel")).toHaveLength(0);
+  });
+
+  it("polls for queue changes even when no task event arrives", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO)];
+    fake.queue.dispatch_blocked = true;
+    vi.useFakeTimers();
+    try {
+      const { view: polledView } = await mount(fake, { route: taskRoute("t-q"), waitConnected: false });
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(screen.getByRole("region", { name: "Queue status" })).toHaveTextContent("restart gate");
+      fake.queue.dispatch_blocked = false;
+      await act(() => vi.advanceTimersByTimeAsync(15_000));
+      expect(screen.getByRole("region", { name: "Queue status" })).toHaveTextContent("scheduler reports no blocker");
+      polledView.unmount();
+      const calls = fake.callsTo("queue.snapshot").length;
+      await act(() => vi.advanceTimersByTimeAsync(15_000));
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(calls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows failed reads, recovery on refresh, and lost connectivity without retaining a stale blocker", async () => {
+    const fake = seeded();
+    fake.tasks = [mkTask("t-q", REPO)];
+    fake.queue.dispatch_blocked = true;
+    const { user } = await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    await within(status).findByText(/restart gate/);
+    fake.failNext("queue.snapshot", { code: -32603, message: "queue read failed" }, 1);
+    await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
+    expect(await within(status).findByText(/Queue status unavailable:/)).toHaveTextContent("queue read failed");
+    expect(status).not.toHaveTextContent("restart gate");
+    await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
+    await within(status).findByText(/restart gate/);
+    fake.openError = new DaemonError("disconnected", "down");
+    fake.drop();
+    expect(await within(status).findByText(/Queue status unavailable while disconnected/)).toBeInTheDocument();
+    expect(status).not.toHaveTextContent("restart gate");
+    expect(within(status).getByRole("button", { name: "Refresh queue status" })).toBeDisabled();
+  });
+
+  it("explains missing queue support instead of presenting it as an unblocked task", async () => {
+    const fake = seeded();
+    fake.unknownCapabilities = ["queue"];
+    await mount(fake, { route: taskRoute("t-q") });
+    const status = await screen.findByRole("region", { name: "Queue status" });
+    expect(await within(status).findByText(/wait reason are unavailable without queue.snapshot/)).toBeInTheDocument();
+    expect(status).toHaveTextContent("Update the daemon");
+  });
+
+  it("does not re-read queue feedback when an event changes no task state", async () => {
+    const fake = seeded();
+    vi.useFakeTimers();
+    try {
+      await mount(fake, { route: taskRoute("t-q"), waitConnected: false });
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      const status = () => screen.getByRole("region", { name: "Queue status" });
+      expect(status()).toHaveTextContent("All 2 worker slots are in use");
+      expect(fake.callsTo("events.subscribe")).toHaveLength(1);
+      const reads = fake.callsTo("queue.snapshot").length;
+      const lists = fake.callsTo("tasks.list").length;
+      act(() => fake.emit(mkEvent(1, "t-r", "s1")));
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(fake.callsTo("tasks.list").length).toBeGreaterThan(lists);
+      expect(status()).toHaveTextContent("All 2 worker slots are in use");
+      expect(fake.callsTo("queue.snapshot")).toHaveLength(reads);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("explains that a Queued task with no session has had no agent launched", async () => {
     await mount(seeded(), { route: taskRoute("t-q") });
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
@@ -317,6 +548,15 @@ describe("S5 coordinator", () => {
     expect(within(related).queryByText("t-other")).not.toBeInTheDocument();
     await user.click(within(screen.getByRole("list", { name: "Pending decisions" })).getByRole("button", { name: "Open review" }));
     expect(await screen.findByText("review t-r")).toBeInTheDocument();
+  });
+
+  it("shows why related queued tasks have not started", async () => {
+    await mount(seeded(), { route });
+    const related = await screen.findByRole("list", { name: "Related tasks" });
+    const item = (id: string) => within(related).getByText(id).closest("li")!;
+    expect(await within(item("t-q")).findByTestId("queue-wait")).toHaveTextContent("All 2 worker slots in use");
+    expect(within(item("t-b")).getByTestId("queue-wait")).toHaveTextContent("Waiting for t-q");
+    expect(within(item("t-r")).queryByTestId("queue-wait")).not.toBeInTheDocument();
   });
 
   it("keeps the draft objective across navigation", async () => {

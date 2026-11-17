@@ -399,6 +399,15 @@ export interface CoordinatorChangeReceipt {
 
 // D11 -- ActivitySource. queue.snapshot is primary; tasks.list and approvals.list enrich it or provide a limited fallback.
 export type WaitingReason = "dependency" | "capacity" | "approval" | "paused" | "unknown";
+/** Why a queued task has not started. */
+export interface QueueWait {
+  reason: WaitingReason;
+  /** Short phrase for task list rows, for example "Waiting for disk space (89% used)". */
+  summary: string;
+  /** Full sentence for the task page and the activity panel. */
+  detail: string;
+  nextStep?: string;
+}
 export interface QueueEntry {
   taskId: string;
   projectId: string;
@@ -406,7 +415,7 @@ export interface QueueEntry {
   agent: string;
   state: TaskState;
   /** Null for entries that are not waiting (running). `unknown` means the daemon reports no reason. */
-  waiting: { reason: WaitingReason; detail: string } | null;
+  waiting: QueueWait | null;
 }
 export type AttentionPriority = "P1" | "P2" | "unknown";
 export interface AttentionItem {

@@ -4,6 +4,7 @@ import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { basename, pendingApprovals } from "./format";
+import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice, LoadableRegion, Notice, SimulatedReceipts, SourceSection, StateText } from "./widgets";
@@ -49,6 +50,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
   };
 
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
+  const waits = useQueueWaits(own.some((task) => task.state === "Queued"));
   const ownIds = new Set(own.map((task) => task.contract.id));
   const pending = pendingApprovals(approvals.data ?? []).filter((a) => ownIds.has(a.action.task_id));
 
@@ -176,6 +178,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
                 {own.map((task) => (
                   <li key={task.contract.id} className="ps-project-row ps-task-row">
                     <code>{task.contract.id}</code> <span className="ps-row-main">{task.contract.objective}</span> <StateText state={task.state} />{" "}
+                    <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
                     <Button onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}>
                       Open task
                     </Button>

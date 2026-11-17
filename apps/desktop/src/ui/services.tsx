@@ -113,6 +113,8 @@ export interface SurfaceRefresh {
   onFocus?: boolean;
   /** Re-load just after each local midnight, for figures scoped to the local day. */
   atLocalMidnight?: boolean;
+  /** Re-load in place whenever this value changes (compared with `Object.is`), such as a signature of related state. */
+  reloadOn?: unknown;
 }
 
 function msUntilLocalMidnight(): number {
@@ -128,7 +130,8 @@ function msUntilLocalMidnight(): number {
  *
  * `refresh` re-loads in place: the previous answer stays on screen until the new one
  * arrives, a slower earlier answer never overwrites a later one, and every timer and
- * listener is released on unmount or when the key changes.
+ * listener is released on unmount or when the key changes. Change `key` only when the
+ * previous answer no longer applies; use `refresh.reloadOn` to re-load without a loading state.
  */
 export function useSurface<T>(
   load: () => Promise<SurfaceResult<T>>,
@@ -143,7 +146,7 @@ export function useSurface<T>(
       ? `${key}@${snapshot.generation}:${snapshot.status}:${snapshot.history.reason ?? ""}`
       : key;
   const [result, setResult] = useState<{ key: string; value: SurfaceResult<T> } | null>(null);
-  const { pollMs, onFocus, atLocalMidnight } = refresh ?? {};
+  const { pollMs, onFocus, atLocalMidnight, reloadOn } = refresh ?? {};
   useEffect(() => {
     let live = true;
     let latest = 0;
@@ -193,6 +196,6 @@ export function useSurface<T>(
       cleanups.forEach((cleanup) => cleanup());
     };
     // The loader closes over `key`; re-running on key is the contract.
-  }, [fullKey, pollMs, onFocus, atLocalMidnight]);
+  }, [fullKey, pollMs, onFocus, atLocalMidnight, reloadOn]);
   return result && result.key === fullKey ? result.value : { status: "loading" };
 }
