@@ -28,6 +28,20 @@ async function settingsOf(fake: FakeDaemon, start = true) {
 }
 
 describe("live D17 settings adapter", () => {
+  it("maps dispatch defaults and sends a group replacement without changing unrelated settings", async () => {
+    const fake = new FakeDaemon();
+    const wire = { ...WIRE, dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "m1", effort: "high" } } } };
+    fake.stub("settings.get", wire);
+    fake.stub("settings.set", wire);
+    const source = await settingsOf(fake);
+    const defaults = { defaultAgent: "codex", providers: { codex: { model: "m1", effort: "high" } } };
+    expect(await source.get()).toMatchObject({ status: "ok", data: { dispatchDefaults: defaults } });
+    await source.setGroups({ dispatchDefaults: defaults });
+    expect(fake.callsTo("settings.set")[0]?.params).toEqual({
+      idempotency_key: expect.any(String), dispatch_defaults: wire.dispatch_defaults,
+    });
+  });
+
   it("settings_live_maps_the_wire_to_limits_readings_and_a_hold_and_defaults_the_feed_to_the_sampler", async () => {
     const fake = new FakeDaemon();
     fake.stub("settings.get", WIRE);

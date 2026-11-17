@@ -3,7 +3,7 @@ import { mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { layoutGraph, MAX_GRAPH_NODES, textDependencies } from "./graph";
 import { countStates, measured } from "../../../sources/surfaces/result";
 import type { Workstream, WorkstreamTask } from "../../../sources/surfaces/types";
-import { deriveLiveGroups, requiredEvidence, type WsTask } from "./model";
+import { deriveLiveGroups, requiredEvidence, taskTitleOf, type WsTask } from "./model";
 
 const A = "/work/alpha";
 const B = "/work/beta";
@@ -198,5 +198,18 @@ describe("textDependencies", () => {
     expect(rows[1]!.predecessors.map((task) => task.id)).toEqual(["a"]);
     expect(rows[1]!.external).toEqual(["ghost"]);
     expect(rows[0]!.consumers.map((task) => task.id)).toEqual(["b"]);
+  });
+});
+
+describe("taskTitleOf", () => {
+  it("keeps at most five words and marks a cut", () => {
+    const long = { id: "t1", objective: "Investigate   why the sidebar\nshows the whole objective text" };
+    expect(taskTitleOf(long)).toBe("Investigate why the sidebar shows…");
+    expect(taskTitleOf({ id: "t1", objective: "Wire the CLI" })).toBe("Wire the CLI");
+    expect(taskTitleOf({ id: "t1", objective: "one two three four five" })).toBe("one two three four five");
+  });
+
+  it("falls back to the id for a blank objective", () => {
+    expect(taskTitleOf({ id: "t-9", objective: "  " })).toBe("t-9");
   });
 });

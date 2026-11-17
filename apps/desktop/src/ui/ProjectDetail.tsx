@@ -263,6 +263,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const known = projects.data?.some((row) => row.id === projectId) ?? null;
   // A registered project has no coordinator until the user adds one in the Workspace (DPES-1105).
   const hasCoordinator = projects.data?.find((row) => row.id === projectId)?.coordinator_active !== false;
+  // A task of an in-place project (the home directory) has nothing to review or land, so only a report is possible.
+  const inPlace = projects.data?.find((row) => row.id === projectId)?.in_place === true;
   const own = tasks.data?.filter((task) => task.contract.project_id === projectId) ?? null;
   const ownIds = new Set(own?.map((task) => task.contract.id));
   // Pending review needs both lists: without the task list no approval can be matched to this project.
@@ -277,7 +279,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
   const submit = async () => {
     setFailure(null);
-    const built = buildSubmission(projectId, draft);
+    const built = buildSubmission(projectId, inPlace ? { ...draft, delivery: "ReportOnly" } : draft);
     if (!built.ok) {
       setErrors(built.errors);
       return;
@@ -381,7 +383,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             Agent
             <input value={draft.agent} onChange={(e) => set({ agent: e.target.value })} />
           </label>
-          <p className="muted ps-wide">Use the launcher ID: codex or claude-code. Display capitalization is accepted.</p>
+          <p className="muted ps-wide">Leave Agent blank to use Settings dispatch defaults, or override with codex or claude-code. Display capitalization is accepted.</p>
           <label>
             Parent task ID (optional)
             <input value={draft.parentId} onChange={(e) => set({ parentId: e.target.value })} />
@@ -408,11 +410,16 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           )}
           <label>
             Delivery
-            <select value={draft.delivery} onChange={(e) => set({ delivery: e.target.value as DeliveryPolicy })}>
+            <select
+              value={inPlace ? "ReportOnly" : draft.delivery}
+              disabled={inPlace}
+              onChange={(e) => set({ delivery: e.target.value as DeliveryPolicy })}
+            >
               <option>ReportOnly</option>
               <option>LocalReview</option>
               <option>PullRequest</option>
             </select>
+            {inPlace && <span className="muted"> This folder is the home directory: a task runs in it directly and only reports.</span>}
           </label>
           <label>
             Autonomy

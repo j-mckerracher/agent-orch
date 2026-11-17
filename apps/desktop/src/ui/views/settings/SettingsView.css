@@ -171,6 +171,10 @@
   width: 12rem;
 }
 
+.settings-row input.settings-path {
+  width: min(32rem, 100%);
+}
+
 .settings-subhead {
   margin: 16px 0 8px;
 }

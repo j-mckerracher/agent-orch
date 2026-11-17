@@ -234,6 +234,20 @@ describe("S2 project detail and submission", () => {
     expect(params.idempotency_key).toBeTruthy();
   });
 
+  it("submits a task for the home directory with ReportOnly delivery and does not offer another", async () => {
+    const fake = seeded();
+    fake.projects = [{ id: REPO, in_place: true }];
+    const { user } = await mount(fake, { route });
+    await user.type(screen.getByLabelText("Objective"), "List my notes");
+    await user.type(screen.getByLabelText("Agent"), "codex");
+    expect(await screen.findByRole("combobox", { name: /Delivery/ })).toBeDisabled();
+    expect(screen.getByText(/This folder is the home directory/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await until(() => fake.callsTo("tasks.submit").length === 1, "submitted");
+    const params = fake.callsTo("tasks.submit")[0]!.params as { contract: Record<string, unknown> };
+    expect(params.contract).toMatchObject({ project_id: REPO, delivery: "ReportOnly" });
+  });
+
   it("does not offer ReadOnly autonomy, which the daemon rejects", async () => {
     await mount(seeded(), { route });
     const autonomy = await screen.findByLabelText("Autonomy");
@@ -246,7 +260,7 @@ describe("S2 project detail and submission", () => {
     const { user } = await mount(fake, { route });
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText("Objective is required.")).toBeInTheDocument();
-    expect(screen.getByText(/Agent is required; no agent is chosen automatically/)).toBeInTheDocument();
+    expect(screen.queryByText(/Agent is required/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.submit")).toHaveLength(0);
   });
 

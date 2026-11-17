@@ -147,6 +147,19 @@ pub(crate) fn build_snapshot_with_notes(
     blocks.push(approvals(store));
     blocks.push(reports(store));
     if actions {
+        let provider = match store.orchestrator_settings() {
+            Ok(settings) => match settings.dispatch_defaults.default_agent.as_deref() {
+                Some("codex") => "codex",
+                Some("claude-code") => "claude-code",
+                Some("github-copilot") => "github-copilot",
+                None => "not configured",
+                _ => "unavailable",
+            },
+            Err(_) => "unknown",
+        };
+        blocks.push(Block::text(format!(
+            "Task dispatch default provider: {provider}"
+        )));
         // A workstream conversation cannot create a workstream, so it is not offered the kind.
         let in_workstream = matches!(target, ConversationTarget::Workstream(_));
         let kinds: Vec<&str> = ActionKind::ALL
@@ -341,7 +354,7 @@ fn this_workstream_tasks(store: &SqliteStore, workstream_id: &str, actions: bool
 
 fn projects(store: &SqliteStore) -> Block {
     match store.list_projects() {
-        Ok(projects) => {
+        Ok(mut projects) => {
             // The mode only: a base branch, a prefix or a check command can look like a
             // path or a token. A project with no row, or a local-only one, shows none.
             let modes: HashMap<String, String> = store
@@ -351,11 +364,32 @@ fn projects(store: &SqliteStore) -> Block {
                 .filter(|row| row.mode != "local-only")
                 .map(|row| (row.project_id, row.mode))
                 .collect();
+            // The home directory's project is where the model puts a task whose project is
+            // unclear. It comes first, so a long list never trims it away.
+            let home = store
+                .orchestrator_settings()
+                .ok()
+                .and_then(|settings| settings.home_directory);
+            projects.sort_by_key(|project| home.as_deref() != Some(project.id.as_str()));
             let items: Vec<String> = projects
                 .iter()
-                .map(|project| match modes.get(&project.id) {
-                    Some(mode) => format!("- {} (mode: {mode})", project_label(&project.id)),
-                    None => format!("- {}", project_label(&project.id)),
+                .map(|project| {
+                    let mut notes = Vec::new();
+                    if let Some(mode) = modes.get(&project.id) {
+                        notes.push(format!("mode: {mode}"));
+                    }
+                    if home.as_deref() == Some(project.id.as_str()) {
+                        notes.push("home: where a task goes when no project is clear".to_owned());
+                    }
+                    if project.is_in_place() {
+                        notes.push("runs in place: delivery ReportOnly".to_owned());
+                    }
+                    let label = project_label(&project.id);
+                    if notes.is_empty() {
+                        format!("- {label}")
+                    } else {
+                        format!("- {label} ({})", notes.join(", "))
+                    }
                 })
                 .collect();
             Block {
@@ -1075,6 +1109,30 @@ mod tests {
         ] {
             assert!(!snapshot.contains(hidden), "{hidden}: {snapshot}");
         }
+    }
+
+    #[test]
+    fn the_snapshot_marks_the_home_project_first_and_says_it_runs_in_place() {
+        let (_directory, store) = store();
+        let home = "/Users/someone/home-root-5521/Code";
+        make_project(&store, "plain", "/work/plain", json!({}));
+        make_project(&store, home, home, json!({ "in_place": true }));
+        store
+            .update_orchestrator_settings(&orchestrator_store::SettingsPatch {
+                home_directory: Some(Some(home.to_owned())),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let snapshot = snapshot_for_global(&store);
+
+        let marked = format!(
+            "Projects (2):\n- {} (home: where a task goes when no project is clear, runs in place: delivery ReportOnly)\n- {}\n",
+            project_label(home),
+            project_label("plain")
+        );
+        assert!(snapshot.contains(&marked), "{snapshot}");
+        assert!(!snapshot.contains("home-root-5521"), "{snapshot}");
     }
 
     #[test]

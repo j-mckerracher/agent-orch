@@ -2098,6 +2098,7 @@ mod usage_paths {
             model_selection: None,
             permission: Default::default(),
             worktree: PathBuf::new(),
+            in_place: false,
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
@@ -2282,6 +2283,7 @@ mod usage_paths {
             }),
             permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
+            in_place: false,
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
@@ -2418,6 +2420,109 @@ fn without_thresholds_admission_is_off_and_starts_are_unchanged() {
     assert_eq!(state["enabled"], false);
     assert_eq!(state["deferred_task_ids"], json!([]));
     assert_eq!(state["decision"]["admitted"], true);
+    api.shutdown();
+}
+
+#[test]
+fn a_task_for_an_in_place_project_runs_in_the_directory_without_a_worktree_or_commit() {
+    let fixture = Fixture::new();
+    let home = fs::canonicalize(fixture.root.path()).unwrap().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let record = fixture.marker("argv");
+    let event = r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Wrote the notes."}}"#;
+    let agent = fixture.script(
+        "in-place-agent",
+        &format!(
+            "printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
+             {THREAD_STARTED}echo produced > agent-output.txt\nprintf '%s\\n' '{event}'\n{TURN_COMPLETED}",
+            record.display()
+        ),
+    );
+    let api = fixture.api(&agent);
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .register_project(&Project {
+            id: home.display().to_string(),
+            root_path: home.display().to_string(),
+            settings: json!({"in_place": true}),
+        })
+        .unwrap();
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["project_id"] = json!(home.display().to_string());
+    let task_id = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "in-place-1", "contract": contract}),
+        )
+        .unwrap()["contract"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    wait_state(&api, &task_id, "Verifying");
+
+    // The agent ran in the directory, and nothing turned it into a repository.
+    assert_eq!(
+        fs::read_to_string(home.join("agent-output.txt")).unwrap(),
+        "produced\n"
+    );
+    assert!(!home.join(".git").exists());
+    assert!(!fixture.data().join("worktrees").exists());
+    let argv = fs::read_to_string(&record).unwrap();
+    assert!(
+        argv.lines().any(|arg| arg == "--skip-git-repo-check"),
+        "{argv}"
+    );
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    assert_eq!(workspace.path, home.display().to_string());
+    assert!(workspace.is_in_place());
+    assert_eq!(
+        (workspace.branch.as_str(), workspace.base_commit.as_str()),
+        ("", "")
+    );
+    // Nothing to review: the last message is the record of what the task did.
+    let report = store.task_report(&task_id).unwrap().expect("a report");
+    assert!(report.body.contains("Wrote the notes."), "{}", report.body);
+    api.shutdown();
+}
+
+#[test]
+fn a_task_for_an_in_place_project_whose_directory_is_gone_fails_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    let gone = fixture.root.path().join("gone");
+    let api = fixture.api(&succeeding_agent(&fixture));
+    SqliteStore::new(&fixture.data().join("store.sqlite"))
+        .unwrap()
+        .register_project(&Project {
+            id: gone.display().to_string(),
+            root_path: gone.display().to_string(),
+            settings: json!({"in_place": true}),
+        })
+        .unwrap();
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["project_id"] = json!(gone.display().to_string());
+    let task_id = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "in-place-2", "contract": contract}),
+        )
+        .unwrap()["contract"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(
+        failed["attempts"][0]["failure_reason"],
+        HOME_DIRECTORY_MISSING
+    );
+    assert_eq!(failed["sessions"], json!([]));
+    assert!(!gone.exists());
     api.shutdown();
 }
 

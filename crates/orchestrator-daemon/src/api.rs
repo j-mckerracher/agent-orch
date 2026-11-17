@@ -105,8 +105,7 @@ struct TaskSubmission {
     parent_id: Option<String>,
     objective: String,
     kind: TaskKind,
-    /// Required unless `work_class` names a class that sets the agent; a missing
-    /// agent is then refused exactly as before.
+    /// Optional when a work class or the saved dispatch defaults set the agent.
     #[serde(default)]
     agent: String,
     dependencies: Vec<String>,
@@ -555,8 +554,9 @@ impl DaemonApi {
             .store
             .projects_without_coordinator()
             .map_err(map_store_error)?;
-        // `mode` appears only for a project that has a defaults row, and `archived` only
-        // (as true) for an archived one, so a project that never set a default lists as before.
+        // `mode` appears only for a project that has a defaults row, `archived` only (as true)
+        // for an archived one, and `in_place` only (as true) for one whose tasks run in its
+        // directory, so a project that never set a default lists as before.
         let modes: std::collections::HashMap<String, String> = self
             .store
             .list_project_defaults()
@@ -578,6 +578,9 @@ impl DaemonApi {
                     }
                     if archived_all.contains(&project.id) {
                         row["archived"] = json!(true);
+                    }
+                    if project.is_in_place() {
+                        row["in_place"] = json!(true);
                     }
                     row
                 })
@@ -624,12 +627,15 @@ impl DaemonApi {
 
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
         let mut request: TaskSubmitParams = parse_params(params)?;
-        if request.contract.work_class.is_none() || !request.contract.agent.trim().is_empty() {
+        if !request.contract.agent.trim().is_empty() {
             request.contract.agent = canonical_agent_id(&request.contract.agent)
                 .ok_or(RpcError::InvalidParams)?
                 .to_owned();
         }
         let key = request.idempotency_key.clone();
+        if let Some(reply) = idempotency::replay(&self.store, "tasks.submit", &key, &request)? {
+            return Ok(reply);
+        }
         let (resolved, selection_catalog) = self.resolve_submission(&request.contract)?;
         // The fingerprint is the request as sent; the write sees what it resolved to.
         let resolved = TaskSubmitParams {
@@ -646,7 +652,7 @@ impl DaemonApi {
         )
     }
 
-    /// Fills in the agent and model selection a work class sets, and reads the catalog the
+    /// Fills in work-class and saved dispatch defaults, and reads the catalog the
     /// selection is checked against. The catalog read can take as long as a CLI probe, so a
     /// caller does this before the idempotency gate is taken: the gate serializes every
     /// mutating request and must not wait on a subprocess.
@@ -654,6 +660,26 @@ impl DaemonApi {
         &self,
         submission: &TaskSubmission,
     ) -> Result<(TaskSubmission, Option<orchestrator_agents::AgentCatalog>), RpcError> {
+        let resolved = self.resolve_dispatch_defaults(submission)?;
+        let selection_catalog = self
+            .selection_catalog(&resolved.agent, resolved.model_selection.as_ref())
+            .inspect_err(|_| {
+                if let Some(class) = &resolved.work_class {
+                    eprintln!(
+                        "orchestrator-daemon: work class {} could not be checked against the catalog",
+                        crate::executor::log_safe(class)
+                    );
+                }
+            })?;
+        Ok((resolved, selection_catalog))
+    }
+
+    /// Explicit choices and named work classes win. A different explicit model does not
+    /// inherit an effort configured for another model.
+    fn resolve_dispatch_defaults(
+        &self,
+        submission: &TaskSubmission,
+    ) -> Result<TaskSubmission, RpcError> {
         let work_classes::Resolved {
             agent,
             selection,
@@ -664,27 +690,42 @@ impl DaemonApi {
             &submission.agent,
             submission.model_selection.as_ref(),
         )?;
-        let agent = canonical_agent_id(&agent)
+        let defaults = self
+            .store
+            .orchestrator_settings()
+            .map_err(map_store_error)?
+            .dispatch_defaults;
+        let agent = if agent.trim().is_empty() {
+            defaults.default_agent.as_deref().unwrap_or("")
+        } else {
+            &agent
+        };
+        let agent = canonical_agent_id(agent)
             .ok_or(RpcError::InvalidParams)?
             .to_owned();
-        let selection_catalog = self
-            .selection_catalog(&agent, selection.as_ref())
-            .map_err(|error| {
-                if let Some(class) = &class {
-                    eprintln!(
-                        "orchestrator-daemon: work class {} could not be checked against the catalog",
-                        crate::executor::log_safe(class)
-                    );
+        let selection = match (selection, defaults.providers.get(&agent)) {
+            (None, saved) => saved.cloned(),
+            (Some(mut chosen), Some(saved))
+                if chosen.model.is_some() || chosen.effort.is_some() =>
+            {
+                if chosen.model.is_none() {
+                    chosen.model = saved.model.clone();
                 }
-                error
-            })?;
+                if chosen.effort.is_none() && chosen.model == saved.model {
+                    chosen.effort = saved.effort.clone();
+                }
+                Some(chosen)
+            }
+            (chosen, _) => chosen,
+        };
         let mut resolved = submission.clone();
         resolved.agent = agent;
         resolved.model_selection = selection;
-        Ok((resolved, selection_catalog))
+        resolved.work_class = class;
+        Ok(resolved)
     }
 
-    /// The submit write, shared with action execution. `key` seeds the task id, and the
+    /// The submit write. `key` seeds the task id, and the
     /// caller holds the idempotency gate. `selection_catalog` is the catalog read the caller
     /// made before taking the gate; it is `None` when the request names no model selection.
     fn submit_task_inner(
@@ -704,6 +745,23 @@ impl DaemonApi {
         request: &TaskSubmitParams,
         key: &str,
         selection_catalog: Option<&orchestrator_agents::AgentCatalog>,
+    ) -> Result<TaskContract, RpcError> {
+        let contract = self.checked_contract_without_catalog(request, key)?;
+        if let Some(selection) = &contract.model_selection {
+            let catalog = selection_catalog.ok_or(RpcError::Internal)?;
+            self.check_resolved_selection(
+                request.contract.work_class.as_deref(),
+                catalog,
+                selection,
+            )?;
+        }
+        Ok(contract)
+    }
+
+    fn checked_contract_without_catalog(
+        &self,
+        request: &TaskSubmitParams,
+        key: &str,
     ) -> Result<TaskContract, RpcError> {
         // The executor always launches a writing agent, so a policy
         // that denies workspace writes cannot be honored. Refuse it
@@ -746,9 +804,14 @@ impl DaemonApi {
             permission,
             work_item: request.contract.work_item.clone(),
         };
-        self.store
+        let project = self
+            .store
             .get_project(&contract.project_id)
             .map_err(map_store_error)?;
+        // A task in the home directory leaves nothing to review or land.
+        if project.is_in_place() && contract.delivery != DeliveryPolicy::ReportOnly {
+            return Err(RpcError::InvalidParams);
+        }
         // A removed project takes no new task until it is registered again.
         if self
             .store
@@ -768,16 +831,6 @@ impl DaemonApi {
             }
         }
         self.check_agent_command_line(&contract)?;
-        if let Some(selection) = &contract.model_selection {
-            // `contract::validate` has accepted the selection, so the
-            // pre-gate read was made for it.
-            let catalog = selection_catalog.ok_or(RpcError::Internal)?;
-            self.check_resolved_selection(
-                request.contract.work_class.as_deref(),
-                catalog,
-                selection,
-            )?;
-        }
         self.validate_scheduler(&contract)?;
         Ok(contract)
     }
@@ -1297,10 +1350,14 @@ impl DaemonApi {
         task_id: &str,
         requested_id: Option<&str>,
     ) -> Result<Workspace, RpcError> {
-        let workspaces = self
+        // A task that ran in place has no checkout of its own to diff, review or land.
+        let workspaces: Vec<Workspace> = self
             .store
             .workspaces_for_task(task_id)
-            .map_err(map_store_error)?;
+            .map_err(map_store_error)?
+            .into_iter()
+            .filter(|workspace| !workspace.is_in_place())
+            .collect();
         match requested_id {
             Some(id) => workspaces
                 .into_iter()
@@ -1736,6 +1793,8 @@ mod grant_matcher;
 mod grants;
 #[path = "api_holds.rs"]
 mod holds;
+#[path = "api_home_directory.rs"]
+mod home_directory;
 #[path = "api_host.rs"]
 mod host;
 #[path = "api_intake.rs"]
@@ -1813,6 +1872,9 @@ mod grant_matcher_tests;
 #[cfg(test)]
 #[path = "api_grants_tests.rs"]
 mod grants_tests;
+#[cfg(test)]
+#[path = "api_home_directory_tests.rs"]
+mod home_directory_tests;
 #[cfg(test)]
 #[path = "api_landing_merge_tests.rs"]
 mod landing_merge_tests;

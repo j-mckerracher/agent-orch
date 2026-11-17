@@ -27,6 +27,35 @@ fn set(api: &DaemonApi, key: &str, load: Value) -> Result<Value, RpcError> {
 }
 
 #[test]
+fn dispatch_defaults_reject_invalid_settings_without_partial_writes() {
+    let (_directory, api) = new_api();
+    let before = get(&api);
+    for (index, defaults) in [
+        json!({"default_agent": "unknown", "providers": {}}),
+        json!({"default_agent": "Codex", "providers": {}}),
+        json!({"default_agent": null, "providers": {"codex": {}}}),
+        json!({"default_agent": null, "providers": {"codex": {"model": "--flag"}}}),
+        json!({"default_agent": null, "providers": {}, "extra": true}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            api.dispatch(
+                "settings.set",
+                json!({
+                    "idempotency_key": format!("defaults-bad-{index}"),
+                    "load": {"cpu_percent": 70},
+                    "dispatch_defaults": defaults,
+                })
+            ),
+            Err(RpcError::InvalidParams)
+        );
+        assert_eq!(get(&api), before);
+    }
+}
+
+#[test]
 fn settings_get_returns_limits_and_the_gate_with_no_path() {
     let (directory, api) = new_api();
 

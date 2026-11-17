@@ -5,7 +5,7 @@ import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type LoadHoldWire, type LoadMeterWire, type SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { observation, okResult } from "../../../sources/surfaces/result";
-import type { LoadReading, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
+import type { LoadReading, ModelCatalog, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
 import { ServicesProvider, type Services } from "../../services";
@@ -74,6 +74,95 @@ const typeInto = async (user: ReturnType<typeof userEvent.setup>, name: string, 
   await user.type(input, text);
   return input;
 };
+
+const DISPATCH_CATALOG: ModelCatalog = {
+  providers: ["codex", "claude-code"].map((id) => ({
+    id, name: id, installed: true, launchable: true, modelSelection: "supported",
+    models: { status: "ok", value: [
+      { id: "m1", label: "Model one", efforts: ["low", "high"] },
+      { id: "m2", label: "Model two", efforts: ["medium"] },
+    ], observedAt: "2026-11-17T00:00:00Z", ageMs: 0 },
+    efforts: { status: "unsupported", reason: "Choose a model to see effort levels." },
+  })),
+};
+
+async function dispatchPage(wire: SettingsWire) {
+  const { fake, services } = await connected(wire);
+  let saved = wire;
+  fake.stub("settings.get", () => saved);
+  fake.stub("settings.set", (params: unknown) => {
+    saved = { ...saved, dispatch_defaults: (params as SettingsWire).dispatch_defaults };
+    return saved;
+  });
+  vi.spyOn(services.surfaces.models, "catalog").mockResolvedValue(
+    okResult(services.surfaces.models.provenance, DISPATCH_CATALOG, observation(Date.now())),
+  );
+  fake.stub("agents.validate_selection", { valid: true });
+  return { fake, services };
+}
+
+describe("Agent dispatch defaults", () => {
+  it("saves per-provider pairs, preserves them when switching providers, and restores after remount", async () => {
+    const { fake, services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
+    const user = userEvent.setup();
+    const first = page(services);
+    await user.selectOptions(await screen.findByLabelText("codex model"), "m1");
+    await user.selectOptions(screen.getByLabelText("codex effort"), "high");
+    await user.selectOptions(screen.getByLabelText("claude-code model"), "m2");
+    await user.selectOptions(screen.getByLabelText("claude-code effort"), "medium");
+    await user.selectOptions(screen.getByLabelText("Default provider"), "claude-code");
+    await user.selectOptions(screen.getByLabelText("Default provider"), "codex");
+    expect(screen.getByLabelText("claude-code effort")).toHaveValue("medium");
+    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")[0]?.params).toEqual({
+      idempotency_key: expect.any(String),
+      dispatch_defaults: {
+        default_agent: "codex",
+        providers: { codex: { model: "m1", effort: "high" }, "claude-code": { model: "m2", effort: "medium" } },
+      },
+    });
+    first.unmount();
+    page(services);
+    expect(await screen.findByLabelText("Default provider")).toHaveValue("codex");
+    expect(await screen.findByLabelText("codex effort")).toHaveValue("high");
+    expect(screen.getByLabelText("claude-code model")).toHaveValue("m2");
+    await user.selectOptions(screen.getByLabelText("codex model"), "m2");
+    expect(screen.getByLabelText("codex effort")).toHaveValue("");
+    expect(within(screen.getByLabelText("codex effort")).queryByRole("option", { name: "high" })).not.toBeInTheDocument();
+  });
+
+  it("retains unavailable saved choices, reports validation failures, and lets the user clear them", async () => {
+    const { fake, services } = await dispatchPage({
+      ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "gone", effort: "high" } } },
+    });
+    fake.stub("agents.validate_selection", { valid: false, reason: "unknown_model", detail: "The selected model is no longer available." });
+    const user = userEvent.setup();
+    page(services);
+    expect(await screen.findByLabelText("codex model")).toHaveValue("gone");
+    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    expect(await screen.findByText("codex: The selected model is no longer available.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Clear dispatch defaults" }));
+    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({ dispatch_defaults: { default_agent: null, providers: {} } });
+  });
+
+  it("does not allow a token-only session to save dispatch defaults", async () => {
+    const fake = new FakeDaemon();
+    fake.approver = false;
+    fake.stub("settings.get", { ...OPEN, dispatch_defaults: { default_agent: "codex", providers: {} } });
+    const services = createServices({ connector: fake, connection: { backoffMs: [5] } });
+    stops.push(() => { services.connection.stop(); services.data.dispose(); });
+    services.connection.start();
+    await until(() => services.connection.getSnapshot().status === "connected", "connected");
+    page(services);
+    expect(await screen.findByLabelText("Default provider")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    expect(fake.callsTo("settings.set")).toHaveLength(0);
+  });
+});
 
 describe("Settings page, live", () => {
   it("settings_page_shows_three_labelled_limit_fields_with_the_daemons_values_and_hints", async () => {

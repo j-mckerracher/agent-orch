@@ -23,6 +23,53 @@ fn open(directory: &Path) -> SqliteStore {
     SqliteStore::new(&directory.join("store.sqlite")).unwrap()
 }
 
+#[test]
+fn dispatch_defaults_persist_and_partial_updates_preserve_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    assert_eq!(
+        store.orchestrator_settings().unwrap().dispatch_defaults,
+        Default::default()
+    );
+    let defaults = serde_json::from_value(serde_json::json!({
+        "default_agent": "codex",
+        "providers": {"codex": {"model": "gpt-6-luna", "effort": "low"}, "claude-code": {"model": "sonnet"}}
+    })).unwrap();
+    store
+        .update_orchestrator_settings(&SettingsPatch {
+            dispatch_defaults: Some(defaults),
+            ..Default::default()
+        })
+        .unwrap();
+    updated(&store, &cpu(75));
+    let saved = store.orchestrator_settings().unwrap();
+    drop(store);
+    let store = open(directory.path());
+    assert_eq!(store.orchestrator_settings().unwrap(), saved);
+    store
+        .update_orchestrator_settings(&SettingsPatch {
+            dispatch_defaults: Some(Default::default()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(
+        store.orchestrator_settings().unwrap().dispatch_defaults,
+        Default::default()
+    );
+    assert_eq!(stored(&store).0, 75);
+    let path = directory.path().join("store.sqlite");
+    try_sql(
+        &path,
+        "UPDATE orchestrator_settings SET dispatch_defaults = 'broken'",
+        &[],
+    )
+    .unwrap();
+    assert!(
+        store.orchestrator_settings().is_err(),
+        "corruption must not silently clear defaults"
+    );
+}
+
 /// The three limits the store holds now, as (cpu, memory, disk).
 fn stored(store: &SqliteStore) -> (u8, u8, u8) {
     let settings = store.orchestrator_settings().unwrap();
@@ -499,4 +546,49 @@ fn an_update_changes_only_the_supplied_columns() {
         assert_eq!(scalars(&path, DUMP), vec![expected]);
     }
     assert_eq!(stored(&store), (60, 70, 95));
+}
+
+#[test]
+fn the_home_directory_is_unset_by_default_and_changes_only_by_a_patch_that_names_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    assert_eq!(store.orchestrator_settings().unwrap().home_directory, None);
+
+    let set = |value: Option<&str>| SettingsPatch {
+        home_directory: Some(value.map(str::to_owned)),
+        ..SettingsPatch::default()
+    };
+    let saved = store
+        .update_orchestrator_settings(&set(Some("/Users/me/Code")))
+        .unwrap();
+    assert_eq!(saved.home_directory.as_deref(), Some("/Users/me/Code"));
+
+    // A patch that does not name it leaves it alone.
+    store.update_orchestrator_settings(&cpu(60)).unwrap();
+    let kept = store.orchestrator_settings().unwrap();
+    assert_eq!(kept.home_directory.as_deref(), Some("/Users/me/Code"));
+    assert_eq!(kept.load.cpu, 60);
+
+    for bad in ["", "bad\0path", &"x".repeat(4097)] {
+        let error = store
+            .update_orchestrator_settings(&set(Some(bad)))
+            .unwrap_err();
+        assert!(is_invalid_input(&error), "{bad:?}");
+    }
+    assert_eq!(
+        store
+            .orchestrator_settings()
+            .unwrap()
+            .home_directory
+            .as_deref(),
+        Some("/Users/me/Code")
+    );
+
+    assert_eq!(
+        store
+            .update_orchestrator_settings(&set(None))
+            .unwrap()
+            .home_directory,
+        None
+    );
 }

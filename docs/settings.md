@@ -2,6 +2,14 @@
 
 Open Settings from the sidebar. Each group has its own Save button.
 
+## Agent dispatch defaults
+
+Choose a default provider, then set the model and effort for each provider. Save dispatch defaults to keep these choices across app and daemon restarts. Switching the default provider preserves the other providers' choices. Model and effort options come from the installed agents' catalogs; refresh the list if a catalog is still loading.
+
+These settings apply to new app/daemon tasks across projects, including chat-proposed tasks and workstream tasks. Explicit task choices take precedence, followed by named work classes, then these defaults. An explicit provider uses only that provider's saved choices. An explicit different model does not inherit effort from the saved model. Choosing provider defaults leaves model or effort selection to the provider.
+
+Existing queued/running tasks, retries, and chat model choices are unchanged. Reassigning a task uses the new provider's defaults; revising a task retains its recorded choices. Standalone CLI execution is unchanged. An unavailable saved selection is refused on submission or before launch, never silently replaced. Clear dispatch defaults and save to remove them; tasks without a provider then require an explicit choice.
+
 ## Machine load limits
 
 New tasks wait while the machine is busy. Set CPU, Memory, and Disk limits as whole percents from 50 to 100. Each limit is compared with the average of the last 60 seconds, and 100 turns that check off.
@@ -21,6 +29,12 @@ Canceling a task, revising a task, and removing a project always need your appro
 ## Notes for the orchestrator
 
 Notes are your own reminders, global or per workstream. The orchestrator reads them as data, not as instructions. Do not put passwords, tokens, or file paths in them, and the daemon refuses notes that look like these.
+
+## Home directory
+
+The home directory is the folder a task runs in when it is not clear which project the task belongs to, such as a task you start from the global orchestrator. Enter the full path of a folder on this machine, for example `~/Code`, and click Save home directory. The folder must already exist. Leave the field empty to set none, and the orchestrator then asks where to run instead.
+
+A task in the home directory runs in that folder itself, not in a separate worktree. An Implement task there can write to the folder directly. The task only reports back: nothing is reviewed or landed afterwards, and its Delivery is fixed to ReportOnly. Tasks started there at the same time share the folder. The folder is listed on the Projects page.
 
 ## Chat options
 

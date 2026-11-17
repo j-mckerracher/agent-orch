@@ -54,7 +54,9 @@ export const WINDOWS = {
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 601 becomes 610.
   // Opt-in project coordinators add 1 portable daemon unit test (registration adds no coordinator): 610 becomes 611.
   // Project coordinator replies add one portable conversation_runtime regression.
-  daemon: { passed: 612, ignored: 1, sequence: [517, 82, 2, 5, 0, 1, 2, 4] },
+  // The home directory and Global tasks add 13 portable daemon unit tests (the 2 executor tests are Unix-only): 612 becomes 625.
+  // Dispatch defaults add two portable unit tests: 625 becomes 627.
+  daemon: { passed: 627, ignored: 1, sequence: [532, 82, 2, 5, 0, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -95,7 +97,9 @@ export const WINDOWS = {
   // DPES-1105 task actions and settings (CI run 44023050296, measured on Windows): action_proposals.rs is 23 tests and a new
   // orchestrator_settings.rs binary adds 12, so 216 passed.
   // Opt-in project coordinators add 2 portable conversation_history tests: 13 becomes 15, so 349 becomes 351 passed.
-  store: { passed: 351, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 12, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
+  // The home directory setting adds 1 portable store test (orchestrator_settings 12 becomes 13): 351 becomes 352.
+  // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
+  store: { passed: 353, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 98 },
@@ -141,7 +145,9 @@ export const MACOS = {
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 696 becomes 705.
   // Opt-in project coordinators add 1 portable daemon unit test: 705 becomes 706.
   // Project coordinator replies add one conversation_runtime regression.
-  daemon: { passed: 707, ignored: 1, sequence: [594, 87, 2, 5, 13, 1, 2, 4] },
+  // The home directory and Global tasks add 15 daemon unit tests (13 portable, 2 Unix-only executor): 707 becomes 722.
+  // Dispatch defaults add two portable unit tests and three Unix fake-CLI tests: 722 becomes 727.
+  daemon: { passed: 727, ignored: 1, sequence: [614, 87, 2, 5, 13, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -172,7 +178,9 @@ export const MACOS = {
   // OX-W9 workstream plan editing adds 9 daemon tests: 2074 becomes 2083.
   // Opt-in project coordinators add 3 tests (1 daemon, 2 store): 2083 becomes 2086.
   // Project coordinator replies add one runtime regression.
-  workspace: { passed: 2087, ignored: 2 },
+  // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
+  // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
+  workspace: { passed: 2111, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
@@ -190,7 +198,9 @@ export const MACOS = {
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): action_proposals.rs is 14 tests, so 199 passed.
   // DPES-1105 task actions and settings (CI run 44023050296, measured on macOS): 220 passed.
   // Opt-in project coordinators add 2 conversation_history tests: 13 becomes 15, so 353 becomes 355 passed.
-  store: { passed: 355, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 12, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
+  // The home directory setting adds 1 store test (orchestrator_settings 12 becomes 13): 355 becomes 356.
+  // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
+  store: { passed: 357, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 100 },
@@ -241,8 +251,12 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // view tests. The tree measured 123 files and 2230 tests before it (the pin had drifted), so `npx vitest run` counts 123 and 2250.
 // Project replies extend running-turn and cancellation cases to project coordinators.
 // Full local run after integrating main's notification tests: 124 files, 2264 tests.
-// Queued-task feedback, including the reported disk hold: full `npm --prefix apps/desktop test` measured 124 files and 2276 tests.
-export const VITEST = { files: 124, tests: 2287 };
+// The home directory setting adds HomeDirectorySection.test.tsx (8 tests), 1 in screens1.test.tsx and 2 title tests in
+// model.test.ts: 125 files, 2275 tests, as a full `npx vitest run` counted them.
+// Dispatch defaults add five tests in existing files: 2275 becomes 2280.
+// Queued-task feedback, with the reported disk hold and wait reasons in task lists, adds 23 tests in existing files. A full
+// `npm --prefix apps/desktop test` after integrating main measured 125 files and 2303 tests.
+export const VITEST = { files: 125, tests: 2303 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

@@ -396,12 +396,21 @@ pub fn reconcile_before_scheduling_with(
 /// reconciliation adapters. Missing records, an unusable repository or any
 /// failed inspection is `Unknown`; the worst workspace decides.
 fn inspect_task_workspaces(project_id: &str, recorded: &[Workspace]) -> WorkspaceEvidence {
+    // A task that ran in place has no worktree to inspect: its directory is the project root,
+    // so there is nothing to be missing, moved or foreign.
+    let (in_place, recorded): (Vec<_>, Vec<_>) = recorded
+        .iter()
+        .partition(|workspace| workspace.is_in_place());
+    if recorded.is_empty() {
+        return if in_place.is_empty() {
+            WorkspaceEvidence::Unknown
+        } else {
+            WorkspaceEvidence::Matching
+        };
+    }
     let Ok(repository) = Repository::new(Path::new(project_id)) else {
         return WorkspaceEvidence::Unknown;
     };
-    if recorded.is_empty() {
-        return WorkspaceEvidence::Unknown;
-    }
     let inputs: Vec<_> = recorded
         .iter()
         .map(|workspace| RecordedWorkspace {

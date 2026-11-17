@@ -18,6 +18,10 @@ Open a project and use the New task form. Fill in Objective, pick the Agent (`co
 
 Parent task and Dependencies are optional task IDs. A task waits until its dependencies finish.
 
+## Tasks from the global orchestrator
+
+A task the global orchestrator proposes joins the "Global tasks" workstream, which is made the first time it is needed. It joins another workstream only when you name that workstream. If it is not clear which project a task belongs to, the task runs in the [home directory](settings.md#home-directory) when you have set one. A task in the home directory runs in that folder itself, not in a worktree, and only reports.
+
 ## Task states
 
 A task moves through Created, Queued, Running, and Verifying. It ends as Succeeded, Failed, VerificationFailed, or Canceled.

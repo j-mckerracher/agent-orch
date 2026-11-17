@@ -135,8 +135,16 @@ struct NewTask {
 impl DaemonApi {
     pub(super) fn workstreams_add_task(&self, params: Value) -> Result<Value, RpcError> {
         let request: AddTaskParams = parse_params(params)?;
+        if let Some(reply) = idempotency::replay(
+            &self.store,
+            "workstreams.add_task",
+            &request.idempotency_key,
+            &request,
+        )? {
+            return Ok(reply);
+        }
         let mut submission = request.contract.clone();
-        if submission.work_class.is_none() || !submission.agent.trim().is_empty() {
+        if !submission.agent.trim().is_empty() {
             submission.agent = canonical_agent_id(&submission.agent)
                 .ok_or(RpcError::InvalidParams)?
                 .to_owned();
@@ -313,7 +321,24 @@ impl DaemonApi {
         request.agent = canonical_agent_id(&request.agent)
             .ok_or(RpcError::InvalidParams)?
             .to_owned();
-        let catalog = self.selection_catalog(&request.agent, request.model_selection.as_ref())?;
+        if let Some(reply) = idempotency::replay(
+            &self.store,
+            "workstreams.reassign_task",
+            &request.idempotency_key,
+            &request,
+        )? {
+            return Ok(reply);
+        }
+        let mut submission = resubmission(
+            &self
+                .store
+                .get(&request.task_id)
+                .map_err(map_store_error)?
+                .contract,
+        );
+        submission.agent = request.agent.clone();
+        submission.model_selection = request.model_selection.clone();
+        let (resolved, catalog) = self.resolve_submission(&submission)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
@@ -325,13 +350,13 @@ impl DaemonApi {
                 let sources = self.replaceable(&request.workstream_id, &[&request.task_id])?;
                 let (old, link) = &sources[0];
                 if old.contract.agent == request.agent
-                    && old.contract.model_selection == request.model_selection
+                    && old.contract.model_selection == resolved.model_selection
                 {
                     return Err(RpcError::InvalidParams);
                 }
                 let mut submission = resubmission(&old.contract);
                 submission.agent = request.agent.clone();
-                submission.model_selection = request.model_selection.clone();
+                submission.model_selection = resolved.model_selection.clone();
                 let task = NewTask {
                     submission,
                     source: old.contract.id.clone(),
