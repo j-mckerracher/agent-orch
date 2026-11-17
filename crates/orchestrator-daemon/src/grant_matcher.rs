@@ -16,7 +16,7 @@
 //! and a test passes any reading and calls it directly. A store error in a tick is logged by
 //! event name only (never a path, id or value), and the tick goes on with the next step.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Condvar, MutexGuard, Weak};
 use std::thread::{self, JoinHandle};
 
@@ -35,6 +35,42 @@ const TICK: Duration = Duration::from_secs(2);
 /// Open grants read, and proposals tried, per pass.
 const GRANT_PAGE: usize = 200;
 const TRY_PAGE: usize = 50;
+/// Consecutive failed tries after which a proposal is marked tried and left to the user.
+const MAX_TRY_FAILURES: u8 = 3;
+
+/// Per-daemon try bookkeeping, in memory only: failures are cleared on success and gone on restart.
+#[derive(Default)]
+pub(super) struct TryState {
+    /// Consecutive failed tries per proposal id.
+    failures: BTreeMap<String, u8>,
+    /// Proposal ids whose try fails on purpose, so a test can drive the failure path.
+    #[cfg(test)]
+    pub(super) forced_errors: BTreeSet<String>,
+}
+
+impl TryState {
+    fn forced_error(&self, _id: &str) -> bool {
+        #[cfg(test)]
+        {
+            self.forced_errors.contains(_id)
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+
+    /// Counts one failed try of `id`. True on the failure that reaches the limit (and resets).
+    fn failed_for_good(&mut self, id: &str) -> bool {
+        let count = self.failures.entry(id.to_owned()).or_insert(0);
+        *count += 1;
+        if *count >= MAX_TRY_FAILURES {
+            self.failures.remove(id);
+            return true;
+        }
+        false
+    }
+}
 
 /// What one pass did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -147,11 +183,20 @@ impl DaemonApi {
             }
         };
         for (proposal, sequence) in pending {
-            // A proposal whose try failed on the store stays untried and is tried again.
+            // A proposal whose try failed on the store stays untried and is tried again, up to
+            // `MAX_TRY_FAILURES` times in a row; then it is marked tried so it cannot starve
+            // newer ones, and falls back to the user's card.
             let Ok(approved) = self.try_match(&proposal, sequence, &grants, now_ms) else {
                 self.config.diagnostics.warn(LOG, "grant_try_failed", &[]);
+                if lock(&self.grant_try_state).failed_for_good(&proposal.id) {
+                    self.config.diagnostics.warn(LOG, "grant_try_given_up", &[]);
+                    if self.store.mark_grant_tried(&proposal.id).is_err() {
+                        self.config.diagnostics.warn(LOG, "grant_mark_failed", &[]);
+                    }
+                }
                 continue;
             };
+            lock(&self.grant_try_state).failures.remove(&proposal.id);
             report.tried += 1;
             report.approved += usize::from(approved);
             if self.store.mark_grant_tried(&proposal.id).is_err() {
@@ -203,6 +248,9 @@ impl DaemonApi {
         grants: &[StandingGrant],
         now_ms: u64,
     ) -> Result<bool, ()> {
+        if lock(&self.grant_try_state).forced_error(&proposal.id) {
+            return Err(());
+        }
         if proposal.state != ProposalState::Pending
             || proposal.denial.is_some()
             || proposal.depends_on.is_some()

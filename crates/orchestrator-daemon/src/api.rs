@@ -80,6 +80,7 @@ pub(crate) struct DaemonApi {
     /// The standing-grant matcher thread (DPES-1105 phase 5). Started by `main` once the API is
     /// in an `Arc`; stopped by `shutdown`.
     grant_matcher: Mutex<Option<grant_matcher::GrantMatcherHandle>>,
+    grant_try_state: Mutex<grant_matcher::TryState>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -250,6 +251,7 @@ impl DaemonApi {
             catalog_cache,
             wake: None,
             grant_matcher: Mutex::new(None),
+            grant_try_state: Mutex::new(grant_matcher::TryState::default()),
         };
         api.reconcile_actions();
         Ok(api)

@@ -57,6 +57,11 @@ enum Decision {
     Reject,
 }
 
+/// Grant ids whose read fails on purpose, so a test can drive the read-error path.
+#[cfg(test)]
+pub(super) static FORCED_GRANT_READ_ERRORS: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
 /// Why one step of an execution failed: the typed workstream store error, or the
 /// `RpcError` the matching task method would have answered with.
 #[derive(Debug)]
@@ -810,7 +815,11 @@ impl DaemonApi {
             .map_err(map_store_error)?
             .unwrap_or_else(|| APPROVER.to_owned());
         let grant_id = approver.strip_prefix("grant:");
-        if let Some(code) = grant_id.and_then(|id| self.grant_stop_code(id, now_ms)) {
+        let stop = match grant_id {
+            Some(id) => self.grant_stop_code(id, now_ms)?,
+            None => None,
+        };
+        if let Some(code) = stop {
             if let Some(id) = grant_id {
                 self.record_grant_outcome(id, proposal, GrantOutcome::Stopped { code }, now_ms)?;
             }
@@ -856,14 +865,30 @@ impl DaemonApi {
         Ok(())
     }
 
-    /// Why a grant no longer lets an approved proposal start, or `None` while it does.
-    fn grant_stop_code(&self, grant_id: &str, now_ms: u64) -> Option<&'static str> {
+    /// Why a grant no longer lets an approved proposal start, or `None` while it does. A grant
+    /// that cannot be read is an error, not a revoke: the proposal stays `approved` and the
+    /// next reconcile pass checks again.
+    fn grant_stop_code(
+        &self,
+        grant_id: &str,
+        now_ms: u64,
+    ) -> Result<Option<&'static str>, RpcError> {
+        #[cfg(test)]
+        {
+            let forced = FORCED_GRANT_READ_ERRORS
+                .lock()
+                .is_ok_and(|forced| forced.contains(grant_id));
+            if forced {
+                return Err(RpcError::Internal);
+            }
+        }
         match self.store.standing_grant(grant_id) {
-            Ok(Some(grant)) if grant.revoked_at_ms.is_some() => Some(GRANT_REVOKED),
-            Ok(Some(grant)) if now_ms >= grant.expires_at_ms => Some(GRANT_EXPIRED),
-            Ok(Some(_)) => None,
-            // A grant that cannot be read fails closed, as a revoked one.
-            Ok(None) | Err(_) => Some(GRANT_REVOKED),
+            Ok(Some(grant)) if grant.revoked_at_ms.is_some() => Ok(Some(GRANT_REVOKED)),
+            Ok(Some(grant)) if now_ms >= grant.expires_at_ms => Ok(Some(GRANT_EXPIRED)),
+            Ok(Some(_)) => Ok(None),
+            // A grant row that does not exist fails closed, as a revoked one.
+            Ok(None) => Ok(Some(GRANT_REVOKED)),
+            Err(error) => Err(internal("grants", &error)),
         }
     }
 

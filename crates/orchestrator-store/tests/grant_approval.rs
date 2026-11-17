@@ -251,3 +251,61 @@ fn the_matcher_reads_only_untried_proposals_created_after_the_floor() {
         .unwrap()
         .is_empty());
 }
+
+/// Makes every later approval event of a proposal fail, from a second connection, so the
+/// approval half of a claim fails after its use half has been written.
+fn reject_approval_events(path: &Path) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(false)
+            .foreign_keys(true)
+            .busy_timeout(std::time::Duration::from_secs(5));
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TRIGGER reject_approved_events BEFORE INSERT ON action_proposal_events \
+             WHEN NEW.to_state = 'approved' \
+             BEGIN SELECT RAISE(ABORT, 'forced approval failure'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+    });
+}
+
+#[test]
+fn a_claim_whose_approval_write_fails_rolls_back_the_use_and_its_event() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    store
+        .create_standing_grant("grant-1", &terms(2), NOW)
+        .unwrap();
+    let (id, digest) = pending(&store, "t1", TASK);
+    reject_approval_events(&directory.path().join("store.sqlite"));
+
+    let claim = store.approve_action_proposal_by_grant(&id, &digest, "grant-1", NOW + 1);
+
+    assert!(matches!(
+        claim,
+        Err(GrantClaimError::Proposal(ResolveError::Store(_)))
+    ));
+    assert_eq!(
+        store.standing_grant("grant-1").unwrap().unwrap().uses_used,
+        0
+    );
+    assert_eq!(event_kinds(&store, "grant-1"), [GrantEventKind::Created]);
+    assert_eq!(
+        store.action_proposal(&id).unwrap().unwrap().state,
+        ProposalState::Pending
+    );
+    assert_eq!(store.proposal_approver(&id).unwrap(), None);
+}

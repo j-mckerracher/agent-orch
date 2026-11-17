@@ -11,7 +11,7 @@ use orchestrator_store::{
     UsageSource,
 };
 
-use super::actions::project_code;
+use super::actions::{project_code, FORCED_GRANT_READ_ERRORS};
 use super::actions_task_tests::{
     proposed_task_id, register_project, submit_queued, task_count, ALPHA,
 };
@@ -600,7 +600,7 @@ fn a_grant_approval_still_hits_the_project_defaults_recheck() {
 }
 
 #[test]
-fn a_use_is_consumed_in_the_same_transaction_as_the_approval() {
+fn a_failed_claim_leaves_no_use_and_a_refused_use_leaves_no_approval() {
     let (_directory, api) = new_api();
     register_project(&api, ALPHA);
     let code = project_code(ALPHA);
@@ -792,4 +792,67 @@ fn a_grant_event_error_or_card_never_contains_a_path_or_token() {
         assert!(!text.contains("canary-root"), "{text}");
         assert!(!text.contains(ALPHA), "{text}");
     }
+}
+
+#[test]
+fn a_proposal_that_keeps_failing_to_match_stops_blocking_newer_ones() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let code = project_code(ALPHA);
+    let grant = project_grant(&api, ALPHA, "g-1");
+    let stuck = propose(&api, "t1", &task_action(&code, "Cannot be matched."));
+    api.grant_try_state
+        .lock()
+        .unwrap()
+        .forced_errors
+        .insert(stuck[0].clone());
+    let untried = |api: &DaemonApi| api.store.untried_pending_proposals(0, 50).unwrap().len();
+
+    // Two failures leave it untried: it is tried again.
+    assert_eq!(tick(&api), MatchReport::default());
+    assert_eq!(tick(&api), MatchReport::default());
+    assert_eq!(untried(&api), 1);
+    // The third marks it tried: later passes no longer read it.
+    assert_eq!(tick(&api), MatchReport::default());
+    assert_eq!(untried(&api), 0);
+    assert_eq!(state_of(&api, &stuck[0]), ProposalState::Pending);
+
+    // A newer proposal is matched, and the failed one is left to the user.
+    let newer = propose(&api, "t3", &task_action(&code, "Newer."));
+    let report = tick(&api);
+    assert_eq!(report.approved, 1);
+    assert_eq!(state_of(&api, &newer[0]), ProposalState::Executed);
+    assert_eq!(state_of(&api, &stuck[0]), ProposalState::Pending);
+    assert_eq!(uses_used(&api, &grant), 1);
+}
+
+#[test]
+fn a_transient_grant_read_error_leaves_the_approved_proposal_for_a_retry() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let code = project_code(ALPHA);
+    let grant = project_grant(&api, ALPHA, "g-1");
+    let first = propose(&api, "t1", &task_action(&code, "First."));
+    claim_only(&api, &first[0], &grant);
+
+    // The grant cannot be read: the proposal is neither failed nor started.
+    FORCED_GRANT_READ_ERRORS
+        .lock()
+        .unwrap()
+        .insert(grant.clone());
+    let report = tick(&api);
+    assert_eq!(report.reconciled, 0);
+    assert_eq!(state_of(&api, &first[0]), ProposalState::Approved);
+    assert_eq!(task_count(&api), 0);
+    assert_eq!(
+        event_kinds(&api, &grant),
+        [GrantEventKind::Created, GrantEventKind::Used]
+    );
+
+    // The read works again: the next pass runs it.
+    FORCED_GRANT_READ_ERRORS.lock().unwrap().remove(&grant);
+    let report = tick(&api);
+    assert_eq!(report.reconciled, 1);
+    assert_eq!(state_of(&api, &first[0]), ProposalState::Executed);
+    assert_eq!(task_count(&api), 1);
 }
