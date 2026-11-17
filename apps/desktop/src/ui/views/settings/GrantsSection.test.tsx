@@ -226,7 +226,7 @@ describe("unattended merge grant form", () => {
   it("mergegrant_the_merge_form_appears_for_the_daemons_real_policy", async () => {
     await section({ configure: (daemon) => withMerge(daemon) });
     await mergeForm();
-    expect(screen.getByRole("textbox", { name: "Branch prefix" })).toHaveValue("moa/");
+    expect(screen.getByRole("textbox", { name: "Branch prefix" })).toHaveValue("mcao/");
     expect(screen.getByText("A merge uses no tokens, so the budget never runs out; it is required for every grant.")).toBeInTheDocument();
   });
 
@@ -307,7 +307,7 @@ describe("unattended merge grant form", () => {
       scope: { kind: "project", id: CODE },
       kinds: ["delivery.merge"],
       confirm_unattended_merge: true,
-      branch_prefix: "moa/",
+      branch_prefix: "mcao/",
       expires_in_secs: 28800,
       max_uses: 5,
       token_budget: 2_000_000,

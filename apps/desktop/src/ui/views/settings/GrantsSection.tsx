@@ -153,7 +153,8 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
     }, createFailureText);
   const createMerge = () =>
     submit(mergeReason, "merge", mergeTermsOf(mergeDraft), () => {
-      setMergeTyped(null);
+      // The prefix stays: it is a per-machine choice, not part of one approval.
+      setMergeTyped({ ...initialMergeDraft(policy), prefix: mergeDraft.prefix });
       setMergeTouched(new Set());
     }, mergeCreateFailureText);
 
@@ -355,7 +356,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
                 onChange={(event) => updateMerge({ prefix: event.target.value }, "prefix")}
               />
               <p id={`${mergeIds.prefix}-hint`} className="settings-hint">
-                Merge only pull requests whose branch starts with this, for example moa/. Required.
+                Merge only pull requests whose branch starts with this, for example mcao/. Required.
               </p>
               {mergeShown("prefix") && (
                 <p id={`${mergeIds.prefix}-error`} role="alert" className="settings-error">

@@ -50,10 +50,10 @@ export const MERGE_CONFIRM_TEXT =
 export const MERGE_INTRO_TEXT =
   "Danger. While this approval is on, the orchestrator merges pull requests for one project without asking you each time. Nothing is on until you save it.";
 export const MERGE_INVALID_REASON = "Choose a project, enter a branch prefix, tick the confirmation, and keep the limits within the ranges shown.";
-export const MERGE_PREFIX_REQUIRED = "Enter the branch prefix this approval may merge, for example moa/.";
+export const MERGE_PREFIX_REQUIRED = "Enter the branch prefix this approval may merge, for example mcao/.";
 export const MERGE_BUDGET_NOTE = "A merge uses no tokens, so the budget never runs out; it is required for every grant.";
 /** The prefix the merge form starts with, the machine-wide task branch prefix. */
-export const MERGE_DEFAULT_PREFIX = "moa/";
+export const MERGE_DEFAULT_PREFIX = "mcao/";
 
 /** What the merge form falls back to for a daemon that offers the kind but sends no limits. */
 const MERGE_LIMITS = { defaultHours: 8, defaultUses: 5, maxUses: 20, maxHours: 24 };
