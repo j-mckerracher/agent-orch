@@ -34,9 +34,15 @@ pub const MAX_REF_CHARS: usize = 32;
 /// card shows the whole text and the canonical JSON must fit the store's
 /// `params_json` limit (20 KiB), so chat proposals stop at 8 KiB.
 pub const MAX_TASK_OBJECTIVE_BYTES: usize = 8 * 1024;
+/// Longest instruction a `task.revise` adds, in bytes.
+pub const MAX_ADDED_INTENT_BYTES: usize = 2 * 1024;
 /// Agents a chat proposal may name. Mirrors `canonicalAgentId` in
 /// `apps/desktop/src/ui/submission.ts`.
 pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
+/// Wire names of the kinds no grant may ever cover. Names, not [`ActionKind`]
+/// values, so a kind that is planned but not parsed yet (`delivery.merge`, added
+/// with its merge worker) is already refused.
+pub const NEVER_GRANTABLE: [&str; 2] = ["project.remove", "delivery.merge"];
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -52,11 +58,14 @@ pub enum ActionKind {
     TaskCancel,
     TaskRetry,
     WorkstreamLinkTask,
+    TaskRevise,
+    ProjectRemove,
+    DecisionHold,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 11] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -65,6 +74,9 @@ impl ActionKind {
         Self::TaskCancel,
         Self::TaskRetry,
         Self::WorkstreamLinkTask,
+        Self::TaskRevise,
+        Self::ProjectRemove,
+        Self::DecisionHold,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -78,7 +90,15 @@ impl ActionKind {
             Self::TaskCancel => "task.cancel",
             Self::TaskRetry => "task.retry",
             Self::WorkstreamLinkTask => "workstream.link_task",
+            Self::TaskRevise => "task.revise",
+            Self::ProjectRemove => "project.remove",
+            Self::DecisionHold => "decision.hold",
         }
+    }
+
+    /// Whether a grant may cover this kind: not one of [`NEVER_GRANTABLE`].
+    pub fn is_grantable(self) -> bool {
+        !NEVER_GRANTABLE.contains(&self.as_str())
     }
 
     /// Parses a wire name.
@@ -107,6 +127,12 @@ pub enum Action {
     TaskRetry(RetryTask),
     #[serde(rename = "workstream.link_task")]
     WorkstreamLinkTask(LinkTask),
+    #[serde(rename = "task.revise")]
+    TaskRevise(ReviseTask),
+    #[serde(rename = "project.remove")]
+    ProjectRemove(RemoveProject),
+    #[serde(rename = "decision.hold")]
+    DecisionHold(HoldDecision),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -194,6 +220,10 @@ pub struct ProposeTask {
     pub workstream_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub objective_id: Option<String>,
+    /// The finished scout task this promotes to a task that ships. Left out of
+    /// the canonical form when absent, so a stored digest stays valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promote_from: Option<String>,
 }
 
 /// `task.cancel`.
@@ -219,6 +249,34 @@ pub struct LinkTask {
     pub task_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub objective_id: Option<String>,
+}
+
+/// `task.revise`. Stops the task and starts a new one with the old objective
+/// plus `added_intent`.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviseTask {
+    pub task_id: String,
+    /// Appended to the old objective. 1 to [`MAX_ADDED_INTENT_BYTES`] bytes.
+    pub added_intent: String,
+}
+
+/// `project.remove`. Stops using a project. Never grantable.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveProject {
+    /// The `p-xxxxxxxx` code, as in [`ProposeTask::project`]. Never a path.
+    pub project: String,
+}
+
+/// `decision.hold`. Hides a task's pending approvals until a date.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HoldDecision {
+    pub task_id: String,
+    /// `YYYY-MM-DD`. Only the shape is checked here; the daemon checks the
+    /// range against its clock when it runs the action.
+    pub until: String,
 }
 
 /// A validated block. `parent(i)` is the index of the earlier
@@ -482,6 +540,31 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
         Action::TaskPropose(propose) => check_propose(propose),
         Action::TaskCancel(cancel) => check(validate_id("task_id", &cancel.task_id), "task_id"),
         Action::TaskRetry(retry) => check(validate_id("task_id", &retry.task_id), "task_id"),
+        Action::TaskRevise(revise) => {
+            check(validate_id("task_id", &revise.task_id), "task_id")?;
+            if revise.added_intent.trim().is_empty()
+                || revise.added_intent.len() > MAX_ADDED_INTENT_BYTES
+                || revise.added_intent.chars().any(is_disallowed_objective_char)
+            {
+                return Err(BlockError::InvalidField("added_intent"));
+            }
+            Ok(())
+        }
+        Action::ProjectRemove(remove) => {
+            if is_project_code(&remove.project) {
+                Ok(())
+            } else {
+                Err(BlockError::InvalidField("project"))
+            }
+        }
+        Action::DecisionHold(hold) => {
+            check(validate_id("task_id", &hold.task_id), "task_id")?;
+            if is_date_shape(&hold.until) {
+                Ok(())
+            } else {
+                Err(BlockError::InvalidField("until"))
+            }
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -520,7 +603,19 @@ fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
         }
         check(validate_id("objective_id", objective_id), "objective_id")?;
     }
+    if let Some(source) = &propose.promote_from {
+        check(validate_id("promote_from", source), "promote_from")?;
+    }
     Ok(())
+}
+
+/// Whether `text` is `YYYY-MM-DD`: four digits, a dash, two digits, a dash, two digits.
+fn is_date_shape(text: &str) -> bool {
+    text.len() == 10
+        && text.bytes().enumerate().all(|(index, byte)| match index {
+            4 | 7 => byte == b'-',
+            _ => byte.is_ascii_digit(),
+        })
 }
 
 /// Whether `code` is `p-` and exactly eight lowercase hex digits.
@@ -604,6 +699,10 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             // The workstream that owns a cancelled or retried task is checked against the store.
             Action::TaskCancel(_) | Action::TaskRetry(_) => true,
             Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
+            // The owning workstream of a revised or held task is checked against the store.
+            Action::TaskRevise(_) | Action::DecisionHold(_) => true,
+            // A workstream conversation never removes a project.
+            Action::ProjectRemove(_) => false,
         };
         if !inside {
             return Err(BlockError::OutOfScope);
@@ -632,6 +731,9 @@ impl Action {
             Self::TaskCancel(_) => ActionKind::TaskCancel,
             Self::TaskRetry(_) => ActionKind::TaskRetry,
             Self::WorkstreamLinkTask(_) => ActionKind::WorkstreamLinkTask,
+            Self::TaskRevise(_) => ActionKind::TaskRevise,
+            Self::ProjectRemove(_) => ActionKind::ProjectRemove,
+            Self::DecisionHold(_) => ActionKind::DecisionHold,
         }
     }
 
@@ -663,7 +765,7 @@ impl Action {
         }
     }
 
-    /// The task a `task.cancel` or `task.retry` names, which must already
+    /// The task a `task.cancel`, `task.retry`, `task.revise` or `decision.hold` names, which must already
     /// belong to the conversation's workstream: the daemon's workstream-scope
     /// check. A `workstream.link_task` is not listed, because the task it
     /// names is not linked yet.
@@ -671,6 +773,8 @@ impl Action {
         match self {
             Self::TaskCancel(cancel) => Some(cancel.task_id.as_str()),
             Self::TaskRetry(retry) => Some(retry.task_id.as_str()),
+            Self::TaskRevise(revise) => Some(revise.task_id.as_str()),
+            Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
             _ => None,
         }
     }
@@ -725,6 +829,9 @@ impl Action {
             Self::TaskCancel(cancel) => cancel.task_id.clone(),
             Self::TaskRetry(retry) => retry.task_id.clone(),
             Self::WorkstreamLinkTask(link) => link.task_id.clone(),
+            Self::TaskRevise(revise) => format!("task.revise:{}", revise.task_id),
+            Self::ProjectRemove(remove) => format!("project.remove:{}", remove.project),
+            Self::DecisionHold(hold) => format!("decision.hold:{}", hold.task_id),
         }
     }
 }
@@ -1185,7 +1292,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_eight_kinds() {
+    fn the_action_kind_list_names_all_eleven_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1198,6 +1305,9 @@ mod tests {
                 "task.cancel",
                 "task.retry",
                 "workstream.link_task",
+                "task.revise",
+                "project.remove",
+                "decision.hold",
             ]
         );
         assert_eq!(
@@ -1689,6 +1799,223 @@ mod tests {
                 json!(format!("Add tests{c}for the retry module.")),
             )]);
             assert!(parse(&block(&text)).is_ok(), "{c:?}");
+        }
+    }
+
+    const REVISE: &str =
+        r#"{"kind":"task.revise","task_id":"task-1","added_intent":"Also cover the error path."}"#;
+    const REMOVE: &str = r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#;
+    const HOLD: &str = r#"{"kind":"decision.hold","task_id":"task-1","until":"2026-12-01"}"#;
+
+    #[test]
+    fn the_never_grantable_list_names_project_remove_and_delivery_merge() {
+        assert_eq!(NEVER_GRANTABLE, ["project.remove", "delivery.merge"]);
+        assert!(!ActionKind::ProjectRemove.is_grantable());
+    }
+
+    #[test]
+    fn every_action_kind_is_grantable_or_never_grantable() {
+        for kind in ActionKind::ALL {
+            assert_eq!(
+                kind.is_grantable(),
+                !NEVER_GRANTABLE.contains(&kind.as_str()),
+                "{kind:?}"
+            );
+        }
+        for name in NEVER_GRANTABLE {
+            // A listed kind that parses is never grantable; `delivery.merge` has no kind yet.
+            if let Some(kind) = ActionKind::parse(name) {
+                assert!(!kind.is_grantable(), "{name}");
+            }
+        }
+        assert!(ActionKind::TaskRevise.is_grantable());
+        assert!(ActionKind::DecisionHold.is_grantable());
+    }
+
+    #[test]
+    fn a_task_propose_without_promote_from_keeps_its_old_digest() {
+        let parsed = parse(&block(PROPOSE)).expect("valid block");
+        let canonical = parsed.actions()[0].canonical(None);
+        // The canonical form Phase 2 stored: no `promote_from` key.
+        let old_json = r#"{"agent":"codex","delivery":"LocalReview","kind":"task.propose","objective":"Add unit tests for the retry module.","project":"p-3fa9c1d2","task_kind":"Implement"}"#;
+        assert_eq!(canonical.json, old_json);
+        let old_digest = ParameterDigest::from_sha256(Sha256::digest(old_json.as_bytes()).into());
+        assert_eq!(canonical.digest, old_digest);
+
+        let promoted = propose(&[("promote_from", json!("task-9"))]);
+        let parsed = parse(&block(&promoted)).expect("valid block");
+        let promoted = parsed.actions()[0].canonical(None);
+        assert!(promoted.json.contains(r#""promote_from":"task-9""#));
+        assert_ne!(promoted.digest, old_digest);
+        assert_eq!(promoted.subject, canonical.subject);
+    }
+
+    #[test]
+    fn promote_from_must_be_a_task_id() {
+        for bad in ["", "task 9", &"t".repeat(129)] {
+            let text = propose(&[("promote_from", json!(bad))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("promote_from")),
+                "{bad:.20?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_new_kinds_parse_once_with_canonical_json_and_subjects() {
+        let parsed = parse(&block(&format!("{REVISE},{REMOVE},{HOLD}"))).expect("valid block");
+        let [revise, remove, hold] = parsed.actions() else {
+            panic!("expected three actions");
+        };
+        assert_eq!(revise.kind(), ActionKind::TaskRevise);
+        assert_eq!(remove.kind(), ActionKind::ProjectRemove);
+        assert_eq!(hold.kind(), ActionKind::DecisionHold);
+        assert_eq!(
+            revise.canonical(None).json,
+            r#"{"added_intent":"Also cover the error path.","kind":"task.revise","task_id":"task-1"}"#
+        );
+        assert_eq!(
+            remove.canonical(None).json,
+            r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#
+        );
+        assert_eq!(
+            hold.canonical(None).json,
+            r#"{"kind":"decision.hold","task_id":"task-1","until":"2026-12-01"}"#
+        );
+        assert_eq!(revise.canonical(None).subject, "task.revise:task-1");
+        assert_eq!(remove.canonical(None).subject, "project.remove:p-3fa9c1d2");
+        assert_eq!(hold.canonical(None).subject, "decision.hold:task-1");
+        assert_eq!(revise.target_task(), Some("task-1"));
+        assert_eq!(hold.target_task(), Some("task-1"));
+        assert_eq!(remove.target_task(), None);
+        assert_ne!(
+            hold.canonical(None).digest,
+            parse(&block(&HOLD.replace("2026-12-01", "2026-12-02")))
+                .expect("valid block")
+                .actions()[0]
+                .canonical(None)
+                .digest
+        );
+    }
+
+    #[test]
+    fn the_new_kinds_reject_unknown_and_missing_fields() {
+        for text in [REVISE, REMOVE, HOLD] {
+            let extra = text.replace('}', r#","force":true}"#);
+            assert_eq!(parse(&block(&extra)), Err(BlockError::Malformed), "{extra}");
+        }
+        for text in [
+            r#"{"kind":"task.revise","task_id":"task-1"}"#,
+            r#"{"kind":"task.revise","added_intent":"x"}"#,
+            r#"{"kind":"project.remove"}"#,
+            r#"{"kind":"decision.hold","task_id":"task-1"}"#,
+            r#"{"kind":"decision.hold","until":"2026-12-01"}"#,
+        ] {
+            assert_eq!(parse(&block(text)), Err(BlockError::Malformed), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_revise_with_a_blank_or_oversize_intent_or_a_bad_task_id_is_refused() {
+        let oversize = "x".repeat(MAX_ADDED_INTENT_BYTES + 1);
+        for (field, value) in [
+            ("added_intent", ""),
+            ("added_intent", " \n\t "),
+            ("added_intent", oversize.as_str()),
+            ("task_id", ""),
+            ("task_id", "task 1"),
+        ] {
+            let text = json!({"kind": "task.revise", "task_id": "task-1", "added_intent": "More.", field: value})
+                .to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{field}: {value:.20?}"
+            );
+        }
+        let full = "y".repeat(MAX_ADDED_INTENT_BYTES);
+        let text = json!({"kind": "task.revise", "task_id": "task-1", "added_intent": full})
+            .to_string();
+        assert!(parse(&block(&text)).is_ok());
+    }
+
+    #[test]
+    fn a_revise_with_an_invisible_character_is_refused() {
+        for c in ['\u{1b}', '\u{7f}', '\u{ad}', '\u{200b}', '\u{202e}', '\u{2066}', '\u{feff}', '\u{e0041}'] {
+            let text = json!({
+                "kind": "task.revise",
+                "task_id": "task-1",
+                "added_intent": format!("Also{c}cover it."),
+            })
+            .to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("added_intent")),
+                "{c:?}"
+            );
+        }
+        let text = json!({
+            "kind": "task.revise",
+            "task_id": "task-1",
+            "added_intent": "Line one.\n\tLine two.",
+        })
+        .to_string();
+        assert!(parse(&block(&text)).is_ok());
+    }
+
+    #[test]
+    fn a_remove_names_a_project_code_never_a_path() {
+        for bad in ["", "p-3fa9c1d", "P-3FA9C1D2", "/Users/someone/repo", "../repo"] {
+            let text = json!({"kind": "project.remove", "project": bad}).to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("project")),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hold_needs_a_date_shape_and_leaves_the_range_to_the_daemon() {
+        for bad in [
+            "", "2026-1-01", "2026/12/01", "20261201", "2026-12-011", "2026-12-0a",
+            "tomorrow", "2026-12-01T00:00:00Z", " 2026-12-01",
+        ] {
+            let text = json!({"kind": "decision.hold", "task_id": "task-1", "until": bad})
+                .to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("until")),
+                "{bad}"
+            );
+        }
+        // Shape only: a far or past date parses, and a bad task id still refuses.
+        for ok in ["1999-01-01", "2999-12-31", "2026-13-45"] {
+            let text = json!({"kind": "decision.hold", "task_id": "task-1", "until": ok})
+                .to_string();
+            assert!(parse(&block(&text)).is_ok(), "{ok}");
+        }
+        let text = json!({"kind": "decision.hold", "task_id": "t 1", "until": "2026-12-01"})
+            .to_string();
+        assert_eq!(
+            parse(&block(&text)),
+            Err(BlockError::InvalidField("task_id"))
+        );
+    }
+
+    #[test]
+    fn a_workstream_scope_refuses_project_remove_and_allows_revise_and_hold() {
+        let scope = BlockScope::Workstream("ws-1");
+        assert_eq!(
+            parse_block(&block(REMOVE), scope),
+            Err(BlockError::OutOfScope)
+        );
+        for action in [REVISE, HOLD] {
+            assert!(parse_block(&block(action), scope).is_ok(), "{action}");
+        }
+        for action in [REVISE, REMOVE, HOLD] {
+            assert!(parse(&block(action)).is_ok(), "{action}");
         }
     }
 

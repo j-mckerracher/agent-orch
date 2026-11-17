@@ -160,6 +160,7 @@ mod tests {
             workstream_id: None,
             workstream_ref: None,
             objective_id: None,
+            promote_from: None,
         }
     }
 
