@@ -61,6 +61,7 @@ mod sqlite_delivery;
 mod sqlite_history;
 mod sqlite_ops;
 mod sqlite_project_defaults;
+mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
 mod sqlite_supervision;
@@ -83,6 +84,9 @@ pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBA
 pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
 pub use sqlite_project_defaults::{
     ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow,
+};
+pub use sqlite_reports::{
+    ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
 };
 pub use sqlite_settings::{
     LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, SupervisionSettings,

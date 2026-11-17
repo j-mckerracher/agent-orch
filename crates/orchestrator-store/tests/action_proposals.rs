@@ -1059,8 +1059,8 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         ]
     );
 
-    // The database takes exactly these eight kinds and core knows the same eight.
-    const KINDS: [&str; 8] = [
+    // The database takes exactly these eleven kinds and core knows the same eleven.
+    const KINDS: [&str; 11] = [
         "workstream.create",
         "workstream.update",
         "objective.add",
@@ -1069,17 +1069,28 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         "task.cancel",
         "task.retry",
         "workstream.link_task",
+        "task.revise",
+        "project.remove",
+        "decision.hold",
     ];
     const RAW_KIND: &str = "INSERT INTO action_proposals \
         (id, scope, turn_id, idx, kind, params_json, digest, subject) \
-        VALUES (?, 'conversation:global', 't2', CAST(? AS INTEGER), ?, '{}', ?, 'x')";
+        VALUES (?, 'conversation:global', ?, CAST(? AS INTEGER), ?, '{}', ?, 'x')";
     assert_eq!(ActionKind::ALL.len(), KINDS.len());
     begin(&store, &ConversationTarget::Global, "t2");
-    for (idx, kind) in KINDS.into_iter().enumerate() {
+    for (position, kind) in KINDS.into_iter().enumerate() {
         assert!(ActionKind::parse(kind).is_some(), "{kind}");
-        let (id, idx) = (format!("raw-{idx}"), idx.to_string());
-        run_sql(&path, RAW_KIND, &[&id, &idx, kind, DIGEST]);
+        // A turn holds at most ten actions (`idx BETWEEN 0 AND 9`), so the eleventh kind is
+        // stored on a second turn, once the first has completed.
+        if position == 10 {
+            store.complete_conversation_turn("t2", TurnBlock::None).unwrap();
+            begin(&store, &ConversationTarget::Global, "t3");
+        }
+        let turn = if position < 10 { "t2" } else { "t3" };
+        let (id, idx) = (format!("raw-{position}"), (position % 10).to_string());
+        run_sql(&path, RAW_KIND, &[&id, turn, &idx, kind, DIGEST]);
     }
+    let current = "t3";
     for unknown in [
         "task.delete",
         "task.create",
@@ -1088,7 +1099,7 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         "TASK.PROPOSE",
     ] {
         assert!(
-            try_sql(&path, RAW_KIND, &["raw-unknown", "9", unknown, DIGEST]).is_err(),
+            try_sql(&path, RAW_KIND, &["raw-unknown", current, "9", unknown, DIGEST]).is_err(),
             "{unknown}"
         );
     }
