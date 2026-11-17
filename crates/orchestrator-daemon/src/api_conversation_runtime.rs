@@ -481,7 +481,9 @@ impl ConversationService {
     /// A level the agent refuses fails the turn with its code and no agent runs.
     /// The level is recorded on the turn only once the agent has started, so a
     /// turn that never launched records none. `actions` is the session's
-    /// negotiated `orchestrator_actions`.
+    /// negotiated `orchestrator_actions`. Actions are on only for a Restricted
+    /// turn: at Auto and Full the agent has a shell and could reach the daemon's
+    /// local token, and the daemon has no caller identity (DPES-1105).
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
@@ -491,6 +493,7 @@ impl ConversationService {
         level: PermissionLevel,
         actions: bool,
     ) -> Result<BegunTurn, ConversationError> {
+        let actions = actions && level == PermissionLevel::Restricted;
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);

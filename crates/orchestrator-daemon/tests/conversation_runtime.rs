@@ -1745,11 +1745,21 @@ fn the_same_request_twice_gives_one_pending_proposal() {
     assert_ne!(first_id, second_id);
 }
 
+/// Actions exist only at Restricted: at Auto and Full the agent has a shell and
+/// could reach the daemon's token, so the block is stripped and nothing is
+/// proposed, even with the capability (DPES-1105).
 #[test]
-fn the_outcome_is_the_same_at_restricted_auto_and_full() {
+fn only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block() {
     let layout = Layout::new();
+    let log = layout.data.join("agent.log");
     let reply_file = script(&layout, "");
-    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let daemon = start(
+        &layout,
+        &[
+            ("FAKE_AGENT_REPLY", reply_file.as_str()),
+            ("FAKE_AGENT_LOG", log.to_str().unwrap()),
+        ],
+    );
     let mut chat = Chat::open(&layout);
     let mut turn_ids = Vec::new();
     for (level, key) in [("restricted", "m-1"), ("auto", "m-2"), ("full", "m-3")] {
@@ -1776,15 +1786,27 @@ fn the_outcome_is_the_same_at_restricted_auto_and_full() {
     }
     stop(&layout, daemon, chat);
 
+    // Only the Restricted turn was told the block format.
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert!(lines[0].contains("mcao-actions"), "{}", lines[0]);
+    for line in &lines[1..] {
+        assert!(!line.contains("mcao-actions"), "{line}");
+    }
+
     let store = store_after_stop(&layout);
-    for turn_id in &turn_ids {
+    assert_eq!(
+        block_outcome(&store, &turn_ids[0]),
+        Some(ActionBlockOutcome::Accepted)
+    );
+    for turn_id in &turn_ids[1..] {
         assert_eq!(
             block_outcome(&store, turn_id),
-            Some(ActionBlockOutcome::Accepted)
+            Some(ActionBlockOutcome::Stripped)
         );
     }
     let rows = proposal_rows(&store);
-    assert_eq!(rows.len(), 6, "{rows:?}");
+    assert_eq!(rows.len(), 2, "{rows:?}");
     assert!(rows.iter().all(|row| row.ends_with(" pending")), "{rows:?}");
 }
 
