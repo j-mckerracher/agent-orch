@@ -1,12 +1,16 @@
-//! Pure dependency-aware worker scheduling. Updated: 2026-11-08 06:48 UTC.
+//! Pure dependency-aware worker scheduling. Updated: 2026-11-17 04:19 UTC.
 //!
 //! Only `Succeeded` tasks satisfy dependencies. Only `Running` tasks consume
 //! worker capacity and reserve worktrees. Worktree paths compare globally;
 //! nonempty branch names compare within their project. Values compare as exact
 //! strings, so callers must canonicalize them. Pass each plan's last-started
 //! project into the next snapshot to preserve fairness across scheduling calls.
+//!
+//! The machine load gate (decision N12) enters as one more input, a
+//! [`StartGate`]. The caller decides whether it is open; the scheduler only
+//! obeys, so nothing here reads load.
 
-use crate::{contract::TaskContract, records::Workspace, task::TaskState};
+use crate::{contract::TaskContract, load_gate::LoadHold, records::Workspace, task::TaskState};
 use std::{collections::BTreeMap, num::NonZeroUsize};
 
 /// One task's scheduling inputs. The referenced contract and workspace remain
@@ -215,6 +219,18 @@ pub struct TaskRejection {
     pub reason: RejectionReason,
 }
 
+/// Whether the scheduler may start tasks. The caller decides, from the machine
+/// load gate; the scheduler only obeys. A closed gate never touches a task
+/// that is already running.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StartGate {
+    /// Tasks may start, within the worker limits.
+    #[default]
+    Open,
+    /// No task may start. The hold names the meter that closed the gate.
+    Closed(LoadHold),
+}
+
 /// Why the scheduler did not start a queued task.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RejectionReason {
@@ -234,6 +250,9 @@ pub enum RejectionReason {
         resource: WorktreeResource,
         value: String,
     },
+    /// The start gate is closed because the machine is busy. Only a task that
+    /// could otherwise start gets this reason.
+    LoadGateClosed(LoadHold),
 }
 
 /// Operator-facing category of a [`RejectionReason`], for read models that
@@ -248,6 +267,8 @@ pub enum WaitingReason {
     ProjectCap,
     /// Start authorization has not been granted.
     Approval,
+    /// The machine load gate is closed.
+    Load,
     /// Anything else: wrong task state or a worktree claimed by another task.
     Other,
 }
@@ -260,6 +281,7 @@ impl WaitingReason {
             Self::GlobalCap => "global_cap",
             Self::ProjectCap => "project_cap",
             Self::Approval => "approval",
+            Self::Load => "load",
             Self::Other => "other",
         }
     }
@@ -275,6 +297,7 @@ impl RejectionReason {
             Self::GlobalLimitReached => WaitingReason::GlobalCap,
             Self::ProjectLimitReached => WaitingReason::ProjectCap,
             Self::Unauthorized => WaitingReason::Approval,
+            Self::LoadGateClosed(_) => WaitingReason::Load,
             Self::TaskNotQueued { .. } | Self::WorktreeOwned { .. } => WaitingReason::Other,
         }
     }
@@ -343,6 +366,7 @@ pub struct Scheduler<'a> {
     limits: SchedulerLimits,
     order: Vec<usize>,
     by_id: BTreeMap<&'a str, usize>,
+    gate: StartGate,
 }
 
 impl<'a> Scheduler<'a> {
@@ -362,7 +386,17 @@ impl<'a> Scheduler<'a> {
             limits,
             order,
             by_id,
+            gate: StartGate::Open,
         })
+    }
+
+    /// Sets whether tasks may start. [`Scheduler::new`] starts open. A closed
+    /// gate starts nothing and gives every task that could otherwise start
+    /// [`RejectionReason::LoadGateClosed`]. Running tasks, the fairness cursor
+    /// and every other rejection reason stay as they are.
+    pub fn with_start_gate(mut self, gate: StartGate) -> Self {
+        self.gate = gate;
+        self
     }
 
     /// Return starts and a reason for every task that does not start.
@@ -372,7 +406,8 @@ impl<'a> Scheduler<'a> {
     /// task-ID order for queued tasks whose dependencies succeeded. `None`
     /// denies every start, and an authorization grant cannot bypass capacity
     /// or ownership checks. Global capacity takes precedence over project
-    /// capacity when both limits are full. A deterministic, side-effect-free
+    /// capacity when both limits are full. A closed start gate holds back every
+    /// task that passed those checks. A deterministic, side-effect-free
     /// policy keeps the result deterministic.
     pub fn schedule(&self, authorization: Option<&dyn StartAuthorization>) -> SchedulePlan {
         let tasks = self.snapshot.tasks;
@@ -412,6 +447,15 @@ impl<'a> Scheduler<'a> {
                 continue;
             }
             eligible.push(index);
+        }
+
+        // A closed gate holds back every task that could have started. The
+        // rest of the pass then has nothing to plan, so the cursor stays put.
+        if let StartGate::Closed(hold) = self.gate {
+            for &index in &eligible {
+                rejections[index] = Some(RejectionReason::LoadGateClosed(hold));
+            }
+            eligible.clear();
         }
 
         let mut running = 0;
@@ -699,4 +743,282 @@ fn find_cycle(dependencies: &[Vec<usize>], roots: &[usize]) -> Option<Vec<usize>
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        contract::{AutonomyPolicy, DeliveryPolicy, TaskKind, VerificationPolicy},
+        load_gate::LoadMeter,
+    };
+
+    const HOLD: LoadHold = LoadHold {
+        meter: LoadMeter::Cpu,
+        mean_percent: 91,
+        limit_percent: 80,
+    };
+    const CLOSED: StartGate = StartGate::Closed(HOLD);
+
+    fn contract(id: &str, project_id: &str, dependencies: &[&str]) -> TaskContract {
+        TaskContract {
+            id: id.to_owned(),
+            project_id: project_id.to_owned(),
+            parent_id: None,
+            objective: "test the start gate".to_owned(),
+            kind: TaskKind::Implement,
+            agent: "test".to_owned(),
+            dependencies: dependencies
+                .iter()
+                .map(|dependency| (*dependency).to_owned())
+                .collect(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: Default::default(),
+        }
+    }
+
+    fn allow_all(_: &str, _: &str) -> bool {
+        true
+    }
+
+    /// One pass over `tasks`. `None` leaves the gate to `Scheduler::new` alone.
+    fn pass(
+        tasks: &[(TaskContract, TaskState)],
+        limits: SchedulerLimits,
+        gate: Option<StartGate>,
+        last_started_project: Option<&str>,
+        authorization: &dyn StartAuthorization,
+    ) -> SchedulePlan {
+        let snapshots: Vec<_> = tasks
+            .iter()
+            .map(|(contract, state)| TaskSnapshot {
+                contract,
+                state: *state,
+                workspace: None,
+            })
+            .collect();
+        let scheduler = Scheduler::new(
+            SchedulerSnapshot {
+                tasks: &snapshots,
+                last_started_project,
+            },
+            limits,
+        )
+        .expect("snapshot is valid");
+        let scheduler = match gate {
+            Some(gate) => scheduler.with_start_gate(gate),
+            None => scheduler,
+        };
+        scheduler.schedule(Some(authorization))
+    }
+
+    fn reason<'a>(plan: &'a SchedulePlan, task_id: &str) -> &'a RejectionReason {
+        &plan
+            .rejected
+            .iter()
+            .find(|rejection| rejection.task_id == task_id)
+            .expect("task has a rejection")
+            .reason
+    }
+
+    #[test]
+    fn a_closed_start_gate_starts_nothing_and_rejects_each_eligible_task_with_the_hold() {
+        let tasks = [
+            (contract("a", "project-a", &[]), TaskState::Queued),
+            (contract("b", "project-b", &[]), TaskState::Queued),
+            (contract("c", "project-a", &[]), TaskState::Queued),
+        ];
+
+        let open = pass(&tasks, SchedulerLimits::default(), None, None, &allow_all);
+        assert_eq!(open.started, ["a", "b"]);
+
+        let closed = pass(
+            &tasks,
+            SchedulerLimits::default(),
+            Some(CLOSED),
+            None,
+            &allow_all,
+        );
+        assert!(closed.started.is_empty());
+        assert_eq!(closed.rejected.len(), 3);
+        for task_id in ["a", "b", "c"] {
+            assert_eq!(
+                reason(&closed, task_id),
+                &RejectionReason::LoadGateClosed(HOLD)
+            );
+        }
+    }
+
+    #[test]
+    fn a_closed_start_gate_leaves_running_tasks_and_the_cursor_untouched() {
+        let tasks = [
+            (contract("run", "project-a", &[]), TaskState::Running),
+            (contract("a", "project-a", &[]), TaskState::Queued),
+            (contract("b", "project-b", &[]), TaskState::Queued),
+        ];
+        let limits = SchedulerLimits::default();
+
+        // Open, the cursor moves on to project-b and one task starts.
+        let open = pass(&tasks, limits, None, Some("project-a"), &allow_all);
+        assert_eq!(open.started, ["b"]);
+        assert_eq!(open.last_started_project.as_deref(), Some("project-b"));
+
+        // Closed, nothing starts and the cursor is the one the caller passed in.
+        for cursor in [None, Some("project-a")] {
+            let closed = pass(&tasks, limits, Some(CLOSED), cursor, &allow_all);
+            assert!(closed.started.is_empty());
+            assert_eq!(closed.last_started_project.as_deref(), cursor);
+            // The running task is reported as it is without a gate: not queued, not stopped.
+            assert_eq!(
+                reason(&closed, "run"),
+                &RejectionReason::TaskNotQueued {
+                    state: TaskState::Running
+                }
+            );
+            assert_eq!(reason(&open, "run"), reason(&closed, "run"));
+        }
+    }
+
+    #[test]
+    fn an_open_start_gate_gives_the_same_plan_as_before() {
+        let tasks = [
+            (contract("run", "project-a", &[]), TaskState::Running),
+            (contract("a-1", "project-a", &[]), TaskState::Queued),
+            (contract("a-2", "project-a", &[]), TaskState::Queued),
+            (contract("b-1", "project-b", &["done"]), TaskState::Queued),
+            (contract("b-2", "project-b", &["a-1"]), TaskState::Queued),
+            (contract("c-1", "project-c", &[]), TaskState::Queued),
+            (contract("c-2", "project-c", &[]), TaskState::Queued),
+            (contract("done", "project-d", &[]), TaskState::Succeeded),
+            (contract("new", "project-d", &[]), TaskState::Created),
+            (contract("u-1", "project-u", &[]), TaskState::Queued),
+        ];
+        let deny_project_u = |project_id: &str, _: &str| project_id != "project-u";
+        let limits = SchedulerLimits::new(Some(3), Some(2)).unwrap();
+
+        for cursor in [None, Some("project-b")] {
+            let before = pass(&tasks, limits, None, cursor, &deny_project_u);
+            let open = pass(
+                &tasks,
+                limits,
+                Some(StartGate::Open),
+                cursor,
+                &deny_project_u,
+            );
+            let default = pass(
+                &tasks,
+                limits,
+                Some(StartGate::default()),
+                cursor,
+                &deny_project_u,
+            );
+            assert_eq!(open, before);
+            assert_eq!(default, before);
+            // The plan is not trivial: it starts tasks and rejects for several reasons.
+            assert!(!before.started.is_empty());
+            assert!(before.rejected.len() > 3);
+            assert!(!before
+                .rejected
+                .iter()
+                .any(|rejection| matches!(rejection.reason, RejectionReason::LoadGateClosed(_))));
+        }
+    }
+
+    #[test]
+    fn the_default_start_gate_is_open() {
+        assert_eq!(StartGate::default(), StartGate::Open);
+    }
+
+    #[test]
+    fn a_task_that_is_not_queued_or_not_authorized_keeps_its_own_reason_under_a_closed_gate() {
+        let tasks = [
+            (contract("created", "project-a", &[]), TaskState::Created),
+            (
+                contract("cancelled", "project-a", &[]),
+                TaskState::Cancelled,
+            ),
+            (contract("done", "project-a", &[]), TaskState::Succeeded),
+            (
+                contract("waiting", "project-a", &["cancelled"]),
+                TaskState::Queued,
+            ),
+            (contract("denied", "project-u", &[]), TaskState::Queued),
+            (contract("ready", "project-a", &["done"]), TaskState::Queued),
+        ];
+        let deny_project_u = |project_id: &str, _: &str| project_id != "project-u";
+
+        let plan = pass(
+            &tasks,
+            SchedulerLimits::default(),
+            Some(CLOSED),
+            None,
+            &deny_project_u,
+        );
+
+        assert!(plan.started.is_empty());
+        assert_eq!(
+            reason(&plan, "created"),
+            &RejectionReason::TaskNotQueued {
+                state: TaskState::Created
+            }
+        );
+        assert_eq!(
+            reason(&plan, "cancelled"),
+            &RejectionReason::TaskNotQueued {
+                state: TaskState::Cancelled
+            }
+        );
+        assert_eq!(
+            reason(&plan, "done"),
+            &RejectionReason::TaskNotQueued {
+                state: TaskState::Succeeded
+            }
+        );
+        assert_eq!(
+            reason(&plan, "waiting"),
+            &RejectionReason::DependencyNotSucceeded {
+                dependency_id: "cancelled".to_owned()
+            }
+        );
+        assert_eq!(reason(&plan, "denied"), &RejectionReason::Unauthorized);
+        assert_eq!(
+            reason(&plan, "ready"),
+            &RejectionReason::LoadGateClosed(HOLD)
+        );
+    }
+
+    #[test]
+    fn a_closed_start_gate_reports_the_load_reason_even_when_the_worker_limits_are_full() {
+        let tasks = [
+            (contract("run-1", "project-a", &[]), TaskState::Running),
+            (contract("run-2", "project-b", &[]), TaskState::Running),
+            (contract("queued", "project-c", &[]), TaskState::Queued),
+        ];
+        let limits = SchedulerLimits::new(Some(2), Some(2)).unwrap();
+
+        // The slot reason comes back the moment the gate opens.
+        let open = pass(&tasks, limits, None, None, &allow_all);
+        assert_eq!(
+            reason(&open, "queued"),
+            &RejectionReason::GlobalLimitReached
+        );
+
+        let closed = pass(&tasks, limits, Some(CLOSED), None, &allow_all);
+        assert_eq!(
+            reason(&closed, "queued"),
+            &RejectionReason::LoadGateClosed(HOLD)
+        );
+    }
+
+    #[test]
+    fn the_load_gate_rejection_is_the_load_waiting_reason() {
+        let reason = RejectionReason::LoadGateClosed(HOLD);
+        assert_eq!(reason.waiting_reason(), WaitingReason::Load);
+        assert_eq!(WaitingReason::Load.as_str(), "load");
+    }
 }
