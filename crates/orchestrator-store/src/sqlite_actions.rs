@@ -6,9 +6,13 @@
 //! inside the transaction that completes the turn, so a turn never completes
 //! without the proposals its block produced.
 //!
-//! Migration 0037 holds the rules that outside callers cannot break: a
+//! Migrations 0037 and 0038 hold the rules that outside callers cannot break: a
 //! proposal's parameters are fixed, a proposal is deleted only by a history
 //! clear, and events are append-only.
+//!
+//! The store holds no policy. A task the envelope refused arrives from the block
+//! with its denial already decided, and is stored as a terminal `failed` card that
+//! no one can approve.
 //!
 //! A pending proposal moves only through [`SqliteStore::approve_action_proposal`],
 //! [`SqliteStore::reject_action_proposal`] and [`SqliteStore::record_action_outcome`].
@@ -17,6 +21,7 @@
 use std::future::Future;
 
 use orchestrator_core::orchestrator_action::{digest_hex, proposal_id, ActionBlock, ActionKind};
+use orchestrator_core::task_envelope::{Denial, ACTION_DENIED};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
@@ -26,7 +31,7 @@ use crate::{SqliteStore, StoreError};
 macro_rules! proposal_columns {
     () => {
         "id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on, state, \
-         result_ref, error_code, created_at, updated_at"
+         result_ref, error_code, denial, created_at, updated_at"
     };
 }
 
@@ -132,6 +137,9 @@ pub struct ActionProposal {
     pub state: ProposalState,
     pub result_ref: Option<String>,
     pub error_code: Option<String>,
+    /// Why the envelope refused a task proposal: set, once, exactly when `error_code`
+    /// is [`ACTION_DENIED`]. Null for every other proposal.
+    pub denial: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -210,6 +218,28 @@ impl SqliteStore {
                 " FROM action_proposals WHERE scope = ? ORDER BY rowid DESC LIMIT ?"
             ))
             .bind(scope)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(decode_proposal)
+                .collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Pending proposals of every conversation, newest first, at most `limit` of them.
+    pub fn pending_action_proposals(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ActionProposal>, StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        self.call(move |pool| async move {
+            let rows = sqlx::query(concat!(
+                "SELECT ",
+                proposal_columns!(),
+                " FROM action_proposals WHERE state = 'pending' \
+                 ORDER BY created_at DESC, rowid DESC LIMIT ?"
+            ))
             .bind(limit)
             .fetch_all(&pool)
             .await?;
@@ -509,6 +539,12 @@ async fn reload_proposal(
 /// Stores the proposals of an accepted block, inside the transaction that completes
 /// its turn. Returns the effective id of each action in block order: an action that
 /// matches a pending card gets that card's id and writes nothing.
+///
+/// An action the envelope refused (`block.denial`) is stored already `failed`, with
+/// `error_code = action_denied` and its denial key, and gets two events: created
+/// `pending`, then `pending` to `failed`. It is never pending, so it matches no card
+/// and a repeat of the same refused request is a second `failed` card. It still
+/// replaces a pending card with the same subject, as any changed request does.
 pub(crate) async fn insert_block_proposals(
     connection: &mut SqliteConnection,
     scope: &str,
@@ -529,15 +565,20 @@ pub(crate) async fn insert_block_proposals(
         let canonical = action.canonical(parent.as_deref());
         let kind = action.kind();
         let digest = digest_hex(&canonical.digest);
-        let existing: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM action_proposals \
-             WHERE scope = ? AND kind = ? AND digest = ? AND state = 'pending'",
-        )
-        .bind(scope)
-        .bind(kind.as_str())
-        .bind(&digest)
-        .fetch_optional(&mut *connection)
-        .await?;
+        let denial = block.denial(index);
+        let existing: Option<String> = if denial.is_some() {
+            None
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM action_proposals \
+                 WHERE scope = ? AND kind = ? AND digest = ? AND state = 'pending'",
+            )
+            .bind(scope)
+            .bind(kind.as_str())
+            .bind(&digest)
+            .fetch_optional(&mut *connection)
+            .await?
+        };
         if let Some(existing) = existing {
             effective.push(existing);
             continue;
@@ -574,10 +615,15 @@ pub(crate) async fn insert_block_proposals(
             }
         }
         let id = proposal_id(turn_id, index);
+        let (state, error_code) = match denial {
+            Some(_) => (ProposalState::Failed, Some(ACTION_DENIED)),
+            None => (ProposalState::Pending, None),
+        };
         sqlx::query(
             "INSERT INTO action_proposals \
-             (id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on, \
+              state, error_code, denial) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(scope)
@@ -588,6 +634,9 @@ pub(crate) async fn insert_block_proposals(
         .bind(&digest)
         .bind(&canonical.subject)
         .bind(parent.as_deref())
+        .bind(state.as_str())
+        .bind(error_code)
+        .bind(denial.map(Denial::as_str))
         .execute(&mut *connection)
         .await?;
         record_event(
@@ -597,8 +646,21 @@ pub(crate) async fn insert_block_proposals(
             None,
             ProposalState::Pending,
             &digest,
+            None,
         )
         .await?;
+        if state == ProposalState::Failed {
+            record_event(
+                connection,
+                &id,
+                scope,
+                Some(ProposalState::Pending),
+                ProposalState::Failed,
+                &digest,
+                error_code,
+            )
+            .await?;
+        }
         effective.push(id);
     }
     Ok(effective)
@@ -640,14 +702,15 @@ async fn supersede(
             Some(ProposalState::Pending),
             ProposalState::Superseded,
             digest,
+            None,
         )
         .await?;
     }
     Ok(())
 }
 
-/// Appends one agent event: creation or supersession. Resolve events go through
-/// `move_state`, which also records the user's actor and outcome.
+/// Appends one agent event: creation, supersession or denial (`error_code`). Resolve
+/// events go through `move_state`, which also records the user's actor and outcome.
 async fn record_event(
     connection: &mut SqliteConnection,
     id: &str,
@@ -655,17 +718,19 @@ async fn record_event(
     from: Option<ProposalState>,
     to: ProposalState,
     digest: &str,
+    error_code: Option<&str>,
 ) -> Result<(), StoreError> {
     sqlx::query(
         "INSERT INTO action_proposal_events \
-         (proposal_id, scope, from_state, to_state, actor, digest) \
-         VALUES (?, ?, ?, ?, 'agent', ?)",
+         (proposal_id, scope, from_state, to_state, actor, digest, error_code) \
+         VALUES (?, ?, ?, ?, 'agent', ?, ?)",
     )
     .bind(id)
     .bind(scope)
     .bind(from.map(ProposalState::as_str))
     .bind(to.as_str())
     .bind(digest)
+    .bind(error_code)
     .execute(connection)
     .await?;
     Ok(())
@@ -689,6 +754,7 @@ fn decode_proposal(row: SqliteRow) -> Result<ActionProposal, StoreError> {
         depends_on: row.try_get("depends_on")?,
         result_ref: row.try_get("result_ref")?,
         error_code: row.try_get("error_code")?,
+        denial: row.try_get("denial")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
         id,

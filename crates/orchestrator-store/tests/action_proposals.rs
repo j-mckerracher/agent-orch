@@ -3,18 +3,34 @@
 //! These tests use the store's public API. A raw connection moves a card to
 //! `executed`, because no API does that before phase 1c.
 
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use orchestrator_core::orchestrator_action::{parse_block, proposal_id, ActionKind, BlockScope};
+use orchestrator_core::orchestrator_action::{
+    parse_block, proposal_id, ActionBlock, ActionKind, BlockScope,
+};
+use orchestrator_core::task_envelope::{chat_task_envelope, ACTION_DENIED};
 use orchestrator_store::{
     ActionBlockOutcome, ActionOutcome, ConversationTarget, ProposalState, ResolveError,
     SqliteStore, TurnBlock, TurnOutcome, TurnState, DEPENDENCY_NOT_EXECUTED,
 };
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection;
 
 const CREATE_ALPHA: &str = r#"{"kind": "workstream.create", "ref": "w1", "title": "Alpha"}"#;
 const PLAN_ALPHA: &str = r#"{"kind": "objective.add", "workstream_ref": "w1", "title": "Plan"}"#;
+
+// The four task kinds. PROPOSE_TASK passes the chat envelope; the pull request variants do
+// not, because the envelope grants report-only and local-review delivery only.
+const PROPOSE_TASK: &str = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Add unit tests for the retry module.", "agent": "codex"}"#;
+const PROPOSE_TASK_AS_PULL_REQUEST: &str = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Add unit tests for the retry module.", "agent": "codex", "delivery": "PullRequest"}"#;
+const PROPOSE_PULL_REQUEST: &str = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Document the retry module.", "agent": "codex", "delivery": "PullRequest"}"#;
+const CANCEL_TASK: &str = r#"{"kind": "task.cancel", "task_id": "task-aaaa0001"}"#;
+const RETRY_TASK: &str = r#"{"kind": "task.retry", "task_id": "task-aaaa0002"}"#;
+const LINK_TASK: &str = r#"{"kind": "workstream.link_task", "workstream_id": "workstream-1", "task_id": "task-aaaa0003"}"#;
+const NEW_KINDS: [&str; 4] = [PROPOSE_TASK, CANCEL_TASK, RETRY_TASK, LINK_TASK];
+const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn open(directory: &Path) -> SqliteStore {
     SqliteStore::new(&directory.join("store.sqlite")).unwrap()
@@ -26,32 +42,79 @@ fn begin(store: &SqliteStore, target: &ConversationTarget, turn: &str) {
         .unwrap();
 }
 
-/// An accepted block, parsed from the fenced text a reply would carry.
-fn accepted(scope: BlockScope<'_>, actions: &str) -> TurnBlock {
+/// A block parsed from the fenced text a reply would carry.
+fn parsed(scope: BlockScope<'_>, actions: &str) -> ActionBlock {
     let held = format!("```mcao-actions\n{{\"mcao_actions\": 1, \"actions\": [{actions}]}}\n```");
-    TurnBlock::Accepted(parse_block(&held, scope).unwrap())
+    parse_block(&held, scope).unwrap()
+}
+
+/// An accepted block that no envelope has looked at, so nothing in it is denied.
+fn accepted(scope: BlockScope<'_>, actions: &str) -> TurnBlock {
+    TurnBlock::Accepted(parsed(scope, actions))
+}
+
+/// An accepted block after the chat envelope checked each task proposal, as the daemon
+/// does before it hands the block to the store.
+fn checked(scope: BlockScope<'_>, actions: &str) -> TurnBlock {
+    TurnBlock::Accepted(parsed(scope, actions).checked(&chat_task_envelope()))
+}
+
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
 }
 
 /// Runs one statement on a second connection, as another process would, with
-/// `binds` bound in order.
+/// `binds` bound in order, and reports whether the database took it.
+fn try_sql(path: &Path, sql: &'static str, binds: &[&str]) -> Result<(), sqlx::Error> {
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options).await?;
+        let mut query = sqlx::query(sql);
+        for value in binds {
+            query = query.bind(*value);
+        }
+        query.execute(&mut connection).await?;
+        Ok::<(), sqlx::Error>(())
+    })
+}
+
 fn run_sql(path: &Path, sql: &'static str, binds: &[&str]) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(async {
+    try_sql(path, sql, binds).unwrap();
+}
+
+/// The first column of every row `sql` returns, as text, read on a second connection.
+fn scalars(path: &Path, sql: &'static str) -> Vec<String> {
+    runtime().block_on(async {
         let options = SqliteConnectOptions::new()
             .filename(path)
             .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
             .unwrap();
-        let mut query = sqlx::query(sql);
-        for value in binds {
-            query = query.bind(*value);
-        }
-        query.execute(&mut connection).await.unwrap();
-    });
+        sqlx::query_scalar::<_, String>(sql)
+            .fetch_all(&mut connection)
+            .await
+            .unwrap()
+    })
+}
+
+/// One `task.propose` row for turn t1 with the given state, error code and denial, for
+/// checking which combinations the database takes. Binds: id, index, digest.
+macro_rules! raw_task_row {
+    ($tail:literal) => {
+        concat!(
+            "INSERT INTO action_proposals \
+             (id, scope, turn_id, idx, kind, params_json, digest, subject, state, error_code, denial) \
+             VALUES (?, 'conversation:global', 't1', CAST(? AS INTEGER), 'task.propose', '{}', ?, 'x', ",
+            $tail,
+            ")"
+        )
+    };
 }
 
 #[test]
@@ -607,4 +670,828 @@ fn scope_workstream_reads_the_workstream_id_from_the_scope() {
     let global = one_pending(&store, "t2", CREATE_ALPHA);
     let global = store.action_proposal(&global).unwrap().unwrap();
     assert_eq!(global.scope_workstream(), None);
+}
+
+const LEGACY_STATES: [&str; 7] = [
+    "pending",
+    "approved",
+    "executed",
+    "failed",
+    "rejected",
+    "superseded",
+    "expired",
+];
+
+const PROPOSAL_DUMP: &str = "SELECT json_array(rowid, id, scope, turn_id, idx, kind, params_json, \
+    digest, subject, depends_on, state, result_ref, error_code, created_at, updated_at) \
+    FROM action_proposals ORDER BY rowid";
+const EVENT_DUMP: &str = "SELECT json_array(sequence, proposal_id, scope, from_state, to_state, \
+    actor, digest, error_code, result_ref, created_at) \
+    FROM action_proposal_events ORDER BY sequence";
+
+/// Builds the database as 0037 left it: only the migrations up to 0037 applied, holding
+/// one workstream proposal in each state, each with the events its history would have
+/// written. Returns the proposals and events as dumped before 0038 runs.
+fn database_at_0037(directory: &Path) -> (Vec<String>, Vec<String>) {
+    let legacy_dir = directory.join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let version: u32 = entry
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split('_')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        if version <= 37 {
+            fs::copy(&entry, legacy_dir.join(entry.file_name().unwrap())).unwrap();
+        }
+    }
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(directory.join("store.sqlite"))
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        let newest: i64 = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(newest, 37);
+        sqlx::query(
+            "INSERT INTO conversations (id, target_kind) VALUES ('conversation:global', 'global')",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO conversation_turns (id, conversation_id, state, runtime_name, runtime_version) \
+             VALUES ('t1', 'conversation:global', 'completed', 'test-runtime', '1.0.0')",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        for (idx, state) in LEGACY_STATES.iter().enumerate() {
+            let id = format!("proposal-legacy-{state}");
+            let digest = format!("{:064x}", idx + 1);
+            let params = format!(r#"{{"kind":"workstream.create","title":"Legacy {state}"}}"#);
+            let (result_ref, error_code, depends_on) = match *state {
+                "executed" => (Some("workstream-1"), None, None),
+                "failed" => (
+                    None,
+                    Some("dependency_not_executed"),
+                    Some("proposal-legacy-pending"),
+                ),
+                _ => (None, None, None),
+            };
+            sqlx::query(
+                "INSERT INTO action_proposals \
+                 (id, scope, turn_id, idx, kind, params_json, digest, subject, depends_on, \
+                  state, result_ref, error_code) \
+                 VALUES (?, 'conversation:global', 't1', ?, 'workstream.create', ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(i64::try_from(idx).unwrap())
+            .bind(&params)
+            .bind(&digest)
+            .bind(format!("Legacy {state}"))
+            .bind(depends_on)
+            .bind(*state)
+            .bind(result_ref)
+            .bind(error_code)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO action_proposal_events \
+                 (proposal_id, scope, from_state, to_state, actor, digest) \
+                 VALUES (?, 'conversation:global', NULL, 'pending', 'agent', ?)",
+            )
+            .bind(&id)
+            .bind(&digest)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+            if *state != "pending" {
+                let from = if *state == "executed" {
+                    "approved"
+                } else {
+                    "pending"
+                };
+                sqlx::query(
+                    "INSERT INTO action_proposal_events \
+                     (proposal_id, scope, from_state, to_state, actor, digest, error_code, result_ref) \
+                     VALUES (?, 'conversation:global', ?, ?, 'user', ?, ?, ?)",
+                )
+                .bind(&id)
+                .bind(from)
+                .bind(*state)
+                .bind(&digest)
+                .bind(error_code)
+                .bind(result_ref)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+            }
+        }
+        let proposals = sqlx::query_scalar::<_, String>(PROPOSAL_DUMP)
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+        let events = sqlx::query_scalar::<_, String>(EVENT_DUMP)
+            .fetch_all(&mut connection)
+            .await
+            .unwrap();
+        connection.close().await.unwrap();
+        (proposals, events)
+    })
+}
+
+#[test]
+fn migration_0038_applies_to_a_0037_database_with_proposals_and_keeps_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let (proposals_before, events_before) = database_at_0037(directory.path());
+    assert_eq!(proposals_before.len(), LEGACY_STATES.len());
+    assert_eq!(events_before.len(), 2 * LEGACY_STATES.len() - 1);
+
+    // Opening the store applies 0038 to the database that already holds them.
+    let store = open(directory.path());
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT CAST(success AS TEXT) FROM _sqlx_migrations WHERE version = 38"
+        ),
+        vec!["1"]
+    );
+
+    // Every row and event is byte for byte what it was, in the same order, and none has
+    // a denial.
+    assert_eq!(scalars(&path, PROPOSAL_DUMP), proposals_before);
+    assert_eq!(scalars(&path, EVENT_DUMP), events_before);
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM action_proposals WHERE denial IS NOT NULL"
+        ),
+        vec!["0"]
+    );
+    assert!(scalars(&path, "PRAGMA foreign_key_check").is_empty());
+
+    // The rules survived the rebuild: the same triggers and indexes exist.
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' \
+             AND tbl_name IN ('action_proposals', 'action_proposal_events') ORDER BY name"
+        ),
+        vec![
+            "action_proposal_events_no_delete",
+            "action_proposal_events_no_update",
+            "action_proposals_fixed_parameters",
+            "action_proposals_gated_delete",
+            "action_proposals_state_transitions",
+        ]
+    );
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'action_proposals' \
+             AND name NOT LIKE 'sqlite_autoindex%' ORDER BY name"
+        ),
+        vec![
+            "action_proposals_by_scope",
+            "action_proposals_one_pending_digest",
+            "action_proposals_pending_subject",
+        ]
+    );
+
+    // The store reads the migrated rows, newest first, and the one pending proposal is
+    // the only one the pending read lists.
+    let listed = store
+        .action_proposals(&ConversationTarget::Global, 20)
+        .unwrap();
+    let states: Vec<&str> = listed
+        .iter()
+        .rev()
+        .map(|proposal| proposal.state.as_str())
+        .collect();
+    assert_eq!(states, LEGACY_STATES);
+    assert!(listed.iter().all(|proposal| proposal.denial.is_none()));
+    let pending = store.pending_action_proposals(10).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, "proposal-legacy-pending");
+
+    // A migrated proposal still moves through its legal edges, with its event.
+    store
+        .approve_action_proposal("proposal-legacy-pending", "user")
+        .unwrap();
+    assert_eq!(
+        store
+            .action_proposal_events("proposal-legacy-pending")
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // And the migrated table takes a new kind and a denied task.
+    begin(&store, &ConversationTarget::Global, "t2");
+    let ids = store
+        .complete_conversation_turn(
+            "t2",
+            checked(
+                BlockScope::Global,
+                &format!("{PROPOSE_TASK}, {PROPOSE_PULL_REQUEST}"),
+            ),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        store.action_proposal(&ids[0]).unwrap().unwrap().state,
+        ProposalState::Pending
+    );
+    assert_eq!(
+        store
+            .action_proposal(&ids[1])
+            .unwrap()
+            .unwrap()
+            .denial
+            .as_deref(),
+        Some("delivery_not_authorized")
+    );
+}
+
+#[test]
+fn after_the_rebuild_parameters_never_change_state_transitions_are_legal_only_and_deletes_need_the_clear_gate(
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let store = open(directory.path());
+    begin(&store, &ConversationTarget::Global, "t1");
+    let ids = store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, &NEW_KINDS.join(", ")))
+        .unwrap()
+        .unwrap();
+    assert_eq!(ids.len(), 4);
+
+    // Each statement names a column that never changes. Some of them would pass every
+    // CHECK, so only the trigger can be what refuses them.
+    const FIXED: [&str; 9] = [
+        "UPDATE action_proposals SET params_json = '{}' WHERE id = ?",
+        "UPDATE action_proposals SET digest = '0000000000000000000000000000000000000000000000000000000000000000' WHERE id = ?",
+        "UPDATE action_proposals SET subject = 'x' WHERE id = ?",
+        "UPDATE action_proposals SET kind = 'workstream.create' WHERE id = ?",
+        "UPDATE action_proposals SET idx = 9 WHERE id = ?",
+        "UPDATE action_proposals SET depends_on = 'x' WHERE id = ?",
+        "UPDATE action_proposals SET denial = 'contract_invalid' WHERE id = ?",
+        "UPDATE action_proposals SET created_at = '2000-01-01 00:00:00' WHERE id = ?",
+        "DELETE FROM action_proposals WHERE id = ?",
+    ];
+    for id in &ids {
+        for sql in FIXED {
+            assert!(try_sql(&path, sql, &[id]).is_err(), "{sql}");
+        }
+        // Only pending -> approved -> executed is legal here: a skipped edge, a repeat,
+        // a backward edge and any change to a terminal row are all refused.
+        assert!(try_sql(
+            &path,
+            "UPDATE action_proposals SET state = 'executed' WHERE id = ?",
+            &[id]
+        )
+        .is_err());
+        assert!(try_sql(
+            &path,
+            "UPDATE action_proposals SET state = 'pending' WHERE id = ?",
+            &[id]
+        )
+        .is_err());
+        store.approve_action_proposal(id, "user").unwrap();
+        assert!(try_sql(
+            &path,
+            "UPDATE action_proposals SET state = 'pending' WHERE id = ?",
+            &[id]
+        )
+        .is_err());
+        assert!(try_sql(
+            &path,
+            "UPDATE action_proposals SET state = 'rejected' WHERE id = ?",
+            &[id]
+        )
+        .is_err());
+        store
+            .record_action_outcome(
+                id,
+                ActionOutcome::Executed {
+                    result_ref: "task-1",
+                },
+                "user",
+            )
+            .unwrap();
+        for sql in [
+            "UPDATE action_proposals SET state = 'failed', error_code = 'conflict' WHERE id = ?",
+            "UPDATE action_proposals SET state = 'approved' WHERE id = ?",
+        ] {
+            assert!(try_sql(&path, sql, &[id]).is_err(), "{sql}");
+        }
+        assert_eq!(
+            store.action_proposal(id).unwrap().unwrap().state,
+            ProposalState::Executed
+        );
+    }
+    // Events are append-only, whatever the kind.
+    assert!(try_sql(&path, "DELETE FROM action_proposal_events", &[]).is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE action_proposal_events SET to_state = 'approved'",
+        &[]
+    )
+    .is_err());
+
+    // Only a history clear deletes proposals, and it leaves their events.
+    assert!(
+        store
+            .clear_conversation_history(&ConversationTarget::Global)
+            .unwrap()
+            .cleared
+    );
+    for id in &ids {
+        assert!(store.action_proposal(id).unwrap().is_none());
+        assert_eq!(store.action_proposal_events(id).unwrap().len(), 3);
+    }
+}
+
+#[test]
+fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let store = open(directory.path());
+    begin(&store, &ConversationTarget::Global, "t1");
+    let ids = store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, &NEW_KINDS.join(", ")))
+        .unwrap()
+        .unwrap();
+    let kinds: Vec<ActionKind> = ids
+        .iter()
+        .map(|id| store.action_proposal(id).unwrap().unwrap().kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            ActionKind::TaskPropose,
+            ActionKind::TaskCancel,
+            ActionKind::TaskRetry,
+            ActionKind::WorkstreamLinkTask,
+        ]
+    );
+
+    // The database takes exactly these eight kinds and core knows the same eight.
+    const KINDS: [&str; 8] = [
+        "workstream.create",
+        "workstream.update",
+        "objective.add",
+        "objective.revise",
+        "task.propose",
+        "task.cancel",
+        "task.retry",
+        "workstream.link_task",
+    ];
+    const RAW_KIND: &str = "INSERT INTO action_proposals \
+        (id, scope, turn_id, idx, kind, params_json, digest, subject) \
+        VALUES (?, 'conversation:global', 't2', CAST(? AS INTEGER), ?, '{}', ?, 'x')";
+    assert_eq!(ActionKind::ALL.len(), KINDS.len());
+    begin(&store, &ConversationTarget::Global, "t2");
+    for (idx, kind) in KINDS.into_iter().enumerate() {
+        assert!(ActionKind::parse(kind).is_some(), "{kind}");
+        let (id, idx) = (format!("raw-{idx}"), idx.to_string());
+        run_sql(&path, RAW_KIND, &[&id, &idx, kind, DIGEST]);
+    }
+    for unknown in [
+        "task.delete",
+        "task.create",
+        "workstream.link",
+        "",
+        "TASK.PROPOSE",
+    ] {
+        assert!(
+            try_sql(&path, RAW_KIND, &["raw-unknown", "9", unknown, DIGEST]).is_err(),
+            "{unknown}"
+        );
+    }
+}
+
+#[test]
+fn a_denied_task_is_stored_failed_with_its_reason_and_two_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let target = ConversationTarget::Global;
+    begin(&store, &target, "t1");
+    let ids = store
+        .complete_conversation_turn(
+            "t1",
+            checked(
+                BlockScope::Global,
+                &format!("{PROPOSE_TASK}, {PROPOSE_PULL_REQUEST}"),
+            ),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(ids, vec![proposal_id("t1", 0), proposal_id("t1", 1)]);
+    assert_eq!(
+        store.conversation_turn("t1").unwrap().unwrap().action_block,
+        Some(ActionBlockOutcome::Accepted)
+    );
+
+    // The allowed task is an ordinary pending card with one event and no denial.
+    let allowed = store.action_proposal(&ids[0]).unwrap().unwrap();
+    assert_eq!(allowed.state, ProposalState::Pending);
+    assert_eq!(allowed.error_code, None);
+    assert_eq!(allowed.denial, None);
+    assert_eq!(store.action_proposal_events(&ids[0]).unwrap().len(), 1);
+
+    // The refused one is stored whole, terminal from the start, with its reason.
+    let denied = store.action_proposal(&ids[1]).unwrap().unwrap();
+    assert_eq!(denied.kind, ActionKind::TaskPropose);
+    assert_eq!(denied.state, ProposalState::Failed);
+    assert_eq!(denied.error_code.as_deref(), Some(ACTION_DENIED));
+    assert_eq!(denied.denial.as_deref(), Some("delivery_not_authorized"));
+    assert_eq!(denied.result_ref, None);
+    assert!(denied.params_json.contains("PullRequest"));
+
+    let events = store.action_proposal_events(&ids[1]).unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].from_state, None);
+    assert_eq!(events[0].to_state, ProposalState::Pending);
+    assert_eq!(events[0].error_code, None);
+    assert_eq!(events[1].from_state, Some(ProposalState::Pending));
+    assert_eq!(events[1].to_state, ProposalState::Failed);
+    assert_eq!(events[1].error_code.as_deref(), Some(ACTION_DENIED));
+    for event in &events {
+        assert_eq!(event.actor, "agent");
+        assert_eq!(event.digest, denied.digest);
+        assert_eq!(event.result_ref, None);
+    }
+
+    // The listing shows both, newest first, with the denial where it was stored.
+    let listed = store.action_proposals(&target, 10).unwrap();
+    assert_eq!(listed, vec![denied, allowed]);
+}
+
+#[test]
+fn the_denial_column_is_set_exactly_when_the_code_is_action_denied() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let store = open(directory.path());
+    begin(&store, &ConversationTarget::Global, "t1");
+
+    // A code of action_denied needs a denial, and a denial needs that code.
+    assert!(try_sql(
+        &path,
+        raw_task_row!("'failed', 'action_denied', NULL"),
+        &["raw-a", "0", DIGEST]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        raw_task_row!("'failed', 'conflict', 'delivery_not_authorized'"),
+        &["raw-b", "1", DIGEST]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        raw_task_row!("'pending', NULL, 'delivery_not_authorized'"),
+        &["raw-c", "2", DIGEST]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        raw_task_row!("'failed', 'action_denied', ''"),
+        &["raw-d", "3", DIGEST]
+    )
+    .is_err());
+    run_sql(
+        &path,
+        raw_task_row!("'failed', 'action_denied', 'delivery_not_authorized'"),
+        &["raw-denied", "4", DIGEST],
+    );
+    run_sql(
+        &path,
+        raw_task_row!("'failed', 'conflict', NULL"),
+        &["raw-failed", "5", DIGEST],
+    );
+    run_sql(
+        &path,
+        raw_task_row!("'pending', NULL, NULL"),
+        &["raw-pending", "6", DIGEST],
+    );
+    let denied = store.action_proposal("raw-denied").unwrap().unwrap();
+    assert_eq!(denied.denial.as_deref(), Some("delivery_not_authorized"));
+    assert_eq!(
+        store.action_proposal("raw-failed").unwrap().unwrap().denial,
+        None
+    );
+    assert_eq!(
+        store
+            .action_proposal("raw-pending")
+            .unwrap()
+            .unwrap()
+            .denial,
+        None
+    );
+
+    // The reason is written once. Changing it passes the CHECK, so the trigger refuses it.
+    assert!(try_sql(
+        &path,
+        "UPDATE action_proposals SET denial = 'contract_invalid' WHERE id = ?",
+        &["raw-denied"]
+    )
+    .is_err());
+    assert!(try_sql(
+        &path,
+        "UPDATE action_proposals SET denial = 'delivery_not_authorized' WHERE id = ?",
+        &["raw-pending"]
+    )
+    .is_err());
+
+    // An execution cannot end in action_denied: no denial was recorded, so the database
+    // refuses the outcome, and the proposal stays approved.
+    store
+        .approve_action_proposal("raw-pending", "user")
+        .unwrap();
+    assert!(matches!(
+        store.record_action_outcome(
+            "raw-pending",
+            ActionOutcome::Failed {
+                error_code: ACTION_DENIED,
+            },
+            "user",
+        ),
+        Err(ResolveError::Store(_))
+    ));
+    assert_eq!(
+        store.action_proposal("raw-pending").unwrap().unwrap().state,
+        ProposalState::Approved
+    );
+    let failed = store
+        .record_action_outcome(
+            "raw-pending",
+            ActionOutcome::Failed {
+                error_code: "conflict",
+            },
+            "user",
+        )
+        .unwrap();
+    assert_eq!(failed.denial, None);
+}
+
+#[test]
+fn a_denied_proposal_is_not_approvable_and_creates_no_pending_card() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let target = ConversationTarget::Global;
+
+    // The same task is pending first. A later request for it that the envelope refuses
+    // replaces that card, as any changed request does, and leaves no pending card.
+    begin(&store, &target, "t1");
+    let pending = store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, PROPOSE_TASK))
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.pending_action_proposals(10).unwrap().len(), 1);
+    begin(&store, &target, "t2");
+    let denied = store
+        .complete_conversation_turn(
+            "t2",
+            checked(BlockScope::Global, PROPOSE_TASK_AS_PULL_REQUEST),
+        )
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+    assert_eq!(
+        store.action_proposal(&pending[0]).unwrap().unwrap().state,
+        ProposalState::Superseded
+    );
+
+    // Nothing moves a denied proposal: not approve, not reject, not an outcome.
+    assert!(matches!(
+        store.approve_action_proposal(&denied, "user"),
+        Err(ResolveError::NotPending(ProposalState::Failed))
+    ));
+    assert!(matches!(
+        store.reject_action_proposal(&denied, "user"),
+        Err(ResolveError::NotPending(ProposalState::Failed))
+    ));
+    assert!(matches!(
+        store.record_action_outcome(
+            &denied,
+            ActionOutcome::Executed {
+                result_ref: "task-1",
+            },
+            "user",
+        ),
+        Err(ResolveError::NotPending(ProposalState::Failed))
+    ));
+    let after = store.action_proposal(&denied).unwrap().unwrap();
+    assert_eq!(after.state, ProposalState::Failed);
+    assert_eq!(after.denial.as_deref(), Some("delivery_not_authorized"));
+    assert_eq!(store.action_proposal_events(&denied).unwrap().len(), 2);
+
+    // A denied task built on a pending workstream is just as terminal, and rejecting
+    // that workstream records nothing more on it.
+    begin(&store, &target, "t3");
+    let ids = store
+        .complete_conversation_turn(
+            "t3",
+            checked(
+                BlockScope::Global,
+                &format!(
+                    r#"{CREATE_ALPHA}, {{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Document the retry module.", "agent": "codex", "delivery": "PullRequest", "workstream_ref": "w1"}}"#
+                ),
+            ),
+        )
+        .unwrap()
+        .unwrap();
+    let child = store.action_proposal(&ids[1]).unwrap().unwrap();
+    assert_eq!(child.depends_on.as_deref(), Some(ids[0].as_str()));
+    assert_eq!(child.state, ProposalState::Failed);
+    assert!(matches!(
+        store.approve_action_proposal(&ids[1], "user"),
+        Err(ResolveError::NotPending(ProposalState::Failed))
+    ));
+    store.reject_action_proposal(&ids[0], "user").unwrap();
+    assert_eq!(store.action_proposal_events(&ids[1]).unwrap().len(), 2);
+    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+}
+
+#[test]
+fn pending_action_proposals_lists_newest_first_and_honors_the_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    let workstream = ConversationTarget::Workstream("ws-1".to_owned());
+    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+
+    begin(&store, &global, "t1");
+    let approved = store
+        .complete_conversation_turn("t1", accepted(BlockScope::Global, CREATE_ALPHA))
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    begin(&store, &workstream, "t2");
+    let in_workstream = store
+        .complete_conversation_turn(
+            "t2",
+            accepted(
+                BlockScope::Workstream("ws-1"),
+                r#"{"kind": "objective.add", "workstream_id": "ws-1", "title": "Plan"}"#,
+            ),
+        )
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    begin(&store, &global, "t3");
+    let task = store
+        .complete_conversation_turn("t3", checked(BlockScope::Global, PROPOSE_TASK))
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    // A denied task and an approved one are not pending, so neither is listed.
+    begin(&store, &global, "t4");
+    store
+        .complete_conversation_turn("t4", checked(BlockScope::Global, PROPOSE_PULL_REQUEST))
+        .unwrap();
+    store.approve_action_proposal(&approved, "user").unwrap();
+
+    // Newest first, across both conversations.
+    let listed: Vec<String> = store
+        .pending_action_proposals(10)
+        .unwrap()
+        .into_iter()
+        .map(|proposal| proposal.id)
+        .collect();
+    assert_eq!(listed, vec![task.clone(), in_workstream]);
+    let newest = store.pending_action_proposals(1).unwrap();
+    assert_eq!(newest.len(), 1);
+    assert_eq!(newest[0].id, task);
+    assert_eq!(newest[0].kind, ActionKind::TaskPropose);
+    assert!(store.pending_action_proposals(0).unwrap().is_empty());
+}
+
+#[test]
+fn a_turn_completed_twice_stores_each_task_proposal_and_its_events_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let target = ConversationTarget::Global;
+    let both = format!("{PROPOSE_TASK}, {PROPOSE_PULL_REQUEST}");
+
+    begin(&store, &target, "t1");
+    let first = store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, &both))
+        .unwrap()
+        .unwrap();
+    // The turn is already completed, so a second completion stores nothing.
+    assert_eq!(
+        store
+            .complete_conversation_turn("t1", checked(BlockScope::Global, &both))
+            .unwrap(),
+        None
+    );
+    assert_eq!(store.action_proposals(&target, 10).unwrap().len(), 2);
+    assert_eq!(store.action_proposal_events(&first[0]).unwrap().len(), 1);
+    assert_eq!(store.action_proposal_events(&first[1]).unwrap().len(), 2);
+
+    // The same request in a later turn matches the pending card and writes nothing for
+    // it. The refused one is never pending, so it is a second failed card with its own
+    // two events.
+    begin(&store, &target, "t2");
+    let second = store
+        .complete_conversation_turn("t2", checked(BlockScope::Global, &both))
+        .unwrap()
+        .unwrap();
+    assert_eq!(second, vec![first[0].clone(), proposal_id("t2", 1)]);
+    assert_eq!(store.action_proposals(&target, 10).unwrap().len(), 3);
+    assert_eq!(store.action_proposal_events(&first[0]).unwrap().len(), 1);
+    assert_eq!(store.action_proposal_events(&second[1]).unwrap().len(), 2);
+    assert_eq!(
+        store.action_proposal(&second[1]).unwrap().unwrap().state,
+        ProposalState::Failed
+    );
+    assert_eq!(store.pending_action_proposals(10).unwrap().len(), 1);
+}
+
+/// Every regular file under `directory` whose bytes contain `needle`.
+fn files_containing(directory: &Path, needle: &str) -> Vec<PathBuf> {
+    fn walk(path: &Path, needle: &[u8], found: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, needle, found);
+            } else if fs::read(&path)
+                .unwrap()
+                .windows(needle.len())
+                .any(|window| window == needle)
+            {
+                found.push(path);
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(directory, needle.as_bytes(), &mut found);
+    found
+}
+
+#[test]
+fn a_clear_scrubs_task_proposal_parameters_and_leaves_only_digests_in_events() {
+    const MARKER: &str = "MARKER-TASK-OBJECTIVE-6b1e";
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let target = ConversationTarget::Global;
+    let task = |delivery: &str| {
+        format!(
+            r#"{{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "{MARKER} {delivery}", "agent": "codex", "delivery": "{delivery}"}}"#
+        )
+    };
+    begin(&store, &target, "t1");
+    let ids = store
+        .complete_conversation_turn(
+            "t1",
+            checked(
+                BlockScope::Global,
+                &format!("{}, {}", task("LocalReview"), task("PullRequest")),
+            ),
+        )
+        .unwrap()
+        .unwrap();
+    // Control: the objective is on disk before the clear, so the search below means something.
+    assert!(!files_containing(directory.path(), MARKER).is_empty());
+
+    assert!(store.clear_conversation_history(&target).unwrap().cleared);
+    assert!(store.action_proposals(&target, 10).unwrap().is_empty());
+    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+    for id in &ids {
+        assert!(store.action_proposal(id).unwrap().is_none());
+    }
+    // The events outlive the clear. They hold digests and codes, never the objective.
+    let pending = store.action_proposal_events(&ids[0]).unwrap();
+    let denied = store.action_proposal_events(&ids[1]).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(denied.len(), 2);
+    assert_eq!(denied[1].error_code.as_deref(), Some(ACTION_DENIED));
+    for event in pending.iter().chain(&denied) {
+        assert_eq!(event.digest.len(), 64);
+    }
+    assert!(files_containing(directory.path(), MARKER).is_empty());
 }
