@@ -450,6 +450,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         // DPES-1105 phase 5b: the return brief shares the grants capability. Both are open: the
         // brief reads, and the ack only clears the window the user has seen.
         "monitoring.brief" | "monitoring.brief_ack" => Some(Capability::StandingApprovals),
+        // DPES-1105 phase 5b: the user's notes share the grants capability. `notes.list` is
+        // open; `notes.set` is user-only because a note is persistent text the next prompt carries.
+        "notes.list" | "notes.set" => Some(Capability::StandingApprovals),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

@@ -64,8 +64,8 @@ pub enum Capability {
     /// `holds.list` (open) and the user-only `holds.set` and `holds.release` (DPES-1105).
     Holds,
     /// `grants.list` (open) and the user-only `grants.create` and `grants.revoke`: standing
-    /// approvals, plus the open `monitoring.brief` and `monitoring.brief_ack` return brief
-    /// (DPES-1105). Not advertised by an older daemon.
+    /// approvals, plus the open `monitoring.brief` and `monitoring.brief_ack` return brief and
+    /// the open `notes.list` with the user-only `notes.set` (DPES-1105). Not advertised by an older daemon.
     StandingApprovals,
 }
 

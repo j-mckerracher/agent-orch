@@ -76,7 +76,7 @@ pub(super) fn chat_submit(key: &str, objective: &str) -> TaskSubmitParams {
 }
 
 /// The contract the chat envelope fixes for a proposal, with id `id`.
-fn chat_contract(id: &str, objective: &str) -> TaskContract {
+pub(super) fn chat_contract(id: &str, objective: &str) -> TaskContract {
     TaskContract {
         id: id.to_owned(),
         project_id: ALPHA.to_owned(),

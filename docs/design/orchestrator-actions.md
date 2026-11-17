@@ -319,12 +319,13 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 - **Five connections without a valid hello disable the optional tools for a turn.** The MCP listener closes for that turn. An unauthenticated local process can cause this. It fails closed.
 - **The approver token opens direct `tasks.*` and `workstreams.*` calls.** It is not a sandbox against a same-user process, which can still edit the store or replace the daemon.
 - **`monitoring.brief_ack` is open to a token-only session.** It only marks a brief as seen and grants no authority.
+- **The per-turn MCP secret is visible in the process list.** It sits in the Claude `--mcp-config` argv, so a same-user process can read it for the life of the turn. It opens three read-only tools on a loopback port. The 0600 secret-file variant is a later hardening.
+- **The note check is a pattern list.** A sensitive-looking note can pass it. The snapshot redactor is a second layer, not a guarantee.
 
 ## Not built
 
 - **Phase 4c, the PR poller and the merge worker.** `delivery.merge` is not parsed, so no merge kind exists. Migration `0046` is reserved and unused.
 - **N8, the unattended merge grant.** It needs the merge worker, so it is not built.
-- **Orchestrator notes.** Migration `0048` covers away mode and the return brief only.
 - **Codex and Copilot MCP wiring.** Only Claude is wired. The other two forms stay design text in `agent-permission-levels.md`.
 - **Automatic scout report relay** (`report_relay_auto`), and the wake events `scout_report_ready` and `pr_changed`. Relay is user-triggered only.
 - **`delivery.request` and `project.register` actions.** Deferred.

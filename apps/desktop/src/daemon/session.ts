@@ -103,6 +103,8 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "grants.create": "standing_approvals",
   "grants.revoke": "standing_approvals",
   "grants.list": "standing_approvals",
+  "notes.list": "standing_approvals",
+  "notes.set": "standing_approvals",
 };
 
 interface Pending {

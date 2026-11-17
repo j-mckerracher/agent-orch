@@ -581,6 +581,7 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "projects.set_defaults",
             "grants.create",
             "grants.revoke",
+            "notes.set",
             "reports.get",
             "reports.relay",
         ]

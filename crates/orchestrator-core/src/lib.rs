@@ -21,6 +21,7 @@ pub mod decomposition;
 pub mod identity;
 pub mod interval;
 pub mod load_gate;
+pub mod notes;
 pub mod orchestrator_action;
 pub mod permission;
 pub mod project_mode;

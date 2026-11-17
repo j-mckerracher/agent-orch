@@ -970,6 +970,26 @@ export interface GrantRevokeResultWire {
   stopped: number;
 }
 
+/** One orchestrator note on the wire (capability `standing_approvals`, DPES-1105 5b). */
+export interface NoteWire {
+  position: number;
+  body: string;
+}
+
+/** `notes.list` and `notes.set` result: one scope's notes in order and the limits the editor must respect. */
+export interface NotesWire {
+  /** `global`, or `workstream:` plus a workstream id. */
+  scope: string;
+  notes: NoteWire[];
+  limits: { max_notes: number; max_bytes: number };
+}
+
+/** `notes.set` result: the scope and how many notes it now holds. It carries no note text (the reply is cached). */
+export interface NotesSetWire {
+  scope: string;
+  count: number;
+}
+
 /** A task the global conversation routed to this workstream (DPES-1105 6a). `title` is the daemon's short objective. */
 export interface ConversationRoutedInWire {
   task_id: string;

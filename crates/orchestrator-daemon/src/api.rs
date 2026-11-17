@@ -424,6 +424,8 @@ impl RpcHandler for DaemonApi {
             "grants.create" => self.grants_create(params),
             "grants.revoke" => self.grants_revoke(params),
             "grants.list" => self.grants_list(params),
+            "notes.list" => self.notes_list(params),
+            "notes.set" => self.notes_set(params),
             "reports.list" => self.reports_list(params),
             "reports.get" => self.reports_get(params),
             "reports.relay" => {
@@ -1629,6 +1631,8 @@ pub(crate) mod load;
 mod models;
 #[path = "api_monitoring.rs"]
 mod monitoring;
+#[path = "api_notes.rs"]
+mod notes;
 #[path = "api_projects_defaults.rs"]
 mod projects_defaults;
 #[path = "api_queue.rs"]
@@ -1684,6 +1688,9 @@ mod grant_matcher_tests;
 #[cfg(test)]
 #[path = "api_grants_tests.rs"]
 mod grants_tests;
+#[cfg(test)]
+#[path = "api_notes_tests.rs"]
+mod notes_tests;
 #[cfg(test)]
 #[path = "api_projects_defaults_tests.rs"]
 mod projects_defaults_tests;

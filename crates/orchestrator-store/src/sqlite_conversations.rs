@@ -45,6 +45,7 @@ use crate::sqlite_conversation_usage::TurnTrigger;
 use crate::sqlite_history::{
     record_audit, set_clear_gate, tombstone_conversation_sends, ClearOutcome,
 };
+use crate::sqlite_notes::delete_scope_notes;
 use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
 
@@ -73,6 +74,14 @@ impl ConversationTarget {
         match self {
             Self::Global => "conversation:global".to_owned(),
             Self::Workstream(id) => format!("conversation:workstream:{id}"),
+        }
+    }
+
+    /// The `orchestrator_notes` scope of this conversation (migration 0050).
+    pub(crate) fn notes_scope(&self) -> String {
+        match self {
+            Self::Global => "global".to_owned(),
+            Self::Workstream(id) => format!("workstream:{id}"),
         }
     }
 
@@ -776,8 +785,8 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
-    /// Permanently delete one conversation's messages, replies, turns and action
-    /// proposals (DPES-1105).
+    /// Permanently delete one conversation's messages, replies, turns, action
+    /// proposals and the user's notes for it (DPES-1105).
     ///
     /// A running turn refuses the clear with [`ConversationError::TurnRunning`], and
     /// nothing is deleted. The check and the delete share one `BEGIN IMMEDIATE`
@@ -791,6 +800,7 @@ impl SqliteStore {
         let conversation_id = target.id();
         let (kind, workstream_id) = target.parts();
         let (kind, workstream_id) = (kind, workstream_id.map(str::to_owned));
+        let notes_scope = target.notes_scope();
         let outcome = conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let running: Option<String> = sqlx::query_scalar(
@@ -802,6 +812,9 @@ impl SqliteStore {
             if let Some(turn_id) = running {
                 return Err(ConversationError::TurnRunning { turn_id });
             }
+            // The user's notes for this conversation go with its history, even when the
+            // history is already empty. Grants and their events stay.
+            delete_scope_notes(&mut transaction, &notes_scope).await?;
             let entries: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?",
             )

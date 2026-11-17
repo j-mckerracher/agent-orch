@@ -35,7 +35,7 @@ use orchestrator_store::{
 };
 
 use super::actions::promotion_denial;
-use super::conversation_snapshot::build_snapshot;
+use super::conversation_snapshot::build_snapshot_with_notes;
 use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
@@ -782,11 +782,12 @@ impl ConversationService {
             level,
             history: self.history(target, turn_id),
             context: Some({
-                let snapshot = build_snapshot(
+                let snapshot = build_snapshot_with_notes(
                     &self.shared.store,
                     target,
                     actions,
                     &self.shared.load.read(Instant::now()),
+                    wake.is_none(),
                 );
                 // A turn nobody asked for sees no path or token a task title may hold.
                 let snapshot = if wake.is_some() {

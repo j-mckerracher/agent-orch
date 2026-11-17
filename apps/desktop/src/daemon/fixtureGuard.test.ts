@@ -90,6 +90,8 @@ const ROWS: Row[] = [
   row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("holdsSet", "holds.set", (a) => a.holdsSet("approval", FX, "2026-11-21", "k"), (a) => a.holdsSet("approval", REAL, "2026-11-21", "k")),
   row("holdsRelease", "holds.release", (a) => a.holdsRelease(FX, "k"), (a) => a.holdsRelease(REAL, "k")),
+  row("notesList", "notes.list", (a) => a.notesList(`workstream:${FX}`), (a) => a.notesList("workstream:ws-1")),
+  row("notesSet", "notes.set", (a) => a.notesSet(`workstream:${FX}`, ["a"], "k"), (a) => a.notesSet("workstream:ws-1", ["a"], "k")),
   row("grantsRevoke", "grants.revoke", (a) => a.grantsRevoke(FX, "k"), (a) => a.grantsRevoke(REAL, "k")),
   row(
     "grantsCreate",

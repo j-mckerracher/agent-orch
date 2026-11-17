@@ -31,6 +31,7 @@ import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
 import { createLiveGrants, GRANTS_METHODS } from "./grants";
+import { createLiveNotes, NOTES_METHODS } from "./notes";
 import { createLiveHolds, HOLDS_METHODS } from "./holds";
 import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
 import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
@@ -300,6 +301,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
   const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
   const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
+  const notes = createLiveNotes(connection, prov("D17", NOTES_METHODS), keys, now);
 
   return {
     workstreams,
@@ -316,5 +318,6 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     holds,
     projectDefaults,
     grants,
+    notes,
   };
 }

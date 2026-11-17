@@ -778,9 +778,10 @@ fn project_label(project_id: &str) -> String {
 /// Slack for the reply envelope around a report text: the keys, the id and the flags.
 const REPLY_OVERHEAD: usize = 512;
 
-/// Strips credentials, then paths and token-like words, so a cut cannot split a secret.
+/// Drops invisible characters first (one inside a token would hide it), then strips
+/// credentials, paths and token-like words, so a cut cannot split a secret.
 fn redact_text(text: &str) -> String {
-    crate::api::wake_events::redact(&redact(text))
+    crate::api::wake_events::redact(&redact(&sanitize(text)))
 }
 
 /// The bytes `text` takes after the two JSON escapings of a tool reply.

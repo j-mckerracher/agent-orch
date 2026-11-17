@@ -896,7 +896,27 @@ revokes a grant.
   from an agent, and it is never put in a prompt.
 - The brief is kept until the user acknowledges it with `monitoring.brief_ack`. That
   method is open to any session and only marks the brief as seen.
-- Orchestrator notes are not built.
+
+## Orchestrator notes (DPES-1105, phase 6)
+
+Notes are short reminders the user writes for the orchestrator, such as a branch
+name or a standing fact. The backend and the desktop editor are built.
+
+- Only the user writes a note. No action kind writes one, and `notes.set` is
+  user-only.
+- A scope holds up to 10 notes. The scopes are the global conversation and one
+  workstream. Each note is at most 200 bytes.
+- A note is refused, not stripped, when it is empty, too long, has a control
+  character, or looks sensitive. Sensitive means a path, a URL with credentials, or a
+  token-shaped string. The check is a pattern list, not a guarantee. The snapshot
+  redactor is a second layer.
+- The snapshot shows the notes as a delimited block of data, never as instructions.
+  A workstream conversation sees its own notes, then the global notes.
+- Wake turns do not see notes.
+- A notes change touches no autonomy, grant or approval.
+- Clearing a conversation's history deletes that scope's notes. Clearing the global
+  conversation deletes the global notes, which every workstream conversation lists.
+- The `notes.set` reply carries no note text, because replies are cached.
 
 ## Not covered here
 

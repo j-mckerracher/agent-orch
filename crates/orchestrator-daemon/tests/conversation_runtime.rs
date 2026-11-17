@@ -2380,6 +2380,46 @@ fn grants_create_and_revoke_are_refused_to_a_token_only_session_on_a_real_daemon
 }
 
 #[test]
+fn notes_set_is_refused_to_a_token_only_session_on_a_real_daemon() {
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::negotiate(&layout, &Capability::ALL);
+    let set =
+        |text: &str, key: &str| json!({"scope": "global", "notes": [text], "idempotency_key": key});
+
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("notes.set", set("planted by a token-only session", "n-1"));
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    // Reading is open, and shows nothing was written.
+    let listed = bare.call("notes.list", json!({"scope": "global"}));
+    assert_eq!(listed["result"]["notes"], json!([]), "{listed}");
+
+    let accepted = chat.call(
+        "notes.set",
+        set("The release branch is release/2026-12", "n-2"),
+    );
+    assert_eq!(accepted["result"]["count"], 1, "{accepted}");
+    let listed = bare.call("notes.list", json!({"scope": "global"}));
+    assert_eq!(
+        listed["result"]["notes"][0]["body"], "The release branch is release/2026-12",
+        "{listed}"
+    );
+    // The same session is refused a replacement, and the user's note stays.
+    let refused = bare.call("notes.set", set("overwritten", "n-3"));
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    let listed = bare.call("notes.list", json!({"scope": "global"}));
+    assert_eq!(
+        listed["result"]["notes"][0]["body"], "The release branch is release/2026-12",
+        "{listed}"
+    );
+    bare.relay.close();
+    stop(&layout, daemon, chat);
+}
+
+#[test]
 fn a_token_only_session_cannot_resolve_an_approval() {
     let layout = Layout::new();
     seed::init_repo(&layout.repo);
@@ -3317,7 +3357,8 @@ fn an_auto_turn_cannot_propose_a_revise_hold_or_remove() {
 // Phase 6b: the read-only MCP server of a Restricted Claude chat turn. The fake agent logs its
 // argv (`FAKE_AGENT_LOG`), so each test reads the exact flags the daemon passed. No real CLI.
 
-const MCP_LINE: &str = "Read-only tools available: task_detail, session_events, task_report.";
+const MCP_LINE: &str =
+    "Read-only tools may be available: task_detail, session_events, task_report.";
 
 /// A daemon whose Claude program is the fake, with `extra` environment on top.
 fn mcp_daemon(layout: &Layout, log: &Path, extra: &[(&str, &str)]) -> Daemon {

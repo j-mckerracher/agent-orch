@@ -544,6 +544,17 @@ impl Client {
         self.call_feature(Capability::StandingApprovals, "grants.list", params)
     }
 
+    /// `notes.list`: one scope's notes and the note limits, from `params` (`scope`).
+    pub fn notes_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "notes.list", params)
+    }
+
+    /// `notes.set`: replaces one scope's notes, from `params` (`scope`, `notes`, an idempotency
+    /// key). The daemon refuses a session that did not prove the approver secret.
+    pub fn notes_set(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "notes.set", params)
+    }
+
     /// `holds.list`: the holds in place.
     pub fn holds_list(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Holds, "holds.list", json!({}))

@@ -66,6 +66,8 @@ import type {
   GrantRevokeResultWire,
   GrantsCreateParams,
   GrantsListWire,
+  NotesSetWire,
+  NotesWire,
   HoldResultWire,
   HoldsListWire,
 } from "./types";
@@ -84,6 +86,12 @@ function realId(id: string): string {
     throw new DaemonError("invalid-params", "placeholder ids cannot be sent to the daemon");
   }
   return id;
+}
+
+/** A notes scope is `global` or `workstream:` plus an id; the id must not be a placeholder. */
+function realScope(scope: string): string {
+  if (scope.startsWith("workstream:")) realId(scope.slice("workstream:".length));
+  return scope;
 }
 
 /**
@@ -599,6 +607,16 @@ export class DaemonApi {
   /** DPES-1105 Phase 5. Ends a standing approval now. User-only. */
   async grantsRevoke(grantId: string, idempotencyKey: string): Promise<GrantRevokeResultWire> {
     return this.session.request("grants.revoke", { grant_id: realId(grantId), idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1105 5b. One scope's orchestrator notes and their limits. A read; needs `standing_approvals`. */
+  async notesList(scope: string): Promise<NotesWire> {
+    return this.session.request("notes.list", { scope: realScope(scope) });
+  }
+
+  /** DPES-1105 5b. Replaces one scope's whole list of notes. User-only. */
+  async notesSet(scope: string, notes: string[], idempotencyKey: string): Promise<NotesSetWire> {
+    return this.session.request("notes.set", { scope: realScope(scope), notes, idempotency_key: idempotencyKey });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

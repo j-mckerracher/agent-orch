@@ -718,6 +718,34 @@ fn a_credential_at_the_cut_point_of_an_objective_is_masked() {
 }
 
 #[test]
+fn a_token_with_a_zero_width_character_inside_is_masked_in_an_mcp_result() {
+    let (_directory, store) = seeded();
+    let token = format!("ghp_{}", "a".repeat(36));
+    let split = format!("{}\u{200b}{}", &token[..12], &token[12..]);
+    store
+        .capture_task_report(
+            "t3",
+            "a1",
+            &format!("Key {split} found"),
+            false,
+            REPORT_TIME,
+        )
+        .unwrap();
+    let server = start(&store, ConversationTarget::Global);
+    let mut client = authed(&server);
+
+    let reply = client.body("task_report", json!({"task_id": "t3"}));
+
+    let text = reply["text"].as_str().unwrap();
+    // The store masks it as `[REDACTED]` when the report is captured; the server's own pass
+    // writes `[redacted]`. Either way no part of the token survives.
+    assert!(text.to_lowercase().contains("[redacted]"), "{text}");
+    assert!(!text.contains(&token[..12]), "{text}");
+    assert!(!text.contains(&token[12..]), "{text}");
+    assert!(!text.contains('\u{200b}'), "{text}");
+}
+
+#[test]
 fn a_quote_heavy_report_fits_the_response_cap() {
     let (_directory, store) = seeded();
     let body = "\"\n".repeat(8 * 1024);

@@ -15,7 +15,7 @@ import type { GrantPolicyWire, GrantWire } from "../../daemon/types";
 import type { SurfaceFixtureScenario } from "./fixtures";
 import { liveRead } from "./liveSupport";
 import { notOk, observation, okResult } from "./result";
-import type { GrantItem, GrantPolicy, GrantReceipt, GrantTerms, GrantsSnapshot, GrantsSource, Provenance } from "./types";
+import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, GrantsSource, Provenance } from "./types";
 
 export const GRANTS_METHODS = ["grants.list", "grants.create", "grants.revoke"] as const;
 

@@ -23,6 +23,7 @@ import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
 import { createFixtureGrants } from "./grants";
+import { createFixtureNotes } from "./notes";
 import { createFixtureHolds } from "./holds";
 import type {
   ActionProposal,
@@ -718,5 +719,6 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     holds: createFixtureHolds(ctx.scenario, ctx.now),
     projectDefaults: projectDefaultsSource(ctx),
     grants: createFixtureGrants(ctx.scenario, ctx.now),
+    notes: createFixtureNotes(ctx.scenario, ctx.now),
   };
 }

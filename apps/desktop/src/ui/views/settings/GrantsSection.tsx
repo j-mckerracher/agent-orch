@@ -3,7 +3,7 @@ import { useId, useRef, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors";
 import { basename } from "../../format";
 import { notOk, observation } from "../../../sources/surfaces/result";
-import type { GrantItem, GrantPolicy, Workstream } from "../../../sources/surfaces/types";
+import type { GrantItem, GrantPolicy, GrantsSnapshot, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 import { Badge, Button, Pill } from "../../theme";
 import { Notice } from "../../widgets";
@@ -373,7 +373,7 @@ export function GrantsSection() {
     () =>
       supported
         ? source.list()
-        : Promise.resolve(notOk(source.provenance, "unsupported", "This daemon has no standing approvals.", observation(Date.now()))),
+        : Promise.resolve(notOk<GrantsSnapshot>(source.provenance, "unsupported", "This daemon has no standing approvals.", observation(Date.now()))),
     `grants#${nonce}`,
     source.provenance,
     supported ? { pollMs: GRANTS_POLL_MS, onFocus: true } : undefined,

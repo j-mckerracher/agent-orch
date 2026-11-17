@@ -331,7 +331,15 @@ fn a_revise_whose_combined_objective_is_too_long_is_denied_at_the_card() {
     let (_directory, api) = new_api();
     register_project(&api, ALPHA);
     let nearly_full = "x".repeat(orchestrator_core::contract::limits::MAX_OBJECTIVE_BYTES - 8);
-    let old = submit_queued(&api, "s-1", &nearly_full);
+    // Made in the store: a near-maximum objective would not launch on Windows, so the public
+    // submit refuses it there, and this test is about the revise bound, not the launch bound.
+    let old = "revise-near-full".to_owned();
+    api.store
+        .create(&super::actions_task_tests::chat_contract(
+            &old,
+            &nearly_full,
+        ))
+        .unwrap();
     let revise = |added_intent: &str| ReviseTask {
         task_id: old.clone(),
         added_intent: added_intent.to_owned(),

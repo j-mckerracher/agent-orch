@@ -632,7 +632,10 @@ impl ConversationRuntime for AgentRuntime {
         if mcp.is_none() {
             request.mcp = None;
         }
-        let prompt = build_prompt(&request);
+        // The MCP flags share the command line with the prompt, so their length comes off the
+        // prompt's budget.
+        let reserve = mcp.as_ref().map_or(0, |(_, wiring)| mcp_argv_units(wiring));
+        let prompt = build_prompt_reserving(&request, reserve);
         let (launch, run, turn_dir) = if selected.agent == GITHUB_COPILOT {
             // A private directory per turn: the CLI's working directory is
             // empty and its usage file sits beside it, never in a repository.
@@ -1050,7 +1053,15 @@ impl Prompt {
 /// The prompt for a turn: the fixed instructions, then the app state the
 /// service built, recent exchanges and the current message. The oldest
 /// exchanges are dropped while the prompt would not fit a Windows command line.
+#[cfg(test)]
 pub(crate) fn build_prompt(request: &TurnRequest) -> Prompt {
+    build_prompt_reserving(request, 0)
+}
+
+/// [`build_prompt`] with `reserve` UTF-16 units taken off the budget, for arguments that
+/// share the command line with the prompt (the MCP flags).
+pub(crate) fn build_prompt_reserving(request: &TurnRequest, reserve: usize) -> Prompt {
+    let budget = MAX_PROMPT_UNITS.saturating_sub(reserve);
     let instructions = if request.actions {
         INSTRUCTIONS_WITH_ACTIONS
     } else {
@@ -1062,7 +1073,7 @@ pub(crate) fn build_prompt(request: &TurnRequest) -> Prompt {
             instructions,
             content: prompt_content(request, history),
         };
-        if history.is_empty() || prompt_units(&prompt) <= MAX_PROMPT_UNITS {
+        if history.is_empty() || prompt_units(&prompt) <= budget {
             return prompt;
         }
         history = &history[1..];
@@ -1077,6 +1088,19 @@ reply with exactly MCAO_QUIET and nothing else.\n";
 
 fn one_line(text: &str) -> String {
     sanitize(text).replace(['\n', '\t'], " ")
+}
+
+/// UTF-16 units the MCP flags add to a Claude command line: `--mcp-config` and its JSON,
+/// `--allowedTools` and the three tool names.
+fn mcp_argv_units(wiring: &McpWiring) -> usize {
+    let mut args = vec![
+        "--mcp-config".to_owned(),
+        wiring.claude_config_json(),
+        "--allowedTools".to_owned(),
+    ];
+    args.extend(McpWiring::claude_allowed_tools());
+    windows_command_line_units(Path::new(""), &args)
+        .saturating_sub(windows_command_line_units(Path::new(""), &[]))
 }
 
 fn prompt_units(prompt: &Prompt) -> usize {
@@ -1109,7 +1133,7 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
     }
     if request.mcp.is_some() {
         content.push_str(&format!(
-            "\nRead-only tools available: {}.\n",
+            "\nRead-only tools may be available: {}.\n",
             MCP_TOOLS.join(", ")
         ));
     }
@@ -1374,13 +1398,42 @@ mod tests {
     #[test]
     fn the_prompt_names_the_mcp_tools_only_when_a_server_started() {
         let dir = tempfile::tempdir().unwrap();
-        let line = "Read-only tools available: task_detail, session_events, task_report.";
+        let line = "Read-only tools may be available: task_detail, session_events, task_report.";
         let mut asked = request("hello", Vec::new());
         assert!(!build_prompt(&asked).joined().contains(line));
         asked.mcp = Some(mcp_view(dir.path()));
         let prompt = build_prompt(&asked);
         assert!(prompt.content.contains(line), "{}", prompt.content);
         assert!(!prompt.instructions.contains(line));
+    }
+
+    #[test]
+    fn a_maximum_size_prompt_with_the_mcp_flags_stays_under_the_windows_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = mcp_runtime(dir.path());
+        let mut asked = request(
+            "hello",
+            (0..400)
+                .map(|n| HistoryTurn {
+                    user: format!("old {n}"),
+                    reply: "\"".repeat(100),
+                })
+                .collect(),
+        );
+        asked.mcp = Some(mcp_view(dir.path()));
+        let selected = claude_selected(dir.path(), CLAUDE, Some(listing(&["--mcp-config"])));
+        let (_server, wiring) = runtime.start_mcp(&asked, &selected).unwrap();
+        let reserve = mcp_argv_units(&wiring);
+        assert!(reserve > 0);
+        let prompt = build_prompt_reserving(&asked, reserve);
+        assert!(prompt.content.contains("old 399"));
+        assert!(!prompt.content.contains("Operator: old 0\n"));
+        let mut args = vec![prompt.joined()];
+        args.extend(["--mcp-config".to_owned(), wiring.claude_config_json()]);
+        args.push("--allowedTools".to_owned());
+        args.extend(McpWiring::claude_allowed_tools());
+        let units = windows_command_line_units(Path::new(""), &args);
+        assert!(units <= MAX_PROMPT_UNITS, "{units}");
     }
 
     #[test]

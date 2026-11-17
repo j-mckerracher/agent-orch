@@ -266,16 +266,20 @@ impl DaemonApi {
         }
         let target = request.target.to_store();
         self.conversations.require_target(&target)?;
+        // The page (and with it the latest turn) is read FIRST. A turn and its proposals commit in
+        // one transaction, so a page that shows a completed turn is followed by a proposals read
+        // that holds that turn's proposals; the other order could pair a completed turn with the
+        // proposals read just before it committed.
+        let mut page = self
+            .store
+            .conversation_page(&target, cursor, CONVERSATION_PAGE_SIZE + 1)
+            .map_err(map_conversation_error)?;
         let (proposals, proposals_more) = self.proposals_page(&target)?;
         let (records, wake_records_more) = self.wake_records(&target)?;
         // A quiet wake turn replied with the quiet token alone: its reply entries stay out of
         // the wire and the record carries the collapsed line instead.
         let quiet_turns = quiet_turn_ids(&records);
         let wake_records: Vec<Value> = records.iter().map(wake_record_wire).collect();
-        let mut page = self
-            .store
-            .conversation_page(&target, cursor, CONVERSATION_PAGE_SIZE + 1)
-            .map_err(map_conversation_error)?;
         if cursor > page.latest_sequence {
             return Err(RpcError::ReplayGap);
         }

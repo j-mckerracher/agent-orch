@@ -64,6 +64,7 @@ mod sqlite_grants;
 mod sqlite_history;
 mod sqlite_holds;
 mod sqlite_lineage;
+mod sqlite_notes;
 mod sqlite_ops;
 mod sqlite_project_defaults;
 mod sqlite_reports;

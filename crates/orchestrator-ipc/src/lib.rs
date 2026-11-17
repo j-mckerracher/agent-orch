@@ -133,6 +133,9 @@ mod lifecycle_tests;
 #[path = "monitoring_tests.rs"]
 mod monitoring_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "notes_tests.rs"]
+mod notes_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "queue_tests.rs"]
 mod queue_tests;
 #[cfg(all(test, any(unix, windows)))]

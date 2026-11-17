@@ -102,6 +102,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "projects.set_defaults",
     "grants.create",
     "grants.revoke",
+    "notes.set",
     "reports.get",
     "reports.relay",
 ];

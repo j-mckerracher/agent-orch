@@ -963,6 +963,33 @@ export interface GrantsSource {
   revoke(grantId: string): Promise<GrantReceipt>;
 }
 
+// Orchestrator notes (DPES-1105 5b). Derived: notes.list / notes.set (capability `standing_approvals`).
+/** One scope's notes in order and the limits the editor must respect. `scope` is `global` or `workstream:` plus an id. */
+export interface NotesSnapshot {
+  scope: string;
+  notes: string[];
+  maxNotes: number;
+  maxBytes: number;
+}
+
+export interface NotesReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
+  notice: string | null;
+  /** The list as the daemon holds it now. Fixture: the list as sent, which was not saved. */
+  snapshot: NotesSnapshot;
+}
+
+export interface NotesSource {
+  readonly provenance: Provenance;
+  /** Derived: `notes.list`. Fixture: two sample notes, or none for the `empty` scenario. */
+  list(scope: string): Promise<SurfaceResult<NotesSnapshot>>;
+  /** Derived: `notes.set`, a user-only method that replaces the whole list; it rejects on failure. Fixture: saves nothing. */
+  set(scope: string, notes: string[]): Promise<NotesReceipt>;
+}
+
 export interface SurfaceSources {
   workstreams: WorkstreamSource;
   conversation: ConversationSource;
@@ -978,4 +1005,5 @@ export interface SurfaceSources {
   holds: HoldsSource;
   projectDefaults: ProjectDefaultsSource;
   grants: GrantsSource;
+  notes: NotesSource;
 }

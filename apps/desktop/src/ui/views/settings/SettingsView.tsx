@@ -32,6 +32,7 @@ import {
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { McpToolsSection } from "./McpToolsSection";
 import { GrantsSection } from "./GrantsSection";
+import { NotesSection } from "./NotesSection";
 import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
 import "./SettingsView.css";
@@ -222,6 +223,7 @@ export function SettingsView() {
       <ChatPullRequestSection model={model} />
       <McpToolsSection model={model} />
       <GrantsSection />
+      <NotesSection />
     </div>
   );
 }
