@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import type { ProjectRow } from "../../../daemon/types";
 import type {
+  ActionBlock,
+  ActionProposal,
   ConversationEntry,
   ConversationTranscript,
   ModelChoice,
@@ -13,14 +15,18 @@ import { useGate, useServices, useStore, useSurface, type SurfaceState } from ".
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Bubble, Button, EmptyState } from "../../theme";
-import { ErrorNotice } from "../../widgets";
+import { ErrorNotice, Notice } from "../../widgets";
+import { useWorkstreamsVersion } from "../workstreams/model";
+import { ActionCard } from "./ActionCard";
 import { AddCoordinatorDialog, ConversationActions, historyActionReason } from "./ConversationActions";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { ModelPicker } from "./ModelPicker";
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
+import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
 import { formatAt } from "./time";
+import { useActionDecisions } from "./useActionDecisions";
 import { useRetained } from "./useRetained";
 import "./workspace.css";
 
@@ -48,9 +54,11 @@ export function WorkspaceView() {
   const live = surfaces.conversation.provenance.kind === "daemon";
   // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
   // notes only); fixtures derive project targets from the placeholder workstreams.
+  // A workstream created on the Workstreams view becomes a target here as soon as it lands (DPES-1105).
+  const workstreamsVersion = useWorkstreamsVersion();
   const workstreams = useSurface(
     () => surfaces.workstreams.workstreams(),
-    "workspace-targets",
+    `workspace-targets#${workstreamsVersion}`,
     surfaces.workstreams.provenance,
   );
   const [simulated, setSimulated] = useState<Record<string, SimulatedEntry[]>>({});
@@ -74,6 +82,12 @@ export function WorkspaceView() {
     () => buildOptions(workstreams, live, live ? projectList.data : null, removedIds),
     [workstreams, live, projectList.data, removedIds],
   );
+  // Workstream titles by daemon id, so an approval card can name the workstream its action changes (DPES-1105).
+  const workstreamNames = useMemo(() => {
+    const names = new Map<string, string>();
+    if (workstreams.status === "ok") for (const ws of workstreams.data) names.set(ws.workstreamId ?? ws.id, ws.title);
+    return names;
+  }, [workstreams]);
   const addable = useMemo(
     () => Array.from(removedIds).map((id) => ({ id, label: projectLabel(id) })),
     [removedIds],
@@ -160,6 +174,7 @@ export function WorkspaceView() {
       <Conversation
         option={option}
         options={options}
+        workstreamNames={workstreamNames}
         live={live}
         draft={drafts.workspaceDraft(resolved)}
         simulated={simulated[resolved] ?? []}
@@ -267,9 +282,13 @@ function resolveKey(
   return "global";
 }
 
+const ACTIONS_LEVEL_NOTE =
+  "Action proposals work only at Restricted. At Auto and Full the orchestrator can answer but cannot propose changes.";
+
 interface ConversationProps {
   option: TargetOption;
   options: readonly TargetOption[];
+  workstreamNames: ReadonlyMap<string, string>;
   live: boolean;
   draft: string;
   simulated: readonly SimulatedEntry[];
@@ -286,6 +305,7 @@ interface ConversationProps {
 function Conversation({
   option,
   options,
+  workstreamNames,
   live,
   draft,
   simulated,
@@ -327,6 +347,20 @@ function Conversation({
   );
   const transcript = useRetained(loaded, option.key);
 
+  // Approval cards: live ones need the capability; fixture ones always show (DPES-1105).
+  const actionsShown = live ? gate.connection.capabilities.includes("orchestrator_actions") : true;
+  const canDecide = !live || gate.can("orchestrator_actions");
+  const decisions = useActionDecisions({
+    scope: option.key,
+    resolve: (proposalId, decision, digest) => surfaces.conversation.resolve(proposalId, decision, digest),
+    announce: (text) => setFeedback({ key: option.key, notice: text, error: null }),
+    reload: () => setNonce((value) => value + 1),
+  });
+  const listed = actionsShown && transcript.status === "ok" ? (transcript.data.proposals ?? []) : [];
+  const shownProposals = listed.map((p) => newerRecord(p, decisions.confirmed.get(p.id)));
+  // An approved action runs in the daemon: keep reading until it reports the outcome.
+  const awaitingDaemon = shownProposals.some((p) => p.state === "approved");
+
   const lines = transcript.status === "ok" ? transcript.data.entries.length + simulated.length : simulated.length;
   useEffect(() => {
     const log = logRef.current;
@@ -351,14 +385,16 @@ function Conversation({
     });
   }, [option.key, turn?.id, turn?.state]);
   useEffect(() => {
-    if (!running) return;
+    if (!running && !awaitingDaemon) return;
     const timer = setTimeout(() => setNonce((value) => value + 1), POLL_MS);
     return () => clearTimeout(timer);
-  }, [running, nonce]);
+  }, [running, awaitingDaemon, nonce]);
 
   // An older daemon has no permission levels and runs chats read-only, so the level reads Restricted (DPES-1105).
   const olderDaemon = live && gate.connected && !gate.can("permission_levels");
   const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
+  // Action proposals run only at Restricted: at Auto and Full the daemon gives the agent no block format (DPES-1105).
+  const actionsLevelNote = live && target.kind !== "project" && actionsShown && shownLevel !== "restricted";
   // A coordinator note runs no agent, so it carries no level (the daemon refuses one there).
   const permissionOnWire = live && target.kind !== "project" ? permissionForSend(permission, !olderDaemon) : undefined;
   // A coordinator note runs no agent either, so it carries no choice (the daemon refuses one there). The picker keeps the
@@ -470,6 +506,66 @@ function Conversation({
   const retryModels = useCallback(() => setModelNonce((value) => value + 1), []);
   const runtimeUnavailable = live && turn?.state === "failed" && turn.errorCode === "runtime_unavailable";
 
+  const parentOf = (p: ActionProposal): ActionProposal | null =>
+    shownProposals.find((other) => other.id === p.dependsOn) ?? null;
+  const cardOf = (p: ActionProposal) => {
+    const parent = parentOf(p);
+    return (
+      <ActionCard
+        key={p.id}
+        proposal={p}
+        parent={parent}
+        names={workstreamNames}
+        scope={target.kind === "workstream" ? target.workstreamId : null}
+        live={live}
+        canDecide={canDecide}
+        deciding={decisions.inFlight.has(p.id)}
+        notice={decisions.notices.get(p.id) ?? null}
+        error={decisions.errors.get(p.id) ?? null}
+        onDecide={(decision) => void decisions.decide(p, decision, parent, workstreamNames)}
+      />
+    );
+  };
+  const loadedTurns = new Set<string>(
+    transcript.status === "ok" ? transcript.data.entries.flatMap((entry) => (entry.turnId ? [entry.turnId] : [])) : [],
+  );
+  // A proposal whose reply is outside the loaded window waits above the transcript (DPES-1105). One decided here
+  // stays while the user is looking at it, so its result and focus do not disappear with the pending state.
+  const waiting = shownProposals.filter(
+    (p) =>
+      !loadedTurns.has(p.turnId) &&
+      (p.state === "pending" || decisions.confirmed.has(p.id) || decisions.inFlight.has(p.id)),
+  );
+  const leading: ReactNode =
+    waiting.length > 0 ? (
+      <section className="ws-action-group" aria-label="Waiting for your decision">
+        <h3>Waiting for your decision</h3>
+        {waiting.map(cardOf)}
+      </section>
+    ) : null;
+  const blockOf = (turnId: string): ActionBlock | null => {
+    if (transcript.status !== "ok") return null;
+    const { actionBlocks, turn: latest } = transcript.data;
+    return actionBlocks?.[turnId] ?? (latest?.id === turnId ? (latest.actionBlock ?? null) : null);
+  };
+  // The cards of one turn follow its last entry. A reply the daemon could not read says so, once, above them.
+  const afterTurn = (turnId: string): ReactNode => {
+    const cards = shownProposals
+      .filter((p) => p.turnId === turnId)
+      .sort((a, b) => a.index - b.index)
+      .map(cardOf);
+    return (
+      <>
+        {blockOf(turnId) === "rejected" && (
+          <Notice tone="warn">
+            The orchestrator&apos;s action block in this reply could not be read. No action was proposed. Nothing was changed.
+          </Notice>
+        )}
+        {cards}
+      </>
+    );
+  };
+
   return (
     <section className="ws-conversation" aria-labelledby={headingId}>
       <header className="ws-head">
@@ -507,6 +603,8 @@ function Conversation({
           label={option.label}
           simulated={simulated}
           onRetry={() => setNonce((value) => value + 1)}
+          afterTurn={afterTurn}
+          leading={leading}
         />
       </div>
 
@@ -593,6 +691,7 @@ function Conversation({
             }
           />
         )}
+        {actionsLevelNote && <p className="ws-small">{ACTIONS_LEVEL_NOTE}</p>}
         {blocked && (
           <p id={sendId} className="ws-small ws-blocked">
             Sending is disabled. {blocked}
@@ -621,11 +720,17 @@ function TranscriptBody({
   label,
   simulated,
   onRetry,
+  afterTurn,
+  leading,
 }: {
   transcript: SurfaceState<ConversationTranscript>;
   label: string;
   simulated: readonly SimulatedEntry[];
   onRetry: () => void;
+  /** Rendered after the last entry of a turn (DPES-1105). */
+  afterTurn?: (turnId: string) => ReactNode;
+  /** Rendered before the entries, under the truncation note (DPES-1105). */
+  leading?: ReactNode;
 }) {
   if (transcript.status === "loading") return <p role="status">Loading conversation…</p>;
   const sim = simulated.map((entry) => (
@@ -668,8 +773,8 @@ function TranscriptBody({
     );
   }
   if (transcript.status !== "ok") return <>{sim}</>;
-  const { entries, truncated, repliesExpected } = transcript.data;
-  if (entries.length === 0 && sim.length === 0) {
+  const { entries, truncated, repliesExpected, proposalsMore } = transcript.data;
+  if (entries.length === 0 && sim.length === 0 && !leading) {
     return (
       <EmptyState
         title="No messages yet"
@@ -680,8 +785,13 @@ function TranscriptBody({
   return (
     <>
       {truncated && <p className="ws-small">Older messages are not shown: the log was cut off.</p>}
-      {entries.map((entry) => (
-        <EntryBubble key={entry.id} entry={entry} label={label} />
+      {proposalsMore && <p className="ws-small">Older proposals are not shown.</p>}
+      {leading}
+      {entries.map((entry, index) => (
+        <Fragment key={entry.id}>
+          <EntryBubble entry={entry} label={label} />
+          {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
+        </Fragment>
       ))}
       {sim}
     </>

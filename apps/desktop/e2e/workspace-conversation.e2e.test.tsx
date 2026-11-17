@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonApi } from "../src/daemon/api";
@@ -378,6 +378,46 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(result.data.entries.some((e) => e.role === "coordinator")).toBe(false);
     } finally {
       await t.stop();
+    }
+  }, 90000);
+
+  it("approves an orchestrator action on the real daemon and creates the workstream once", async () => {
+    // The fake agent reads its reply from this file: prose, then one trailing action block (DPES-1105).
+    const dir = mkdtempSync(join(tmpdir(), "orch-actions-reply-"));
+    const replyFile = join(dir, "reply.txt");
+    const block = { mcao_actions: 1, actions: [{ kind: "workstream.create", ref: "a", title: "Post-MVP work", summary: "" }] };
+    writeFileSync(replyFile, ["Post-MVP work can be its own workstream.", "```mcao-actions", JSON.stringify(block), "```"].join("\n"));
+    const t = await prepare({
+      ...fakeAgentEnv(),
+      FAKE_AGENT_REPLY: replyFile,
+      AGENT_ORCH_ENV_PASSTHROUGH: "FAKE_AGENT_LOG,FAKE_AGENT_REPLY",
+    });
+    try {
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      // user-event reads "[[" as a literal "[".
+      await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:script] plan the post-MVP work");
+      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(sendButton());
+
+      expect(await screen.findByText("Post-MVP work can be its own workstream.", undefined, { timeout: 20000 })).toBeTruthy();
+      const card = await screen.findByRole("article", { name: "Proposed: Create workstream" }, { timeout: 20000 });
+      expect(screen.getByRole("log", { name: /Conversation with Global orchestrator/ }).textContent).not.toContain("mcao-actions");
+
+      await userEvent.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
+      await waitFor(() => expect(card.querySelector(".ui-pill")).toHaveTextContent("Created"), { timeout: 15000 });
+
+      const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
+      expect(titled).toHaveLength(1);
+    } finally {
+      await t.stop();
+      rmSync(dir, { recursive: true, force: true });
     }
   }, 90000);
 });

@@ -2,7 +2,7 @@
  * Daemon and transport failures as one typed error.
  *
  * Codes come from `crates/orchestrator-ipc` (handshake -32001..-32004,
- * -32601, -32600) and `RpcError` (-32602, -32010..-32020, -32603). Messages
+ * -32601, -32600) and `RpcError` (-32602, -32010..-32023, -32603). Messages
  * from the daemon are sanitized and path-free; the UI still never renders a
  * token, which the webview does not hold.
  */
@@ -26,6 +26,9 @@ export type DaemonErrorKind =
   | "replay-gap"
   | "epoch-mismatch"
   | "conversation-busy"
+  | "proposal-not-found"
+  | "proposal-not-pending"
+  | "proposal-invalid"
   | "internal"
   | "timeout"
   | "disconnected"
@@ -51,6 +54,9 @@ const KIND_BY_CODE: Record<number, DaemonErrorKind> = {
   [-32017]: "replay-gap",
   [-32018]: "epoch-mismatch",
   [-32019]: "conversation-busy",
+  [-32021]: "proposal-not-found",
+  [-32022]: "proposal-not-pending",
+  [-32023]: "proposal-invalid",
   [-32603]: "internal",
 };
 
@@ -191,6 +197,18 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   "conversation-busy": {
     reason: "A reply to this conversation is still running.",
     nextStep: "Wait for the reply to finish or cancel it, then try again.",
+  },
+  "proposal-not-found": {
+    reason: "The proposal no longer exists.",
+    nextStep: "Refresh the conversation; its history may have been cleared.",
+  },
+  "proposal-not-pending": {
+    reason: "The proposal was already decided.",
+    nextStep: "Refresh to see the daemon's current state.",
+  },
+  "proposal-invalid": {
+    reason: "The daemon cannot approve this proposal now.",
+    nextStep: "Approve the proposal it depends on first, then try again.",
   },
   internal: {
     reason: "The daemon reported an internal error.",

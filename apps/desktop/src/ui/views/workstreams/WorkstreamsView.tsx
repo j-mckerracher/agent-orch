@@ -1,8 +1,8 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import type { Provenance } from "../../../sources/types";
 import { TASK_STATES, basename, stateLabel } from "../../format";
-import { useGate, useServices } from "../../services";
+import { useGate, useServices, useStore } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
@@ -62,11 +62,17 @@ function assignment(task: WsGroup["tasks"][number]): string {
 /** The `#/workstreams` global view (OX-S4). Register it through `register.tsx`. */
 export function WorkstreamsView() {
   const model = useWorkstreamModel();
-  const { surfaces } = useServices();
+  const { surfaces, router } = useServices();
   const headingId = useId();
   const reasonId = useId();
   const mutations = useMutationRunner();
-  const [selected, setSelected] = useState<string | null>(null);
+  // A route that names a workstream selects it on first render and whenever navigation names one (DPES-1105).
+  const route = useStore(router);
+  const routeWorkstream = route.name === "global" ? route.workstreamId : undefined;
+  const [selected, setSelected] = useState<string | null>(routeWorkstream ?? null);
+  useEffect(() => {
+    if (routeWorkstream !== undefined) setSelected(routeWorkstream);
+  }, [routeWorkstream]);
   const [filter, setFilter] = useState("");
   const [title, setTitle] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);

@@ -136,6 +136,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
             })),
             repliesExpected: false,
             truncated: more,
+            proposalsMore: false,
           };
         }),
       );
@@ -173,6 +174,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
       }
     },
     cancel: (target, turnId) => liveConversation.cancel(target, turnId),
+    resolve: (proposalId, decision, digest) => liveConversation.resolve(proposalId, decision, digest),
     async clear(target: ConversationTarget): Promise<ClearReceipt> {
       if (isLiveTarget(target)) return liveConversation.clear(target);
       if (isFixtureLikeId(target.projectId)) {

@@ -24,7 +24,8 @@ export type Capability =
   | "workstreams"
   | "conversation_history"
   | "conversation_selection"
-  | "permission_levels";
+  | "permission_levels"
+  | "orchestrator_actions";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
   "health",
@@ -44,6 +45,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "conversation_history",
   "conversation_selection",
   "permission_levels",
+  "orchestrator_actions",
 ];
 
 /** The capabilities the UI requests: every capability the daemon offers (M5-02, M5-02b, M5-02c). */
@@ -61,6 +63,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "conversation_history",
   "conversation_selection",
   "permission_levels",
+  "orchestrator_actions",
 ];
 
 export interface Welcome {
@@ -547,6 +550,8 @@ export interface ConversationWireEntry {
   author: "user" | "orchestrator" | "system";
   body: string;
   error_code: string | null;
+  /** Set on a `turn_completed` entry (DPES-1105). Absent from older daemons; null when the turn had no action block. */
+  action_block?: ActionBlockWire | null;
   /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
   runtime?: { name: string; version: string };
   created_at: string;
@@ -568,6 +573,8 @@ export interface ConversationWireTurn {
   /** The level the daemon recorded the agent ran with. Null before launch and for turns from before levels. */
   permission_level?: PermissionLevelWire | null;
   permission_profile?: string | null;
+  /** The outcome of the action block in this turn's reply (DPES-1105). Absent from older daemons. */
+  action_block?: ActionBlockWire | null;
 }
 
 /**
@@ -601,6 +608,36 @@ export interface ConversationSendResult {
   epoch: string;
 }
 
+/** An action proposal's kind on the wire (DPES-1105). Unknown kinds arrive as strings and render as unknown. */
+export type ActionKindWire = "workstream.create" | "workstream.update" | "objective.add" | "objective.revise";
+
+/** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
+export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
+
+/** What the orchestrator's action block in one reply became (DPES-1105). */
+export type ActionBlockWire = "accepted" | "rejected" | "stripped";
+
+/** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
+export interface ActionProposalWire {
+  id: string;
+  turn_id: string;
+  index: number;
+  kind: ActionKindWire | (string & {});
+  params: Record<string, unknown>;
+  digest: string;
+  depends_on: string | null;
+  state: ProposalStateWire | (string & {});
+  result_ref: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `actions.resolve` result: the proposal as the daemon now holds it (DPES-1105). */
+export interface ActionsResolveWire {
+  proposal: ActionProposalWire;
+}
+
 /** `conversations.get` result: cursor paging, no push stream. */
 export interface ConversationWirePage {
   authority: "none";
@@ -613,6 +650,10 @@ export interface ConversationWirePage {
   clear_generation: number;
   turn: ConversationWireTurn | null;
   epoch: string;
+  /** The scope's proposals, newest first, on every page (DPES-1105). Absent from older daemons. */
+  proposals?: ActionProposalWire[];
+  /** True when the daemon held more decided proposals than it sent (count or byte budget). Pending ones are always sent. Absent from older daemons. */
+  proposals_more?: boolean;
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */

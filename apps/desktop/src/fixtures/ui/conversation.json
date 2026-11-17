@@ -6,7 +6,40 @@
       "data": {
         "global": [
           { "id": "fixture:msg-1", "kind": "message", "role": "user", "text": "Which workstreams need attention today?", "at": "2026-01-01T09:00:00Z" },
-          { "id": "fixture:msg-2", "kind": "message", "role": "coordinator", "text": "Auth hardening has one running task and a pending review. Docs refresh has a failed task.", "at": "2026-01-01T09:00:05Z" }
+          { "id": "fixture:msg-2", "kind": "message", "role": "coordinator", "text": "Auth hardening has one running task and a pending review. Docs refresh has a failed task.", "at": "2026-01-01T09:00:05Z", "turnId": "fixture:turn-1" }
+        ],
+        "proposals": [
+          {
+            "id": "fixture:proposal-1",
+            "turnId": "fixture:turn-1",
+            "index": 0,
+            "kind": "workstream.create",
+            "params": { "title": "Post-MVP work", "summary": "Track the work that follows the MVP release." },
+            "digest": "1111111111111111111111111111111111111111111111111111111111111111",
+            "dependsOn": null,
+            "state": "pending",
+            "resultRef": null,
+            "errorCode": null,
+            "updatedAt": "2026-01-01T09:00:05Z"
+          },
+          {
+            "id": "fixture:proposal-2",
+            "turnId": "fixture:turn-1",
+            "index": 1,
+            "kind": "objective.add",
+            "params": {
+              "workstream_ref": "fixture:proposal-1",
+              "title": "Draft the release checklist",
+              "description": "List the steps the release team signs off before launch.",
+              "gates": ["Checklist reviewed"]
+            },
+            "digest": "2222222222222222222222222222222222222222222222222222222222222222",
+            "dependsOn": "fixture:proposal-1",
+            "state": "pending",
+            "resultRef": null,
+            "errorCode": null,
+            "updatedAt": "2026-01-01T09:00:05Z"
+          }
         ],
         "project": [
           { "id": "fixture:msg-3", "kind": "message", "role": "user", "text": "Please split the docs work into smaller tasks.", "at": "2026-01-01T09:10:00Z" },

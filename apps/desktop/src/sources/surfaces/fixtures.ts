@@ -22,6 +22,7 @@ import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
 import type {
+  ActionProposal,
   ActivitySnapshot,
   ActivitySource,
   ConversationEntry,
@@ -35,7 +36,9 @@ import type {
   LocalToolsSource,
   ModelCatalog,
   ModelCatalogSource,
+  Decision,
   Provenance,
+  ResolveReceipt,
   SendReceipt,
   SurfaceId,
   SurfaceReceipt,
@@ -202,27 +205,52 @@ function notMutable(): Promise<never> {
 }
 
 function conversationSource(ctx: Ctx): ConversationSource {
-  type Data = { global: ConversationEntry[]; project: ConversationEntry[] };
+  type Data = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
   const envelope = conversationFixture as unknown as Envelope<Data>;
   const counter = { n: 0 };
   // Simulated clears (DPES-1105) empty a fixture transcript for the rest of the session only.
   const cleared = new Set<string>();
   const keyOf = (target: ConversationTarget) => JSON.stringify(target);
-  // The fixture has no workstream transcripts; project notes must not stand in for one.
-  const transcriptOf = (target: ConversationTarget, entries: ConversationEntry[]) =>
+  // The fixture has no workstream transcripts; project notes must not stand in for one. Proposals are Global only.
+  const transcriptOf = (target: ConversationTarget, entries: ConversationEntry[], proposals: ActionProposal[] = []) =>
     target.kind === "workstream"
       ? null
-      : { target, entries: cleared.has(keyOf(target)) ? [] : entries, repliesExpected: true, truncated: false };
+      : {
+          target,
+          entries: cleared.has(keyOf(target)) ? [] : entries,
+          repliesExpected: true,
+          truncated: false,
+          proposals: target.kind === "global" && !cleared.has(keyOf(target)) ? proposals : [],
+          proposalsMore: false,
+        };
   return {
     provenance: provenance("D10", envelope),
     transcript: (target: ConversationTarget) =>
-      resolve<Data, { target: ConversationTarget; entries: ConversationEntry[]; repliesExpected: boolean; truncated: boolean }>(
+      resolve<
+        Data,
+        {
+          target: ConversationTarget;
+          entries: ConversationEntry[];
+          repliesExpected: boolean;
+          truncated: boolean;
+          proposals: ActionProposal[];
+          proposalsMore: boolean;
+        }
+      >(
         "D10",
         envelope,
         ctx,
-        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"]),
+        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], data.proposals),
         () => transcriptOf(target, []),
       ),
+    // DPES-1105. Fixture cards stay pending: nothing is sent and the daemon is never asked.
+    resolve: (_proposalId: string, decision: Decision, _digest: string): Promise<ResolveReceipt> =>
+      Promise.resolve({
+        simulated: true,
+        provenance: provenance("D10", envelope),
+        notice: decision === "approve" ? "Fixture data: nothing was created." : "Fixture data: nothing was changed.",
+        proposal: null,
+      }),
     send: (target: ConversationTarget, text: string): Promise<SendReceipt> => {
       const where = { global: "the coordinator", project: "a project", workstream: "a workstream" }[target.kind];
       const base = receipt("D10", envelope, ctx, counter, `message to ${where}`);

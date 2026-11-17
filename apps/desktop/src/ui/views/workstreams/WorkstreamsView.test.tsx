@@ -74,11 +74,11 @@ function d9CountSurfaces(): SurfaceSources {
 
 async function mount(
   fake: FakeDaemon | null,
-  options: { scenario?: SurfaceFixtureScenario; fixtureOverBridge?: boolean; surfaces?: SurfaceSources } = {},
+  options: { scenario?: SurfaceFixtureScenario; fixtureOverBridge?: boolean; surfaces?: SurfaceSources; route?: Route } = {},
 ) {
   const services = createServices({
     connector: fake ?? undefined,
-    initialRoute: VIEW,
+    initialRoute: options.route ?? VIEW,
     connection: { backoffMs: [5], requestTimeoutMs: 250 },
     data: { coalesceMs: 10 },
     sources: createFixtureSources(),
@@ -248,6 +248,12 @@ describe("live data", () => {
     expect(rows[1]).toHaveTextContent("codex · Running · attempt 1");
     expect(rows[1]).toHaveTextContent("Candidate from the running attempt");
     expect(rows[0]).toHaveTextContent("None: task succeeded");
+  });
+
+  it("selects the workstream named in the route", async () => {
+    await mount(daemon(), { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
+    expect(screen.getByTestId("task-row")).toHaveTextContent("None until dispatched");
   });
 
   it("selecting another workstream swaps the table and the objectives", async () => {

@@ -46,6 +46,7 @@ import type {
   WorkstreamTaskLinkWire,
   WorkstreamUpdateRequest,
   WorkstreamWire,
+  ActionsResolveWire,
   ClearedEntryReference,
   ConversationClearResult,
   CoordinatorChangeResult,
@@ -446,6 +447,24 @@ export class DaemonApi {
   async conversationsClear(target: ConversationWireTarget, idempotencyKey: string): Promise<ConversationClearResult> {
     return this.session.request("conversations.clear", {
       target: realTarget(target),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /**
+   * DPES-1105. Approves or rejects one proposed action. The daemon answers with the proposal as it now stands,
+   * which may be `failed` with an `error_code` when the approved change could not be applied.
+   */
+  async actionsResolve(
+    proposalId: string,
+    decision: "approve" | "reject",
+    digest: string,
+    idempotencyKey: string,
+  ): Promise<ActionsResolveWire> {
+    return this.session.request("actions.resolve", {
+      proposal_id: realId(proposalId),
+      decision,
+      digest,
       idempotency_key: idempotencyKey,
     });
   }
