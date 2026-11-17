@@ -32,6 +32,7 @@ fn create_task(store: &SqliteStore) {
             max_repairs: 1,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
 }

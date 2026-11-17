@@ -34,6 +34,7 @@ pub mod standing_grant;
 pub mod supervision;
 pub mod task;
 pub mod task_envelope;
+pub mod work_item;
 pub mod workstream;
 
 pub use identity::ProcessIdentity;

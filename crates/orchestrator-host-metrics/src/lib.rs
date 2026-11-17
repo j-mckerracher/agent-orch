@@ -12,10 +12,12 @@
 //!
 //! The wire contract is documented on [`Snapshot`] and in `docs/host-metrics.md`.
 
+mod admission;
 mod model;
 mod probe;
 mod service;
 
+pub use admission::{evaluate, Breach, Decision, ReasonCode, Thresholds};
 pub use model::{Meter, MeterId, MeterKind, MeterState, Snapshot, Unit, SCHEMA_VERSION};
 pub use probe::SysinfoProbe;
 pub use service::{HostMetrics, Probe, DEFAULT_INTERVAL, MIN_INTERVAL, STALE_AFTER_INTERVALS};

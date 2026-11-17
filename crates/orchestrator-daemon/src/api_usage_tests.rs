@@ -42,6 +42,7 @@ fn task_with_sessions(api: &DaemonApi, sessions: &[(&str, &str)]) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -205,6 +206,20 @@ fn invalid_token_warning_configuration_does_not_hide_usage_or_prevent_receipts()
         api.usage_summary(around_now()).unwrap()["token_warnings"]["state"],
         "off"
     );
+}
+
+#[test]
+fn non_file_token_warning_configuration_is_disclosed_and_usage_still_records() {
+    let (directory, api) = new_api();
+    task_with_sessions(&api, &[("s-codex", "codex")]);
+    std::fs::create_dir(directory.path().join("usage-token-warnings.json")).unwrap();
+    api.store
+        .record_usage_receipt(&receipt("s-codex", "turn:1", now_ms()))
+        .unwrap();
+    let summary = api.usage_summary(around_now()).unwrap();
+    assert_eq!(summary["token_warnings"]["state"], "invalid_configuration");
+    assert_eq!(summary["token_warnings"]["rules"], json!([]));
+    assert_eq!(provider(&summary, "codex")["reported"]["output_tokens"], 20);
 }
 
 #[test]

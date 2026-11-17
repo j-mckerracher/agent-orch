@@ -40,6 +40,7 @@ fn create(api: &DaemonApi, task_id: &str, project_id: &str, dependencies: &[&str
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
 }

@@ -266,6 +266,7 @@ mod tests {
                 max_retries: 1,
                 max_repairs: 1,
                 model_selection: None,
+                work_item: None,
                 permission: Default::default(),
             })
             .unwrap();

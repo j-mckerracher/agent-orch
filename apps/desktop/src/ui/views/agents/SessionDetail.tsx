@@ -5,6 +5,7 @@ import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import { useServices, useStore } from "../../services";
 import { Button, Disclosure, EmptyState } from "../../theme";
 import { DisabledAction, PlaceholderMark, StatePill } from "./common";
+import { OutputTail } from "./OutputTail";
 import { rowFromTask, type WorkRow } from "./model";
 import { SessionControls } from "./SessionControls";
 import { TaskControls } from "./TaskControls";
@@ -112,6 +113,15 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
 
       <TaskControls key={row.id} row={row} live={live} />
       <SessionControls row={row} session={session} live={live} />
+
+      {real && session && (
+        <OutputTail
+          key={session.id}
+          taskId={row.id}
+          sessionId={session.id}
+          running={session.state === "Spawning" || session.state === "Running"}
+        />
+      )}
 
       <Disclosure summary="Execution feed, side effects and supplied context">
         <p className="agents-sub">

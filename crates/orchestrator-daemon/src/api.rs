@@ -90,14 +90,14 @@ pub(crate) struct DaemonApi {
     landing: landing::LandingState,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskSubmitParams {
     idempotency_key: String,
     contract: TaskSubmission,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskSubmission {
     project_id: String,
@@ -105,6 +105,9 @@ struct TaskSubmission {
     parent_id: Option<String>,
     objective: String,
     kind: TaskKind,
+    /// Required unless `work_class` names a class that sets the agent; a missing
+    /// agent is then refused exactly as before.
+    #[serde(default)]
     agent: String,
     dependencies: Vec<String>,
     verification: VerificationPolicy,
@@ -118,6 +121,14 @@ struct TaskSubmission {
     /// field is omitted from the request, so its idempotency key is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     permission: Option<PermissionLevel>,
+    /// A work class (DPES-677) whose settings fill in the agent, model and effort the
+    /// task leaves unset. Omitted when absent, so its idempotency key is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    work_class: Option<String>,
+    /// The confirmed intake record (DPES-673). Refused unless it has criteria and every
+    /// one is confirmed. Omitted when absent, so its idempotency key is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    work_item: Option<orchestrator_core::work_item::WorkItem>,
 }
 
 #[derive(Deserialize)]
@@ -386,6 +397,7 @@ impl RpcHandler for DaemonApi {
             "projects.register" => self.register_project(params),
             "projects.get_defaults" => self.projects_get_defaults(params),
             "projects.set_defaults" => self.projects_set_defaults(params),
+            "intake.normalize" => self.intake_normalize(params),
             "tasks.submit" => self.submit_task(params),
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
@@ -398,6 +410,7 @@ impl RpcHandler for DaemonApi {
             "sessions.list" => self.list_sessions(params),
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
+            "sessions.output_tail" => self.session_output_tail(params),
             "approvals.list" => self.list_approvals(params),
             "approvals.resolve" => self.resolve_approval(params),
             "workspaces.diff" => self.workspace_diff(params),
@@ -432,6 +445,8 @@ impl RpcHandler for DaemonApi {
             "usage.localTools" => self.local_usage_read(params),
             "usage.localTools.setEnabled" => self.local_usage_set_enabled(params),
             "usage.localTools.refresh" => self.local_usage_refresh(params),
+            "settings.workClasses.get" => self.work_classes_get(params),
+            "settings.workClasses.set" => self.work_classes_set(params),
             "workstreams.create" => self.workstreams_create(params),
             "workstreams.list" => self.workstreams_list(params),
             "workstreams.get" => self.workstreams_get(params),
@@ -601,24 +616,50 @@ impl DaemonApi {
 
     fn submit_task(&self, params: Value) -> Result<Value, RpcError> {
         let mut request: TaskSubmitParams = parse_params(params)?;
-        request.contract.agent = canonical_agent_id(&request.contract.agent)
-            .ok_or(RpcError::InvalidParams)?
-            .to_owned();
+        if request.contract.work_class.is_none() || !request.contract.agent.trim().is_empty() {
+            request.contract.agent = canonical_agent_id(&request.contract.agent)
+                .ok_or(RpcError::InvalidParams)?
+                .to_owned();
+        }
         let key = request.idempotency_key.clone();
-        // The catalog read can take as long as a CLI probe, so it happens
-        // before the idempotency gate is taken: the gate serializes every
-        // mutating request and must not wait on a subprocess.
-        let selection_catalog = self.selection_catalog(
+        let work_classes::Resolved {
+            agent,
+            selection,
+            class,
+        } = work_classes::resolve(
+            &self.config.data_dir,
+            request.contract.work_class.as_deref(),
             &request.contract.agent,
             request.contract.model_selection.as_ref(),
         )?;
+        let agent = canonical_agent_id(&agent)
+            .ok_or(RpcError::InvalidParams)?
+            .to_owned();
+        // The catalog read can take as long as a CLI probe, so it happens
+        // before the idempotency gate is taken: the gate serializes every
+        // mutating request and must not wait on a subprocess.
+        let selection_catalog = self
+            .selection_catalog(&agent, selection.as_ref())
+            .map_err(|error| {
+                if let Some(class) = &class {
+                    eprintln!(
+                        "orchestrator-daemon: work class {} could not be checked against the catalog",
+                        crate::executor::log_safe(class)
+                    );
+                }
+                error
+            })?;
+        // The fingerprint is the request as sent; the write sees what it resolved to.
+        let mut resolved = request.clone();
+        resolved.contract.agent = agent;
+        resolved.contract.model_selection = selection;
         idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "tasks.submit",
             &key,
             &request,
-            || self.submit_task_inner(&request, &key, selection_catalog.as_ref()),
+            || self.submit_task_inner(&resolved, &key, selection_catalog.as_ref()),
         )
     }
 
@@ -670,6 +711,7 @@ impl DaemonApi {
             max_repairs: request.contract.max_repairs,
             model_selection: request.contract.model_selection.clone(),
             permission,
+            work_item: request.contract.work_item.clone(),
         };
         self.store
             .get_project(&contract.project_id)
@@ -697,7 +739,7 @@ impl DaemonApi {
             // `contract::validate` has accepted the selection, so the
             // pre-gate read was made for it.
             let catalog = selection_catalog.ok_or(RpcError::Internal)?;
-            self.check_selection(catalog, selection)?;
+            self.check_resolved_selection(request.contract.work_class.as_deref(), catalog, selection)?;
         }
         self.validate_scheduler(&contract)?;
         self.store.create(&contract).map_err(map_store_error)?;
@@ -1630,6 +1672,8 @@ mod actions;
 use actions::project_code;
 #[path = "api_brief.rs"]
 mod brief;
+#[path = "admission.rs"]
+pub(crate) mod admission;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]
@@ -1658,6 +1702,8 @@ mod landing;
 mod landing_api;
 #[path = "api_load.rs"]
 pub(crate) mod load;
+#[path = "api_intake.rs"]
+mod intake;
 #[path = "api_models.rs"]
 mod models;
 #[path = "api_monitoring.rs"]
@@ -1666,6 +1712,8 @@ mod monitoring;
 mod notes;
 #[path = "api_projects_defaults.rs"]
 mod projects_defaults;
+#[path = "api_output.rs"]
+mod output;
 #[path = "api_queue.rs"]
 mod queue;
 #[path = "report.rs"]
@@ -1697,6 +1745,8 @@ mod queue_tests;
 #[cfg(test)]
 #[path = "api_settings_tests.rs"]
 mod settings_tests;
+#[path = "api_work_classes.rs"]
+mod work_classes;
 #[path = "api_workstreams.rs"]
 mod workstreams;
 

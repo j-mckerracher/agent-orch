@@ -2728,6 +2728,7 @@ fn seed_idle_task(layout: &Layout, task_id: &str) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
 }
@@ -3790,6 +3791,7 @@ fn seed_merge_target(layout: &Layout) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     store.transition(SEEDED_TASK, TaskEvent::Admit).unwrap();

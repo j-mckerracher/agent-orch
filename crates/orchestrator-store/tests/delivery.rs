@@ -41,6 +41,7 @@ fn new_store() -> (TempDir, SqliteStore) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .expect("create task");
     (directory, store)
@@ -365,6 +366,7 @@ fn all_delivery_steps_survive_reopen() {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .expect("create second task");
     let second_action = ApprovalAction::new(

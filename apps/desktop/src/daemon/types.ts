@@ -128,6 +128,8 @@ export interface TaskContract {
   autonomy: AutonomyPolicy;
   max_retries: number;
   max_repairs: number;
+  /** DPES-673. The confirmed intake record; absent on tasks submitted without one. */
+  work_item?: WorkItemWire;
 }
 
 export interface Attempt {
@@ -205,6 +207,29 @@ export interface SessionEventsPage {
   events: DaemonEvent[];
   more: boolean;
   next_after_sequence: number;
+}
+
+export interface OutputLine {
+  /** Monotonic per session. */
+  sequence: number;
+  stream: "stdout" | "stderr";
+  text: string;
+  /** The line was cut to the daemon's per-line byte cap. */
+  line_truncated: boolean;
+}
+
+/** `sessions.output_tail`: a bounded, read-only, unredacted view of a session's recent output. */
+export interface SessionOutputTail {
+  task_id: string;
+  session_id: string;
+  /** False when no output is retained: not started, evicted after ending, or the daemon restarted. */
+  available: boolean;
+  ended: boolean;
+  limit: number;
+  lines: OutputLine[];
+  /** Newer-than-cursor lines exist that are not returned (dropped from the ring or beyond `limit`). */
+  truncated_lines: boolean;
+  last_sequence: number;
 }
 
 /** `Actor` serializes as `{kind, id}`. */
@@ -499,7 +524,8 @@ export interface TaskSubmission {
   parent_id?: string | null;
   objective: string;
   kind: TaskKind;
-  agent: string;
+  /** Required unless `work_class` names a class that sets the agent. */
+  agent?: string;
   dependencies: string[];
   verification: VerificationPolicy;
   delivery: DeliveryPolicy;
@@ -508,7 +534,82 @@ export interface TaskSubmission {
   max_repairs: number;
   /** Optional; check it with `agents.validate_selection` first. At least one of model and effort. */
   model_selection?: ModelSelectionWire;
+  /**
+   * DPES-677. A work class whose settings fill in any of agent, model and effort the task leaves unset
+   * (field by field; what the task names always wins). An unknown class, or one that no longer validates
+   * against the live catalog, is refused with `invalid-params` and no task is created.
+   */
+  work_class?: string;
+  /**
+   * DPES-673. The intake record from `intake.normalize` after the user confirmed it: every criterion must have
+   * `confirmed: true`. An unconfirmed item, or one with no criteria, is refused with `invalid-params` and no task is
+   * created. It is stored on the task and returned in `contract.work_item`.
+   */
+  work_item?: WorkItemWire;
 }
+
+/** DPES-673. Where a work item came from; `reference` is a Jira key or `owner/repo#N`, recorded and never fetched. */
+export interface WorkSourceWire {
+  kind: "github_issue" | "jira" | "text";
+  reference: string | null;
+}
+
+/** DPES-673. One acceptance criterion. `drafted` marks one the intake step wrote; the user confirms each. */
+export interface CriterionWire {
+  text: string;
+  drafted: boolean;
+  confirmed: boolean;
+}
+
+/** DPES-673. `intake.normalize` result body: a draft to show for confirmation. Every criterion starts unconfirmed. */
+export interface WorkItemWire {
+  source: WorkSourceWire;
+  title: string;
+  ask: string;
+  acceptance_criteria: CriterionWire[];
+}
+
+/** DPES-673. `intake.normalize` result. */
+export interface IntakeNormalizeResult {
+  work_item: WorkItemWire;
+}
+
+/** DPES-677. `settings.workClasses.get` result. `invalid_configuration` and `unavailable` list no classes. */
+export type WorkClassesStateWire = "off" | "ok" | "invalid_configuration" | "unavailable";
+
+export interface WorkClassWire {
+  name: string;
+  agent: string | null;
+  model: string | null;
+  effort: string | null;
+}
+
+export interface WorkClassesWire {
+  schema_version: 1;
+  state: WorkClassesStateWire;
+  classes: WorkClassWire[];
+  max_classes: number;
+}
+
+/** One class of `settings.workClasses.set`. `name` is lowercase letters, digits and hyphens, at most 32. */
+export interface WorkClassInput {
+  name: string;
+  agent?: string;
+  model?: string;
+  effort?: string;
+}
+
+/** Names the class (null when the name itself is unusable) and the field the daemon refused. */
+export interface WorkClassRefusal {
+  code: "invalid_work_class";
+  class: string | null;
+  field: "classes" | "name" | "agent" | "model" | "effort";
+  reason: string;
+  detail: string;
+}
+
+/** `settings.workClasses.set` replaces the whole set or, when `saved` is false, writes nothing. */
+export type WorkClassesSaveResult = (WorkClassesWire & { saved: true }) | { saved: false; error: WorkClassRefusal };
 
 /** `model_selection` of a task contract and params of `agents.validate_selection` (M7-09). */
 export interface ModelSelectionWire {

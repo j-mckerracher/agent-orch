@@ -2363,6 +2363,7 @@ mod tests {
             max_repairs: 1,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         }
     }
 

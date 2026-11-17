@@ -238,6 +238,20 @@ describe("Agents & Sessions, live mode", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());
   });
 
+  it("shows the selected session's recent output read-only in the detail", async () => {
+    const fake = seeded();
+    fake.outputs.set("s-1", {
+      lines: [{ sequence: 1, stream: "stderr", text: "compiling", line_truncated: false }],
+    });
+    const { user } = await liveView(fake);
+    await user.click(screen.getByRole("button", { name: /t-run/ }));
+    const panel = within(await screen.findByRole("region", { name: "Recent output" }));
+    expect(await panel.findByText("compiling")).toBeInTheDocument();
+    expect(panel.getByText("stderr")).toBeInTheDocument();
+    expect(panel.queryByRole("button")).not.toBeInTheDocument();
+    expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
+  });
+
   it("places cancel under Session controls and the reassignment under Task controls", async () => {
     const { user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));

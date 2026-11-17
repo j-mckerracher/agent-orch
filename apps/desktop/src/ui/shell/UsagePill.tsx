@@ -58,12 +58,14 @@ function figure(label: string, value: Measured<number>, currency: string): strin
     : `${label}: ${value.status} (${trimStop(value.reason)}).`;
 }
 
+const TOKEN_LABELS = { input_tokens: "fresh input tokens", cache_read_tokens: "cache read tokens", cache_write_tokens: "cache write tokens", output_tokens: "output tokens" };
+
 function TokenWarnings({ summary }: { summary: UsageSummary }) {
   const warnings = summary.tokenWarnings;
   if (!warnings) return null;
   if (warnings.state === "off") return <p>Daily token warnings off.</p>;
   if (warnings.state !== "ok") return <p>Daily token warnings unavailable. Check the token warning settings; usage figures remain available.</p>;
-  const labels = { input_tokens: "fresh input tokens", cache_read_tokens: "cache read tokens", cache_write_tokens: "cache write tokens", output_tokens: "output tokens" };
+  const labels = TOKEN_LABELS;
   return (
     <section aria-label="Daily token warnings">
       <p>Known recorded tokens only. Missing usage may mean the actual total is higher. These warnings do not stop agents.</p>
@@ -158,6 +160,7 @@ export function UsagePill() {
   const summary = result.status === "ok" ? result.data : null;
   const tokenWarnings = summary?.tokenWarnings;
   const tokenWarning = tokenWarnings?.state === "ok" && tokenWarnings.rules.some((rule) => rule.exceeded === true);
+  const exceededRules = tokenWarnings?.state === "ok" ? tokenWarnings.rules.filter((rule) => rule.exceeded === true) : [];
   const tokenWarningUnavailable = tokenWarnings && tokenWarnings.state !== "ok" && tokenWarnings.state !== "off";
   const toolsSnapshot = tools.result?.status === "ok" ? tools.result.data : null;
   const toolsChip = chipText(toolsSnapshot, tools.pending ?? toolsSnapshot?.enabled ?? false);
@@ -198,7 +201,10 @@ export function UsagePill() {
       <span>Usage:</span>
       <strong data-testid="top-usage-value">{text}</strong>
       {(tokenWarning || tokenWarningUnavailable) && (
-        <button type="button" className="top-usage-token-warning" data-testid="top-token-warning" onClick={open}>
+        <button type="button" className="top-usage-token-warning" data-testid="top-token-warning"
+          title={tokenWarning ? exceededRules.map((rule) => `${agentDisplayName(rule.provider)}: ${TOKEN_LABELS[rule.metric]} (tokens, not USD)`).join("; ") : "The daily token warning settings are invalid or unreadable. Usage figures remain available."}
+          onClick={open}
+        >
           {tokenWarning ? "Token threshold exceeded" : "Token warnings unavailable"}
         </button>
       )}

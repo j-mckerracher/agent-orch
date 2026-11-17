@@ -33,6 +33,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::api::admission::{AdmissionConfig, AdmissionGate};
 use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
@@ -52,6 +53,7 @@ use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
     UsageReceipt, UsageSource,
 };
+use output_ring::{EndOnDrop, OutputStore, Stream};
 
 use crate::api::load::LoadHandle;
 
@@ -79,6 +81,8 @@ pub(crate) struct ExecutorConfig {
     /// the explicit check, and every Copilot run.
     pub(crate) copilot_sign_in: Arc<CopilotSignIn>,
     pub(crate) limits: SchedulerLimits,
+    /// Host-resource thresholds checked before each start; all off by default.
+    pub(crate) admission: AdmissionConfig,
     pub(crate) poll: Duration,
     #[cfg(test)]
     pub(crate) wait_for_exit_before_identity: bool,
@@ -180,6 +184,7 @@ impl ExecutorConfig {
                 == Ok("1"),
             copilot_sign_in: Arc::default(),
             limits: SchedulerLimits::default(),
+            admission: AdmissionConfig::from_env(),
             poll: Duration::from_millis(500),
             #[cfg(test)]
             wait_for_exit_before_identity: false,
@@ -240,19 +245,24 @@ struct Inner {
     cursor: Mutex<Option<String>>,
     /// Liveness of running sessions, touched by `monitor_agent`.
     pulse: Arc<SessionPulse>,
+    admission: AdmissionGate,
+    output: Arc<OutputStore>,
 }
 
 impl Executor {
     pub(crate) fn start(store: Arc<SqliteStore>, config: ExecutorConfig) -> Result<Self, String> {
+        let admission = AdmissionGate::new(config.admission.clone(), config.data_dir.clone());
         let inner = Arc::new(Inner {
             store,
             config,
+            admission,
             dirty: Mutex::new(true),
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
             pulse: Arc::new(SessionPulse::default()),
+            output: Arc::default(),
         });
         // A weak reference: the gate outlives the executor and must not keep it alive.
         let weak = Arc::downgrade(&inner);
@@ -295,6 +305,17 @@ impl Executor {
             lock(&self.inner.cursor).clone(),
             lock(&self.inner.blocked).is_some(),
         )
+    }
+
+    /// `admission` object for `host.metrics`: thresholds, last decision and
+    /// deferred task ids.
+    pub(crate) fn admission_json(&self) -> serde_json::Value {
+        self.inner.admission.to_json()
+    }
+
+    /// Recent output of a session, read-only; see `output_ring.rs`.
+    pub(crate) fn output(&self) -> &OutputStore {
+        &self.inner.output
     }
 
     /// The restart-gate refusal currently blocking all launches, if any.
@@ -517,12 +538,47 @@ impl Inner {
         // A closed load gate leaves every task Queued; running tasks are not touched.
         let scheduler = scheduler.with_start_gate(self.config.load.start_gate(Instant::now()));
         let plan = scheduler.schedule(Some(&authorization));
-        *last_started_project = plan.last_started_project;
+        let mut running = snapshots
+            .iter()
+            .filter(|snapshot| snapshot.state == TaskState::Running)
+            .count();
+        let mut deferred = Vec::new();
+        let mut last_decision = None;
+        let mut launched_project = None;
         for task_id in &plan.started {
             let Some(task) = tasks.iter().find(|task| &task.contract.id == task_id) else {
                 continue;
             };
+            let decision = self.admission.check(running);
+            if !decision.admitted {
+                deferred.push(task_id.clone());
+                last_decision = Some(decision);
+                continue;
+            }
+            last_decision = Some(decision);
+            running += 1;
+            launched_project = Some(task.contract.project_id.clone());
             self.launch(task);
+        }
+        if deferred.is_empty() {
+            *last_started_project = plan.last_started_project;
+        } else if launched_project.is_some() {
+            *last_started_project = launched_project;
+        }
+        let changed = self
+            .admission
+            .record(last_decision.as_ref(), deferred.clone());
+        if let (true, Some(decision)) = (changed, &last_decision) {
+            if !decision.admitted {
+                diag.warn(
+                    LOG,
+                    "start_deferred",
+                    &[
+                        ("reason_code", decision.reason_code.as_str()),
+                        ("deferred_task_ids", &deferred.join(",")),
+                    ],
+                );
+            }
         }
     }
 
@@ -541,6 +597,7 @@ impl Inner {
             permission: task.contract.permission,
             worktree: PathBuf::new(),
             diag: self.config.diagnostics.clone(),
+            output: self.output.clone(),
         };
         if let Err(error) = self.prepare(task, number, job) {
             self.config.diagnostics.error(
@@ -685,6 +742,7 @@ struct Job {
     permission: PermissionLevel,
     worktree: PathBuf,
     diag: Diagnostics,
+    output: Arc<OutputStore>,
 }
 
 impl Job {
@@ -965,6 +1023,11 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     };
     // The level and the argument mapping the run launched with. Recorded here,
     // after the spawn, so a launch that never started records nothing.
+    inner.output.begin(&job.session_id);
+    let _output_ended = EndOnDrop {
+        store: &inner.output,
+        session_id: &job.session_id,
+    };
     let profile =
         orchestrator_agents::permission::task_profile(&job.agent, job.permission).unwrap_or("none");
     job.diag.info(
@@ -1248,7 +1311,8 @@ async fn monitor_agent_with(
                     supervision_error,
                 });
             }
-            Some(Ok(Some(_))) => {
+            Some(Ok(Some(event))) => {
+                record_output(job, &event);
                 if let Some(pulse) = pulse {
                     pulse.touch(&job.session_id);
                 }
@@ -1298,6 +1362,20 @@ async fn monitor_agent_with(
         cancellation_error: cancel_error,
         supervision_error,
     })
+}
+
+/// Copies the text of an event the executor already read into the session's
+/// bounded ring. Infallible and non-blocking for the run: it neither reads the
+/// agent's pipes nor changes the event.
+fn record_output(job: &Job, event: &AgentEvent) {
+    match event {
+        AgentEvent::MessageDelta { text } => job.output.push(&job.session_id, Stream::Stdout, text),
+        AgentEvent::ProtocolError { message } => {
+            job.output.push(&job.session_id, Stream::Stderr, message);
+            job.output.push(&job.session_id, Stream::Stderr, "\n");
+        }
+        _ => {}
+    }
 }
 
 fn describe_exit(exit: &AgentExit) -> (&'static str, String, String) {
@@ -1707,6 +1785,9 @@ mod running_listing_tests {
         assert_eq!(join_or_unknown(Some(&[])), "");
     }
 }
+
+#[path = "output_ring.rs"]
+pub(crate) mod output_ring;
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]

@@ -226,3 +226,25 @@ button.agents-row[aria-pressed="true"] {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.agents-output-log {
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border, currentColor);
+  font-size: 12px;
+}
+
+.agents-output-line code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agents-output-line[data-stream="stderr"] .agents-output-stream {
+  font-weight: 700;
+}
+
+.agents-output-stream {
+  font-weight: 600;
+  text-transform: lowercase;
+}

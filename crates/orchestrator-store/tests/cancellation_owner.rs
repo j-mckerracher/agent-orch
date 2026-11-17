@@ -39,6 +39,7 @@ fn running_task(store: &SqliteStore, task_id: &str, register_owner: bool) -> Can
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     store.transition(task_id, TaskEvent::Admit).unwrap();

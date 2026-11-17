@@ -9,6 +9,7 @@ import type {
   Approval,
   Capability,
   DaemonEvent,
+  OutputLine,
   ProjectRow,
   Session,
   SessionEntry,
@@ -124,6 +125,8 @@ export class FakeDaemon implements DaemonConnector {
   /** Scheduler limits and restart gate reported by `queue.snapshot`. */
   queue: FakeQueueSettings = { ...DEFAULT_QUEUE_SETTINGS };
   pageSize = 256;
+  /** Retained worker output by session id for `sessions.output_tail`; a missing entry is `available: false`. */
+  outputs = new Map<string, { lines: OutputLine[]; ended?: boolean; lastSequence?: number }>();
   /** Makes `sessions.events` ignore `after_sequence`, as an overlapping page would. */
   ignoreAfterSequence = false;
   capabilitiesOverride: Capability[] | null = null;
@@ -299,6 +302,30 @@ export class FakeDaemon implements DaemonConnector {
           events: page,
           more: all.length > page.length,
           next_after_sequence: page.length > 0 ? page[page.length - 1]!.sequence : after,
+        });
+      }
+      case "sessions.output_tail": {
+        const task = this.tasks.find((t) => t.contract.id === params.task_id);
+        const session = task?.sessions.find((x) => x.id === params.session_id);
+        if (!task || !session) return fail(-32010, "session not found");
+        const limit = typeof params.limit === "number" ? Math.min(params.limit, 100) : 40;
+        const after = typeof params.after_sequence === "number" ? params.after_sequence : 0;
+        const output = this.outputs.get(session.id);
+        const over = session.state === "Exited" || session.state === "Aborted";
+        const base = { task_id: task.contract.id, session_id: session.id, limit };
+        if (!output) {
+          return reply({ ...base, available: false, ended: over, lines: [], truncated_lines: false, last_sequence: 0 });
+        }
+        const newer = output.lines.filter((l) => l.sequence > after);
+        const lines = newer.slice(Math.max(0, newer.length - limit));
+        const last = output.lastSequence ?? output.lines.reduce((max, l) => Math.max(max, l.sequence), 0);
+        return reply({
+          ...base,
+          available: true,
+          ended: (output.ended ?? false) || over,
+          lines,
+          truncated_lines: Math.max(0, last - after) > lines.length,
+          last_sequence: last,
         });
       }
       case "approvals.list":

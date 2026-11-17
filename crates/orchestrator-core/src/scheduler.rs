@@ -778,6 +778,7 @@ mod tests {
             max_retries: 0,
             max_repairs: 0,
             model_selection: None,
+            work_item: None,
             permission: Default::default(),
         }
     }

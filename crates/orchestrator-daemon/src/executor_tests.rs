@@ -3,16 +3,21 @@
 //! not Windows evidence.
 
 use super::*;
+use crate::api::admission::AdmissionConfig;
 use crate::api::DaemonApi;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
 use orchestrator_core::records::Project;
+use orchestrator_host_metrics::{
+    Meter, MeterId, MeterKind, MeterState, Snapshot, Thresholds, Unit,
+};
 use orchestrator_ipc::{RpcError, RpcHandler};
 use serde_json::{json, Value};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::sync::atomic::AtomicU32;
 use std::time::Instant;
 use tempfile::TempDir;
 
@@ -82,6 +87,7 @@ impl Fixture {
             copilot_program: Some(self.root.path().join("no-such-copilot")),
             copilot_sign_in: Default::default(),
             limits: SchedulerLimits::default(),
+            admission: Default::default(),
             poll: Duration::from_millis(25),
             wait_for_exit_before_identity: false,
             probe_timeout: Duration::from_secs(5),
@@ -575,6 +581,192 @@ fn cancelling_a_running_task_stops_the_agent_through_its_owner() {
     api.shutdown();
 }
 
+fn message_line(text: &str) -> String {
+    format!(
+        "printf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"i\",\"type\":\"agent_message\",\"text\":\"{text}\\\\n\"}}}}\\n'\n"
+    )
+}
+
+fn output_tail(api: &DaemonApi, task_id: &str, extra: Value) -> Result<Value, RpcError> {
+    let mut params = json!({"task_id": task_id, "session_id": format!("{task_id}-session-1")});
+    params
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    api.dispatch("sessions.output_tail", params)
+}
+
+fn tail_texts(tail: &Value) -> Vec<String> {
+    tail["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| line["text"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn output_tail_is_read_only_and_leaves_a_running_agent_and_its_exit_untouched() {
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let agent = fixture.script(
+        "chatty-agent",
+        &format!(
+            "{THREAD_STARTED}{}while [ ! -f '{}' ]; do sleep 0.05; done\n{}{TURN_COMPLETED}",
+            message_line("before"),
+            release.display(),
+            message_line("after"),
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "tail-1", 0);
+    wait_state(&api, &task_id, "Running");
+    wait_until("the first output line", || {
+        output_tail(&api, &task_id, json!({})).is_ok_and(|tail| tail_texts(&tail) == ["before"])
+    });
+
+    for _ in 0..50 {
+        let tail = output_tail(&api, &task_id, json!({})).unwrap();
+        assert_eq!(tail["available"], true);
+        assert_eq!(tail["ended"], false);
+        assert_eq!(tail["lines"][0]["stream"], "stdout");
+        assert_eq!(tail["lines"][0]["sequence"], 1);
+        assert_eq!(tail["lines"][0]["line_truncated"], false);
+        assert_eq!(tail["truncated_lines"], false);
+    }
+    assert_eq!(task(&api, &task_id)["sessions"][0]["state"], "Running");
+
+    fs::write(&release, "").unwrap();
+    let done = wait_state(&api, &task_id, "Verifying");
+    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    assert_eq!(done["sessions"][0]["state"], "Exited");
+
+    let tail = output_tail(&api, &task_id, json!({})).unwrap();
+    assert_eq!(tail_texts(&tail), ["before", "after"]);
+    assert_eq!(tail["ended"], true);
+    assert_eq!(tail["last_sequence"], 2);
+    let newer = output_tail(&api, &task_id, json!({"after_sequence": 1})).unwrap();
+    assert_eq!(tail_texts(&newer), ["after"]);
+    assert_eq!(newer["truncated_lines"], false);
+    api.shutdown();
+}
+
+#[test]
+fn output_tail_flood_stays_within_the_ring_and_line_caps_and_the_run_still_succeeds() {
+    use crate::executor::output_ring::{MAX_LINE_BYTES, MAX_TAIL_LINES, RING_LINES};
+    let fixture = Fixture::new();
+    let agent = fixture.script(
+        "flood-agent",
+        &format!(
+            "{THREAD_STARTED}pad=$(head -c {} /dev/zero | tr '\\0' x)\ni=0\nwhile [ $i -lt {} ]; do\nprintf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"i\",\"type\":\"agent_message\",\"text\":\"%s %s\\\\n\"}}}}\\n' $i \"$pad\"\ni=$((i+1))\ndone\n{TURN_COMPLETED}",
+            MAX_LINE_BYTES * 2,
+            RING_LINES * 3,
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "flood-1", 0);
+    let done = wait_state(&api, &task_id, "Verifying");
+    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+
+    let tail = output_tail(&api, &task_id, json!({"limit": 100_000})).unwrap();
+    assert_eq!(tail["limit"], MAX_TAIL_LINES);
+    let lines = tail["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), MAX_TAIL_LINES);
+    assert_eq!(tail["truncated_lines"], true);
+    assert_eq!(tail["last_sequence"], RING_LINES * 3);
+    for line in lines {
+        assert!(line["text"].as_str().unwrap().len() <= MAX_LINE_BYTES);
+        assert_eq!(line["line_truncated"], true);
+    }
+    // Everything older than the ring is gone; the ring holds RING_LINES.
+    let oldest = output_tail(&api, &task_id, json!({"after_sequence": 0, "limit": 100})).unwrap();
+    assert!(oldest["lines"][0]["sequence"].as_u64().unwrap() > (RING_LINES * 2) as u64);
+    api.shutdown();
+}
+
+#[test]
+fn output_tail_defaults_clamps_and_rejects_bad_input_and_unknown_sessions() {
+    use crate::executor::output_ring::{DEFAULT_TAIL_LINES, MAX_TAIL_LINES};
+    let fixture = Fixture::new();
+    let body: String = (0..150)
+        .map(|number| message_line(&format!("row {number}")))
+        .collect();
+    let agent = fixture.script(
+        "rows-agent",
+        &format!("{THREAD_STARTED}{body}{TURN_COMPLETED}"),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "rows-1", 0);
+    wait_state(&api, &task_id, "Verifying");
+
+    let default = output_tail(&api, &task_id, json!({})).unwrap();
+    assert_eq!(default["limit"], DEFAULT_TAIL_LINES);
+    let rows = tail_texts(&default);
+    assert_eq!(rows.len(), DEFAULT_TAIL_LINES);
+    assert_eq!(rows.last().unwrap(), "row 149");
+    assert_eq!(default["truncated_lines"], true);
+
+    let clamped = output_tail(&api, &task_id, json!({"limit": 101})).unwrap();
+    assert_eq!(clamped["limit"], MAX_TAIL_LINES);
+    assert_eq!(tail_texts(&clamped).len(), MAX_TAIL_LINES);
+    let exact = output_tail(&api, &task_id, json!({"limit": 100})).unwrap();
+    assert_eq!(tail_texts(&exact).len(), 100);
+    let three = output_tail(&api, &task_id, json!({"limit": 3})).unwrap();
+    assert_eq!(tail_texts(&three), ["row 147", "row 148", "row 149"]);
+
+    for bad in [
+        json!({"limit": 0}),
+        json!({"limit": -5}),
+        json!({"limit": "ten"}),
+        json!({"after_sequence": -1}),
+        json!({"extra": true}),
+    ] {
+        assert_eq!(
+            output_tail(&api, &task_id, bad.clone()),
+            Err(RpcError::InvalidParams),
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        api.dispatch(
+            "sessions.output_tail",
+            json!({"task_id": task_id, "session_id": "no-such-session"})
+        ),
+        Err(RpcError::NotFound)
+    );
+    assert_eq!(
+        api.dispatch(
+            "sessions.output_tail",
+            json!({"task_id": "no-such-task", "session_id": "s"})
+        ),
+        Err(RpcError::NotFound)
+    );
+    assert_eq!(
+        api.dispatch("sessions.output_tail", Value::Null),
+        Err(RpcError::InvalidParams)
+    );
+    api.shutdown();
+}
+
+#[test]
+fn output_tail_of_a_session_the_daemon_has_no_output_for_is_empty_and_flagged() {
+    let fixture = Fixture::new();
+    let agent = succeeding_agent(&fixture);
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "restart-1", 0);
+    wait_state(&api, &task_id, "Verifying");
+    api.shutdown();
+
+    // A new daemon over the same data has the session on record but no ring.
+    let restarted = fixture.api(&fixture.script("idle-agent", "exit 0\n"));
+    let tail = output_tail(&restarted, &task_id, json!({})).unwrap();
+    assert_eq!(tail["available"], false);
+    assert_eq!(tail["ended"], true);
+    assert_eq!(tail["lines"], json!([]));
+    assert_eq!(tail["last_sequence"], 0);
+    restarted.shutdown();
+}
+
 #[test]
 fn unlaunchable_task_fails_with_a_recorded_attempt_instead_of_hanging() {
     let fixture = Fixture::new();
@@ -639,6 +831,7 @@ fn queued_contract(fixture: &Fixture, id: &str) -> TaskContract {
         max_repairs: 0,
         model_selection: None,
         permission: Default::default(),
+        work_item: None,
     }
 }
 
@@ -1906,6 +2099,7 @@ mod usage_paths {
             permission: Default::default(),
             worktree: PathBuf::new(),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
+            output: Default::default(),
         };
         tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -2089,6 +2283,7 @@ mod usage_paths {
             permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
+            output: Default::default(),
         };
         assert_eq!(
             requested_codex_model(&job(CODEX_AGENT, Some("gpt-6-luna"))).as_deref(),
@@ -2100,6 +2295,130 @@ mod usage_paths {
             None
         );
     }
+}
+
+fn metric(meter: MeterId, value: f64, total: Option<f64>) -> Meter {
+    let (kind, unit) = match meter {
+        MeterId::Cpu | MeterId::Gpu => (MeterKind::Utilization, Unit::Percent),
+        MeterId::Memory | MeterId::Disk => (MeterKind::Capacity, Unit::Bytes),
+    };
+    Meter {
+        meter,
+        state: MeterState::Ok,
+        kind,
+        unit,
+        scope: Some("test".into()),
+        value: Some(value),
+        total,
+        observed_at: None,
+        sample_interval_ms: 0,
+        reason: None,
+    }
+}
+
+fn cpu_snapshot(percent: f64) -> Snapshot {
+    Snapshot {
+        schema_version: 1,
+        sample_interval_ms: 1000,
+        meters: vec![metric(MeterId::Cpu, percent, None)],
+    }
+}
+
+fn admission(api: &DaemonApi) -> Value {
+    api.dispatch("host.metrics", Value::Null).unwrap()["admission"].clone()
+}
+
+#[test]
+fn a_start_over_the_cpu_threshold_is_deferred_with_a_reason_then_admitted_when_it_drops() {
+    let fixture = Fixture::new();
+    let cpu = Arc::new(AtomicU32::new(90));
+    let reading = cpu.clone();
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.admission = AdmissionConfig {
+            thresholds: Thresholds {
+                max_cpu_percent: Some(50.0),
+                ..Thresholds::default()
+            },
+            source: Some(Arc::new(move || {
+                cpu_snapshot(f64::from(reading.load(Ordering::SeqCst)))
+            })),
+        };
+    });
+    let task_id = fixture.submit(&api, "admit-cpu", 0);
+
+    wait_until("the start to be deferred", || {
+        admission(&api)["decision"]["reason_code"] == "cpu_over_threshold"
+    });
+    let state = admission(&api);
+    assert_eq!(state["enabled"], true);
+    assert_eq!(state["deferred_task_ids"], json!([task_id]));
+    assert_eq!(state["decision"]["admitted"], false);
+    assert_eq!(state["decision"]["breaches"][0]["threshold"], 50.0);
+    assert_eq!(task(&api, &task_id)["state"], "Queued");
+
+    cpu.store(10, Ordering::SeqCst);
+    wait_state(&api, &task_id, "Verifying");
+    let state = admission(&api);
+    assert_eq!(state["decision"]["reason_code"], "admitted");
+    assert_eq!(state["deferred_task_ids"], json!([]));
+    api.shutdown();
+}
+
+#[test]
+fn an_unreadable_meter_never_blocks_a_start_and_is_reported_unknown() {
+    let fixture = Fixture::new();
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.admission = AdmissionConfig {
+            thresholds: Thresholds {
+                max_memory_percent: Some(1.0),
+                ..Thresholds::default()
+            },
+            source: Some(Arc::new(|| cpu_snapshot(99.0))),
+        };
+    });
+    let task_id = fixture.submit(&api, "admit-unknown", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let state = admission(&api);
+    assert_eq!(state["decision"]["reason_code"], "admitted_metric_unknown");
+    assert_eq!(state["decision"]["unknown"], json!(["memory"]));
+    api.shutdown();
+}
+
+#[test]
+fn the_running_agent_threshold_defers_the_next_start_without_touching_running_work() {
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), |config| {
+        config.admission.thresholds.max_running_agents = Some(1);
+    });
+    let first = fixture.submit(&api, "agents-1", 0);
+    wait_state(&api, &first, "Running");
+    let second = fixture.submit(&api, "agents-2", 0);
+
+    wait_until("the second start to be deferred", || {
+        admission(&api)["decision"]["reason_code"] == "running_agents_at_limit"
+    });
+    assert_eq!(admission(&api)["deferred_task_ids"], json!([second]));
+    assert_eq!(task(&api, &first)["state"], "Running");
+    assert_eq!(task(&api, &second)["state"], "Queued");
+
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &first, "Verifying");
+    wait_state(&api, &second, "Verifying");
+    api.shutdown();
+}
+
+#[test]
+fn without_thresholds_admission_is_off_and_starts_are_unchanged() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let task_id = fixture.submit(&api, "admit-off", 0);
+    wait_state(&api, &task_id, "Verifying");
+    let state = admission(&api);
+    assert_eq!(state["enabled"], false);
+    assert_eq!(state["deferred_task_ids"], json!([]));
+    assert_eq!(state["decision"]["admitted"], true);
+    api.shutdown();
 }
 
 #[path = "api_models_tests.rs"]

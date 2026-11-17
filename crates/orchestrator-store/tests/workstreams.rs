@@ -34,6 +34,7 @@ fn contract(id: &str, project: &str) -> TaskContract {
         max_repairs: 0,
         model_selection: None,
         permission: Default::default(),
+        work_item: None,
     }
 }
 

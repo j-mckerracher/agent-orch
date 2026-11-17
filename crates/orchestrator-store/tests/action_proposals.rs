@@ -1854,6 +1854,7 @@ fn link(store: &SqliteStore, workstream_id: &str, task_id: &str) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     store.link_task(workstream_id, task_id, None).unwrap();

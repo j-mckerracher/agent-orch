@@ -18,8 +18,12 @@ import type {
   ConversationWirePage,
   PermissionLevelWire,
   ConversationWireTarget,
+  IntakeNormalizeResult,
   ModelSelectionWire,
   SelectionCheck,
+  WorkClassInput,
+  WorkClassesSaveResult,
+  WorkClassesWire,
   CoordinatorEntry,
   CoordinatorPage,
   DaemonHealth,
@@ -35,6 +39,7 @@ import type {
   ReviewEvidenceWire,
   SessionEntry,
   SessionEventsPage,
+  SessionOutputTail,
   TaskRecord,
   TaskSubmission,
   WorkspaceDiff,
@@ -157,6 +162,15 @@ export class DaemonApi {
     return this.session.request("tasks.get", { task_id: realId(taskId) });
   }
 
+  /**
+   * DPES-673 (capability `tasks`). Pure and read-only: turns pasted text, a Jira key or a GitHub issue
+   * reference into a draft work item to show for confirmation. Nothing is fetched or stored; over-limit
+   * input (20 000 bytes, 200-character title, 20 criteria, 500 characters each) is refused with `invalid-params`.
+   */
+  intakeNormalize(input: string): Promise<IntakeNormalizeResult> {
+    return this.session.request("intake.normalize", { input });
+  }
+
   /** `tasks.submit` queues work; it does not prove an agent launched. */
   async tasksSubmit(idempotencyKey: string, contract: TaskSubmission): Promise<TaskRecord> {
     realIdFields(contract);
@@ -195,6 +209,20 @@ export class DaemonApi {
       task_id: realId(taskId),
       session_id: realId(sessionId),
       ...(afterSequence === undefined ? {} : { after_sequence: afterSequence }),
+    });
+  }
+
+  /** Read-only; `limit` defaults to 40 and is clamped to 100 by the daemon. Output is not redacted. */
+  async sessionsOutputTail(
+    taskId: string,
+    sessionId: string,
+    options: { limit?: number; afterSequence?: number } = {},
+  ): Promise<SessionOutputTail> {
+    return this.session.request("sessions.output_tail", {
+      task_id: realId(taskId),
+      session_id: realId(sessionId),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+      ...(options.afterSequence === undefined ? {} : { after_sequence: options.afterSequence }),
     });
   }
 
@@ -642,6 +670,17 @@ export class DaemonApi {
    */
   agentsCopilotSignInCheck(force = false): Promise<CopilotSignInRecord> {
     return this.session.request("agents.check_copilot_sign_in", { force });
+  }
+
+  /** DPES-677 (capability `agents`). A broken settings file reads as state `invalid_configuration`, never an error. */
+  settingsWorkClassesGet(): Promise<WorkClassesWire> {
+    return this.session.request("settings.workClasses.get");
+  }
+
+  /** DPES-677. Replaces the whole set; checks every class against the live catalog and writes nothing when one is refused. */
+  async settingsWorkClassesSet(classes: WorkClassInput[]): Promise<WorkClassesSaveResult> {
+    realIdFields(classes);
+    return this.session.request("settings.workClasses.set", { classes });
   }
 
   /** At least one of model and effort is required by the daemon. */

@@ -71,6 +71,8 @@ pub(super) fn chat_submit(key: &str, objective: &str) -> TaskSubmitParams {
             max_repairs: 1,
             model_selection: None,
             permission: None,
+            work_item: None,
+            work_class: None,
         },
     }
 }
@@ -92,6 +94,7 @@ pub(super) fn chat_contract(id: &str, objective: &str) -> TaskContract {
         max_repairs: 1,
         model_selection: None,
         permission: PermissionLevel::Restricted,
+        work_item: None,
     }
 }
 

@@ -94,6 +94,7 @@ pub(super) fn succeeded_task(
             max_repairs: 0,
             model_selection: None,
             permission: PermissionLevel::Restricted,
+            work_item: None,
         })
         .unwrap();
     api.store.transition(id, TaskEvent::Admit).unwrap();
@@ -151,6 +152,7 @@ pub(super) fn failed_pr_task(api: &DaemonApi, id: &str, project: &str) {
             max_repairs: 0,
             model_selection: None,
             permission: PermissionLevel::Restricted,
+            work_item: None,
         })
         .unwrap();
     api.store.transition(id, TaskEvent::Admit).unwrap();
@@ -449,6 +451,7 @@ pub(super) fn submit_pr_task_not_finished(api: &DaemonApi, project: &str) -> Str
             max_repairs: 0,
             model_selection: None,
             permission: PermissionLevel::Restricted,
+            work_item: None,
         })
         .unwrap();
     api.store.transition(&id, TaskEvent::Admit).unwrap();

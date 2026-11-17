@@ -421,9 +421,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "projects.register"
         | "projects.get_defaults"
         | "projects.set_defaults" => Some(Capability::Projects),
-        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry" => {
-            Some(Capability::Tasks)
-        }
+        // DPES-673: draft normalization shares the capability of the submit it feeds.
+        "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry"
+        | "intake.normalize" => Some(Capability::Tasks),
         "agents.capabilities"
         | "agents.catalog"
         | "agents.validate_selection"
@@ -431,8 +431,12 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "usage.summary"
         | "usage.localTools"
         | "usage.localTools.setEnabled"
-        | "usage.localTools.refresh" => Some(Capability::Agents),
-        "sessions.list" | "sessions.get" | "sessions.events" => Some(Capability::Sessions),
+        | "usage.localTools.refresh"
+        | "settings.workClasses.get"
+        | "settings.workClasses.set" => Some(Capability::Agents),
+        "sessions.list" | "sessions.get" | "sessions.events" | "sessions.output_tail" => {
+            Some(Capability::Sessions)
+        }
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
         "delivery.request" => Some(Capability::Delivery),
@@ -618,4 +622,155 @@ fn write_error(
         },
     )
     .map_err(|_| io::Error::other("IPC response failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig};
+    use serde_json::{json, Value};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    struct Recorder {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl RpcHandler for Recorder {
+        fn capabilities(&self) -> Vec<Capability> {
+            vec![Capability::Health, Capability::Sessions, Capability::Tasks]
+        }
+
+        fn dispatch(&self, method: &str, _: Value) -> Result<Value, RpcError> {
+            self.calls.lock().unwrap().push(method.to_owned());
+            Ok(json!({"lines": []}))
+        }
+
+        fn events_after(&self, _: i64, _: usize) -> Result<Vec<IpcEvent>, RpcError> {
+            Ok(Vec::new())
+        }
+
+        fn keep_alive(&self) -> bool {
+            true
+        }
+    }
+
+    fn connect(dir: &std::path::Path, capabilities: &[Capability]) -> Client {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match Client::connect_with_capabilities(dir, capabilities) {
+                Ok(client) => return client,
+                Err(error) => {
+                    assert!(Instant::now() < deadline, "daemon not ready: {error}");
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn output_tail_maps_to_the_sessions_capability_like_other_session_reads() {
+        for method in ["sessions.get", "sessions.events", "sessions.output_tail"] {
+            assert_eq!(method_capability(method), Some(Capability::Sessions));
+        }
+    }
+
+    #[test]
+    fn work_class_settings_map_to_the_agents_capability() {
+        for method in ["settings.workClasses.get", "settings.workClasses.set"] {
+            assert_eq!(method_capability(method), Some(Capability::Agents));
+        }
+    }
+
+    #[test]
+    fn intake_normalize_maps_to_the_tasks_capability_like_tasks_submit() {
+        assert_eq!(
+            method_capability("intake.normalize"),
+            Some(Capability::Tasks)
+        );
+        assert_eq!(
+            method_capability("intake.normalize"),
+            method_capability("tasks.submit")
+        );
+    }
+
+    #[test]
+    fn the_server_refuses_intake_normalize_without_the_tasks_capability() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let handler = Arc::new(Recorder {
+            calls: Mutex::new(Vec::new()),
+        });
+        let server = {
+            let dir = dir.path().to_path_buf();
+            let handler = handler.clone();
+            std::thread::spawn(move || {
+                Server::serve_with_handler(
+                    ServerConfig::new(dir, "intake-test")
+                        .with_idle_timeout(Duration::from_secs(30))
+                        .with_stream_timeout(Duration::from_secs(5)),
+                    handler,
+                )
+                .unwrap();
+            })
+        };
+        let params = json!({"input": "DPES-673"});
+
+        let mut without = connect(dir.path(), &[Capability::Health, Capability::Sessions]);
+        assert!(matches!(
+            without.call("intake.normalize", params.clone()),
+            Err(IpcError::UnsupportedCapability)
+        ));
+        assert!(handler.calls.lock().unwrap().is_empty());
+
+        let mut with = connect(dir.path(), &[Capability::Health, Capability::Tasks]);
+        assert_eq!(
+            with.call("intake.normalize", params).unwrap(),
+            json!({"lines": []})
+        );
+        assert_eq!(*handler.calls.lock().unwrap(), vec!["intake.normalize"]);
+
+        drop(without);
+        with.shutdown().unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn the_server_refuses_output_tail_without_the_sessions_capability() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let handler = Arc::new(Recorder {
+            calls: Mutex::new(Vec::new()),
+        });
+        let server = {
+            let dir = dir.path().to_path_buf();
+            let handler = handler.clone();
+            std::thread::spawn(move || {
+                Server::serve_with_handler(
+                    ServerConfig::new(dir, "output-tail-test")
+                        .with_idle_timeout(Duration::from_secs(30))
+                        .with_stream_timeout(Duration::from_secs(5)),
+                    handler,
+                )
+                .unwrap();
+            })
+        };
+        let params = json!({"task_id": "t", "session_id": "s"});
+
+        let mut without = connect(dir.path(), &[Capability::Health]);
+        assert!(matches!(
+            without.call("sessions.output_tail", params.clone()),
+            Err(IpcError::UnsupportedCapability)
+        ));
+        assert!(handler.calls.lock().unwrap().is_empty());
+
+        let mut with = connect(dir.path(), &[Capability::Health, Capability::Sessions]);
+        assert_eq!(
+            with.call("sessions.output_tail", params).unwrap(),
+            json!({"lines": []})
+        );
+        assert_eq!(*handler.calls.lock().unwrap(), vec!["sessions.output_tail"]);
+
+        drop(without);
+        with.shutdown().unwrap();
+        server.join().unwrap();
+    }
 }

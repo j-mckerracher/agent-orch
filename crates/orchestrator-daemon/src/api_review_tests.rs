@@ -54,6 +54,7 @@ fn contract(id: &str, project_id: &str, delivery: DeliveryPolicy) -> TaskContrac
         max_repairs: 0,
         model_selection: None,
         permission: Default::default(),
+        work_item: None,
     }
 }
 

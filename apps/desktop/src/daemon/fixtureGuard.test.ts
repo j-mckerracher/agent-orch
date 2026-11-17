@@ -4,7 +4,7 @@ import { DaemonError } from "./errors";
 import { isFixtureLikeId } from "../sources/surfaces/fixtureIds";
 import { DaemonSession } from "./session";
 import { ALL_CAPABILITIES } from "./types";
-import { FakeDaemon } from "../test/fakeDaemon";
+import { FakeDaemon, StubRpcError } from "../test/fakeDaemon";
 
 /**
  * M7-30: a placeholder id from fixture mode must never reach a daemon mutation. Every `DaemonApi`
@@ -43,6 +43,7 @@ const ROWS: Row[] = [
   row("sessionsList", "sessions.list", (a) => a.sessionsList(FX), (a) => a.sessionsList(REAL)),
   row("sessionsGet", "sessions.get", (a) => a.sessionsGet(REAL, FX), (a) => a.sessionsGet(REAL, "s1")),
   row("sessionsEvents", "sessions.events", (a) => a.sessionsEvents(REAL, FX), (a) => a.sessionsEvents(REAL, "s1")),
+  row("sessionsOutputTail", "sessions.output_tail", (a) => a.sessionsOutputTail(REAL, FX), (a) => a.sessionsOutputTail(REAL, "s1")),
   row("approvalsResolve", "approvals.resolve", (a) => a.approvalsResolve(FX, "approve", "k"), (a) => a.approvalsResolve(REAL, "approve", "k")),
   row("workspacesDiff", "workspaces.diff", (a) => a.workspacesDiff({ task_id: FX }), (a) => a.workspacesDiff({ task_id: REAL })),
   row(
@@ -109,6 +110,7 @@ const ROWS: Row[] = [
   ),
   row("actionsResolve", "actions.resolve", (a) => a.actionsResolve(FX, "approve", DIGEST, "k"), (a) => a.actionsResolve(REAL, "approve", DIGEST, "k")),
   row("agentsValidateSelection", "agents.validate_selection", (a) => a.agentsValidateSelection(FX, { model: "m" }), (a) => a.agentsValidateSelection("codex", { model: "m" })),
+  row("settingsWorkClassesSet", "settings.workClasses.set", (a) => a.settingsWorkClassesSet([{ name: "review", agent: FX }]), (a) => a.settingsWorkClassesSet([{ name: "review", agent: "codex" }])),
 ];
 
 /** Methods that take no id (or only free text / a path), so there is nothing to guard. */
@@ -140,6 +142,8 @@ const NO_ID_METHODS = new Set<string>([
   "holdsList",
   "pullsList",
   "grantsList",
+  "settingsWorkClassesGet",
+  "intakeNormalize",
 ]);
 
 async function api(fake: FakeDaemon) {
@@ -292,5 +296,86 @@ describe("A1b shared mutation boundaries", () => {
     await target.approvalsResolve(REAL, "approve", "a");
     await target.approvalsResolve(REAL, "reject", "r");
     expect(sentMethods(fake)).toEqual(["review.request_changes", "approvals.resolve", "approvals.resolve"]);
+  });
+});
+
+describe("work class settings client (DPES-677)", () => {
+  it("reads and replaces the classes over the agents capability and sends work_class with a submission", async () => {
+    const fake = new FakeDaemon();
+    const classes = [{ name: "review", agent: "codex", model: "m", effort: "high" }];
+    fake.stub("settings.workClasses.get", { schema_version: 1, state: "off", classes: [], max_classes: 16 });
+    fake.stub("settings.workClasses.set", { saved: false, error: { code: "invalid_work_class", class: "review", field: "model", reason: "unknown_model", detail: "d" } });
+    fake.stub("tasks.submit", {});
+    const target = await api(fake);
+    await expect(target.settingsWorkClassesGet()).resolves.toMatchObject({ state: "off", classes: [] });
+    await expect(target.settingsWorkClassesSet(classes)).resolves.toMatchObject({ saved: false, error: { class: "review", field: "model" } });
+    await target.tasksSubmit("k", { ...submission("/p", null, []), agent: undefined, work_class: "review" });
+    expect(fake.callsTo("settings.workClasses.get")[0]?.params).toBeUndefined();
+    expect(fake.callsTo("settings.workClasses.set")[0]?.params).toEqual({ classes });
+    expect((fake.callsTo("tasks.submit")[0]?.params as { contract: Record<string, unknown> }).contract).toMatchObject({ work_class: "review" });
+  });
+
+  it("is refused locally, and sends nothing, when the agents capability was not negotiated", async () => {
+    const fake = new FakeDaemon();
+    fake.capabilitiesOverride = ["health", "tasks"];
+    const target = await api(fake);
+    await expect(target.settingsWorkClassesGet()).rejects.toMatchObject({ kind: "capability-not-negotiated" });
+    await expect(target.settingsWorkClassesSet([])).rejects.toMatchObject({ kind: "capability-not-negotiated" });
+    expect(sentMethods(fake)).toEqual([]);
+  });
+});
+
+describe("work item intake client (DPES-673)", () => {
+  const draft = {
+    work_item: {
+      source: { kind: "jira" as const, reference: "DPES-673" },
+      title: "DPES-673",
+      ask: "DPES-673",
+      acceptance_criteria: [{ text: "Done and verified", drafted: true, confirmed: false }],
+    },
+  };
+
+  it("sends the pasted text as input over the tasks capability and returns the draft untouched", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("intake.normalize", draft);
+    const target = await api(fake);
+    await expect(target.intakeNormalize("DPES-673")).resolves.toEqual(draft);
+    expect(fake.callsTo("intake.normalize")[0]?.params).toEqual({ input: "DPES-673" });
+  });
+
+  it("surfaces an over-limit refusal as invalid-params", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("intake.normalize", () => {
+      throw new StubRpcError(-32602, "invalid params");
+    });
+    const target = await api(fake);
+    await expect(target.intakeNormalize("x".repeat(20_001))).rejects.toMatchObject({ kind: "invalid-params" });
+  });
+
+  it("is refused locally, and sends nothing, when the tasks capability was not negotiated", async () => {
+    const fake = new FakeDaemon();
+    fake.capabilitiesOverride = ["health", "agents"];
+    const target = await api(fake);
+    await expect(target.intakeNormalize("DPES-673")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
+    expect(sentMethods(fake)).toEqual([]);
+  });
+
+  it("sends a confirmed work item with a submission and leaves the field out when there is none", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("tasks.submit", {});
+    const target = await api(fake);
+    const confirmed = { ...draft.work_item, acceptance_criteria: [{ text: "Done and verified", drafted: true, confirmed: true }] };
+    await target.tasksSubmit("k1", { ...submission("/p", null, []), work_item: confirmed });
+    await target.tasksSubmit("k2", submission("/p", null, []));
+    const sent = fake.callsTo("tasks.submit").map((c) => (c.params as { contract: Record<string, unknown> }).contract);
+    expect(sent[0]?.work_item).toEqual(confirmed);
+    expect(sent[1]).not.toHaveProperty("work_item");
+  });
+
+  it("surfaces an unconfirmed-item refusal from tasks.submit as invalid-params", async () => {
+    const fake = new FakeDaemon();
+    fake.failNext("tasks.submit", { code: -32602, message: "invalid params" });
+    const target = await api(fake);
+    await expect(target.tasksSubmit("k", { ...submission("/p", null, []), work_item: draft.work_item })).rejects.toMatchObject({ kind: "invalid-params" });
   });
 });

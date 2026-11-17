@@ -261,7 +261,7 @@ impl DaemonApi {
         })
     }
 
-    fn catalog(&self, agent: &str) -> AgentCatalog {
+    pub(super) fn catalog(&self, agent: &str) -> AgentCatalog {
         self.catalogs(&[agent]).remove(0)
     }
 
@@ -301,7 +301,10 @@ impl CatalogCache {
     }
 }
 
-fn check(catalog: &AgentCatalog, selection: &ModelSelection) -> Result<(), SelectionError> {
+pub(super) fn check(
+    catalog: &AgentCatalog,
+    selection: &ModelSelection,
+) -> Result<(), SelectionError> {
     catalog.validate(selection.model.as_deref(), selection.effort.as_deref())
 }
 

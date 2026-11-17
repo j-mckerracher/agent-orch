@@ -9,6 +9,12 @@
 //!   scope, value, total, observed_at, sample_interval_ms, reason}]}` with one
 //!   or more meters for each of `cpu`, `memory`, `disk` and `gpu`. `state` is
 //!   `ok`, `unavailable` or `unsupported`; `value` is null unless `ok`.
+//! - Result also carries `admission`: `{enabled, thresholds, decision,
+//!   deferred_task_ids}`. `decision` is null until a start was considered, else
+//!   `{admitted, reason_code, breaches, unknown}`; `reason_code` is one of
+//!   `admitted`, `admitted_metric_unknown`, `running_agents_at_limit`,
+//!   `cpu_over_threshold`, `memory_over_threshold`, `disk_over_threshold`.
+//!   Thresholds default off (`enabled` false); see `admission.rs`.
 //! - Never blocks: the handler copies a cache that a background thread fills.
 //!   The sampler starts with the executor, or on first use when there is none.
 
@@ -61,7 +67,22 @@ impl HostService {
 impl DaemonApi {
     pub(super) fn host_metrics(&self, params: Value) -> Result<Value, RpcError> {
         require_empty_params(&params)?;
-        serde_json::to_value(self.host.metrics().snapshot()).map_err(|_| RpcError::Internal)
+        let mut result =
+            serde_json::to_value(self.host.metrics().snapshot()).map_err(|_| RpcError::Internal)?;
+        if let Some(fields) = result.as_object_mut() {
+            fields.insert("admission".into(), self.admission_json());
+        }
+        Ok(result)
+    }
+
+    /// Start-admission state: thresholds, last decision and deferred tasks.
+    /// Not enabled (and no decision) when no threshold is configured or the
+    /// daemon has no executor.
+    fn admission_json(&self) -> Value {
+        self.executor.as_ref().map_or_else(
+            || json!({"enabled": false, "thresholds": {}, "decision": null, "deferred_task_ids": []}),
+            Executor::admission_json,
+        )
     }
 }
 

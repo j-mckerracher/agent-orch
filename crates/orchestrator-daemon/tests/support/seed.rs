@@ -106,6 +106,7 @@ pub fn seed_review(data_dir: &Path, repo: &Path, worktrees: &Path, task_id: &str
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .expect("task");
     for event in [

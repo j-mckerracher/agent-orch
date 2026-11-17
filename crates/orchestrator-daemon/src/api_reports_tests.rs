@@ -141,6 +141,7 @@ fn make_task(api: &DaemonApi, id: &str, kind: TaskKind, project: &str) -> String
             max_repairs: 0,
             model_selection: None,
             permission: PermissionLevel::Restricted,
+            work_item: None,
         })
         .unwrap();
     id.to_owned()

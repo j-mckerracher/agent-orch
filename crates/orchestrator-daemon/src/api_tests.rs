@@ -60,6 +60,7 @@ fn create_running_task(api: &DaemonApi, task_id: &str) {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     api.store.transition(task_id, TaskEvent::Admit).unwrap();
@@ -299,6 +300,7 @@ fn task_submission_accepts_an_existing_parent() {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
 
@@ -349,6 +351,7 @@ fn session_events_replay_task_and_only_selected_session_events() {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     api.store.transition("task-1", TaskEvent::Admit).unwrap();
@@ -777,6 +780,7 @@ fn approval_resolution_uses_allowlisted_actor_and_is_idempotent() {
             max_repairs: 0,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         })
         .unwrap();
     let allowlist = ApproverAllowlist::new("local-user", Vec::<String>::new()).unwrap();

@@ -11,6 +11,7 @@
 
 use crate::authorization::Authorization;
 use crate::permission::PermissionLevel;
+use crate::work_item::WorkItem;
 
 /// Kind of work a contract requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -176,6 +177,11 @@ pub struct TaskContract {
     /// contract written before the field, and read as Restricted.
     #[serde(default, skip_serializing_if = "PermissionLevel::is_restricted")]
     pub permission: PermissionLevel,
+    /// The confirmed intake record behind the task (DPES-673): source, ask and
+    /// acceptance criteria. Absent on every task submitted without one, and then
+    /// omitted from the contract JSON so existing digests are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_item: Option<WorkItem>,
 }
 
 /// Errors from [`validate`]. Each variant names the invariant that failed.
@@ -207,6 +213,12 @@ pub enum ContractError {
     InvalidModelId,
     /// The effort level is empty, too long, or not a lowercase token.
     InvalidEffort,
+    /// A work item has no acceptance criteria.
+    WorkItemWithoutCriteria,
+    /// A work item has a criterion nobody has confirmed (DPES-673).
+    UnconfirmedCriterion,
+    /// A work item title, ask or criterion is blank; the payload names it.
+    EmptyWorkItemField(&'static str),
 }
 
 /// Size bounds for untrusted contract fields. The 1 MiB IPC frame is the
@@ -270,6 +282,13 @@ impl std::fmt::Display for ContractError {
                 f,
                 "effort must be 1-32 characters of lowercase letters, digits, - or _"
             ),
+            ContractError::WorkItemWithoutCriteria => {
+                write!(f, "work item must have at least one acceptance criterion")
+            }
+            ContractError::UnconfirmedCriterion => {
+                write!(f, "every acceptance criterion must be confirmed")
+            }
+            ContractError::EmptyWorkItemField(field) => write!(f, "{field} must be non-empty"),
         }
     }
 }
@@ -310,6 +329,9 @@ pub fn validate(contract: &TaskContract) -> Result<(), ContractError> {
     if let Some(selection) = &contract.model_selection {
         selection.validate()?;
     }
+    if let Some(item) = &contract.work_item {
+        validate_work_item(item)?;
+    }
     Ok(())
 }
 
@@ -326,7 +348,7 @@ fn check_text(field: &'static str, value: &str, max_bytes: usize) -> Result<(), 
 /// Characters that can reorder or disguise displayed text: the Arabic letter
 /// mark, left-to-right and right-to-left marks, the embedding and override
 /// controls, and the isolate controls.
-fn is_bidi_control(c: char) -> bool {
+pub(crate) fn is_bidi_control(c: char) -> bool {
     matches!(
         c,
         '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
@@ -378,6 +400,52 @@ fn validate_bounds(contract: &TaskContract) -> Result<(), ContractError> {
                 check_text("verification argument", argument, MAX_COMMAND_ARG_BYTES)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Validate a work item before a task may be admitted for it (DPES-673): it has
+/// at least one criterion, every text is within the intake bounds, and *every*
+/// criterion is confirmed. This is the gate behind "Admit is blocked until the
+/// user confirms all criteria". A client-supplied work item is untrusted, so the
+/// bounds [`crate::work_item::normalize`] enforces are checked again here.
+pub fn validate_work_item(item: &WorkItem) -> Result<(), ContractError> {
+    use crate::work_item::{MAX_CRITERIA, MAX_CRITERION_CHARS, MAX_INPUT_BYTES, MAX_TITLE_CHARS};
+    if item.acceptance_criteria.is_empty() {
+        return Err(ContractError::WorkItemWithoutCriteria);
+    }
+    if item.acceptance_criteria.len() > MAX_CRITERIA {
+        return Err(ContractError::FieldTooLarge("acceptance criteria"));
+    }
+    if item.title.trim().is_empty() {
+        return Err(ContractError::EmptyWorkItemField("work item title"));
+    }
+    if item.ask.trim().is_empty() {
+        return Err(ContractError::EmptyWorkItemField("work item ask"));
+    }
+    if item.title.chars().count() > MAX_TITLE_CHARS {
+        return Err(ContractError::FieldTooLarge("work item title"));
+    }
+    check_text("work item title", &item.title, MAX_INPUT_BYTES)?;
+    check_free_text("work item title", &item.title)?;
+    check_text("work item ask", &item.ask, MAX_INPUT_BYTES)?;
+    check_free_text("work item ask", &item.ask)?;
+    if let Some(reference) = &item.source.reference {
+        check_text("work item reference", reference, 256)?;
+        check_free_text("work item reference", reference)?;
+    }
+    for criterion in &item.acceptance_criteria {
+        if criterion.text.trim().is_empty() {
+            return Err(ContractError::EmptyWorkItemField("acceptance criterion"));
+        }
+        if criterion.text.chars().count() > MAX_CRITERION_CHARS {
+            return Err(ContractError::FieldTooLarge("acceptance criterion"));
+        }
+        check_text("acceptance criterion", &criterion.text, MAX_INPUT_BYTES)?;
+        check_free_text("acceptance criterion", &criterion.text)?;
+    }
+    if item.acceptance_criteria.iter().any(|c| !c.confirmed) {
+        return Err(ContractError::UnconfirmedCriterion);
     }
     Ok(())
 }
@@ -490,6 +558,7 @@ pub fn validate_proposal(proposal: &TaskProposal, envelope: &Authorization) -> V
         max_repairs: proposal.max_repairs,
         model_selection: None,
         permission: Default::default(),
+        work_item: None,
     };
     match validate(&probe) {
         Ok(()) => Validation::Accept,
@@ -521,7 +590,149 @@ mod tests {
             max_repairs: 1,
             model_selection: None,
             permission: Default::default(),
+            work_item: None,
         }
+    }
+
+    #[test]
+    fn a_contract_serializes_exactly_as_before_the_work_item_intake() {
+        // Pins the pre-DPES-673 wire shape so digests and idempotency keys
+        // computed over a contract JSON stay valid.
+        assert_eq!(
+            serde_json::to_string(&contract()).unwrap(),
+            r#"{"id":"t1","project_id":"p1","parent_id":null,"objective":"Add unit tests","kind":"Implement","agent":"codex","dependencies":[],"verification":{"Commands":{"commands":[["cargo","test"]]}},"delivery":"LocalReview","autonomy":"WorkspaceWrites","max_retries":1,"max_repairs":1}"#
+        );
+    }
+
+    fn confirmed_item() -> WorkItem {
+        let mut item =
+            crate::work_item::normalize("Add intake\nAsk text\n1. First\n2. Second").unwrap();
+        item.acceptance_criteria
+            .iter_mut()
+            .for_each(|c| c.confirmed = true);
+        item
+    }
+
+    #[test]
+    fn a_fully_confirmed_work_item_is_valid() {
+        assert_eq!(validate_work_item(&confirmed_item()), Ok(()));
+    }
+
+    #[test]
+    fn contract_validation_requires_every_criterion_of_a_present_work_item_to_be_confirmed() {
+        let mut c = contract();
+        assert_eq!(validate(&c), Ok(()));
+        c.work_item = Some(crate::work_item::normalize("T\n1. a\n2. b").unwrap());
+        assert_eq!(validate(&c), Err(ContractError::UnconfirmedCriterion));
+        let item = c.work_item.as_mut().unwrap();
+        item.acceptance_criteria[0].confirmed = true;
+        assert_eq!(validate(&c), Err(ContractError::UnconfirmedCriterion));
+        c.work_item = Some(confirmed_item());
+        assert_eq!(validate(&c), Ok(()));
+        c.work_item.as_mut().unwrap().acceptance_criteria.clear();
+        assert_eq!(validate(&c), Err(ContractError::WorkItemWithoutCriteria));
+    }
+
+    #[test]
+    fn work_item_is_absent_from_legacy_json_omitted_when_unset_and_round_trips() {
+        let value = serde_json::to_value(contract()).unwrap();
+        assert!(value.get("work_item").is_none());
+        let legacy: TaskContract = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.work_item, None);
+
+        let mut with = contract();
+        with.work_item = Some(confirmed_item());
+        let written = serde_json::to_value(&with).unwrap();
+        assert_eq!(written["work_item"]["source"]["kind"], "text");
+        assert_eq!(
+            written["work_item"]["acceptance_criteria"][0]["confirmed"],
+            true
+        );
+        let read: TaskContract = serde_json::from_value(written).unwrap();
+        assert_eq!(read, with);
+    }
+
+    #[test]
+    fn a_work_item_is_refused_until_every_criterion_is_confirmed() {
+        let fresh = crate::work_item::normalize("Add intake\n1. First\n2. Second").unwrap();
+        assert_eq!(
+            validate_work_item(&fresh),
+            Err(ContractError::UnconfirmedCriterion)
+        );
+        let mut partial = confirmed_item();
+        partial.acceptance_criteria[1].confirmed = false;
+        assert_eq!(
+            validate_work_item(&partial),
+            Err(ContractError::UnconfirmedCriterion)
+        );
+        // A drafted criterion needs the same confirmation.
+        let mut drafted = crate::work_item::normalize("Just a title").unwrap();
+        assert!(drafted.acceptance_criteria[0].drafted);
+        assert_eq!(
+            validate_work_item(&drafted),
+            Err(ContractError::UnconfirmedCriterion)
+        );
+        drafted.acceptance_criteria[0].confirmed = true;
+        assert_eq!(validate_work_item(&drafted), Ok(()));
+    }
+
+    #[test]
+    fn a_work_item_without_criteria_is_refused() {
+        let mut item = confirmed_item();
+        item.acceptance_criteria.clear();
+        assert_eq!(
+            validate_work_item(&item),
+            Err(ContractError::WorkItemWithoutCriteria)
+        );
+    }
+
+    #[test]
+    fn a_client_supplied_work_item_is_bounds_checked_again() {
+        use crate::work_item::{MAX_CRITERIA, MAX_CRITERION_CHARS, MAX_TITLE_CHARS};
+        let check = |edit: &dyn Fn(&mut WorkItem)| {
+            let mut item = confirmed_item();
+            edit(&mut item);
+            validate_work_item(&item)
+        };
+        assert_eq!(
+            check(&|i| i.title = "t".repeat(MAX_TITLE_CHARS + 1)),
+            Err(ContractError::FieldTooLarge("work item title"))
+        );
+        assert_eq!(
+            check(&|i| i.acceptance_criteria[0].text = "c".repeat(MAX_CRITERION_CHARS + 1)),
+            Err(ContractError::FieldTooLarge("acceptance criterion"))
+        );
+        assert_eq!(
+            check(&|i| {
+                let first = i.acceptance_criteria[0].clone();
+                i.acceptance_criteria = vec![first; MAX_CRITERIA + 1];
+            }),
+            Err(ContractError::FieldTooLarge("acceptance criteria"))
+        );
+        assert_eq!(
+            check(&|i| i.title = "  ".into()),
+            Err(ContractError::EmptyWorkItemField("work item title"))
+        );
+        assert_eq!(
+            check(&|i| i.ask.clear()),
+            Err(ContractError::EmptyWorkItemField("work item ask"))
+        );
+        assert_eq!(
+            check(&|i| i.acceptance_criteria[0].text = " ".into()),
+            Err(ContractError::EmptyWorkItemField("acceptance criterion"))
+        );
+        assert_eq!(
+            check(&|i| i.ask = "a\u{0}b".into()),
+            Err(ContractError::ContainsNul("work item ask"))
+        );
+        assert_eq!(
+            check(&|i| i.acceptance_criteria[0].text = "a\u{202e}b".into()),
+            Err(ContractError::DisallowedCharacter("acceptance criterion"))
+        );
+        assert_eq!(
+            check(&|i| i.source.reference = Some("x".repeat(257))),
+            Err(ContractError::FieldTooLarge("work item reference"))
+        );
     }
 
     #[test]
