@@ -246,7 +246,7 @@ describe("S2 project detail and submission", () => {
     const { user } = await mount(fake, { route });
     await user.click(screen.getByRole("button", { name: "Submit" }));
     expect(await screen.findByText("Objective is required.")).toBeInTheDocument();
-    expect(screen.getByText(/Agent is required; no agent is chosen automatically/)).toBeInTheDocument();
+    expect(screen.queryByText(/Agent is required/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.submit")).toHaveLength(0);
   });
 

@@ -120,6 +120,7 @@ enum Execution {
 /// the new task joins, if any.
 struct ProposeExec {
     submit: TaskSubmitParams,
+    apply_dispatch_defaults: bool,
     link: Option<LinkTarget>,
     /// The finished scout this task promotes to a task that ships. Only the lineage link
     /// carries it: the objective is the text the proposal wrote, never the scout's report.
@@ -337,7 +338,18 @@ impl ProposeExec {
             Some(_) => {}
             None => {
                 self.preflight(api)?;
-                api.submit_task_inner(&self.submit, &self.submit.idempotency_key, None)?;
+                let submit = TaskSubmitParams {
+                    idempotency_key: self.submit.idempotency_key.clone(),
+                    contract: if self.apply_dispatch_defaults {
+                        api.resolve_dispatch_defaults(&self.submit.contract)?
+                    } else {
+                        self.submit.contract.clone()
+                    },
+                };
+                // Actions run under the mutation gate: do not probe a CLI here. These
+                // defaults were checked on save; the executor rechecks before launching.
+                let contract = api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
+                api.admit_contract(&contract)?;
             }
         }
         // Written once, right after the task exists. A rerun finds the same link and
@@ -1179,6 +1191,7 @@ impl DaemonApi {
             old_task_id: revise.task_id,
             added_intent: revise.added_intent,
             task: ProposeExec {
+                apply_dispatch_defaults: false,
                 submit: TaskSubmitParams {
                     idempotency_key: key,
                     contract: TaskSubmission {
@@ -1193,7 +1206,7 @@ impl DaemonApi {
                         autonomy: envelope.autonomy,
                         max_retries: CHAT_TASK_MAX_RETRIES,
                         max_repairs: CHAT_TASK_MAX_REPAIRS,
-                        model_selection: None,
+                        model_selection: old.contract.model_selection,
                         permission: None,
                         work_item: None,
                         work_class: None,
@@ -1228,9 +1241,13 @@ impl DaemonApi {
         if check_task(&propose, &envelope).is_err() {
             return Err(INVALID);
         }
-        let agent = canonical_agent_id(&propose.agent)
-            .ok_or(INVALID)?
-            .to_owned();
+        let agent = if propose.agent == "default" {
+            String::new()
+        } else {
+            canonical_agent_id(&propose.agent)
+                .ok_or(INVALID)?
+                .to_owned()
+        };
         let project_id = project?;
         // A promotion is checked again here, at execution: the scout and its report are
         // read as they are now.
@@ -1262,6 +1279,7 @@ impl DaemonApi {
             (None, Some(_)) => return Err(INVALID),
         };
         Ok(ProposeExec {
+            apply_dispatch_defaults: true,
             submit: TaskSubmitParams {
                 idempotency_key: key,
                 contract: TaskSubmission {

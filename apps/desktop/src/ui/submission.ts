@@ -40,8 +40,7 @@ export function buildSubmission(projectId: string, draft: SubmitDraft): Submissi
   const errors: string[] = [];
   if (draft.objective.trim() === "") errors.push("Objective is required.");
   const agent = canonicalAgentId(draft.agent);
-  if (draft.agent.trim() === "") errors.push("Agent is required; no agent is chosen automatically.");
-  else if (agent === null) errors.push("Agent must be codex or claude-code.");
+  if (draft.agent.trim() !== "" && agent === null) errors.push("Agent must be codex or claude-code.");
   const dependencies = ids(draft.dependencies);
   const parent = draft.parentId.trim();
   if (dependencies.some(isFixtureId) || isFixtureId(parent)) {
@@ -67,7 +66,7 @@ export function buildSubmission(projectId: string, draft: SubmitDraft): Submissi
       parent_id: parent === "" ? null : parent,
       objective: draft.objective.trim(),
       kind: draft.kind,
-      agent: agent!,
+      ...(agent === null ? {} : { agent }),
       dependencies,
       verification,
       delivery: draft.delivery,

@@ -917,6 +917,12 @@ export interface SettingsWire {
   chat_pr_delivery?: boolean;
   /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
   mcp?: McpWire;
+  dispatch_defaults?: DispatchDefaultsWire;
+}
+
+export interface DispatchDefaultsWire {
+  default_agent: string | null;
+  providers: Record<string, ModelSelectionWire>;
 }
 
 /** `settings.get` mcp group: whether the read-only task tools are on. Off by default. */
@@ -945,6 +951,7 @@ export interface SettingsPatchWire {
   wake_limits?: Partial<WakeLimitsWire>;
   chat_pr_delivery?: boolean;
   mcp?: McpWire;
+  dispatch_defaults?: DispatchDefaultsWire;
 }
 
 /** Automatic monitoring is limited to Global and workstream conversation targets. */

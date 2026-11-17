@@ -39,6 +39,82 @@ fn task_block(code: &str, objective: &str, extra: &str) -> String {
     )
 }
 
+#[test]
+fn proposed_tasks_use_dispatch_defaults_and_revisions_keep_recorded_choices() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let defaults = json!({
+        "default_agent":"claude-code",
+        "providers":{"claude-code":{"model":"sonnet"},"codex":{"model":"gpt-6-luna","effort":"low"}}
+    });
+    api.store
+        .update_orchestrator_settings(&orchestrator_store::SettingsPatch {
+            dispatch_defaults: Some(serde_json::from_value(defaults).unwrap()),
+            ..Default::default()
+        })
+        .unwrap();
+    let snapshot = super::conversation_snapshot::build_snapshot(
+        &api.store,
+        &ConversationTarget::Global,
+        true,
+        &api.config.load.read(std::time::Instant::now()),
+    );
+    assert!(snapshot.contains("Task dispatch default provider: claude-code"));
+    let code = project_code(ALPHA);
+    let ids = propose(
+        &api,
+        "defaults-turn",
+        &format!(
+            r#"{{"kind":"task.propose","project":"{code}","objective":"Use defaults"}}, {}"#,
+            task_block(&code, "Explicit provider", "")
+        ),
+    );
+    for (index, agent, model) in [(0, "claude-code", "sonnet"), (1, "codex", "gpt-6-luna")] {
+        let result = resolve(
+            &api,
+            &ids[index],
+            "approve",
+            &format!("defaults-approve-{index}"),
+        )
+        .unwrap();
+        let id = proposed_task_id(&ids[index]);
+        assert_executed(&result, &id);
+        let contract = api.store.get(&id).unwrap().contract;
+        assert_eq!(contract.agent, agent);
+        assert_eq!(
+            contract.model_selection.unwrap().model.as_deref(),
+            Some(model)
+        );
+    }
+    api.store
+        .update_orchestrator_settings(&orchestrator_store::SettingsPatch {
+            dispatch_defaults: Some(
+                serde_json::from_value(json!({
+                    "default_agent": "codex",
+                    "providers": {"claude-code": {"model":"sonnet", "effort":"high"}}
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        })
+        .unwrap();
+    let old = proposed_task_id(&ids[0]);
+    let revised = propose(
+        &api,
+        "revise-defaults",
+        &format!(
+            r#"{{"kind":"task.revise","task_id":"{old}","added_intent":"Add one more case"}}"#
+        ),
+    );
+    let result = resolve(&api, &revised[0], "approve", "defaults-revise").unwrap();
+    let next = proposed_task_id(&revised[0]);
+    assert_executed(&result, &next);
+    assert_eq!(
+        api.store.get(&next).unwrap().contract.model_selection,
+        api.store.get(&old).unwrap().contract.model_selection
+    );
+}
+
 fn in_workstream(workstream: &str) -> String {
     format!(r#", "workstream_id": "{workstream}""#)
 }

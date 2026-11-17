@@ -2,6 +2,14 @@
 
 Open Settings from the sidebar. Each group has its own Save button.
 
+## Agent dispatch defaults
+
+Choose a default provider, then set the model and effort for each provider. Save dispatch defaults to keep these choices across app and daemon restarts. Switching the default provider preserves the other providers' choices. Model and effort options come from the installed agents' catalogs; refresh the list if a catalog is still loading.
+
+These settings apply to new app/daemon tasks across projects, including chat-proposed tasks and workstream tasks. Explicit task choices take precedence, followed by named work classes, then these defaults. An explicit provider uses only that provider's saved choices. An explicit different model does not inherit effort from the saved model. Choosing provider defaults leaves model or effort selection to the provider.
+
+Existing queued/running tasks, retries, and chat model choices are unchanged. Reassigning a task uses the new provider's defaults; revising a task retains its recorded choices. Standalone CLI execution is unchanged. An unavailable saved selection is refused on submission or before launch, never silently replaced. Clear dispatch defaults and save to remove them; tasks without a provider then require an explicit choice.
+
 ## Machine load limits
 
 New tasks wait while the machine is busy. Set CPU, Memory, and Disk limits as whole percents from 50 to 100. Each limit is compared with the average of the last 60 seconds, and 100 turns that check off.

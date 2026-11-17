@@ -381,7 +381,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             Agent
             <input value={draft.agent} onChange={(e) => set({ agent: e.target.value })} />
           </label>
-          <p className="muted ps-wide">Use the launcher ID: codex or claude-code. Display capitalization is accepted.</p>
+          <p className="muted ps-wide">Leave Agent blank to use Settings dispatch defaults, or override with codex or claude-code. Display capitalization is accepted.</p>
           <label>
             Parent task ID (optional)
             <input value={draft.parentId} onChange={(e) => set({ parentId: e.target.value })} />

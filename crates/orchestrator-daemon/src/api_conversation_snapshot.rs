@@ -147,6 +147,19 @@ pub(crate) fn build_snapshot_with_notes(
     blocks.push(approvals(store));
     blocks.push(reports(store));
     if actions {
+        let provider = match store.orchestrator_settings() {
+            Ok(settings) => match settings.dispatch_defaults.default_agent.as_deref() {
+                Some("codex") => "codex",
+                Some("claude-code") => "claude-code",
+                Some("github-copilot") => "github-copilot",
+                None => "not configured",
+                _ => "unavailable",
+            },
+            Err(_) => "unknown",
+        };
+        blocks.push(Block::text(format!(
+            "Task dispatch default provider: {provider}"
+        )));
         // A workstream conversation cannot create a workstream, so it is not offered the kind.
         let in_workstream = matches!(target, ConversationTarget::Workstream(_));
         let kinds: Vec<&str> = ActionKind::ALL

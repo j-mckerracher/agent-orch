@@ -735,6 +735,11 @@ export interface GroupsPatch {
   chatPrDelivery?: boolean;
   /** Whether the orchestrator chat gets the read-only task tools. */
   mcpEnabled?: boolean;
+  dispatchDefaults?: DispatchDefaults;
+}
+export interface DispatchDefaults {
+  defaultAgent: string | null;
+  providers: Record<string, { model?: string; effort?: string }>;
 }
 export interface SettingsSnapshot {
   limits: LoadLimits;
@@ -744,6 +749,8 @@ export interface SettingsSnapshot {
   chatPrDelivery?: boolean;
   /** Absent from a daemon that cannot change it. */
   mcpEnabled?: boolean;
+  /** Absent from older daemons. Shared by new tasks across projects. */
+  dispatchDefaults?: DispatchDefaults;
   gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
   /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
   feed: "sampler" | "disabled_by_environment";

@@ -3,6 +3,12 @@ import { emptySubmitDraft } from "./drafts";
 import { buildSubmission } from "./submission";
 
 describe("buildSubmission agent identifiers", () => {
+  it("omits a blank agent so the daemon resolves saved dispatch defaults", () => {
+    const result = buildSubmission("/repo", { ...emptySubmitDraft(), objective: "Use defaults" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.submission).not.toHaveProperty("agent");
+  });
+
   it.each([
     ["codex", "codex"],
     ["Codex", "codex"],

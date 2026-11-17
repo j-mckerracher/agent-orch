@@ -23,6 +23,27 @@ enum CachedReply {
 /// (DPES-1105). Clients may not use it, so they cannot pre-claim one.
 pub(crate) const ACTION_KEY_PREFIX: &str = "action-";
 
+/// A completed request must not be re-resolved against subsequently changed defaults.
+pub(crate) fn replay<P: Serialize>(
+    store: &SqliteStore,
+    method: &str,
+    key: &str,
+    params: &P,
+) -> Result<Option<Value>, RpcError> {
+    if !valid_key(key) || key.starts_with(ACTION_KEY_PREFIX) {
+        return Err(RpcError::InvalidParams);
+    }
+    match store
+        .lookup_idempotency(key, method, &fingerprint(method, params)?)
+        .map_err(map_store_error)?
+    {
+        Some(IdempotencyStart::Completed(reply)) => decode_reply(reply).map(Some),
+        Some(IdempotencyStart::InProgress) => Err(RpcError::IdempotencyInProgress),
+        Some(IdempotencyStart::Started) => Err(RpcError::Internal),
+        None => Ok(None),
+    }
+}
+
 pub(crate) fn run<P: Serialize>(
     store: &SqliteStore,
     gate: &Mutex<()>,

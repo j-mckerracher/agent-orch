@@ -671,7 +671,7 @@ export class DaemonApi {
    * DPES-1105 Phase 3. Changes the supervision or wake-limit groups. Only the groups present are sent: a group
    * must name at least one field. User-only, like `settingsSet`.
    */
-  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp">, idempotencyKey: string): Promise<SettingsWire> {
+  settingsSetGroups(patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "dispatch_defaults">, idempotencyKey: string): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
   }
 

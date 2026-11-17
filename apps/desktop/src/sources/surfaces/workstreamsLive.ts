@@ -260,7 +260,7 @@ export function createLiveWorkstreams(
               parent_id: null,
               objective: task.objective,
               kind: task.kind,
-              agent: task.agent,
+              ...(task.agent === "" ? {} : { agent: task.agent }),
               dependencies: [],
               verification: "None",
               delivery: "LocalReview",
