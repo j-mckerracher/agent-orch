@@ -38,7 +38,7 @@
  *   `conversations.send`), `cancel` (`conversations.cancel`), D9 `workstreams.*`
  *   writes and D17 `settings.set`. Ids prefixed `fixture:` are refused (`invalid-params`) before any request.
  */
-import type { ApprovalState, CopilotSignInRecord, LoadMeterName, TaskState } from "../../daemon/types";
+import type { ApprovalState, CopilotSignInRecord, DeliveryPolicy, LoadMeterName, TaskKind, TaskState } from "../../daemon/types";
 import type { UsageTokenWarningsWire } from "../../daemon/usageWire";
 import type { Provenance, SimulatedReceipt, SourceId } from "../types";
 
@@ -125,6 +125,32 @@ export interface WorkstreamMutation {
   revision: number | null;
   at: string;
 }
+/** A plan edit that queued new tasks in place of `replaced` (empty for an added task). `id` is the first created task. */
+export interface WorkstreamPlanEdit extends WorkstreamMutation {
+  created: string[];
+  replaced: string[];
+}
+/** A removed task; `cancelled` is true when it had not started and the daemon cancelled it first. */
+export interface WorkstreamTaskRemoval extends WorkstreamMutation {
+  cancelled: boolean;
+}
+/** The task fields `addTask` sends; the policy defaults are the submit form's. */
+export interface WorkstreamNewTask {
+  projectId: string;
+  objective: string;
+  kind: TaskKind;
+  agent: string;
+  /** The workstream objective to link the task under; omitted links it to the workstream only. */
+  objectiveId?: string;
+}
+/** Execution policy fields of a task; `setTaskPolicy` sends only the ones given, and needs at least one. */
+export interface WorkstreamTaskPolicy {
+  permission?: PermissionLevel;
+  autonomy?: "WorkspaceWrites" | "ApprovalRequired";
+  delivery?: DeliveryPolicy;
+  maxRetries?: number;
+  maxRepairs?: number;
+}
 export interface WorkstreamSource {
   readonly provenance: Provenance;
   /** Lists daemon workstreams and linked tasks; unread details keep an explicit unknown reason. */
@@ -154,6 +180,16 @@ export interface WorkstreamSource {
   ): Promise<WorkstreamMutation>;
   linkTask(workstreamId: string, taskId: string, objectiveId?: string): Promise<WorkstreamMutation>;
   unlinkTask(workstreamId: string, taskId: string): Promise<WorkstreamMutation>;
+  /*
+   * Plan edits (OX-W9). The daemon queues the new tasks, links them under the same objective and
+   * cancels a replaced task that had not started; the replaced task stays linked as history.
+   */
+  addTask(workstreamId: string, task: WorkstreamNewTask): Promise<WorkstreamPlanEdit>;
+  splitTask(workstreamId: string, taskId: string, objectives: string[]): Promise<WorkstreamPlanEdit>;
+  combineTasks(workstreamId: string, taskIds: string[], objective: string): Promise<WorkstreamPlanEdit>;
+  removeTask(workstreamId: string, taskId: string): Promise<WorkstreamTaskRemoval>;
+  reassignTask(workstreamId: string, taskId: string, agent: string): Promise<WorkstreamPlanEdit>;
+  setTaskPolicy(workstreamId: string, taskId: string, policy: WorkstreamTaskPolicy): Promise<WorkstreamPlanEdit>;
 }
 
 // D10 -- ConversationSource. Project notes use coordinator.get/send_message; Global and workstream turns use conversations.get/send/cancel.

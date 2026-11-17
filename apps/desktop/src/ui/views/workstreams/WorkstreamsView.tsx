@@ -29,6 +29,7 @@ import {
   type WsGroup,
   type WsTask,
 } from "./model";
+import { PlanEditing } from "./PlanEditing";
 import { STATE_TONE } from "./tone";
 import { WsTabs } from "./WsTabs";
 import "./workstreams.css";
@@ -49,8 +50,6 @@ const DEPENDENCY_REASON =
   "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
 const LIST_REASON =
   "Disabled: no daemon method orders initiatives, so Prioritize has nothing to call. Archive here is not in this release; archive the selected initiative from its detail panel.";
-const PLAN_REASON =
-  "Disabled: the daemon has no method to add, split, combine or remove tasks, reassign them, or change execution policy. Moving a task needs an unlink then a link, which is not atomic, so it is not offered as one action.";
 const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
 
 function assignment(task: WsGroup["tasks"][number]): string {
@@ -618,16 +617,22 @@ function Detail({
         {!fixture && (
           <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />
         )}
-        <div className="ws-row" role="group" aria-label="Plan editing">
-          {["Add task", "Split task", "Combine tasks", "Remove task", "Reassign", "Change execution policy"].map((label) => (
-            <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>
-              {label}
-            </Button>
-          ))}
-        </div>
-        <p className="ws-reason" id={`${reasonId}-plan`}>
-          {fixture ? FIXTURE_REASON : PLAN_REASON}
-        </p>
+        {fixture ? (
+          <>
+            <div className="ws-row" role="group" aria-label="Plan editing">
+              {["Add task", "Split task", "Combine tasks", "Remove task", "Reassign", "Change execution policy"].map((label) => (
+                <Button key={label} disabled aria-describedby={`${reasonId}-plan`}>
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <p className="ws-reason" id={`${reasonId}-plan`}>
+              {FIXTURE_REASON}
+            </p>
+          </>
+        ) : (
+          <PlanEditing group={group} controls={controls} />
+        )}
               </>
             ),
           },

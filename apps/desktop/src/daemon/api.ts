@@ -47,10 +47,13 @@ import type {
   GateDraft,
   ObjectiveWire,
   WorkstreamDetailWire,
+  WorkstreamPlanEditWire,
+  WorkstreamRemoveTaskWire,
   WorkstreamReviseObjectiveRequest,
   WorkstreamSetGateRequest,
   WorkstreamStateWire,
   WorkstreamTaskLinkWire,
+  WorkstreamTaskPolicyPatch,
   WorkstreamUpdateRequest,
   WorkstreamWire,
   ActionsPendingWire,
@@ -465,6 +468,100 @@ export class DaemonApi {
     return this.session.request("workstreams.unlink_task", {
       workstream_id: realId(workstreamId),
       task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Queues a task and links it to the workstream (and objective) in one request; `contract` is `tasks.submit`'s. */
+  async workstreamsAddTask(
+    workstreamId: string,
+    objectiveId: string | undefined,
+    contract: TaskSubmission,
+    idempotencyKey: string,
+  ): Promise<WorkstreamPlanEditWire> {
+    realIdFields(contract);
+    return this.session.request("workstreams.add_task", {
+      workstream_id: realId(workstreamId),
+      ...(objectiveId === undefined ? {} : { objective_id: realId(objectiveId) }),
+      contract: {
+        ...contract,
+        project_id: realId(contract.project_id),
+        parent_id: contract.parent_id ? realId(contract.parent_id) : null,
+        dependencies: contract.dependencies.map(realId),
+      },
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Replaces one task with 2 to 8 tasks, one per objective text. */
+  async workstreamsSplitTask(
+    workstreamId: string,
+    taskId: string,
+    objectives: string[],
+    idempotencyKey: string,
+  ): Promise<WorkstreamPlanEditWire> {
+    return this.session.request("workstreams.split_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      objectives,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Replaces 2 to 8 tasks of one project and kind with one task. */
+  async workstreamsCombineTasks(
+    workstreamId: string,
+    taskIds: string[],
+    objective: string,
+    idempotencyKey: string,
+  ): Promise<WorkstreamPlanEditWire> {
+    return this.session.request("workstreams.combine_tasks", {
+      workstream_id: realId(workstreamId),
+      task_ids: taskIds.map(realId),
+      objective,
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Cancels a not-yet-started task, then unlinks it; a finished task is only unlinked. */
+  async workstreamsRemoveTask(workstreamId: string, taskId: string, idempotencyKey: string): Promise<WorkstreamRemoveTaskWire> {
+    return this.session.request("workstreams.remove_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Replaces the task with a copy that runs on `agent`. */
+  async workstreamsReassignTask(
+    workstreamId: string,
+    taskId: string,
+    agent: string,
+    modelSelection: ModelSelectionWire | undefined,
+    idempotencyKey: string,
+  ): Promise<WorkstreamPlanEditWire> {
+    if (modelSelection !== undefined) realIdFields(modelSelection);
+    return this.session.request("workstreams.reassign_task", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      agent: realId(agent),
+      ...(modelSelection === undefined ? {} : { model_selection: modelSelection }),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** Replaces the task with a copy under the changed policy fields; the daemon refuses an empty patch. */
+  async workstreamsSetTaskPolicy(
+    workstreamId: string,
+    taskId: string,
+    patch: WorkstreamTaskPolicyPatch,
+    idempotencyKey: string,
+  ): Promise<WorkstreamPlanEditWire> {
+    const fields = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    return this.session.request("workstreams.set_task_policy", {
+      workstream_id: realId(workstreamId),
+      task_id: realId(taskId),
+      ...fields,
       idempotency_key: idempotencyKey,
     });
   }

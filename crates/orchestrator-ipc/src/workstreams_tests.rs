@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-const WORKSTREAM_METHODS: [&str; 9] = [
+const WORKSTREAM_METHODS: [&str; 15] = [
     "workstreams.create",
     "workstreams.list",
     "workstreams.get",
@@ -20,6 +20,12 @@ const WORKSTREAM_METHODS: [&str; 9] = [
     "workstreams.set_gate",
     "workstreams.link_task",
     "workstreams.unlink_task",
+    "workstreams.add_task",
+    "workstreams.split_task",
+    "workstreams.combine_tasks",
+    "workstreams.remove_task",
+    "workstreams.reassign_task",
+    "workstreams.set_task_policy",
 ];
 
 struct Recorder {

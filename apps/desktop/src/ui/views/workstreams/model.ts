@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import type { Loadable } from "../../../daemon/appData";
 import { presentError } from "../../../daemon/errors";
-import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
+import type { Approval, SessionEntry, TaskContract, TaskRecord, TaskState } from "../../../daemon/types";
 import type {
   Measured,
   Workstream,
@@ -51,6 +51,8 @@ export interface WsTask {
   pendingDecision: boolean;
   /** True only for a real daemon task: the one kind that has a detail route. */
   openable: boolean;
+  /** The loaded task contract (kind and policy) that plan edits start from; null when no record is loaded. */
+  contract: TaskContract | null;
 }
 
 export interface WsGroup {
@@ -199,6 +201,7 @@ function wsTaskOf(
     requiredEvidence: requiredEvidence({ id: base.id, state, dependencies }, states, approvals),
     pendingDecision: pendingApprovals(approvals ?? []).some((approval) => approval.action.task_id === base.id),
     openable: !isFixtureId(base.id),
+    contract: record?.contract ?? null,
   };
 }
 
@@ -278,6 +281,7 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
       requiredEvidence: requiredEvidence(task, byId, []),
       pendingDecision: false,
       openable: false,
+      contract: null,
     })),
     counts: ws.counts,
     objectives: ws.objectives,

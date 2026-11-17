@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ALL_CAPABILITIES } from "../../daemon/types";
 import { FakeDaemon } from "../../test/fakeDaemon";
-import { WORKSTREAM_STATE, connect, populate } from "./testkit";
+import { ALPHA, WORKSTREAM_STATE, connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
 afterEach(() => {
@@ -108,6 +108,56 @@ describe("live workstreams adapter", () => {
     }
   });
 
+  it("maps each plan edit to its workstreams method, sending only the fields given", async () => {
+    const fake = populate(new FakeDaemon());
+    const source = await live(fake);
+    const strip = ({ idempotency_key: _key, ...rest }: Record<string, unknown>) => rest;
+    const added = await source.addTask("ws-1", { projectId: ALPHA, objective: "Add a REPL", kind: "Investigate", agent: "codex", objectiveId: "obj-1" });
+    expect(added).toMatchObject({ id: added.created[0], replaced: [] });
+    const policy = await source.setTaskPolicy("ws-1", "t-wait", { permission: "auto", maxRetries: 3 });
+    expect(policy.replaced).toEqual(["t-wait"]);
+    const moved = await source.reassignTask("ws-1", policy.id, "claude-code");
+    const split = await source.splitTask("ws-1", moved.id, ["Parse", "Print"]);
+    expect(split.created).toHaveLength(2);
+    const combined = await source.combineTasks("ws-1", split.created, "Parse and print");
+    await expect(source.removeTask("ws-1", combined.id)).resolves.toMatchObject({ id: combined.id, cancelled: true });
+
+    expect(paramsOf(fake, "workstreams.add_task").map(strip)).toEqual([
+      {
+        workstream_id: "ws-1",
+        objective_id: "obj-1",
+        contract: {
+          project_id: ALPHA,
+          parent_id: null,
+          objective: "Add a REPL",
+          kind: "Investigate",
+          agent: "codex",
+          dependencies: [],
+          verification: "None",
+          delivery: "LocalReview",
+          autonomy: "ApprovalRequired",
+          max_retries: 1,
+          max_repairs: 1,
+        },
+      },
+    ]);
+    expect(paramsOf(fake, "workstreams.set_task_policy").map(strip)).toEqual([
+      { workstream_id: "ws-1", task_id: "t-wait", permission: "auto", max_retries: 3 },
+    ]);
+    expect(paramsOf(fake, "workstreams.reassign_task").map(strip)).toEqual([{ workstream_id: "ws-1", task_id: policy.id, agent: "claude-code" }]);
+    expect(paramsOf(fake, "workstreams.split_task").map(strip)).toEqual([
+      { workstream_id: "ws-1", task_id: moved.id, objectives: ["Parse", "Print"] },
+    ]);
+    expect(paramsOf(fake, "workstreams.combine_tasks").map(strip)).toEqual([
+      { workstream_id: "ws-1", task_ids: split.created, objective: "Parse and print" },
+    ]);
+    expect(paramsOf(fake, "workstreams.remove_task").map(strip)).toEqual([{ workstream_id: "ws-1", task_id: combined.id }]);
+    const keys = ["add_task", "set_task_policy", "reassign_task", "split_task", "combine_tasks", "remove_task"].map(
+      (method) => paramsOf(fake, `workstreams.${method}`)[0]!.idempotency_key,
+    );
+    expect(new Set(keys).size).toBe(6);
+  });
+
   it("never sends a fixture id: it refuses before any request", async () => {
     const fake = populate(new FakeDaemon());
     const source = await live(fake);
@@ -122,10 +172,13 @@ describe("live workstreams adapter", () => {
       source.linkTask("fixture:ws-auth", "t-free"),
       source.linkTask("ws-1", "t-free", "fixture:obj-1"),
       source.unlinkTask("fixture:ws-auth", "t-run"),
+      source.addTask("ws-1", { projectId: "fixture:project", objective: "x", kind: "Implement", agent: "codex" }),
+      source.combineTasks("ws-1", ["t-wait", "fixture:task-1"], "x"),
+      source.reassignTask("fixture:ws-auth", "t-wait", "codex"),
     ];
     for (const refusal of refusals) await expect(refusal).rejects.toMatchObject({ kind: "invalid-params" });
     for (const call of fake.calls) expect(JSON.stringify(call.params ?? null)).not.toContain("fixture:");
-    expect(fake.calls.filter((call) => /^workstreams\.(create|update|add_|revise_|set_|link_|unlink_)/.test(call.method))).toEqual([]);
+    expect(fake.calls.filter((call) => /^workstreams\.(create|update|add_|revise_|set_|link_|unlink_|split_|combine_|remove_|reassign_)/.test(call.method))).toEqual([]);
   });
 
   it("reuses the idempotency key after an indeterminate failure and applies the write once", async () => {

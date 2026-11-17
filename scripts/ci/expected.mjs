@@ -51,7 +51,8 @@ export const WINDOWS = {
   // conversation_runtime 44, with 239 passed plus 1 ignored.
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on Windows): the unit binary is 212 and
   // conversation_runtime 61, with 281 passed plus 1 ignored.
-  daemon: { passed: 601, ignored: 1, sequence: [507, 81, 2, 5, 0, 1, 2, 4] },
+  // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 601 becomes 610.
+  daemon: { passed: 610, ignored: 1, sequence: [516, 81, 2, 5, 0, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -134,7 +135,8 @@ export const MACOS = {
   // conversation_runtime 49, with 325 passed plus 1 ignored.
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on macOS): the unit binary is 282 and
   // conversation_runtime 66, daemon.rs 13, with 369 passed plus 1 ignored.
-  daemon: { passed: 696, ignored: 1, sequence: [584, 86, 2, 5, 13, 1, 2, 4] },
+  // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 696 becomes 705.
+  daemon: { passed: 705, ignored: 1, sequence: [593, 86, 2, 5, 13, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -162,7 +164,8 @@ export const MACOS = {
   // DPES-1105 action proposals (macOS workspace-tests gate, PR #113, CI run 43981399384): 1203 becomes 1258.
   // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 1258 becomes 1289.
   // CI run 44023050296: 1289 becomes 1432.
-  workspace: { passed: 2074, ignored: 2 },
+  // OX-W9 workstream plan editing adds 9 daemon tests: 2074 becomes 2083.
+  workspace: { passed: 2083, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
@@ -226,7 +229,9 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 3 new files and 57 tests, 84 files 1773 tests.
 // DPES-1105 task cards, the proposed actions queue and the approver notice (CI run 44023050296): 86 files, 1856 tests.
 // DPES-1105 phases 2 to 6 (CI run 44084375506): 116 files, 2134 tests.
-export const VITEST = { files: 120, tests: 2199 };
+// Workstream plan editing (OX-W9) adds 20 tests to existing files: 12 fixtureGuard rows, one surface mapping test and seven
+// view tests. The tree measured 123 files and 2230 tests before it (the pin had drifted), so `npx vitest run` counts 123 and 2250.
+export const VITEST = { files: 123, tests: 2250 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

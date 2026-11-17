@@ -269,7 +269,7 @@ describe("live data", () => {
   it("disables what the daemon cannot do and says why", async () => {
     await mount(daemon());
     await screen.findAllByTestId("task-row");
-    for (const name of ["Prioritize", "Split task", "Combine tasks", "Change execution policy", "Reassign", "Resolve contract decision"]) {
+    for (const name of ["Prioritize", "Resolve contract decision"]) {
       const button = screen.getByRole("button", { name });
       expect(button).toBeDisabled();
       const reason = button.getAttribute("aria-describedby");
@@ -468,6 +468,132 @@ describe("live mutations", () => {
     expect(screen.getByRole("button", { name: "Unlink Wire the CLI" })).toBeEnabled();
   });
 
+  describe("plan editing", () => {
+    /** Adds a queued "Write docs" (under Docs) and a failed "Fix lexer" to Alpha stream: both can be replaced. */
+    const planDaemon = () =>
+      daemon((fake, state) => {
+        fake.tasks.push(
+          mkTask("a3", A, { state: "Queued", contract: { objective: "Write docs", agent: "codex" } }),
+          mkTask("a4", A, { state: "Failed", contract: { objective: "Fix lexer", agent: "codex" } }),
+        );
+        state.links.push(
+          { task_id: "a3", workstream_id: "ws-a", objective_id: "obj-a2" },
+          { task_id: "a4", workstream_id: "ws-a", objective_id: null },
+        );
+      });
+    const open = async (user: ReturnType<typeof userEvent.setup>, button: string, form: string) => {
+      await user.click(await screen.findByRole("button", { name: button }));
+      return screen.getByRole(button === "Change execution policy" ? "group" : "form", { name: form });
+    };
+    const rowOf = (label: string) => screen.getAllByTestId("task-row").find((row) => row.textContent?.includes(label));
+
+    it("disables the edits no task qualifies for and says why", async () => {
+      await mount(daemon());
+      await screen.findAllByTestId("task-row");
+      for (const name of ["Split task", "Reassign", "Change execution policy"]) {
+        expect(screen.getByRole("button", { name })).toBeDisabled();
+        expect(screen.getByRole("button", { name })).toHaveAccessibleDescription(/no task here can be replaced/);
+      }
+      expect(screen.getByRole("button", { name: "Combine tasks" })).toHaveAccessibleDescription(/two tasks that can be replaced/);
+      expect(screen.getByRole("button", { name: "Remove task" })).toHaveAccessibleDescription(/running, verifying, cited as gate evidence/);
+      expect(screen.getByRole("button", { name: "Add task" })).toBeEnabled();
+    });
+
+    it("adds a task under an objective", async () => {
+      const fake = daemon();
+      const { user } = await mount(fake);
+      const form = await open(user, "Add task", "Add task");
+      expect(within(form).getByLabelText("Project")).toHaveValue(A);
+      await user.type(within(form).getByLabelText("Task objective"), "Add a REPL");
+      await user.selectOptions(within(form).getByLabelText("Agent"), "codex");
+      await user.selectOptions(within(form).getByLabelText("Under objective"), "obj-a2");
+      await user.click(within(form).getByRole("button", { name: "Queue task" }));
+      expect(await screen.findByText(/Add task "Add a REPL": recorded by the daemon/)).toBeInTheDocument();
+      await waitFor(() => expect(rowOf("Add a REPL")).toHaveTextContent("Docs"));
+      expect(paramsOf(fake, "workstreams.add_task")[0]).toMatchObject({
+        workstream_id: "ws-a",
+        objective_id: "obj-a2",
+        contract: { project_id: A, objective: "Add a REPL", kind: "Implement", agent: "codex" },
+      });
+      expect(screen.queryByRole("form", { name: "Add task" })).not.toBeInTheDocument();
+    });
+
+    it("splits a task into one new task per line and cancels the original", async () => {
+      const fake = planDaemon();
+      const { user } = await mount(fake);
+      const form = await open(user, "Split task", "Split task");
+      expect(within(within(form).getByLabelText("Task to split")).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["", "a3", "a4"]);
+      await user.selectOptions(within(form).getByLabelText("Task to split"), "a3");
+      await user.type(within(form).getByLabelText("New task objectives, one per line"), "Draft docs{Enter}Review docs");
+      await user.click(within(form).getByRole("button", { name: "Split into 2 tasks" }));
+      await waitFor(() => expect(rowOf("Review docs")).toBeDefined());
+      expect(rowOf("Draft docs")).toHaveTextContent("Docs");
+      await waitFor(() => expect(rowOf("Write docs")).toHaveTextContent("Cancelled"));
+      expect(paramsOf(fake, "workstreams.split_task")[0]).toMatchObject({ workstream_id: "ws-a", task_id: "a3", objectives: ["Draft docs", "Review docs"] });
+    });
+
+    it("combines the checked tasks, prefilling the objective from theirs", async () => {
+      const fake = planDaemon();
+      const { user } = await mount(fake);
+      const form = await open(user, "Combine tasks", "Combine tasks");
+      const submit = within(form).getByRole("button", { name: "Combine into one task" });
+      await user.click(within(form).getByRole("checkbox", { name: /Write docs/ }));
+      expect(submit).toBeDisabled();
+      await user.click(within(form).getByRole("checkbox", { name: /Fix lexer/ }));
+      expect(within(form).getByLabelText("Combined objective")).toHaveValue("Write docs\nFix lexer");
+      await user.click(submit);
+      await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(5));
+      expect(paramsOf(fake, "workstreams.combine_tasks")[0]).toMatchObject({ task_ids: ["a3", "a4"], objective: "Write docs\nFix lexer" });
+    });
+
+    it("removes only a task that may leave, after a confirmation that says what happens", async () => {
+      const fake = planDaemon();
+      const { user } = await mount(fake);
+      const form = await open(user, "Remove task", "Remove task");
+      expect(within(within(form).getByLabelText("Task to remove")).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["", "a3", "a4"]);
+      await user.selectOptions(within(form).getByLabelText("Task to remove"), "a3");
+      expect(form).toHaveTextContent("the daemon cancels it and then unlinks it");
+      await user.click(within(form).getByRole("button", { name: "Confirm remove" }));
+      await waitFor(() => expect(rowOf("Write docs")).toBeUndefined());
+      expect(paramsOf(fake, "workstreams.remove_task")[0]).toMatchObject({ workstream_id: "ws-a", task_id: "a3" });
+    });
+
+    it("reassigns a task to another agent, never to the one it has", async () => {
+      const fake = planDaemon();
+      const { user } = await mount(fake);
+      const form = await open(user, "Reassign", "Reassign task");
+      await user.selectOptions(within(form).getByLabelText("Task to reassign"), "a4");
+      expect(within(form).getByRole("option", { name: "Codex (current)" })).toBeDisabled();
+      await user.selectOptions(within(form).getByLabelText("Agent"), "claude-code");
+      await user.click(within(form).getByRole("button", { name: "Reassign task" }));
+      expect(await screen.findByText(/Reassign task a4 to Claude Code: recorded by the daemon/)).toBeInTheDocument();
+      const [call] = paramsOf(fake, "workstreams.reassign_task");
+      expect(call).toMatchObject({ workstream_id: "ws-a", task_id: "a4", agent: "claude-code" });
+      expect(call).not.toHaveProperty("model_selection");
+    });
+
+    it("changes the execution policy from the task's contract and sends only what changed", async () => {
+      const fake = planDaemon();
+      const { user } = await mount(fake);
+      const group = await open(user, "Change execution policy", "Change execution policy");
+      await user.selectOptions(within(group).getByLabelText("Task to change"), "a4");
+      const form = within(group).getByRole("form", { name: "Execution policy of Fix lexer" });
+      expect(within(form).getByLabelText("Permission")).toHaveValue("restricted");
+      expect(within(form).getByLabelText("Delivery")).toHaveValue("LocalReview");
+      const apply = within(form).getByRole("button", { name: "Apply policy" });
+      expect(apply).toBeDisabled();
+      await user.selectOptions(within(form).getByLabelText("Delivery"), "PullRequest");
+      await user.clear(within(form).getByLabelText("Max retries"));
+      await user.type(within(form).getByLabelText("Max retries"), "3");
+      await user.click(apply);
+      expect(await screen.findByText(/Change execution policy of task a4: recorded by the daemon/)).toBeInTheDocument();
+      const strip = ({ idempotency_key: _key, ...rest }: Record<string, unknown>) => rest;
+      expect(paramsOf(fake, "workstreams.set_task_policy").map(strip)).toEqual([
+        { workstream_id: "ws-a", task_id: "a4", delivery: "PullRequest", max_retries: 3 },
+      ]);
+    });
+  });
+
   it("suspends and resumes with an advisory note, and updates at the revision it read", async () => {
     const fake = daemon();
     const { user } = await mount(fake);
@@ -492,7 +618,8 @@ describe("live mutations", () => {
     expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Add objective" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Apply to CLI wired" })).toBeDisabled();
-    expect(screen.getByText(/archived workstream is read-only/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add task" })).toHaveAccessibleDescription(/archived workstream is read-only/);
+    for (const note of screen.getAllByText(/archived workstream is read-only/)) expect(note).toBeVisible();
   });
 
   it("answers a stale-revision conflict by reloading, never by overwriting", async () => {

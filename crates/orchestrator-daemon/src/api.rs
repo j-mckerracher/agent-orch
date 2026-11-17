@@ -456,6 +456,12 @@ impl RpcHandler for DaemonApi {
             "workstreams.set_gate" => self.workstreams_set_gate(params),
             "workstreams.link_task" => self.workstreams_link_task(params),
             "workstreams.unlink_task" => self.workstreams_unlink_task(params),
+            "workstreams.add_task" => self.workstreams_add_task(params),
+            "workstreams.split_task" => self.workstreams_split_task(params),
+            "workstreams.combine_tasks" => self.workstreams_combine_tasks(params),
+            "workstreams.remove_task" => self.workstreams_remove_task(params),
+            "workstreams.reassign_task" => self.workstreams_reassign_task(params),
+            "workstreams.set_task_policy" => self.workstreams_set_task_policy(params),
             "actions.resolve" => self.actions_resolve(params),
             "actions.pending" => self.actions_pending(params),
             "holds.set" => self.holds_set(params),
@@ -622,22 +628,43 @@ impl DaemonApi {
                 .to_owned();
         }
         let key = request.idempotency_key.clone();
+        let (resolved, selection_catalog) = self.resolve_submission(&request.contract)?;
+        // The fingerprint is the request as sent; the write sees what it resolved to.
+        let resolved = TaskSubmitParams {
+            idempotency_key: key.clone(),
+            contract: resolved,
+        };
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.submit",
+            &key,
+            &request,
+            || self.submit_task_inner(&resolved, &key, selection_catalog.as_ref()),
+        )
+    }
+
+    /// Fills in the agent and model selection a work class sets, and reads the catalog the
+    /// selection is checked against. The catalog read can take as long as a CLI probe, so a
+    /// caller does this before the idempotency gate is taken: the gate serializes every
+    /// mutating request and must not wait on a subprocess.
+    fn resolve_submission(
+        &self,
+        submission: &TaskSubmission,
+    ) -> Result<(TaskSubmission, Option<orchestrator_agents::AgentCatalog>), RpcError> {
         let work_classes::Resolved {
             agent,
             selection,
             class,
         } = work_classes::resolve(
             &self.config.data_dir,
-            request.contract.work_class.as_deref(),
-            &request.contract.agent,
-            request.contract.model_selection.as_ref(),
+            submission.work_class.as_deref(),
+            &submission.agent,
+            submission.model_selection.as_ref(),
         )?;
         let agent = canonical_agent_id(&agent)
             .ok_or(RpcError::InvalidParams)?
             .to_owned();
-        // The catalog read can take as long as a CLI probe, so it happens
-        // before the idempotency gate is taken: the gate serializes every
-        // mutating request and must not wait on a subprocess.
         let selection_catalog = self
             .selection_catalog(&agent, selection.as_ref())
             .map_err(|error| {
@@ -649,18 +676,10 @@ impl DaemonApi {
                 }
                 error
             })?;
-        // The fingerprint is the request as sent; the write sees what it resolved to.
-        let mut resolved = request.clone();
-        resolved.contract.agent = agent;
-        resolved.contract.model_selection = selection;
-        idempotency::run(
-            &self.store,
-            &self.idempotency_gate,
-            "tasks.submit",
-            &key,
-            &request,
-            || self.submit_task_inner(&resolved, &key, selection_catalog.as_ref()),
-        )
+        let mut resolved = submission.clone();
+        resolved.agent = agent;
+        resolved.model_selection = selection;
+        Ok((resolved, selection_catalog))
     }
 
     /// The submit write, shared with action execution. `key` seeds the task id, and the
@@ -672,6 +691,18 @@ impl DaemonApi {
         key: &str,
         selection_catalog: Option<&orchestrator_agents::AgentCatalog>,
     ) -> Result<Value, RpcError> {
+        let contract = self.checked_contract(request, key, selection_catalog)?;
+        self.admit_contract(&contract)
+    }
+
+    /// Builds the contract a submit request stands for and runs every check a submit makes,
+    /// writing nothing. The caller holds the idempotency gate.
+    fn checked_contract(
+        &self,
+        request: &TaskSubmitParams,
+        key: &str,
+        selection_catalog: Option<&orchestrator_agents::AgentCatalog>,
+    ) -> Result<TaskContract, RpcError> {
         // The executor always launches a writing agent, so a policy
         // that denies workspace writes cannot be honored. Refuse it
         // rather than run an agent with more access than requested.
@@ -739,10 +770,19 @@ impl DaemonApi {
             // `contract::validate` has accepted the selection, so the
             // pre-gate read was made for it.
             let catalog = selection_catalog.ok_or(RpcError::Internal)?;
-            self.check_resolved_selection(request.contract.work_class.as_deref(), catalog, selection)?;
+            self.check_resolved_selection(
+                request.contract.work_class.as_deref(),
+                catalog,
+                selection,
+            )?;
         }
         self.validate_scheduler(&contract)?;
-        self.store.create(&contract).map_err(map_store_error)?;
+        Ok(contract)
+    }
+
+    /// Creates and admits a contract `checked_contract` built, then wakes the executor.
+    fn admit_contract(&self, contract: &TaskContract) -> Result<Value, RpcError> {
+        self.store.create(contract).map_err(map_store_error)?;
         self.store
             .transition(&contract.id, TaskEvent::Admit)
             .map_err(map_store_error)?;
@@ -1670,10 +1710,10 @@ thread_local! {
 #[path = "api_actions.rs"]
 mod actions;
 use actions::project_code;
-#[path = "api_brief.rs"]
-mod brief;
 #[path = "admission.rs"]
 pub(crate) mod admission;
+#[path = "api_brief.rs"]
+mod brief;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]
@@ -1696,24 +1736,24 @@ mod grants;
 mod holds;
 #[path = "api_host.rs"]
 mod host;
+#[path = "api_intake.rs"]
+mod intake;
 #[path = "landing.rs"]
 mod landing;
 #[path = "api_landing.rs"]
 mod landing_api;
 #[path = "api_load.rs"]
 pub(crate) mod load;
-#[path = "api_intake.rs"]
-mod intake;
 #[path = "api_models.rs"]
 mod models;
 #[path = "api_monitoring.rs"]
 mod monitoring;
 #[path = "api_notes.rs"]
 mod notes;
-#[path = "api_projects_defaults.rs"]
-mod projects_defaults;
 #[path = "api_output.rs"]
 mod output;
+#[path = "api_projects_defaults.rs"]
+mod projects_defaults;
 #[path = "api_queue.rs"]
 mod queue;
 #[path = "report.rs"]
@@ -1747,6 +1787,8 @@ mod queue_tests;
 mod settings_tests;
 #[path = "api_work_classes.rs"]
 mod work_classes;
+#[path = "api_workstream_plan.rs"]
+mod workstream_plan;
 #[path = "api_workstreams.rs"]
 mod workstreams;
 
@@ -1787,6 +1829,9 @@ mod reports_tests;
 #[cfg(test)]
 #[path = "api_routing_tests.rs"]
 mod routing_tests;
+#[cfg(test)]
+#[path = "api_workstream_plan_tests.rs"]
+mod workstream_plan_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

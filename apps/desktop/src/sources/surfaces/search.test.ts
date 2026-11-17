@@ -27,6 +27,12 @@ function wsSource(result: SurfaceResult<Workstream[]>): WorkstreamSource {
     setGate: () => Promise.reject(new Error("unused")),
     linkTask: () => Promise.reject(new Error("unused")),
     unlinkTask: () => Promise.reject(new Error("unused")),
+    addTask: () => Promise.reject(new Error("unused")),
+    splitTask: () => Promise.reject(new Error("unused")),
+    combineTasks: () => Promise.reject(new Error("unused")),
+    removeTask: () => Promise.reject(new Error("unused")),
+    reassignTask: () => Promise.reject(new Error("unused")),
+    setTaskPolicy: () => Promise.reject(new Error("unused")),
   };
 }
 function dqSource(result: SurfaceResult<DecisionQueue>): DecisionQueueSource {
