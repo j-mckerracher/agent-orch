@@ -31,7 +31,6 @@ export const UNSUPPORTED_DETAIL = "It does not offer the settings capability, so
 export const REFRESH_FAILED_TEXT = "The last refresh failed. The load figures on this page may be out of date.";
 
 export const INVALID_REASON = "Enter whole numbers from 50 to 100 before saving.";
-export const UNCHANGED_REASON = "Change a limit to save.";
 export const NOT_CONNECTED_REASON = "The app is not connected to the orchestrator service, so nothing can be saved.";
 
 /** The whole number in `text`, or null when it is empty, not a whole number, or outside 50 to 100. */
@@ -46,13 +45,12 @@ export function limitError(text: string): string | null {
   return parseLimit(text) === null ? LIMIT_ERROR : null;
 }
 
-/** What Save sends: only the fields whose typed text is a valid number that differs from the saved limit. */
+/** What Save sends: every meter, from its typed text or else the saved limit, so a save with no edit still writes. A meter whose text is invalid is left out; Save is blocked before then. */
 export function limitPatch(saved: LoadLimits, typed: Partial<Record<LoadMeterName, string>>): Partial<LoadLimits> {
   const patch: Partial<LoadLimits> = {};
   for (const meter of LOAD_METERS) {
-    const text = typed[meter];
-    const value = text === undefined ? null : parseLimit(text);
-    if (value !== null && value !== saved[meter]) patch[meter] = value;
+    const value = parseLimit(typed[meter] ?? String(saved[meter]));
+    if (value !== null) patch[meter] = value;
   }
   return patch;
 }

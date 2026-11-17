@@ -309,12 +309,20 @@ impl Shared {
 }
 
 /// Whether a turn may carry action proposals (DPES-1105). Only a session that
-/// negotiated `orchestrator_actions` and a turn at `Restricted` qualify. Above
-/// Restricted the agent has a shell. The approver secret keeps a session that only
-/// holds the token from calling `actions.resolve`, but a shell can still edit the
-/// store or replace the daemon, and no credential stops that.
+/// negotiated `orchestrator_actions` and a turn at `Restricted` or `Auto` qualify.
+/// Auto has a shell, so a turn there could read the daemon's token. The approver
+/// secret keeps a session that only holds the token from calling `actions.resolve`,
+/// and every card still needs the user's approval, but a shell can edit the store or
+/// replace the daemon, and no credential stops that. The user accepted that limit so
+/// the default chat level (Auto) can propose. Extended and Full never carry proposals.
 pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
-    negotiated && level == PermissionLevel::Restricted
+    negotiated && level_allows_actions(level)
+}
+
+/// The levels whose turns may carry proposals and whose stored proposals may be resolved.
+/// Merge cards and standing approvals stay Restricted-only (`api_landing`, `grant_matcher`).
+pub(crate) fn level_allows_actions(level: PermissionLevel) -> bool {
+    matches!(level, PermissionLevel::Restricted | PermissionLevel::Auto)
 }
 
 /// Whether a turn is offered the read-only MCP server (DPES-1105 phase 6b): the setting is
@@ -333,6 +341,8 @@ pub(crate) struct ReplySink {
     /// The session negotiated `orchestrator_actions`. Without it a held block is
     /// stripped, never parsed.
     actions: bool,
+    /// The level the turn ran at. A merge card is approvable only from a Restricted turn.
+    level: PermissionLevel,
     /// What opened the turn. Recorded on each usage receipt.
     trigger: TurnTrigger,
     /// Holds back an action block as it streams in. Shared by clones, so the
@@ -449,8 +459,12 @@ impl ReplySink {
                         denial_of(store, propose).or_else(|| promotion_denial(store, propose))
                     }
                     Action::TaskRevise(revise) => revise_denial(store, revise),
-                    // A merge for a pull request the app has not read, at another head, or that
-                    // would be refused now is stored already `failed`, never approvable.
+                    // A merge from a turn above Restricted, for a pull request the app has not
+                    // read, at another head, or that would be refused now is stored already
+                    // `failed`, never approvable.
+                    Action::DeliveryMerge(_) if self.level != PermissionLevel::Restricted => {
+                        Some(orchestrator_core::task_envelope::Denial::Delivery)
+                    }
                     Action::DeliveryMerge(merge) => merge_denial(
                         store,
                         merge,
@@ -823,6 +837,7 @@ impl ConversationService {
             turn_id: turn_id.to_owned(),
             target: target.clone(),
             actions,
+            level,
             trigger: wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake),
             filter: Arc::new(Mutex::new(ReplyFilter::default())),
         };

@@ -153,7 +153,7 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
             id: format!("{task_id}-workspace-1"),
             task_id: task_id.to_owned(),
             path: task_worktree(fixture, task_id).display().to_string(),
-            branch: format!("moa/{task_id}"),
+            branch: format!("mcao/{task_id}"),
             base_commit: git(&fixture.repo, &["rev-parse", "HEAD"]),
         })
         .unwrap();
@@ -267,8 +267,8 @@ fn run_rejects_data_directory_inside_primary_checkout_before_writing() {
 #[test]
 fn run_reports_git_cause_when_worktree_creation_fails() {
     let fixture = fixture(successful_script());
-    // A branch named `moa` makes `moa/<task>` uncreatable.
-    git(&fixture.repo, &["branch", "moa"]);
+    // A branch named `mcao` makes `mcao/<task>` uncreatable.
+    git(&fixture.repo, &["branch", "mcao"]);
     let output = Command::new(CLI)
         .arg("--data-dir")
         .arg(&fixture.data)
@@ -296,7 +296,7 @@ fn run_reports_git_cause_when_worktree_creation_fails() {
     // progress line, so this proves the cause reached the CLI without
     // depending on git's (localizable) wording.
     assert!(
-        stderr.contains("refs/heads/moa/cause-visible"),
+        stderr.contains("refs/heads/mcao/cause-visible"),
         "git's cause is lost: {stderr}"
     );
 }
@@ -314,7 +314,7 @@ fn run_names_the_task_branch_with_the_default_prefix() {
     run_success(&fixture, "default-prefix");
     assert!(task_branches(&fixture)
         .lines()
-        .any(|b| b == "moa/default-prefix"));
+        .any(|b| b == "mcao/default-prefix"));
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn run_names_the_task_branch_with_the_configured_prefix() {
         branches.lines().any(|b| b == "team1/custom-prefix"),
         "{branches}"
     );
-    assert!(!branches.contains("moa/"), "{branches}");
+    assert!(!branches.contains("mcao/"), "{branches}");
 }
 
 #[test]

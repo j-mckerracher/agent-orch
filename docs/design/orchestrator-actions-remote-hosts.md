@@ -69,7 +69,7 @@ The daemon runs on demand. The host starts it. It exits after 60 seconds idle un
 
 ### What the daemon does not know
 
-- It has no caller identity. Any process that holds the token can call any method, including `actions.resolve` and `approvals.resolve`. That is why actions exist only for Restricted turns: at Auto and Full the agent has a shell and could read the token.
+- It has no caller identity. Any process that holds the token can call any method, including `actions.resolve` and `approvals.resolve`. At Auto and Full the agent has a shell and could read the token. Actions exist for Restricted and Auto turns only; the user accepted the Auto limit so the default chat level can propose.
 - On Windows the client does not verify the server before it sends the token. This is a known limit from the M6 threat review, written in `windows_transport.rs`. Locally it is contained by the pipe name and the DACL. Across a network it would not be.
 - Agent children run as the user with an environment allowlist. That is hardening, not containment. `AGENT_ORCH_` names are never forwarded.
 

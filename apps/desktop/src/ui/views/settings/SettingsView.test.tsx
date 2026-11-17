@@ -147,7 +147,7 @@ describe("Settings page, live", () => {
   });
 
   it("settings_page_marks_an_invalid_limit_with_linked_error_text_and_a_save_that_says_why", async () => {
-    const { services } = await connected();
+    const { fake, services } = await connected();
     const user = userEvent.setup();
     page(services);
     const cpu = await typeInto(user, CPU, "49");
@@ -156,31 +156,33 @@ describe("Settings page, live", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Enter a whole number from 50 to 100.");
     expect(cpu).toHaveFocus();
     const save = screen.getByRole("button", { name: SAVE });
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription("Enter whole numbers from 50 to 100 before saving.");
+    await user.click(save);
+    expect(screen.getByText("Enter whole numbers from 50 to 100 before saving.")).toHaveAttribute("role", "alert");
+    expect(fake.callsTo("settings.set")).toHaveLength(0);
     await typeInto(user, CPU, "70");
     expect(cpu).not.toHaveAttribute("aria-invalid");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(save).toBeEnabled();
   });
 
-  it("settings_page_keeps_save_disabled_with_a_visible_reason_until_a_limit_changes", async () => {
-    const { services } = await connected();
+  it("settings_page_save_without_an_edit_still_writes_the_saved_limits", async () => {
+    const { fake, services } = await connected(OPEN, (daemon) => daemon.stub("settings.set", () => OPEN));
     const user = userEvent.setup();
     page(services);
     await field(CPU);
     const save = screen.getByRole("button", { name: SAVE });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAccessibleDescription("Change a limit to save.");
-    expect(screen.getByText("Change a limit to save.")).toBeVisible();
-    await typeInto(user, CPU, "80");
-    expect(save).toBeDisabled();
-    await typeInto(user, CPU, "75");
     expect(save).toBeEnabled();
-    expect(save).not.toHaveAttribute("aria-describedby");
+    await user.click(save);
+    expect(await screen.findByText(SAVED_TEXT)).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")).toHaveLength(1);
+    expect(fake.callsTo("settings.set")[0]!.params).toMatchObject({
+      load: { cpu_percent: 80, memory_percent: 85, disk_percent: 90 },
+    });
   });
 
-  it("settings_page_saves_only_the_changed_limits_and_announces_the_new_values", async () => {
+  it("settings_page_saves_every_valid_limit_and_announces_the_new_values", async () => {
     const { fake, services } = await connected(OPEN, (daemon) =>
       daemon.stub("settings.set", () => ({ ...OPEN, load: { ...OPEN.load, cpu_percent: 85 } })),
     );
@@ -192,10 +194,13 @@ describe("Settings page, live", () => {
     expect(await screen.findByText(SAVED_TEXT)).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Save result" })).toHaveTextContent(SAVED_TEXT);
     expect(fake.callsTo("settings.set")).toEqual([
-      { method: "settings.set", params: { idempotency_key: expect.any(String), load: { cpu_percent: 85 } } },
+      {
+        method: "settings.set",
+        params: { idempotency_key: expect.any(String), load: { cpu_percent: 85, memory_percent: 85, disk_percent: 90 } },
+      },
     ]);
     expect(await field(CPU)).toHaveValue(85);
-    expect(screen.getByRole("button", { name: SAVE })).toBeDisabled();
+    expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
   });
 
   it.each([
@@ -233,14 +238,14 @@ describe("Settings page, live", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
-  it("settings_page_disables_save_and_shows_the_notice_when_this_app_did_not_start_the_service", async () => {
+  it("settings_page_blocks_save_and_shows_the_notice_when_this_app_did_not_start_the_service", async () => {
     const { fake, services } = await connected(OPEN, (daemon) => {
       daemon.approver = false;
     });
     page(services);
     const cpu = await field(CPU);
     const save = screen.getByRole("button", { name: SAVE });
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(screen.getByText(APPROVER_REQUIRED_NOTICE)).toBeVisible();
     expect(save).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
     expect(cpu).toHaveValue(80);
@@ -273,7 +278,7 @@ describe("Settings page, live", () => {
     expect(fake.callsTo("settings.get")).toHaveLength(2);
   });
 
-  it("settings_page_disables_save_and_notes_the_failed_refresh_when_the_connection_is_lost", async () => {
+  it("settings_page_blocks_save_and_notes_the_failed_refresh_when_the_connection_is_lost", async () => {
     const { fake, services } = await connected();
     page(services);
     await field(CPU);
@@ -281,7 +286,7 @@ describe("Settings page, live", () => {
     fake.drop();
     await until(() => services.connection.getSnapshot().status !== "connected", "connection lost");
     expect(await screen.findByText("The last refresh failed. The load figures on this page may be out of date.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: SAVE })).toBeDisabled();
+    expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
     expect(screen.getByText("The app is not connected to the orchestrator service, so nothing can be saved.")).toBeVisible();
   });
 });

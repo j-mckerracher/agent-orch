@@ -1509,6 +1509,17 @@ fn block_titled(title: &str) -> String {
     )
 }
 
+/// [`block_titled`] plus a `delivery.merge`, which only a Restricted turn may get approved.
+fn block_titled_with_merge(title: &str) -> String {
+    block_titled(title).replace(
+        "]}\n```",
+        &format!(
+            ",{{\"kind\":\"delivery.merge\",\"task_id\":\"task-1\",\"pr_number\":7,\"head_sha\":\"{}\"}}]}}\n```",
+            "a".repeat(40)
+        ),
+    )
+}
+
 /// Writes the reply the scripted fake agent gives, and returns its path.
 fn script(layout: &Layout, reply: &str) -> String {
     let path = layout.data.join("reply.txt");
@@ -1809,10 +1820,11 @@ fn the_same_request_twice_gives_one_pending_proposal() {
     assert_ne!(first_id, second_id);
 }
 
-/// Only a Restricted turn carries proposals. Auto and Full turns in a session that
-/// negotiated the capability get the block stripped: no card, and nothing to approve.
+/// Only a Restricted or Auto turn carries proposals. Auto is the default chat level, so the
+/// Global orchestrator must propose there. A Full turn in a session that negotiated the
+/// capability gets the block stripped: no card, and nothing to approve.
 #[test]
-fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
+fn proposals_exist_only_for_a_restricted_or_auto_turn_and_only_their_approval_runs() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let reply_file = script(&layout, "");
@@ -1826,14 +1838,13 @@ fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
     let mut chat = Chat::open(&layout);
     let mut turns = Vec::new();
     for (level, key) in [("restricted", "m-1"), ("auto", "m-2"), ("full", "m-3")] {
-        std::fs::write(
-            &reply_file,
-            format!(
-                "Level {level}.\n{}",
-                block_titled(&format!("Level {level}"))
-            ),
-        )
-        .unwrap();
+        let title = format!("Level {level}");
+        let block = if level == "auto" {
+            block_titled_with_merge(&title)
+        } else {
+            block_titled(&title)
+        };
+        std::fs::write(&reply_file, format!("Level {level}.\n{block}")).unwrap();
         let sent = chat.send_params(json!({
             "target": global(),
             "text": "[fake:script]",
@@ -1848,49 +1859,70 @@ fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
         turns.push((level, turn_id));
     }
 
-    // Only the Restricted turn's two cards exist, and they are the ones to approve.
+    // Only the Restricted and Auto turns' cards exist, and they are the ones to approve.
     let page = chat.get(&global(), 0);
-    let restricted_turn = &turns[0].1;
-    let ids = proposals_of(&page, restricted_turn);
-    assert_eq!(ids.len(), 2, "{page}");
-    assert_eq!(page["proposals"].as_array().unwrap().len(), 2, "{page}");
-    let approved = resolve(&mut chat, &ids[0], "approve", "approve-restricted-0");
-    assert_eq!(
-        approved["result"]["proposal"]["state"], "executed",
-        "{approved}"
-    );
-    let approved = resolve(&mut chat, &ids[1], "approve", "approve-restricted-1");
-    assert_eq!(
-        approved["result"]["proposal"]["state"], "executed",
-        "{approved}"
-    );
+    assert_eq!(page["proposals"].as_array().unwrap().len(), 5, "{page}");
+    let merge = page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["kind"] == "delivery.merge")
+        .unwrap();
+    assert_eq!(merge["state"], "failed", "{merge}");
+    assert_eq!(merge["denial"], "delivery_not_authorized", "{merge}");
+    for (level, turn_id) in &turns[..2] {
+        let ids = proposals_of(&page, turn_id);
+        assert_eq!(
+            ids.len(),
+            if *level == "auto" { 3 } else { 2 },
+            "{level}: {page}"
+        );
+        // An Auto turn's merge card is stored already failed, so it is never approvable.
+        for (position, id) in ids.iter().take(2).enumerate() {
+            let approved = resolve(
+                &mut chat,
+                id,
+                "approve",
+                &format!("approve-{level}-{position}"),
+            );
+            assert_eq!(
+                approved["result"]["proposal"]["state"], "executed",
+                "{level}: {approved}"
+            );
+        }
+    }
     stop(&layout, daemon, chat);
 
-    // Only the Restricted turn was told the block format.
+    // Only the Restricted and Auto turns were told the block format.
     let lines = launch_lines(&log);
     assert_eq!(lines.len(), 3, "{lines:?}");
     assert!(lines[0].contains("mcao-actions"), "{}", lines[0]);
-    for line in &lines[1..] {
-        assert!(!line.contains("mcao-actions"), "{line}");
-    }
+    assert!(lines[1].contains("mcao-actions"), "{}", lines[1]);
+    assert!(!lines[2].contains("mcao-actions"), "{}", lines[2]);
 
     let store = store_after_stop(&layout);
-    assert_eq!(
-        block_outcome(&store, restricted_turn),
-        Some(ActionBlockOutcome::Accepted)
-    );
-    for (level, turn_id) in &turns[1..] {
+    for (level, turn_id) in &turns[..2] {
         assert_eq!(
             block_outcome(&store, turn_id),
-            Some(ActionBlockOutcome::Stripped),
+            Some(ActionBlockOutcome::Accepted),
             "{level}"
         );
     }
     assert_eq!(
-        proposal_rows(&store),
-        ["objective.add executed", "workstream.create executed"]
+        block_outcome(&store, &turns[2].1),
+        Some(ActionBlockOutcome::Stripped)
     );
-    assert_eq!(store.list_workstreams(None).unwrap().len(), 1);
+    assert_eq!(
+        proposal_rows(&store),
+        [
+            "delivery.merge failed",
+            "objective.add executed",
+            "objective.add executed",
+            "workstream.create executed",
+            "workstream.create executed",
+        ]
+    );
+    assert_eq!(store.list_workstreams(None).unwrap().len(), 2);
 }
 
 #[test]
@@ -2810,39 +2842,33 @@ fn a_pull_request_task_proposal_is_stored_denied_and_resolve_says_proposal_not_p
     assert_eq!(proposal_rows(&store), ["task.propose failed"]);
 }
 
-/// Only a Restricted turn carries proposals, task proposals included. Auto and Full
-/// turns get the block stripped: no card, and nothing to approve.
+/// Only a Restricted or Auto turn carries proposals, task proposals included. A Full
+/// turn gets the block stripped: no card, and nothing to approve.
 #[test]
-fn an_auto_turn_cannot_propose_a_task() {
+fn a_full_turn_cannot_propose_a_task() {
     let layout = Layout::new();
     let reply_file = script(&layout, &task_block(PROJECT_CODE, "LocalReview"));
     let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
     let mut chat = Chat::open(&layout);
-    let mut turns = Vec::new();
-    for (level, key) in [("auto", "m-1"), ("full", "m-2")] {
-        let sent = chat.send_params(json!({
-            "target": global(),
-            "text": "[fake:script]",
-            "idempotency_key": key,
-            "permission": level,
-        }));
-        turns.push((level, sent["turn"]["id"].as_str().unwrap().to_owned()));
-        let page = chat.settled(&global());
-        assert_eq!(page["turn"]["state"], "completed", "{page}");
-        assert_eq!(page["turn"]["permission_level"], level, "{page}");
-        assert_eq!(reply(&page), "Task below.\n", "{level}");
-        assert_eq!(page["proposals"], json!([]), "{level}: {page}");
-    }
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "[fake:script]",
+        "idempotency_key": "m-1",
+        "permission": "full",
+    }));
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["permission_level"], "full", "{page}");
+    assert_eq!(reply(&page), "Task below.\n");
+    assert_eq!(page["proposals"], json!([]), "{page}");
     stop(&layout, daemon, chat);
 
     let store = store_after_stop(&layout);
-    for (level, turn_id) in &turns {
-        assert_eq!(
-            block_outcome(&store, turn_id),
-            Some(ActionBlockOutcome::Stripped),
-            "{level}"
-        );
-    }
+    assert_eq!(
+        block_outcome(&store, &turn_id),
+        Some(ActionBlockOutcome::Stripped)
+    );
     assert!(proposal_rows(&store).is_empty());
 }
 
@@ -3393,36 +3419,30 @@ fn a_restart_between_approve_and_execute_holds_and_archives_once() {
 }
 
 #[test]
-fn an_auto_turn_cannot_propose_a_revise_hold_or_remove() {
+fn a_full_turn_cannot_propose_a_revise_hold_or_remove() {
     let layout = Layout::new();
     let reply_file = script(&layout, &phase4_block(PROJECT_CODE, &date_in_days(3)));
     let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
     let mut chat = Chat::open(&layout);
-    let mut turns = Vec::new();
-    for (level, key) in [("auto", "m-1"), ("full", "m-2")] {
-        let sent = chat.send_params(json!({
-            "target": global(),
-            "text": "[fake:script]",
-            "idempotency_key": key,
-            "permission": level,
-        }));
-        turns.push((level, sent["turn"]["id"].as_str().unwrap().to_owned()));
-        let page = chat.settled(&global());
-        assert_eq!(page["turn"]["state"], "completed", "{page}");
-        assert_eq!(page["turn"]["permission_level"], level, "{page}");
-        assert_eq!(reply(&page), "Three below.\n", "{level}");
-        assert_eq!(page["proposals"], json!([]), "{level}: {page}");
-    }
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "[fake:script]",
+        "idempotency_key": "m-1",
+        "permission": "full",
+    }));
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["permission_level"], "full", "{page}");
+    assert_eq!(reply(&page), "Three below.\n");
+    assert_eq!(page["proposals"], json!([]), "{page}");
     stop(&layout, daemon, chat);
 
     let store = store_after_stop(&layout);
-    for (level, turn_id) in &turns {
-        assert_eq!(
-            block_outcome(&store, turn_id),
-            Some(ActionBlockOutcome::Stripped),
-            "{level}"
-        );
-    }
+    assert_eq!(
+        block_outcome(&store, &turn_id),
+        Some(ActionBlockOutcome::Stripped)
+    );
     assert!(proposal_rows(&store).is_empty());
     assert!(store.active_decision_holds().unwrap().is_empty());
     assert!(store.archived_project_ids().unwrap().is_empty());

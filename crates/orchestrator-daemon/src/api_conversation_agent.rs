@@ -1000,7 +1000,8 @@ pub(crate) const INSTRUCTIONS_WITH_ACTIONS: &str = instructions!(
     "To act, end your reply with one action block. Never say an action happened until a \
 later snapshot shows it. A workstream conversation acts only inside its own workstream and \
 cannot create workstreams. In the global conversation, route a task by naming the \
-owning workstream_id in task.propose.",
+owning workstream_id in task.propose. When the user asks for a sub-orchestrator, propose \
+workstream.create now; it needs no registered project. Only tasks need one.",
     r#"
 
 Action block: end the reply with one fenced block, after all text, and nothing after it; nothing changes until the user approves it.

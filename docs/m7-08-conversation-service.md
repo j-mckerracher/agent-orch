@@ -249,11 +249,12 @@ no flag.
   beyond the reply sink. A reply is data, with one exception: a completed reply
   may end with one `mcao-actions` block. The daemon parses that block into
   pending proposals, which carry no authority until the user approves them in a
-  later step. Only a Restricted turn from a session that negotiated
+  later step. Only a Restricted or Auto turn from a session that negotiated
   `orchestrator_actions` gets a parse, and only that turn's instructions name
   the block format. At Auto and Full the agent has a shell and could reach the
   daemon's local token. A shell can edit the store or replace the daemon, which
-  no credential stops, so those turns get no actions (DPES-1105). Any other turn
+  no credential stops. Full gets no actions. Auto does, because it is the default
+  chat level and the user accepted that limit (DPES-1105). Any other turn
   strips the block, records
   `action_block` `stripped`, and creates no proposals. A block that does not
   pass is recorded as `rejected`, and a block in a canceled or failed turn is
@@ -640,8 +641,7 @@ that did not negotiate the capability still gets `-32004` first. Later phases ad
 `grants.create` and `grants.revoke` (phase 5), each in the same change that routes
 the method.
 
-The Restricted-only rule is unchanged. The credential does not enable actions at
-Auto or Full.
+The credential does not enable actions at Full. Actions run at Restricted and Auto.
 
 What it does not stop. A process of the same user can still:
 
@@ -671,7 +671,7 @@ running. The action card and the Review view say so in plain words.
 
 Phase 2 adds four kinds to the action block, a fixed envelope that a proposed
 task must pass, and the read method `actions.pending`. Everything above holds
-unchanged: actions exist only for a Restricted turn, nothing happens until the
+unchanged: actions exist only for a Restricted or Auto turn, nothing happens until the
 user approves the card, and the approver decides on the card only.
 
 ### The four kinds
@@ -815,7 +815,7 @@ session that holds only the token.
 
 Phase 4 adds per-project defaults, scout reports, promotion, holds, task lineage,
 a soft archive, and the action kinds `task.revise`, `decision.hold` and
-`project.remove`. Actions still run only at Restricted, and every mutation still
+`project.remove`. Actions still run only at Restricted or Auto, and every mutation still
 needs a per-action approval.
 
 - **Project modes.** A project's mode is `LocalOnly` (the default), `DirectPr` or

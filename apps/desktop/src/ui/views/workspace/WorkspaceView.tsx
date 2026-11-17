@@ -301,7 +301,7 @@ function resolveKey(
 }
 
 const ACTIONS_LEVEL_NOTE =
-  "Action proposals work only at Restricted. At Auto and Full the orchestrator can answer but cannot propose changes.";
+  "Action proposals work only at Restricted and Auto. At Full the orchestrator can answer but cannot propose changes.";
 
 interface ConversationProps {
   option: TargetOption;
@@ -455,8 +455,8 @@ function Conversation({
   // An older daemon has no permission levels and runs chats read-only, so the level reads Restricted (DPES-1105).
   const olderDaemon = live && gate.connected && !gate.can("permission_levels");
   const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
-  // Action proposals run only at Restricted: at Auto and Full the daemon gives the agent no block format (DPES-1105).
-  const actionsLevelNote = live && target.kind !== "project" && actionsShown && shownLevel !== "restricted";
+  // Action proposals run at Restricted and Auto: at Full the daemon gives the agent no block format (DPES-1105).
+  const actionsLevelNote = live && target.kind !== "project" && actionsShown && shownLevel === "full";
   // A coordinator note runs no agent, so it carries no level (the daemon refuses one there).
   const permissionOnWire = live && target.kind !== "project" ? permissionForSend(permission, !olderDaemon) : undefined;
   // A coordinator note runs no agent either, so it carries no choice (the daemon refuses one there). The picker keeps the
