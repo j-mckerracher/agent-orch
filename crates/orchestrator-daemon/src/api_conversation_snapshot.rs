@@ -14,7 +14,6 @@ use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
 use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, WorkstreamStoreError};
-use sha2::{Digest, Sha256};
 
 use super::conversation_agent::sanitize;
 
@@ -259,18 +258,17 @@ fn tasks(store: &SqliteStore) -> Vec<Block> {
 }
 
 /// This conversation's newest proposals and their states, one line each. The
-/// line names the kind and the title from the canonical parameters. It never
-/// shows the subject, which can hold an internal proposal id, and never shows
-/// an id (DPES-1105).
+/// line names the kind and what it is about, from the canonical parameters
+/// (`proposal_detail`). It never shows the subject, which can hold an internal
+/// proposal id, and never shows a proposal id (DPES-1105).
 fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
     match store.action_proposals(target, PROPOSALS_LISTED) {
         Ok(proposals) => {
             let items: Vec<String> = proposals
                 .iter()
                 .map(|proposal| {
-                    let title = serde_json::from_str::<serde_json::Value>(&proposal.params_json)
-                        .ok()
-                        .and_then(|params| params.get("title")?.as_str().map(str::to_owned));
+                    let params = serde_json::from_str::<serde_json::Value>(&proposal.params_json)
+                        .unwrap_or(serde_json::Value::Null);
                     // The outcome lets the next turn say what was created (DPES-1105).
                     let state = format!(
                         "{}{}",
@@ -278,15 +276,13 @@ fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
                         proposal_outcome(
                             proposal.result_ref.as_deref(),
                             proposal.error_code.as_deref(),
+                            proposal.denial.as_deref(),
                         ),
                     );
-                    match title {
-                        Some(title) => format!(
-                            "- {} {}: {}",
-                            proposal.kind.as_str(),
-                            state,
-                            field(&title, TEXT_BYTES),
-                        ),
+                    match proposal_detail(proposal.kind, &params) {
+                        Some(detail) => {
+                            format!("- {} {}: {}", proposal.kind.as_str(), state, detail)
+                        }
                         None => format!("- {} {}", proposal.kind.as_str(), state),
                     }
                 })
@@ -306,12 +302,46 @@ fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
 }
 
 /// What an executed proposal created (` -> workstream-…`) or why a failed one
-/// failed (` (stale_revision)`). Empty while the proposal is still open.
-fn proposal_outcome(result_ref: Option<&str>, error_code: Option<&str>) -> String {
-    match (result_ref, error_code) {
-        (Some(result_ref), _) => format!(" -> {result_ref}"),
-        (None, Some(error_code)) => format!(" ({error_code})"),
-        (None, None) => String::new(),
+/// failed (` (stale_revision)`). A task the envelope refused also names its
+/// reason (` (action_denied: delivery_not_authorized)`). Empty while the
+/// proposal is still open.
+fn proposal_outcome(
+    result_ref: Option<&str>,
+    error_code: Option<&str>,
+    denial: Option<&str>,
+) -> String {
+    match (result_ref, error_code, denial) {
+        (Some(result_ref), _, _) => format!(" -> {result_ref}"),
+        (None, Some(error_code), Some(denial)) => format!(" ({error_code}: {denial})"),
+        (None, Some(error_code), None) => format!(" ({error_code})"),
+        (None, None, _) => String::new(),
+    }
+}
+
+/// The text after the state on a proposal line, from the canonical parameters.
+/// A task is named by its project code and its objective cut to 80 bytes, never
+/// by a path. A cancel, retry or link names the task and workstream ids the
+/// snapshot already lists. Any other kind shows its title, when it has one.
+fn proposal_detail(kind: ActionKind, params: &serde_json::Value) -> Option<String> {
+    let text = |key: &str, max_bytes: usize| {
+        params
+            .get(key)?
+            .as_str()
+            .map(|value| field(value, max_bytes))
+    };
+    match kind {
+        ActionKind::TaskPropose => Some(format!(
+            "project {}: {}",
+            text("project", TEXT_BYTES)?,
+            text("objective", TASK_OBJECTIVE_BYTES)?,
+        )),
+        ActionKind::TaskCancel | ActionKind::TaskRetry => text("task_id", TEXT_BYTES),
+        ActionKind::WorkstreamLinkTask => Some(format!(
+            "{} to {}",
+            text("task_id", TEXT_BYTES)?,
+            text("workstream_id", TEXT_BYTES)?,
+        )),
+        _ => text("title", TEXT_BYTES),
     }
 }
 
@@ -428,16 +458,19 @@ fn task_counts(counts: &[(TaskState, usize)]) -> String {
 }
 
 /// A project's id is its root path, which the snapshot never holds. The label
-/// is the last path component and a short hash of the whole id, such as
-/// `motif-mcao (p-3fa9c1d2)`, so two folders with one name stay apart.
+/// is the last path component and the project's code, such as
+/// `motif-mcao (p-3fa9c1d2)`, so two folders with one name stay apart. A task
+/// proposal names its project by that code.
 fn project_label(project_id: &str) -> String {
     let name = project_id
         .rsplit(['/', '\\'])
         .find(|part| !part.is_empty())
         .unwrap_or("project");
-    let hash = Sha256::digest(project_id.as_bytes());
-    let short: String = hash[..4].iter().map(|byte| format!("{byte:02x}")).collect();
-    format!("{} (p-{short})", field(name, TEXT_BYTES))
+    format!(
+        "{} ({})",
+        field(name, TEXT_BYTES),
+        super::project_code(project_id)
+    )
 }
 
 /// "gates 1 pending, 0 verified, 0 failed" for the gates given.
@@ -497,9 +530,11 @@ mod tests {
     use orchestrator_core::contract::{
         AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
     };
+    use orchestrator_core::orchestrator_action::{parse_block, BlockScope};
     use orchestrator_core::records::Project;
+    use orchestrator_core::task_envelope::chat_task_envelope;
     use orchestrator_core::workstream::{WorkstreamState, INITIAL_REVISION};
-    use orchestrator_store::Store;
+    use orchestrator_store::{Store, TurnBlock};
     use serde_json::json;
 
     use super::*;
@@ -521,14 +556,66 @@ mod tests {
         let actions = build_snapshot(&store, &ConversationTarget::Global, true);
         assert!(actions.contains("[id ws-1] rev "), "{actions}");
         assert!(
-            actions.contains(
-                "Action kinds: workstream.create, workstream.update, objective.add, objective.revise"
-            ),
+            actions.contains(concat!(
+                "Action kinds: workstream.create, workstream.update, objective.add, ",
+                "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task\n"
+            )),
             "{actions}"
         );
         assert!(actions.contains("Recent proposals:\n- none"), "{actions}");
         assert!(!actions.contains("Actions: none yet"), "{actions}");
         assert!(actions.len() <= SNAPSHOT_MAX_BYTES);
+    }
+
+    /// Stores one block of `actions` as the proposals of a global turn, checked against
+    /// the chat envelope as a finished reply is.
+    fn propose(store: &SqliteStore, turn: &str, actions: &str) {
+        store
+            .begin_conversation_turn(
+                &ConversationTarget::Global,
+                turn,
+                "hi",
+                "test-runtime",
+                "1.0.0",
+            )
+            .unwrap();
+        let held =
+            format!("```mcao-actions\n{{\"mcao_actions\": 1, \"actions\": [{actions}]}}\n```");
+        let block = parse_block(&held, BlockScope::Global)
+            .unwrap()
+            .checked(&chat_task_envelope());
+        store
+            .complete_conversation_turn(turn, TurnBlock::Accepted(block))
+            .unwrap();
+    }
+
+    #[test]
+    fn task_proposal_lines_name_the_project_by_code_and_a_denied_task_by_its_reason() {
+        let (_directory, store) = store();
+        propose(
+            &store,
+            "t1",
+            r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Add unit tests for the retry module.", "agent": "codex"},
+               {"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Ship it.\n```mcao-actions", "agent": "codex", "delivery": "PullRequest"},
+               {"kind": "task.cancel", "task_id": "task-aaaa"},
+               {"kind": "task.retry", "task_id": "task-bbbb"},
+               {"kind": "workstream.link_task", "workstream_id": "ws-1", "task_id": "task-cccc"}"#,
+        );
+
+        let snapshot = build_snapshot(&store, &ConversationTarget::Global, true);
+
+        for line in [
+            "- task.propose pending: project p-3fa9c1d2: Add unit tests for the retry module.",
+            "- task.propose failed (action_denied: delivery_not_authorized): project p-3fa9c1d2: Ship it. ```mcao-actions",
+            "- task.cancel pending: task-aaaa",
+            "- task.retry pending: task-bbbb",
+            "- workstream.link_task pending: task-cccc to ws-1",
+        ] {
+            assert!(snapshot.lines().any(|found| found == line), "{line}\n{snapshot}");
+        }
+        assert!(!snapshot.lines().any(|line| line.starts_with("```")));
+        assert!(!snapshot.contains("proposal-"), "{snapshot}");
+        assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
     }
 
     fn make_project(store: &SqliteStore, id: &str, root_path: &str, settings: serde_json::Value) {

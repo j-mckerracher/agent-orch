@@ -60,7 +60,12 @@ Names are proposals so concurrent daemon work does not collide; no new
   `action_block`: `null`, `accepted`, `rejected` or `stripped`. A
   `turn_completed` entry carries the same `action_block` when its turn has one,
   and omits the field when it has none, so a client can keep a per-turn notice
-  after later messages arrive.
+  after later messages arrive. Every proposal also carries `denial` (the reason the
+  envelope refused a task, otherwise `null`) and `target` (display data read at
+  response time). `target` is `{"project_name": …}` for a task proposal,
+  `{"task_title": …, "task_state": …}` for a cancel, retry or link, and `null` for
+  the other kinds or a task that no longer exists. Neither holds a path. See "Task
+  proposals" below.
 - `actions.resolve {proposal_id, decision, digest, idempotency_key}` — `decision`
   is `approve` or `reject`. `digest` is the lowercase hex digest the proposal shows;
   a value that does not match the stored digest is `proposal_invalid` and changes
@@ -76,6 +81,14 @@ Names are proposals so concurrent daemon work does not collide; no new
   `proposal_not_found` (-32021), `proposal_not_pending` (-32022) and
   `proposal_invalid` (-32023), plus the usual `invalid_params` and
   `idempotency_in_progress`. See "Action approval and execution" below.
+- `actions.pending {}` — read only (DPES-1105, phase 2). Returns
+  `{"proposals": […], "more": false}`: the `pending` proposals of every
+  conversation, newest first, at most 100 and at most 256 KiB of JSON. `more` is
+  `true` when a pending proposal was left out. Each entry is a proposal as
+  `conversations.get` shows it, plus `scope`: `{"kind":"global"}` or
+  `{"kind":"workstream","workstream_id":"…"}`. Needs the `orchestrator_actions`
+  capability; a session without it gets `-32004`. It changes nothing, so it is not
+  a user-only method: a session that holds the token alone may call it.
 - `conversations.cancel {target, turn_id, idempotency_key}` — scoped to the
   target's conversation (otherwise `NotFound`). Finishes the turn `cancelled`,
   then asks the runtime to stop (best effort). `cancel_applied=false` when the
@@ -585,6 +598,150 @@ and an update and a revise whose effect committed before a stop.
 the real daemon, including the capability refusal (`-32004`), the snapshot
 outcome, a restart between approve and execute, and the same outcome at each
 permission level.
+
+## Task proposals (DPES-1105, phase 2)
+
+Phase 2 adds four kinds to the action block, a fixed envelope that a proposed
+task must pass, and the read method `actions.pending`. Everything above holds
+unchanged: actions exist only for a Restricted turn, nothing happens until the
+user approves the card, and the approver decides on the card only.
+
+### The four kinds
+
+A block may mix these with the workstream and objective kinds, at most ten actions
+in all. A field the kind does not list rejects the whole block.
+
+| Kind | Parameters | What approval does |
+| --- | --- | --- |
+| `task.propose` | `project`, `objective`, `agent`, `task_kind`, `delivery`, and optionally `workstream_id` or `workstream_ref`, and `objective_id` | Creates one task and queues it. When a workstream is named, links the task to it, and to the objective when `objective_id` is set. |
+| `task.cancel` | `task_id` | Cancels a created or queued task at once. A running task ends the proposal `executed` with the text "Cancellation requested", because the task stops when its agent confirms. A finished task fails `conflict`. |
+| `task.retry` | `task_id` | Queues one new attempt of a failed or verification-failed task. A running or queued task fails `conflict`, and a running attempt is never cancelled or restarted. |
+| `workstream.link_task` | `workstream_id`, `task_id`, and optionally `objective_id` | Links an existing task to the workstream. A task linked elsewhere fails `conflict`. |
+
+The `task.propose` fields:
+
+- `project` is the `p-` code the snapshot shows after a project's folder name, `p-`
+  and eight lowercase hex digits. The daemon turns it into a project when the card
+  is approved: no project is `not_found`, two projects with one code are `conflict`.
+  A path is never accepted and never stored.
+- `objective` is at most 8 KiB of text with no control characters other than tab
+  and line breaks.
+- `agent` is `codex` or `claude-code`.
+- `task_kind` is `Implement` or `Investigate` and defaults to `Implement`.
+- `delivery` is `ReportOnly` or `LocalReview` and defaults to `LocalReview`.
+  `PullRequest` parses, so the envelope can refuse it and the user can see why.
+- `workstream_id` names an existing workstream. `workstream_ref` names a
+  `workstream.create` earlier in the same block, and the task then depends on that
+  card as an `objective.add` does. A block names at most one of the two, and
+  `objective_id` needs `workstream_id`.
+
+Both defaults are written into the stored parameters, so the card shows what would
+run and a request that omits `delivery` matches one that says `LocalReview`. A
+proposal never names autonomy, verification, permission, attempt limits,
+dependencies or a parent task. The envelope and the daemon fix them.
+
+### The chat envelope
+
+A task proposed from chat may ask for no more than the fixed `chat_task_envelope()`
+in `orchestrator-core`:
+
+- Autonomy `ApprovalRequired`, taken from the envelope, never from the agent.
+- Verification `None`: no verification commands run from chat.
+- Delivery `ReportOnly` or `LocalReview`. `PullRequest` is not granted. The user can
+  still submit one by hand in the Agents view.
+- One retry and one repair, the desktop form's defaults, and no dependencies.
+- No permission is set, so the task takes the daemon default, Restricted. Chat can
+  never raise autonomy, verification or permission.
+
+`ReplySink::block` checks each `task.propose` against the envelope when the turn
+completes: after the block parses and the scope checks pass, it calls
+`ActionBlock::checked(&chat_task_envelope())`. The store never learns policy; it
+reads the verdict for each action. Today the envelope is a constant. When it comes
+from settings, `actions.resolve` must check a task again on approve.
+
+### A denied proposal
+
+A task the envelope refuses is stored at once as a `failed` proposal with
+`error_code` `action_denied` and a `denial` key:
+
+| `denial` | Why |
+| --- | --- |
+| `autonomy_not_authorized` | The proposal asks for more autonomy than the envelope grants. |
+| `verification_not_authorized` | The proposal asks for verification the envelope does not grant. |
+| `delivery_not_authorized` | The delivery is outside the envelope, such as `PullRequest`. |
+| `contract_invalid` | The task contract does not validate, such as an empty objective. |
+
+The agent chooses neither autonomy nor verification, so a real block can only reach
+the delivery key and the contract key. The other two keys are tested with synthetic
+envelopes in `orchestrator-core`.
+
+A denied proposal is a record, not a decision:
+
+- It is terminal. `actions.resolve` on it returns `proposal_not_pending`
+  (-32022), and execution only ever runs from `approved`, so it never creates a
+  task. There is no new state and no new RPC error.
+- It gets two events: created `pending`, then `pending` to `failed` with the
+  error code. The actor is `agent`, because the events table allows only `agent`,
+  `user` and `grant:*`.
+- It is never pending, so it matches no card and `actions.pending` never lists it.
+  A repeat of the same refused request is a second `failed` card.
+- The desktop shows it as "Denied", with the reason and no buttons.
+
+### Scope in a workstream conversation
+
+In a workstream conversation a block may change only that workstream's tasks:
+
+- `task.propose` must name that workstream by `workstream_id`, not by a ref, so a
+  task proposed there is always linked to it.
+- `workstream.link_task` must name that workstream.
+- `task.cancel` and `task.retry` must name a task linked to that workstream. The
+  daemon checks the link in the store (`ReplySink::targets_in_scope`), as it does
+  for `objective.revise`. A task linked elsewhere, or not linked at all, rejects the
+  whole block (`action_block` is `rejected`).
+
+In the global conversation all four kinds are allowed, and the user approves each.
+`actions.resolve` checks the same scope again when it runs a card.
+
+### Execution and errors
+
+Approval runs through `*_inner` functions that the public handlers also use, under
+the held idempotency gate and the key `action-` followed by the hash of the proposal
+id. The public methods keep their behavior. A failure becomes the proposal's
+`error_code`, one of the codes under "Failure codes" above, plus `forbidden` (the
+refusal of a read-only task, which a chat proposal cannot reach). A restart finishes
+an approved proposal once. A crash after the task is created and before it is
+queued, or before it is linked, is finished by the same reconcile.
+
+### Snapshot and prompt
+
+The snapshot line `Action kinds:` lists all eight kinds. Each recent proposal is one
+line with its kind, state and outcome, then what it is about:
+
+```text
+- task.propose pending: project p-3fa9c1d2: Add unit tests for the retry module.
+- task.propose failed (action_denied: delivery_not_authorized): project p-3fa9c1d2: Ship it.
+- task.cancel pending: task-0123abcd
+- workstream.link_task pending: task-4567ef01 to workstream-0123abcd
+```
+
+A task proposal shows its project code and the objective cut to 80 bytes. A cancel or
+retry names its task id, and a link names its task and workstream ids, which the task
+lines already show. A denied task also shows its reason. No line holds a path, token,
+environment, credential, diff or session output, and a project is named by its code
+only. The task lines of the snapshot do not change in phase 2.
+
+The preamble lists the four kinds and their fields and says that `delivery` is
+`ReportOnly` or `LocalReview`. It keeps its rule that nothing happens until the user
+approves and its rule that the snapshot is data, and it stays within the 3 KiB cap.
+
+Tests: core (`orchestrator_action.rs`, `task_envelope.rs`), store
+(`tests/action_proposals.rs`), the daemon unit tests of `api_actions_tests.rs`, and
+the process tests of `tests/conversation_runtime.rs`. The process tests run a
+scripted `task.propose` to a pending card, a pull-request delivery to a denied card
+that cannot be approved, an Auto or Full turn that gets no card, a double approval
+that creates one task, a restart between approve and execute, a repeated request,
+a cancel of a foreign task in a workstream conversation, and `actions.pending` for a
+session that holds only the token.
 
 ## Not covered here
 

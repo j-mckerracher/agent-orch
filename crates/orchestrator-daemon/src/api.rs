@@ -356,6 +356,7 @@ impl RpcHandler for DaemonApi {
             "workstreams.link_task" => self.workstreams_link_task(params),
             "workstreams.unlink_task" => self.workstreams_unlink_task(params),
             "actions.resolve" => self.actions_resolve(params),
+            "actions.pending" => self.actions_pending(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -485,80 +486,87 @@ impl DaemonApi {
             "tasks.submit",
             &key,
             &request,
-            || {
-                // The executor always launches a writing agent, so a policy
-                // that denies workspace writes cannot be honored. Refuse it
-                // rather than run an agent with more access than requested.
-                if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
-                    return Err(RpcError::Forbidden);
-                }
-                let permission = request.contract.permission.unwrap_or_default();
-                // A level the agent has no task mapping for is refused, so no task is
-                // created for it. Restricted always takes the existing path, so an
-                // agent with no launcher still fails at launch, as before.
-                if permission != PermissionLevel::Restricted
-                    && orchestrator_agents::permission::task_profile(
-                        &request.contract.agent,
-                        permission,
-                    )
-                    .is_none()
-                {
-                    self.config.diagnostics.warn(
-                        "api",
-                        orchestrator_core::permission::PERMISSION_LEVEL_UNSUPPORTED,
-                        &[
-                            ("agent", &request.contract.agent),
-                            ("permission", permission.as_str()),
-                        ],
-                    );
-                    return Err(RpcError::InvalidParams);
-                }
-                let contract = TaskContract {
-                    id: idempotency::stable_id("task", &key),
-                    project_id: request.contract.project_id.clone(),
-                    parent_id: request.contract.parent_id.clone(),
-                    objective: request.contract.objective.clone(),
-                    kind: request.contract.kind,
-                    agent: request.contract.agent.clone(),
-                    dependencies: request.contract.dependencies.clone(),
-                    verification: request.contract.verification.clone(),
-                    delivery: request.contract.delivery,
-                    autonomy: request.contract.autonomy,
-                    max_retries: request.contract.max_retries,
-                    max_repairs: request.contract.max_repairs,
-                    model_selection: request.contract.model_selection.clone(),
-                    permission,
-                };
-                self.store
-                    .get_project(&contract.project_id)
-                    .map_err(map_store_error)?;
-                contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
-                if let Some(parent_id) = &contract.parent_id {
-                    match self.store.get(parent_id) {
-                        Ok(_) => {}
-                        Err(StoreError::NotFound(_) | StoreError::InvalidTaskId(_)) => {
-                            return Err(RpcError::ParentNotFound);
-                        }
-                        Err(error) => return Err(map_store_error(error)),
-                    }
-                }
-                self.check_agent_command_line(&contract)?;
-                if let Some(selection) = &contract.model_selection {
-                    // `contract::validate` has accepted the selection, so the
-                    // pre-gate read was made for it.
-                    let catalog = selection_catalog.as_ref().ok_or(RpcError::Internal)?;
-                    self.check_selection(catalog, selection)?;
-                }
-                self.validate_scheduler(&contract)?;
-                self.store.create(&contract).map_err(map_store_error)?;
-                self.store
-                    .transition(&contract.id, TaskEvent::Admit)
-                    .map_err(map_store_error)?;
-                self.wake_executor();
-                serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.submit_task_inner(&request, &key, selection_catalog.as_ref()),
         )
+    }
+
+    /// The submit write, shared with action execution. `key` seeds the task id, and the
+    /// caller holds the idempotency gate. `selection_catalog` is the catalog read the caller
+    /// made before taking the gate; it is `None` when the request names no model selection.
+    fn submit_task_inner(
+        &self,
+        request: &TaskSubmitParams,
+        key: &str,
+        selection_catalog: Option<&orchestrator_agents::AgentCatalog>,
+    ) -> Result<Value, RpcError> {
+        // The executor always launches a writing agent, so a policy
+        // that denies workspace writes cannot be honored. Refuse it
+        // rather than run an agent with more access than requested.
+        if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
+            return Err(RpcError::Forbidden);
+        }
+        let permission = request.contract.permission.unwrap_or_default();
+        // A level the agent has no task mapping for is refused, so no task is
+        // created for it. Restricted always takes the existing path, so an
+        // agent with no launcher still fails at launch, as before.
+        if permission != PermissionLevel::Restricted
+            && orchestrator_agents::permission::task_profile(&request.contract.agent, permission)
+                .is_none()
+        {
+            self.config.diagnostics.warn(
+                "api",
+                orchestrator_core::permission::PERMISSION_LEVEL_UNSUPPORTED,
+                &[
+                    ("agent", &request.contract.agent),
+                    ("permission", permission.as_str()),
+                ],
+            );
+            return Err(RpcError::InvalidParams);
+        }
+        let contract = TaskContract {
+            id: idempotency::stable_id("task", key),
+            project_id: request.contract.project_id.clone(),
+            parent_id: request.contract.parent_id.clone(),
+            objective: request.contract.objective.clone(),
+            kind: request.contract.kind,
+            agent: request.contract.agent.clone(),
+            dependencies: request.contract.dependencies.clone(),
+            verification: request.contract.verification.clone(),
+            delivery: request.contract.delivery,
+            autonomy: request.contract.autonomy,
+            max_retries: request.contract.max_retries,
+            max_repairs: request.contract.max_repairs,
+            model_selection: request.contract.model_selection.clone(),
+            permission,
+        };
+        self.store
+            .get_project(&contract.project_id)
+            .map_err(map_store_error)?;
+        contract::validate(&contract).map_err(|_| RpcError::InvalidParams)?;
+        if let Some(parent_id) = &contract.parent_id {
+            match self.store.get(parent_id) {
+                Ok(_) => {}
+                Err(StoreError::NotFound(_) | StoreError::InvalidTaskId(_)) => {
+                    return Err(RpcError::ParentNotFound);
+                }
+                Err(error) => return Err(map_store_error(error)),
+            }
+        }
+        self.check_agent_command_line(&contract)?;
+        if let Some(selection) = &contract.model_selection {
+            // `contract::validate` has accepted the selection, so the
+            // pre-gate read was made for it.
+            let catalog = selection_catalog.ok_or(RpcError::Internal)?;
+            self.check_selection(catalog, selection)?;
+        }
+        self.validate_scheduler(&contract)?;
+        self.store.create(&contract).map_err(map_store_error)?;
+        self.store
+            .transition(&contract.id, TaskEvent::Admit)
+            .map_err(map_store_error)?;
+        self.wake_executor();
+        serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     /// Queues a new attempt for a `Failed` or `VerificationFailed` task. The
@@ -575,24 +583,27 @@ impl DaemonApi {
             "tasks.retry",
             &key,
             &request,
-            || {
-                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
-                let bound = match task.state {
-                    TaskState::Failed => task.contract.max_retries,
-                    TaskState::VerificationFailed => task.contract.max_repairs,
-                    _ => return Err(RpcError::Conflict),
-                };
-                if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
-                    return Err(RpcError::Conflict);
-                }
-                self.store
-                    .transition(&request.task_id, TaskEvent::RetryRequested)
-                    .map_err(map_store_error)?;
-                self.wake_executor();
-                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.retry_task_inner(&request.task_id),
         )
+    }
+
+    /// The retry write, shared with action execution. The caller holds the idempotency gate.
+    pub(super) fn retry_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
+        let task = self.store.get(task_id).map_err(map_store_error)?;
+        let bound = match task.state {
+            TaskState::Failed => task.contract.max_retries,
+            TaskState::VerificationFailed => task.contract.max_repairs,
+            _ => return Err(RpcError::Conflict),
+        };
+        if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
+            return Err(RpcError::Conflict);
+        }
+        self.store
+            .transition(task_id, TaskEvent::RetryRequested)
+            .map_err(map_store_error)?;
+        self.wake_executor();
+        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     /// Reports each known agent family: whether its executable is installed
@@ -779,12 +790,16 @@ impl DaemonApi {
             "tasks.cancel",
             &key,
             &request,
-            || {
-                self.cancel_task_record(&request.task_id)?;
-                serde_json::to_value(self.store.get(&request.task_id).map_err(map_store_error)?)
-                    .map_err(|_| RpcError::Internal)
-            },
+            || self.cancel_task_inner(&request.task_id),
         )
+    }
+
+    /// The cancel write, shared with action execution. The caller holds the idempotency gate.
+    /// A running task only has its cancellation requested; the owner confirms later.
+    pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
+        self.cancel_task_record(task_id)?;
+        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
+            .map_err(|_| RpcError::Internal)
     }
 
     fn cancel_task_record(&self, task_id: &str) -> Result<(), RpcError> {
@@ -1464,6 +1479,7 @@ thread_local! {
 
 #[path = "api_actions.rs"]
 mod actions;
+use actions::project_code;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]
@@ -1506,6 +1522,9 @@ mod workstreams;
 #[path = "api_review_tests.rs"]
 mod review_tests;
 
+#[cfg(test)]
+#[path = "api_actions_task_tests.rs"]
+mod actions_task_tests;
 #[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;

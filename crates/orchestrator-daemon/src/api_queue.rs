@@ -268,5 +268,7 @@ fn explain(reason: &RejectionReason) -> (WaitingReason, Option<String>, Option<&
         RejectionReason::GlobalLimitReached | RejectionReason::ProjectLimitReached => {
             (category, None, None)
         }
+        // The meter and its numbers are added with the load handle (part 2c daemon glue).
+        RejectionReason::LoadGateClosed(_) => (category, None, None),
     }
 }

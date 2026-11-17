@@ -23,9 +23,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use orchestrator_agents::SelectionReason;
 use orchestrator_core::orchestrator_action::{
-    parse_block, Action, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
+    parse_block, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
 };
 use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTED};
+use orchestrator_core::task_envelope::chat_task_envelope;
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, SqliteStore, TurnBlock,
@@ -267,8 +268,9 @@ impl Shared {
 
 /// Whether a turn may carry action proposals (DPES-1105). Only a session that
 /// negotiated `orchestrator_actions` and a turn at `Restricted` qualify. Above
-/// Restricted the agent has a shell, so it could read the daemon's token and call
-/// `actions.resolve` itself, and the daemon has no caller identity to refuse it.
+/// Restricted the agent has a shell. The approver secret keeps a session that only
+/// holds the token from calling `actions.resolve`, but a shell can still edit the
+/// store or replace the daemon, and no credential stops that.
 pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
     negotiated && level == PermissionLevel::Restricted
 }
@@ -344,7 +346,9 @@ impl ReplySink {
         self.shared.complete(&self.turn_id, block);
     }
 
-    /// Decides what the held block, if any, does to the turn.
+    /// Decides what the held block, if any, does to the turn. An accepted block
+    /// has each `task.propose` checked against the chat envelope: a refused task
+    /// is stored as a failed card, never a pending one.
     fn block(&self, held: Option<HeldBlock>) -> TurnBlock {
         let text = match held {
             None => return TurnBlock::None,
@@ -357,27 +361,38 @@ impl ReplySink {
             ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
         };
         match parse_block(&text, scope) {
-            Ok(block) if self.revisions_in_scope(&block) => TurnBlock::Accepted(block),
+            // The envelope is fixed in Phase 2. When it comes from settings,
+            // `resolve_as` must check a task again on approve (DPES-1105).
+            Ok(block) if self.targets_in_scope(&block) => {
+                TurnBlock::Accepted(block.checked(&chat_task_envelope()))
+            }
             _ => TurnBlock::Rejected,
         }
     }
 
-    /// An objective revision in a workstream conversation must name one of that
-    /// workstream's objectives. The lookup needs the store, so it is checked here.
-    fn revisions_in_scope(&self, block: &ActionBlock) -> bool {
+    /// In a workstream conversation, an objective revision must name one of that
+    /// workstream's objectives, and a task cancel or retry one of its tasks. The
+    /// lookups need the store, so they are checked here.
+    fn targets_in_scope(&self, block: &ActionBlock) -> bool {
         let ConversationTarget::Workstream(workstream_id) = &self.target else {
             return true;
         };
-        block
-            .actions()
-            .iter()
-            .filter_map(Action::revised_objective)
-            .all(|objective_id| {
-                self.shared
-                    .store
+        let store = &self.shared.store;
+        block.actions().iter().all(|action| {
+            let objective_in_scope = action.revised_objective().is_none_or(|objective_id| {
+                store
                     .get_objective(objective_id)
                     .is_ok_and(|objective| objective.workstream_id == *workstream_id)
-            })
+            });
+            let task_in_scope = action.target_task().is_none_or(|task_id| {
+                store
+                    .workstream_task_link(task_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|link| link.workstream_id == *workstream_id)
+            });
+            objective_in_scope && task_in_scope
+        })
     }
 
     pub(crate) fn fail(&self, failure: RuntimeFailure) {

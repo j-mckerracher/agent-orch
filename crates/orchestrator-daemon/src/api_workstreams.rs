@@ -14,7 +14,7 @@
 use orchestrator_core::workstream::{
     AcceptanceGate, GateState, Objective, Workstream, WorkstreamRuleError, WorkstreamState,
 };
-use orchestrator_store::WorkstreamStoreError;
+use orchestrator_store::{WorkstreamStoreError, WorkstreamTask};
 
 use super::*;
 
@@ -100,12 +100,12 @@ struct SetGateParams {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct LinkTaskParams {
-    workstream_id: String,
-    task_id: String,
+pub(super) struct LinkTaskParams {
+    pub(super) workstream_id: String,
+    pub(super) task_id: String,
     #[serde(default)]
-    objective_id: Option<String>,
-    idempotency_key: String,
+    pub(super) objective_id: Option<String>,
+    pub(super) idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -338,16 +338,22 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let link = self
-                    .store
-                    .link_task(
-                        &request.workstream_id,
-                        &request.task_id,
-                        request.objective_id.as_deref(),
-                    )
-                    .map_err(map_workstream_error)?;
-                to_json(&link)
+                self.link_task_inner(&request)
+                    .map_err(map_workstream_error)
+                    .and_then(|link| to_json(&link))
             },
+        )
+    }
+
+    /// The link write, shared with action execution. Returns the typed store error.
+    pub(super) fn link_task_inner(
+        &self,
+        request: &LinkTaskParams,
+    ) -> Result<WorkstreamTask, WorkstreamStoreError> {
+        self.store.link_task(
+            &request.workstream_id,
+            &request.task_id,
+            request.objective_id.as_deref(),
         )
     }
 

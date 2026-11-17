@@ -11,14 +11,19 @@
 #[macro_use]
 mod support;
 
-use orchestrator_ipc::{Capability, Relay, RelayEvent};
-use orchestrator_store::{ActionBlockOutcome, ConversationTarget, SqliteStore};
+use orchestrator_core::contract::{
+    AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
+};
+use orchestrator_core::records::Project;
+use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayEvent, USER_ONLY_METHODS};
+use orchestrator_store::{ActionBlockOutcome, ConversationTarget, SqliteStore, Store};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 use support::process::{connect, Daemon, Layout};
+use support::seed;
 
 const WAIT: Duration = Duration::from_secs(30);
 const CONFLICT: i64 = -32011;
@@ -80,25 +85,33 @@ fn start(layout: &Layout, extra: &[(&str, &str)]) -> Daemon {
     Daemon::start_with_env(layout, &pairs)
 }
 
+/// What the desktop negotiates for the workspace chat.
+const ACTION_CAPABILITIES: [Capability; 5] = [
+    Capability::Coordinator,
+    Capability::Tasks,
+    Capability::Approvals,
+    Capability::Workstreams,
+    Capability::OrchestratorActions,
+];
+
 struct Chat {
     relay: Relay,
     frames: Receiver<RelayEvent>,
     next_id: u64,
+    welcome: Value,
 }
 
 impl Chat {
-    /// A session that negotiated `orchestrator_actions`, as the desktop does.
+    /// A session that negotiated `orchestrator_actions` and proved the approver
+    /// secret, as the desktop does.
     fn open(layout: &Layout) -> Self {
-        Self::negotiate(
-            layout,
-            &[
-                Capability::Coordinator,
-                Capability::Tasks,
-                Capability::Approvals,
-                Capability::Workstreams,
-                Capability::OrchestratorActions,
-            ],
-        )
+        Self::negotiate(layout, &ACTION_CAPABILITIES)
+    }
+
+    /// The same session with only the token, which is all an agent that read
+    /// `daemon.token` has.
+    fn open_without_approver(layout: &Layout) -> Self {
+        Self::negotiate_without_approver(layout, &ACTION_CAPABILITIES)
     }
 
     /// A session that did not negotiate `orchestrator_actions`, as an older
@@ -116,16 +129,36 @@ impl Chat {
     }
 
     fn negotiate(layout: &Layout, capabilities: &[Capability]) -> Self {
+        Self::negotiate_with(layout, capabilities, Some(&*layout.approver()))
+    }
+
+    fn negotiate_without_approver(layout: &Layout, capabilities: &[Capability]) -> Self {
+        Self::negotiate_with(layout, capabilities, None)
+    }
+
+    /// Opens a session that presents `approver`, whatever the daemon holds.
+    fn negotiate_with(
+        layout: &Layout,
+        capabilities: &[Capability],
+        approver: Option<&ApproverSecret>,
+    ) -> Self {
         let (events, frames) = mpsc::channel();
-        let (relay, _welcome) = Relay::open(&layout.data, capabilities, move |event| {
-            let _ = events.send(event);
-        })
-        .unwrap();
+        let (relay, welcome) =
+            Relay::open_with_approver(&layout.data, capabilities, approver, move |event| {
+                let _ = events.send(event);
+            })
+            .unwrap();
         Self {
             relay,
             frames,
             next_id: 0,
+            welcome,
         }
+    }
+
+    /// Whether the daemon accepted this session as an approver.
+    fn is_approver(&self) -> bool {
+        self.welcome["approver"] == true
     }
 
     fn call(&mut self, method: &str, params: Value) -> Value {
@@ -2099,3 +2132,701 @@ fn a_restart_between_approve_and_execute_completes_once() {
     assert_eq!(store.list_workstreams(None).unwrap().len(), 1);
 }
 
+// Only a session that proved the approver secret may decide a proposal. An agent that
+// read `daemon.token` has the token and the socket, and nothing more.
+
+const FORBIDDEN: i64 = -32012;
+const PROPOSAL_NOT_FOUND: i64 = -32021;
+
+/// Params for a proposal that does not exist. Only the gate tells the callers apart: an
+/// approver reaches the lookup and a token-only session never does.
+fn unknown_proposal_params() -> Value {
+    json!({
+        "proposal_id": "no-such-proposal",
+        "decision": "approve",
+        "digest": "0".repeat(64),
+        "idempotency_key": "gate-1",
+    })
+}
+
+/// A pending proposal pair from one scripted turn, and the params that approve the first.
+fn held_proposals(chat: &mut Chat) -> (Vec<String>, Value) {
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 2, "{page}");
+    let digest = digest_of(chat, &ids[0]);
+    let params = json!({
+        "proposal_id": ids[0],
+        "decision": "approve",
+        "digest": digest,
+        "idempotency_key": "r-1",
+    });
+    (ids, params)
+}
+
+#[test]
+fn a_token_only_session_cannot_resolve_an_action() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &format!("Held.\n{}", block_titled("Held work")));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    assert!(chat.is_approver(), "{}", chat.welcome);
+    let (ids, params) = held_proposals(&mut chat);
+
+    let mut bare = Chat::open_without_approver(&layout);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("actions.resolve", params);
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    bare.relay.close();
+
+    let page = chat.get(&global(), 0);
+    assert_eq!(state_in(&page, &ids[0]), "pending");
+    assert_eq!(state_in(&page, &ids[1]), "pending");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        proposal_rows(&store),
+        ["objective.add pending", "workstream.create pending"]
+    );
+    assert!(store.list_workstreams(None).unwrap().is_empty());
+}
+
+#[test]
+fn a_token_only_session_cannot_replay_an_approved_key() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &format!("Held.\n{}", block_titled("Replayed work")));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let (_ids, params) = held_proposals(&mut chat);
+    let approved = chat.call("actions.resolve", params.clone());
+    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
+
+    // The cached answer belongs to the approver, not to whoever repeats the key.
+    let mut bare = Chat::open_without_approver(&layout);
+    let replay = bare.call("actions.resolve", params.clone());
+    assert_eq!(replay["error"]["code"], FORBIDDEN, "{replay}");
+    assert!(replay.get("result").is_none(), "{replay}");
+    bare.relay.close();
+
+    let again = chat.call("actions.resolve", params);
+    assert_eq!(again["result"], approved["result"], "{again}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn the_gate_runs_before_the_proposal_lookup() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    let found = chat.call("actions.resolve", unknown_proposal_params());
+    assert_eq!(found["error"]["code"], PROPOSAL_NOT_FOUND, "{found}");
+
+    let mut bare = Chat::open_without_approver(&layout);
+    let refused = bare.call("actions.resolve", unknown_proposal_params());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    bare.relay.close();
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn every_user_only_method_is_refused_to_a_token_only_session_on_a_real_daemon() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    assert!(!USER_ONLY_METHODS.is_empty());
+    for &method in USER_ONLY_METHODS {
+        // The gate answers before any parameter is read, so no fixture is needed. These
+        // params are never sent as an approver: a future method could take all-optional ones.
+        let refused = bare.call(method, json!({}));
+        assert_eq!(refused["error"]["code"], FORBIDDEN, "{method}: {refused}");
+        assert!(refused.get("result").is_none(), "{method}: {refused}");
+    }
+    stop(&layout, daemon, bare);
+}
+
+#[test]
+fn a_token_only_session_cannot_resolve_an_approval() {
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    let seeded = seed::seed_review(&layout.data, &layout.repo, &layout.worktrees, "task-g");
+    let task_id = seeded["task_id"].as_str().unwrap();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::negotiate(&layout, &Capability::ALL);
+    let requested = chat.call(
+        "review.request_approval",
+        json!({
+            "task_id": task_id,
+            "workspace_id": seeded["workspace_id"],
+            "verification_run_id": seeded["verification_run_id"],
+            "action": "local_review",
+            "target_ref": format!("refs/heads/orchestrator/review/{task_id}"),
+            "idempotency_key": "request-1",
+        }),
+    );
+    let approval_id = requested["result"]["approval"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no approval requested: {requested}"))
+        .to_owned();
+    let decision =
+        json!({"approval_id": approval_id, "decision": "approve", "idempotency_key": "resolve-1"});
+
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    let refused = bare.call("approvals.resolve", decision.clone());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    bare.relay.close();
+
+    // Nothing was decided: the approval still waits, and the approver can decide it.
+    let pending = chat.call("approvals.list", Value::Null);
+    let waiting = pending["result"].as_array().unwrap();
+    assert!(
+        waiting.iter().any(|approval| approval["id"] == approval_id.as_str()),
+        "{pending}"
+    );
+    let approved = chat.call("approvals.resolve", decision);
+    assert_eq!(approved["result"]["state"]["state"], "approved", "{approved}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_daemon_started_without_the_flag_refuses_a_session_that_presents_a_secret() {
+    let layout = Layout::new();
+    // Its stdin stays open and silent: a daemon without the flag never reads it.
+    let daemon = Daemon::start_without_approver(&layout);
+    // The layout's secret is presented, and this daemon never received one.
+    let mut chat = Chat::open(&layout);
+    assert!(!chat.is_approver(), "{}", chat.welcome);
+    let refused = chat.call("actions.resolve", unknown_proposal_params());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    let tasks = chat.call("tasks.list", Value::Null);
+    assert_eq!(tasks["result"], json!([]), "{tasks}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn a_restarted_daemon_with_a_new_secret_refuses_the_old_one() {
+    let layout = Layout::new();
+    let first = start(&layout, &[]);
+    let chat = Chat::open(&layout);
+    assert!(chat.is_approver(), "{}", chat.welcome);
+    stop(&layout, first, chat);
+
+    let renewed = ApproverSecret::generate().unwrap();
+    let second = Daemon::start_with_secret(&layout, &renewed);
+    // What a host that did not start this daemon still holds.
+    let mut stale = Chat::open(&layout);
+    assert!(!stale.is_approver(), "{}", stale.welcome);
+    let refused = stale.call("actions.resolve", unknown_proposal_params());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    stale.relay.close();
+
+    let mut fresh = Chat::negotiate_with(&layout, &ACTION_CAPABILITIES, Some(&renewed));
+    assert!(fresh.is_approver(), "{}", fresh.welcome);
+    let found = fresh.call("actions.resolve", unknown_proposal_params());
+    assert_eq!(found["error"]["code"], PROPOSAL_NOT_FOUND, "{found}");
+    stop(&layout, second, fresh);
+}
+
+#[test]
+fn the_approver_secret_is_not_in_the_log_a_snapshot_or_any_error() {
+    let layout = Layout::new();
+    let secret = layout.approver().to_wire();
+    assert_eq!(secret.len(), 64);
+    let reply_file = script(&layout, &format!("Held.\n{}", block_titled("Secret work")));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let (_ids, params) = held_proposals(&mut chat);
+    // The payloads below are not printed on failure: a leak would print the secret.
+    let approved = chat.call("actions.resolve", params.clone());
+    assert_eq!(approved["result"]["proposal"]["state"], "executed");
+    let mut bare = Chat::open_without_approver(&layout);
+    let refused = bare.call("actions.resolve", params);
+    assert_eq!(refused["error"]["code"], FORBIDDEN);
+    chat.send(&global(), "[fake:echo]", "m-2");
+    let echoed = reply(&chat.settled(&global()));
+    let snapshot = chat.get(&global(), 0);
+    let welcomes = format!("{} {}", chat.welcome, bare.welcome);
+    bare.relay.close();
+    stop(&layout, daemon, chat);
+
+    let log = String::from_utf8_lossy(&std::fs::read(&layout.log).unwrap()).into_owned();
+    for (what, text) in [
+        ("daemon.log", log),
+        ("a conversations.get result", snapshot.to_string()),
+        ("the prompt the agent was given", echoed),
+        ("an actions.resolve result", approved.to_string()),
+        ("a refusal body", refused.to_string()),
+        ("a welcome", welcomes),
+    ] {
+        assert!(!text.contains(&secret), "the approver secret is in {what}");
+    }
+}
+
+// Task proposals (DPES-1105, phase 2). A `task.propose` is checked against the chat
+// envelope when its turn completes, and nothing is created until the user approves.
+
+const PROPOSAL_NOT_PENDING: i64 = -32022;
+/// A well-formed project code. A proposal is stored whether or not a project has it.
+const PROJECT_CODE: &str = "p-3fa9c1d2";
+const TASK_OBJECTIVE: &str = "Add unit tests for the retry module.";
+
+/// A reply holding one `task.propose` for `project` with `delivery`.
+fn task_block(project: &str, delivery: &str) -> String {
+    let block = json!({
+        "mcao_actions": 1,
+        "actions": [{
+            "kind": "task.propose",
+            "project": project,
+            "objective": TASK_OBJECTIVE,
+            "agent": "codex",
+            "delivery": delivery,
+        }],
+    });
+    format!("Task below.\n```mcao-actions\n{block}\n```\n")
+}
+
+/// A reply holding one `task.cancel` or `task.retry` of `task_id`.
+fn task_action_block(kind: &str, task_id: &str) -> String {
+    let block = json!({
+        "mcao_actions": 1,
+        "actions": [{"kind": kind, "task_id": task_id}],
+    });
+    format!("Action below.\n```mcao-actions\n{block}\n```\n")
+}
+
+/// Registers the layout's repository as a project, as the desktop does, and returns the
+/// code the snapshot gives it. That is the code the agent reads and names it by.
+fn register_project(layout: &Layout, chat: &mut Chat, key: &str) -> String {
+    seed::init_repo(&layout.repo);
+    connect(&layout.data)
+        .projects_register(&layout.repo.display().to_string())
+        .unwrap();
+    chat.send(&global(), "[fake:echo]", key);
+    let echoed = reply(&chat.settled(&global()));
+    // The repository folder is named `r`.
+    let line = echoed
+        .lines()
+        .find(|line| line.starts_with("- r (p-"))
+        .unwrap_or_else(|| panic!("no project line in {echoed}"));
+    line.trim_start_matches("- r (")
+        .trim_end_matches(')')
+        .to_owned()
+}
+
+/// Writes a task that never runs into the data directory before the daemon starts: a
+/// `Created` task is not launched, and a workstream link only needs the task to exist.
+fn seed_idle_task(layout: &Layout, task_id: &str) {
+    let store = store_after_stop(layout);
+    if store.get_project("seed-project").is_err() {
+        store
+            .register_project(&Project {
+                id: "seed-project".into(),
+                root_path: layout.repo.to_string_lossy().into_owned(),
+                settings: json!({}),
+            })
+            .unwrap();
+    }
+    store
+        .create(&TaskContract {
+            id: task_id.into(),
+            project_id: "seed-project".into(),
+            parent_id: None,
+            objective: "Seeded task".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: Default::default(),
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_scripted_task_propose_block_becomes_a_pending_card_with_project_name_and_fixed_policy() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, task_block(&code, "LocalReview")).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(reply(&page), "Task below.\n");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+
+    let card = page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["id"] == ids[0].as_str())
+        .unwrap();
+    assert_eq!(card["kind"], "task.propose", "{card}");
+    assert_eq!(card["state"], "pending", "{card}");
+    assert_eq!(card["error_code"], Value::Null, "{card}");
+    assert_eq!(card["denial"], Value::Null, "{card}");
+    // The card names the project by its folder, never by a path.
+    assert_eq!(card["target"]["project_name"], "r", "{card}");
+    let root = layout
+        .repo
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .unwrap();
+    assert!(!card.to_string().contains(root), "{card}");
+
+    // Only the agent's choices appear. The envelope and the daemon fix autonomy,
+    // verification, permission and the attempt limits.
+    let params = &card["params"];
+    assert_eq!(params["project"], code.as_str(), "{card}");
+    assert_eq!(params["objective"], TASK_OBJECTIVE, "{card}");
+    assert_eq!(params["agent"], "codex", "{card}");
+    assert_eq!(params["task_kind"], "Implement", "{card}");
+    assert_eq!(params["delivery"], "LocalReview", "{card}");
+    for fixed in [
+        "autonomy",
+        "verification",
+        "permission",
+        "max_retries",
+        "max_repairs",
+    ] {
+        assert!(params.get(fixed).is_none(), "{fixed} is in {card}");
+    }
+
+    // Nothing exists until the user approves.
+    chat.assert_no_authority();
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        block_outcome(&store, &turn_id),
+        Some(ActionBlockOutcome::Accepted)
+    );
+    assert_eq!(proposal_rows(&store), ["task.propose pending"]);
+}
+
+#[test]
+fn a_pull_request_task_proposal_is_stored_denied_and_resolve_says_proposal_not_pending() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &task_block(PROJECT_CODE, "PullRequest"));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+
+    // The card records the refusal and its reason. It is never pending.
+    let cards = page["proposals"].as_array().unwrap();
+    assert_eq!(cards.len(), 1, "{page}");
+    assert_eq!(cards[0]["state"], "failed", "{page}");
+    assert_eq!(cards[0]["error_code"], "action_denied", "{page}");
+    assert_eq!(cards[0]["denial"], "delivery_not_authorized", "{page}");
+
+    // It cannot be approved, and nothing was created.
+    let refused = resolve(&mut chat, &ids[0], "approve", "r-1");
+    assert_eq!(refused["error"]["code"], PROPOSAL_NOT_PENDING, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    chat.assert_no_authority();
+
+    // The next snapshot tells the agent what was refused and why.
+    chat.send(&global(), "[fake:echo]", "m-2");
+    let echoed = reply(&chat.settled(&global()));
+    let line = format!(
+        "- task.propose failed (action_denied: delivery_not_authorized): project {PROJECT_CODE}: {TASK_OBJECTIVE}"
+    );
+    assert!(echoed.lines().any(|found| found == line), "{echoed}");
+    assert!(!echoed.contains("proposal-"), "{echoed}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        block_outcome(&store, &turn_id),
+        Some(ActionBlockOutcome::Accepted)
+    );
+    assert_eq!(proposal_rows(&store), ["task.propose failed"]);
+}
+
+/// Only a Restricted turn carries proposals, task proposals included. Auto and Full
+/// turns get the block stripped: no card, and nothing to approve.
+#[test]
+fn an_auto_turn_cannot_propose_a_task() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &task_block(PROJECT_CODE, "LocalReview"));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let mut turns = Vec::new();
+    for (level, key) in [("auto", "m-1"), ("full", "m-2")] {
+        let sent = chat.send_params(json!({
+            "target": global(),
+            "text": "[fake:script]",
+            "idempotency_key": key,
+            "permission": level,
+        }));
+        turns.push((level, sent["turn"]["id"].as_str().unwrap().to_owned()));
+        let page = chat.settled(&global());
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+        assert_eq!(page["turn"]["permission_level"], level, "{page}");
+        assert_eq!(reply(&page), "Task below.\n", "{level}");
+        assert_eq!(page["proposals"], json!([]), "{level}: {page}");
+    }
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    for (level, turn_id) in &turns {
+        assert_eq!(
+            block_outcome(&store, turn_id),
+            Some(ActionBlockOutcome::Stripped),
+            "{level}"
+        );
+    }
+    assert!(proposal_rows(&store).is_empty());
+}
+
+#[test]
+fn approving_a_task_proposal_twice_with_two_keys_creates_one_task() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, task_block(&code, "LocalReview")).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+
+    let first = resolve(&mut chat, &ids[0], "approve", "r-1");
+    assert_eq!(first["result"]["proposal"]["state"], "executed", "{first}");
+    let task_id = first["result"]["proposal"]["result_ref"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no task id in {first}"))
+        .to_owned();
+
+    // A second key finds nothing pending, and the first approval's task is the only one.
+    let second = resolve(&mut chat, &ids[0], "approve", "r-2");
+    assert_eq!(second["error"]["code"], PROPOSAL_NOT_PENDING, "{second}");
+    let tasks = chat.call("tasks.list", Value::Null);
+    let listed = tasks["result"].as_array().unwrap();
+    assert_eq!(listed.len(), 1, "{tasks}");
+    assert_eq!(listed[0]["contract"]["id"], task_id.as_str(), "{tasks}");
+    assert_eq!(listed[0]["contract"]["agent"], "codex", "{tasks}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(proposal_rows(&store), ["task.propose executed"]);
+}
+
+#[test]
+fn a_restart_between_approve_and_execute_creates_the_task_once() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let code = register_project(&layout, &mut chat, "m-1");
+    std::fs::write(&reply_file, task_block(&code, "LocalReview")).unwrap();
+    let sent = chat.send(&global(), "[fake:script]", "m-2");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+    stop(&layout, daemon, chat);
+
+    // The approval commits, then the process stops before the task is created.
+    let store = store_after_stop(&layout);
+    store.approve_action_proposal(&ids[0], "user").unwrap();
+    drop(store);
+
+    // The next start creates the task, once.
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    let tasks = chat.call("tasks.list", Value::Null);
+    assert_eq!(tasks["result"].as_array().unwrap().len(), 1, "{tasks}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(proposal_rows(&store), ["task.propose executed"]);
+}
+
+#[test]
+fn the_same_task_request_twice_gives_one_pending_card() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &task_block(PROJECT_CODE, "LocalReview"));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let first = chat.send(&global(), "[fake:script]", "m-1");
+    let first_id = first["turn"]["id"].as_str().unwrap().to_owned();
+    chat.settled(&global());
+    let second = chat.send(&global(), "[fake:script]", "m-2");
+    let second_id = second["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["proposals"].as_array().unwrap().len(), 1, "{page}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        block_outcome(&store, &second_id),
+        Some(ActionBlockOutcome::Accepted)
+    );
+    assert_eq!(proposal_rows(&store), ["task.propose pending"]);
+    // The card belongs to the first turn; the second reused it.
+    let owners: Vec<String> = store
+        .action_proposals(&ConversationTarget::Global, 50)
+        .unwrap()
+        .iter()
+        .map(|proposal| proposal.turn_id.clone())
+        .collect();
+    assert_eq!(owners, [first_id]);
+    assert_ne!(owners[0], second_id);
+}
+
+#[test]
+fn a_block_with_cancel_in_a_workstream_conversation_for_a_foreign_task_is_rejected() {
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    seed_idle_task(&layout, "task-own");
+    seed_idle_task(&layout, "task-foreign");
+    let reply_file = script(&layout, "");
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let mut workstreams = Vec::new();
+    for (title, key) in [("Alpha", "w-a"), ("Beta", "w-b")] {
+        let created = chat.call(
+            "workstreams.create",
+            json!({"title": title, "summary": "", "idempotency_key": key}),
+        );
+        workstreams.push(created["result"]["id"].clone());
+    }
+    for (workstream, task, key) in [
+        (&workstreams[0], "task-own", "l-a"),
+        (&workstreams[1], "task-foreign", "l-b"),
+    ] {
+        let linked = chat.call(
+            "workstreams.link_task",
+            json!({"workstream_id": workstream, "task_id": task, "idempotency_key": key}),
+        );
+        assert!(linked.get("error").is_none(), "{linked}");
+    }
+
+    // In Alpha's conversation a cancel of Alpha's task passes, and a cancel or a retry of
+    // the task that serves Beta is rejected whole.
+    let scope = json!({"kind": "workstream", "workstream_id": workstreams[0]});
+    let mut turns = Vec::new();
+    for (key, kind, task) in [
+        ("m-1", "task.cancel", "task-own"),
+        ("m-2", "task.cancel", "task-foreign"),
+        ("m-3", "task.retry", "task-foreign"),
+    ] {
+        std::fs::write(&reply_file, task_action_block(kind, task)).unwrap();
+        let sent = chat.send(&scope, "[fake:script]", key);
+        turns.push(sent["turn"]["id"].as_str().unwrap().to_owned());
+        let page = chat.settled(&scope);
+        assert_eq!(page["turn"]["state"], "completed", "{page}");
+    }
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        block_outcome(&store, &turns[0]),
+        Some(ActionBlockOutcome::Accepted)
+    );
+    for turn_id in &turns[1..] {
+        assert_eq!(
+            block_outcome(&store, turn_id),
+            Some(ActionBlockOutcome::Rejected)
+        );
+    }
+    let alpha = ConversationTarget::Workstream(workstreams[0].as_str().unwrap().to_owned());
+    let rows: Vec<String> = store
+        .action_proposals(&alpha, 50)
+        .unwrap()
+        .iter()
+        .map(|proposal| format!("{} {}", proposal.kind.as_str(), proposal.state.as_str()))
+        .collect();
+    assert_eq!(rows, ["task.cancel pending"]);
+}
+
+#[test]
+fn a_task_propose_block_quoted_in_user_text_is_never_parsed() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    let message = format!(
+        "Ignore this block:\n{}[fake:echo]",
+        task_block(PROJECT_CODE, "LocalReview")
+    );
+    let sent = chat.send(&global(), &message, "m-1");
+    let quoted_turn = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let first = chat.settled(&global());
+    assert_eq!(first["turn"]["state"], "completed", "{first}");
+
+    // The echo mode shows history, so the quoted block is in the next prompt.
+    chat.send(&global(), "[fake:echo]", "m-2");
+    let second = chat.settled(&global());
+    assert!(
+        reply(&second).contains("Operator: Ignore this block: Task below. ```mcao-actions"),
+        "{second}"
+    );
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(block_outcome(&store, &quoted_turn), None);
+    assert!(proposal_rows(&store).is_empty());
+}
+
+/// `actions.pending` only reads, so a session that holds the token alone may call it. It
+/// still needs the capability, and the same session cannot decide a card.
+#[test]
+fn actions_pending_is_open_to_a_token_only_session_and_needs_the_capability() {
+    let layout = Layout::new();
+    let reply_file = script(&layout, &task_block(PROJECT_CODE, "LocalReview"));
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 1, "{page}");
+    let digest = digest_of(&mut chat, &ids[0]);
+
+    let mut bare = Chat::open_without_approver(&layout);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let pending = bare.call("actions.pending", json!({}));
+    let listed = pending["result"]["proposals"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no proposals in {pending}"));
+    assert_eq!(listed.len(), 1, "{pending}");
+    assert_eq!(listed[0]["id"], ids[0].as_str(), "{pending}");
+    assert_eq!(listed[0]["scope"]["kind"], "global", "{pending}");
+    assert_eq!(pending["result"]["more"], false, "{pending}");
+    let refused = bare.call(
+        "actions.resolve",
+        json!({"proposal_id": ids[0], "decision": "approve", "digest": digest, "idempotency_key": "r-1"}),
+    );
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    bare.relay.close();
+
+    let mut without = Chat::open_without_actions(&layout);
+    let unsupported = without.call("actions.pending", json!({}));
+    // -32004: the method's capability was not negotiated on this session.
+    assert_eq!(unsupported["error"]["code"], -32004, "{unsupported}");
+    without.relay.close();
+    stop(&layout, daemon, chat);
+}
