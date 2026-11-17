@@ -1509,6 +1509,17 @@ fn block_titled(title: &str) -> String {
     )
 }
 
+/// [`block_titled`] plus a `delivery.merge`, which only a Restricted turn may get approved.
+fn block_titled_with_merge(title: &str) -> String {
+    block_titled(title).replace(
+        "]}\n```",
+        &format!(
+            ",{{\"kind\":\"delivery.merge\",\"task_id\":\"task-1\",\"pr_number\":7,\"head_sha\":\"{}\"}}]}}\n```",
+            "a".repeat(40)
+        ),
+    )
+}
+
 /// Writes the reply the scripted fake agent gives, and returns its path.
 fn script(layout: &Layout, reply: &str) -> String {
     let path = layout.data.join("reply.txt");
@@ -1827,14 +1838,13 @@ fn proposals_exist_only_for_a_restricted_or_auto_turn_and_only_their_approval_ru
     let mut chat = Chat::open(&layout);
     let mut turns = Vec::new();
     for (level, key) in [("restricted", "m-1"), ("auto", "m-2"), ("full", "m-3")] {
-        std::fs::write(
-            &reply_file,
-            format!(
-                "Level {level}.\n{}",
-                block_titled(&format!("Level {level}"))
-            ),
-        )
-        .unwrap();
+        let title = format!("Level {level}");
+        let block = if level == "auto" {
+            block_titled_with_merge(&title)
+        } else {
+            block_titled(&title)
+        };
+        std::fs::write(&reply_file, format!("Level {level}.\n{block}")).unwrap();
         let sent = chat.send_params(json!({
             "target": global(),
             "text": "[fake:script]",
@@ -1851,11 +1861,24 @@ fn proposals_exist_only_for_a_restricted_or_auto_turn_and_only_their_approval_ru
 
     // Only the Restricted and Auto turns' cards exist, and they are the ones to approve.
     let page = chat.get(&global(), 0);
-    assert_eq!(page["proposals"].as_array().unwrap().len(), 4, "{page}");
+    assert_eq!(page["proposals"].as_array().unwrap().len(), 5, "{page}");
+    let merge = page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["kind"] == "delivery.merge")
+        .unwrap();
+    assert_eq!(merge["state"], "failed", "{merge}");
+    assert_eq!(merge["denial"], "delivery_not_authorized", "{merge}");
     for (level, turn_id) in &turns[..2] {
         let ids = proposals_of(&page, turn_id);
-        assert_eq!(ids.len(), 2, "{level}: {page}");
-        for (position, id) in ids.iter().enumerate() {
+        assert_eq!(
+            ids.len(),
+            if *level == "auto" { 3 } else { 2 },
+            "{level}: {page}"
+        );
+        // An Auto turn's merge card is stored already failed, so it is never approvable.
+        for (position, id) in ids.iter().take(2).enumerate() {
             let approved = resolve(
                 &mut chat,
                 id,
@@ -1889,7 +1912,16 @@ fn proposals_exist_only_for_a_restricted_or_auto_turn_and_only_their_approval_ru
         block_outcome(&store, &turns[2].1),
         Some(ActionBlockOutcome::Stripped)
     );
-    assert_eq!(proposal_rows(&store).len(), 4);
+    assert_eq!(
+        proposal_rows(&store),
+        [
+            "delivery.merge failed",
+            "objective.add executed",
+            "objective.add executed",
+            "workstream.create executed",
+            "workstream.create executed",
+        ]
+    );
     assert_eq!(store.list_workstreams(None).unwrap().len(), 2);
 }
 
