@@ -30,6 +30,7 @@ import { DecisionTabs } from "./DecisionTabs";
 import { ProposedActions } from "./ProposedActions";
 import type { AttemptsLoader } from "./Attempts";
 import { SixFactsRecord } from "./ReviewRecord";
+import { DecisionNotifications } from "./DecisionNotifications";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
 import { filterByTab, indexMeta, tabsFor, type TabId } from "./queue";
 import { useHolds, type HoldsModel } from "./useHolds";
@@ -151,6 +152,7 @@ export function ReviewDecisionsView({
       header: (state: ReviewState) => (
         <>
           <Heading state={state} holds={holds} />
+          <DecisionNotifications />
           <DecisionTabs state={state} tab={tab} onTab={setTab} holds={holds} />
           <ScopeRow />
         </>

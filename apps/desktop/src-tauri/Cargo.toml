@@ -13,10 +13,12 @@ publish = false
 
 [dependencies]
 # Pinned 2026-11-07 against crates.io max stable versions.
-tauri = { version = "=2.12.5", features = [] }
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
 # Restores window size, position and maximized state on launch (and on the macOS
 # reopen path, which rebuilds the window); clamps to the connected monitors.
 tauri-plugin-window-state = "=2.5.0"
+tauri-plugin-notification = "=2.8.1"
+time = { version = "=0.3.55", features = ["parsing"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 # The authenticated local transport; the host forwards frames, it never owns
@@ -27,6 +29,11 @@ orchestrator-diagnostics = { path = "../../../crates/orchestrator-diagnostics" }
 # Owner-only data directory and log (a protected DACL on Windows); shared with
 # the engine's store but dependency-free on Unix, so it pulls in no SQLite.
 orchestrator-private-fs = { path = "../../../crates/orchestrator-private-fs" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-app-kit = { version = "=0.3.2", features = ["NSApplication", "NSDockTile", "NSResponder"] }
+objc2-foundation = { version = "=0.3.2", features = ["NSString"] }
 
 [build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
