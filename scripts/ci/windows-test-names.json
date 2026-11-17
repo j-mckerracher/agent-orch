@@ -78,7 +78,9 @@
    "the_selection_capability_is_named_and_round_trips",
    "actions_tests::a_context_reports_only_the_capabilities_it_was_given",
    "actions_tests::a_handler_that_ignores_the_context_runs_dispatch",
-   "actions_tests::orchestrator_actions_is_named_and_round_trips"
+   "actions_tests::orchestrator_actions_is_named_and_round_trips",
+   "actions_tests::proposal_codes_round_trip_through_map_remote",
+   "actions_tests::actions_resolve_needs_orchestrator_actions"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -303,7 +305,29 @@
    "the_block_format_reaches_the_agent_only_with_the_capability",
    "proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs",
    "the_same_request_twice_gives_one_pending_proposal",
-   "the_snapshot_names_proposals_by_title_and_never_by_id"
+   "the_snapshot_names_proposals_by_title_and_never_by_id",
+   "api::actions_tests::a_dependent_approved_before_its_parent_executed_gets_proposal_invalid",
+   "api::actions_tests::a_digest_that_does_not_match_refuses_and_changes_nothing",
+   "api::actions_tests::a_missing_digest_is_a_bad_request",
+   "api::actions_tests::a_proposal_on_a_non_restricted_turn_is_refused_and_never_executes",
+   "api::actions_tests::a_rejected_parent_fails_its_dependent_with_dependency_not_executed",
+   "api::actions_tests::a_restart_between_approve_and_execute_completes_once",
+   "api::actions_tests::a_second_key_for_the_same_proposal_gets_proposal_not_pending",
+   "api::actions_tests::a_stale_revision_fails_the_card_with_stale_revision",
+   "api::actions_tests::a_turn_above_restricted_never_gets_the_block_format",
+   "api::actions_tests::an_approved_update_and_revision_run_once_and_name_the_action_as_actor",
+   "api::actions_tests::a_pending_proposal_stays_listed_past_the_settled_cap",
+   "api::actions_tests::approve_after_clear_gets_proposal_not_found_and_so_does_its_replay",
+   "api::actions_tests::approve_executes_each_kind_once_and_records_the_result",
+   "api::actions_tests::an_update_and_a_revise_whose_effect_committed_are_found_not_rerun_at_startup",
+   "api::actions_tests::reject_then_approve_gets_proposal_not_pending",
+   "api::actions_tests::the_approval_allowlist_refuses_an_agent_actor",
+   "api::actions_tests::unknown_proposal_bad_decision_and_bad_key_are_refused_without_writes",
+   "api::actions_tests::the_same_key_twice_returns_the_same_result_and_writes_once",
+   "idempotency::tests::run_refuses_a_client_key_in_the_action_namespace",
+   "idempotency::tests::run_locked_accepts_a_key_in_the_action_namespace",
+   "a_restart_between_approve_and_execute_completes_once",
+   "an_approved_card_creates_the_workstream_once_and_the_next_snapshot_says_so"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -601,7 +625,14 @@
    "the_same_request_twice_returns_the_existing_cards_including_dependents",
    "a_clear_deletes_its_proposals_and_keeps_their_events",
    "a_database_from_0036_is_migrated_with_its_turns_and_no_action_block",
-   "action_proposals_are_deleted_only_by_a_clear_and_events_never"
+   "action_proposals_are_deleted_only_by_a_clear_and_events_never",
+   "a_dependent_is_approved_only_after_its_parent_executed",
+   "a_failed_parent_fails_pending_dependents_with_events",
+   "approve_is_a_compare_and_set_from_pending",
+   "approved_proposals_list_only_approved_oldest_first",
+   "outcomes_record_once_and_repeat_is_idempotent",
+   "reject_fails_pending_dependents_with_events",
+   "scope_workstream_reads_the_workstream_id_from_the_scope"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
