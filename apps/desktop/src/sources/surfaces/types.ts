@@ -230,6 +230,8 @@ export interface ProposalTarget {
   /** Only on a `project.remove` card: the tasks kept in history, and how many of them are running now. */
   taskCount?: number;
   runningTasks?: number;
+  /** Only on a `delivery.merge` card: the pull request as the daemon last read it. */
+  pull?: PullFacts;
 }
 
 /** A pending proposal and the conversation that holds its card (DPES-1105). */
@@ -858,6 +860,55 @@ export interface HoldReceipt {
   hold: HoldItem;
 }
 
+// Pull requests (DPES-1105 Phase 4c). Derived: pulls.list / pulls.refresh (capability `landing`), read only.
+/** One check of a pull request. `name` is remote text: show it as plain text only. */
+export interface PullCheck {
+  name: string;
+  /** The host's word for the outcome, as sent. */
+  result: string;
+}
+
+/** The facts a merge card and a list row share. */
+export interface PullFacts {
+  mergeMethod: string;
+  requiredTotal: number;
+  requiredPassed: number;
+  requiredFailed: number;
+  checks: PullCheck[];
+  observedAgeSecs: number;
+  /** The refusal code a merge would meet now (for example `checks_red`); null when it would be allowed. */
+  refusal: string | null;
+}
+
+/** One watched pull request. `title`, `branch` and `baseBranch` are remote text: show them as plain text only. */
+export interface PullItem {
+  taskId: string;
+  number: number;
+  /** open, merged or closed; kept as the daemon's string so an unknown value is never coerced. */
+  state: string;
+  /** The full 40 character commit. */
+  headSha: string;
+  baseBranch: string;
+  branch: string;
+  mergeable: "yes" | "no" | "unknown";
+  requiredTotal: number;
+  requiredPassed: number;
+  requiredFailed: number;
+  checks: PullCheck[];
+  title: string;
+  observedAgeSecs: number;
+  /** The task's merge request, when one was made; null otherwise. */
+  merge: { state: string; refusal: string | null } | null;
+}
+
+export interface PullsSource {
+  readonly provenance: Provenance;
+  /** The watched pull requests. Derived: `pulls.list`. Fixture: sample rows. */
+  list(): Promise<SurfaceResult<PullItem[]>>;
+  /** Derived: `pulls.refresh`, a read the daemon rate limits per task; it rejects on failure. Fixture: the row as it was. */
+  refresh(taskId: string): Promise<PullItem>;
+}
+
 export interface HoldsSource {
   readonly provenance: Provenance;
   /** The holds in force now. Derived: `holds.list`. Fixture: one held decision. */
@@ -1003,6 +1054,7 @@ export interface SurfaceSources {
   settings: SettingsSource;
   monitoring: MonitoringSource;
   holds: HoldsSource;
+  pulls: PullsSource;
   projectDefaults: ProjectDefaultsSource;
   grants: GrantsSource;
   notes: NotesSource;

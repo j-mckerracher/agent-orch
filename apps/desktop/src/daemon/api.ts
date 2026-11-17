@@ -70,6 +70,8 @@ import type {
   NotesWire,
   HoldResultWire,
   HoldsListWire,
+  PullsListWire,
+  PullsRefreshWire,
 } from "./types";
 import type { HostMetricsWire } from "./hostMetrics";
 import type { LocalToolsSetEnabledRequest, LocalToolsWindowRequest, UsageSummaryRequest } from "./usageWire";
@@ -591,6 +593,16 @@ export class DaemonApi {
   /** DPES-1105 Phase 4. The holds in force now. A read. */
   async holdsList(): Promise<HoldsListWire> {
     return this.session.request("holds.list", {});
+  }
+
+  /** DPES-1105 Phase 4c. The pull requests the daemon watches. A read; needs `landing`. */
+  async pullsList(): Promise<PullsListWire> {
+    return this.session.request("pulls.list", {});
+  }
+
+  /** DPES-1105 Phase 4c. Reads one task's pull request again. A read; the daemon allows it once per 10 seconds per task. */
+  async pullsRefresh(taskId: string): Promise<PullsRefreshWire> {
+    return this.session.request("pulls.refresh", { task_id: realId(taskId) });
   }
 
   /** DPES-1105 Phase 5. The standing approvals and the limits for a new one. A read; needs `standing_approvals`. */

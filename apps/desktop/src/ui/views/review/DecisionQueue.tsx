@@ -5,6 +5,7 @@ import type { ReviewState } from "../../../review/useReview";
 import { Badge, Button, EmptyState, Pill, type Tone } from "../../theme";
 import { HOLD_REASON_ID, HoldControl } from "./HoldControl";
 import { HeldList } from "./HeldList";
+import { PullRequests } from "./PullRequests";
 import type { HoldsModel } from "./useHolds";
 import {
   KIND_LABEL,
@@ -136,6 +137,7 @@ export function DecisionQueue({
             {holds.blocked}
           </p>
         )}
+        {current.id === "delivery" && <PullRequests />}
         {current.id === "held" ? (
           <HeldList
             holds={holds}

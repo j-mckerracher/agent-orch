@@ -29,6 +29,7 @@ export type Capability =
   | "settings"
   | "monitoring"
   | "holds"
+  | "landing"
   | "standing_approvals";
 
 export const ALL_CAPABILITIES: readonly Capability[] = [
@@ -53,6 +54,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "settings",
   "monitoring",
   "holds",
+  "landing",
   "standing_approvals",
 ];
 
@@ -75,6 +77,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "settings",
   "monitoring",
   "holds",
+  "landing",
   "standing_approvals",
 ];
 
@@ -679,6 +682,8 @@ export interface ProposalTargetWire {
   /** Present only on a `project.remove` card: the tasks kept in history and the ones still running. */
   task_count?: number;
   running_tasks?: number;
+  /** Present only on a `delivery.merge` card: the pull request as the daemon last read it. */
+  pull?: PullFactsWire;
 }
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
@@ -908,6 +913,58 @@ export interface HoldResultWire {
 export interface HoldsListWire {
   holds: HoldWire[];
 }
+
+/** One check of a pull request. `name` is remote text; `result` is the host's word for the outcome (pass, fail, pending). */
+export interface PullCheckWire {
+  name: string;
+  result: string;
+}
+
+/** What `merge_verdict` and the merge worker last said of a task's merge request; null when none was made. */
+export interface PullMergeWire {
+  state: string;
+  refusal: string | null;
+}
+
+/** The facts of a pull request the daemon last read, shared by a `pulls.*` row and a `delivery.merge` card's `target.pull`. */
+export interface PullFactsWire {
+  merge_method: string;
+  required_total: number;
+  required_passed: number;
+  required_failed: number;
+  checks: PullCheckWire[];
+  observed_age_secs: number;
+  /** The refusal code `merge_verdict` gives now (for example `checks_red`); null when a merge would be allowed. */
+  refusal?: string | null;
+}
+
+/** One watched pull request (capability `landing`). `state` is open, merged or closed; `title`, `branch` and `base_branch` are remote text. */
+export interface PullWire {
+  task_id: string;
+  number: number;
+  state: string;
+  /** The full 40 character commit. */
+  head_sha: string;
+  base_branch: string;
+  branch: string;
+  /** A boolean or the host's word; read by one mapping function. */
+  mergeable: boolean | string | null;
+  required_total: number;
+  required_passed: number;
+  required_failed: number;
+  checks: PullCheckWire[];
+  title: string;
+  observed_age_secs: number;
+  merge: PullMergeWire | null;
+}
+
+/** `pulls.list` result. */
+export interface PullsListWire {
+  pulls: PullWire[];
+}
+
+/** `pulls.refresh` result: the one row, after a fresh read. */
+export type PullsRefreshWire = PullWire;
 
 /** What a standing approval is bound to: one project (by its short code) or one workstream. `label` is a folder name or a title, never a path. */
 export interface GrantScopeWire {

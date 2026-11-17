@@ -7,6 +7,7 @@ import { APPROVER_REQUIRED_NOTICE, presentError, type DaemonError } from "../../
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 import { formatHoldDay } from "../review/holdDates";
+import { agoText, checkLine, mergeMethodText, mergeVerdict, plainRemote, shortSha } from "../review/pullsModel";
 
 export type CardState = "pending" | "approved" | "executed" | "rejected" | "failed" | "superseded" | "expired" | "unknown";
 
@@ -32,6 +33,7 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "task.revise": { heading: "Revise task", done: "Revision started" },
   "decision.hold": { heading: "Hold decision", done: "Held" },
   "project.remove": { heading: "Remove project", done: "Removed" },
+  "delivery.merge": { heading: "Merge pull request", done: "Merged" },
 };
 
 /** The kinds that act on a task. Their failures read in task words. */
@@ -70,6 +72,23 @@ const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>
     invalid:
       "The date is not allowed (it must be from today to 60 days from today), or the request is outside this conversation. Nothing was changed.",
   },
+  // Each merge failure says whether the host was asked: only `merge_unconfirmed` leaves that open.
+  "delivery.merge": {
+    head_moved: "The pull request changed after you were shown it. Nothing was merged. Ask the orchestrator to propose again.",
+    checks_red: "A required check failed. Nothing was merged.",
+    checks_pending: "A required check has not finished. Nothing was merged.",
+    checks_missing: "No required check was reported, so the app does not merge. Nothing was merged.",
+    not_open: "The pull request is no longer open. Nothing was merged.",
+    not_mergeable: "GitHub says this cannot be merged now (for example a conflict or a required review). Nothing was merged.",
+    stale: "The app last looked at this pull request too long ago. Nothing was merged.",
+    merge_unconfirmed:
+      "The app asked GitHub to merge but could not confirm it. Check the pull request on GitHub before asking again.",
+    not_signed_in: "The GitHub command line is not signed in on this machine. Nothing was merged.",
+    project_mode: "This project's mode is local-only. Nothing was merged.",
+    not_found: "The task or its pull request is no longer known. Nothing was merged.",
+    conflict: "The task is not in a state that allows a merge. Nothing was merged.",
+    invalid: "The app could not read this merge request. Nothing was merged. Ask the orchestrator to propose again.",
+  },
   "project.remove": {
     not_found: "The project is gone. Nothing was changed.",
     conflict: "The project still has running work or decisions waiting, so it was not removed. Nothing was changed.",
@@ -87,10 +106,12 @@ const DENIAL_TEXT: Readonly<Record<string, string>> = {
 };
 
 const DENIAL_FALLBACK = "The app refused this task. Nothing was created.";
+const MERGE_DENIAL_FALLBACK = "The app refused this merge. Nothing was merged.";
 
 const REVISE_EFFECT =
   "The current attempt stops. Its work is kept. A new task starts with the old objective plus this instruction.";
 const HOLD_EFFECT = "It stays in Review and Decisions, marked Held, and comes back on that day.";
+const MERGE_WARNING = "Approving merges exactly this commit on GitHub and cannot be undone from here.";
 const REMOVE_EFFECT =
   "The project leaves the project list. Its folder, worktrees and branches are not touched. Register the folder again to bring it back.";
 
@@ -190,8 +211,9 @@ function isDenied(p: ActionProposal): boolean {
   return p.state === "failed" && p.errorCode === "action_denied";
 }
 
-function denialText(denial: string | null): string {
-  return lookup(DENIAL_TEXT, denial) ?? DENIAL_FALLBACK;
+function denialText(p: ActionProposal): string {
+  if (p.kind === "delivery.merge") return lookup(KIND_FAILURE_TEXT["delivery.merge"], p.denial) ?? MERGE_DENIAL_FALLBACK;
+  return lookup(DENIAL_TEXT, p.denial) ?? DENIAL_FALLBACK;
 }
 
 /**
@@ -215,6 +237,8 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
   if (p.kind === "project.remove") return shorten(p.target?.projectName || text(p.params.project));
+  // The number and the commit name the merge in a button, so the title (remote text) stays out of it.
+  if (p.kind === "delivery.merge") return `${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}`;
   return text(p.params.title);
 }
 
@@ -346,6 +370,21 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("What happens", HOLD_EFFECT),
         field("Task id", text(x.task_id)),
       ];
+    case "delivery.merge": {
+      const pull = p.target?.pull;
+      const verdict = mergeVerdict(pull, p.denial);
+      return [
+        field("Task title", plainRemote(p.target?.taskTitle ?? "(not available)")),
+        field("Pull request", text(x.pr_number)),
+        field("Commit", shortSha(text(x.head_sha))),
+        field("Merge method", pull === undefined ? "(not available)" : mergeMethodText(pull.mergeMethod)),
+        field("Checks", pull === undefined ? [] : pull.checks.map(checkLine)),
+        field("Check summary", verdict?.text ?? "(not available)"),
+        ...(pull === undefined ? [] : [field("Seen", agoText(pull.observedAgeSecs))]),
+        field("What happens", MERGE_WARNING),
+        field("Task id", text(x.task_id)),
+      ];
+    }
     case "project.remove": {
       const project = text(x.project);
       const name = p.target?.projectName;
@@ -372,7 +411,7 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
 /** Plain words for a failed execution, by the daemon's error code. */
 export function failureText(p: ActionProposal): string {
   const code = p.errorCode;
-  if (code === "action_denied") return denialText(p.denial);
+  if (code === "action_denied") return denialText(p);
   const own = Object.prototype.hasOwnProperty.call(KIND_FAILURE_TEXT, p.kind) ? lookup(KIND_FAILURE_TEXT[p.kind], code) : null;
   if (own !== null) return own;
   if (code === "stale_revision" && p.kind === "objective.revise") {
@@ -443,6 +482,7 @@ export function openTaskId(p: ActionProposal): string | null {
     case "task.cancel":
     case "task.retry":
     case "decision.hold":
+    case "delivery.merge":
       return text(p.params.task_id) || null;
     case "task.revise":
       // The new task: the daemon's result is its id.
@@ -468,6 +508,8 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Held the decision for “${subjectOf(p, names)}” until ${formatHoldDay(text(p.params.until), true)}.`;
     case "project.remove":
       return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
+    case "delivery.merge":
+      return `Merged pull request ${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}.`;
     case "workstream.create":
       return `Created workstream “${text(p.params.title)}”.`;
     case "objective.add":
@@ -479,6 +521,13 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
     default:
       return "The daemon ran this action.";
   }
+}
+
+/** Why a pending merge card cannot be approved: the daemon says a merge would be refused now. Null for any other card. */
+function mergeNotReady(p: ActionProposal): string | null {
+  if (p.kind !== "delivery.merge") return null;
+  const verdict = mergeVerdict(p.target?.pull, p.denial);
+  return verdict !== null && !verdict.ready ? verdict.text : null;
 }
 
 /**
@@ -503,13 +552,14 @@ function pendingView(p: ActionProposal, parent: ActionProposal | null, ctx: View
           ? "This app version cannot show this action. Update the app to approve it."
           : waiting
             ? waitingText
-            : null;
+            : mergeNotReady(p);
   // Archiving, stopping a task and removing a project are hard to undo.
   const variant: "primary" | "danger" =
     (p.kind === "workstream.update" && p.params.state === "archived") ||
     p.kind === "task.cancel" ||
     p.kind === "task.revise" ||
-    p.kind === "project.remove"
+    p.kind === "project.remove" ||
+    p.kind === "delivery.merge"
       ? "danger"
       : "primary";
   const rejectEnabled = ctx.canDecide && ctx.approver && !ctx.deciding;
@@ -534,7 +584,17 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
     case "pending":
       return pendingView(p, parent, ctx);
     case "approved":
-      return closedView(state, { tone: "info", text: "Approved, running" }, { tone: "info", text: "The daemon is running this action." });
+      return closedView(
+        state,
+        { tone: "info", text: "Approved, running" },
+        {
+          tone: "info",
+          text:
+            p.kind === "delivery.merge"
+              ? "Approved. The app reads the pull request once more, then asks GitHub to merge this exact commit only if it is unchanged. Checking whether it merged can take a moment."
+              : "The daemon is running this action.",
+        },
+      );
     case "executed":
       return closedView(
         state,
@@ -552,7 +612,13 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
       return closedView(
         state,
         { tone: "neutral", text: "Superseded" },
-        { tone: "neutral", text: "A newer proposal replaced this one. Nothing was changed." },
+        {
+          tone: "neutral",
+          text:
+            p.kind === "delivery.merge"
+              ? "Superseded: the pull request changed. Ask the orchestrator to propose again. Nothing was merged."
+              : "A newer proposal replaced this one. Nothing was changed.",
+        },
       );
     case "expired":
       return closedView(

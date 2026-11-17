@@ -7,6 +7,7 @@ import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type { ActionProposalWire } from "../../daemon/types";
 import { isFixtureLikeId } from "./fixtureIds";
+import { mapPullFacts } from "./pulls";
 import type { ActionProposal, Decision, Provenance, ResolveReceipt } from "./types";
 
 export const RESOLVE_METHOD = "actions.resolve" as const;
@@ -48,6 +49,7 @@ export function mapProposal(wire: ActionProposalWire): ActionProposal {
           projectMode: wire.target.project_mode,
           taskCount: wire.target.task_count,
           runningTasks: wire.target.running_tasks,
+          pull: wire.target.pull === undefined ? undefined : mapPullFacts(wire.target.pull),
         }
       : null,
     updatedAt: wire.updated_at,

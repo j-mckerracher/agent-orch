@@ -24,6 +24,7 @@ import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
 import { createFixtureGrants } from "./grants";
 import { createFixtureNotes } from "./notes";
+import { createFixturePulls } from "./pulls";
 import { createFixtureHolds } from "./holds";
 import type {
   ActionProposal,
@@ -717,6 +718,7 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     settings: settingsSource(ctx, options.settingsGate ?? "open"),
     monitoring: monitoringSource(ctx),
     holds: createFixtureHolds(ctx.scenario, ctx.now),
+    pulls: createFixturePulls(ctx.scenario, ctx.now),
     projectDefaults: projectDefaultsSource(ctx),
     grants: createFixtureGrants(ctx.scenario, ctx.now),
     notes: createFixtureNotes(ctx.scenario, ctx.now),
