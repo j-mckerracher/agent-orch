@@ -19,6 +19,9 @@
 //!   present group names at least one field. `settings.set` never sets the monitoring mode:
 //!   only `monitoring.set` does. The wake scheduler reads the settings on every pass, so a
 //!   change applies at its next tick.
+//! - Phase 4b (DPES-1105) adds `chat_pr_delivery`, a boolean in both answers and an optional
+//!   field of `settings.set` (off by default). `settings.set` stays user-only. A `report_relay_auto`
+//!   setting does not exist.
 
 use std::time::Instant;
 
@@ -54,6 +57,10 @@ struct SetParams {
     supervision: Option<SupervisionParams>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wake_limits: Option<WakeLimitsParams>,
+    /// Lets chat propose a task that ends in a pull request (DPES-1105 phase 4b). Off by
+    /// default. A loosening, so only this user-only method sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chat_pr_delivery: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -213,6 +220,7 @@ impl DaemonApi {
         if request.load.is_none()
             && request.supervision.is_none()
             && request.wake_limits.is_none()
+            && request.chat_pr_delivery.is_none()
         {
             return Err(RpcError::InvalidParams);
         }
@@ -247,13 +255,15 @@ impl DaemonApi {
                         .unwrap_or_default(),
                     // `settings.set` never sets the mode.
                     mode: None,
-                    // The Phase 4 booleans are set by their own methods, never by this one.
-                    ..SettingsPatch::default()
+                    chat_pr_delivery: request.chat_pr_delivery,
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
                 fields.extend(request.supervision.iter().flat_map(SupervisionParams::fields));
                 fields.extend(request.wake_limits.iter().flat_map(WakeLimitsParams::fields));
+                if let Some(value) = request.chat_pr_delivery {
+                    fields.push(("chat_pr_delivery", value.to_string()));
+                }
                 let saved = self.store.update_orchestrator_settings(&patch);
                 self.finish(saved, request.load.is_some(), &fields)
             },
@@ -319,6 +329,7 @@ impl DaemonApi {
                 "daily_cap": settings.wake_limits.daily,
                 "daily_token_budget": settings.wake_limits.daily_tokens,
             },
+            "chat_pr_delivery": settings.chat_pr_delivery,
         }))
     }
 }

@@ -1296,6 +1296,74 @@ fn launch_failures_are_stored_on_their_attempt_and_survive_retry() {
     api.shutdown();
 }
 
+/// The defaults row a project with a base branch `base_branch` and the prefix `team/` has.
+fn project_defaults_row(fixture: &Fixture, base_branch: &str) -> orchestrator_store::ProjectDefaultsRow {
+    orchestrator_store::ProjectDefaultsRow {
+        project_id: fixture.project_id(),
+        mode: "local-only".to_owned(),
+        base_branch: Some(base_branch.to_owned()),
+        branch_prefix: Some("team/".to_owned()),
+        checks: Vec::new(),
+        merge_method: "squash".to_owned(),
+        updated_at: String::new(),
+    }
+}
+
+#[test]
+fn a_task_is_created_from_the_projects_base_branch_and_prefix() {
+    let fixture = Fixture::new();
+    // `release-1` is one commit ahead of `main`, and `main` stays checked out.
+    run_git(&fixture.repo, &["checkout", "-q", "-b", "release-1"]);
+    fs::write(fixture.repo.join("release.txt"), "release\n").unwrap();
+    run_git(&fixture.repo, &["add", "release.txt"]);
+    run_git(&fixture.repo, &["commit", "-q", "-m", "release"]);
+    run_git(&fixture.repo, &["checkout", "-q", "main"]);
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "release-1"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-1", 0);
+
+    wait_state(&api, &task_id, "Verifying");
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    assert!(workspace.branch.starts_with("team/"), "{}", workspace.branch);
+    let tip = Command::new("git")
+        .arg("-C")
+        .arg(&fixture.repo)
+        .args(["rev-parse", "release-1"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        workspace.base_commit,
+        String::from_utf8(tip.stdout).unwrap().trim()
+    );
+    api.shutdown();
+}
+
+#[test]
+fn a_missing_base_branch_fails_the_attempt_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    // No agent can start: the worktree fails first.
+    let api = fixture.api(&fixture.root.path().join("missing-codex"));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .set_project_defaults(&project_defaults_row(&fixture, "deleted-branch"))
+        .unwrap();
+    let task_id = fixture.submit(&api, "base-2", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["failure_reason"], BASE_BRANCH_MISSING);
+    assert!(!BASE_BRANCH_MISSING.contains("deleted-branch"));
+    assert_eq!(failed["sessions"], json!([]));
+    api.shutdown();
+}
+
 #[test]
 fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
     let fixture = Fixture::new();

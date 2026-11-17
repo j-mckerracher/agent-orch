@@ -532,8 +532,14 @@ fn a_pull_request_task_that_was_never_checked_still_cannot_run() {
     );
     assert_eq!(proposal(&api, &ids[0]).state, ProposalState::Pending);
 
+    // The approve-time re-check (Phase 4b) refuses it first, with its reason recorded. The
+    // execution-time check in `propose_execution` stays behind it as a second line of defence.
     let result = resolve(&api, &ids[0], "approve", "k-1").unwrap();
-    assert_failed(&result, "invalid");
+    assert_failed(&result, "action_denied");
+    assert_eq!(
+        result["proposal"]["denial"], "delivery_not_authorized",
+        "{result}"
+    );
     assert_eq!(task_count(&api), 0);
 }
 

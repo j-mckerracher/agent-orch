@@ -2258,6 +2258,39 @@ fn every_user_only_method_is_refused_to_a_token_only_session_on_a_real_daemon() 
 }
 
 #[test]
+fn projects_set_defaults_is_refused_to_a_token_only_session() {
+    let layout = Layout::new();
+    seed::init_repo(&layout.repo);
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::negotiate(&layout, &Capability::ALL);
+    let registered = chat.call("projects.register", json!({"path": layout.repo.to_str().unwrap()}));
+    let project_id = registered["result"]["id"].as_str().unwrap().to_owned();
+    let params = json!({
+        "project_id": project_id,
+        "mode": "direct-pr",
+        "base_branch": null,
+        "branch_prefix": null,
+        "checks": [["cargo", "test"]],
+        "merge_method": "squash",
+        "idempotency_key": "d-1",
+    });
+
+    let mut bare = Chat::negotiate_without_approver(&layout, &Capability::ALL);
+    assert!(!bare.is_approver(), "{}", bare.welcome);
+    let refused = bare.call("projects.set_defaults", params.clone());
+    assert_eq!(refused["error"]["code"], FORBIDDEN, "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    // Reading the defaults is open to any session, and shows nothing was written.
+    let read = bare.call("projects.get_defaults", json!({"project_id": project_id}));
+    assert_eq!(read["result"]["defaults"]["mode"], "local-only", "{read}");
+    bare.relay.close();
+
+    let accepted = chat.call("projects.set_defaults", params);
+    assert_eq!(accepted["result"]["defaults"]["mode"], "direct-pr", "{accepted}");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
 fn a_token_only_session_cannot_resolve_an_approval() {
     let layout = Layout::new();
     seed::init_repo(&layout.repo);

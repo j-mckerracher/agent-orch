@@ -351,6 +351,8 @@ impl RpcHandler for DaemonApi {
         let result = self.report_internal(|| match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
+            "projects.get_defaults" => self.projects_get_defaults(params),
+            "projects.set_defaults" => self.projects_set_defaults(params),
             "tasks.submit" => self.submit_task(params),
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
@@ -481,13 +483,31 @@ impl DaemonApi {
             .store
             .removed_coordinator_projects()
             .map_err(map_store_error)?;
+        // `mode` appears only for a project that has a defaults row, and `archived` only
+        // (as true) for an archived one, so a project that never set a default lists as before.
+        let modes: std::collections::HashMap<String, String> = self
+            .store
+            .list_project_defaults()
+            .map_err(map_store_error)?
+            .into_iter()
+            .map(|row| (row.project_id, row.mode))
+            .collect();
+        let archived_all = self.store.archived_project_ids().map_err(map_store_error)?;
         Ok(Value::Array(
             projects
                 .into_iter()
                 .filter(|project| !archived.contains(&project.id))
                 .map(|project| {
                     let coordinator_active = !removed.contains(&project.id);
-                    json!({"id": project.id, "coordinator_active": coordinator_active})
+                    let mut row =
+                        json!({"id": project.id, "coordinator_active": coordinator_active});
+                    if let Some(mode) = modes.get(&project.id) {
+                        row["mode"] = json!(mode);
+                    }
+                    if archived_all.contains(&project.id) {
+                        row["archived"] = json!(true);
+                    }
+                    row
                 })
                 .collect(),
         ))
@@ -1575,6 +1595,8 @@ pub(crate) mod load;
 mod models;
 #[path = "api_monitoring.rs"]
 mod monitoring;
+#[path = "api_projects_defaults.rs"]
+mod projects_defaults;
 #[path = "api_queue.rs"]
 mod queue;
 #[path = "api_review.rs"]
@@ -1618,6 +1640,9 @@ mod actions_phase4_tests;
 #[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
+#[cfg(test)]
+#[path = "api_projects_defaults_tests.rs"]
+mod projects_defaults_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

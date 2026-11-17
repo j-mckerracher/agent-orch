@@ -11,9 +11,7 @@ use std::sync::MutexGuard;
 use orchestrator_core::orchestrator_action::{Action, ProposeTask, ReviseTask};
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::task::AuditEvent;
-use orchestrator_core::task_envelope::{
-    chat_task_envelope, check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES,
-};
+use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
     ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, HoldSubject, LineageError,
@@ -24,6 +22,7 @@ use super::workstreams::{
     AddObjectiveParams, CreateParams, GateParams, LinkTaskParams, ReviseObjectiveParams,
     UpdateParams,
 };
+use super::projects_defaults::envelope_for;
 use super::*;
 
 /// Event actor of every 1c transition: the approver the audit trail records.
@@ -543,11 +542,21 @@ impl DaemonApi {
                 if turn.and_then(|turn| turn.permission_level) != Some(PermissionLevel::Restricted) {
                     return Err(RpcError::ProposalInvalid);
                 }
-                // The envelope is not checked again here. Once it comes from settings
-                // (phase 4b), a pending `task.propose` must be checked again against it at
-                // this point, and moved to `failed` with `action_denied` in the same
-                // transaction as the decision. The fixed chat envelope cannot change after
-                // the block was stored, so there is nothing to re-check yet.
+                // Defense in depth and a changed setting: an approval of a pending task
+                // proposal re-checks the envelope as it stands now (the project's current
+                // defaults and `chat_pr_delivery`). A refusal moves the card to `failed` with
+                // `action_denied` in one transaction and approves nothing, so lowering a
+                // setting between propose and approve denies the card. A reject is never
+                // re-checked.
+                if matches!(request.decision, Decision::Approve) {
+                    if let Some(denial) = self.recheck_task_denial(&current)? {
+                        let denied = self
+                            .store
+                            .deny_action_proposal(&request.proposal_id, denial.as_str(), APPROVER)
+                            .map_err(map_resolve_error)?;
+                        return Ok(json!({"proposal_id": denied.id, "denied": denial.as_str()}));
+                    }
+                }
                 let decided = match request.decision {
                     Decision::Approve => self
                         .store
@@ -921,7 +930,11 @@ impl DaemonApi {
                 return Err("internal");
             }
         };
-        let envelope = chat_task_envelope();
+        let envelope = envelope_for(&self.store, Some(&old.contract.project_id), old.contract.kind)
+            .map_err(|error| {
+                internal("actions", &error);
+                "internal"
+            })?;
         if !envelope.delivery_grants(old.contract.delivery) {
             return Err("action_denied");
         }
@@ -968,25 +981,32 @@ impl DaemonApi {
     }
 
     /// The `tasks.submit` request a `task.propose` stands for. Autonomy and verification
-    /// come from the fixed chat envelope, attempt limits are constants, and no permission
-    /// is set, so the task takes the daemon default (Restricted). A proposal can raise none
-    /// of them. `parent` is the `workstream.create` a `workstream_ref` names.
+    /// come from the project's envelope (the fixed chat envelope unless the project has a
+    /// pull-request mode), attempt limits are constants, and no permission is set, so the
+    /// task takes the daemon default (Restricted). A proposal can raise none of them.
+    /// `parent` is the `workstream.create` a `workstream_ref` names.
     fn propose_execution(
         &self,
         propose: ProposeTask,
         parent: Option<&ActionProposal>,
         key: String,
     ) -> Result<ProposeExec, &'static str> {
-        let envelope = chat_task_envelope();
-        // Defense in depth: the block was checked against this same envelope when it was
-        // stored. A block stored unchecked must still not run what the envelope refuses.
+        let project = self.resolve_project(&propose.project);
+        let envelope = envelope_for(&self.store, project.as_deref().ok(), propose.task_kind)
+            .map_err(|error| {
+                internal("actions", &error);
+                "internal"
+            })?;
+        // Defense in depth: the block was checked against this envelope when it was stored,
+        // and again when it was approved. A block stored unchecked must still not run what
+        // the envelope refuses.
         if check_task(&propose, &envelope).is_err() {
             return Err(INVALID);
         }
         let agent = canonical_agent_id(&propose.agent)
             .ok_or(INVALID)?
             .to_owned();
-        let project_id = self.resolve_project(&propose.project)?;
+        let project_id = project?;
         let workstream_id = match (propose.workstream_id, propose.workstream_ref, parent) {
             (Some(workstream_id), None, _) => Some(workstream_id),
             (None, Some(_), Some(parent)) => Some(parent.result_ref.clone().ok_or(INVALID)?),
@@ -1112,7 +1132,13 @@ impl DaemonApi {
                     .status(std::time::Instant::now())
                     .hold
                     .is_some();
-                return json!({"project_name": name, "machine_busy": machine_busy});
+                let mut target = json!({"project_name": name, "machine_busy": machine_busy});
+                // Only a project in a pull-request mode can be below its default.
+                if let Some(mode) = self.below_project_default(propose) {
+                    target["below_project_default"] = json!(true);
+                    target["project_mode"] = json!(mode.as_str());
+                }
+                return target;
             }
             Action::ProjectRemove(remove) => return self.remove_target(&remove.project),
             Action::TaskCancel(cancel) => &cancel.task_id,

@@ -9,6 +9,8 @@
 //! Every free-text field is flattened to one bounded line, so no field can
 //! start a line of its own.
 
+use std::collections::HashMap;
+
 use orchestrator_core::approval::ApprovalActionKind;
 use orchestrator_core::load_gate::{Reading, Unknown};
 use orchestrator_core::orchestrator_action::ActionKind;
@@ -242,9 +244,21 @@ fn this_workstream(store: &SqliteStore, workstream_id: &str, actions: bool) -> B
 fn projects(store: &SqliteStore) -> Block {
     match store.list_projects() {
         Ok(projects) => {
+            // The mode only: a base branch, a prefix or a check command can look like a
+            // path or a token. A project with no row, or a local-only one, shows none.
+            let modes: HashMap<String, String> = store
+                .list_project_defaults()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|row| row.mode != "local-only")
+                .map(|row| (row.project_id, row.mode))
+                .collect();
             let items: Vec<String> = projects
                 .iter()
-                .map(|project| format!("- {}", project_label(&project.id)))
+                .map(|project| match modes.get(&project.id) {
+                    Some(mode) => format!("- {} (mode: {mode})", project_label(&project.id)),
+                    None => format!("- {}", project_label(&project.id)),
+                })
                 .collect();
             Block {
                 head: format!("Projects ({}):", items.len()),
@@ -786,6 +800,38 @@ mod tests {
         assert!(snapshot.contains(&format!("project {label} workstream none")));
         assert!(!snapshot.contains("root-7731-distinct"), "{snapshot}");
         assert!(!snapshot.contains("/Users/someone"), "{snapshot}");
+    }
+
+    #[test]
+    fn the_snapshot_shows_the_mode_and_never_a_branch_or_a_check() {
+        let (_directory, store) = store();
+        let root = "/Users/someone/mode-root-4417/alpha";
+        make_project(&store, root, root, json!({}));
+        make_project(&store, "plain", "/work/plain", json!({}));
+        store
+            .set_project_defaults(&orchestrator_store::ProjectDefaultsRow {
+                project_id: root.to_owned(),
+                mode: "direct-pr".to_owned(),
+                base_branch: Some("release-canary-9z".to_owned()),
+                branch_prefix: Some("canary-prefix/".to_owned()),
+                checks: vec![vec!["cargo".to_owned(), "--token-canary-77".to_owned()]],
+                merge_method: "squash".to_owned(),
+                updated_at: String::new(),
+            })
+            .unwrap();
+
+        let snapshot = snapshot_for_global(&store);
+
+        let label = project_label(root);
+        assert!(
+            snapshot.contains(&format!("- {label} (mode: direct-pr)\n")),
+            "{snapshot}"
+        );
+        // A project with no row lists as before, with no mode.
+        assert!(snapshot.contains(&format!("- {}\n", project_label("plain"))), "{snapshot}");
+        for hidden in ["release-canary-9z", "canary-prefix", "token-canary-77", "cargo", "mode-root-4417"] {
+            assert!(!snapshot.contains(hidden), "{hidden}: {snapshot}");
+        }
     }
 
     #[test]

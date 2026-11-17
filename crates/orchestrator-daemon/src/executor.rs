@@ -560,8 +560,20 @@ impl Inner {
         let worktree = Repository::new(Path::new(&task.contract.project_id)).and_then(|repository| {
             std::fs::create_dir_all(&self.config.worktrees_root).map_err(GitError::Io)?;
             let root = std::fs::canonicalize(&self.config.worktrees_root).map_err(GitError::Io)?;
-            let prefix = BranchPrefix::read(&self.config.data_dir)?;
-            create_task_worktree(&repository, &task_id, "HEAD", &root, &prefix)
+            // A project's own base branch and prefix win over HEAD and the machine-wide
+            // prefix (DPES-1105). A task already running keeps the worktree it has.
+            let defaults = store
+                .project_defaults(&task.contract.project_id)
+                .map_err(|error| GitError::Io(std::io::Error::other(error.to_string())))?;
+            let prefix = match defaults.as_ref().and_then(|row| row.branch_prefix.as_deref()) {
+                Some(value) => BranchPrefix::parse(value)?,
+                None => BranchPrefix::read(&self.config.data_dir)?,
+            };
+            let base_ref = defaults
+                .as_ref()
+                .and_then(|row| row.base_branch.as_deref())
+                .unwrap_or("HEAD");
+            create_task_worktree(&repository, &task_id, base_ref, &root, &prefix)
         });
         store
             .add_attempt(
@@ -694,6 +706,9 @@ fn preserved_work(job: &Job) -> (String, String) {
     (worktree, uncommitted)
 }
 
+/// Attempt failure reason when the project's base branch no longer resolves.
+pub(crate) const BASE_BRANCH_MISSING: &str = "The project's base branch no longer exists. Set a base branch that exists in the project defaults, or clear it, then retry.";
+
 /// User-facing worktree failure reasons must never copy paths or raw Git
 /// output from the daemon log into task records.
 fn worktree_failure_reason(error: &GitError) -> &'static str {
@@ -701,6 +716,8 @@ fn worktree_failure_reason(error: &GitError) -> &'static str {
         GitError::InvalidBaseRef { refspec, .. } if refspec == "HEAD" => {
             "The repository has no commit at HEAD. Create an initial commit in the registered repository, then retry."
         }
+        // Only a project's base branch reaches here: the reason never names it.
+        GitError::InvalidBaseRef { .. } => BASE_BRANCH_MISSING,
         GitError::CreationFailed { source, .. } => worktree_failure_reason(source),
         _ => "The daemon could not prepare a task worktree. Check the daemon log for details, then retry.",
     }

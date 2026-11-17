@@ -24,10 +24,9 @@ use std::time::Instant;
 
 use orchestrator_agents::{SelectionReason, UsageReport};
 use orchestrator_core::orchestrator_action::{
-    parse_block, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
+    parse_block, Action, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
 };
 use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTED};
-use orchestrator_core::task_envelope::chat_task_envelope;
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, ConversationUsageReceipt,
@@ -37,6 +36,7 @@ use orchestrator_store::{
 
 use super::conversation_snapshot::build_snapshot;
 use super::load::LoadHandle;
+use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
 use crate::executor::unix_now_ms;
 
@@ -422,10 +422,16 @@ impl ReplySink {
             ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
         };
         match parse_block(&text, scope) {
-            // The envelope is fixed in Phase 2. When it comes from settings,
-            // `resolve_as` must check a task again on approve (DPES-1105).
+            // Each `task.propose` is checked against its own project's envelope as it is
+            // now. `resolve_as` checks a task again on approve, because the project's mode
+            // or `chat_pr_delivery` may change before the user decides (DPES-1105).
             Ok(block) if self.targets_in_scope(&block) => {
-                TurnBlock::Accepted(block.checked(&chat_task_envelope()))
+                let store = &*self.shared.store;
+                TurnBlock::Accepted(block.checked_with(|action| match action {
+                    Action::TaskPropose(propose) => denial_of(store, propose),
+                    Action::TaskRevise(revise) => revise_denial(store, revise),
+                    _ => None,
+                }))
             }
             _ => TurnBlock::Rejected,
         }
