@@ -9,7 +9,6 @@
 use std::sync::MutexGuard;
 
 use orchestrator_core::orchestrator_action::{Action, ProposeTask, ReviseTask};
-use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
@@ -632,13 +631,21 @@ impl DaemonApi {
                 if current.digest != request.digest {
                     return Err(RpcError::ProposalInvalid);
                 }
-                // Defense in depth: only a Restricted turn may carry proposals (DPES-1105).
+                // Defense in depth: only a Restricted or Auto turn may carry proposals, and a
+                // merge card only a Restricted one (DPES-1105).
                 let turn = self
                     .store
                     .conversation_turn(&current.turn_id)
                     .map_err(|error| internal("actions", &format!("{error:?}")))?;
-                if turn.and_then(|turn| turn.permission_level) != Some(PermissionLevel::Restricted)
+                let level = turn.and_then(|turn| turn.permission_level);
+                let allowed = if current.kind
+                    == orchestrator_core::orchestrator_action::ActionKind::DeliveryMerge
                 {
+                    level == Some(orchestrator_core::permission::PermissionLevel::Restricted)
+                } else {
+                    level.is_some_and(super::conversation_runtime::level_allows_actions)
+                };
+                if !allowed {
                     return Err(RpcError::ProposalInvalid);
                 }
                 // Defense in depth and a changed setting: an approval of a pending task

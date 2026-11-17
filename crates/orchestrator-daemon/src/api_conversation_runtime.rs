@@ -309,12 +309,20 @@ impl Shared {
 }
 
 /// Whether a turn may carry action proposals (DPES-1105). Only a session that
-/// negotiated `orchestrator_actions` and a turn at `Restricted` qualify. Above
-/// Restricted the agent has a shell. The approver secret keeps a session that only
-/// holds the token from calling `actions.resolve`, but a shell can still edit the
-/// store or replace the daemon, and no credential stops that.
+/// negotiated `orchestrator_actions` and a turn at `Restricted` or `Auto` qualify.
+/// Auto has a shell, so a turn there could read the daemon's token. The approver
+/// secret keeps a session that only holds the token from calling `actions.resolve`,
+/// and every card still needs the user's approval, but a shell can edit the store or
+/// replace the daemon, and no credential stops that. The user accepted that limit so
+/// the default chat level (Auto) can propose. Extended and Full never carry proposals.
 pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
-    negotiated && level == PermissionLevel::Restricted
+    negotiated && level_allows_actions(level)
+}
+
+/// The levels whose turns may carry proposals and whose stored proposals may be resolved.
+/// Merge cards and standing approvals stay Restricted-only (`api_landing`, `grant_matcher`).
+pub(crate) fn level_allows_actions(level: PermissionLevel) -> bool {
+    matches!(level, PermissionLevel::Restricted | PermissionLevel::Auto)
 }
 
 /// Whether a turn is offered the read-only MCP server (DPES-1105 phase 6b): the setting is
