@@ -366,6 +366,20 @@ impl ActionBlock {
         self
     }
 
+    /// The block with each `task.propose` for a project `in_place(code)` accepts and that asks
+    /// for `LocalReview` set to `ReportOnly`. An in-place task leaves no candidate to review
+    /// or land, so the card shows, and the digest binds, the delivery that will run.
+    pub fn with_in_place_delivery(mut self, in_place: impl Fn(&str) -> bool) -> Self {
+        for action in &mut self.actions {
+            if let Action::TaskPropose(propose) = action {
+                if propose.delivery == DeliveryPolicy::LocalReview && in_place(&propose.project) {
+                    propose.delivery = DeliveryPolicy::ReportOnly;
+                }
+            }
+        }
+        self
+    }
+
     /// The envelope's refusal of action `index`, if any. Always `None` for the other kinds.
     pub fn denial(&self, index: usize) -> Option<Denial> {
         self.denials.get(index).copied().flatten()
@@ -2095,6 +2109,31 @@ mod tests {
         // A method the model wrote is never replaced, and nothing resolved leaves it absent.
         assert_eq!(squash, canonical(&written, Some(MergeMethod::Rebase)));
         assert!(!canonical(&bare, None).json.contains("method"));
+    }
+
+    #[test]
+    fn a_task_for_an_in_place_project_gets_report_only_delivery_in_its_digest() {
+        let canonical = |text: &str, in_place: bool| {
+            parse(&block(text))
+                .expect("valid block")
+                .with_in_place_delivery(|code| in_place && code == "p-3fa9c1d2")
+                .actions()[0]
+                .canonical(None)
+        };
+        let bare = propose(&[]);
+        let moved = canonical(&bare, true);
+        assert!(
+            moved.json.contains(r#""delivery":"ReportOnly""#),
+            "{}",
+            moved.json
+        );
+        // The same as a proposal that asked for it.
+        let asked = propose(&[("delivery", json!("ReportOnly"))]);
+        assert_eq!(moved, canonical(&asked, false));
+        // Another project, or one not in place, keeps what the model wrote.
+        assert!(canonical(&bare, false).json.contains("LocalReview"));
+        let other = propose(&[("project", json!("p-00000000"))]);
+        assert!(canonical(&other, true).json.contains("LocalReview"));
     }
 
     #[test]

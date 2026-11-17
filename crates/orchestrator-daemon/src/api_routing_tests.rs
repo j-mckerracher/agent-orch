@@ -331,7 +331,8 @@ fn routed_in_row_and_snapshot_line_hold_no_path_from_the_objective() {
 fn the_preamble_names_the_scope_rule_and_stays_under_the_cap() {
     for sentence in [
         "A workstream conversation acts only inside its own workstream and cannot create workstreams.",
-        "In the global conversation, route a task by naming the owning workstream_id in task.propose.",
+        "In the global conversation, name a workstream_id in task.propose only if the user names that workstream; otherwise omit it and the task joins Global tasks.",
+        "With no clear project, use the one marked home.",
     ] {
         assert!(INSTRUCTIONS_WITH_ACTIONS.contains(sentence), "{sentence}");
         assert!(!INSTRUCTIONS.contains(sentence), "{sentence}");

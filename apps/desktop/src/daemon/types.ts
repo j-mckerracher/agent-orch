@@ -170,6 +170,8 @@ export interface ProjectRow {
   coordinator_active?: boolean;
   /** The project's delivery mode; present only for a project with saved defaults (DPES-1105). */
   mode?: string;
+  /** True only for a project whose tasks run directly in its folder, like the home directory: such a task has no review and no landing, so it takes `ReportOnly` delivery only. */
+  in_place?: true;
   /** True only for an archived project. The daemon already hides those from the list. */
   archived?: true;
 }
@@ -917,6 +919,8 @@ export interface SettingsWire {
   chat_pr_delivery?: boolean;
   /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
   mcp?: McpWire;
+  /** The folder a task runs in when it is not clear which project it belongs to; `null` while none is set. Absent from an older daemon. */
+  home_directory?: string | null;
   dispatch_defaults?: DispatchDefaultsWire;
 }
 
@@ -951,6 +955,8 @@ export interface SettingsPatchWire {
   wake_limits?: Partial<WakeLimitsWire>;
   chat_pr_delivery?: boolean;
   mcp?: McpWire;
+  /** The folder to run in when no project is clear; `null` clears it. The daemon refuses a folder that does not exist. */
+  home_directory?: string | null;
   dispatch_defaults?: DispatchDefaultsWire;
 }
 

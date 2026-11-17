@@ -122,11 +122,15 @@ struct ProposeExec {
     submit: TaskSubmitParams,
     apply_dispatch_defaults: bool,
     link: Option<LinkTarget>,
+    /// A task the global conversation proposes without a workstream joins the default
+    /// "Global tasks" workstream, unless the user archived it. Never set with `link`.
+    default_link: bool,
     /// The finished scout this task promotes to a task that ships. Only the lineage link
     /// carries it: the objective is the text the proposal wrote, never the scout's report.
     promote_from: Option<String>,
 }
 
+#[derive(Clone)]
 struct LinkTarget {
     workstream_id: String,
     objective_id: Option<String>,
@@ -330,6 +334,7 @@ impl ProposeExec {
     /// to repeat, so a rerun after a stop only does what is still missing.
     fn run(&self, api: &DaemonApi) -> Result<String, ActionError> {
         let task_id = self.task_id();
+        let link = self.link_target(api)?;
         match find_task(api, &task_id)? {
             // A stopped run created the task and never admitted it.
             Some(task) if task.state == TaskState::Created => {
@@ -337,7 +342,7 @@ impl ProposeExec {
             }
             Some(_) => {}
             None => {
-                self.preflight(api)?;
+                Self::preflight(api, link.as_ref())?;
                 let submit = TaskSubmitParams {
                     idempotency_key: self.submit.idempotency_key.clone(),
                     contract: if self.apply_dispatch_defaults {
@@ -359,7 +364,7 @@ impl ProposeExec {
                 .add_task_lineage(&task_id, source, LineageRelation::PromotedFrom, None)
                 .map_err(lineage_error)?;
         }
-        if let Some(link) = &self.link {
+        if let Some(link) = &link {
             api.link_task_inner(&LinkTaskParams {
                 workstream_id: link.workstream_id.clone(),
                 task_id: task_id.clone(),
@@ -369,6 +374,21 @@ impl ProposeExec {
         }
         api.wake_executor();
         Ok(task_id)
+    }
+
+    /// The workstream the task joins: the one the proposal named, or the default
+    /// workstream, made on first use. An archived default leaves the task unlinked.
+    fn link_target(&self, api: &DaemonApi) -> Result<Option<LinkTarget>, ActionError> {
+        if self.link.is_some() || !self.default_link {
+            return Ok(self.link.clone());
+        }
+        let workstream = api.global_tasks_workstream()?;
+        Ok(
+            (workstream.state != WorkstreamState::Archived).then_some(LinkTarget {
+                workstream_id: workstream.id,
+                objective_id: None,
+            }),
+        )
     }
 
     /// Whether the task exists, which means a stopped run got that far. The steps it
@@ -383,8 +403,8 @@ impl ProposeExec {
     /// Refuses a link the store would refuse before the task exists, so no task is
     /// made that cannot be linked. Every workstream writer takes the gate the caller
     /// holds, so the answer cannot change before the link is made.
-    fn preflight(&self, api: &DaemonApi) -> Result<(), ActionError> {
-        let Some(link) = &self.link else {
+    fn preflight(api: &DaemonApi, link: Option<&LinkTarget>) -> Result<(), ActionError> {
+        let Some(link) = link else {
             return Ok(());
         };
         if api.store.get_workstream(&link.workstream_id)?.state == WorkstreamState::Archived {
@@ -1111,7 +1131,9 @@ impl DaemonApi {
                 })
             }
             Action::TaskPropose(propose) => {
-                Execution::Propose(Box::new(self.propose_execution(propose, parent, key)?))
+                let mut exec = self.propose_execution(propose, parent, key)?;
+                exec.default_link = exec.link.is_none() && proposal.scope_workstream().is_none();
+                Execution::Propose(Box::new(exec))
             }
             Action::TaskCancel(cancel) => Execution::Cancel(CancelParams {
                 task_id: cancel.task_id,
@@ -1213,6 +1235,7 @@ impl DaemonApi {
                     },
                 },
                 link,
+                default_link: false,
                 promote_from: None,
             },
         })
@@ -1301,6 +1324,7 @@ impl DaemonApi {
                 },
             },
             link,
+            default_link: false,
             promote_from: propose.promote_from,
         })
     }

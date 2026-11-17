@@ -30,6 +30,7 @@ import {
 } from "./settingsModel";
 import { SaveButton, useSaveGuard } from "./SaveBar";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
+import { HomeDirectorySection } from "./HomeDirectorySection";
 import { McpToolsSection } from "./McpToolsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
@@ -205,6 +206,7 @@ export function SettingsView() {
       <SupervisionSections model={model} />
       <ChatPullRequestSection model={model} />
       <McpToolsSection model={model} />
+      <HomeDirectorySection model={model} />
       <GrantsSection />
       <NotesSection />
     </div>

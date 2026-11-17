@@ -35,6 +35,9 @@ pub struct OrchestratorSettings {
     pub chat_pr_delivery: bool,
     /// Phase 6b: the read-only task tools for the orchestrator chat. Off by default.
     pub mcp: McpSettings,
+    /// Migration 0055: the directory a task runs in when it is not clear which project it
+    /// belongs to. The daemon validates the path before it is stored. `None` means none is set.
+    pub home_directory: Option<String>,
     pub dispatch_defaults: DispatchDefaults,
 }
 
@@ -148,6 +151,8 @@ pub struct SettingsPatch {
     pub mode: Option<MonitoringMode>,
     pub chat_pr_delivery: Option<bool>,
     pub mcp: McpPatch,
+    /// `Some(None)` clears the home directory.
+    pub home_directory: Option<Option<String>>,
     /// Replaces this group; an absent group leaves it unchanged.
     pub dispatch_defaults: Option<DispatchDefaults>,
 }
@@ -163,7 +168,7 @@ enum Bound {
     Integer(i64),
     Null,
     Text(&'static str),
-    Json(String),
+    Owned(String),
 }
 
 impl Bound {
@@ -174,7 +179,8 @@ impl Bound {
 
 const SETTINGS_COLUMNS: &str = "load_cpu_percent, load_memory_percent, load_disk_percent, \
     monitoring_mode, base_interval_secs, min_interval_secs, wake_hourly_cap, wake_daily_cap, \
-    wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery, mcp_server_enabled, dispatch_defaults";
+    wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery, mcp_server_enabled, \
+    home_directory, dispatch_defaults";
 
 impl SqliteStore {
     /// The settings row. A new store holds the defaults: load limits 80, 85 and 90, mode on,
@@ -291,10 +297,22 @@ impl SqliteStore {
             if let Some(value) = patch.mcp.enabled {
                 named.push(("mcp_server_enabled", Bound::Integer(i64::from(value))));
             }
+            if let Some(directory) = &patch.home_directory {
+                let bound = match directory {
+                    None => Bound::Null,
+                    Some(path) if path.is_empty() || path.len() > 4096 || path.contains('\0') => {
+                        return Err(invalid_input(
+                            "the home directory must be a path of 1 to 4096 bytes",
+                        ))
+                    }
+                    Some(path) => Bound::Owned(path.clone()),
+                };
+                named.push(("home_directory", bound));
+            }
             if let Some(defaults) = &patch.dispatch_defaults {
                 defaults.validate()?;
                 let json = serde_json::to_string(defaults).map_err(|_| damaged())?;
-                named.push(("dispatch_defaults", Bound::Json(json)));
+                named.push(("dispatch_defaults", Bound::Owned(json)));
             }
 
             // Set only the columns the patch names. A write must never touch a column it was
@@ -316,7 +334,7 @@ impl SqliteStore {
                     Bound::Integer(value) => update.bind(*value),
                     Bound::Null => update.bind(None::<i64>),
                     Bound::Text(value) => update.bind(*value),
-                    Bound::Json(value) => update.bind(value),
+                    Bound::Owned(value) => update.bind(value.as_str()),
                 };
             }
             update.execute(&mut *transaction).await?;
@@ -480,6 +498,7 @@ async fn read_settings(
         mcp: McpSettings {
             enabled: row.try_get::<i64, _>("mcp_server_enabled")? != 0,
         },
+        home_directory: row.try_get("home_directory")?,
         dispatch_defaults,
     })
 }

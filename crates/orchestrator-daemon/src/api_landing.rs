@@ -450,7 +450,8 @@ impl DaemonApi {
                 .store
                 .workspaces_for_task(&request.task_id)
                 .map_err(map_store_error)?
-                .last()
+                .iter()
+                .rfind(|space| !space.is_in_place())
                 .map(|space| space.branch.clone())
                 .ok_or(RpcError::NotFound)?,
         };

@@ -481,6 +481,85 @@ fn approving_task_propose_with_a_workstream_links_the_task() {
 }
 
 #[test]
+fn a_global_task_proposal_without_a_workstream_joins_global_tasks_once() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let code = project_code(ALPHA);
+    let named = create_workstream(&api, "Specialised", "w-1");
+    let ids = propose(
+        &api,
+        "t1",
+        &[
+            task_block(&code, "First loose task.", ""),
+            task_block(&code, "Second loose task.", ""),
+            task_block(&code, "A named task.", &in_workstream(&named)),
+        ]
+        .join(", "),
+    );
+
+    let first = resolve(&api, &ids[0], "approve", "k-1").unwrap();
+    assert_executed(&first, &proposed_task_id(&ids[0]));
+    let second = resolve(&api, &ids[1], "approve", "k-2").unwrap();
+    assert_executed(&second, &proposed_task_id(&ids[1]));
+    let third = resolve(&api, &ids[2], "approve", "k-3").unwrap();
+    assert_executed(&third, &proposed_task_id(&ids[2]));
+
+    let link_of = |index: usize| {
+        api.store
+            .workstream_task_link(&proposed_task_id(&ids[index]))
+            .unwrap()
+            .unwrap()
+            .workstream_id
+    };
+    let global = link_of(0);
+    assert_eq!(link_of(1), global);
+    assert_eq!(link_of(2), named);
+    let workstreams = api.store.list_workstreams(None).unwrap();
+    assert_eq!(workstreams.len(), 2);
+    let default = workstreams.iter().find(|ws| ws.id == global).unwrap();
+    assert_eq!(default.title, "Global tasks");
+}
+
+#[test]
+fn a_global_task_proposal_stays_unlinked_when_global_tasks_is_archived() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let code = project_code(ALPHA);
+    let ids = propose(
+        &api,
+        "t1",
+        &[
+            task_block(&code, "Makes the default workstream.", ""),
+            task_block(&code, "Runs after it is archived.", ""),
+        ]
+        .join(", "),
+    );
+    resolve(&api, &ids[0], "approve", "k-1").unwrap();
+    let global = api
+        .store
+        .workstream_task_link(&proposed_task_id(&ids[0]))
+        .unwrap()
+        .unwrap()
+        .workstream_id;
+    call(
+        &api,
+        "workstreams.update",
+        json!({"workstream_id": global, "expected_revision": 1, "state": "archived", "idempotency_key": "w-2"}),
+    )
+    .unwrap();
+
+    let result = resolve(&api, &ids[1], "approve", "k-2").unwrap();
+    assert_executed(&result, &proposed_task_id(&ids[1]));
+    assert_eq!(
+        api.store
+            .workstream_task_link(&proposed_task_id(&ids[1]))
+            .unwrap(),
+        None
+    );
+    assert_eq!(task_count(&api), 2);
+}
+
+#[test]
 fn task_propose_for_an_archived_workstream_fails_conflict_and_creates_no_task() {
     let (_directory, api) = new_api();
     register_project(&api, ALPHA);
