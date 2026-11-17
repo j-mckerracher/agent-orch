@@ -13,6 +13,7 @@ import { ServicesProvider } from "../src/ui/services";
 import { WorkspaceView } from "../src/ui/views/workspace/WorkspaceView";
 import { CHOICE_PREFERENCE_KEY } from "../src/ui/views/workspace/modelChoice";
 import { RESTRICTED_PREFERENCE_KEY } from "../src/ui/views/workspace/permissionLevel";
+import { projectLabel } from "../src/ui/views/workspace/targets";
 import { NodeConnector, fakeAgentEnv, noAgentsEnv, startDaemon } from "./harness";
 
 // A saved model choice (DPES-1105) lives in browser storage, which outlives a test.
@@ -223,9 +224,18 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     }, "turn settled");
   }
 
-  it("shows the agent's reply in the UI, with no task, approval or simulated text", async () => {
+  it.each(["global", "project"] as const)("shows the agent's reply in the %s UI, with no task, approval or simulated text", async (kind) => {
     const t = await prepare(fakeAgentEnv());
     try {
+      const project = kind === "project" ? await t.direct((api) => api.projectsRegister(t.daemon.repo)) : null;
+      const target = project ? { kind: "project" as const, project_id: project.id } : { kind: "global" as const };
+      const label = project ? projectLabel(project.id) : "Global orchestrator";
+      if (project) {
+        await t.direct((api) => api.coordinatorRestore(project.id, "add-coordinator"));
+        await t.direct((api) => api.coordinatorSendMessage(project.id, "Earlier coordinator note", "legacy-note"));
+        await t.services.data.refreshAll();
+      }
+      t.services.drafts.setWorkspaceTarget(project ? `project:${project.id}` : "global");
       // A cold agent catalog makes the first send a retryable conflict; warm it first.
       await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
       render(
@@ -233,10 +243,11 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
           <WorkspaceView />
         </ServicesProvider>,
       );
-      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
-      const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
+      await screen.findByRole("heading", { name: `Talking to: ${label}` }, { timeout: 15000 });
+      if (project) expect(await screen.findByText("Earlier coordinator note")).toBeTruthy();
+      const box = screen.getByRole("textbox", { name: `Message ${label}` });
       await userEvent.type(box, "hello fake agent");
-      const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      const sendButton = () => screen.getByRole("button", { name: `Send message to ${label}` });
       await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
       await userEvent.click(sendButton());
 
@@ -245,7 +256,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(screen.queryByText(/SIMULATED/)).toBeNull();
 
       const page = await until(async () => {
-        const current = await t.direct((api) => api.conversationsGet({ kind: "global" }));
+        const current = await t.direct((api) => api.conversationsGet(target));
         return current.turn?.state === "completed" && current;
       }, "completed conversation turn");
       expect(page.entries.map((e) => e.kind)).toEqual(["user_message", "reply_chunk", "turn_completed"]);

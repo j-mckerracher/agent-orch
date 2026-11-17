@@ -1118,6 +1118,7 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
         None => content.push_str(match &request.target {
             ConversationTarget::Global => "Scope: the global orchestrator.\n",
             ConversationTarget::Workstream(_) => "Scope: one workstream.\n",
+            ConversationTarget::Project(_) => "Scope: one project coordinator.\n",
         }),
     }
     if !history.is_empty() {

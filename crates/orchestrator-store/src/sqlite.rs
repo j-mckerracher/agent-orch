@@ -200,10 +200,35 @@ fn run_worker(
             return;
         }
     };
-    let migrated = runtime.block_on(MIGRATOR.run(&pool));
+    let migrated: Result<(), StoreError> = runtime.block_on(async {
+        let mut connection = pool.acquire().await?;
+        // SQLite parent-table rebuilds require foreign keys off outside a transaction.
+        // Keep this connection until enforcement and integrity are restored.
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *connection)
+            .await?;
+        MIGRATOR
+            .run(&mut *connection)
+            .await
+            .map_err(StoreError::Migration)?;
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *connection)
+            .await?;
+        if sqlx::query("PRAGMA foreign_key_check")
+            .fetch_optional(&mut *connection)
+            .await?
+            .is_some()
+        {
+            return Err(StoreError::Corrupt {
+                task_id: String::new(),
+                detail: "foreign key check failed after migration".to_owned(),
+            });
+        }
+        Ok(())
+    });
     drop(open_lock);
     if let Err(error) = migrated {
-        let _ = ready_sender.send(Err(StoreError::Migration(error)));
+        let _ = ready_sender.send(Err(error));
         runtime.block_on(pool.close());
         return;
     }

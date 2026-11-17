@@ -90,7 +90,7 @@ fn stop(dir: &Path, daemon: JoinHandle<()>) {
 #[test]
 fn standing_approvals_is_named_and_round_trips() {
     assert!(Capability::ALL.contains(&Capability::StandingApprovals));
-    assert_eq!(Capability::ALL.len(), 23);
+    assert_eq!(Capability::ALL.len(), 24);
     assert_eq!(Capability::StandingApprovals.as_str(), "standing_approvals");
     assert_eq!(
         Capability::from_name("standing_approvals"),

@@ -928,6 +928,14 @@ fn a_database_from_0036_is_migrated_with_its_turns_and_no_action_block() {
         .execute(&mut connection)
         .await
         .unwrap();
+        sqlx::query("INSERT INTO projects (id, root_path, settings) VALUES ('p1', '/work/p1', '{}')")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO coordinator_scopes (project_id, clear_generation, removed) VALUES ('p1', 3, 0)")
+            .execute(&mut connection)
+            .await
+            .unwrap();
     });
     drop(connection);
 
@@ -935,6 +943,50 @@ fn a_database_from_0036_is_migrated_with_its_turns_and_no_action_block() {
     assert_eq!(
         store.conversation_turn("t1").unwrap().unwrap().action_block,
         None
+    );
+    let target = ConversationTarget::Project("p1".into());
+    assert_eq!(
+        store
+            .conversation_page(&target, 0, 100)
+            .unwrap()
+            .clear_generation,
+        4
+    );
+    assert_eq!(store.coordinator_scope("p1").unwrap().clear_generation, 4);
+    assert!(store.coordinator_scope("p1").unwrap().removed);
+    store.restore_coordinator("p1").unwrap();
+    store
+        .begin_conversation_turn(
+            &target,
+            "project-turn",
+            COORDINATOR_NOTE,
+            "test-runtime",
+            "1.0.0",
+        )
+        .unwrap();
+    store
+        .finish_conversation_turn("project-turn", &TurnOutcome::Completed)
+        .unwrap();
+    assert_eq!(
+        store
+            .clear_coordinator_history("p1")
+            .unwrap()
+            .clear_generation,
+        5
+    );
+    assert_eq!(
+        store
+            .conversation_page(&target, 0, 100)
+            .unwrap()
+            .clear_generation,
+        5
+    );
+    assert_eq!(
+        raw_scalar(
+            directory.path(),
+            "SELECT CAST(COUNT(*) AS TEXT) FROM pragma_foreign_key_check"
+        ),
+        "0"
     );
     assert_eq!(
         raw_scalar(

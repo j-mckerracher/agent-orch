@@ -791,5 +791,6 @@ export class DaemonApi {
 }
 
 function realTarget(target: ConversationWireTarget): ConversationWireTarget {
+  if (target.kind === "project") return { kind: "project", project_id: realId(target.project_id) };
   return target.kind === "global" ? target : { kind: "workstream", workstream_id: realId(target.workstream_id) };
 }

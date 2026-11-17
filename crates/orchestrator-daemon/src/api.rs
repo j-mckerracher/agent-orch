@@ -372,6 +372,7 @@ impl RpcHandler for DaemonApi {
             Capability::Workstreams,
             Capability::ConversationHistory,
             Capability::ConversationSelection,
+            Capability::ProjectConversations,
             Capability::PermissionLevels,
             Capability::OrchestratorActions,
             Capability::Settings,

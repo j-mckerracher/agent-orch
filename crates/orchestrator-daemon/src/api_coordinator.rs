@@ -152,7 +152,7 @@ impl DaemonApi {
                 let outcome = self
                     .store
                     .clear_coordinator_history(&request.project_id)
-                    .map_err(map_store_error)?;
+                    .map_err(super::conversations::map_clear_error)?;
                 Ok(json!({
                     "project_id": request.project_id,
                     "cleared": outcome.cleared,
@@ -178,7 +178,7 @@ impl DaemonApi {
                 let change = self
                     .store
                     .remove_coordinator(&request.project_id)
-                    .map_err(map_store_error)?;
+                    .map_err(super::conversations::map_clear_error)?;
                 Ok(coordinator_change_json(&request.project_id, &change))
             },
         )

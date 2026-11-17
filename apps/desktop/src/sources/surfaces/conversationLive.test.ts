@@ -334,12 +334,16 @@ describe("live conversation adapter", () => {
     expect(transcript.status === "ok" && transcript.data.entries.at(-1)).toMatchObject({ kind: "status" });
   });
 
-  it("leaves the project coordinator path untouched", async () => {
+  it("reads legacy project notes and the shared runtime transcript", async () => {
     const fake = populate(new FakeDaemon());
+    stubConversation(fake);
     const s = await live(fake);
     const result = await s.conversation.transcript({ kind: "project", projectId: "/repos/alpha" });
     expect(result.status).toBe("ok");
-    expect(fake.callsTo("conversations.get")).toHaveLength(0);
+    expect(fake.callsTo("conversations.get")[0]!.params).toMatchObject({
+      target: { kind: "project", project_id: "/repos/alpha" },
+    });
+    expect(fake.callsTo("coordinator.get")).toHaveLength(1);
   });
 });
 

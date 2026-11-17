@@ -285,6 +285,7 @@
    "a_turn_the_daemon_lost_is_failed_on_restart_not_left_running",
    "cancel_stops_a_streaming_reply_and_later_output_is_discarded",
    "control_characters_never_reach_the_transcript",
+   "project_coordinator_replies_keep_history_selection_and_lifecycle",
    "replies_are_ordered_correlated_and_carry_history_and_workstream_context",
    "agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes",
    "the_agent_runs_read_only_in_an_empty_scratch_directory",

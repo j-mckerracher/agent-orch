@@ -173,6 +173,9 @@ function conversationTarget(params: Record<string, unknown>): ConversationWireTa
   if (typeof target !== "object" || target === null) return GLOBAL;
   const candidate = target as Partial<ConversationWireTarget>;
   if (candidate.kind === "global") return GLOBAL;
+  if (candidate.kind === "project" && typeof candidate.project_id === "string") {
+    return { kind: "project", project_id: candidate.project_id };
+  }
   if (candidate.kind === "workstream" && typeof candidate.workstream_id === "string") {
     return { kind: "workstream", workstream_id: candidate.workstream_id };
   }
