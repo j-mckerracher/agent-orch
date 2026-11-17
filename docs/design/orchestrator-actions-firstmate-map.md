@@ -14,7 +14,6 @@ Status values:
 - **HAVE.** MCAO delivers the outcome today. The cell names the crate, method or screen.
 - **PARTIAL.** Part of the outcome exists. The cell says what is missing and the phase that adds it.
 - **GAP.** No MCAO mechanism yet. The cell names the MCAO-native design and its phase.
-- **NEEDS USER DECISION.** The outcome is in scope, but how to deliver it has a cost only the user can weigh. See the decisions list in the main document.
 
 Phases are the ones in the main document: 1 context and workstream proposals, 2 task lifecycle proposals, 3 wake-up loop, 4 shapes, modes and landing, 5 standing approvals and away mode, 6 fleet.
 
@@ -24,9 +23,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- |
 | HAVE | 17 |
 | PARTIAL | 19 |
-| GAP | 31 |
-| NEEDS USER DECISION | 4 |
-| Total | 71 |
+| GAP | 32 |
+| Total | 68 |
 
 ## Dispatch and supervision
 
@@ -41,11 +39,10 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | D7 | Event-driven wake of the liaison when something needs the user | GAP | Phase 3: the daemon is the watcher and starts an orchestrator turn. See "Wake-up loop" in the main document. |
 | D8 | Turn-end guard: no turn ends blind while work runs | GAP | Phase 3: obligations live in the store (open proposals, pending approvals, unacknowledged wake records), not in the model's memory. The daemon re-surfaces them. A per-turn CLI cannot "forget" a record. |
 | D9 | Durable wake queue, acknowledged only after handling | GAP | Phase 3: `wake_records` table. A wake is closed by the turn that handled it, or by the user. |
-| D10 | Stuck and wedged worker detection | GAP | Phase 3: a daemon stall detector on session event time and attempt wall time. Deterministic, no model call. |
+| D10 | Stuck and wedged worker detection | GAP | Phase 3: a daemon stall check once per effective supervision interval (decisions N10, N11): no session event and no worktree change since the last check, or attempt over its wall-time bound. The interval doubles with the amount of work, up to a user-set maximum. Deterministic, no model call. |
 | D11 | Steer a running worker with text | GAP | Phase 4: headless `exec` and `-p` runs take no input mid-run, and contracts are immutable. Steering becomes a `task.revise` proposal: cancel plus a new contract with the added intent. Cost: in-flight progress is lost unless the worktree is reused (unverified). |
 | D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry`. Phase 2 lets the orchestrator propose them. |
 | D13 | Busy state is semantic, per adapter | HAVE | Adapter parsers (`codex_parser.rs`, `copilot_parser.rs`, Claude stream JSON) feed `sessions.events`. |
-| D14 | Visible worker sessions in a terminal multiplexer (tmux, Herdr, Zellij and others) | NEEDS USER DECISION | The outcome (see and step in) is delivered by D15 and D12. A real terminal per worker is decision N5. |
 | D15 | Watch live worker output | HAVE | Agents and Sessions view over `sessions.list`, `sessions.events` with replay. |
 
 ## Task shapes
@@ -139,10 +136,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| I1 | Relay: answer public mentions on X and Discord | NEEDS USER DECISION | External side effect under the user's public identity. Decision N6. |
 | I2 | Watch pull request checks and merge | GAP | Phase 4: a PR state poller and a merge action bound to the head commit. |
 | I3 | External process-event sources | GAP | Phase 6: a daemon-owned source with a fixed adapter contract. |
-| I4 | Voice relay | GAP | Phase 6 or later. |
 | I5 | Many harness adapters | HAVE | Codex, Claude Code, GitHub Copilot and Pi adapters (`orchestrator-agents`). |
 
 ## Self-maintenance
@@ -150,9 +145,9 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
-| M2 | Patch its own code and publish upstream only with consent | NEEDS USER DECISION | Decision N7. |
+| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7: not now. The orchestrator gets no self-patching or self-publishing support. |
 | M3 | Curate durable operational memory (stow) | GAP | Phase 5: user-visible orchestrator notes the snapshot includes, editable and deletable. |
-| M4 | Unattended push to a protected branch | NEEDS USER DECISION | Decision N8: a scoped standing approval, not a hard no. |
+| M4 | Unattended push to a protected branch | GAP | Phase 5: a per-project setting the user turns on, built as a merge-kind standing approval (decision N8). Off until set. Green required checks only. |
 
 ## Firstmate rules and what they protect
 
@@ -163,7 +158,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | Hard rule 3: never tear down unlanded work | Work that exists nowhere else | No action kind discards a worktree or branch in phases 1 to 5. |
 | Hard rule 4: workers never address the user | One interface | Task agents have no conversation write path. Their results reach the user through the orchestrator and daemon-confirmed records. |
 | Hard rule 5: report outcomes faithfully | Trust in the summary | The UI shows only daemon-confirmed results. The preamble forbids early claims. |
-| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Decision N7. |
+| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Nothing is built for self-publishing (N7). Publishing to MCAO's own upstream is never grantable. |
 | "Evidence is never authorization" | Action from a report or recommendation alone | A report produces proposals, never execution. |
 | "Away never changes the authority set" | Silent widening while nobody watches | Away is a preset of grants the user made. It adds none. |
 | "Standing autonomy is scoped consent per project" | Unbounded delegation | Standing approvals have scope, kinds, expiry, count and spend limits, a visible indicator, revoke and an audit entry per use. |

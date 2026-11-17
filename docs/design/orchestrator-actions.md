@@ -6,19 +6,21 @@ Goal, decided by the user: the user talks to one agent, the Global orchestrator,
 
 Basis: `motif-mcao/main` at `89bfc8b2d`. Firstmate `main` at `427056c41`, read only. CLI facts come from help text only: `claude 2.1.311`, `codex-cli 0.169.0`, `copilot 1.0.109`. No CLI was run for a prompt or turn. No build or test ran.
 
-## Decisions needed
+## Decisions
 
-Each item has a working default that this design uses until the user decides.
+Decided by the user. IDs are stable; other documents cite them.
 
-- **N1. Mechanism for actions.** Recommended: the agent ends a reply with one structured action block. The daemon parses it into proposals, shows each as an approval card, and executes only after the user approves. Later, add a daemon-hosted MCP server with read-only tools. Cost of the recommendation: the model can emit a malformed block (the card then says so, nothing runs). Cost of MCP first: three different per-CLI configurations, the "no MCP below Full" hard limit in the permission-levels design must change, and Restricted Copilot denies unlisted tools in `-p`. Cost of shell to the `agent-orch` CLI: it needs a shell tool, which Restricted removes, and a shell can do anything else too. Rejected.
-- **N2. Phase order.** Recommended: the order in "Phases" below (context, workstream proposals, task proposals, wake-up loop, shapes and landing, standing approvals, fleet). Cost: unattended supervision (phase 3) waits for task proposals (phase 2). Moving the wake-up loop first would let the orchestrator notice events it cannot act on.
-- **N3. Autonomy default.** Recommended: every action needs a per-action approval. Phases 1 to 4 ship with no other path. Cost: one click per action, including harmless ones such as adding an objective.
-- **N4. Standing-approval scope.** Recommended: a grant names one project or one workstream, a set of action kinds, an optional branch prefix, an expiry (default 8 hours, maximum 7 days), a use count (default 20) and a token budget. Only the user creates a grant, in the UI, never by proposal. Destructive kinds are never grantable (see "Standing approvals"). Cost: away mode cannot cover a project the user did not name before leaving. Wider grants (all projects, no expiry) cost the user's ability to say what ran without them.
-- **N5. Terminal multiplexer backends.** Recommended: do not adopt tmux, Herdr or Zellij. The outcome (see live output, step in) is delivered by the Agents and Sessions view, cancel and retry, and phase 4 revise. Cost: no keystroke-level intervention in a running worker. Adopting a backend costs a per-OS dependency, a Windows story, and a second process supervisor beside the daemon's.
-- **N6. Relay replies on public channels.** Recommended: out of scope until the user asks. If adopted, every public post is a per-action approval and never grantable. Cost of no: firstmate parity has one missing integration. Cost of yes: posts under the user's identity, a credential to store, and public prompt injection as an input.
-- **N7. The app patching itself.** Recommended: the MCAO repository can be registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) needs a per-action approval and is never grantable. Cost: the user approves each upstream step. Cost of a hard no: the orchestrator cannot help improve MCAO, which firstmate does for itself.
-- **N8. Unattended pushes to protected branches.** Recommended: allowed only as a phase 5 standing approval of the merge kind, scoped to one project, green required checks only, the head commit bound to the approval, an audit entry per use. Cost: a wrong grant lands code unattended. Cost of a hard no: no `+yolo` parity.
-- **N9. Wake-turn budget defaults.** Recommended: at most 6 wake turns per hour and 40 per day per target, a daily wake token budget the user sets (default off until set, so the loop runs only deterministic notices), and wake turns always at Restricted. Cost: a busy fleet waits up to 10 minutes for interpretation.
+- **N1. Mechanism for actions.** Delegated to the agent. Decided: the agent ends a reply with one structured action block. The daemon parses it into proposals, shows each as an approval card, and executes only after the user approves. Later, add a daemon-hosted MCP server with read-only tools. Why: the model can emit a malformed block, but the card then says so and nothing runs. MCP first needs three different per-CLI configurations, changes the "no MCP below Full" hard limit in the permission-levels design, and Restricted Copilot denies unlisted tools in `-p`. A shell to the `agent-orch` CLI needs a shell tool, which Restricted removes, and a shell can do anything else too. Rejected.
+- **N2. Phase order.** The user has no preference. Decided: the sequential order in "Phases" below (context, workstream proposals, task proposals, wake-up loop, shapes and landing, standing approvals, fleet). Unattended supervision (phase 3) waits for task proposals (phase 2), so the wake loop never notices events it cannot act on.
+- **N3. Autonomy default.** Decided: chat runs at Auto, and the user can set the default chat permission level. Action approval is unchanged: every action needs a per-action approval, and phases 1 to 4 ship with no other path. Cost: one click per action, including harmless ones such as adding an objective.
+- **N4. Standing-approval scope.** Decided: a grant names one project or one workstream, a set of action kinds, an optional branch prefix, an expiry (default 8 hours, maximum 7 days), a use count (default 20) and a token budget. Only the user creates a grant, in the UI, never by proposal. Destructive kinds are never grantable (see "Standing approvals"). Cost: away mode cannot cover a project the user did not name before leaving. Wider grants (all projects, no expiry) cost the user's ability to say what ran without them.
+- **N5. Terminal multiplexer backends.** Declined: not supported now. No tmux, Herdr or Zellij backend. The user sees live output in the Agents and Sessions view and steers with cancel, retry and phase 4 revise.
+- **N6. Relay replies on public channels.** Declined. No public relay of any kind.
+- **N7. The app patching itself.** Not now. Nothing is built for the orchestrator to patch or publish to MCAO's own repository. Publishing to MCAO's own upstream is never grantable.
+- **N8. Unattended pushes to protected branches.** Decided: the user can set it, per project, as a phase 5 standing approval of the merge kind. Green required checks only, the head commit bound to the approval, an audit entry per use. Off until the user sets it. Cost: a wrong grant lands code unattended.
+- **N9. Wake-turn budget.** Decided: unlimited by default. The user can set hourly and daily wake-turn caps per target and a daily wake token budget. Wake turns always run at Restricted. Cost: with no limit, a busy fleet can spend tokens on wake turns without a cap until the user sets one.
+- **N10. Supervision checks.** Decided: while agents work for the orchestrator, it checks them for stuck work and for scope creep. The base interval is a user setting, default 10 minutes, on a new Settings page, because the app has none. Findings become notices and proposals. The orchestrator never cancels or revises work by itself. Cost: each scope check that has something to judge is a wake turn, and with N9 unlimited it spends tokens until the user sets a limit.
+- **N11. Wake backoff by workload.** Decided: the interval between checks grows exponentially with the amount of work the orchestrator is running. Each running task counts as one unit, and each sub-orchestrator counts as one more. The interval doubles per unit from the base up to a user-set maximum (default 240 minutes). Cost: with a lot of work, a stuck task can go unnoticed for up to the maximum. Lowering the maximum, or setting it equal to the base, trades token cost for faster detection.
 
 ## What the code says today
 
@@ -36,14 +38,13 @@ These findings correct or sharpen the brief. Each is from a file on `main`.
 
 ## Capability counts
 
-71 firstmate capabilities in 11 groups. Detail and per-item design: [the map](orchestrator-actions-firstmate-map.md).
+68 firstmate capabilities in 11 groups. Detail and per-item design: [the map](orchestrator-actions-firstmate-map.md).
 
 | Status | Count |
 | --- | --- |
 | HAVE | 17 |
 | PARTIAL | 19 |
-| GAP | 31 |
-| NEEDS USER DECISION | 4 |
+| GAP | 32 |
 
 The engine already has most of the crew: contracts, worktrees, scheduling, verification, delivery approvals, restart safety. The gaps sit in the liaison layer: context, actions, the wake-up loop, standing authority, and landing.
 
@@ -59,7 +60,8 @@ Events the daemon records as wake candidates:
 | --- | --- | --- |
 | Task succeeded with a delivery waiting for approval | Task state, approvals | Deterministic notice and a link to the approval. No model turn. |
 | Task failed, verification failed, retries exhausted | Task state | Model turn: explain and propose retry, revise or cancel. |
-| Task stalled | New stall detector: no session event for N minutes, or attempt over its wall-time bound | Model turn: propose recovery. |
+| Task stalled | Supervision check: no session event and no worktree change for one effective interval, or attempt over its wall-time bound | Deterministic notice, then a model turn: propose recovery. |
+| Scope creep suspected | Supervision check: change set grew since the last check and the model judges it outside the task objective | Model turn: explain the drift and propose cancel or revise. |
 | Scout report ready | Report publish | Model turn: relay findings, list decisions. |
 | Proposal waiting past a threshold | Proposals table | Deterministic reminder, at most once per threshold. |
 | Credential or sign-in needed | Catalog and runtime failures | Deterministic notice. |
@@ -69,12 +71,28 @@ Events the daemon records as wake candidates:
 Rules:
 
 - **Debounce.** Events coalesce per target for 60 seconds. One wake turn per target runs at a time. A user turn takes precedence and the wake waits until it ends.
-- **Limits.** Hourly and daily wake-turn caps per target (N9). A daily wake token budget, enforced from usage receipts that chat turns must start writing (phase 3 prerequisite). When a cap is reached the loop falls back to deterministic notices and the header says "Monitoring paused: limit reached".
+- **Limits.** None by default (N9). The user may set hourly and daily wake-turn caps per target and a daily wake token budget, enforced from usage receipts that chat turns must start writing (phase 3 prerequisite). Debounce and one wake turn per target at a time still bound the rate. When a set cap is reached the loop falls back to deterministic notices and the header says "Monitoring paused: limit reached".
 - **Level.** Wake turns run at Restricted, whatever the user's last choice. Nobody watches a wake turn, and it needs no tools.
 - **Output.** A wake turn may reply, propose, or answer with the quiet token. A quiet answer stores one collapsed line, "Checked 3 updates. Nothing needs you." An empty-looking transcript never hides a failure: failures are deterministic notices first.
 - **Records.** `wake_records` hold the event, the coalesced set, and the turn that handled it. A record closes when its turn completes, or when the user dismisses it.
 - **Modes.** `on`: wake replies notify. `quiet`: wake replies are stored and do not notify. `away` (phase 5): quiet plus standing approvals plus a return brief. `off`: deterministic notices only.
 - **What the user sees.** A badge on the Global target, a "Monitoring: on" chip in the header with the mode menu, and each wake message labeled "Update, not a reply to you" with the triggering events.
+
+### Supervision checks: stuck work and scope creep
+
+Decided by the user (N10, N11): while agents work for the orchestrator, it checks on them for two things, work that is stuck and work that has drifted outside its task. The daemon runs one check per running task in the target's scope, once per effective interval. The effective interval grows exponentially with the amount of work, as described next. The user sets the base interval (default 10 minutes, 1 to 240) and the maximum interval (default 240 minutes, up to 1,440).
+
+**Backoff by workload (N11).** The daemon has no periodic wake mechanism today: its scheduler reacts to events. Phase 3 adds a wake scheduler that arms one timer per target. The closest existing pattern is `RetryPolicy` in `orchestrator-core/src/retry.rs`: a pure function that doubles a delay up to a maximum and takes a jitter trait. The wake scheduler uses the same shape, with the exponent taken from the amount of work instead of a retry number:
+
+`interval(W) = min(maximum, base × 2^(W − 1))` for `W ≥ 1`. With `W = 0` no timer is armed.
+
+`W` counts the work units in the target's scope: each running task is one unit, and each sub-orchestrator is one more unit. A sub-orchestrator is a workstream conversation that has a running task, an open proposal or a pending wake record. The Global target counts every running task and every active workstream, so a workstream with 3 running tasks gives `W = 4` and an 80 minute interval at the defaults. A workstream target counts only its own tasks, because depth stays flat. The due time is the previous check plus `interval(W)` for the current `W`, recomputed whenever a task starts or ends, so the interval shortens again as work finishes. Jitter is none by default, which keeps the function testable. Setting the maximum equal to the base turns the backoff off. Tradeoff: the more work there is, the longer a stuck or drifting task can go unnoticed, up to the maximum. Event-driven wakes (a task failed, an approval is waiting, sign-in needed) and the wall-time bound are not delayed, and the 60 second debounce still applies.
+
+- **Stuck.** Deterministic, no model call. A task is stuck when it has had no session event and no worktree change since the previous check, or when its attempt is over its wall-time bound. The wall-time bound fires when crossed, not at the next check. The result is the "Task stalled" wake event. Its model turn proposes recovery: cancel and retry (phase 2), revise (phase 4).
+- **Scope creep.** The daemon gathers facts in code: the task objective and, when linked, its workstream objective; the changed file names and the diff stat against the base commit, capped at 4 KiB; the file count and line count at the previous check. A task contract has no path scope today, so the judgment of "does this change match the objective" needs a model turn. That turn runs only when the change set grew since the last check, so a quiet task costs no tokens. Contents of diffs and session output are never sent.
+- **Outcome.** A finding is a notice with the evidence (the files and the objective) and a proposal: cancel, or in phase 4 revise with a narrower objective. The check never cancels, revises or edits anything itself. The user approves the card.
+- **Level and limits.** Scope-check turns are wake turns: Restricted, counted against the N9 limits if the user set any. In monitoring mode `off`, the stuck check still runs as a deterministic notice and the scope-check turn does not.
+- **Interval change.** A new base or maximum applies at the next check without a daemon restart. A manual "Check now" is not part of this design.
 
 ### Visible crew
 
@@ -83,7 +101,7 @@ Rules:
 | See live agent output | Agents and Sessions view, `sessions.events` with replay | None |
 | Stop or restart a worker | `tasks.cancel`, `tasks.retry` | Phase 2: the orchestrator can propose them |
 | Steer with new instructions | None | Phase 4 `task.revise`: cancel plus a new contract with the added intent, linked to the old task |
-| Type into the worker's terminal | None | Decision N5 |
+| Type into the worker's terminal | None | Not supported (N5) |
 
 ### Secondmates and the "sub-orchestrator" request
 
@@ -174,7 +192,7 @@ The block is fenced with the info string `mcao-actions`. Parser rules: only the 
 
 ### Snapshot content
 
-Target and its scope; projects by id and display name; workstreams with title, state and objective and gate counts; for a workstream target, its objectives and gates; task counts by state and up to 20 non-terminal tasks (id, short title, state, project, workstream); pending delivery approvals count; this conversation's recent proposals and their states; monitoring mode; the action kinds this client can show. Never included: paths, tokens, environment, credentials, diffs, session output, or anything outside this daemon's store.
+Target and its scope; projects by id and display name; workstreams with title, state and objective and gate counts; for a workstream target, its objectives and gates; task counts by state and up to 20 non-terminal tasks (id, short title, state, project, workstream); pending delivery approvals count; this conversation's recent proposals and their states; monitoring mode; the action kinds this client can show. Never included: paths, tokens, environment, credentials, diffs, session output, or anything outside this daemon's store. The one exception is a supervision check turn, which also gets the facts listed under "Supervision checks" for the task being checked.
 
 The snapshot is built by the conversation service, which already builds workstream context for the runtime through `TurnRequest.context`. The runtime keeps no store handle.
 
@@ -199,7 +217,7 @@ Firstmate's `+yolo`, away mode and captain-approved autonomy become explicit gra
 
 The daemon matches each new proposal against active grants. A full match executes and the card says "Approved by standing approval", with a revoke link. Anything outside the scope gets a normal card.
 
-Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, publishing to MCAO's own upstream (N7), and public posts (N6). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N7). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
 
 ## Human control and safety
 
@@ -217,15 +235,16 @@ Never grantable: grant creation or change (only the user, in the UI, never by pr
 - **Failures.** A failed execution shows the reason in plain words, for example "A newer change to this workstream exists. Ask the orchestrator to propose again."
 - **Fixture mode.** Cards render from fixtures. Approve shows "Fixture data: nothing was created", matching how conversation actions label fixture mode today.
 - **Accessibility.** The card is an article with a heading. Buttons name the action ("Approve: create workstream Post-MVP work"). State changes are announced through a polite live region. State is never shown by color alone. Focus stays on the card after a decision.
+- **Settings.** The app has no settings page today, and the only stored preferences are desktop-local (background, sidebar layout). Phase 3 adds a Settings page: a new route and navigation entry. The daemon runs the checks, so these values live in the daemon store (`orchestrator_settings`), not desktop storage. The first controls are the base supervision interval (N10) and the maximum interval for the workload backoff (N11). The same page later hosts the default chat permission level (N3), the optional wake-turn and token limits (N9), and, in phase 5, a project's unattended merge standing approval (N8). Nothing is limited or unattended until the user sets it, except that chat starts at Auto and supervision starts at a 10 minute base and a 240 minute maximum.
 - **Wireframe.** OX-B2 (transcript) and OX-B3 (composer) host the cards. OX-A2 carries the decision count. The wireframe's Global orchestrator says it "can propose a revised plan" but shows no inline approval card in the conversation; decisions live in Review and Decisions (S2, S3). This design adds the inline card and keeps the queue entry.
 
 ## Wire contract and compatibility
 
 - **Capability.** New `orchestrator_actions`. The daemon puts the block instructions in the preamble only when the sending session negotiated it. Without it, the preamble gives context but no block format, and a block that appears anyway is stripped with a notice.
-- **Methods.** `conversations.get` adds an additive `proposals` array. New `actions.resolve` with `proposal_id`, `decision`, `idempotency_key`. Phase 5 adds `grants.create`, `grants.list`, `grants.revoke`. Phase 3 adds `monitoring.get` and `monitoring.set`.
+- **Methods.** `conversations.get` adds an additive `proposals` array. New `actions.resolve` with `proposal_id`, `decision`, `idempotency_key`. Phase 5 adds `grants.create`, `grants.list`, `grants.revoke`. Phase 3 adds `monitoring.get` and `monitoring.set`, which carry the mode, the optional wake limits (N9) and the base and maximum supervision intervals (N10, N11).
 - **Failure codes.** `proposal_not_found`, `proposal_not_pending`, `proposal_expired`, `proposal_invalid`, `action_denied` (envelope), and the underlying codes passed through (`stale_revision`, `not_found`). An older desktop shows an unknown code as a generic failure.
 - **Older daemon, newer desktop.** No capability, no cards. Chat works as today.
-- **Migrations.** Additive: `action_proposals`, `action_proposal_events`, `wake_records`, `standing_grants`, and a `trigger` column on conversation turns (`user` default, `wake`) with `ALTER TABLE ADD COLUMN`. No table rebuild: proposals and results live in their own tables, so the `conversation_entries` kind checks stay unchanged. Clear history extends to the new tables in the same transaction.
+- **Migrations.** Additive: `action_proposals`, `action_proposal_events`, `wake_records`, `standing_grants`, `orchestrator_settings` (one row: supervision interval, wake limits, and later settings), and a `trigger` column on conversation turns (`user` default, `wake`) with `ALTER TABLE ADD COLUMN`. No table rebuild: proposals and results live in their own tables, so the `conversation_entries` kind checks stay unchanged. Clear history extends to the new tables in the same transaction.
 
 ## Phases
 
@@ -233,7 +252,7 @@ Never grantable: grant creation or change (only the user, in the UI, never by pr
 | --- | --- | --- | --- | --- | --- |
 | 1 | The orchestrator knows the app and current state, answers "what is running", and proposes workstreams and objectives the user approves in chat | M | None | 1a alone. 1b and 1c together, then 1d | 1a preamble and snapshot (quick win). 1b store and parser. 1c `actions.resolve` and execution. 1d desktop card |
 | 2 | The orchestrator proposes, starts, cancels and retries tasks, inside the user's envelope | M | 1 | 2a and 2b together | 2a task kinds with envelope check. 2b card for a task contract and Review and Decisions entry |
-| 3 | The orchestrator notices finished, failed and stalled work and speaks up without being asked, within limits | L | 2 | 3a first, then 3b and 3c, then 3d | 3a chat usage receipts. 3b stall detector and wake records. 3c wake scheduler, limits and modes. 3d desktop monitoring chip and labels |
+| 3 | The orchestrator notices finished, failed and stalled work, checks running work for scope creep at a workload-scaled interval, and speaks up without being asked, within limits | L | 2 | 3a first, then 3b and 3c, then 3d and 3e | 3a chat usage receipts. 3b stall detector, scope-check facts and wake records. 3c wake scheduler with workload backoff, limits and modes. 3d desktop monitoring chip and labels. 3e settings store, new Settings page, base and maximum interval |
 | 4 | Scout reports are relayed, scouts promote to ships, projects have a default mode, work lands on approval | L | 2, parts of 3 | 4a to 4d mostly independent | 4a scout relay and promotion. 4b project defaults, base branch, per-project prefix. 4c PR poller and merge action. 4d `task.revise`, holds, project remove |
 | 5 | The user grants scoped standing approvals, leaves in away mode, and gets a brief on return | M | 3, 4c | 5a then 5b | 5a grants with audit and revoke. 5b away mode, return brief, orchestrator notes |
 | 6 | Workstreams that act as secondmates, read-only MCP tools, remote design | L | 5 | Independent | 6a routing by scope. 6b read-only MCP server. 6c remote threat model, design only |
@@ -247,6 +266,9 @@ Daemon tests with the fake CLI harness in `crates/orchestrator-daemon/tests/conv
 - Approval: approve executes once; the same key twice returns the cached result; two keys for one proposal give `proposal_not_pending`; reject then approve conflicts; approve after clear gives `proposal_not_found`; a daemon restart between approve and execute completes once.
 - Duplicates: the same request twice gives one pending card.
 - Levels: the outcome is the same at Restricted, Auto and Full.
+- Settings: with no default level set, a new chat starts at Auto; a saved default survives a daemon restart (never Full); with no wake limits set, no cap applies and a set limit pauses wake turns with "Monitoring paused: limit reached".
+- Supervision: a task with no session event and no worktree change for one effective interval raises a stall notice with no model turn; a task whose change set did not grow since the last check costs no scope-check turn; a changed setting takes effect at the next check without a restart; a finding never cancels or revises a task without an approved proposal.
+- Backoff: with base 10 minutes and maximum 240, work of 1, 2, 3, 4, 5 and 6 units gives 10, 20, 40, 80, 160 and 240 minutes; a sub-orchestrator counts as one unit besides its tasks; with maximum equal to base the interval never grows; the due time is recomputed when the work count changes, so a drop in work shortens the wait; zero units schedules no check; event-driven wakes and the wall-time bound are not delayed.
 - Store: migrations apply on a copy of the previous schema; event tables refuse update and delete.
 - Phase 2: an envelope denial disables approval and records the reason.
 
@@ -263,6 +285,7 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 - `agent-permission-levels.md`, hard limit 2 ("No web, memory, MCP servers or repository instructions" below Full). Option 1 in phase 6 needs an exception for a daemon-owned read-only server.
 - `agent-permission-levels.md` says Codex chat runs with `--ignore-user-config` at Restricted and Auto. The code does not pass it for chat (finding 8). One of them must change.
 - `agent-permission-levels.md` makes Auto the chat default. This design runs wake turns at Restricted. Not a contradiction, but a second rule.
+- `agent-permission-levels.md` (O4) resets Auto, Extended and Full to Auto on restart. N3 adds a user-set default chat level that persists. Full never persists, so Full cannot be the default.
 - `m7-08-conversation-service.md` says reply text "is never parsed into methods". This design parses it into proposals. Proposals still carry no authority until approval, so the safety intent holds, but the sentence must change in the same PR as 1b.
 
 ## Not verified
