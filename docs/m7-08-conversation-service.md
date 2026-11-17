@@ -865,8 +865,9 @@ revokes a grant.
   `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
   `workstream.link_task`. A grant names at most 16 kinds. `decision.hold` and
   `workstream.create` are not grantable in this build.
-- **Never grantable.** The code's `NEVER_GRANTABLE` list has four entries:
-  `project.remove`, `delivery.merge`, `task.cancel` and `task.revise`.
+- **Never grantable.** The code's `NEVER_GRANTABLE` list has three entries:
+  `project.remove`, `task.cancel` and `task.revise`. `delivery.merge` is covered only by
+  a merge grant, which may name no other kind (see `orchestrator-actions.md`).
 - **Expiry.** Required. Default 8 hours, maximum 7 days, minimum 60 seconds.
 - **Uses.** Default 20, maximum 200.
 - **Token budget.** Required, from 1 to 1,000,000,000 tokens. It counts the tokens
@@ -882,9 +883,9 @@ revokes a grant.
 - **Revoke and expiry.** A revoke is immediate. An execution under a grant stops before
   it starts if the grant is revoked, expired, out of uses or out of budget at that
   moment. A use already spent is not refunded.
-- **Not built: the N8 merge grant.** The unattended merge grant needs the merge
-  worker (phase 4c), which is not built. No merge kind exists, so no grant can cover
-  one. `delivery.merge` stays never grantable.
+- **Merge grant (N8).** The unattended merge grant is built with the pull request
+  poller and the merge action (phase 4c). Its rules and the checks that still need a
+  live `gh` are in `orchestrator-actions.md`, "Pull request watching and merge".
 
 ### Away mode and the return brief
 

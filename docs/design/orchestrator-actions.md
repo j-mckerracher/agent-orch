@@ -131,7 +131,7 @@ Phase 2 delivers proposals inside a workstream's scope. Phase 3 reports task eve
 
 - **Scout and ship.** Ship is `Implement` with local review or PR delivery. Scout is `Investigate` with `ReportOnly`. Phase 4 adds the report relay and promotion.
 - **Project modes.** Phase 4 adds a per-project default: `no-mistakes` maps to full verification and PR delivery, `direct-PR` to PR delivery with the project's checks, `local-only` to local review. A proposal that drops below the default shows the drop on the card.
-- **Landing.** Delivery writes a review ref and opens PRs but never merges. Phase 4 adds a PR state poller and a merge action bound to the head commit, per-action approval only.
+- **Landing.** Delivery writes a review ref. The user opens the pull request by hand: the code watches pull requests and never opens one. Phase 4 adds a PR state poller and a merge action bound to the head commit, per-action approval only.
 - **Backlog and holds.** Tasks with dependencies are the queue. Phase 4 adds held decisions with an until date in Review and Decisions.
 - **Stuck recovery.** Phase 3 detects, phase 4 proposes.
 - **Bearings and captain holds.** Phase 1 answers status from the snapshot. Phase 3 adds the return catch-up.
@@ -235,7 +235,47 @@ Firstmate's `+yolo`, away mode and captain-approved autonomy become explicit gra
 
 The daemon matches each new proposal against active grants. A full match executes and the card says "Approved by standing approval", with a revoke link. Anything outside the scope gets a normal card.
 
-Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N7). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N7). `delivery.merge` is covered only by the merge grant in the next section. The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+
+## Pull request watching and merge
+
+The poller reads pull requests and the merge action merges one. The code never opens, closes,
+comments on or edits a pull request. The user opens the pull request by hand. The poller finds it
+by its head branch name (`gh pr list --head`). A pull request from a fork is refused (`cross_repo`)
+and is never bound to a task.
+
+- **Reads.** The poller checks each bound task on an interval: 120 seconds while work is busy, 600
+  seconds when idle, at most 20 calls per tick, and a backoff capped at 15 minutes. A rate-limit
+  answer pauses it for 15 minutes. `pulls.list` is read only. `pulls.refresh` is read only and
+  capped at 20 reads per minute across all tasks, with at least 10 seconds between reads of one task.
+- **The `delivery.merge` card.** Only a Restricted chat turn may propose it. The user approves it
+  per action from an approver session. The card binds the head commit and the merge method,
+  both fixed when the proposal is made. The task must have succeeded with pull request delivery.
+  The code re-reads the pull request at execution. It writes a claim to the ledger before the host
+  call, so a restart cannot merge the same proposal twice. A merge is recorded as merged only when
+  a fresh read shows the bound head merged. A red, pending or missing required check refuses. The
+  host call is `gh pr merge --match-head-commit <sha>` with one of `--merge`, `--squash` or
+  `--rebase`. It never passes `--admin` or `--auto`.
+
+### Unattended merge grant
+
+A merge grant is the only way `delivery.merge` runs without a card. It follows the standing
+approval rules above, with these differences:
+
+- Project scope only, and the merge kind alone. Only the user creates it, with an explicit
+  confirmation.
+- A branch prefix is required. A grant without one is refused.
+- Expiry defaults to 8 hours and is at most 24 hours. Uses default to 5 and are at most 20. The
+  token budget is still required by the form, but a merge starts no task, so it never counts.
+- A use needs the same conditions as a click, checked on a fresh read: the head is the bound one,
+  the pull request is from the same repository, every required check passed, the head branch
+  matches the prefix, the task is in the state above, and the repository is not MCAO's own upstream
+  (refused by name and by owner and name).
+- Each use writes an audit row with the proposal digest and the head commit.
+- Off until the user creates one.
+
+Migrations `0051_pull_requests.sql` and `0052_merge_grants.sql` hold the pull request state and the
+grant columns.
 
 ## Human control and safety
 
@@ -312,6 +352,12 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 
 ## Residual risks, stated honestly
 
+- **Merges are unverified against a live `gh`.** The `gh` JSON field names, `isCrossRepository`,
+  `headRepositoryOwner`, the output of `gh pr checks --required`, the `--repo github.com/owner/name`
+  form, the stderr texts the code matches and `--match-head-commit` on a moved head are not checked
+  against a live `gh`. The user must run the checklist below on a throwaway repository before
+  creating any merge grant or approving any merge. A required check that never reported is invisible
+  to `gh pr checks --required`, so host branch protection is the backstop.
 - **Report relay redaction is word-based.** Emails, IP addresses, short secrets and secrets split by spaces can survive it. The relay turn is Restricted and can only propose, and every proposal needs a user approval. A proposal made after a relay is labelled "Made after reading a report".
 - **`projects.register` restores an archived project.** It clears the archive marker, so a token-only session that knows the root path can un-archive it. The archive is soft and no row is lost. Such a session can already register any path and submit tasks, so it gains no authority.
 - **A workstream grant covers a task on any member project,** even when the task is not linked to the workstream.
@@ -322,10 +368,24 @@ The wrong claims come from the frame text and the missing context. PR 1a replace
 - **The per-turn MCP secret is visible in the process list.** It sits in the Claude `--mcp-config` argv, so a same-user process can read it for the life of the turn. It opens three read-only tools on a loopback port. The 0600 secret-file variant is a later hardening.
 - **The note check is a pattern list.** A sensitive-looking note can pass it. The snapshot redactor is a second layer, not a guarantee.
 
+## Before you enable merges on a real repository
+
+Run each item on a throwaway repository. Do this before creating any merge grant or approving any
+merge.
+
+- The `gh pr view`, `gh pr list` and `gh pr checks` JSON field names the code reads.
+- `isCrossRepository` on a fork pull request, and `headRepositoryOwner` (an object with `login`)
+  for a fork whose owner was deleted.
+- How `gh pr checks --required` reports a required check that never started. Such a check may be
+  absent from the output, so the verdict can read green.
+- That `gh` accepts `--repo github.com/owner/name`.
+- The stderr texts the code matches to classify errors (`classify` in `crates/orchestrator-git/src/github.rs`).
+- That `--match-head-commit` refuses when the head moved after the read.
+- Host branch protection on the default branch: every required check is enforced, including for
+  administrators.
+
 ## Not built
 
-- **Phase 4c, the PR poller and the merge worker.** `delivery.merge` is not parsed, so no merge kind exists. Migration `0046` is reserved and unused.
-- **N8, the unattended merge grant.** It needs the merge worker, so it is not built.
 - **Codex and Copilot MCP wiring.** Only Claude is wired. The other two forms stay design text in `agent-permission-levels.md`.
 - **Automatic scout report relay** (`report_relay_auto`), and the wake events `scout_report_ready` and `pr_changed`. Relay is user-triggered only.
 - **`delivery.request` and `project.register` actions.** Deferred.
