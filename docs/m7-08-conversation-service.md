@@ -51,7 +51,31 @@ Names are proposals so concurrent daemon work does not collide; no new
 - `conversations.get {target, after_sequence?, epoch?}` — page of 100 entries,
   `more`, `next_after_sequence`, `latest_sequence`, latest `turn`, store `epoch`.
   `after_sequence` beyond the latest is `ReplayGap`; a wrong `epoch` is
-  `EpochMismatch`; an unused conversation reads as empty.
+  `EpochMismatch`; an unused conversation reads as empty. Every page also
+  carries `proposals` (DPES-1105): every `pending` proposal of the conversation,
+  plus the newest settled ones (`executed`, `failed`, `rejected`, `superseded`),
+  newest first, at most 100 settled and at most 256 KiB of settled JSON.
+  `proposals_more` is `true` when a settled proposal was left out by either
+  limit; pending proposals are never left out. Each turn carries
+  `action_block`: `null`, `accepted`, `rejected` or `stripped`. A
+  `turn_completed` entry carries the same `action_block` when its turn has one,
+  and omits the field when it has none, so a client can keep a per-turn notice
+  after later messages arrive.
+- `actions.resolve {proposal_id, decision, digest, idempotency_key}` — `decision`
+  is `approve` or `reject`. `digest` is the lowercase hex digest the proposal shows;
+  a value that does not match the stored digest is `proposal_invalid` and changes
+  nothing, so an approval binds the parameters the user saw. A proposal from a
+  turn that did not run at `restricted` is also `proposal_invalid`. Needs the
+  `orchestrator_actions` capability; a session without it gets `-32004`, the
+  capability-not-negotiated error. The daemon has no caller identity on the wire
+  today: `resolve` checks the configured approver against the approval allowlist,
+  and the desktop is the only client that sends `actions.resolve`. How a wire
+  caller is identified is open. Returns `{"proposal": …}`, the proposal as it
+  stands after the call. An approved proposal runs in the same call. A run that
+  fails still returns success, with `state` `failed` and an `error_code`. Codes:
+  `proposal_not_found` (-32021), `proposal_not_pending` (-32022) and
+  `proposal_invalid` (-32023), plus the usual `invalid_params` and
+  `idempotency_in_progress`. See "Action approval and execution" below.
 - `conversations.cancel {target, turn_id, idempotency_key}` — scoped to the
   target's conversation (otherwise `NotFound`). Finishes the turn `cancelled`,
   then asks the runtime to stop (best effort). `cancel_applied=false` when the
@@ -211,12 +235,19 @@ no flag.
   beyond the reply sink. A reply is data, with one exception: a completed reply
   may end with one `mcao-actions` block. The daemon parses that block into
   pending proposals, which carry no authority until the user approves them in a
+<<<<<<< HEAD
   later step. Only a Restricted turn from a session that negotiated
   `orchestrator_actions` gets a parse, and only that turn's instructions name
   the block format. At Auto and Full the agent has a shell and could reach the
   daemon's local token, and the daemon has no caller identity, so those turns
   get no actions (DPES-1105). Any other turn strips the block, records
   `action_block` `stripped`, and creates no proposals. A block that does not
+=======
+  later step. Only a turn at `restricted` in a session that negotiated
+  `orchestrator_actions` gets a parse. Any other turn gets no block format in its
+  preamble, and a block it emits is stripped, recorded as `action_block`
+  `stripped`, and creates no proposals. A block that does not
+>>>>>>> df95c1fcf (feat(daemon): DPES-1105 - Approve and run orchestrator action proposals)
   pass is recorded as `rejected`, and a block in a canceled or failed turn is
   ignored.
 - **Recovery.** Unchanged: the daemon owns the transcript, a turn the daemon
@@ -463,6 +494,104 @@ runs at. Rules:
 **Not covered.** Workstream conversations can be cleared through the API, but
 the desktop does not offer it. Single messages cannot be deleted. No retention
 policy is applied; history is kept until someone clears it.
+
+## Action approval and execution (DPES-1105, PR 1c)
+
+**Who may propose.** Actions exist only for turns at `restricted`, whatever the
+chat level is set to: the chat level does not widen authority. At `auto` and
+`full` the agent has a shell, so it could read the daemon's local token and call
+`actions.resolve` itself, and the daemon has no caller identity to refuse it.
+
+**States.** A proposal moves `pending` to `approved` (approve) or `rejected`
+(reject), then `approved` to `executed` or `failed`. A pending proposal can
+also become `superseded` (a changed request replaces it). A rejected parent fails
+its pending dependents with `dependency_not_executed`; a superseded parent
+supersedes them. `expired` is never entered. Every transition is a conditional update, `WHERE state = ?`, and
+writes one event row with actor `user`. A transition that loses the race is
+`proposal_not_pending`.
+
+**Dependents.** An `objective.add` that names a workstream proposal by ref
+depends on it. Approving it before the parent has `executed` gives
+`proposal_invalid`, and nothing changes.
+
+**Failure codes.** A failed execution stores one of `stale_revision` (the
+workstream or objective moved on since the proposal read it), `not_found`,
+`conflict` (an archived workstream, an illegal transition, a task already
+linked), `invalid` (the proposal no longer fits its scope or names an empty
+change), `dependency_not_executed`, or `internal` (a store failure inside the
+change itself). A store error while the approval, a claim or an outcome is
+written leaves the proposal `approved`, and the next start retries it. The
+failure is logged with a path-free cause, and the daemon still starts.
+
+**One run, one key.** Approve and reject run under the caller's key, through
+the shared idempotency executor. `actions.resolve` holds the idempotency gate
+for the whole call, so no clear or workstream write lands between approve and
+execute. The change itself runs under its own key, `action-` followed by the
+hash of the proposal id, claimed under the `workstreams.*` method it uses. Its
+cached outcome holds only `result_ref` or `error_code`, so a replay tells
+`stale_revision` from `conflict` without re-running anything. Writes made by an
+action record the actor `action:<proposal id>` in the revision history.
+
+**Replays.**
+
+- The same key twice returns the cached result.
+- A second key for an approved proposal gets `proposal_not_pending`.
+- Reject then approve gets `proposal_not_pending`.
+- Approve after the conversation is cleared gets `proposal_not_found`, and so
+  does a replay of that key.
+- The approval allowlist refuses an agent actor, with nothing changed. That is a
+  unit-level check (`the_approval_allowlist_refuses_an_agent_actor`), not a wire
+  guarantee, because the daemon has no caller identity today.
+- A digest that does not match refuses with `proposal_invalid` and changes
+  nothing.
+
+**Refusals are cached.** `proposal_invalid` (including a digest mismatch) and
+`proposal_not_pending` are cached under the caller's key like every refusal, so a
+retry needs a new key. The desktop already uses a new key after any definite
+outcome.
+
+**Restart.** Before the daemon serves a request, every `approved` proposal is
+executed, oldest first in insertion order. An execution claim that a stopped
+process left open is checked against the store first: if the record it would
+create or change is already there, the claim is completed with that record;
+otherwise the change runs once. If that check fails, the proposal stays
+`approved` and the next start retries it. A failure on one proposal is logged
+and the rest still run; startup never fails because of it. Pending proposals are
+never touched at startup.
+
+| Stopped after | Store state | Next start | Same user key on retry |
+| --- | --- | --- | --- |
+| Key claimed, before the approval committed | `pending` | Nothing to do | `idempotency_in_progress` |
+| Approval committed, before the user key completed | `approved` | Executes the change | `idempotency_in_progress` |
+| User key completed, before the change was claimed | `approved` | Executes the change | Cached success, `executed` |
+| Change claimed, before its effect committed | `approved` | Runs the change | Cached success, `executed` |
+| Effect committed, before its claim completed | `approved` | Records the existing record | Cached success, `executed` |
+| Claim completed, before the outcome was recorded | `approved` | Replays the cached outcome | Cached success, `executed` |
+
+The retry column shows what the same user key returns. A key whose process
+stopped before its outcome was recorded returns `idempotency_in_progress`,
+which every method does today. A new key gets the proposal's real state after
+the restart. The desktop's per-click keys (DPES-1105, phase 1d) keep the retry
+case rare.
+
+**Snapshot.** The next turn's snapshot lists each recent proposal with its
+state, and with its outcome: `executed` shows the record it created, and
+`failed` shows the code. A block in a workstream title or in a reply is never
+approved by the agent; only `actions.resolve` changes a proposal.
+
+**Event and audit.** `action_proposal_events` gets one row per transition, with
+actor `user`. Clearing a conversation deletes its proposals, and their events
+stay: the events table is append-only, has no foreign key, and holds digests
+and codes, never parameters or text.
+
+**Tests.** `crates/orchestrator-daemon/src/api_actions_tests.rs` covers each
+kind, replays, refusals, digest checks, stale revisions, dependencies, a
+pending proposal kept past the settled cap, a restart between approve and execute,
+and an update and a revise whose effect committed before a stop.
+`crates/orchestrator-daemon/tests/conversation_runtime.rs` runs approval through
+the real daemon, including the capability refusal (`-32004`), the snapshot
+outcome, a restart between approve and execute, and the same outcome at each
+permission level.
 
 ## Not covered here
 

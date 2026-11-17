@@ -1502,6 +1502,14 @@ fn a_scripted_block_becomes_pending_proposals_and_is_not_in_the_reply() {
     let page = chat.settled(&global());
     assert_eq!(page["turn"]["state"], "completed", "{page}");
     assert_eq!(reply(&page), "Two workstream changes below.\n");
+    // The completed turn's entry names the block outcome, so a client can keep its notice.
+    let completed = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["kind"] == "turn_completed")
+        .unwrap();
+    assert_eq!(completed["action_block"], "accepted", "{page}");
     stop(&layout, daemon, chat);
 
     let store = store_after_stop(&layout);
@@ -1745,11 +1753,10 @@ fn the_same_request_twice_gives_one_pending_proposal() {
     assert_ne!(first_id, second_id);
 }
 
-/// Actions exist only at Restricted: at Auto and Full the agent has a shell and
-/// could reach the daemon's token, so the block is stripped and nothing is
-/// proposed, even with the capability (DPES-1105).
+/// Only a Restricted turn carries proposals. Auto and Full turns in a session that
+/// negotiated the capability get the block stripped: no card, and nothing to approve.
 #[test]
-fn only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block() {
+fn proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let reply_file = script(&layout, "");
@@ -1761,14 +1768,11 @@ fn only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block() {
         ],
     );
     let mut chat = Chat::open(&layout);
-    let mut turn_ids = Vec::new();
+    let mut turns = Vec::new();
     for (level, key) in [("restricted", "m-1"), ("auto", "m-2"), ("full", "m-3")] {
         std::fs::write(
             &reply_file,
-            format!(
-                "Level {level}.\n{}",
-                block_titled(&format!("Level {level}"))
-            ),
+            format!("Level {level}.\n{}", block_titled(&format!("Level {level}"))),
         )
         .unwrap();
         let sent = chat.send_params(json!({
@@ -1782,8 +1786,19 @@ fn only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block() {
         assert_eq!(page["turn"]["state"], "completed", "{page}");
         assert_eq!(page["turn"]["permission_level"], level, "{page}");
         assert_eq!(reply(&page), format!("Level {level}.\n"));
-        turn_ids.push(turn_id);
+        turns.push((level, turn_id));
     }
+
+    // Only the Restricted turn's two cards exist, and they are the ones to approve.
+    let page = chat.get(&global(), 0);
+    let restricted_turn = &turns[0].1;
+    let ids = proposals_of(&page, restricted_turn);
+    assert_eq!(ids.len(), 2, "{page}");
+    assert_eq!(page["proposals"].as_array().unwrap().len(), 2, "{page}");
+    let approved = resolve(&mut chat, &ids[0], "approve", "approve-restricted-0");
+    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
+    let approved = resolve(&mut chat, &ids[1], "approve", "approve-restricted-1");
+    assert_eq!(approved["result"]["proposal"]["state"], "executed", "{approved}");
     stop(&layout, daemon, chat);
 
     // Only the Restricted turn was told the block format.
@@ -1796,18 +1811,21 @@ fn only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block() {
 
     let store = store_after_stop(&layout);
     assert_eq!(
-        block_outcome(&store, &turn_ids[0]),
+        block_outcome(&store, restricted_turn),
         Some(ActionBlockOutcome::Accepted)
     );
-    for turn_id in &turn_ids[1..] {
+    for (level, turn_id) in &turns[1..] {
         assert_eq!(
             block_outcome(&store, turn_id),
-            Some(ActionBlockOutcome::Stripped)
+            Some(ActionBlockOutcome::Stripped),
+            "{level}"
         );
     }
-    let rows = proposal_rows(&store);
-    assert_eq!(rows.len(), 2, "{rows:?}");
-    assert!(rows.iter().all(|row| row.ends_with(" pending")), "{rows:?}");
+    assert_eq!(
+        proposal_rows(&store),
+        ["objective.add executed", "workstream.create executed"]
+    );
+    assert_eq!(store.list_workstreams(None).unwrap().len(), 1);
 }
 
 #[test]
@@ -1919,3 +1937,165 @@ fn a_workstream_revision_must_name_an_objective_of_that_workstream() {
         .collect();
     assert_eq!(rows, ["objective.revise pending"]);
 }
+
+/// The ids of one turn's proposals, in block order.
+fn proposals_of(page: &Value, turn_id: &str) -> Vec<String> {
+    let mut found: Vec<(u64, String)> = page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|proposal| proposal["turn_id"] == turn_id)
+        .map(|proposal| {
+            (
+                proposal["index"].as_u64().unwrap(),
+                proposal["id"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    found.sort();
+    found.into_iter().map(|(_, id)| id).collect()
+}
+
+/// The state one proposal shows on a page.
+fn state_in(page: &Value, id: &str) -> String {
+    page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["id"] == id)
+        .unwrap()["state"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// The digest the daemon shows for one proposal of the global conversation.
+fn digest_of(chat: &mut Chat, id: &str) -> String {
+    let page = chat.get(&global(), 0);
+    page["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["id"] == id)
+        .unwrap()["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// The whole `actions.resolve` response, `result` or `error` included. The digest is
+/// the one the proposal shows, as the desktop sends it.
+fn resolve(chat: &mut Chat, id: &str, decision: &str, key: &str) -> Value {
+    let digest = digest_of(chat, id);
+    chat.call(
+        "actions.resolve",
+        json!({"proposal_id": id, "decision": decision, "digest": digest, "idempotency_key": key}),
+    )
+}
+
+#[test]
+fn an_approved_card_creates_the_workstream_once_and_the_next_snapshot_says_so() {
+    let layout = Layout::new();
+    let reply_file = script(
+        &layout,
+        &format!("Two steps.\n{}", block_titled("Approved work")),
+    );
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    let ids = proposals_of(&page, &turn_id);
+    assert_eq!(ids.len(), 2, "{page}");
+
+    // The same request again adds no card: the first turn's cards are reused.
+    chat.send(&global(), "[fake:script]", "m-2");
+    let page = chat.settled(&global());
+    assert_eq!(page["proposals"].as_array().unwrap().len(), 2, "{page}");
+
+    // A session that did not negotiate the capability cannot approve, and the card stays pending.
+    let digest = digest_of(&mut chat, &ids[0]);
+    let mut bare = Chat::open_without_actions(&layout);
+    let refused = bare.call(
+        "actions.resolve",
+        json!({"proposal_id": ids[0], "decision": "approve", "digest": digest, "idempotency_key": "r-0"}),
+    );
+    // -32004: the method's capability was not negotiated on this session.
+    assert_eq!(refused["error"]["code"], -32004, "{refused}");
+    bare.relay.close();
+    assert_eq!(state_in(&chat.get(&global(), 0), &ids[0]), "pending");
+
+    let first = resolve(&mut chat, &ids[0], "approve", "r-1");
+    assert_eq!(first["result"]["proposal"]["state"], "executed", "{first}");
+    let result_ref = first["result"]["proposal"]["result_ref"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(result_ref.starts_with("workstream-"), "{first}");
+
+    // The same key replays the same result; a second key finds nothing pending.
+    let replay = resolve(&mut chat, &ids[0], "approve", "r-1");
+    assert_eq!(replay["result"], first["result"], "{replay}");
+    let second = resolve(&mut chat, &ids[0], "approve", "r-2");
+    assert_eq!(second["error"]["code"], -32022, "{second}");
+
+    let added = resolve(&mut chat, &ids[1], "approve", "r-3");
+    assert_eq!(added["result"]["proposal"]["state"], "executed", "{added}");
+    let listed = chat.call("workstreams.list", json!({}));
+    assert_eq!(listed["result"].as_array().unwrap().len(), 1, "{listed}");
+
+    // The next turn's snapshot carries the outcome of the approved card.
+    chat.send(&global(), "[fake:echo]", "m-3");
+    let echoed = reply(&chat.settled(&global()));
+    assert!(
+        echoed.contains(&format!(
+            "- workstream.create executed -> {result_ref}: Approved work"
+        )),
+        "{echoed}"
+    );
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        proposal_rows(&store),
+        ["objective.add executed", "workstream.create executed"]
+    );
+    assert_eq!(store.list_workstreams(None).unwrap().len(), 1);
+}
+
+#[test]
+fn a_restart_between_approve_and_execute_completes_once() {
+    let layout = Layout::new();
+    let reply_file = script(
+        &layout,
+        &format!("Two steps.\n{}", block_titled("Restart work")),
+    );
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", reply_file.as_str())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "[fake:script]", "m-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let page = chat.settled(&global());
+    let ids = proposals_of(&page, &turn_id);
+    stop(&layout, daemon, chat);
+
+    // The approval commits, then the process stops before the change runs.
+    let store = store_after_stop(&layout);
+    store.approve_action_proposal(&ids[0], "user").unwrap();
+    drop(store);
+
+    // The next start finishes the approved change, once.
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    let listed = chat.call("workstreams.list", json!({}));
+    assert_eq!(listed["result"].as_array().unwrap().len(), 1, "{listed}");
+    stop(&layout, daemon, chat);
+
+    let store = store_after_stop(&layout);
+    assert_eq!(
+        proposal_rows(&store),
+        ["objective.add pending", "workstream.create executed"]
+    );
+    assert_eq!(store.list_workstreams(None).unwrap().len(), 1);
+}
+

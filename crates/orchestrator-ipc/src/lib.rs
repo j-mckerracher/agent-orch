@@ -139,6 +139,12 @@ pub enum RpcError {
     EpochMismatch,
     /// A history clear was refused because a reply to this conversation is running.
     ConversationBusy,
+    /// No stored action proposal has this id (DPES-1105).
+    ProposalNotFound,
+    /// The action proposal was already decided or superseded (DPES-1105).
+    ProposalNotPending,
+    /// The action proposal cannot run now, such as before its parent executed (DPES-1105).
+    ProposalInvalid,
     Internal,
 }
 
@@ -157,6 +163,9 @@ impl RpcError {
             Self::ReplayGap => -32017,
             Self::EpochMismatch => -32018,
             Self::ConversationBusy => -32019,
+            Self::ProposalNotFound => -32021,
+            Self::ProposalNotPending => -32022,
+            Self::ProposalInvalid => -32023,
             Self::Internal => -32603,
         }
     }
@@ -177,6 +186,9 @@ impl RpcError {
             Self::ReplayGap => "event cursor is ahead of the durable journal",
             Self::EpochMismatch => "event cursor belongs to a different durable journal",
             Self::ConversationBusy => "conversation has a reply in progress",
+            Self::ProposalNotFound => "action proposal was not found",
+            Self::ProposalNotPending => "action proposal is no longer pending",
+            Self::ProposalInvalid => "action proposal cannot be approved now",
             Self::Internal => "internal operation failed",
         }
     }
@@ -286,6 +298,14 @@ pub enum IpcError {
     ReplayGap,
     #[error("event cursor belongs to a different durable journal")]
     EpochMismatch,
+    #[error("RPC conversation has a reply in progress")]
+    ConversationBusy,
+    #[error("RPC action proposal was not found")]
+    ProposalNotFound,
+    #[error("RPC action proposal is no longer pending")]
+    ProposalNotPending,
+    #[error("RPC action proposal cannot be approved now")]
+    ProposalInvalid,
     #[error("event subscription is not active")]
     NoSubscription,
     #[error("local IPC operation failed")]

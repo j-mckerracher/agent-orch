@@ -69,7 +69,8 @@ pub use sqlite_conversations::{
     MAX_WORKSTREAM_ID_BYTES,
 };
 pub use sqlite_actions::{
-    ActionBlockOutcome, ActionProposal, ProposalEvent, ProposalState, TurnBlock,
+    ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
+    TurnBlock, DEPENDENCY_NOT_EXECUTED,
 };
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};

@@ -439,6 +439,9 @@ fn method_capability(method: &str) -> Option<Capability> {
         | "coordinator.clear"
         | "coordinator.remove"
         | "coordinator.restore" => Some(Capability::ConversationHistory),
+        // DPES-1105: approving or rejecting a proposed action. Only a session that
+        // negotiated `orchestrator_actions` can resolve one.
+        "actions.resolve" => Some(Capability::OrchestratorActions),
         _ => None,
     }
 }

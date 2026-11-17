@@ -214,7 +214,7 @@ impl DaemonApi {
             pinned,
         );
         conversations.recover()?;
-        Ok(Self {
+        let api = Self {
             store,
             config,
             executor: None,
@@ -225,7 +225,9 @@ impl DaemonApi {
             local_usage: usage_local::start_local_usage(data_dir),
             conversations,
             catalog_cache,
-        })
+        };
+        api.reconcile_actions();
+        Ok(api)
     }
 
     /// Opens the store and starts the executor, which reconciles the store
@@ -353,6 +355,7 @@ impl RpcHandler for DaemonApi {
             "workstreams.set_gate" => self.workstreams_set_gate(params),
             "workstreams.link_task" => self.workstreams_link_task(params),
             "workstreams.unlink_task" => self.workstreams_unlink_task(params),
+            "actions.resolve" => self.actions_resolve(params),
             _ => Err(RpcError::InvalidParams),
         });
         // Only the method and the error class are reported, never parameters.
@@ -1459,6 +1462,8 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+#[path = "api_actions.rs"]
+mod actions;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]
@@ -1501,6 +1506,9 @@ mod workstreams;
 #[path = "api_review_tests.rs"]
 mod review_tests;
 
+#[cfg(test)]
+#[path = "api_actions_tests.rs"]
+mod actions_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;

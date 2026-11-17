@@ -265,6 +265,14 @@ impl Shared {
     }
 }
 
+/// Whether a turn may carry action proposals (DPES-1105). Only a session that
+/// negotiated `orchestrator_actions` and a turn at `Restricted` qualify. Above
+/// Restricted the agent has a shell, so it could read the daemon's token and call
+/// `actions.resolve` itself, and the daemon has no caller identity to refuse it.
+pub(crate) fn turn_actions(negotiated: bool, level: PermissionLevel) -> bool {
+    negotiated && level == PermissionLevel::Restricted
+}
+
 /// The reply channel for one turn. Cloneable and safe to use from any thread.
 #[derive(Clone)]
 pub(crate) struct ReplySink {
@@ -481,9 +489,8 @@ impl ConversationService {
     /// A level the agent refuses fails the turn with its code and no agent runs.
     /// The level is recorded on the turn only once the agent has started, so a
     /// turn that never launched records none. `actions` is the session's
-    /// negotiated `orchestrator_actions`. Actions are on only for a Restricted
-    /// turn: at Auto and Full the agent has a shell and could reach the daemon's
-    /// local token, and the daemon has no caller identity (DPES-1105).
+    /// negotiated `orchestrator_actions`; it counts only at `Restricted`
+    /// (`turn_actions`).
     pub(crate) fn start(
         &self,
         target: &ConversationTarget,
@@ -491,9 +498,9 @@ impl ConversationService {
         text: &str,
         choice: Option<&Choice>,
         level: PermissionLevel,
-        actions: bool,
+        negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
-        let actions = actions && level == PermissionLevel::Restricted;
+        let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);
