@@ -487,6 +487,11 @@ impl SqliteStore {
     /// the effective proposal id of each action comes back in block order. An action
     /// that matches a pending card returns that card's id.
     ///
+    /// A block is stored whole or not at all. One that would leave the conversation with
+    /// more than 20 pending proposals stores nothing and is recorded as
+    /// [`ActionBlockOutcome::Rejected`], and the list that comes back is empty, as it is
+    /// for a block refused before it got here. The turn still completes.
+    ///
     /// This is a trusted-caller API. It does not check the session's negotiated
     /// capabilities. The daemon applies the `orchestrator_actions` gate, and a caller
     /// must pass [`TurnBlock::Stripped`] when the session did not negotiate it.
@@ -513,14 +518,20 @@ impl SqliteStore {
                 TurnBlock::Stripped => (Some(ActionBlockOutcome::Stripped), Vec::new()),
                 TurnBlock::Rejected => (Some(ActionBlockOutcome::Rejected), Vec::new()),
                 TurnBlock::Accepted(action_block) => {
-                    let effective = insert_block_proposals(
+                    let stored = insert_block_proposals(
                         &mut transaction,
                         &turn.conversation_id,
                         &turn_id,
                         &action_block,
                     )
                     .await?;
-                    (Some(ActionBlockOutcome::Accepted), effective)
+                    // `None`: the block would have left the conversation over its limit of
+                    // pending proposals. Nothing of it was kept, so the turn records it as
+                    // rejected here, in the same transaction that completes the turn.
+                    match stored {
+                        Some(effective) => (Some(ActionBlockOutcome::Accepted), effective),
+                        None => (Some(ActionBlockOutcome::Rejected), Vec::new()),
+                    }
                 }
             };
             if let Some(outcome) = outcome {

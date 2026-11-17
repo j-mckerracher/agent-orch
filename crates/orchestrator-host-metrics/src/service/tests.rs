@@ -375,6 +375,28 @@ fn the_observer_does_not_block_snapshot() {
 }
 
 #[test]
+fn an_observer_stuck_past_the_stale_threshold_makes_every_reading_stale() {
+    let (entered_sender, entered) = mpsc::channel();
+    let (release_sender, release) = mpsc::channel::<()>();
+    let metrics =
+        HostMetrics::start_observed(fixed(full_sample()), DEFAULT_INTERVAL, move |_| {
+            let _ = entered_sender.send(());
+            let _ = release.recv();
+        });
+    entered.recv_timeout(WAIT).unwrap();
+
+    // The sampler thread is stuck in the observer, so no new sample replaces the cache.
+    // Read at the time such a stall would have reached, the readings are stale.
+    assert_eq!(metrics.snapshot().meters[0].state, MeterState::Ok);
+    let later = SystemTime::now() + DEFAULT_INTERVAL * (STALE_AFTER_INTERVALS + 1);
+    for meter in &metrics.snapshot_at(later).meters[..3] {
+        assert_eq!(meter.state, MeterState::Unavailable, "{:?}", meter.meter);
+        assert!(meter.reason.as_deref().unwrap().contains("stale"));
+    }
+    release_sender.send(()).unwrap();
+}
+
+#[test]
 fn a_panicking_observer_does_not_end_the_sampler() {
     let (sender, delivered) = mpsc::channel();
     let mut calls = 0;

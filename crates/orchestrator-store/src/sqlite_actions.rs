@@ -40,7 +40,8 @@ macro_rules! proposal_columns {
 pub enum ActionBlockOutcome {
     /// The block parsed, and its actions are pending proposals.
     Accepted,
-    /// The block was malformed or out of scope, so nothing was stored.
+    /// The block was malformed, out of scope, or would have left the conversation over
+    /// its limit of pending proposals, so nothing was stored.
     Rejected,
     /// The session did not negotiate actions, so the block was dropped unparsed.
     Stripped,
@@ -74,7 +75,9 @@ pub enum TurnBlock {
     Stripped,
     /// A block was present and refused. Nothing is stored.
     Rejected,
-    /// A block was present and valid. Its actions become pending proposals.
+    /// A block was present and valid. Its actions become pending proposals, unless that
+    /// would leave the conversation over its limit: then nothing is stored and the turn
+    /// records [`ActionBlockOutcome::Rejected`].
     Accepted(ActionBlock),
 }
 
@@ -163,6 +166,13 @@ pub struct ProposalEvent {
 
 /// Event `error_code` of a pending proposal failed because its parent did not execute.
 pub const DEPENDENCY_NOT_EXECUTED: &str = "dependency_not_executed";
+
+/// Most pending proposals one conversation may hold. A block that would leave its
+/// conversation above this stores nothing, and its turn records
+/// [`ActionBlockOutcome::Rejected`]. A pending card is at most about 17 KiB, so 20 of
+/// them stay under the 1 MiB IPC body limit, and the user can always open the
+/// conversation and reject.
+const MAX_PENDING_PROPOSALS_PER_SCOPE: usize = 20;
 
 /// Why a resolve call was refused. A refused call writes nothing.
 #[derive(Debug)]
@@ -543,14 +553,25 @@ async fn reload_proposal(
 /// An action the envelope refused (`block.denial`) is stored already `failed`, with
 /// `error_code = action_denied` and its denial key, and gets two events: created
 /// `pending`, then `pending` to `failed`. It is never pending, so it matches no card
-/// and a repeat of the same refused request is a second `failed` card. It still
-/// replaces a pending card with the same subject, as any changed request does.
+/// and a repeat of the same refused request is a second `failed` card. It supersedes
+/// nothing: a pending card with the same subject stays pending.
+///
+/// A block is stored whole or not at all. If it would leave more than
+/// [`MAX_PENDING_PROPOSALS_PER_SCOPE`] cards pending in `scope`, counted after its own
+/// supersedes, everything it wrote is undone (cards, supersedes and events) and the
+/// result is `None`. The transaction goes on, so the caller can still complete the
+/// turn and record the block as [`ActionBlockOutcome::Rejected`].
 pub(crate) async fn insert_block_proposals(
     connection: &mut SqliteConnection,
     scope: &str,
     turn_id: &str,
     block: &ActionBlock,
-) -> Result<Vec<String>, ConversationError> {
+) -> Result<Option<Vec<String>>, ConversationError> {
+    // The cap can only be counted after the last insert, so an over-cap block is undone
+    // back to here, including the cards it superseded.
+    sqlx::query("SAVEPOINT block_proposals")
+        .execute(&mut *connection)
+        .await?;
     let mut effective: Vec<String> = Vec::with_capacity(block.actions().len());
     for (index, action) in block.actions().iter().enumerate() {
         let parent = block
@@ -584,16 +605,22 @@ pub(crate) async fn insert_block_proposals(
             continue;
         }
         // Every pending card found here differs from this action, because identical
-        // ones were matched above. A changed request replaces them.
-        let stale = sqlx::query(
-            "SELECT id, digest FROM action_proposals \
-             WHERE scope = ? AND kind = ? AND subject = ? AND state = 'pending'",
-        )
-        .bind(scope)
-        .bind(kind.as_str())
-        .bind(&canonical.subject)
-        .fetch_all(&mut *connection)
-        .await?;
+        // ones were matched above. A changed request replaces them. A denied card
+        // replaces nothing: it can never be approved, so it must not take away a
+        // card the user still can.
+        let stale = if denial.is_some() {
+            Vec::new()
+        } else {
+            sqlx::query(
+                "SELECT id, digest FROM action_proposals \
+                 WHERE scope = ? AND kind = ? AND subject = ? AND state = 'pending'",
+            )
+            .bind(scope)
+            .bind(kind.as_str())
+            .bind(&canonical.subject)
+            .fetch_all(&mut *connection)
+            .await?
+        };
         for row in stale {
             let old_id: String = row.try_get("id")?;
             let old_digest: String = row.try_get("digest")?;
@@ -663,7 +690,22 @@ pub(crate) async fn insert_block_proposals(
         }
         effective.push(id);
     }
-    Ok(effective)
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM action_proposals WHERE scope = ? AND state = 'pending'",
+    )
+    .bind(scope)
+    .fetch_one(&mut *connection)
+    .await?;
+    let over = usize::try_from(pending).unwrap_or(usize::MAX) > MAX_PENDING_PROPOSALS_PER_SCOPE;
+    if over {
+        sqlx::query("ROLLBACK TO block_proposals")
+            .execute(&mut *connection)
+            .await?;
+    }
+    sqlx::query("RELEASE block_proposals")
+        .execute(&mut *connection)
+        .await?;
+    Ok((!over).then_some(effective))
 }
 
 /// Deletes one conversation's proposals. Runs in the clear transaction with the gate

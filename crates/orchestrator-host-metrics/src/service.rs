@@ -67,13 +67,20 @@ impl HostMetrics {
     /// readings have no `observed_at` and a zero `sample_interval_ms` (those are
     /// filled in when a snapshot is served), so an observer that needs a time takes
     /// its own. Nothing is delivered before the first sample completes, and a sample
-    /// that finishes after the handle is dropped is not delivered.
+    /// that finishes after the handle is dropped is not delivered (a delivery that
+    /// has already started is not recalled).
     ///
     /// The observer runs after the cache holds the sample and with no lock held, so
-    /// a slow observer never delays [`HostMetrics::snapshot`] or dropping the handle.
-    /// It does delay the sampler's next sample by as long as it runs, so it must
-    /// return quickly. A panic inside it is caught and the sampler goes on; the
-    /// observer is called again with the next sample.
+    /// a slow observer never makes [`HostMetrics::snapshot`] wait or delays dropping
+    /// the handle. It does run on the sampler thread, so the next sample waits for
+    /// it. A cache not refreshed within [`STALE_AFTER_INTERVALS`] intervals goes
+    /// stale: `snapshot` then reports every meter that was `ok` as `unavailable`
+    /// until the sampler completes another sample. An observer that blocks that
+    /// long therefore blinds `host.metrics`, and the observer must do a short,
+    /// non-blocking hand-off only (push the readings to a queue or channel and
+    /// return) and never wait on a lock, a file, the network or another thread. A
+    /// panic inside it is caught and the sampler goes on; the observer is called
+    /// again with the next sample.
     pub fn start_observed(
         mut probe: impl Probe,
         interval: Duration,
@@ -95,13 +102,15 @@ impl HostMetrics {
                 let observed = SystemTime::now();
                 {
                     let mut state = worker.lock();
-                    if state.stop {
-                        return;
-                    }
                     state.cached = Some(Cached {
                         observed,
                         meters: meters.clone(),
                     });
+                    // Read last, just before the delivery: a handle dropped while the probe
+                    // ran gets none. A drop after this read does not recall the call.
+                    if state.stop {
+                        return;
+                    }
                 }
                 // No lock is held here, and a panicking observer must not end the sampler.
                 let _ = catch_unwind(AssertUnwindSafe(|| observer(&meters)));

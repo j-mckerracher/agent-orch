@@ -531,14 +531,34 @@ fn is_project_code(code: &str) -> bool {
 }
 
 /// Whether `c` may not appear in a proposed task objective: any control
-/// character except tab, LF and CR, and the bidirectional formatting controls.
-/// The same set `contract::check_free_text` refuses; a test keeps the two in step.
+/// character except tab, LF and CR, the bidirectional formatting controls, and
+/// the characters that render as nothing. The first two are the set
+/// `contract::check_free_text` refuses; a test keeps them in step.
 fn is_disallowed_objective_char(c: char) -> bool {
     let bidi_control = matches!(
         c,
         '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
     );
-    (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) || bidi_control
+    (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) || bidi_control || is_invisible(c)
+}
+
+/// Whether `c` renders as nothing: the soft hyphen, the zero-width space, the line
+/// and paragraph separators, the word joiner and invisible operators, the
+/// byte-order mark and the Unicode tag block. The set the conversation
+/// transcript's `sanitize` strips (with the controls and bidi characters above),
+/// so the card never shows text the task agent reads differently. The zero-width
+/// joiner and non-joiner stay: emoji sequences and several scripts need them.
+fn is_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{200B}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{FEFF}'
+            | '\u{E0000}'..='\u{E007F}'
+    )
 }
 
 fn check(result: Result<(), WorkstreamRuleError>, field: &'static str) -> Result<(), BlockError> {
@@ -684,10 +704,19 @@ impl Action {
                 format!("objective.add:{workstream}/{}", normalize(&add.title))
             }
             Self::ObjectiveRevise(revise) => revise.objective_id.clone(),
-            // The hash keeps the subject inside the store's 512-byte limit.
+            // The hash keeps the subject inside the store's 512-byte limit and holds no
+            // objective text. It covers the agent and the workstream (the id, or the
+            // proposal the ref resolves to) too, so the same objective for another agent
+            // or workstream is another card. NUL ends each part: none of them holds one.
             Self::TaskPropose(propose) => {
-                let objective = Sha256::digest(normalize(&propose.objective).as_bytes());
-                format!("{}/{}", propose.project, hex(&objective))
+                let workstream = propose.workstream_id.as_deref().or(parent).unwrap_or_default();
+                let objective = normalize(&propose.objective);
+                let mut hash = Sha256::new();
+                for part in [objective.as_str(), propose.agent.as_str(), workstream] {
+                    hash.update(part.as_bytes());
+                    hash.update(b"\0");
+                }
+                format!("{}/{}", propose.project, hex(&hash.finalize()))
             }
             Self::TaskCancel(cancel) => cancel.task_id.clone(),
             Self::TaskRetry(retry) => retry.task_id.clone(),
@@ -1351,7 +1380,8 @@ mod tests {
         let second = action.canonical(Some("proposal-2"));
         assert!(first.json.contains(r#""workstream_ref":"proposal-1""#));
         assert_ne!(first.digest, second.digest);
-        assert_eq!(first.subject, second.subject);
+        // The workstream is part of the subject, so another create is another subject.
+        assert_ne!(first.subject, second.subject);
 
         let unlinked = parse(&block(PROPOSE)).expect("valid block");
         assert_eq!(unlinked.parent(0), None);
@@ -1504,10 +1534,11 @@ mod tests {
             parsed.actions()[0].canonical(None)
         };
         let base = canonical_of(PROPOSE);
-        let objective_hash = hex(&Sha256::digest(
-            "add unit tests for the retry module.".as_bytes(),
+        // Normalized objective, agent and workstream (none here), each ended by NUL.
+        let hashed_subject = hex(&Sha256::digest(
+            b"add unit tests for the retry module.\0codex\0\0",
         ));
-        assert_eq!(base.subject, format!("p-3fa9c1d2/{objective_hash}"));
+        assert_eq!(base.subject, format!("p-3fa9c1d2/{hashed_subject}"));
         assert!(base.subject.len() <= 512);
 
         // Same project and objective text up to case and spacing: same subject. A
@@ -1543,6 +1574,32 @@ mod tests {
     }
 
     #[test]
+    fn the_same_objective_for_two_agents_or_two_workstreams_is_two_subjects() {
+        let canonical_of = |text: &str| {
+            let parsed = parse(&block(text)).expect("valid block");
+            parsed.actions()[0].canonical(None)
+        };
+        let base = canonical_of(PROPOSE);
+        let other_agent = canonical_of(&propose(&[("agent", json!("claude-code"))]));
+        let first = canonical_of(&propose(&[("workstream_id", json!("ws-1"))]));
+        let second = canonical_of(&propose(&[("workstream_id", json!("ws-2"))]));
+        let subjects = [&base, &other_agent, &first, &second].map(|canonical| &canonical.subject);
+        for (index, subject) in subjects.iter().enumerate() {
+            assert!(subject.len() <= 512);
+            assert!(subjects[index + 1..].iter().all(|other| other != subject));
+        }
+
+        // A ref stands for the proposal that creates the workstream, so two creates
+        // are two workstreams even when the ref and the objective are the same.
+        let by_ref = propose(&[("workstream_ref", json!("a"))]);
+        let parsed = parse(&block(&format!("{CREATE},{by_ref}"))).expect("valid block");
+        let in_first_create = parsed.actions()[1].canonical(Some("proposal-1"));
+        let in_second_create = parsed.actions()[1].canonical(Some("proposal-2"));
+        assert_ne!(in_first_create.subject, in_second_create.subject);
+        assert_ne!(in_first_create.subject, base.subject);
+    }
+
+    #[test]
     fn a_checked_block_denies_only_a_pull_request_task_propose() {
         let pull_request = propose(&[("delivery", json!("PullRequest"))]);
         let text = block(&format!("{CREATE},{PROPOSE},{pull_request},{CANCEL}"));
@@ -1570,11 +1627,50 @@ mod tests {
                 ..base.clone()
             };
             let verdict = validate_proposal(&task_proposal(&action, &envelope), &envelope);
+            // Apart from the invisible characters, which the contract accepts and the
+            // rule refuses, the two refuse the same characters.
             assert_eq!(
                 matches!(verdict, Validation::Invalid(_)),
-                is_disallowed_objective_char(c),
+                is_disallowed_objective_char(c) && !is_invisible(c),
                 "{c:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_task_objective_with_an_invisible_character_is_refused() {
+        let invisible = [
+            ("soft hyphen", '\u{ad}'),
+            ("zero-width space", '\u{200b}'),
+            ("word joiner", '\u{2060}'),
+            ("invisible times", '\u{2062}'),
+            ("invisible plus", '\u{2064}'),
+            ("byte-order mark", '\u{feff}'),
+            ("line separator", '\u{2028}'),
+            ("paragraph separator", '\u{2029}'),
+            ("tag block start", '\u{e0000}'),
+            ("tag letter", '\u{e0041}'),
+            ("tag block end", '\u{e007f}'),
+        ];
+        for (name, c) in invisible {
+            let text = propose(&[(
+                "objective",
+                json!(format!("Add tests{c}for the retry module.")),
+            )]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("objective")),
+                "{name}: {c:?}"
+            );
+        }
+
+        // The joiners that emoji sequences and several scripts need stay allowed.
+        for c in ['\u{200c}', '\u{200d}'] {
+            let text = propose(&[(
+                "objective",
+                json!(format!("Add tests{c}for the retry module.")),
+            )]);
+            assert!(parse(&block(&text)).is_ok(), "{c:?}");
         }
     }
 

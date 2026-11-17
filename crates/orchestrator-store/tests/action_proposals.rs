@@ -1263,7 +1263,7 @@ fn a_denied_proposal_is_not_approvable_and_creates_no_pending_card() {
     let target = ConversationTarget::Global;
 
     // The same task is pending first. A later request for it that the envelope refuses
-    // replaces that card, as any changed request does, and leaves no pending card.
+    // is stored failed and takes nothing away: the earlier card stays pending.
     begin(&store, &target, "t1");
     let pending = store
         .complete_conversation_turn("t1", checked(BlockScope::Global, PROPOSE_TASK))
@@ -1279,10 +1279,12 @@ fn a_denied_proposal_is_not_approvable_and_creates_no_pending_card() {
         .unwrap()
         .unwrap()
         .remove(0);
-    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+    let still_pending = store.pending_action_proposals(10).unwrap();
+    assert_eq!(still_pending.len(), 1);
+    assert_eq!(still_pending[0].id, pending[0]);
     assert_eq!(
         store.action_proposal(&pending[0]).unwrap().unwrap().state,
-        ProposalState::Superseded
+        ProposalState::Pending
     );
 
     // Nothing moves a denied proposal: not approve, not reject, not an outcome.
@@ -1333,7 +1335,259 @@ fn a_denied_proposal_is_not_approvable_and_creates_no_pending_card() {
     ));
     store.reject_action_proposal(&ids[0], "user").unwrap();
     assert_eq!(store.action_proposal_events(&ids[1]).unwrap().len(), 2);
-    assert!(store.pending_action_proposals(10).unwrap().is_empty());
+    // Only the card from the first turn is left pending.
+    let left = store.pending_action_proposals(10).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id, pending[0]);
+}
+
+#[test]
+fn a_denied_proposal_never_supersedes_a_pending_one() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let target = ConversationTarget::Global;
+
+    // One pending card, and a changed request for the same subject that the envelope
+    // refuses. They share a subject (same project, objective, agent, no workstream)
+    // and differ only in delivery, so the digests differ.
+    begin(&store, &target, "t1");
+    let pending = store
+        .complete_conversation_turn("t1", checked(BlockScope::Global, PROPOSE_TASK))
+        .unwrap()
+        .unwrap();
+    begin(&store, &target, "t2");
+    let denied = store
+        .complete_conversation_turn(
+            "t2",
+            checked(BlockScope::Global, PROPOSE_TASK_AS_PULL_REQUEST),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(denied, vec![proposal_id("t2", 0)]);
+
+    // The denied card is stored failed. The pending one is untouched: still pending,
+    // with its single creation event and no superseded event.
+    let denied = store.action_proposal(&denied[0]).unwrap().unwrap();
+    assert_eq!(denied.state, ProposalState::Failed);
+    assert_eq!(denied.denial.as_deref(), Some("delivery_not_authorized"));
+    let kept = store.action_proposal(&pending[0]).unwrap().unwrap();
+    assert_eq!(kept.state, ProposalState::Pending);
+    assert_eq!(store.action_proposal_events(&pending[0]).unwrap().len(), 1);
+    assert_eq!(store.pending_action_proposals(10).unwrap().len(), 1);
+
+    // The user can still approve the card the denied one did not replace.
+    store.approve_action_proposal(&pending[0], "user").unwrap();
+
+    // The same holds inside one block: a refused request after a pending one with the
+    // same subject leaves that card pending.
+    begin(&store, &target, "t3");
+    let both = format!("{PROPOSE_TASK}, {PROPOSE_TASK_AS_PULL_REQUEST}");
+    let ids = store
+        .complete_conversation_turn("t3", checked(BlockScope::Global, &both))
+        .unwrap()
+        .unwrap();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        store.action_proposal(&ids[0]).unwrap().unwrap().state,
+        ProposalState::Pending
+    );
+    assert_eq!(
+        store.action_proposal(&ids[1]).unwrap().unwrap().state,
+        ProposalState::Failed
+    );
+    assert_eq!(store.pending_action_proposals(10).unwrap().len(), 1);
+}
+
+/// `count` `task.propose` actions with distinct objectives, numbered from `first`, so
+/// none matches or replaces another.
+fn task_requests(first: usize, count: usize) -> String {
+    (first..first + count)
+        .map(|number| {
+            format!(
+                r#"{{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Task number {number}.", "agent": "codex"}}"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// How many proposals of `target` are pending.
+fn pending_in(store: &SqliteStore, target: &ConversationTarget) -> usize {
+    store
+        .action_proposals(target, 100)
+        .unwrap()
+        .iter()
+        .filter(|proposal| proposal.state == ProposalState::Pending)
+        .count()
+}
+
+/// Fills the global conversation with 20 pending task proposals, the most it may hold
+/// (`MAX_PENDING_PROPOSALS_PER_SCOPE`), in two turns because a block holds at most 10
+/// actions. Returns their ids, numbered from 0.
+fn fill_the_global_conversation(store: &SqliteStore) -> Vec<String> {
+    let mut ids = Vec::new();
+    for (turn, first) in [("fill-1", 0), ("fill-2", 10)] {
+        begin(store, &ConversationTarget::Global, turn);
+        let block = accepted(BlockScope::Global, &task_requests(first, 10));
+        ids.extend(
+            store
+                .complete_conversation_turn(turn, block)
+                .unwrap()
+                .unwrap(),
+        );
+    }
+    assert_eq!(ids.len(), 20);
+    assert_eq!(pending_in(store, &ConversationTarget::Global), 20);
+    ids
+}
+
+#[test]
+fn a_scope_with_20_pending_proposals_stores_no_more_and_the_block_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    let ids = fill_the_global_conversation(&store);
+
+    // A block that would take the conversation to 21 stores nothing, not even the actions
+    // of it that would fit. The turn still completes, and it records the block as rejected
+    // in the same transaction, so the daemon does not need a second attempt.
+    begin(&store, &global, "t3");
+    let over = accepted(BlockScope::Global, &task_requests(20, 1));
+    assert_eq!(store.complete_conversation_turn("t3", over).unwrap(), Some(Vec::new()));
+    let turn = store.conversation_turn("t3").unwrap().unwrap();
+    assert_eq!(turn.state, TurnState::Completed);
+    assert_eq!(turn.action_block, Some(ActionBlockOutcome::Rejected));
+    assert!(store
+        .action_proposal(&proposal_id("t3", 0))
+        .unwrap()
+        .is_none());
+    assert_eq!(store.action_proposals(&global, 100).unwrap().len(), 20);
+    assert_eq!(pending_in(&store, &global), 20);
+
+    // A block that replaces a pending card leaves the count where it was, so it fits at
+    // the cap. Same project, objective and agent as task 1, another delivery.
+    begin(&store, &global, "t4");
+    let replacement = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Task number 1.", "agent": "codex", "delivery": "ReportOnly"}"#;
+    let stored = store
+        .complete_conversation_turn("t4", accepted(BlockScope::Global, replacement))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored, vec![proposal_id("t4", 0)]);
+    assert_eq!(
+        store.action_proposal(&ids[1]).unwrap().unwrap().state,
+        ProposalState::Superseded
+    );
+    assert_eq!(pending_in(&store, &global), 20);
+
+    // A block of two stores neither when only the second would not fit. One slot is
+    // free here, because a card was rejected.
+    store.reject_action_proposal(&ids[0], "user").unwrap();
+    begin(&store, &global, "t5");
+    let two = accepted(BlockScope::Global, &task_requests(21, 2));
+    assert_eq!(store.complete_conversation_turn("t5", two).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.conversation_turn("t5").unwrap().unwrap().action_block,
+        Some(ActionBlockOutcome::Rejected)
+    );
+    assert!(store
+        .action_proposal(&proposal_id("t5", 0))
+        .unwrap()
+        .is_none());
+    assert_eq!(pending_in(&store, &global), 19);
+
+    // The cap is per conversation: a workstream conversation is not held back by the
+    // full global one.
+    let workstream = ConversationTarget::Workstream("ws-1".to_owned());
+    begin(&store, &workstream, "t6");
+    let linked = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Task number 0.", "agent": "codex", "workstream_id": "ws-1"}"#;
+    let stored = store
+        .complete_conversation_turn("t6", accepted(BlockScope::Workstream("ws-1"), linked))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored, vec![proposal_id("t6", 0)]);
+    assert_eq!(pending_in(&store, &workstream), 1);
+}
+
+#[test]
+fn a_decided_proposal_frees_a_slot_under_the_pending_cap() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    let ids = fill_the_global_conversation(&store);
+
+    // Full: one more is refused.
+    begin(&store, &global, "t3");
+    let next = accepted(BlockScope::Global, &task_requests(20, 1));
+    assert_eq!(store.complete_conversation_turn("t3", next).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.conversation_turn("t3").unwrap().unwrap().action_block,
+        Some(ActionBlockOutcome::Rejected)
+    );
+
+    // Each way a card stops being pending frees one slot, and only one.
+    store.reject_action_proposal(&ids[0], "user").unwrap();
+    store.approve_action_proposal(&ids[1], "user").unwrap();
+    assert_eq!(pending_in(&store, &global), 18);
+    begin(&store, &global, "t4");
+    let stored = store
+        .complete_conversation_turn("t4", accepted(BlockScope::Global, &task_requests(20, 2)))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.len(), 2);
+    assert_eq!(pending_in(&store, &global), 20);
+
+    // Full again: a decided card never counts, and a new one does.
+    begin(&store, &global, "t5");
+    let over = accepted(BlockScope::Global, &task_requests(22, 1));
+    assert_eq!(store.complete_conversation_turn("t5", over).unwrap(), Some(Vec::new()));
+    assert_eq!(
+        store.conversation_turn("t5").unwrap().unwrap().action_block,
+        Some(ActionBlockOutcome::Rejected)
+    );
+    assert_eq!(pending_in(&store, &global), 20);
+}
+
+#[test]
+fn an_over_the_cap_block_records_the_turn_as_rejected_in_one_transaction() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let store = open(directory.path());
+    let global = ConversationTarget::Global;
+    let ids = fill_the_global_conversation(&store);
+    let proposals_before = scalars(&path, PROPOSAL_DUMP);
+    let events_before = scalars(&path, EVENT_DUMP);
+    assert_eq!(proposals_before.len(), 20);
+
+    // The first action replaces pending task 1, which leaves the count at 20. The other
+    // two are new, so the block would end at 22. Everything it wrote is undone, the
+    // replacement included, and one call both completes the turn and records the outcome.
+    begin(&store, &global, "t3");
+    let replacement = r#"{"kind": "task.propose", "project": "p-3fa9c1d2", "objective": "Task number 1.", "agent": "codex", "delivery": "ReportOnly"}"#;
+    let over = format!("{replacement}, {}", task_requests(20, 2));
+    let stored = store
+        .complete_conversation_turn("t3", accepted(BlockScope::Global, &over))
+        .unwrap();
+    assert_eq!(stored, Some(Vec::new()));
+    let turn = store.conversation_turn("t3").unwrap().unwrap();
+    assert_eq!(turn.state, TurnState::Completed);
+    assert_eq!(turn.action_block, Some(ActionBlockOutcome::Rejected));
+
+    // No row of the turn exists, and the 20 cards and their events are byte for byte
+    // what they were: the replaced card is still pending, with no superseded event.
+    assert_eq!(
+        scalars(
+            &path,
+            "SELECT CAST(COUNT(*) AS TEXT) FROM action_proposals WHERE turn_id = 't3'"
+        ),
+        vec!["0"]
+    );
+    assert_eq!(scalars(&path, PROPOSAL_DUMP), proposals_before);
+    assert_eq!(scalars(&path, EVENT_DUMP), events_before);
+    assert_eq!(
+        store.action_proposal(&ids[1]).unwrap().unwrap().state,
+        ProposalState::Pending
+    );
+    assert_eq!(pending_in(&store, &global), 20);
 }
 
 #[test]

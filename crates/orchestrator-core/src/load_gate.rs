@@ -18,8 +18,12 @@
 //! * Readings are rounded to a hundredth of a percent and held as integers, and
 //!   a mean is compared with a limit as an exact product. No float comparison
 //!   decides whether work may start.
+//! * A close or an open is a [`Change`]. [`LoadGate::status`] never takes one,
+//!   so any number of pollers can read the gate without hiding a change from
+//!   the caller that wakes on it. Only [`LoadGate::record`] and
+//!   [`LoadGate::take_change`] take a change, and each one is taken once.
 //!
-//! Updated: 2026-11-17T04:19:04Z.
+//! Updated: 2026-11-17T05:47:09Z.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -226,7 +230,9 @@ pub struct LoadStatus {
     pub meters: [(LoadMeter, Reading); 3],
 }
 
-/// What an evaluation did to the gate. Each close and each open is reported once.
+/// The gate's last move since the previous take. Each close and each open is
+/// reported once, to the first [`LoadGate::record`] or [`LoadGate::take_change`]
+/// that follows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
     None,
@@ -279,6 +285,7 @@ impl Mean {
 
 /// A reading in hundredths of a percent, or `None` when it is not a finite number.
 fn hundredths(percent: f64) -> Option<u16> {
+    // Infinity is no reading, not 100: a broken probe leaves the meter unknown (fails open).
     percent
         .is_finite()
         .then(|| (percent.clamp(0.0, 100.0) * 100.0).round() as u16)
@@ -302,6 +309,10 @@ pub struct LoadGate {
     /// Readings per meter, oldest first, in hundredths of a percent.
     windows: [VecDeque<(Instant, u16)>; 3],
     closed: bool,
+    /// The newest close or open that no `record` or `take_change` has taken. A
+    /// newer one replaces it: a waiter needs the gate's last move, and a close
+    /// then an open leaves it open.
+    untaken: Change,
     /// Whether any sample has reached the gate.
     any_sample: bool,
     /// The newest time the gate has seen.
@@ -315,18 +326,20 @@ impl LoadGate {
             limits,
             windows: Default::default(),
             closed: false,
+            untaken: Change::None,
             any_sample: false,
             latest: None,
         }
     }
 
-    /// Takes effect at the next `record` or `status`, over the readings
-    /// already in the windows.
+    /// Takes effect at the next `record`, `take_change` or `status`, over the
+    /// readings already in the windows.
     pub fn set_limits(&mut self, limits: LoadLimits) {
         self.limits = limits;
     }
 
-    /// Adds one sample taken at `now`, drops readings 60 seconds old, evaluates.
+    /// Adds one sample taken at `now`, drops readings 60 seconds old, evaluates,
+    /// and takes the change (see [`LoadGate::take_change`]).
     pub fn record(&mut self, sample: LoadSample, now: Instant) -> Change {
         let now = self.advance(now);
         self.any_sample = true;
@@ -340,14 +353,26 @@ impl LoadGate {
             }
             window.push_back((now, reading));
         }
-        self.evaluate(now).1
+        self.take_change(now)
     }
 
-    /// Evaluates at `now` without a new sample. A sampler that stops empties
-    /// every window within 60 seconds, and a closed gate then fails open.
+    /// Evaluates at `now` without a new sample and takes the close or open that
+    /// no call has taken yet, if any. The caller that wakes on a change uses this
+    /// when no sample arrives: a sampler that stops empties every window within
+    /// 60 seconds, and a closed gate then fails open.
+    pub fn take_change(&mut self, now: Instant) -> Change {
+        let now = self.advance(now);
+        self.evaluate(now);
+        std::mem::replace(&mut self.untaken, Change::None)
+    }
+
+    /// Evaluates at `now` without a new sample. Aging moves the gate on, but this
+    /// takes no change: the second value is the one still waiting for `record` or
+    /// `take_change`, and reading it any number of times leaves it there.
     pub fn status(&mut self, now: Instant) -> (LoadStatus, Change) {
         let now = self.advance(now);
-        self.evaluate(now)
+        let status = self.evaluate(now);
+        (status, self.untaken)
     }
 
     /// Time never runs backwards inside the gate. Callers on different threads
@@ -361,7 +386,8 @@ impl LoadGate {
         now
     }
 
-    fn evaluate(&mut self, now: Instant) -> (LoadStatus, Change) {
+    /// Moves the gate to `now` and records a close or open in `untaken`.
+    fn evaluate(&mut self, now: Instant) -> LoadStatus {
         let limits = self.limits;
         let any_sample = self.any_sample;
         let mut means: [Option<Mean>; 3] = [None; 3];
@@ -414,12 +440,12 @@ impl LoadGate {
         } else {
             None
         };
-        let change = match (was_closed, self.closed) {
-            (false, true) => Change::Closed,
-            (true, false) => Change::Opened,
-            _ => Change::None,
-        };
-        (LoadStatus { hold, meters }, change)
+        match (was_closed, self.closed) {
+            (false, true) => self.untaken = Change::Closed,
+            (true, false) => self.untaken = Change::Opened,
+            _ => {}
+        }
+        LoadStatus { hold, meters }
     }
 }
 
@@ -747,6 +773,9 @@ mod tests {
             reading(&status, LoadMeter::Cpu),
             Reading::Unknown(Unknown::WarmingUp)
         );
+        // Polling took nothing: the open waits for the caller that wakes on it, once.
+        assert_eq!(gate.take_change(later(110)), Change::Opened);
+        assert_eq!(gate.take_change(later(110)), Change::None);
         // At 120 seconds none remain.
         let (status, change) = gate.status(later(120));
         assert_eq!(change, Change::None);
@@ -829,6 +858,36 @@ mod tests {
         assert_eq!(gate.status(at(t0, 59)).1, Change::None);
         assert_eq!(feed(&mut gate, t0, 60..90, cpu(90.0)), [Change::Closed]);
         assert_eq!(feed(&mut gate, t0, 90..120, cpu(10.0)), [Change::Opened]);
+    }
+
+    #[test]
+    fn polling_status_does_not_consume_the_opened_edge() {
+        let t0 = Instant::now();
+        let mut gate = LoadGate::new(LoadLimits::default());
+        assert_eq!(feed(&mut gate, t0, 0..10, cpu(100.0)), [Change::Closed]);
+        assert!(feed(&mut gate, t0, 10..32, cpu(60.0)).is_empty());
+
+        // At the time of reading 32 the window holds 29 readings with a mean of 69.7, under
+        // the reopen level of 70, so a poll that comes before that sample sees the gate
+        // open. A poll takes nothing, however often it asks.
+        for _ in 0..3 {
+            let (status, change) = gate.status(at(t0, 32));
+            assert_eq!(status.hold, None);
+            assert_eq!(change, Change::Opened);
+        }
+        // The sample that follows, and only it, reports the open.
+        assert_eq!(gate.record(cpu(60.0), at(t0, 32)), Change::Opened);
+        assert_eq!(gate.take_change(at(t0, 32)), Change::None);
+        assert_eq!(gate.status(at(t0, 32)).1, Change::None);
+
+        // A newer move replaces one nobody took: a close then an open is the open.
+        let mut gate = LoadGate::new(LoadLimits::default());
+        assert!(feed(&mut gate, t0, 0..30, cpu(75.0)).is_empty());
+        gate.set_limits(LoadLimits::new(70, 85, 90).expect("limits are in range"));
+        assert_eq!(gate.status(at(t0, 29)).1, Change::Closed);
+        gate.set_limits(LoadLimits::new(90, 85, 90).expect("limits are in range"));
+        assert_eq!(gate.take_change(at(t0, 29)), Change::Opened);
+        assert_eq!(gate.take_change(at(t0, 29)), Change::None);
     }
 
     #[test]
