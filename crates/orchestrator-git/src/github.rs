@@ -13,6 +13,8 @@
 //! throwaway repository (plan-4 section 11.5) before any project is put in pull request
 //! mode. Until then a surprise fails closed: unknown text maps to a refusing error, an
 //! unknown check state never counts as passed, and a changed field name fails the parse.
+//! The host-qualified `--repo github.com/owner/name` form and the `isCrossRepository` and
+//! `headRepositoryOwner` (an object with `login`) fields must be checked live too.
 //!
 //! The error type holds only fixed text, so no child output (which may carry a path, a token
 //! or a URL with credentials) can reach a log, a card or an error reply.
@@ -60,11 +62,12 @@ const MAX_REF_CHARS: usize = 255;
 mod wire {
     /// `gh pr view --json` fields.
     pub const VIEW_FIELDS: &str =
-        "number,state,headRefName,baseRefName,headRefOid,mergeable,title,mergeCommit";
+        "number,state,headRefName,baseRefName,headRefOid,mergeable,title,mergeCommit,\
+         isCrossRepository,headRepositoryOwner";
     /// `gh pr checks --required --json` fields. `bucket` is pass, fail, pending, skipping or cancel.
     pub const CHECK_FIELDS: &str = "name,bucket";
     /// `gh pr list --json` fields.
-    pub const LIST_FIELDS: &str = "number,state";
+    pub const LIST_FIELDS: &str = "number,state,isCrossRepository,headRepositoryOwner";
 
     pub const STATE_OPEN: &str = "OPEN";
     pub const STATE_MERGED: &str = "MERGED";
@@ -161,10 +164,21 @@ impl RepoRef {
             None if !url.contains("://") => url.split_once(':')?,
             None => return None,
         };
+        // Userinfo may carry a token, so `_` is allowed there; the host is stricter.
+        let plain = |text: &str, extra: &[char]| {
+            text.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(c, '.' | '@' | ':' | '-')
+                    || extra.contains(&c)
+            })
+        };
+        if !plain(authority, &['_']) {
+            return None;
+        }
         let host = authority
             .rsplit_once('@')
             .map_or(authority, |(_, host)| host);
-        if !host.eq_ignore_ascii_case("github.com") {
+        if !plain(host, &[]) || !host.eq_ignore_ascii_case("github.com") {
             return None;
         }
         let path = path.trim_matches('/');
@@ -256,7 +270,9 @@ impl GitHubError {
             | Self::NotMergeable
             | Self::RateLimited => false,
             Self::Timeout => true,
-            Self::Failed(code) => !matches!(code.as_bytes(), b"bad_argument" | b"spawn"),
+            Self::Failed(code) => {
+                !matches!(code.as_bytes(), b"bad_argument" | b"spawn" | b"cross_repo")
+            }
         }
     }
 }
@@ -291,6 +307,11 @@ fn is_head_sha(value: &str) -> bool {
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// The `--repo` value: host-qualified, so `gh` never falls back to its own default host.
+fn repo_arg(repo: &RepoRef) -> String {
+    format!("github.com/{repo}")
+}
+
 /// `gh pr view`.
 pub fn view_args(repo: &RepoRef, number: u64) -> Vec<String> {
     vec![
@@ -298,7 +319,7 @@ pub fn view_args(repo: &RepoRef, number: u64) -> Vec<String> {
         "view".into(),
         number.to_string(),
         "--repo".into(),
-        repo.to_string(),
+        repo_arg(repo),
         "--json".into(),
         wire::VIEW_FIELDS.into(),
     ]
@@ -311,7 +332,7 @@ pub fn checks_args(repo: &RepoRef, number: u64) -> Vec<String> {
         "checks".into(),
         number.to_string(),
         "--repo".into(),
-        repo.to_string(),
+        repo_arg(repo),
         "--required".into(),
         "--json".into(),
         wire::CHECK_FIELDS.into(),
@@ -327,7 +348,7 @@ pub fn find_args(repo: &RepoRef, branch: &str) -> Result<Vec<String>, GitHubErro
         "pr".into(),
         "list".into(),
         "--repo".into(),
-        repo.to_string(),
+        repo_arg(repo),
         "--head".into(),
         branch.to_owned(),
         "--state".into(),
@@ -360,7 +381,7 @@ pub fn merge_args(
         "merge".into(),
         number.to_string(),
         "--repo".into(),
-        repo.to_string(),
+        repo_arg(repo),
         "--match-head-commit".into(),
         head_sha.to_owned(),
         flag.into(),
@@ -401,12 +422,33 @@ fn parse_pr_state(text: &str) -> Result<PrState, GitHubError> {
     }
 }
 
+/// Whether the pull request head lives in `repo` itself, not in a fork. Fails closed: a
+/// missing `isCrossRepository` is an error; a missing head owner (a deleted fork) is a fork.
+fn is_from_repo(item: &Value, repo: &RepoRef) -> Result<bool, GitHubError> {
+    let cross = item
+        .get("isCrossRepository")
+        .and_then(Value::as_bool)
+        .ok_or(GitHubError::Failed("bad_json"))?;
+    let owner = item
+        .get("headRepositoryOwner")
+        .and_then(|owner| owner.get("login"))
+        .and_then(Value::as_str);
+    Ok(!cross && owner.is_some_and(|login| login.eq_ignore_ascii_case(repo.owner())))
+}
+
 /// Reads `gh pr view --json` output into a view with no checks. A different number than the
 /// one asked for, an unknown state or a head that is not 40 hex characters is an error.
-pub fn parse_view(stdout: &[u8], number: u64) -> Result<PullRequestView, GitHubError> {
+pub fn parse_view(
+    stdout: &[u8],
+    number: u64,
+    repo: &RepoRef,
+) -> Result<PullRequestView, GitHubError> {
     let value = parse_json(stdout)?;
     if value.get("number").and_then(Value::as_u64) != Some(number) {
         return Err(GitHubError::Failed("wrong_number"));
+    }
+    if !is_from_repo(&value, repo)? {
+        return Err(GitHubError::Failed("cross_repo"));
     }
     let state = parse_pr_state(text_field(&value, "state")?)?;
     let head_sha = text_field(&value, "headRefOid")?;
@@ -463,11 +505,15 @@ pub fn parse_checks(stdout: &[u8]) -> Result<Vec<CheckRun>, GitHubError> {
 }
 
 /// Picks the open pull request with the highest number, else the highest number of any state.
-pub fn parse_found(stdout: &[u8]) -> Result<Option<u64>, GitHubError> {
+/// A pull request from a fork is skipped, never picked.
+pub fn parse_found(stdout: &[u8], repo: &RepoRef) -> Result<Option<u64>, GitHubError> {
     let value = parse_json(stdout)?;
     let items = value.as_array().ok_or(GitHubError::Failed("bad_json"))?;
     let mut best: Option<(bool, u64)> = None;
     for item in items {
+        if !is_from_repo(item, repo)? {
+            continue;
+        }
         let number = item
             .get("number")
             .and_then(Value::as_u64)
@@ -486,6 +532,33 @@ pub fn parse_found(stdout: &[u8]) -> Result<Option<u64>, GitHubError> {
 /// sign-in.
 pub fn gh_env_policy() -> EnvPolicy {
     EnvPolicy::with_names(std::iter::empty::<&str>())
+}
+
+/// What the `gh` child gets: the allowed environment plus the fixed additions, and a working
+/// directory. Pure, so a test can assert it.
+struct ChildParts {
+    env: Vec<(OsString, OsString)>,
+    cwd: PathBuf,
+}
+
+/// The working directory is the user's home when it is an existing directory (`gh` reads its
+/// own config from there anyway and a home is not world-writable), else the temp directory;
+/// never the repository, so a `gh` config file in the checkout is never read.
+fn child_command_parts<I>(policy: &EnvPolicy, parent: I, home: Option<OsString>) -> ChildParts
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    let mut env = policy.filter(parent);
+    env.extend(
+        wire::CHILD_ENV
+            .iter()
+            .map(|(name, value)| (OsString::from(name), OsString::from(value))),
+    );
+    let cwd = home
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path.is_dir())
+        .unwrap_or_else(std::env::temp_dir);
+    ChildParts { env, cwd }
 }
 
 struct Drained {
@@ -533,6 +606,9 @@ pub struct GhCli {
     env: EnvPolicy,
     /// One `gh` at a time, so a slow host cannot start a thread storm.
     gate: Mutex<()>,
+    view_timeout: Duration,
+    merge_timeout: Duration,
+    max_stdout: usize,
 }
 
 impl GhCli {
@@ -545,10 +621,23 @@ impl GhCli {
     }
 
     pub fn with_program(program: PathBuf) -> Self {
+        Self::with_limits(program, VIEW_TIMEOUT, MERGE_TIMEOUT, MAX_STDOUT_BYTES)
+    }
+
+    /// As [`GhCli::with_program`] with the time and output limits chosen by the caller (tests).
+    pub fn with_limits(
+        program: PathBuf,
+        view_timeout: Duration,
+        merge_timeout: Duration,
+        max_stdout: usize,
+    ) -> Self {
         Self {
             program,
             env: gh_env_policy(),
             gate: Mutex::new(()),
+            view_timeout,
+            merge_timeout,
+            max_stdout,
         }
     }
 
@@ -556,12 +645,17 @@ impl GhCli {
     /// environment, bounded time and output; the child is killed and reaped on timeout.
     fn run_gh(&self, args: &[String], timeout: Duration) -> Result<Finished, GitHubError> {
         let _one_at_a_time = self.gate.lock().unwrap_or_else(PoisonError::into_inner);
+        let parts = child_command_parts(
+            &self.env,
+            std::env::vars_os(),
+            std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")),
+        );
         let mut command = Command::new(&self.program);
-        self.env.apply(&mut command);
         command
-            .envs(wire::CHILD_ENV)
+            .env_clear()
+            .envs(parts.env)
             .args(args)
-            .current_dir(std::env::temp_dir())
+            .current_dir(parts.cwd)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -572,7 +666,7 @@ impl GhCli {
                 GitHubError::Failed("spawn")
             }
         })?;
-        let stdout = drain(child.stdout.take(), MAX_STDOUT_BYTES);
+        let stdout = drain(child.stdout.take(), self.max_stdout);
         let stderr = drain(child.stderr.take(), MAX_STDERR_BYTES);
         let deadline = Instant::now() + timeout;
         let status = loop {
@@ -610,7 +704,7 @@ impl GhCli {
     /// The required checks. `gh pr checks` exits non-zero for pending or failing checks
     /// while still printing JSON, so parseable output wins over the exit status.
     fn required_checks(&self, repo: &RepoRef, number: u64) -> Result<Vec<CheckRun>, GitHubError> {
-        let done = self.run_gh(&checks_args(repo, number), VIEW_TIMEOUT)?;
+        let done = self.run_gh(&checks_args(repo, number), self.view_timeout)?;
         if !done.stdout.is_empty() {
             return parse_checks(&done.stdout);
         }
@@ -636,19 +730,19 @@ impl GitHub for GhCli {
     }
 
     fn find_by_branch(&self, repo: &RepoRef, branch: &str) -> Result<Option<u64>, GitHubError> {
-        let done = self.run_gh(&find_args(repo, branch)?, VIEW_TIMEOUT)?;
+        let done = self.run_gh(&find_args(repo, branch)?, self.view_timeout)?;
         if !done.success {
             return Err(wire::classify(&done.stderr));
         }
-        parse_found(&done.stdout)
+        parse_found(&done.stdout, repo)
     }
 
     fn view(&self, repo: &RepoRef, number: u64) -> Result<PullRequestView, GitHubError> {
-        let done = self.run_gh(&view_args(repo, number), VIEW_TIMEOUT)?;
+        let done = self.run_gh(&view_args(repo, number), self.view_timeout)?;
         if !done.success {
             return Err(wire::classify(&done.stderr));
         }
-        let mut view = parse_view(&done.stdout, number)?;
+        let mut view = parse_view(&done.stdout, number, repo)?;
         match self.required_checks(repo, number) {
             Ok(checks) => view.checks = checks,
             // Could not learn the required set: say so with no checks and no mergeable
@@ -670,7 +764,7 @@ impl GitHub for GhCli {
         method: MergeMethod,
     ) -> Result<(), GitHubError> {
         let args = merge_args(repo, number, head_sha, method)?;
-        let done = self.run_gh(&args, MERGE_TIMEOUT)?;
+        let done = self.run_gh(&args, self.merge_timeout)?;
         if done.success {
             Ok(())
         } else {
@@ -695,7 +789,8 @@ mod tests {
         format!(
             r#"{{"number":7,"state":"{state}","headRefName":"moa/fix","baseRefName":"main",
             "headRefOid":"{SHA}","mergeable":"{mergeable}","title":"Fix it",
-            "mergeCommit":{merge_commit}}}"#
+            "mergeCommit":{merge_commit},
+            "isCrossRepository":false,"headRepositoryOwner":{{"login":"octo"}}}}"#
         )
     }
 
@@ -757,7 +852,7 @@ mod tests {
                 "merge",
                 "7",
                 "--repo",
-                "octo/demo",
+                "github.com/octo/demo",
                 "--match-head-commit",
                 SHA,
                 "--squash"
@@ -812,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn github_argv_values_never_start_with_a_dash() {
+    fn github_argv_values_that_are_not_listed_flags_never_start_with_a_dash() {
         let flags = [
             "--repo",
             "--json",
@@ -836,17 +931,30 @@ mod tests {
     #[test]
     fn github_view_and_checks_argv_name_the_wire_fields() {
         let view = view_args(&repo(), 7);
-        assert_eq!(view[..5], ["pr", "view", "7", "--repo", "octo/demo"]);
+        assert_eq!(
+            view[..5],
+            ["pr", "view", "7", "--repo", "github.com/octo/demo"]
+        );
         assert!(view.last().unwrap().contains("headRefOid"));
+        assert!(view.last().unwrap().contains("isCrossRepository"));
+        assert!(view.last().unwrap().contains("headRepositoryOwner"));
         let checks = checks_args(&repo(), 7);
         assert!(checks.contains(&"--required".to_owned()));
         assert_eq!(checks.last().unwrap(), "name,bucket");
+        let found = find_args(&repo(), "moa/x").unwrap();
+        assert!(found.last().unwrap().contains("isCrossRepository"));
+        assert!(found.last().unwrap().contains("headRepositoryOwner"));
+        for args in [view, checks, found] {
+            assert!(args
+                .windows(2)
+                .any(|w| w == ["--repo", "github.com/octo/demo"].as_slice()));
+        }
     }
 
     #[test]
     fn github_parse_view_reads_an_open_pull_request() {
         let json = view_json("OPEN", "MERGEABLE", "null");
-        let view = parse_view(json.as_bytes(), 7).unwrap();
+        let view = parse_view(json.as_bytes(), 7, &repo()).unwrap();
         assert_eq!(view.state, PrState::Open);
         assert_eq!(view.head_sha, SHA);
         assert_eq!(view.mergeable, Some(true));
@@ -859,13 +967,16 @@ mod tests {
     #[test]
     fn github_parse_view_maps_states_mergeable_and_merge_commit() {
         let json = view_json("CLOSED", "CONFLICTING", "null");
-        let view = parse_view(json.as_bytes(), 7).unwrap();
+        let view = parse_view(json.as_bytes(), 7, &repo()).unwrap();
         assert_eq!((view.state, view.mergeable), (PrState::Closed, Some(false)));
         let json = view_json("OPEN", "UNKNOWN", "null");
-        assert_eq!(parse_view(json.as_bytes(), 7).unwrap().mergeable, None);
+        assert_eq!(
+            parse_view(json.as_bytes(), 7, &repo()).unwrap().mergeable,
+            None
+        );
         let merged = format!(r#"{{"oid":"{SHA}"}}"#);
         let json = view_json("MERGED", "UNKNOWN", &merged);
-        let view = parse_view(json.as_bytes(), 7).unwrap();
+        let view = parse_view(json.as_bytes(), 7, &repo()).unwrap();
         assert_eq!(view.state, PrState::Merged);
         assert_eq!(view.merge_sha.as_deref(), Some(SHA));
     }
@@ -874,26 +985,26 @@ mod tests {
     fn github_parse_view_refuses_what_it_cannot_place() {
         let unknown = view_json("DRAFTISH", "MERGEABLE", "null");
         assert_eq!(
-            parse_view(unknown.as_bytes(), 7),
+            parse_view(unknown.as_bytes(), 7, &repo()),
             Err(GitHubError::Failed("unknown_state"))
         );
         let ok = view_json("OPEN", "MERGEABLE", "null");
         assert_eq!(
-            parse_view(ok.as_bytes(), 8),
+            parse_view(ok.as_bytes(), 8, &repo()),
             Err(GitHubError::Failed("wrong_number"))
         );
         let short = ok.replace(SHA, "abc");
         assert_eq!(
-            parse_view(short.as_bytes(), 7),
+            parse_view(short.as_bytes(), 7, &repo()),
             Err(GitHubError::Failed("bad_head_sha"))
         );
         let upper = ok.replace(SHA, &SHA.to_uppercase());
         assert_eq!(
-            parse_view(upper.as_bytes(), 7),
+            parse_view(upper.as_bytes(), 7, &repo()),
             Err(GitHubError::Failed("bad_head_sha"))
         );
         for junk in ["", "[]", "{", "null", r#"{"number":7}"#] {
-            assert!(parse_view(junk.as_bytes(), 7).is_err(), "{junk}");
+            assert!(parse_view(junk.as_bytes(), 7, &repo()).is_err(), "{junk}");
         }
     }
 
@@ -902,7 +1013,7 @@ mod tests {
         let long = "t".repeat(500);
         let json = view_json("OPEN", "MERGEABLE", "null")
             .replace("Fix it", &format!("a\\u001b[31mb\\n{long}"));
-        let view = parse_view(json.as_bytes(), 7).unwrap();
+        let view = parse_view(json.as_bytes(), 7, &repo()).unwrap();
         assert_eq!(view.title.chars().count(), MAX_TITLE_CHARS);
         assert!(view.title.starts_with("a[31mb"));
         assert!(!view.title.chars().any(char::is_control));
@@ -956,16 +1067,76 @@ mod tests {
         assert!(!checks[0].name.chars().any(char::is_control));
     }
 
+    fn list_item(number: u64, state: &str) -> String {
+        format!(
+            r#"{{"number":{number},"state":"{state}","isCrossRepository":false,
+            "headRepositoryOwner":{{"login":"octo"}}}}"#
+        )
+    }
+
+    fn fork_item(number: u64, state: &str) -> String {
+        format!(
+            r#"{{"number":{number},"state":"{state}","isCrossRepository":true,
+            "headRepositoryOwner":{{"login":"stranger"}}}}"#
+        )
+    }
+
+    fn list(items: &[String]) -> String {
+        format!("[{}]", items.join(","))
+    }
+
     #[test]
     fn github_parse_found_prefers_open_then_highest_number() {
-        let json = r#"[{"number":3,"state":"MERGED"},{"number":9,"state":"CLOSED"},
-            {"number":5,"state":"OPEN"},{"number":4,"state":"OPEN"}]"#;
-        assert_eq!(parse_found(json.as_bytes()), Ok(Some(5)));
-        let closed = r#"[{"number":3,"state":"MERGED"},{"number":9,"state":"CLOSED"}]"#;
-        assert_eq!(parse_found(closed.as_bytes()), Ok(Some(9)));
-        assert_eq!(parse_found(b"[]"), Ok(None));
-        assert!(parse_found(b"{}").is_err());
-        assert!(parse_found(br#"[{"number":1,"state":"ODD"}]"#).is_err());
+        let json = list(&[
+            list_item(3, "MERGED"),
+            list_item(9, "CLOSED"),
+            list_item(5, "OPEN"),
+            list_item(4, "OPEN"),
+        ]);
+        assert_eq!(parse_found(json.as_bytes(), &repo()), Ok(Some(5)));
+        let closed = list(&[list_item(3, "MERGED"), list_item(9, "CLOSED")]);
+        assert_eq!(parse_found(closed.as_bytes(), &repo()), Ok(Some(9)));
+        assert_eq!(parse_found(b"[]", &repo()), Ok(None));
+        assert!(parse_found(b"{}", &repo()).is_err());
+        let odd = list(&[list_item(1, "ODD")]);
+        assert!(parse_found(odd.as_bytes(), &repo()).is_err());
+        // A list entry without the fork fields fails closed.
+        assert!(parse_found(br#"[{"number":1,"state":"OPEN"}]"#, &repo()).is_err());
+    }
+
+    #[test]
+    fn github_a_pull_request_from_a_fork_is_never_found_or_viewed() {
+        // The fork's pull request has the higher number and is open: it is still skipped.
+        let json = list(&[
+            fork_item(12, "OPEN"),
+            list_item(5, "OPEN"),
+            fork_item(13, "OPEN"),
+        ]);
+        assert_eq!(parse_found(json.as_bytes(), &repo()), Ok(Some(5)));
+        let only_forks = list(&[fork_item(12, "OPEN")]);
+        assert_eq!(parse_found(only_forks.as_bytes(), &repo()), Ok(None));
+        // Same owner name but flagged cross-repository, and a different owner not flagged.
+        let flagged = list(&[list_item(5, "OPEN")]).replace("false", "true");
+        assert_eq!(parse_found(flagged.as_bytes(), &repo()), Ok(None));
+        let other_owner = list(&[list_item(5, "OPEN")]).replace("octo", "stranger");
+        assert_eq!(parse_found(other_owner.as_bytes(), &repo()), Ok(None));
+        // A deleted fork has no head owner.
+        let deleted = list(&[list_item(5, "OPEN")]).replace(
+            r#""headRepositoryOwner":{"login":"octo"}"#,
+            r#""headRepositoryOwner":null"#,
+        );
+        assert_eq!(parse_found(deleted.as_bytes(), &repo()), Ok(None));
+
+        let view = view_json("OPEN", "MERGEABLE", "null");
+        let flagged = view.replace("false", "true");
+        let other_owner = view.replace(r#""login":"octo""#, r#""login":"stranger""#);
+        for bad in [flagged, other_owner] {
+            assert_eq!(
+                parse_view(bad.as_bytes(), 7, &repo()),
+                Err(GitHubError::Failed("cross_repo"))
+            );
+        }
+        assert!(!GitHubError::Failed("cross_repo").may_have_reached_host());
     }
 
     #[test]
@@ -1033,7 +1204,7 @@ mod tests {
     }
 
     #[test]
-    fn github_child_environment_carries_no_token_or_host() {
+    fn github_env_policy_allows_no_token_or_host_name() {
         let policy = gh_env_policy();
         for name in [
             "GH_TOKEN",
@@ -1056,6 +1227,63 @@ mod tests {
     }
 
     #[test]
+    fn github_child_command_parts_carry_no_token_or_host_and_a_safe_directory() {
+        let os = |text: &str| OsString::from(text);
+        let parent = [
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/someone"),
+            ("GH_TOKEN", "secret"),
+            ("GITHUB_TOKEN", "secret"),
+            ("GH_HOST", "example.test"),
+            ("AGENT_ORCH_ENV_PASSTHROUGH", "GH_TOKEN"),
+            ("ANTHROPIC_API_KEY", "secret"),
+        ]
+        .map(|(name, value)| (os(name), os(value)));
+        let home = std::env::temp_dir();
+        let parts =
+            child_command_parts(&gh_env_policy(), parent.clone(), Some(home.clone().into()));
+        let names: Vec<&OsString> = parts.env.iter().map(|(name, _)| name).collect();
+        for kept in ["PATH", "HOME", "GH_PROMPT_DISABLED", "NO_COLOR"] {
+            assert!(names.contains(&&os(kept)), "{kept}");
+        }
+        for dropped in [
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_HOST",
+            "AGENT_ORCH_ENV_PASSTHROUGH",
+            "ANTHROPIC_API_KEY",
+        ] {
+            assert!(!names.contains(&&os(dropped)), "{dropped}");
+        }
+        assert_eq!(parts.cwd, home);
+        // A home that does not exist or is not absolute falls back to the temp directory.
+        for bad in [
+            Some(os("/nonexistent-dir/home")),
+            Some(os("relative")),
+            None,
+        ] {
+            let parts = child_command_parts(&gh_env_policy(), parent.clone(), bad);
+            assert_eq!(parts.cwd, std::env::temp_dir());
+        }
+    }
+
+    #[test]
+    fn github_repo_ref_refuses_a_backslash_or_odd_character_in_the_authority() {
+        for url in [
+            "https://evil\\@github.com/octo/demo",
+            "https://github.com\\/octo/demo",
+            "https://user%40x@github.com/octo/demo",
+            "https://us er@github.com/octo/demo",
+            "https://user@git\u{0}hub.com/octo/demo",
+            "ssh://git@github.com\\/octo/demo",
+            "https://git hub.com/octo/demo",
+            "https://u[1]@github.com/octo/demo",
+        ] {
+            assert_eq!(RepoRef::from_remote_url(url), None, "{url}");
+        }
+    }
+
+    #[test]
     fn github_a_missing_program_is_not_available_and_runs_nothing() {
         let cli = GhCli::with_program(PathBuf::from("/nonexistent-dir/definitely-not-gh"));
         assert_eq!(cli.view(&repo(), 7), Err(GitHubError::NotAvailable));
@@ -1071,6 +1299,69 @@ mod tests {
         assert_eq!(
             cli.merge(&repo(), 7, "bad", MergeMethod::Squash),
             Err(GitHubError::Failed("bad_argument"))
+        );
+    }
+
+    /// A stub `gh`: a shell script in its own temp directory, removed on drop. Unix only.
+    #[cfg(unix)]
+    struct StubGh {
+        dir: PathBuf,
+        program: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl StubGh {
+        fn new(label: &str, script: &str) -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = std::env::temp_dir().join(format!("gh-stub-{}-{label}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let program = dir.join("gh");
+            std::fs::write(&program, format!("#!/bin/sh\n{script}\n")).unwrap();
+            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+            Self { dir, program }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for StubGh {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn github_a_gh_that_times_out_is_killed_and_reports_timeout() {
+        // `exec` so the kill lands on the sleeping process itself, not on a shell around it.
+        let stub = StubGh::new("timeout", "exec sleep 30");
+        let cli = GhCli::with_limits(
+            stub.program.clone(),
+            Duration::from_millis(200),
+            Duration::from_millis(200),
+            MAX_STDOUT_BYTES,
+        );
+        let started = Instant::now();
+        assert_eq!(cli.view(&repo(), 7), Err(GitHubError::Timeout));
+        assert_eq!(
+            cli.merge(&repo(), 7, SHA, MergeMethod::Squash),
+            Err(GitHubError::Timeout)
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn github_a_gh_that_prints_too_much_is_capped() {
+        let stub = StubGh::new("flood", "exec head -c 100000 /dev/zero");
+        let cli = GhCli::with_limits(
+            stub.program.clone(),
+            Duration::from_secs(10),
+            Duration::from_secs(10),
+            1024,
+        );
+        assert_eq!(
+            cli.find_by_branch(&repo(), "moa/x"),
+            Err(GitHubError::Failed("output_too_large"))
         );
     }
 }

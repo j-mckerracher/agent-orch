@@ -7,7 +7,7 @@
 //! head move between a check and a merge, checks that turn red, and a merge that lands while
 //! its reply is lost.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use orchestrator_core::landing::{CheckState, MergeMethod, PrState};
@@ -72,6 +72,8 @@ enum AfterView {
 struct FakeState {
     repo: Option<RepoRef>,
     pulls: BTreeMap<(RepoRef, u64), PullRequestView>,
+    /// Pull requests whose head is in a fork: never found, never viewed.
+    cross_repository: BTreeSet<(RepoRef, u64)>,
     calls: Vec<Call>,
     failures: Vec<(Method, VecDeque<GitHubError>)>,
     after_next_view: Vec<AfterView>,
@@ -116,6 +118,18 @@ impl FakeGitHub {
     pub fn set_head(&self, repo: &RepoRef, number: u64, head_sha: &str) {
         if let Some(view) = self.lock().pulls.get_mut(&(repo.clone(), number)) {
             view.head_sha = head_sha.to_owned();
+        }
+    }
+
+    /// Marks a pull request as opened from a fork (or clears the mark). Like the real
+    /// client, `find_by_branch` then skips it and `view` refuses it with `Failed("cross_repo")`.
+    pub fn set_cross_repository(&self, repo: &RepoRef, number: u64, cross: bool) {
+        let key = (repo.clone(), number);
+        let mut state = self.lock();
+        if cross {
+            state.cross_repository.insert(key);
+        } else {
+            state.cross_repository.remove(&key);
         }
     }
 
@@ -206,7 +220,11 @@ impl GitHub for FakeGitHub {
         let found = state
             .pulls
             .iter()
-            .filter(|((r, _), view)| r == repo && view.head_branch == branch)
+            .filter(|((r, number), view)| {
+                r == repo
+                    && view.head_branch == branch
+                    && !state.cross_repository.contains(&(r.clone(), *number))
+            })
             .map(|((_, number), view)| (view.state == PrState::Open, *number))
             .max();
         Ok(found.map(|(_, number)| number))
@@ -220,6 +238,9 @@ impl GitHub for FakeGitHub {
         });
         if let Some(error) = state.take_failure(Method::View) {
             return Err(error);
+        }
+        if state.cross_repository.contains(&(repo.clone(), number)) {
+            return Err(GitHubError::Failed("cross_repo"));
         }
         let seen = state
             .pulls
@@ -364,6 +385,28 @@ mod tests {
         fake.set_pull_request(&repo(), closed);
         assert_eq!(fake.find_by_branch(&repo(), "moa/fix"), Ok(Some(7)));
         assert_eq!(fake.find_by_branch(&repo(), "moa/other"), Ok(None));
+    }
+
+    #[test]
+    fn fake_github_can_script_a_cross_repository_pull_request() {
+        let fake = fake();
+        let mut fork = view(9);
+        fork.head_branch = "moa/fix".to_owned();
+        fake.set_pull_request(&repo(), fork);
+        // Without the mark the higher number wins.
+        assert_eq!(fake.find_by_branch(&repo(), "moa/fix"), Ok(Some(9)));
+        fake.set_cross_repository(&repo(), 9, true);
+        assert_eq!(fake.find_by_branch(&repo(), "moa/fix"), Ok(Some(7)));
+        assert_eq!(
+            fake.view(&repo(), 9),
+            Err(GitHubError::Failed("cross_repo"))
+        );
+        assert!(fake.view(&repo(), 7).is_ok());
+        fake.set_cross_repository(&repo(), 7, true);
+        assert_eq!(fake.find_by_branch(&repo(), "moa/fix"), Ok(None));
+        fake.set_cross_repository(&repo(), 7, false);
+        fake.set_cross_repository(&repo(), 9, false);
+        assert_eq!(fake.find_by_branch(&repo(), "moa/fix"), Ok(Some(9)));
     }
 
     #[test]
