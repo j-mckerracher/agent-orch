@@ -304,15 +304,19 @@ impl ActionBlock {
     /// [`parse_block`] leaves every denial `None`, so a block that was never
     /// checked is never denied. The daemon calls this once, after the scope
     /// checks.
-    pub fn checked(mut self, envelope: &Authorization) -> Self {
-        self.denials = self
-            .actions
-            .iter()
-            .map(|action| match action {
-                Action::TaskPropose(propose) => check_task(propose, envelope).err(),
-                _ => None,
-            })
-            .collect();
+    pub fn checked(self, envelope: &Authorization) -> Self {
+        self.checked_with(|action| match action {
+            Action::TaskPropose(propose) => check_task(propose, envelope).err(),
+            _ => None,
+        })
+    }
+
+    /// Like [`ActionBlock::checked`], with the refusal of each action chosen by `check`. The
+    /// daemon uses it to build the envelope of each task proposal from that proposal's own
+    /// project, which a single envelope cannot do. `check` returns `None` for an action it
+    /// does not refuse.
+    pub fn checked_with(mut self, check: impl Fn(&Action) -> Option<Denial>) -> Self {
+        self.denials = self.actions.iter().map(check).collect();
         self
     }
 
@@ -1725,6 +1729,33 @@ mod tests {
         assert_eq!(checked.parent(1), parsed.parent(1));
         let denials: Vec<_> = (0..5).map(|index| checked.denial(index)).collect();
         assert_eq!(denials, [None, None, Some(Denial::Delivery), None, None]);
+    }
+
+    #[test]
+    fn checked_with_lets_the_caller_choose_each_actions_refusal() {
+        let text = block(&format!("{CREATE},{PROPOSE},{CANCEL}"));
+        let parsed = parse(&text).expect("valid block");
+        // Refuse every task.propose with the verification key and leave the others alone.
+        let refused = parsed.clone().checked_with(|action| match action {
+            Action::TaskPropose(_) => Some(Denial::Verification),
+            _ => None,
+        });
+        let denials: Vec<_> = (0..4).map(|index| refused.denial(index)).collect();
+        assert_eq!(denials, [None, Some(Denial::Verification), None, None]);
+        assert_eq!(refused.actions(), parsed.actions());
+        // A check that refuses nothing leaves the block as if it was never checked.
+        let allowed = parsed.clone().checked_with(|_| None);
+        assert!((0..4).all(|index| allowed.denial(index).is_none()));
+        // `checked` is `checked_with` over the fixed envelope.
+        let by_envelope = parsed.clone().checked(&chat_task_envelope());
+        let same = parsed.checked_with(|action| match action {
+            Action::TaskPropose(propose) => check_task(propose, &chat_task_envelope()).err(),
+            _ => None,
+        });
+        assert_eq!(
+            (0..4).map(|index| by_envelope.denial(index)).collect::<Vec<_>>(),
+            (0..4).map(|index| same.denial(index)).collect::<Vec<_>>()
+        );
     }
 
     #[test]
