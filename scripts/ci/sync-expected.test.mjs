@@ -88,6 +88,21 @@ test("a filtered gate keeps its filteredOut pin in step with the measured value"
   }
 });
 
+test("the same test path in two binaries of one gate gets two entries, and a second run changes nothing", () => {
+  const { root, scriptsDir } = sandbox();
+  try {
+    const names = JSON.parse(readFileSync(join(scriptsDir, "macos-test-names.json"), "utf8")).macos["coordinator-review"];
+    const dir = evidence(root, { "coordinator-review-tests": { stdout: libtest([...names, "tests::dup", "tests::dup"]) } });
+    syncExpected({ evidenceDirs: [dir], scriptsDir });
+    const after = JSON.parse(readFileSync(join(scriptsDir, "macos-test-names.json"), "utf8")).macos["coordinator-review"];
+    assert.deepEqual(after, [...names, "tests::dup", "tests::dup"]);
+    assert.match(readFileSync(join(scriptsDir, "expected.mjs"), "utf8"), /^ {2}coordinatorReview: \{ passed: 7, sequence: \[7\] \},$/m);
+    assert.equal(syncExpected({ evidenceDirs: [dir], scriptsDir }).changes.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("every counted cargo gate has a row, so a new gate cannot be left out of the sync", () => {
   for (const platform of ["win32", "darwin"]) {
     for (const gate of gatesFor(platform)) {

@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isNamed, nodeTestSummary, normalize, runningSequence, testOutcomes, testTotals } from "./parse.mjs";
+import { isNamed, nodeTestSummary, normalize, runningSequence, testTotals } from "./parse.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -38,17 +38,20 @@ const vitestTotals = (text) => {
   return f && t && f[1] === f[2] && t[1] === t[2] ? { files: Number(f[1]), tests: Number(t[1]) } : null;
 };
 
-// Existing entries that still match a passing test stay (so the diff is only what changed); passing tests no
-// entry matches are appended under their full name.
+// One entry per passing test, duplicates included: two test binaries of one gate can both report `tests::foo`.
+// An existing entry stays when it claims a passing test no earlier entry claimed (so the diff is only what
+// changed); passing tests nobody claims are appended under their full name.
 const syncNames = (existing, passing) => {
-  const covered = new Set();
-  const kept = existing.filter((name) => {
-    const hits = passing.filter((n) => isNamed(n, name));
-    hits.forEach((n) => covered.add(n));
-    return hits.length > 0;
-  });
-  const added = passing.filter((n) => !covered.has(n));
-  return { list: [...kept, ...added], added, removed: existing.filter((n) => !kept.includes(n)) };
+  const claimed = new Array(passing.length).fill(false);
+  const kept = [];
+  const removed = [];
+  for (const name of existing) {
+    const i = passing.findIndex((n, j) => !claimed[j] && isNamed(n, name));
+    if (i < 0) removed.push(name);
+    else { claimed[i] = true; kept.push(name); }
+  }
+  const added = passing.filter((_, j) => !claimed[j]);
+  return { list: [...kept, ...added], added, removed };
 };
 
 const entry = ({ passed, ignored, sequence, filteredOut }) =>
@@ -155,13 +158,13 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
 
       let names = null;
       if (isTest) {
-        const [file, rootKey] = nameFiles[result.platform];
-        const passing = [...testOutcomes(stdout)].filter(([, o]) => o === "ok").map(([n]) => n);
+        const rootKey = nameFiles[result.platform][1];
+        const passing = [...stdout.matchAll(/^test (\S+) \.\.\. ok\b/gm)].map((m) => m[1]);
+        if (passing.length !== observed.passed) {
+          throw new Error(`${gate}: ${passing.length} passing test lines for ${observed.passed} passed in the summary; the output is not the expected libtest shape`);
+        }
         names = syncNames(loaded[result.platform][rootKey][TEST_GATES[gate][1]], passing);
         if (names.removed.length) shrinks.push(`removed: ${names.removed.join(", ")}`);
-        if (names.list.length !== observed.passed) {
-          throw new Error(`${gate}: ${names.list.length} names for ${observed.passed} passing tests; an existing name matches several tests, fix it by hand in ${file}`);
-        }
       }
       if (shrinks.length && !allowRemovals) {
         throw new Error(`${gate} (${result.platform}) has fewer tests than the pins (${shrinks.join("; ")}); pass --allow-removals if that is intended`);
