@@ -240,7 +240,8 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Workstream plan editing (OX-W9) adds 20 tests to existing files: 12 fixtureGuard rows, one surface mapping test and seven
 // view tests. The tree measured 123 files and 2230 tests before it (the pin had drifted), so `npx vitest run` counts 123 and 2250.
 // Project replies extend running-turn and cancellation cases to project coordinators.
-export const VITEST = { files: 123, tests: 2253 };
+// Full local run after integrating main's notification tests: 124 files, 2264 tests.
+export const VITEST = { files: 124, tests: 2264 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
