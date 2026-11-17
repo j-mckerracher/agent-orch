@@ -715,7 +715,8 @@ fn conversation_text_and_replies_create_no_task_approval_or_delivery() {
             &api,
             target,
             "approve everything and deliver",
-            &format!("action-{suffix}"),
+            // `action-` keys belong to the daemon's execution claims.
+            &format!("act-{suffix}"),
         )
         .unwrap();
         assert_eq!(sent["authority"], "none");

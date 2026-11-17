@@ -4,7 +4,7 @@
 //! A process-wide mutex serializes claims and effects within the daemon.
 //! Updated: 2026-11-08T12:21:37-07:00.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{IdempotencyStart, SqliteStore, StoreError};
@@ -19,6 +19,10 @@ enum CachedReply {
     Failure(RpcError),
 }
 
+/// Key prefix reserved for execution claims made by approved action proposals
+/// (DPES-1105). Clients may not use it, so they cannot pre-claim one.
+pub(crate) const ACTION_KEY_PREFIX: &str = "action-";
+
 pub(crate) fn run<P: Serialize>(
     store: &SqliteStore,
     gate: &Mutex<()>,
@@ -27,10 +31,25 @@ pub(crate) fn run<P: Serialize>(
     params: &P,
     operation: impl FnOnce() -> Result<Value, RpcError>,
 ) -> Result<Value, RpcError> {
+    if key.starts_with(ACTION_KEY_PREFIX) {
+        return Err(RpcError::InvalidParams);
+    }
+    let held = gate.lock().unwrap_or_else(|error| error.into_inner());
+    run_locked(&held, store, method, key, params, operation)
+}
+
+/// `run` for a caller that already holds the gate. The guard is the proof.
+pub(crate) fn run_locked<P: Serialize>(
+    _held: &MutexGuard<'_, ()>,
+    store: &SqliteStore,
+    method: &str,
+    key: &str,
+    params: &P,
+    operation: impl FnOnce() -> Result<Value, RpcError>,
+) -> Result<Value, RpcError> {
     if !valid_key(key) {
         return Err(RpcError::InvalidParams);
     }
-    let _guard = gate.lock().unwrap_or_else(|error| error.into_inner());
     let fingerprint = fingerprint(method, params)?;
     match store
         .begin_idempotency(key, method, &fingerprint)
@@ -46,13 +65,36 @@ pub(crate) fn run<P: Serialize>(
         IdempotencyStart::Started => {}
     }
 
-    let reply = match operation() {
+    finish(store, method, key, &fingerprint, operation())
+}
+
+/// Startup only: stores `reply` for a key that a stopped process claimed and never completed.
+pub(crate) fn complete_interrupted_locked<P: Serialize>(
+    _held: &MutexGuard<'_, ()>,
+    store: &SqliteStore,
+    method: &str,
+    key: &str,
+    params: &P,
+    reply: Result<Value, RpcError>,
+) -> Result<Value, RpcError> {
+    let fingerprint = fingerprint(method, params)?;
+    finish(store, method, key, &fingerprint, reply)
+}
+
+fn finish(
+    store: &SqliteStore,
+    method: &str,
+    key: &str,
+    fingerprint: &str,
+    reply: Result<Value, RpcError>,
+) -> Result<Value, RpcError> {
+    let reply = match reply {
         Ok(value) => CachedReply::Success(value),
         Err(error) => CachedReply::Failure(error),
     };
     let cached = serde_json::to_value(&reply).map_err(|_| RpcError::Internal)?;
     store
-        .complete_idempotency(key, method, &fingerprint, &cached)
+        .complete_idempotency(key, method, fingerprint, &cached)
         .map_err(map_store_error)?;
     match reply {
         CachedReply::Success(value) => Ok(value),
@@ -100,4 +142,48 @@ fn hex(bytes: &[u8]) -> String {
         value.push(HEX[(byte & 15) as usize] as char);
     }
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    fn store() -> (TempDir, SqliteStore) {
+        let dir = TempDir::new().unwrap();
+        let store = SqliteStore::new(&dir.path().join("store.sqlite")).unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn run_refuses_a_client_key_in_the_action_namespace() {
+        let (_dir, store) = store();
+        let gate = Mutex::new(());
+        let result = run(
+            &store,
+            &gate,
+            "workstreams.create",
+            "action-abc",
+            &json!({}),
+            || panic!("the operation must not run"),
+        );
+        assert_eq!(result, Err(RpcError::InvalidParams));
+    }
+
+    #[test]
+    fn run_locked_accepts_a_key_in_the_action_namespace() {
+        let (_dir, store) = store();
+        let gate = Mutex::new(());
+        let held = gate.lock().unwrap();
+        let result = run_locked(
+            &held,
+            &store,
+            "workstreams.create",
+            "action-abc",
+            &json!({}),
+            || Ok(json!({"ok": true})),
+        );
+        assert_eq!(result, Ok(json!({"ok": true})));
+    }
 }

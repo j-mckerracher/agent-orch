@@ -23,8 +23,8 @@
 use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
-    ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
-    MAX_CONVERSATION_MESSAGE_BYTES,
+    ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget,
+    ConversationTurn, MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
@@ -252,6 +252,7 @@ impl DaemonApi {
         }
         let target = request.target.to_store();
         self.conversations.require_target(&target)?;
+        let (proposals, proposals_more) = self.proposals_page(&target)?;
         let mut page = self
             .store
             .conversation_page(&target, cursor, CONVERSATION_PAGE_SIZE + 1)
@@ -276,6 +277,8 @@ impl DaemonApi {
             "latest_sequence": page.latest_sequence,
             "clear_generation": page.clear_generation,
             "turn": page.latest_turn.as_ref().map(|turn| self.turn_wire(turn)),
+            "proposals": proposals,
+            "proposals_more": proposals_more,
             "epoch": epoch
         }))
     }
@@ -364,15 +367,25 @@ fn entry_json(entry: &ConversationEntry) -> Value {
 
 /// An entry as `conversations.get` returns it. A turn refused for its version
 /// also names the agent and version it refused (DPES-1106), so the desktop can
-/// say which one to pin. Both are read from the turn the daemon recorded.
+/// say which one to pin. Both are read from the turn the daemon recorded. A
+/// completed turn's entry also names what became of its action block (DPES-1105),
+/// so the desktop keeps its notice after the next message.
 fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, RpcError> {
     let mut value = entry_json(entry);
-    if entry.error_code.as_deref() == Some("version_mismatch") {
+    let is_version_mismatch = entry.error_code.as_deref() == Some("version_mismatch");
+    let is_completed = entry.kind == "turn_completed";
+    if is_version_mismatch || is_completed {
         let turn = store
             .conversation_turn(&entry.turn_id)
             .map_err(map_conversation_error)?;
         if let Some(turn) = turn {
-            value["runtime"] = json!({"name": turn.runtime_name, "version": turn.runtime_version});
+            if is_version_mismatch {
+                value["runtime"] =
+                    json!({"name": turn.runtime_name, "version": turn.runtime_version});
+            }
+            if let (true, Some(block)) = (is_completed, turn.action_block) {
+                value["action_block"] = json!(block.as_str());
+            }
         }
     }
     Ok(value)
@@ -404,6 +417,8 @@ fn turn_json(turn: &ConversationTurn) -> Value {
         // levels, and for a turn the agent refused before it ran.
         "permission_level": turn.permission_level.map(PermissionLevel::as_str),
         "permission_profile": turn.permission_profile,
+        // What became of the turn's action block (DPES-1105). Null when it had none.
+        "action_block": turn.action_block.map(ActionBlockOutcome::as_str),
         "created_at": turn.created_at,
         "updated_at": turn.updated_at
     })

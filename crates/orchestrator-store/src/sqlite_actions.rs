@@ -9,10 +9,16 @@
 //! Migration 0037 holds the rules that outside callers cannot break: a
 //! proposal's parameters are fixed, a proposal is deleted only by a history
 //! clear, and events are append-only.
+//!
+//! A pending proposal moves only through [`SqliteStore::approve_action_proposal`],
+//! [`SqliteStore::reject_action_proposal`] and [`SqliteStore::record_action_outcome`].
+//! Each is a compare-and-set from the state it read, and its event commits with it.
+
+use std::future::Future;
 
 use orchestrator_core::orchestrator_action::{digest_hex, proposal_id, ActionBlock, ActionKind};
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Row, SqliteConnection};
+use sqlx::{Row, SqliteConnection, SqlitePool};
 
 use crate::sqlite_conversations::{corrupt, ConversationError, ConversationTarget};
 use crate::{SqliteStore, StoreError};
@@ -147,6 +153,47 @@ pub struct ProposalEvent {
     pub created_at: String,
 }
 
+/// Event `error_code` of a pending proposal failed because its parent did not execute.
+pub const DEPENDENCY_NOT_EXECUTED: &str = "dependency_not_executed";
+
+/// Why a resolve call was refused. A refused call writes nothing.
+#[derive(Debug)]
+pub enum ResolveError {
+    /// No proposal has this id.
+    NotFound,
+    /// The proposal is not in the state the transition needs.
+    NotPending(ProposalState),
+    /// An approved dependent needs its parent executed first.
+    ParentNotExecuted,
+    Store(StoreError),
+}
+
+impl From<StoreError> for ResolveError {
+    fn from(error: StoreError) -> Self {
+        Self::Store(error)
+    }
+}
+
+impl From<sqlx::Error> for ResolveError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Store(StoreError::Database(error))
+    }
+}
+
+/// What an execution produced, recorded by [`SqliteStore::record_action_outcome`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionOutcome<'a> {
+    Executed { result_ref: &'a str },
+    Failed { error_code: &'a str },
+}
+
+impl ActionProposal {
+    /// The workstream id of a workstream-scoped proposal.
+    pub fn scope_workstream(&self) -> Option<&str> {
+        self.scope.strip_prefix("conversation:workstream:")
+    }
+}
+
 impl SqliteStore {
     /// Proposals of one conversation, newest first, at most `limit` of them.
     pub fn action_proposals(
@@ -206,6 +253,257 @@ impl SqliteStore {
                 .collect::<Result<Vec<_>, _>>()
         })
     }
+
+    /// Approved proposals, in the order they were stored. Startup reconcile executes
+    /// these; a pending proposal is never returned.
+    pub fn approved_action_proposals(&self) -> Result<Vec<ActionProposal>, StoreError> {
+        self.call(move |pool| async move {
+            let rows = sqlx::query(concat!(
+                "SELECT ",
+                proposal_columns!(),
+                " FROM action_proposals WHERE state = 'approved' ORDER BY rowid"
+            ))
+            .fetch_all(&pool)
+            .await?;
+            rows.into_iter()
+                .map(decode_proposal)
+                .collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Moves a pending proposal to `approved`. A parent it depends on must already be
+    /// `executed`.
+    pub fn approve_action_proposal(
+        &self,
+        id: &str,
+        actor: &str,
+    ) -> Result<ActionProposal, ResolveError> {
+        let (id, actor) = (id.to_owned(), actor.to_owned());
+        resolve_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let proposal = load_proposal(&mut transaction, &id)
+                .await?
+                .ok_or(ResolveError::NotFound)?;
+            if proposal.state != ProposalState::Pending {
+                return Err(ResolveError::NotPending(proposal.state));
+            }
+            if let Some(parent_id) = &proposal.depends_on {
+                let parent = load_proposal(&mut transaction, parent_id).await?;
+                if parent.map(|parent| parent.state) != Some(ProposalState::Executed) {
+                    return Err(ResolveError::ParentNotExecuted);
+                }
+            }
+            move_state(
+                &mut transaction,
+                &proposal,
+                ProposalState::Approved,
+                None,
+                None,
+                &actor,
+            )
+            .await?;
+            let approved = reload_proposal(&mut transaction, &id).await?;
+            transaction.commit().await?;
+            Ok(approved)
+        })
+    }
+
+    /// Moves a pending proposal to `rejected`, and fails its pending dependents.
+    pub fn reject_action_proposal(
+        &self,
+        id: &str,
+        actor: &str,
+    ) -> Result<ActionProposal, ResolveError> {
+        let (id, actor) = (id.to_owned(), actor.to_owned());
+        resolve_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let proposal = load_proposal(&mut transaction, &id)
+                .await?
+                .ok_or(ResolveError::NotFound)?;
+            if proposal.state != ProposalState::Pending {
+                return Err(ResolveError::NotPending(proposal.state));
+            }
+            move_state(
+                &mut transaction,
+                &proposal,
+                ProposalState::Rejected,
+                None,
+                None,
+                &actor,
+            )
+            .await?;
+            fail_pending_dependents(&mut transaction, &id, &actor).await?;
+            let rejected = reload_proposal(&mut transaction, &id).await?;
+            transaction.commit().await?;
+            Ok(rejected)
+        })
+    }
+
+    /// Records how an approved proposal ended: `executed`, or `failed` with its code,
+    /// which also fails its pending dependents. The same outcome again returns the
+    /// proposal unchanged, and writes nothing.
+    pub fn record_action_outcome(
+        &self,
+        id: &str,
+        outcome: ActionOutcome<'_>,
+        actor: &str,
+    ) -> Result<ActionProposal, ResolveError> {
+        let (id, actor) = (id.to_owned(), actor.to_owned());
+        let (to, result_ref, error_code) = match outcome {
+            ActionOutcome::Executed { result_ref } => {
+                (ProposalState::Executed, Some(result_ref.to_owned()), None)
+            }
+            ActionOutcome::Failed { error_code } => {
+                (ProposalState::Failed, None, Some(error_code.to_owned()))
+            }
+        };
+        resolve_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let proposal = load_proposal(&mut transaction, &id)
+                .await?
+                .ok_or(ResolveError::NotFound)?;
+            if proposal.state == to
+                && proposal.result_ref == result_ref
+                && proposal.error_code == error_code
+            {
+                return Ok(proposal);
+            }
+            if proposal.state != ProposalState::Approved {
+                return Err(ResolveError::NotPending(proposal.state));
+            }
+            move_state(
+                &mut transaction,
+                &proposal,
+                to,
+                result_ref.as_deref(),
+                error_code.as_deref(),
+                &actor,
+            )
+            .await?;
+            if to == ProposalState::Failed {
+                fail_pending_dependents(&mut transaction, &id, &actor).await?;
+            }
+            let recorded = reload_proposal(&mut transaction, &id).await?;
+            transaction.commit().await?;
+            Ok(recorded)
+        })
+    }
+}
+
+/// Runs one resolve transaction. Refusals are the closure's own `Err`; storage
+/// failures arrive as [`ResolveError::Store`].
+fn resolve_call<T, F, Fut>(store: &SqliteStore, operation: F) -> Result<T, ResolveError>
+where
+    T: Send + 'static,
+    F: FnOnce(SqlitePool) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, ResolveError>> + Send + 'static,
+{
+    store
+        .call(move |pool| async move { Ok::<_, StoreError>(operation(pool).await) })
+        .map_err(ResolveError::Store)?
+}
+
+/// Moves `proposal` from its current state to `to` by compare-and-set, and appends its
+/// event in the same transaction. The update touches only the state, the outcome and
+/// `updated_at`, which migration 0037 allows.
+async fn move_state(
+    connection: &mut SqliteConnection,
+    proposal: &ActionProposal,
+    to: ProposalState,
+    result_ref: Option<&str>,
+    error_code: Option<&str>,
+    actor: &str,
+) -> Result<(), ResolveError> {
+    let from = proposal.state;
+    let updated = sqlx::query(
+        "UPDATE action_proposals \
+         SET state = ?, result_ref = ?, error_code = ?, updated_at = CURRENT_TIMESTAMP \
+         WHERE id = ? AND state = ?",
+    )
+    .bind(to.as_str())
+    .bind(result_ref)
+    .bind(error_code)
+    .bind(&proposal.id)
+    .bind(from.as_str())
+    .execute(&mut *connection)
+    .await?;
+    // The row was read in this same immediate transaction, so this only fails if
+    // another writer changed it in between, which the transaction rules out.
+    if updated.rows_affected() != 1 {
+        return Err(ResolveError::NotPending(from));
+    }
+    sqlx::query(
+        "INSERT INTO action_proposal_events \
+         (proposal_id, scope, from_state, to_state, actor, digest, error_code, result_ref) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&proposal.id)
+    .bind(&proposal.scope)
+    .bind(from.as_str())
+    .bind(to.as_str())
+    .bind(actor)
+    .bind(&proposal.digest)
+    .bind(error_code)
+    .bind(result_ref)
+    .execute(&mut *connection)
+    .await?;
+    Ok(())
+}
+
+/// Fails every pending proposal that depends on `parent_id`. Only pending dependents
+/// move: an approved one needed its parent executed, so it cannot still depend on it.
+async fn fail_pending_dependents(
+    connection: &mut SqliteConnection,
+    parent_id: &str,
+    actor: &str,
+) -> Result<(), ResolveError> {
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        proposal_columns!(),
+        " FROM action_proposals WHERE depends_on = ? AND state = 'pending' ORDER BY rowid"
+    ))
+    .bind(parent_id)
+    .fetch_all(&mut *connection)
+    .await?;
+    for row in rows {
+        let dependent = decode_proposal(row)?;
+        move_state(
+            connection,
+            &dependent,
+            ProposalState::Failed,
+            None,
+            Some(DEPENDENCY_NOT_EXECUTED),
+            actor,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn load_proposal(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> Result<Option<ActionProposal>, StoreError> {
+    sqlx::query(concat!(
+        "SELECT ",
+        proposal_columns!(),
+        " FROM action_proposals WHERE id = ?"
+    ))
+    .bind(id)
+    .fetch_optional(&mut *connection)
+    .await?
+    .map(decode_proposal)
+    .transpose()
+}
+
+/// Reads a proposal written earlier in the same transaction.
+async fn reload_proposal(
+    connection: &mut SqliteConnection,
+    id: &str,
+) -> Result<ActionProposal, ResolveError> {
+    load_proposal(connection, id)
+        .await?
+        .ok_or(ResolveError::NotFound)
 }
 
 /// Stores the proposals of an accepted block, inside the transaction that completes
@@ -348,7 +646,8 @@ async fn supersede(
     Ok(())
 }
 
-/// Appends one event. Phase 1 records only the agent's own actions.
+/// Appends one agent event: creation or supersession. Resolve events go through
+/// `move_state`, which also records the user's actor and outcome.
 async fn record_event(
     connection: &mut SqliteConnection,
     id: &str,

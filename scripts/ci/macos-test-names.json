@@ -364,7 +364,7 @@
    "a_snapshot_title_carrying_a_block_yields_no_proposal",
    "a_workstream_revision_must_name_an_objective_of_that_workstream",
    "the_block_format_reaches_the_agent_only_with_the_capability",
-   "only_a_restricted_turn_can_propose_and_auto_or_full_strip_the_block",
+   "proposals_exist_only_for_a_restricted_turn_and_only_their_approval_runs",
    "the_same_request_twice_gives_one_pending_proposal",
    "the_snapshot_names_proposals_by_title_and_never_by_id"
   ],

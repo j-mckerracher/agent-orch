@@ -278,6 +278,26 @@ impl Client {
         )
     }
 
+    /// Approves or rejects one proposed action; see `actions.resolve`.
+    pub fn actions_resolve(
+        &mut self,
+        proposal_id: &str,
+        decision: &str,
+        digest: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::OrchestratorActions,
+            "actions.resolve",
+            json!({
+                "proposal_id": proposal_id,
+                "decision": decision,
+                "digest": digest,
+                "idempotency_key": idempotency_key
+            }),
+        )
+    }
+
     pub fn workspaces_diff(
         &mut self,
         task_id: &str,
@@ -667,7 +687,7 @@ fn read_token_contents(file: &mut File) -> Result<String, IpcError> {
     Ok(token)
 }
 
-fn map_remote(code: i32) -> IpcError {
+pub(crate) fn map_remote(code: i32) -> IpcError {
     match code {
         -32001 => IpcError::Authentication,
         -32002 | -32004 => IpcError::UnsupportedCapability,
@@ -683,6 +703,10 @@ fn map_remote(code: i32) -> IpcError {
         -32016 => IpcError::ResultTooLarge,
         -32017 => IpcError::ReplayGap,
         -32018 => IpcError::EpochMismatch,
+        -32019 => IpcError::ConversationBusy,
+        -32021 => IpcError::ProposalNotFound,
+        -32022 => IpcError::ProposalNotPending,
+        -32023 => IpcError::ProposalInvalid,
         _ => IpcError::Operation,
     }
 }

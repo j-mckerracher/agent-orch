@@ -20,17 +20,17 @@ use super::*;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct GateParams {
-    description: String,
+pub(super) struct GateParams {
+    pub(super) description: String,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct CreateParams {
-    title: String,
+pub(super) struct CreateParams {
+    pub(super) title: String,
     #[serde(default)]
-    summary: String,
-    idempotency_key: String,
+    pub(super) summary: String,
+    pub(super) idempotency_key: String,
 }
 
 #[derive(Deserialize)]
@@ -48,42 +48,42 @@ struct GetParams {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct UpdateParams {
-    workstream_id: String,
-    expected_revision: i64,
+pub(super) struct UpdateParams {
+    pub(super) workstream_id: String,
+    pub(super) expected_revision: i64,
     #[serde(default)]
-    title: Option<String>,
+    pub(super) title: Option<String>,
     #[serde(default)]
-    summary: Option<String>,
+    pub(super) summary: Option<String>,
     #[serde(default)]
-    state: Option<WorkstreamState>,
-    idempotency_key: String,
+    pub(super) state: Option<WorkstreamState>,
+    pub(super) idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct AddObjectiveParams {
-    workstream_id: String,
-    title: String,
+pub(super) struct AddObjectiveParams {
+    pub(super) workstream_id: String,
+    pub(super) title: String,
     #[serde(default)]
-    description: String,
+    pub(super) description: String,
     #[serde(default)]
-    gates: Vec<GateParams>,
-    idempotency_key: String,
+    pub(super) gates: Vec<GateParams>,
+    pub(super) idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct ReviseObjectiveParams {
-    objective_id: String,
-    expected_revision: i64,
+pub(super) struct ReviseObjectiveParams {
+    pub(super) objective_id: String,
+    pub(super) expected_revision: i64,
     #[serde(default)]
-    title: Option<String>,
+    pub(super) title: Option<String>,
     #[serde(default)]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[serde(default)]
-    add_gates: Vec<GateParams>,
-    idempotency_key: String,
+    pub(super) add_gates: Vec<GateParams>,
+    pub(super) idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -116,6 +116,20 @@ struct UnlinkTaskParams {
     idempotency_key: String,
 }
 
+impl UpdateParams {
+    /// Refused before the idempotency claim, so an empty patch is never cached.
+    pub(super) fn is_empty_patch(&self) -> bool {
+        self.title.is_none() && self.summary.is_none() && self.state.is_none()
+    }
+}
+
+impl ReviseObjectiveParams {
+    /// Refused before the idempotency claim, so an empty patch is never cached.
+    pub(super) fn is_empty_patch(&self) -> bool {
+        self.title.is_none() && self.description.is_none() && self.add_gates.is_empty()
+    }
+}
+
 impl DaemonApi {
     pub(super) fn workstreams_create(&self, params: Value) -> Result<Value, RpcError> {
         let request: CreateParams = parse_params(params)?;
@@ -127,16 +141,22 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let id = idempotency::stable_id("workstream", &request.idempotency_key);
-                let workstream = Workstream::new(id, &request.title, &request.summary)
-                    .map_err(|error| map_workstream_error(error.into()))?;
-                let stored = self
-                    .store
-                    .create_workstream(&workstream, LOCAL_USER)
-                    .map_err(map_workstream_error)?;
-                to_json(&stored)
+                self.create_inner(&request, LOCAL_USER)
+                    .map_err(map_workstream_error)
+                    .and_then(|stored| to_json(&stored))
             },
         )
+    }
+
+    /// The create write, shared with action execution. Returns the typed store error.
+    pub(super) fn create_inner(
+        &self,
+        request: &CreateParams,
+        actor: &str,
+    ) -> Result<Workstream, WorkstreamStoreError> {
+        let id = idempotency::stable_id("workstream", &request.idempotency_key);
+        let workstream = Workstream::new(id, &request.title, &request.summary)?;
+        self.store.create_workstream(&workstream, actor)
     }
 
     pub(super) fn workstreams_list(&self, params: Value) -> Result<Value, RpcError> {
@@ -176,7 +196,7 @@ impl DaemonApi {
 
     pub(super) fn workstreams_update(&self, params: Value) -> Result<Value, RpcError> {
         let request: UpdateParams = parse_params(params)?;
-        if request.title.is_none() && request.summary.is_none() && request.state.is_none() {
+        if request.is_empty_patch() {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
@@ -187,19 +207,26 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let updated = self
-                    .store
-                    .update_workstream(
-                        &request.workstream_id,
-                        request.expected_revision,
-                        request.title.as_deref(),
-                        request.summary.as_deref(),
-                        request.state,
-                        LOCAL_USER,
-                    )
-                    .map_err(map_workstream_error)?;
-                to_json(&updated)
+                self.update_inner(&request, LOCAL_USER)
+                    .map_err(map_workstream_error)
+                    .and_then(|updated| to_json(&updated))
             },
+        )
+    }
+
+    /// The update write, shared with action execution. Returns the typed store error.
+    pub(super) fn update_inner(
+        &self,
+        request: &UpdateParams,
+        actor: &str,
+    ) -> Result<Workstream, WorkstreamStoreError> {
+        self.store.update_workstream(
+            &request.workstream_id,
+            request.expected_revision,
+            request.title.as_deref(),
+            request.summary.as_deref(),
+            request.state,
+            actor,
         )
     }
 
@@ -213,28 +240,33 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let id = idempotency::stable_id("objective", &request.idempotency_key);
-                let objective = Objective::new(
-                    id,
-                    &request.workstream_id,
-                    &request.title,
-                    &request.description,
-                    new_gates(0, &request.gates),
-                )
-                .map_err(|error| map_workstream_error(error.into()))?;
-                let stored = self
-                    .store
-                    .add_objective(&objective, LOCAL_USER)
-                    .map_err(map_workstream_error)?;
-                to_json(&stored)
+                self.add_objective_inner(&request, LOCAL_USER)
+                    .map_err(map_workstream_error)
+                    .and_then(|stored| to_json(&stored))
             },
         )
     }
 
+    /// The add-objective write, shared with action execution. Returns the typed store error.
+    pub(super) fn add_objective_inner(
+        &self,
+        request: &AddObjectiveParams,
+        actor: &str,
+    ) -> Result<Objective, WorkstreamStoreError> {
+        let id = idempotency::stable_id("objective", &request.idempotency_key);
+        let objective = Objective::new(
+            id,
+            &request.workstream_id,
+            &request.title,
+            &request.description,
+            new_gates(0, &request.gates),
+        )?;
+        self.store.add_objective(&objective, actor)
+    }
+
     pub(super) fn workstreams_revise_objective(&self, params: Value) -> Result<Value, RpcError> {
         let request: ReviseObjectiveParams = parse_params(params)?;
-        if request.title.is_none() && request.description.is_none() && request.add_gates.is_empty()
-        {
+        if request.is_empty_patch() {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
@@ -245,24 +277,28 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                let current = self
-                    .store
-                    .get_objective(&request.objective_id)
-                    .map_err(map_workstream_error)?;
-                let gates = new_gates(current.gates.len(), &request.add_gates);
-                let revised = self
-                    .store
-                    .revise_objective(
-                        &request.objective_id,
-                        request.expected_revision,
-                        request.title.as_deref(),
-                        request.description.as_deref(),
-                        &gates,
-                        LOCAL_USER,
-                    )
-                    .map_err(map_workstream_error)?;
-                to_json(&revised)
+                self.revise_objective_inner(&request, LOCAL_USER)
+                    .map_err(map_workstream_error)
+                    .and_then(|revised| to_json(&revised))
             },
+        )
+    }
+
+    /// The revise write, shared with action execution. Returns the typed store error.
+    pub(super) fn revise_objective_inner(
+        &self,
+        request: &ReviseObjectiveParams,
+        actor: &str,
+    ) -> Result<Objective, WorkstreamStoreError> {
+        let current = self.store.get_objective(&request.objective_id)?;
+        let gates = new_gates(current.gates.len(), &request.add_gates);
+        self.store.revise_objective(
+            &request.objective_id,
+            request.expected_revision,
+            request.title.as_deref(),
+            request.description.as_deref(),
+            &gates,
+            actor,
         )
     }
 

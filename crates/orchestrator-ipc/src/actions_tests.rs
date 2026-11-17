@@ -2,8 +2,16 @@
 //! `orchestrator_actions` capability name (DPES-1105). No socket: each case
 //! calls the trait directly.
 
-use crate::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
+use crate::client::map_remote;
+use crate::{
+    CallContext, Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig,
+};
 use serde_json::{json, Value};
+use std::path::Path;
+use std::sync::Arc;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 /// Answers every method with its name, so a test can see what was called.
 struct Echo;
@@ -57,5 +65,85 @@ fn orchestrator_actions_is_named_and_round_trips() {
     assert_eq!(
         serde_json::from_value::<Capability>(encoded).unwrap(),
         Capability::OrchestratorActions
+    );
+}
+
+const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+fn serve(dir: &Path) -> JoinHandle<()> {
+    let dir = dir.to_path_buf();
+    thread::spawn(move || {
+        Server::serve_with_handler(
+            ServerConfig::new(dir, "actions-test")
+                .with_idle_timeout(Duration::from_secs(30))
+                .with_stream_timeout(Duration::from_secs(5)),
+            Arc::new(Echo),
+        )
+        .unwrap();
+    })
+}
+
+fn connect(dir: &Path, capabilities: &[Capability]) -> Client {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match Client::connect_with_capabilities(dir, capabilities) {
+            Ok(client) => return client,
+            Err(error) => {
+                assert!(Instant::now() < deadline, "daemon not ready: {error}");
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+}
+
+#[test]
+fn actions_resolve_needs_orchestrator_actions() {
+    let dir = TempDir::new().unwrap();
+    let daemon = serve(dir.path());
+    let mut without = connect(dir.path(), &[Capability::Health]);
+    assert!(matches!(
+        without.actions_resolve("proposal-1", "approve", DIGEST, "key-1"),
+        Err(IpcError::UnsupportedCapability)
+    ));
+    // `call` skips the client-side gate, so the server refuses the method.
+    assert!(matches!(
+        without.call("actions.resolve", json!({})),
+        Err(IpcError::UnsupportedCapability)
+    ));
+    drop(without);
+
+    let mut with = connect(
+        dir.path(),
+        &[Capability::Health, Capability::OrchestratorActions],
+    );
+    let result = with
+        .actions_resolve("proposal-1", "approve", DIGEST, "key-1")
+        .unwrap();
+    assert_eq!(result["method"], "actions.resolve");
+    with.shutdown().unwrap();
+    daemon.join().unwrap();
+}
+
+#[test]
+fn proposal_codes_round_trip_through_map_remote() {
+    assert!(matches!(
+        map_remote(RpcError::ProposalNotFound.code()),
+        IpcError::ProposalNotFound
+    ));
+    assert!(matches!(
+        map_remote(RpcError::ProposalNotPending.code()),
+        IpcError::ProposalNotPending
+    ));
+    assert!(matches!(
+        map_remote(RpcError::ProposalInvalid.code()),
+        IpcError::ProposalInvalid
+    ));
+    assert!(matches!(
+        map_remote(RpcError::ConversationBusy.code()),
+        IpcError::ConversationBusy
+    ));
+    assert_eq!(
+        serde_json::to_value(RpcError::ProposalNotPending).unwrap(),
+        json!("proposal_not_pending")
     );
 }

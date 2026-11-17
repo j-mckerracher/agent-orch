@@ -271,14 +271,23 @@ fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
                     let title = serde_json::from_str::<serde_json::Value>(&proposal.params_json)
                         .ok()
                         .and_then(|params| params.get("title")?.as_str().map(str::to_owned));
+                    // The outcome lets the next turn say what was created (DPES-1105).
+                    let state = format!(
+                        "{}{}",
+                        proposal.state.as_str(),
+                        proposal_outcome(
+                            proposal.result_ref.as_deref(),
+                            proposal.error_code.as_deref(),
+                        ),
+                    );
                     match title {
                         Some(title) => format!(
                             "- {} {}: {}",
                             proposal.kind.as_str(),
-                            proposal.state.as_str(),
+                            state,
                             field(&title, TEXT_BYTES),
                         ),
-                        None => format!("- {} {}", proposal.kind.as_str(), proposal.state.as_str()),
+                        None => format!("- {} {}", proposal.kind.as_str(), state),
                     }
                 })
                 .collect();
@@ -293,6 +302,16 @@ fn proposals(store: &SqliteStore, target: &ConversationTarget) -> Block {
             }
         }
         Err(_) => Block::unavailable("Recent proposals"),
+    }
+}
+
+/// What an executed proposal created (` -> workstream-…`) or why a failed one
+/// failed (` (stale_revision)`). Empty while the proposal is still open.
+fn proposal_outcome(result_ref: Option<&str>, error_code: Option<&str>) -> String {
+    match (result_ref, error_code) {
+        (Some(result_ref), _) => format!(" -> {result_ref}"),
+        (None, Some(error_code)) => format!(" ({error_code})"),
+        (None, None) => String::new(),
     }
 }
 

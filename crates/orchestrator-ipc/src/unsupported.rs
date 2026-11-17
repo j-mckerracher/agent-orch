@@ -67,6 +67,15 @@ impl Client {
     pub fn approvals_resolve(&mut self, _: &str, _: &str, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn actions_resolve(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: &str,
+        _: &str,
+    ) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn workspaces_diff(
         &mut self,
         _: &str,

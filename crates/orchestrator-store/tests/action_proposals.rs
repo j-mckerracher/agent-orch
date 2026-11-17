@@ -7,8 +7,8 @@ use std::path::Path;
 
 use orchestrator_core::orchestrator_action::{parse_block, proposal_id, ActionKind, BlockScope};
 use orchestrator_store::{
-    ActionBlockOutcome, ConversationTarget, ProposalState, SqliteStore, TurnBlock, TurnOutcome,
-    TurnState,
+    ActionBlockOutcome, ActionOutcome, ConversationTarget, ProposalState, ResolveError,
+    SqliteStore, TurnBlock, TurnOutcome, TurnState, DEPENDENCY_NOT_EXECUTED,
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection;
@@ -337,4 +337,274 @@ fn proposals_list_by_scope_newest_first_and_get_by_id() {
         .unwrap();
     assert_eq!(by_id, in_workstream[0]);
     assert!(store.action_proposal("proposal-missing").unwrap().is_none());
+}
+
+/// One pending proposal, stored by its own turn.
+fn one_pending(store: &SqliteStore, turn: &str, request: &str) -> String {
+    begin(store, &ConversationTarget::Global, turn);
+    store
+        .complete_conversation_turn(turn, accepted(BlockScope::Global, request))
+        .unwrap()
+        .unwrap()
+        .remove(0)
+}
+
+/// A parent workstream and the objective built on it, both pending, in one turn.
+fn parent_and_dependent(store: &SqliteStore) -> (String, String) {
+    begin(store, &ConversationTarget::Global, "t1");
+    let both = format!("{CREATE_ALPHA}, {PLAN_ALPHA}");
+    let ids = store
+        .complete_conversation_turn("t1", accepted(BlockScope::Global, &both))
+        .unwrap()
+        .unwrap();
+    (ids[0].clone(), ids[1].clone())
+}
+
+#[test]
+fn approve_is_a_compare_and_set_from_pending() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let id = one_pending(&store, "t1", CREATE_ALPHA);
+
+    // An outcome needs an approved proposal, so a pending one is refused.
+    assert!(matches!(
+        store.record_action_outcome(
+            &id,
+            ActionOutcome::Executed {
+                result_ref: "workstream-1",
+            },
+            "user",
+        ),
+        Err(ResolveError::NotPending(ProposalState::Pending))
+    ));
+
+    let approved = store.approve_action_proposal(&id, "user").unwrap();
+    assert_eq!(approved.state, ProposalState::Approved);
+    // A second approve, and a reject after approve, both find the row approved.
+    assert!(matches!(
+        store.approve_action_proposal(&id, "user"),
+        Err(ResolveError::NotPending(ProposalState::Approved))
+    ));
+    assert!(matches!(
+        store.reject_action_proposal(&id, "user"),
+        Err(ResolveError::NotPending(ProposalState::Approved))
+    ));
+    assert!(matches!(
+        store.approve_action_proposal("proposal-missing", "user"),
+        Err(ResolveError::NotFound)
+    ));
+
+    let events = store.action_proposal_events(&id).unwrap();
+    let transitions: Vec<ProposalState> = events.iter().map(|event| event.to_state).collect();
+    assert_eq!(
+        transitions,
+        vec![ProposalState::Pending, ProposalState::Approved]
+    );
+    assert_eq!(events[1].from_state, Some(ProposalState::Pending));
+    assert_eq!(events[1].actor, "user");
+    assert_eq!(events[1].digest, approved.digest);
+}
+
+#[test]
+fn a_dependent_is_approved_only_after_its_parent_executed() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let (parent, child) = parent_and_dependent(&store);
+
+    assert!(matches!(
+        store.approve_action_proposal(&child, "user"),
+        Err(ResolveError::ParentNotExecuted)
+    ));
+    store.approve_action_proposal(&parent, "user").unwrap();
+    // Approved is not enough: the parent must have executed.
+    assert!(matches!(
+        store.approve_action_proposal(&child, "user"),
+        Err(ResolveError::ParentNotExecuted)
+    ));
+    store
+        .record_action_outcome(
+            &parent,
+            ActionOutcome::Executed {
+                result_ref: "workstream-1",
+            },
+            "user",
+        )
+        .unwrap();
+
+    let approved = store.approve_action_proposal(&child, "user").unwrap();
+    assert_eq!(approved.state, ProposalState::Approved);
+    assert_eq!(store.action_proposal_events(&child).unwrap().len(), 2);
+}
+
+#[test]
+fn outcomes_record_once_and_repeat_is_idempotent() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let id = one_pending(&store, "t1", CREATE_ALPHA);
+    store.approve_action_proposal(&id, "user").unwrap();
+
+    let executed = store
+        .record_action_outcome(
+            &id,
+            ActionOutcome::Executed {
+                result_ref: "workstream-1",
+            },
+            "user",
+        )
+        .unwrap();
+    assert_eq!(executed.state, ProposalState::Executed);
+    assert_eq!(executed.result_ref.as_deref(), Some("workstream-1"));
+    assert_eq!(executed.error_code, None);
+
+    // The same outcome again returns the proposal unchanged and writes no event.
+    let again = store
+        .record_action_outcome(
+            &id,
+            ActionOutcome::Executed {
+                result_ref: "workstream-1",
+            },
+            "user",
+        )
+        .unwrap();
+    assert_eq!(again, executed);
+    assert_eq!(store.action_proposal_events(&id).unwrap().len(), 3);
+
+    // A different outcome, or a failure after execution, is refused.
+    assert!(matches!(
+        store.record_action_outcome(
+            &id,
+            ActionOutcome::Executed {
+                result_ref: "workstream-2",
+            },
+            "user",
+        ),
+        Err(ResolveError::NotPending(ProposalState::Executed))
+    ));
+    assert!(matches!(
+        store.record_action_outcome(
+            &id,
+            ActionOutcome::Failed {
+                error_code: "conflict",
+            },
+            "user",
+        ),
+        Err(ResolveError::NotPending(ProposalState::Executed))
+    ));
+    assert_eq!(store.action_proposal(&id).unwrap().unwrap(), executed);
+}
+
+#[test]
+fn reject_fails_pending_dependents_with_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let (parent, child) = parent_and_dependent(&store);
+
+    let rejected = store.reject_action_proposal(&parent, "user").unwrap();
+    assert_eq!(rejected.state, ProposalState::Rejected);
+    assert_eq!(
+        store.action_proposal_events(&parent).unwrap().last().unwrap().actor,
+        "user"
+    );
+
+    let dependent = store.action_proposal(&child).unwrap().unwrap();
+    assert_eq!(dependent.state, ProposalState::Failed);
+    assert_eq!(
+        dependent.error_code.as_deref(),
+        Some(DEPENDENCY_NOT_EXECUTED)
+    );
+    let events = store.action_proposal_events(&child).unwrap();
+    let transitions: Vec<ProposalState> = events.iter().map(|event| event.to_state).collect();
+    assert_eq!(
+        transitions,
+        vec![ProposalState::Pending, ProposalState::Failed]
+    );
+    assert_eq!(events[1].actor, "user");
+    assert_eq!(events[1].error_code.as_deref(), Some(DEPENDENCY_NOT_EXECUTED));
+}
+
+#[test]
+fn a_failed_parent_fails_pending_dependents_with_events() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let (parent, child) = parent_and_dependent(&store);
+    store.approve_action_proposal(&parent, "user").unwrap();
+
+    let failed = store
+        .record_action_outcome(
+            &parent,
+            ActionOutcome::Failed {
+                error_code: "stale_revision",
+            },
+            "user",
+        )
+        .unwrap();
+    assert_eq!(failed.state, ProposalState::Failed);
+    assert_eq!(failed.error_code.as_deref(), Some("stale_revision"));
+
+    let dependent = store.action_proposal(&child).unwrap().unwrap();
+    assert_eq!(dependent.state, ProposalState::Failed);
+    assert_eq!(
+        dependent.error_code.as_deref(),
+        Some(DEPENDENCY_NOT_EXECUTED)
+    );
+    let events = store.action_proposal_events(&child).unwrap();
+    assert_eq!(events.last().unwrap().actor, "user");
+    assert_eq!(events.last().unwrap().to_state, ProposalState::Failed);
+}
+
+#[test]
+fn approved_proposals_list_only_approved_oldest_first() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let first = one_pending(&store, "t1", CREATE_ALPHA);
+    let second = one_pending(
+        &store,
+        "t2",
+        r#"{"kind": "workstream.create", "title": "Beta"}"#,
+    );
+    let third = one_pending(
+        &store,
+        "t3",
+        r#"{"kind": "workstream.create", "title": "Gamma"}"#,
+    );
+    assert!(store.approved_action_proposals().unwrap().is_empty());
+
+    // Approval order differs from storage order; the listing follows storage.
+    store.approve_action_proposal(&third, "user").unwrap();
+    store.approve_action_proposal(&first, "user").unwrap();
+    store.reject_action_proposal(&second, "user").unwrap();
+
+    let approved: Vec<String> = store
+        .approved_action_proposals()
+        .unwrap()
+        .into_iter()
+        .map(|proposal| proposal.id)
+        .collect();
+    assert_eq!(approved, vec![first, third]);
+}
+
+#[test]
+fn scope_workstream_reads_the_workstream_id_from_the_scope() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    let workstream = ConversationTarget::Workstream("ws-1".to_owned());
+
+    begin(&store, &workstream, "t1");
+    let id = store
+        .complete_conversation_turn(
+            "t1",
+            accepted(
+                BlockScope::Workstream("ws-1"),
+                r#"{"kind": "objective.add", "workstream_id": "ws-1", "title": "Plan"}"#,
+            ),
+        )
+        .unwrap()
+        .unwrap()
+        .remove(0);
+    let proposal = store.action_proposal(&id).unwrap().unwrap();
+    assert_eq!(proposal.scope_workstream(), Some("ws-1"));
+
+    let global = one_pending(&store, "t2", CREATE_ALPHA);
+    let global = store.action_proposal(&global).unwrap().unwrap();
+    assert_eq!(global.scope_workstream(), None);
 }
