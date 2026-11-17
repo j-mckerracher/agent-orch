@@ -339,6 +339,8 @@ describe("live data", () => {
     const { services, user } = await mount(fake);
     const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
     await user.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    await user.click(first);
     expect(first).toHaveAttribute("aria-expanded", "false");
     await user.click(within(tree()).getByRole("treeitem", { name: /Workstream 2 of 2/ }));
     expect(within(tree()).getByText("Cache downloads")).toBeInTheDocument();
@@ -733,7 +735,7 @@ describe("tree keyboard navigation", () => {
     expect(within(tree()).getAllByRole("treeitem").at(-1)).toHaveFocus();
   });
 
-  it("expands, collapses and moves between levels with Right, Left and Enter", async () => {
+  it("expands, collapses and moves between levels with Right, Left and Space", async () => {
     const { user } = await mount(daemon());
     const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
     first.focus();
@@ -743,12 +745,28 @@ describe("tree keyboard navigation", () => {
     expect(first).toHaveFocus();
     await user.keyboard("{ArrowLeft}");
     expect(first).toHaveAttribute("aria-expanded", "false");
-    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
     expect(first).toHaveAttribute("aria-expanded", "true");
     await user.keyboard(" ");
     expect(first).toHaveAttribute("aria-expanded", "false");
     await user.keyboard("{ArrowRight}");
     expect(first).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("a workstream row opens that workstream's view on click or Enter", async () => {
+    const { services, user } = await mount(daemon());
+    const second = await within(tree()).findByRole("treeitem", { name: /Workstream 2 of 2/ });
+    await user.click(second);
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-b" });
+    expect(second).toHaveAttribute("aria-current", "page");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+
+    const first = within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ });
+    first.focus();
+    await user.keyboard("{Enter}");
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
+    expect(first).toHaveAttribute("aria-current", "page");
+    expect(second).not.toHaveAttribute("aria-current");
   });
 
   it("Enter on a task row follows its link", async () => {

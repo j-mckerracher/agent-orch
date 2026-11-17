@@ -71,8 +71,9 @@ function WorkerRows({ task }: { task: WsTask }) {
  * Sidebar tree for the `workstreamsTree` shell slot (OX-A4). Groups are the daemon's workstreams
  * (M7-23); leaves are their linked tasks with one worker row
  * ("adapter · state") per recorded session. It follows the ARIA tree pattern: one tab stop
- * (roving tabindex), arrows move, Right/Left expand and collapse, Home/End jump, and
- * Enter/Space toggles a group or opens a task. Expanded state lives here, so groups the
+ * (roving tabindex), arrows move, Right/Left expand and collapse, Home/End jump, Space toggles a
+ * group, and Enter or a click opens a group's workstream view (the same place the chat's "Open
+ * workstream" goes) or a task's detail page. Expanded state lives here, so groups the
  * operator collapsed or opened stay that way across data refreshes. The shell's tree body
  * scrolls independently of the page.
  */
@@ -115,6 +116,18 @@ export function WorkstreamTree() {
     refs.current.get(key)?.focus();
   };
   const setOpen = (group: WsGroup, open: boolean) => setExpanded((current) => ({ ...current, [group.id]: open }));
+  const isCurrentWorkstream = (group: WsGroup) =>
+    route.name === "global" && route.view === "workstreams" && route.workstreamId === group.id;
+  // Opens the workstream's view (the same place the chat's "Open workstream" goes) and expands it;
+  // activating the workstream already shown toggles its tasks instead.
+  const openWorkstream = (group: WsGroup, index: number) => {
+    if (isCurrentWorkstream(group)) {
+      setOpen(group, !isOpen(group, index));
+      return;
+    }
+    setOpen(group, true);
+    router.navigate({ name: "global", view: "workstreams", workstreamId: group.id });
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
@@ -155,11 +168,16 @@ export function WorkstreamTree() {
         else if (isOpen(group, groupIndex)) setOpen(group, false);
         break;
       case "Enter":
+        if (item.kind === "group") {
+          handled();
+          openWorkstream(group, groupIndex);
+        }
+        break;
       case " ":
         if (item.kind === "group") {
           handled();
           setOpen(group, !isOpen(group, groupIndex));
-        } else if (event.key === " ") {
+        } else {
           handled();
           element.click();
         }
@@ -201,6 +219,7 @@ export function WorkstreamTree() {
                 aria-setsize={groups.length}
                 aria-posinset={index + 1}
                 aria-expanded={groupOpen}
+                aria-current={isCurrentWorkstream(group) ? "page" : undefined}
                 aria-label={`Workstream ${index + 1} of ${groups.length}: ${group.title}, ${group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}`}
                 tabIndex={tabKey === key ? 0 : -1}
                 data-key={key}
@@ -211,7 +230,7 @@ export function WorkstreamTree() {
                 className="ws-tree-summary"
                 title={group.projectIds.join("\n")}
                 onFocus={() => setActive(key)}
-                onClick={() => setOpen(group, !groupOpen)}
+                onClick={() => openWorkstream(group, index)}
               >
                 <span className="ws-tree-number" aria-hidden="true" data-text={`${index + 1} / ${groups.length}`} />
                 <span className="ws-tree-title">{group.title}</span>
