@@ -702,6 +702,8 @@ export interface ActionProposalWire {
    * Absent from older daemons. A bare `grant:<id>` event actor is read the same way.
    */
   approved_by?: { kind: "user" } | { kind: "grant"; grant_id: string } | string | null;
+  /** The daemon sends the approving grant's id here (null when a person approved or nobody has). */
+  grant_id?: string | null;
   created_at: string;
   updated_at: string;
 }

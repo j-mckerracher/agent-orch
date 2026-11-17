@@ -239,6 +239,11 @@ describe("action proposals (DPES-1105)", () => {
 });
 
 describe("mapProposal", () => {
+  it("grants_the_daemons_top_level_grant_id_reads_as_an_approval_by_a_standing_grant", () => {
+    expect(mapProposal(proposal({ grant_id: "grant-7" })).approvedBy).toEqual({ kind: "grant", grantId: "grant-7" });
+    expect(mapProposal(proposal({ grant_id: null })).approvedBy).toBeUndefined();
+  });
+
   it("copies every field and leaves an unknown kind or state as it arrived", () => {
     const mapped = mapProposal(proposal({ kind: "future.kind", state: "paused", depends_on: "proposal-0", result_ref: "ref-1", error_code: "x" }));
     expect(mapped).toEqual({

@@ -23,7 +23,7 @@ function approverOf(wire: ActionProposalWire["approved_by"]): ActionProposal["ap
 export function mapProposal(wire: ActionProposalWire): ActionProposal {
   const params: Record<string, unknown> = { ...wire.params };
   delete params.kind;
-  const approvedBy = approverOf(wire.approved_by);
+  const approvedBy = typeof wire.grant_id === "string" ? ({ kind: "grant", grantId: wire.grant_id } as const) : approverOf(wire.approved_by);
   return {
     id: wire.id,
     turnId: wire.turn_id,
