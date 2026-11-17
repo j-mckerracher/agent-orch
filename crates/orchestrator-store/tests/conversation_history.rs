@@ -116,6 +116,7 @@ fn a_cleared_conversation_leaves_its_text_in_no_file_of_the_data_directory() {
     let directory = tempfile::tempdir().unwrap();
     let store = open(directory.path());
     store.register_project(&project("p1")).unwrap();
+    store.restore_coordinator("p1").unwrap();
     begin_global(&store, "t1", GLOBAL_MESSAGE);
     store.append_reply_chunk("t1", GLOBAL_REPLY).unwrap();
     store
@@ -325,6 +326,7 @@ fn a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty() {
     {
         let store = open(directory.path());
         store.register_project(&project("p1")).unwrap();
+        store.restore_coordinator("p1").unwrap();
         store
             .append_coordinator_entry("c1", "p1", "message", "user", COORDINATOR_NOTE, None)
             .unwrap();
@@ -341,7 +343,7 @@ fn a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty() {
     let store = open(directory.path());
     assert!(store.coordinator_scope("p1").unwrap().removed);
     assert_eq!(
-        store.removed_coordinator_projects().unwrap(),
+        store.projects_without_coordinator().unwrap(),
         vec!["p1".to_owned()]
     );
     assert!(store
@@ -367,7 +369,11 @@ fn a_removed_coordinator_stays_removed_across_a_reopen_and_restores_empty() {
         .collect();
     assert_eq!(
         actions,
-        vec!["remove:coordinator:p1", "restore:coordinator:p1"]
+        vec![
+            "restore:coordinator:p1",
+            "remove:coordinator:p1",
+            "restore:coordinator:p1"
+        ]
     );
     // The project and its registration are untouched.
     assert_eq!(store.get_project("p1").unwrap().id, "p1");
@@ -378,6 +384,7 @@ fn a_coordinator_clear_keeps_the_project_and_is_refused_once_removed() {
     let directory = tempfile::tempdir().unwrap();
     let store = open(directory.path());
     store.register_project(&project("p1")).unwrap();
+    store.restore_coordinator("p1").unwrap();
     store
         .append_coordinator_entry("c1", "p1", "message", "user", COORDINATOR_NOTE, None)
         .unwrap();
@@ -392,11 +399,157 @@ fn a_coordinator_clear_keeps_the_project_and_is_refused_once_removed() {
 }
 
 #[test]
+fn a_registered_project_has_no_coordinator_until_one_is_added() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    store.register_project(&project("p1")).unwrap();
+
+    let scope = store.coordinator_scope("p1").unwrap();
+    assert!(scope.removed);
+    assert_eq!(scope.clear_generation, 0);
+    assert_eq!(
+        store.projects_without_coordinator().unwrap(),
+        vec!["p1".to_owned()]
+    );
+    assert!(store.clear_coordinator_history("p1").is_err());
+    let removed = store.remove_coordinator("p1").unwrap();
+    assert!(!removed.changed && removed.removed);
+
+    let added = store.restore_coordinator("p1").unwrap();
+    assert!(added.changed && !added.removed);
+    assert_eq!(added.clear_generation, 0);
+    assert!(!store.coordinator_scope("p1").unwrap().removed);
+    assert!(store.projects_without_coordinator().unwrap().is_empty());
+    let actions: Vec<String> = store
+        .conversation_audit()
+        .unwrap()
+        .into_iter()
+        .map(|record| format!("{}:{}", record.action, record.scope))
+        .collect();
+    assert_eq!(actions, vec!["restore:coordinator:p1"]);
+}
+
+#[test]
+fn the_opt_in_migration_removes_every_coordinator_that_existed_and_its_notes() {
+    const LEGACY_NOTE: &str = "MARKER-PRE-OPT-IN-NOTE-6a1b";
+    let directory = tempfile::tempdir().unwrap();
+    let path = store_path(directory.path());
+
+    // Build the database as it was before 0053: only the migrations up to 0052.
+    let legacy_dir = directory.path().join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let version: u32 = entry
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split('_')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        if version <= 52 {
+            fs::copy(&entry, legacy_dir.join(entry.file_name().unwrap())).unwrap();
+        }
+    }
+    let rt = runtime();
+    let mut connection = raw_connect(&path);
+    rt.block_on(async {
+        sqlx::migrate::Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        // p1 never touched its coordinator (active by default before 0053), p2 cleared
+        // it twice, and p3 removed it.
+        for statement in [
+            "INSERT INTO projects (id, root_path, settings) VALUES \
+             ('p1', '/work/p1', '{}'), ('p2', '/work/p2', '{}'), ('p3', '/work/p3', '{}')",
+            "INSERT INTO coordinator_scopes (project_id, removed, clear_generation) VALUES \
+             ('p2', 0, 2), ('p3', 1, 4)",
+            "INSERT INTO coordinator_entries (id, project_id, kind, author, body) VALUES \
+             ('c1', 'p1', 'message', 'user', 'MARKER-PRE-OPT-IN-NOTE-6a1b'), \
+             ('c2', 'p2', 'message', 'user', 'second note')",
+            "INSERT INTO idempotency_records (key, method, fingerprint, result) VALUES \
+             ('k-note', 'coordinator.send_message', \
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', \
+              '{\"status\":\"success\",\"body\":{\"entry_id\":\"c1\"}}')",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+        }
+    });
+    drop(connection);
+    assert!(!files_containing(directory.path(), LEGACY_NOTE).is_empty());
+
+    let store = open(directory.path());
+    let scopes: Vec<(bool, i64)> = ["p1", "p2", "p3"]
+        .iter()
+        .map(|id| {
+            let scope = store.coordinator_scope(id).unwrap();
+            (scope.removed, scope.clear_generation)
+        })
+        .collect();
+    assert_eq!(scopes, vec![(true, 1), (true, 3), (true, 4)]);
+    assert_eq!(
+        store.projects_without_coordinator().unwrap(),
+        vec!["p1".to_owned(), "p2".to_owned(), "p3".to_owned()]
+    );
+    assert!(store.coordinator_entry("c1").unwrap().is_none());
+    assert!(store.coordinator_entry("c2").unwrap().is_none());
+    let audit: Vec<(String, String, i64)> = store
+        .conversation_audit()
+        .unwrap()
+        .into_iter()
+        .map(|record| (record.action, record.scope, record.entries_deleted))
+        .collect();
+    assert_eq!(
+        audit,
+        vec![
+            ("remove".to_owned(), "coordinator:p1".to_owned(), 1),
+            ("remove".to_owned(), "coordinator:p2".to_owned(), 1),
+        ]
+    );
+    // The deleted note's key stays spent with a tombstone fingerprint.
+    assert!(matches!(
+        store
+            .begin_idempotency("k-note", "coordinator.send_message", &fingerprint(1))
+            .unwrap(),
+        IdempotencyStart::Completed(_)
+    ));
+    assert_eq!(
+        raw_scalar(
+            directory.path(),
+            "SELECT CAST(open AS TEXT) FROM conversation_clear_gate"
+        ),
+        "0"
+    );
+    assert_eq!(
+        files_containing(directory.path(), LEGACY_NOTE),
+        Vec::<PathBuf>::new()
+    );
+
+    // A project's coordinator can still be added back, empty.
+    assert!(store.restore_coordinator("p1").unwrap().changed);
+    assert!(store
+        .coordinator_entries_after("p1", 0, 100)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn history_rows_are_only_deleted_by_a_clear_and_audit_rows_never() {
     let directory = tempfile::tempdir().unwrap();
     let path = store_path(directory.path());
     let store = open(directory.path());
     store.register_project(&project("p1")).unwrap();
+    store.restore_coordinator("p1").unwrap();
     begin_global(&store, "t1", GLOBAL_MESSAGE);
     store
         .finish_conversation_turn("t1", &TurnOutcome::Completed)
@@ -554,15 +707,14 @@ fn a_database_from_before_the_clear_migrations_is_migrated_and_its_replies_scrub
             .unwrap(),
         IdempotencyStart::Completed(json!({"status": "failure", "body": "conflict"}))
     );
-    // The messages themselves are not cleared, so they still read back.
+    // The conversation message is not cleared, so it still reads back. The coordinator
+    // note is gone: 0053 removed every coordinator that existed before they became
+    // opt-in.
     assert_eq!(
         store.conversation_entry("t1:user").unwrap().unwrap().body,
         "LEGACY-MESSAGE"
     );
-    assert_eq!(
-        store.coordinator_entry("c1").unwrap().unwrap().body,
-        "LEGACY-NOTE"
-    );
+    assert!(store.coordinator_entry("c1").unwrap().is_none());
     drop(store);
 
     let rt = runtime();

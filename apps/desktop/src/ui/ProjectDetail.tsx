@@ -261,6 +261,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   );
 
   const known = projects.data?.some((row) => row.id === projectId) ?? null;
+  // A registered project has no coordinator until the user adds one in the Workspace (DPES-1105).
+  const hasCoordinator = projects.data?.find((row) => row.id === projectId)?.coordinator_active !== false;
   const own = tasks.data?.filter((task) => task.contract.project_id === projectId) ?? null;
   const ownIds = new Set(own?.map((task) => task.contract.id));
   // Pending review needs both lists: without the task list no approval can be matched to this project.
@@ -311,7 +313,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       )}
       <nav aria-label="Project navigation" className="ps-actions">
         <Button onClick={() => router.navigate({ name: "tasks", projectId, filter: "all" })}>Tasks</Button>
-        <Button onClick={() => router.navigate({ name: "coordinator", projectId })}>Coordinator</Button>
+        {hasCoordinator && (
+          <Button onClick={() => router.navigate({ name: "coordinator", projectId })}>Coordinator</Button>
+        )}
         <Button onClick={() => router.navigate({ name: "review", projectId, taskId: null })}>
           Pending review ({pendingText})
         </Button>

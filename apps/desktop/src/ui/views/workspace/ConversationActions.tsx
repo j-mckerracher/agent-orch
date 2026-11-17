@@ -207,15 +207,15 @@ export function ConversationActions({
 }
 
 export interface AddCoordinatorDialogProps {
-  /** Projects whose coordinator is removed. */
+  /** Projects without a coordinator: never added, or removed. */
   projects: readonly { id: string; label: string }[];
-  /** The project being restored, while its request is in flight. */
+  /** The project being added, while its request is in flight. */
   busyId: string | null;
   onAdd: (projectId: string) => void;
   onClose: () => void;
 }
 
-/** Lists removed coordinators with an "Add" action each (DPES-1105). Restoring starts the coordinator empty. */
+/** Lists projects without a coordinator, with an "Add" action each (DPES-1105). An added coordinator starts empty. */
 export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCoordinatorDialogProps) {
   return (
     <Dialog

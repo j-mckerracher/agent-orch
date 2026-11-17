@@ -109,6 +109,7 @@ fn coordinator_conversation_survives_daemon_restart_and_grants_no_authority() {
             settings: json!({}),
         })
         .unwrap();
+    store.restore_coordinator("project-1").unwrap();
     drop(store);
 
     let mut first = Daemon::start(&layout);

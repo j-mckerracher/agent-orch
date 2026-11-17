@@ -406,6 +406,20 @@ impl Client {
         )
     }
 
+    /// `coordinator.restore`: adds a coordinator to a project that has none. A
+    /// registered project has no coordinator until this is called.
+    pub fn coordinator_restore(
+        &mut self,
+        project_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::ConversationHistory,
+            "coordinator.restore",
+            json!({"project_id": project_id, "idempotency_key": idempotency_key}),
+        )
+    }
+
     /// `reports.list`: the newest scout reports, without their text.
     pub fn reports_list(&mut self, params: Value) -> Result<Value, IpcError> {
         self.call_feature(Capability::Coordinator, "reports.list", params)

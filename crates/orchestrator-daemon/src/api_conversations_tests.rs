@@ -886,6 +886,7 @@ fn clear(api: &DaemonApi, target: Value, key: &str) -> Result<Value, RpcError> {
     )
 }
 
+/// Registers a project and adds its coordinator, which registration alone does not do.
 fn register_coordinator_project(api: &DaemonApi, id: &str) {
     api.store
         .register_project(&orchestrator_core::records::Project {
@@ -894,6 +895,7 @@ fn register_coordinator_project(api: &DaemonApi, id: &str) {
             settings: json!({}),
         })
         .unwrap();
+    api.store.restore_coordinator(id).unwrap();
 }
 
 fn coordinator_note(

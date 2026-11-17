@@ -955,10 +955,12 @@ mod tests {
         let child = store.get("t2").unwrap();
         assert_eq!(child.contract.objective, "legacy t2");
         assert_eq!(child.contract.parent_id.as_deref(), Some("t1"));
-        assert_eq!(
-            store.coordinator_entries_after("p1", 0, 10).unwrap()[0].body,
-            "hello"
-        );
+        // The one intended loss: 0053 made coordinators opt-in and removed every
+        // coordinator that existed, with its notes.
+        assert!(store
+            .coordinator_entries_after("p1", 0, 10)
+            .unwrap()
+            .is_empty());
         assert!(store.list_workstreams(None).unwrap().is_empty());
 
         store

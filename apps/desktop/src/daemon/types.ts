@@ -163,7 +163,7 @@ export interface TaskRecord {
 /** `projects.list` row. The id is the canonical repository root. */
 export interface ProjectRow {
   id: string;
-  /** False while the project's coordinator is removed (DPES-1105). Absent from older daemons, where it is active. */
+  /** False while the project has no coordinator: registering adds none, `coordinator.restore` adds one (DPES-1105). Absent from older daemons, where it is active. */
   coordinator_active?: boolean;
   /** The project's delivery mode; present only for a project with saved defaults (DPES-1105). */
   mode?: string;

@@ -60,8 +60,8 @@ export function WorkspaceView() {
   const gate = useGate();
   const monitoring = useMonitoring();
   const live = surfaces.conversation.provenance.kind === "daemon";
-  // Live targets are the daemon's workstreams plus the registered projects (project coordinators take
-  // notes only); fixtures derive project targets from the placeholder workstreams.
+  // Live targets are the daemon's workstreams plus the projects with a coordinator (project coordinators take
+  // notes only; registering a project adds none); fixtures derive project targets from the placeholder workstreams.
   // A workstream created on the Workstreams view becomes a target here as soon as it lands (DPES-1105).
   const workstreamsVersion = useWorkstreamsVersion();
   const workstreams = useSurface(

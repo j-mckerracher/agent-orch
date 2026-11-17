@@ -421,7 +421,7 @@ fn daemon_clients_submit_cancel_and_resume_durable_events() {
     .unwrap();
     assert_eq!(
         client.projects_list().unwrap(),
-        json!([{"id": "project-1", "coordinator_active": true}])
+        json!([{"id": "project-1", "coordinator_active": false}])
     );
     client.events_subscribe(None).unwrap();
     let params = json!({
