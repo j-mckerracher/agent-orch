@@ -42,6 +42,7 @@ const ROUTED_IN_ROWS: usize = 5;
 pub(super) enum TargetParam {
     Global {},
     Workstream { workstream_id: String },
+    Project { project_id: String },
 }
 
 impl TargetParam {
@@ -51,6 +52,7 @@ impl TargetParam {
             Self::Workstream { workstream_id } => {
                 ConversationTarget::Workstream(workstream_id.clone())
             }
+            Self::Project { project_id } => ConversationTarget::Project(project_id.clone()),
         }
     }
 }
@@ -371,7 +373,7 @@ impl DaemonApi {
     }
 }
 
-fn map_clear_error(error: ConversationError) -> RpcError {
+pub(super) fn map_clear_error(error: ConversationError) -> RpcError {
     match error {
         ConversationError::TurnRunning { .. } => RpcError::ConversationBusy,
         other => map_conversation_error(other),

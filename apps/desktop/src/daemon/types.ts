@@ -24,6 +24,7 @@ export type Capability =
   | "workstreams"
   | "conversation_history"
   | "conversation_selection"
+  | "project_conversations"
   | "permission_levels"
   | "orchestrator_actions"
   | "settings"
@@ -49,6 +50,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "workstreams",
   "conversation_history",
   "conversation_selection",
+  "project_conversations",
   "permission_levels",
   "orchestrator_actions",
   "settings",
@@ -72,6 +74,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "workstreams",
   "conversation_history",
   "conversation_selection",
+  "project_conversations",
   "permission_levels",
   "orchestrator_actions",
   "settings",
@@ -718,8 +721,11 @@ export interface CopilotSignInRecord {
   warning: string | null;
 }
 
-/** Conversation target on the wire (M7-08). The kind is `workstream`, not `project`. */
-export type ConversationWireTarget = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+/** Project targets require the `project_conversations` capability. */
+export type ConversationWireTarget =
+  | { kind: "global" }
+  | { kind: "workstream"; workstream_id: string }
+  | { kind: "project"; project_id: string };
 
 export type ConversationEntryKind =
   | "user_message"
@@ -941,8 +947,8 @@ export interface SettingsPatchWire {
   mcp?: McpWire;
 }
 
-/** Where a wake record or a monitoring count belongs; the same shape as a conversation target. */
-export type MonitoringTargetWire = ConversationWireTarget;
+/** Automatic monitoring is limited to Global and workstream conversation targets. */
+export type MonitoringTargetWire = Exclude<ConversationWireTarget, { kind: "project" }>;
 
 /** One wake record inside `conversations.get`. `state`, `outcome` and `skip_reason` stay strings so unknown values survive. */
 export interface WakeRecordWire {

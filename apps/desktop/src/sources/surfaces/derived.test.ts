@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../../daemon/errors";
-import type { ActionProposalWire } from "../../daemon/types";
+import { ALL_CAPABILITIES, type ActionProposalWire } from "../../daemon/types";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { stubConversation } from "../../test/m724Stubs";
 import { ALPHA, BETA, WORKSTREAM_STATE, connect, populate } from "./testkit";
@@ -101,20 +101,25 @@ describe("derived D9 workstreams", () => {
 });
 
 describe("derived D10 conversation", () => {
-  it("reads the project transcript from coordinator.get and expects no replies", async () => {
-    const s = await live(populate(new FakeDaemon()));
+  it("preserves legacy notes alongside a live project conversation", async () => {
+    const fake = populate(new FakeDaemon());
+    stubConversation(fake, "completed");
+    const s = await live(fake);
+    await s.conversation.send({ kind: "project", projectId: ALPHA }, "new question");
     const result = await s.conversation.transcript({ kind: "project", projectId: ALPHA });
     expect(result).toMatchObject({
       status: "ok",
-      provenance: {
-        methods: ["coordinator.get", "coordinator.send_message", "coordinator.clear", "coordinator.remove", "coordinator.restore"],
-      },
-      data: { repliesExpected: false, truncated: false, entries: [{ id: "c-1", role: "user", text: "hello", kind: "message" }] },
+      data: { repliesExpected: true, truncated: false, entries: [
+        { id: "c-1", role: "user", text: "hello", kind: "message" },
+        { role: "user", text: "new question" },
+        { role: "coordinator", text: "Hello from the runtime." },
+      ] },
     });
   });
 
   it("flags a transcript that hit the paging limit as truncated", async () => {
     const fake = new FakeDaemon();
+    stubConversation(fake);
     let sequence = 0;
     fake.stub("coordinator.get", (params: Record<string, unknown>) => {
       sequence += 1;
@@ -144,27 +149,30 @@ describe("derived D10 conversation", () => {
     expect(result.status).toBe("unsupported");
   });
 
-  it("records a note through coordinator.send_message and reuses the key after an indeterminate failure", async () => {
+  it("sends a project message and reuses the key after an indeterminate failure", async () => {
     const fake = populate(new FakeDaemon());
-    fake.failNext("coordinator.send_message", "hang");
+    stubConversation(fake, "completed");
+    fake.failNext("conversations.send", "hang");
     const s = await live(fake);
     await expect(s.conversation.send({ kind: "project", projectId: ALPHA }, "ship it")).rejects.toMatchObject({ kind: "timeout" });
     const receipt = await s.conversation.send({ kind: "project", projectId: ALPHA }, "ship it");
-    expect(receipt).toMatchObject({ simulated: false, entryId: "c-2", provenance: { kind: "daemon", id: "D10" } });
-    const keys = fake.callsTo("coordinator.send_message").map((call) => (call.params as { idempotency_key: string }).idempotency_key);
+    expect(receipt).toMatchObject({ simulated: false, turn: { state: "completed" }, provenance: { kind: "daemon", id: "D10" } });
+    const keys = fake.callsTo("conversations.send").map((call) => (call.params as { idempotency_key: string }).idempotency_key);
     expect(keys).toHaveLength(2);
     expect(keys[0]).toBe(keys[1]);
   });
 
-  it("refuses a model choice for a coordinator note instead of sending the note without it", async () => {
+  it("refuses project sends on old daemons rather than silently saving notes", async () => {
     const fake = populate(new FakeDaemon());
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "project_conversations");
     stubConversation(fake);
     const s = await live(fake);
     const choice = { agent: "codex", model: "gpt-a" };
     await expect(s.conversation.send({ kind: "project", projectId: ALPHA }, "note", choice)).rejects.toMatchObject({
-      kind: "invalid-params",
+      kind: "capability-unavailable",
     });
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
   });
 
   it("sends a global message through conversations.send, not coordinator.send_message", async () => {

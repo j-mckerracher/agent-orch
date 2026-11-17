@@ -53,7 +53,8 @@ export const WINDOWS = {
   // conversation_runtime 61, with 281 passed plus 1 ignored.
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 601 becomes 610.
   // Opt-in project coordinators add 1 portable daemon unit test (registration adds no coordinator): 610 becomes 611.
-  daemon: { passed: 611, ignored: 1, sequence: [517, 81, 2, 5, 0, 1, 2, 4] },
+  // Project coordinator replies add one portable conversation_runtime regression.
+  daemon: { passed: 612, ignored: 1, sequence: [517, 82, 2, 5, 0, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -139,7 +140,8 @@ export const MACOS = {
   // conversation_runtime 66, daemon.rs 13, with 369 passed plus 1 ignored.
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 696 becomes 705.
   // Opt-in project coordinators add 1 portable daemon unit test: 705 becomes 706.
-  daemon: { passed: 706, ignored: 1, sequence: [594, 86, 2, 5, 13, 1, 2, 4] },
+  // Project coordinator replies add one conversation_runtime regression.
+  daemon: { passed: 707, ignored: 1, sequence: [594, 87, 2, 5, 13, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -169,7 +171,8 @@ export const MACOS = {
   // CI run 44023050296: 1289 becomes 1432.
   // OX-W9 workstream plan editing adds 9 daemon tests: 2074 becomes 2083.
   // Opt-in project coordinators add 3 tests (1 daemon, 2 store): 2083 becomes 2086.
-  workspace: { passed: 2086, ignored: 2 },
+  // Project coordinator replies add one runtime regression.
+  workspace: { passed: 2087, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
@@ -236,14 +239,17 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // DPES-1105 phases 2 to 6 (CI run 44084375506): 116 files, 2134 tests.
 // Workstream plan editing (OX-W9) adds 20 tests to existing files: 12 fixtureGuard rows, one surface mapping test and seven
 // view tests. The tree measured 123 files and 2230 tests before it (the pin had drifted), so `npx vitest run` counts 123 and 2250.
-export const VITEST = { files: 123, tests: 2251 };
+// Project replies extend running-turn and cancellation cases to project coordinators.
+// Full local run after integrating main's notification tests: 124 files, 2264 tests.
+export const VITEST = { files: 124, tests: 2264 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
 // 46 e2e tests (`Tests 1 failed | 45 passed (46)`, before the fix in the next commit).
 // DPES-1105 approval card (PR #118) adds one real-daemon e2e test (CI run 43994386560: 51 tests in 10 files): 51.
 // DPES-1105 approver credential adds one real-daemon e2e test (CI run 44023050296: 52 tests): 52.
-export const E2E_TESTS = 52;
+// Project coordinator replies add one real-daemon UI scenario.
+export const E2E_TESTS = 53;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;

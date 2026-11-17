@@ -95,13 +95,15 @@ fn start(layout: &Layout, extra: &[(&str, &str)]) -> Daemon {
 }
 
 /// What the desktop negotiates for the workspace chat.
-const ACTION_CAPABILITIES: [Capability; 6] = [
+const ACTION_CAPABILITIES: [Capability; 8] = [
     Capability::Settings,
     Capability::Coordinator,
     Capability::Tasks,
     Capability::Approvals,
     Capability::Workstreams,
     Capability::OrchestratorActions,
+    Capability::ProjectConversations,
+    Capability::ConversationHistory,
 ];
 
 struct Chat {
@@ -293,6 +295,155 @@ fn stop(layout: &Layout, mut daemon: Daemon, chat: Chat) {
     chat.relay.close();
     connect(&layout.data).shutdown().unwrap();
     daemon.wait_for_exit();
+}
+
+#[test]
+fn project_coordinator_replies_keep_history_selection_and_lifecycle() {
+    let layout = Layout::new();
+    let store = SqliteStore::new(&layout.data.join("store.sqlite")).unwrap();
+    let project_id = "/private/projects/alpha";
+    store
+        .register_project(&Project {
+            id: project_id.into(),
+            root_path: project_id.into(),
+            settings: json!({}),
+        })
+        .unwrap();
+    store.restore_coordinator(project_id).unwrap();
+    store
+        .append_coordinator_entry(
+            "old-note",
+            project_id,
+            "message",
+            "user",
+            "Earlier note",
+            None,
+        )
+        .unwrap();
+    store
+        .register_project(&Project {
+            id: "/private/projects/beta".into(),
+            root_path: "/private/projects/beta".into(),
+            settings: json!({}),
+        })
+        .unwrap();
+    drop(store);
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    assert!(chat.welcome["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("project_conversations")));
+    let target = json!({"kind": "project", "project_id": project_id});
+    let sent = chat.send_choice(
+        &target,
+        "hello coordinator",
+        "project-m1",
+        json!({"agent": "codex"}),
+    );
+    let page = chat.settled(&target);
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(reply(&page), "fake reply to: hello coordinator");
+    assert_eq!(sent["authority"], "none");
+    chat.send(&target, "[fake:echo]", "project-m2");
+    let page = chat.settled(&target);
+    let echoed = reply(&page);
+    assert!(
+        echoed.contains("Scope: one project coordinator."),
+        "{echoed}"
+    );
+    assert!(
+        echoed.contains("hello coordinator\nAssistant: fake reply to: hello coordinator"),
+        "{echoed}"
+    );
+    assert!(
+        !echoed.contains(project_id),
+        "project paths must not enter the prompt"
+    );
+    assert_eq!(chat.get(&global(), 0)["entries"], json!([]));
+    let beta = json!({"kind": "project", "project_id": "/private/projects/beta"});
+    let missing = chat.call("conversations.get", json!({"target": beta}));
+    assert_eq!(missing["error"]["code"], -32010, "{missing}");
+    chat.call(
+        "coordinator.restore",
+        json!({
+            "project_id": "/private/projects/beta", "idempotency_key": "add-beta"
+        }),
+    );
+    assert_eq!(chat.get(&beta, 0)["entries"], json!([]));
+    let before_restart = page["entries"].clone();
+    chat.assert_no_authority();
+    stop(&layout, daemon, chat);
+
+    let script_path = layout.data.join("project-reply.txt");
+    std::fs::write(&script_path, "A discussion reply.\n```mcao-actions\n{\"mcao_actions\":1,\"actions\":[{\"kind\":\"workstream.create\",\"title\":\"Not authorized\"}]}\n```\n").unwrap();
+    let daemon = start(&layout, &[("FAKE_AGENT_REPLY", &text(&script_path))]);
+    let mut chat = Chat::open(&layout);
+    assert_eq!(chat.get(&target, 0)["entries"], before_restart);
+    chat.send(&target, "[fake:script]", "project-actions");
+    let page = chat.settled(&target);
+    assert_eq!(reply(&page), "A discussion reply.\n");
+    assert_eq!(page["turn"]["action_block"], "stripped");
+    assert_eq!(page["proposals"], json!([]));
+    assert_eq!(
+        chat.call("workstreams.list", json!({}))["result"],
+        json!([])
+    );
+
+    let running = chat.send(&target, "[fake:hang]", "project-hang");
+    for method in ["coordinator.clear", "coordinator.remove"] {
+        let response = chat.call(
+            method,
+            json!({"project_id": project_id, "idempotency_key": format!("busy-{method}")}),
+        );
+        assert_eq!(response["error"]["code"], -32019, "{response}");
+    }
+    let cancelled = chat.call(
+        "conversations.cancel",
+        json!({
+            "target": target, "turn_id": running["turn"]["id"], "idempotency_key": "project-cancel"
+        }),
+    );
+    assert_eq!(
+        cancelled["result"]["turn"]["state"], "cancelled",
+        "{cancelled}"
+    );
+    let cleared = chat.call(
+        "coordinator.clear",
+        json!({"project_id": project_id, "idempotency_key": "project-clear"}),
+    );
+    assert_eq!(cleared["result"]["cleared"], true, "{cleared}");
+    assert_eq!(chat.get(&target, 0)["entries"], json!([]));
+    assert_eq!(
+        chat.call("coordinator.get", json!({"project_id": project_id}))["result"]["entries"],
+        json!([])
+    );
+    assert_eq!(
+        chat.send_choice(
+            &target,
+            "hello coordinator",
+            "project-m1",
+            json!({"agent": "codex"})
+        )["entry"]["cleared"],
+        true
+    );
+
+    chat.send(&target, "new conversation", "project-new");
+    assert_eq!(chat.settled(&target)["turn"]["state"], "completed");
+    let removed = chat.call(
+        "coordinator.remove",
+        json!({"project_id": project_id, "idempotency_key": "project-remove"}),
+    );
+    assert_eq!(removed["result"]["removed"], true, "{removed}");
+    let missing = chat.call("conversations.get", json!({"target": target}));
+    assert_eq!(missing["error"]["code"], -32010, "{missing}");
+    chat.call(
+        "coordinator.restore",
+        json!({"project_id": project_id, "idempotency_key": "project-restore"}),
+    );
+    assert_eq!(chat.get(&target, 0)["entries"], json!([]));
+    chat.assert_no_authority();
+    stop(&layout, daemon, chat);
 }
 
 #[test]

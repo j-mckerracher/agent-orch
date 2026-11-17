@@ -198,7 +198,7 @@ export type ConversationTarget =
   | { kind: "project"; projectId: string }
   /** M7-24: a daemon workstream (`conversations.*`), distinct from a project coordinator. */
   | { kind: "workstream"; workstreamId: string };
-/** A target that has a daemon conversation: Global or a workstream. */
+/** Targets with monitoring and action proposals: Global or a workstream. */
 export type LiveConversationTarget = Exclude<ConversationTarget, { kind: "project" }>;
 export interface ConversationEntry {
   id: string;
@@ -302,11 +302,12 @@ export interface ConversationTurnInfo {
 export interface ConversationTranscript {
   target: ConversationTarget;
   entries: ConversationEntry[];
-  /** False for the daemon's coordinator: it records messages and nothing replies. */
+  /** False for legacy coordinator notes on a daemon without project conversations. */
   repliesExpected: boolean;
+  clearGeneration?: number;
   /** True when paging stopped before the end of the log. */
   truncated: boolean;
-  /** Live Global and workstream targets only; null when nothing was sent yet. */
+  /** Latest runtime turn; null when nothing was sent yet. */
   turn?: ConversationTurnInfo | null;
   /** The scope's proposed actions, newest first (DPES-1105). Absent when the daemon did not send them. */
   proposals?: ActionProposal[];
@@ -352,13 +353,12 @@ export interface ConversationSource {
   /** Reads the target log. Project logs keep the oldest 50 pages and mark truncation. */
   transcript(target: ConversationTarget): Promise<SurfaceResult<ConversationTranscript>>;
   /**
-   * Derived: a project target records a note through `coordinator.send_message`;
-   * a global or workstream target sends through `conversations.send` (M7-24).
+   * Derived: all targets send through `conversations.send`.
    * Rejects for `fixture:` ids. Fixture: simulated. `selection` is the model choice for this message (DPES-1105).
    * `permission` is the level the message runs at. It is sent only when the daemon advertises `permission_levels`.
    */
   send(target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel): Promise<SendReceipt>;
-  /** Derived global and workstream targets only: `conversations.cancel` for a running turn. */
+  /** `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
   /**
    * DPES-1105. Approves or rejects one proposed action through `actions.resolve`. `digest` is the proposal's

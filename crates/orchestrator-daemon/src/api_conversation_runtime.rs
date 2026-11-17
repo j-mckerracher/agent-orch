@@ -444,6 +444,7 @@ impl ReplySink {
         let scope = match &self.target {
             ConversationTarget::Global => BlockScope::Global,
             ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
+            ConversationTarget::Project(_) => return TurnBlock::Stripped,
         };
         match parse_block(&text, scope) {
             // Each `task.propose` is checked against its own project's envelope as it is
@@ -600,6 +601,22 @@ impl ConversationService {
     pub(crate) fn require_target(&self, target: &ConversationTarget) -> Result<(), RpcError> {
         match target {
             ConversationTarget::Global => Ok(()),
+            ConversationTarget::Project(id) => {
+                self.shared
+                    .store
+                    .get_project(id)
+                    .map_err(super::map_store_error)?;
+                let scope = self
+                    .shared
+                    .store
+                    .coordinator_scope(id)
+                    .map_err(super::map_store_error)?;
+                if scope.removed {
+                    Err(RpcError::NotFound)
+                } else {
+                    Ok(())
+                }
+            }
             ConversationTarget::Workstream(id) => {
                 if self.workstreams.exists(id)? {
                     Ok(())
@@ -706,7 +723,9 @@ impl ConversationService {
         };
         let choice = if relay.is_some() { None } else { choice };
         let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
-        let actions = turn_actions(negotiated, level);
+        // Project coordinators gain replies, not the Global/workstream action authority.
+        let actions =
+            !matches!(target, ConversationTarget::Project(_)) && turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);

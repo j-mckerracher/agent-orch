@@ -43,7 +43,9 @@ use crate::sqlite_actions::{
 };
 use crate::sqlite_conversation_usage::TurnTrigger;
 use crate::sqlite_history::{
-    record_audit, set_clear_gate, tombstone_conversation_sends, ClearOutcome,
+    bump_coordinator, coordinator_generation, coordinator_removed, coordinator_scope_id,
+    count_coordinator_entries, record_audit, require_project, set_clear_gate,
+    tombstone_conversation_sends, wipe_coordinator, ClearOutcome,
 };
 use crate::sqlite_notes::delete_scope_notes;
 use crate::sqlite_wake::delete_scope_wake_records;
@@ -67,6 +69,7 @@ pub enum ConversationTarget {
     Global,
     /// Opaque reference resolved by M7-07.
     Workstream(String),
+    Project(String),
 }
 
 impl ConversationTarget {
@@ -74,6 +77,7 @@ impl ConversationTarget {
         match self {
             Self::Global => "conversation:global".to_owned(),
             Self::Workstream(id) => format!("conversation:workstream:{id}"),
+            Self::Project(id) => format!("conversation:project:{id}"),
         }
     }
 
@@ -82,18 +86,25 @@ impl ConversationTarget {
         match self {
             Self::Global => "global".to_owned(),
             Self::Workstream(id) => format!("workstream:{id}"),
+            Self::Project(id) => format!("project:{id}"),
         }
     }
 
-    fn parts(&self) -> (&'static str, Option<&str>) {
+    fn parts(&self) -> (&'static str, Option<&str>, Option<&str>) {
         match self {
-            Self::Global => ("global", None),
-            Self::Workstream(id) => ("workstream", Some(id.as_str())),
+            Self::Global => ("global", None, None),
+            Self::Workstream(id) => ("workstream", Some(id.as_str()), None),
+            Self::Project(id) => ("project", None, Some(id.as_str())),
         }
     }
 
     fn validate(&self) -> Result<(), ConversationError> {
         match self {
+            Self::Project(id)
+                if id.is_empty() || id.len() > 4096 || id.chars().any(char::is_control) =>
+            {
+                Err(ConversationError::InvalidInput("project id"))
+            }
             Self::Workstream(id)
                 if id.is_empty()
                     || id.len() > MAX_WORKSTREAM_ID_BYTES
@@ -322,12 +333,25 @@ impl SqliteStore {
             return Err(ConversationError::InvalidInput("message"));
         }
         let conversation_id = target.id();
-        let (kind, workstream_id) = target.parts();
-        let (kind, workstream_id) = (kind, workstream_id.map(str::to_owned));
+        let (kind, workstream_id, project_id) = target.parts();
+        let (workstream_id, project_id) = (
+            workstream_id.map(str::to_owned),
+            project_id.map(str::to_owned),
+        );
         let (turn_id, text) = (turn_id.to_owned(), text.to_owned());
         let (runtime_name, runtime_version) = (runtime_name.to_owned(), runtime_version.to_owned());
         conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            if let Some(id) = &project_id {
+                require_project(&mut transaction, id).await?;
+                if coordinator_removed(&mut transaction, id).await? {
+                    return Err(StoreError::RecordNotFound {
+                        entity: "coordinator",
+                        id: id.clone(),
+                    }
+                    .into());
+                }
+            }
             if let Some(turn) = load_turn(&mut transaction, &turn_id).await? {
                 if turn.conversation_id != conversation_id {
                     return Err(ConversationError::InvalidInput("turn id"));
@@ -341,12 +365,13 @@ impl SqliteStore {
                 });
             }
             sqlx::query(
-                "INSERT INTO conversations (id, target_kind, workstream_id) VALUES (?, ?, ?) \
+                "INSERT INTO conversations (id, target_kind, workstream_id, project_id) VALUES (?, ?, ?, ?) \
                  ON CONFLICT(id) DO NOTHING",
             )
             .bind(&conversation_id)
             .bind(kind)
             .bind(&workstream_id)
+            .bind(&project_id)
             .execute(&mut *transaction)
             .await?;
             let running: Option<String> = sqlx::query_scalar(
@@ -796,13 +821,45 @@ impl SqliteStore {
         &self,
         target: &ConversationTarget,
     ) -> Result<ClearOutcome, ConversationError> {
+        self.clear_conversation_history_as(target, false)
+    }
+
+    pub(crate) fn clear_conversation_history_as(
+        &self,
+        target: &ConversationTarget,
+        remove: bool,
+    ) -> Result<ClearOutcome, ConversationError> {
         target.validate()?;
         let conversation_id = target.id();
-        let (kind, workstream_id) = target.parts();
-        let (kind, workstream_id) = (kind, workstream_id.map(str::to_owned));
+        let (kind, workstream_id, project_id) = target.parts();
+        let (workstream_id, project_id) = (
+            workstream_id.map(str::to_owned),
+            project_id.map(str::to_owned),
+        );
         let notes_scope = target.notes_scope();
         let outcome = conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let legacy_entries = if let Some(id) = &project_id {
+                require_project(&mut transaction, id).await?;
+                if coordinator_removed(&mut transaction, id).await? {
+                    if !remove {
+                        return Err(StoreError::RecordNotFound {
+                            entity: "coordinator",
+                            id: id.clone(),
+                        }
+                        .into());
+                    }
+                    return Ok(ClearOutcome {
+                        cleared: false,
+                        entries_deleted: 0,
+                        turns_deleted: 0,
+                        clear_generation: coordinator_generation(&mut transaction, id).await?,
+                    });
+                }
+                count_coordinator_entries(&mut transaction, id).await?
+            } else {
+                0
+            };
             let running: Option<String> = sqlx::query_scalar(
                 "SELECT id FROM conversation_turns WHERE conversation_id = ? AND state = 'running'",
             )
@@ -832,22 +889,30 @@ impl SqliteStore {
                     .bind(&conversation_id)
                     .fetch_one(&mut *transaction)
                     .await?;
-            if entries == 0 && turns == 0 && wake_records == 0 {
+            if entries == 0 && turns == 0 && wake_records == 0 && legacy_entries == 0 && !remove {
                 let clear_generation: Option<i64> =
                     sqlx::query_scalar("SELECT clear_generation FROM conversations WHERE id = ?")
                         .bind(&conversation_id)
                         .fetch_optional(&mut *transaction)
                         .await?;
+                let clear_generation = if let Some(id) = &project_id {
+                    coordinator_generation(&mut transaction, id).await?
+                } else {
+                    clear_generation.unwrap_or(0)
+                };
                 transaction.commit().await?;
                 return Ok(ClearOutcome {
                     cleared: false,
                     entries_deleted: 0,
                     turns_deleted: 0,
-                    clear_generation: clear_generation.unwrap_or(0),
+                    clear_generation,
                 });
             }
-            let entries = u64::try_from(entries).unwrap_or(0);
+            let entries = u64::try_from(entries).unwrap_or(0) + legacy_entries;
             let turns = u64::try_from(turns).unwrap_or(0);
+            if let Some(id) = &project_id {
+                wipe_coordinator(&mut transaction, id).await?;
+            }
             set_clear_gate(&mut transaction, true).await?;
             delete_scope_proposals(&mut transaction, &conversation_id).await?;
             // The wake turn ledger and the usage receipts stay: they hold no text, and a
@@ -864,16 +929,35 @@ impl SqliteStore {
                 .await?;
             set_clear_gate(&mut transaction, false).await?;
             let clear_generation: i64 = sqlx::query_scalar(
-                "INSERT INTO conversations (id, target_kind, workstream_id) VALUES (?, ?, ?) \
+                "INSERT INTO conversations (id, target_kind, workstream_id, project_id) VALUES (?, ?, ?, ?) \
                  ON CONFLICT(id) DO UPDATE SET clear_generation = clear_generation + 1 \
                  RETURNING clear_generation",
             )
             .bind(&conversation_id)
             .bind(kind)
             .bind(&workstream_id)
+            .bind(&project_id)
             .fetch_one(&mut *transaction)
             .await?;
-            record_audit(&mut transaction, "clear", &conversation_id, entries, turns).await?;
+            let (clear_generation, audit_scope) = if let Some(id) = &project_id {
+                let generation = bump_coordinator(&mut transaction, id, remove).await?;
+                sqlx::query("UPDATE conversations SET clear_generation = ? WHERE id = ?")
+                    .bind(generation)
+                    .bind(&conversation_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                (generation, coordinator_scope_id(id))
+            } else {
+                (clear_generation, conversation_id)
+            };
+            record_audit(
+                &mut transaction,
+                if remove { "remove" } else { "clear" },
+                &audit_scope,
+                entries,
+                turns,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(ClearOutcome {
                 cleared: true,

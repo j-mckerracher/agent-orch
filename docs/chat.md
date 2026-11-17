@@ -4,7 +4,9 @@ The Orchestrator Workspace is where you talk to an agent. Each message can use a
 
 ## Choose who you talk to
 
-The target picker lists Global, project coordinators, and workstreams. Click anywhere on a target's row to load its conversation and restore its unsent draft. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository.
+The target picker lists Global, project coordinators, and workstreams. Click anywhere on a target's row to load its conversation and restore its unsent draft. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository and appears only after you add it; registering a repository alone does not create one.
+
+Project coordinators answer through the same agent runtime as Global and workstreams, using your chosen model and permission level. Earlier coordinator notes remain visible above new exchanges. Project conversations do not propose actions; use Global or a workstream to request actionable plans. If the daemon predates project conversations, update it before sending; the app keeps your draft instead of saving an unanswered note.
 
 ## Choose an agent and model
 

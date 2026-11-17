@@ -48,6 +48,8 @@ pub enum Capability {
     ConversationHistory,
     /// A model and effort chosen for one `conversations.send` (DPES-1105).
     ConversationSelection,
+    /// Project coordinator targets on the shared conversation runtime.
+    ProjectConversations,
     /// A permission level chosen for one `conversations.send` (DPES-1105). Not
     /// advertised by an older daemon, which runs every message read-only.
     PermissionLevels,
@@ -74,7 +76,7 @@ pub enum Capability {
 }
 
 impl Capability {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -91,6 +93,7 @@ impl Capability {
         Self::Workstreams,
         Self::ConversationHistory,
         Self::ConversationSelection,
+        Self::ProjectConversations,
         Self::PermissionLevels,
         Self::OrchestratorActions,
         Self::Settings,
@@ -118,6 +121,7 @@ impl Capability {
             Self::Workstreams => "workstreams",
             Self::ConversationHistory => "conversation_history",
             Self::ConversationSelection => "conversation_selection",
+            Self::ProjectConversations => "project_conversations",
             Self::PermissionLevels => "permission_levels",
             Self::OrchestratorActions => "orchestrator_actions",
             Self::Settings => "settings",

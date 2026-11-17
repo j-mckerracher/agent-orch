@@ -54,7 +54,11 @@ async function mountView(services: Services, waitConnected = true) {
   return { user, view };
 }
 
-const liveDaemon = () => populate(new FakeDaemon());
+const liveDaemon = () => {
+  const fake = populate(new FakeDaemon());
+  stubConversation(fake, "completed");
+  return fake;
+};
 const created: Services[] = [];
 const track = (services: Services) => (created.push(services), services);
 
@@ -300,23 +304,26 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.queryByText(/does not create tasks or approvals/)).toBeNull();
   });
 
-  it("sends through coordinator.send_message with an idempotency key, then reloads the recorded note", async () => {
+  it("sends to the project conversation runtime with an idempotency key and shows its reply", async () => {
     const fake = liveDaemon();
+    stubConversation(fake, "completed");
     const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     await user.type(box, "ship it");
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
-    const params = fake.callsTo("coordinator.send_message")[0].params as Record<string, unknown>;
-    expect(params).toMatchObject({ project_id: ALPHA, text: "ship it" });
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    const params = fake.callsTo("conversations.send")[0].params as Record<string, unknown>;
+    expect(params).toMatchObject({ target: { kind: "project", project_id: ALPHA }, text: "ship it" });
     expect(String(params.idempotency_key)).not.toBe("");
-    expect(await screen.findByText("Recorded by the daemon. The coordinator does not reply.")).toBeInTheDocument();
+    expect(await screen.findByText("Hello from the runtime.")).toBeInTheDocument();
+    expect(screen.queryByText("Notes, no reply")).toBeNull();
+    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
     expect(box).toHaveValue("");
     expect(services.drafts.workspaceDraft(`project:${ALPHA}`)).toBe("");
     // The transcript was re-read after the send.
-    await waitFor(() => expect(fake.callsTo("coordinator.get").length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(fake.callsTo("conversations.get").length).toBeGreaterThanOrEqual(2));
   });
 
   it("keeps the draft after a failed send and reuses the idempotency key when an indeterminate send is retried", async () => {
@@ -326,14 +333,14 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     await user.type(box, "retry me");
-    fake.failNext("coordinator.send_message", "hang");
+    fake.failNext("conversations.send", "hang");
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
     expect(await screen.findByRole("alert", {}, { timeout: 2000 })).toHaveTextContent(/Sending the message failed/);
     expect(screen.getByText(/The daemon may have recorded it/)).toBeInTheDocument();
     expect(box).toHaveValue("retry me");
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(2));
-    const [first, second] = fake.callsTo("coordinator.send_message").map((call) => (call.params as Record<string, unknown>).idempotency_key);
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(2));
+    const [first, second] = fake.callsTo("conversations.send").map((call) => (call.params as Record<string, unknown>).idempotency_key);
     expect(second).toBe(first);
     await waitFor(() => expect(box).toHaveValue(""));
   });
@@ -382,6 +389,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
   it.each([
     { label: "Global orchestrator", target: /Global orchestrator/ },
     { label: "Session hardening orchestrator", target: /Session hardening orchestrator/ },
+    { label: "alpha coordinator", target: /alpha coordinator/ },
   ])("clears the waiting status after a successful $label turn", async ({ target }) => {
     const fake = liveDaemon();
     const convo = stubConversation(fake, "running");
@@ -466,8 +474,8 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(await screen.findByRole("heading", { name: "Talking to: alpha coordinator" })).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "x");
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
-    for (const call of [...fake.callsTo("coordinator.send_message"), ...fake.callsTo("coordinator.get")]) {
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    for (const call of [...fake.callsTo("conversations.send"), ...fake.callsTo("coordinator.get")]) {
       expect(JSON.stringify(call.params)).not.toContain("fixture:");
     }
   });
@@ -570,7 +578,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(fake.callsTo("conversations.send")).toHaveLength(1);
   });
 
-  it("sends a coordinator note without the model choice, and keeps the choice the user made (DPES-1105)", async () => {
+  it("sends the chosen model with a project coordinator message and keeps the choice", async () => {
     const fake = liveDaemon();
     const catalog = [CODEX_CATALOG];
     fake.stub("agents.catalog", catalog);
@@ -584,13 +592,13 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
     expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
-    expect(fake.callsTo("coordinator.send_message")[0]!.params).not.toHaveProperty("selection");
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ selection: { agent: "codex", model: "gpt-a" } });
     expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "codex", model: "gpt-a" }));
     expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A/ })).toBeInTheDocument();
   });
 
-  it("sends a coordinator note with a saved choice and level present, and sends neither on the request (DPES-1105)", async () => {
+  it("sends a project coordinator message with the saved model, effort and permission level", async () => {
     window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }));
     window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
     const fake = liveDaemon();
@@ -606,10 +614,12 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await user.type(screen.getByRole("textbox", { name: "Message alpha coordinator" }), "a note");
     expect(screen.queryByText(/Coordinator notes take no model/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
-    const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
-    expect(Object.keys(params).sort()).toEqual(["idempotency_key", "project_id", "text"]);
-    expect(params).toMatchObject({ text: "a note" });
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    const params = fake.callsTo("conversations.send")[0]!.params as Record<string, unknown>;
+    expect(params).toMatchObject({
+      target: { kind: "project", project_id: ALPHA }, text: "a note",
+      selection: { agent: "codex", model: "gpt-a", effort: "high" }, permission: "restricted",
+    });
     expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(
       JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }),
     );
@@ -818,15 +828,21 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.queryByText(/PLACEHOLDER/)).toBeNull();
   });
 
-  it("labels project targets 'notes, no reply' in the header and the picker, with no note above the composer", async () => {
-    const services = track(build({ fake: liveDaemon() }));
+  it("keeps legacy notes readable but blocks unanswered sends on older daemons", async () => {
+    const fake = liveDaemon();
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "project_conversations");
+    const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
-    const heading = await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
-    expect(within(heading.parentElement as HTMLElement).getByText("Notes, no reply")).toBeInTheDocument();
-    expect(screen.queryByText(/Notes only, no reply/)).toBeNull();
-    await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
-    expect(screen.getAllByText(/notes, no reply/).length).toBeGreaterThan(0);
+    await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
+    expect(await screen.findByText("hello")).toBeInTheDocument();
+    const box = screen.getByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(box, "keep my question");
+    expect(screen.getByRole("button", { name: "Send message to alpha coordinator" })).toBeDisabled();
+    expect(screen.getByText(/Update the daemon to enable project coordinator replies/)).toBeInTheDocument();
+    expect(box).toHaveValue("keep my question");
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+    expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
   });
 
   it("names the composer for screen readers with a fixed placeholder and shows no visible label or key hint", async () => {
@@ -1251,9 +1267,9 @@ describe("composer keys", () => {
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     await user.type(box, "ship it{Enter}");
-    await waitFor(() => expect(fake.callsTo("coordinator.send_message")).toHaveLength(1));
-    const params = fake.callsTo("coordinator.send_message")[0]!.params as Record<string, unknown>;
-    expect(params).toMatchObject({ project_id: ALPHA, text: "ship it" });
+    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
+    const params = fake.callsTo("conversations.send")[0]!.params as Record<string, unknown>;
+    expect(params).toMatchObject({ target: { kind: "project", project_id: ALPHA }, text: "ship it" });
     await waitFor(() => expect(box).toHaveValue(""));
   });
 
@@ -1307,7 +1323,7 @@ describe("workspace view, history actions", () => {
 
     expect(await screen.findByRole("heading", { name: "Talking to: Global orchestrator", level: 2 })).toBeInTheDocument();
     expect(fake.callsTo("coordinator.remove")[0].params).toMatchObject({ project_id: ALPHA });
-    expect(await screen.findByText(/Coordinator removed\. Its notes were deleted/)).toBeInTheDocument();
+    expect(await screen.findByText(/Coordinator removed\. Its conversation was deleted/)).toBeInTheDocument();
     expect(services.drafts.workspaceDraft(`project:${ALPHA}`)).toBe("");
     await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
     await waitFor(() => expect(screen.queryByRole("radio", { name: /alpha coordinator/ })).toBeNull());
@@ -1378,7 +1394,7 @@ describe("workspace view, history actions", () => {
     await user.click(screen.getByRole("button", { name: "Clear history permanently" }));
 
     expect(fake.callsTo("coordinator.clear")[0].params).toMatchObject({ project_id: ALPHA });
-    expect(await screen.findByText("Coordinator history cleared. The deleted notes cannot be recovered.")).toBeInTheDocument();
+    expect(await screen.findByText("Coordinator history cleared. The deleted messages and replies cannot be recovered.")).toBeInTheDocument();
     await waitFor(() => expect(within(log).queryByText("hello")).toBeNull());
     expect(box).toHaveValue("still here");
   });

@@ -64,7 +64,7 @@ fn database_at_0039(directory: &Path) -> Vec<String> {
         let options = SqliteConnectOptions::new()
             .filename(directory.join("store.sqlite"))
             .create_if_missing(true)
-            .foreign_keys(false);
+            .foreign_keys(true);
         let mut connection = sqlx::SqliteConnection::connect_with(&options)
             .await
             .unwrap();
@@ -80,6 +80,9 @@ fn database_at_0039(directory: &Path) -> Vec<String> {
             .unwrap();
         assert_eq!(newest, 39);
         for sql in [
+            "INSERT INTO projects (id, root_path, settings) VALUES ('p1', '/work/p1', '{}')",
+            "INSERT INTO tasks (id, project_id, state, contract_json, version) \
+             VALUES ('task-a', 'p1', 'Queued', '{}', 1), ('task-b', 'p1', 'Queued', '{}', 1)",
             "UPDATE orchestrator_settings SET load_cpu_percent = 70",
             "INSERT INTO conversations (id, target_kind) VALUES ('conversation:global', 'global')",
             "INSERT INTO conversation_turns (id, conversation_id, state, runtime_name, runtime_version) \

@@ -338,6 +338,7 @@
    "agent_failures_and_oversized_replies_fail_the_turn_with_stable_codes",
    "the_agent_runs_read_only_in_an_empty_scratch_directory",
    "cancel_stops_a_streaming_reply_and_later_output_is_discarded",
+   "project_coordinator_replies_keep_history_selection_and_lifecycle",
    "replies_are_ordered_correlated_and_carry_history_and_workstream_context",
    "replies_survive_a_restart_replay_by_sequence_and_stay_idempotent",
    "an_agent_orphaned_by_a_killed_daemon_is_reaped_on_the_next_start",

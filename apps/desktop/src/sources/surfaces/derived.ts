@@ -1,7 +1,7 @@
 /**
  * Daemon-derived D9-D17 adapters. D9 uses workstreams.list/get and tasks.list;
- * D10 uses coordinator.get/send_message for project notes and conversations.get/send/cancel
- * for Global and workstream turns. D11 prefers queue.snapshot with tasks.list and
+ * D10 retains legacy project notes via coordinator.get and uses conversations.get/send/cancel
+ * for Global, project and workstream turns. D11 prefers queue.snapshot with tasks.list and
  * approvals.list. D12 uses usage.summary and the usage.localTools methods; D13 uses host.metrics; D14 uses
  * agents.capabilities/catalog/validate_selection; D16 joins approvals.list and tasks.list and adds actions.pending;
  * D17 uses settings.get and settings.set. D15 indexes D9 and D16 locally. No daemon method is added here.
@@ -21,7 +21,6 @@ import { mapProposal } from "./actionProposals";
 import {
   createLiveConversation,
   HistoryChanged,
-  isLiveTarget,
   LIVE_METHODS,
   restartOnHistoryChange,
 } from "./conversationLive";
@@ -109,10 +108,9 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     simulateCreate: () => Promise.reject(fixtureOnly("workstream creation")),
   };
 
-  const conversationProvenance = prov("D10", ["coordinator.get", "coordinator.send_message", ...LIVE_METHODS]);
+  const conversationProvenance = prov("D10", ["coordinator.get", ...LIVE_METHODS]);
   const projectProvenance = prov("D10", [
     "coordinator.get",
-    "coordinator.send_message",
     "coordinator.clear",
     "coordinator.remove",
     "coordinator.restore",
@@ -121,12 +119,12 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const conversation: ConversationSource = {
     provenance: conversationProvenance,
     async transcript(target: ConversationTarget) {
-      if (isLiveTarget(target)) return liveConversation.transcript(target);
+      if (target.kind !== "project") return liveConversation.transcript(target);
       if (isFixtureLikeId(target.projectId)) {
         return notOk(projectProvenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
       // A clear between pages starts the read over, so the notes shown never mix two logs.
-      return guarded(projectProvenance, now, () =>
+      const readNotes = () => guarded(projectProvenance, now, () =>
         restartOnHistoryChange(async () => {
           const api = connection.api();
           const entries: CoordinatorEntry[] = [];
@@ -152,48 +150,38 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
               at: entry.created_at,
             })),
             repliesExpected: false,
+            clearGeneration: generation ?? 0,
             truncated: more,
             proposalsMore: false,
           };
         }),
       );
-    },
-    async send(target, text, selection, permission) {
-      if (isLiveTarget(target)) return liveConversation.send(target, text, selection, permission);
-      // A coordinator note has no selection on the wire; refuse rather than send the message without the choice.
-      if (selection !== undefined) {
-        throw new DaemonError("invalid-params", "Only a Global or workstream message takes a model choice.");
-      }
-      if (permission !== undefined) {
-        throw new DaemonError("invalid-params", "Only a Global or workstream message takes a permission level.");
-      }
-      if (isFixtureLikeId(target.projectId)) {
-        throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
-      }
-      const scope = `send:${target.projectId}`;
-      const key = keys.keyFor(scope, text);
+      if (!connection.getSnapshot().capabilities.includes("project_conversations")) return readNotes();
       try {
-        const entry = await connection.api().coordinatorSendMessage(target.projectId, text, key);
-        keys.settle(scope, null);
-        return {
-          simulated: false,
-          provenance: projectProvenance,
-          notice:
-            "cleared" in entry
-              ? "That note was cleared. The coordinator does not reply."
-              : "Recorded by the daemon. The coordinator does not reply.",
-          at: entry.created_at ?? new Date(now()).toISOString(),
-          entryId: entry.id,
-        };
+        return await restartOnHistoryChange(async () => {
+          const notes = await readNotes();
+          if (notes.status !== "ok") return notes;
+          const replies = await liveConversation.transcript(target);
+          if (replies.status !== "ok") return replies;
+          if (notes.data.clearGeneration !== replies.data.clearGeneration) throw new HistoryChanged();
+          return {
+            ...replies,
+            data: {
+              ...replies.data,
+              entries: [...notes.data.entries, ...replies.data.entries],
+              truncated: notes.data.truncated || replies.data.truncated,
+            },
+          };
+        });
       } catch (error) {
-        keys.settle(scope, asDaemonError(error));
-        throw error;
+        return failure(conversationProvenance, error, now);
       }
     },
+    send: (target, text, selection, permission) => liveConversation.send(target, text, selection, permission),
     cancel: (target, turnId) => liveConversation.cancel(target, turnId),
     resolve: (proposalId, decision, digest) => liveConversation.resolve(proposalId, decision, digest),
     async clear(target: ConversationTarget): Promise<ClearReceipt> {
-      if (isLiveTarget(target)) return liveConversation.clear(target);
+      if (target.kind !== "project") return liveConversation.clear(target);
       if (isFixtureLikeId(target.projectId)) {
         throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
       }
@@ -207,7 +195,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
           provenance: projectProvenance,
           cleared: result.cleared,
           notice: result.cleared
-            ? "Coordinator history cleared. The deleted notes cannot be recovered."
+            ? "Coordinator history cleared. The deleted messages and replies cannot be recovered."
             : "There was no coordinator history to clear.",
         };
       } catch (error) {
@@ -239,10 +227,10 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         removed,
         notice: removed
           ? result.changed
-            ? "Coordinator removed. Its notes were deleted; the project and its tasks are unchanged."
+            ? "Coordinator removed. Its conversation was deleted; the project and its tasks are unchanged."
             : "That coordinator was already removed."
           : result.changed
-            ? "Coordinator added. It starts with no notes."
+            ? "Coordinator added. It starts with no conversation history."
             : "That coordinator is already active.",
       };
     } catch (error) {
