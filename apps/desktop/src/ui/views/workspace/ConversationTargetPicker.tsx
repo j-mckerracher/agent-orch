@@ -118,7 +118,15 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
           {shown.map((option) => {
             const unseen = option.target.kind === "global" ? globalUnseen : 0;
             return (
-            <label key={option.key} className="ws-target-option">
+            <label
+              key={option.key}
+              className="ws-target-option"
+              onMouseDown={(event) => {
+                // Keep focus here until the label activates its radio; focusing the scrollable
+                // workspace ancestor would blur and close the popover before the click arrives.
+                event.preventDefault();
+              }}
+            >
               <input
                 type="radio"
                 aria-label={unseen > 0 ? targetNameWithBadge(option.label, unseen) : undefined}
