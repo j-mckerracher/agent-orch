@@ -1,4 +1,5 @@
 import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
+import { heldSets } from "../../sources/surfaces/holds";
 import { useGate, useServices, useStore, useSurface } from "../services";
 import { Badge } from "../theme";
 import type { GlobalView } from "../router";
@@ -78,7 +79,7 @@ const surfaceCount = (status: string, value: number | undefined): Count =>
 /** Same task, approval and proposal lists as the nav, lists and Review count, so the numbers cannot drift. */
 function LiveCounts() {
   const { data, surfaces } = useServices();
-  const { tasks, approvals, proposals } = useStore(data);
+  const { tasks, approvals, proposals, holds } = useStore(data);
   const gate = useGate();
   const taskList = tasks.data;
   // The daemon emits no workstream events, so D9 re-reads when a workstream mutation lands
@@ -106,7 +107,7 @@ function LiveCounts() {
         // Pending approvals plus pending proposed actions, the number the Review nav and the activity badge show.
         attention:
           approvals.data && proposals.data
-            ? pendingDecisionCount(approvals.data, proposals.data)
+            ? pendingDecisionCount(approvals.data, proposals.data, heldSets(holds.data ?? []))
             : pendingRead(approvals.data ? proposals.status : approvals.status),
       }}
     />

@@ -354,6 +354,31 @@ describe("workspace activity popover", () => {
     expect(trigger).toHaveAccessibleName(/1 require attention/);
   });
 
+  it("the_count_is_unchanged_while_the_holds_have_not_loaded", async () => {
+    const fake = liveDaemon();
+    // The holds read never answers, so nothing is known to be held.
+    fake.stub("holds.list", () => new Promise(() => undefined));
+    const { panel } = await mountPanel(fake, { open: false });
+    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
+    await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+  });
+
+  it("the_nav_the_top_bar_and_the_badge_agree_when_something_is_held", async () => {
+    const fake = liveDaemon();
+    fake.approvals = [mkApproval("a1", "t1"), mkApproval("a3", "t2")];
+    fake.stub("holds.list", () => ({
+      holds: [{ id: "h1", subject_kind: "approval", subject_id: "t1", until_date: "2099-01-01", state: "active" }],
+    }));
+    const { panel } = await mountPanel(fake, { open: false });
+    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
+    await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+  });
+
   it("closes on Escape and returns focus to the trigger", async () => {
     const { panel, user } = await mountPanel(null, { open: false });
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });

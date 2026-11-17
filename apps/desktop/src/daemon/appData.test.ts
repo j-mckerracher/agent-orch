@@ -731,3 +731,76 @@ describe("AppData proposals", () => {
     }
   });
 });
+
+describe("AppData holds", () => {
+  const holdWire = (id: string, subjectId: string) => ({ id, subject_kind: "approval", subject_id: subjectId, until_date: "2026-12-01", state: "active" });
+  const heldTasks = (data: AppData) => data.getSnapshot().holds.data?.map((hold) => hold.subjectId);
+  const idleFor = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "hidden");
+    vi.useRealTimers();
+  });
+
+  it("an_older_daemon_without_holds_reads_as_nothing_held", async () => {
+    const fake = new FakeDaemon();
+    const { connection, data } = setup(fake);
+    expect(data.getSnapshot().holds).toEqual({ status: "idle", data: null, error: null });
+    connection.start();
+    await until(() => data.getSnapshot().holds.status === "ready");
+    expect(data.getSnapshot().holds).toEqual({ status: "ready", data: [], error: null });
+  });
+
+  it("the_holds_slice_refreshes_on_the_visible_window_timer_and_leaks_no_timer", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const fake = new FakeDaemon();
+    fake.stub("holds.list", () => ({ holds: [holdWire("h1", "t1")] }));
+    const connection = new ConnectionManager({ connector: fake, backoffMs: [5], requestTimeoutMs: 100 });
+    const data = new AppData(connection, { coalesceMs: 10 });
+    // One timer serves both the proposals and the holds read.
+    expect(vi.getTimerCount()).toBe(1);
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    try {
+      connection.start();
+      await until(() => heldTasks(data) !== undefined);
+      expect(heldTasks(data)).toEqual(["t1"]);
+      await idleFor(30);
+      const reads = () => fake.callsTo("holds.list").length;
+      const first = reads();
+      vi.advanceTimersByTime(PROPOSALS_REFRESH_MS);
+      await until(() => reads() === first + 1);
+
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      vi.advanceTimersByTime(3 * PROPOSALS_REFRESH_MS);
+      await idleFor(30);
+      expect(reads()).toBe(first + 1);
+    } finally {
+      connection.stop();
+      data.dispose();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("an_older_holds_read_that_finishes_late_does_not_overwrite_a_newer_one", async () => {
+    const reads: Array<(result: unknown) => void> = [];
+    const connection = {
+      getSnapshot: () => ({ status: "connected" }),
+      onConnected: () => () => undefined,
+      onEvent: () => () => undefined,
+      api: () => ({ holdsList: () => new Promise((answer) => reads.push(answer)) }),
+    } as unknown as ConnectionManager;
+    const data = new AppData(connection, { coalesceMs: 10 });
+    disposables.push(() => data.dispose());
+    const older = data.refreshHolds();
+    const newer = data.refreshHolds();
+    expect(reads).toHaveLength(2);
+
+    reads[1]!({ holds: [holdWire("h2", "t2")] });
+    await newer;
+    expect(heldTasks(data)).toEqual(["t2"]);
+    // The old list, read before the release, arrives after the newer one.
+    reads[0]!({ holds: [holdWire("h1", "t1"), holdWire("h2", "t2")] });
+    await older;
+    expect(heldTasks(data)).toEqual(["t2"]);
+  });
+});

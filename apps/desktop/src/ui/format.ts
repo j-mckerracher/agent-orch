@@ -1,4 +1,5 @@
 import type { Approval, Session, SessionEntry, TaskRecord, TaskState } from "../daemon/types";
+import { NO_HELD, type HeldSets } from "../sources/surfaces/holds";
 import type { TaskFilter } from "./router";
 
 /** Display name only; the full project id (canonical path) is always shown too. */
@@ -50,9 +51,18 @@ export function pendingProposals<T extends { state: string }>(proposals: readonl
   return proposals.filter((proposal) => proposal.state === "pending");
 }
 
-/** Pending approvals plus pending proposed actions: the one number the nav, the top bar and the activity badge show. */
-export function pendingDecisionCount(approvals: readonly Approval[], proposals: readonly { state: string }[]): number {
-  return pendingApprovals(approvals).length + pendingProposals(proposals).length;
+/**
+ * Pending approvals plus pending proposed actions: one number nav, top bar activity badge show. A held decision
+ * (the user postponed it) is not counted, so it matches the Actionable tab; with no `held` every decision counts.
+ */
+export function pendingDecisionCount(
+  approvals: readonly Approval[],
+  proposals: readonly { id?: string; state: string }[],
+  held: HeldSets = NO_HELD,
+): number {
+  const approvalCount = pendingApprovals(approvals).filter((approval) => !held.tasks.has(approval.action.task_id)).length;
+  const proposalCount = pendingProposals(proposals).filter((proposal) => proposal.id === undefined || !held.proposals.has(proposal.id)).length;
+  return approvalCount + proposalCount;
 }
 
 /**

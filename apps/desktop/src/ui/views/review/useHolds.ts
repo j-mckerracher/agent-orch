@@ -36,7 +36,7 @@ export interface HoldsModel {
 }
 
 export function useHolds(): HoldsModel {
-  const { surfaces } = useServices();
+  const { data, surfaces } = useServices();
   const gate = useGate();
   const source = surfaces.holds;
   const live = source.provenance.kind === "daemon";
@@ -91,9 +91,11 @@ export function useHolds(): HoldsModel {
         return false;
       } finally {
         setBusy(null);
+        // The nav count leaves out held decisions: read the holds now rather than at the next 30 second tick.
+        void data.refreshHolds();
       }
     },
-    [busy, result],
+    [busy, data, result],
   );
 
   const hold = useCallback(

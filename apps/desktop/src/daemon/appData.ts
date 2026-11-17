@@ -8,7 +8,9 @@
  * trusted (M5-02 D3).
  */
 import type { ConnectionManager } from "./connection";
-import { DaemonError, asDaemonError } from "./errors";
+import { DaemonError, asDaemonError, isMissingFeature } from "./errors";
+import { mapHold } from "../sources/surfaces/holds";
+import type { HoldItem } from "../sources/surfaces/types";
 import { IdempotencyTracker } from "./idempotency";
 import { Store } from "./store";
 import type {
@@ -33,6 +35,9 @@ export interface ProposalsSlice extends Loadable<ActionsPendingWire["proposals"]
   more: boolean;
 }
 
+/** `holds.list`: the holds in force now. Only the decision count reads it, to leave out held decisions. */
+export type HoldsSlice = Loadable<HoldItem[]>;
+
 export interface Timeline {
   taskId: string;
   sessionId: string;
@@ -55,6 +60,8 @@ export interface AppDataSnapshot {
    * gives an empty loaded list, never an error, so the nav count falls back to the approvals alone.
    */
   proposals: ProposalsSlice;
+  /** `holds.list` (DPES-1105): a daemon without the method gives an empty loaded list, never an error. */
+  holds: HoldsSlice;
   timelines: Record<string, Timeline>;
   /** `tasks.get` per watched task id. */
   taskDetails: Record<string, Loadable<TaskRecord>>;
@@ -95,6 +102,7 @@ export class AppData extends Store<AppDataSnapshot> {
   private readonly watched = new Map<string, () => Promise<void>>();
   private readonly timelineLoads = new Map<string, number>();
   private proposalsLoads = 0;
+  private holdsLoads = 0;
 
   constructor(
     private readonly connection: ConnectionManager,
@@ -106,6 +114,7 @@ export class AppData extends Store<AppDataSnapshot> {
       sessions: idle(),
       approvals: idle(),
       proposals: { status: "idle", data: null, error: null, more: false },
+      holds: idle(),
       timelines: {},
       taskDetails: {},
       taskSessions: {},
@@ -124,7 +133,9 @@ export class AppData extends Store<AppDataSnapshot> {
     // that is shown again reads the list within one interval. Without a document (a node run) there is no window.
     if (typeof document !== "undefined") {
       this.proposalsTimer = setInterval(() => {
-        if (!document.hidden && !this.refreshing) void this.refreshProposals();
+        if (document.hidden || this.refreshing) return;
+        void this.refreshProposals();
+        void this.refreshHolds();
       }, PROPOSALS_REFRESH_MS);
     }
   }
@@ -153,6 +164,7 @@ export class AppData extends Store<AppDataSnapshot> {
           this.load("sessions", (api) => api.sessionsList(null)),
           this.load("approvals", (api) => api.approvalsList()),
           this.loadProposals(),
+          this.loadHolds(),
           ...[...this.watched.values()].map((reload) => reload()),
         ]);
       } while (this.dirty);
@@ -165,6 +177,29 @@ export class AppData extends Store<AppDataSnapshot> {
   async refreshProposals(): Promise<void> {
     if (this.connection.getSnapshot().status !== "connected") return;
     await this.loadProposals();
+  }
+
+  /** Reads the holds in force again. While disconnected nothing is sent; the next connect reads them. */
+  async refreshHolds(): Promise<void> {
+    if (this.connection.getSnapshot().status !== "connected") return;
+    await this.loadHolds();
+  }
+
+  /** Same newest-read-wins guard as `loadProposals`. A daemon without holds reads as nothing held. */
+  private async loadHolds(): Promise<void> {
+    const generation = ++this.holdsLoads;
+    const stale = () => this.holdsLoads !== generation;
+    const previous = this.getSnapshot().holds;
+    this.update({ holds: { ...previous, status: "loading", error: null } });
+    try {
+      const { holds } = await this.connection.api().holdsList();
+      if (!stale()) this.update({ holds: { status: "ready", data: holds.map(mapHold), error: null } });
+    } catch (error) {
+      const failure = asDaemonError(error);
+      if (stale()) return;
+      if (isMissingFeature(failure)) this.update({ holds: { status: "ready", data: [], error: null } });
+      else this.update({ holds: { status: "error", data: previous.data, error: failure } });
+    }
   }
 
   /**

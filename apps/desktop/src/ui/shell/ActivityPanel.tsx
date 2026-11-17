@@ -44,6 +44,7 @@ import type {
   UsageSummary,
   WaitingReason,
 } from "../../sources/surfaces/types";
+import { heldSets } from "../../sources/surfaces/holds";
 import { basename, decisionCountText, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
@@ -370,7 +371,7 @@ export function ActivityPanel() {
   const { more } = appData.proposals;
   const attentionCount =
     appData.approvals.data && appData.proposals.data
-      ? decisionCountText(pendingDecisionCount(appData.approvals.data, appData.proposals.data), more)
+      ? decisionCountText(pendingDecisionCount(appData.approvals.data, appData.proposals.data, heldSets(appData.holds.data ?? [])), more)
       : null;
   const badge = attentionCount ?? "—";
   // The source lists approvals only; a pending proposed action waits on its card in the conversation.

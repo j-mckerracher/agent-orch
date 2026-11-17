@@ -3,6 +3,7 @@ import { emptySubmitDraft, type SubmitDraft } from "./drafts";
 import { decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
+import { NO_HELD } from "../sources/surfaces/holds";
 import { mkApproval, mkTask } from "../test/fakeDaemon";
 
 const draft = (patch: Partial<SubmitDraft> = {}): SubmitDraft => ({
@@ -149,6 +150,19 @@ describe("pendingDecisionCount", () => {
     expect(pendingDecisionCount(approvals, [])).toBe(2);
     expect(pendingDecisionCount([], proposals)).toBe(2);
     expect(pendingDecisionCount([], [])).toBe(0);
+  });
+
+  it("a_held_approval_is_not_counted_in_the_decision_count", () => {
+    const held = { tasks: new Set(["t1"]), proposals: new Set<string>() };
+    expect(pendingDecisionCount(approvals, [], held)).toBe(1);
+    expect(pendingDecisionCount(approvals, [], NO_HELD)).toBe(2);
+  });
+
+  it("a_held_proposal_is_not_counted_in_the_decision_count", () => {
+    const withIds = [{ id: "p1", state: "pending" }, { id: "p2", state: "pending" }, { id: "p3", state: "executed" }];
+    const held = { tasks: new Set<string>(), proposals: new Set(["p1", "p3"]) };
+    expect(pendingDecisionCount([], withIds, held)).toBe(1);
+    expect(pendingDecisionCount(approvals, withIds, held)).toBe(3);
   });
 
   it("decision_count_text_is_the_bare_number_and_gets_a_plus_only_when_more_are_waiting", () => {
