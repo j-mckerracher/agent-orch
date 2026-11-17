@@ -181,7 +181,7 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
                   disabled={busy}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
-                    if (value === "off" || value === "15" || value === "30" || value === "60" || value === "custom") setChoice(value);
+                    if (value === "off" || value === "60" || value === "120" || value === "240" || value === "custom") setChoice(value);
                   }}
                 >
                   <option value="off">Off</option>
