@@ -2,6 +2,7 @@ use super::*;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::scheduler::StartGate;
 use orchestrator_core::task::{Attempt, TaskEvent};
 use orchestrator_store::Store;
 use serde_json::json;
@@ -198,6 +199,7 @@ fn withheld_start_authorization_waits_for_approval() {
             SchedulerLimits::default(),
             None,
             false,
+            StartGate::Open,
             &deny_held,
         )
         .unwrap(),
@@ -224,6 +226,7 @@ fn restart_gate_marks_startable_tasks_as_blocked() {
             SchedulerLimits::default(),
             None,
             true,
+            StartGate::Open,
             &|_: &str, _: &str| true,
         )
         .unwrap(),
@@ -234,6 +237,34 @@ fn restart_gate_marks_startable_tasks_as_blocked() {
     let gated = entry(&result, "gated");
     assert_eq!(gated["waiting_reason"], "other");
     assert_eq!(gated["waiting_detail"], "dispatch_blocked");
+}
+
+#[test]
+fn a_queued_task_waiting_on_load_is_listed_with_the_meter_and_percentages() {
+    let (_directory, api) = new_api();
+    register(&api, "a");
+    register(&api, "b");
+    queue(&api, "a1", "a", &[]);
+    queue(&api, "a2", "a", &[]);
+    queue(&api, "b1", "b", &[]);
+    let open = snapshot(&api);
+    crate::api::load::tests::close_gate(&api.config.load);
+
+    let closed = snapshot(&api);
+
+    for id in ["a1", "a2", "b1"] {
+        let waiting = entry(&closed, id);
+        assert_eq!(waiting["waiting_reason"], "load", "{id}");
+        assert_eq!(
+            waiting["load"],
+            json!({"meter": "cpu", "mean_percent": 95, "limit_percent": 80, "reopen_percent": 70})
+        );
+        // Positions stay the fair order while the gate is closed.
+        assert_eq!(waiting["position"], entry(&open, id)["position"], "{id}");
+        assert_eq!(entry(&open, id).get("load"), None, "{id}");
+    }
+    assert_eq!(ids(&closed["queued"]), ["a1", "b1", "a2"]);
+    assert!(!closed.to_string().contains("/private"));
 }
 
 #[test]
@@ -304,6 +335,7 @@ fn build(reading: &super::queue::Reading, cursor: Option<&str>, dispatch_blocked
             SchedulerLimits::default(),
             cursor,
             dispatch_blocked,
+            StartGate::Open,
             &|_: &str, _: &str| true,
         )
         .unwrap(),

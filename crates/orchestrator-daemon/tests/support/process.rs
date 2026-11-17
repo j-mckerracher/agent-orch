@@ -170,6 +170,8 @@ impl Daemon {
             command.arg("--approver-stdin");
         }
         let mut child = command
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())

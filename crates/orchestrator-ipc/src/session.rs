@@ -440,6 +440,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
             Some(Capability::Review)
         }
         "host.metrics" => Some(Capability::Host),
+        "settings.get" | "settings.set" => Some(Capability::Settings),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

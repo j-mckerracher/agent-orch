@@ -196,6 +196,11 @@ impl DaemonApi {
             SqliteStore::new(&data_dir.join("store.sqlite"))
                 .map_err(|_| "cannot open daemon store".to_owned())?,
         );
+        // The saved limits apply before anything can start a task.
+        let settings = store
+            .orchestrator_settings()
+            .map_err(|_| "cannot read orchestrator settings".to_owned())?;
+        config.load.set_limits(settings.load);
         let approval_actor = Actor::User(LOCAL_USER.to_owned());
         let approval_allowlist =
             ApproverAllowlist::new(LOCAL_USER, std::iter::empty::<String>())
@@ -212,8 +217,11 @@ impl DaemonApi {
             Arc::new(runtime),
             Arc::new(conversation_agent::StoreWorkstreams(store.clone())),
             pinned,
+            config.load.clone(),
         );
         conversations.recover()?;
+        let feed = config.load_feed.then(|| config.load.clone());
+        let host = host::HostService::new(data_dir, feed);
         let api = Self {
             store,
             config,
@@ -221,7 +229,7 @@ impl DaemonApi {
             idempotency_gate: Mutex::new(()),
             approval_actor,
             approval_allowlist,
-            host: host::HostService::new(data_dir),
+            host,
             local_usage: usage_local::start_local_usage(data_dir),
             conversations,
             catalog_cache,
@@ -293,6 +301,7 @@ impl RpcHandler for DaemonApi {
             Capability::ConversationSelection,
             Capability::PermissionLevels,
             Capability::OrchestratorActions,
+            Capability::Settings,
         ]
     }
 
@@ -341,6 +350,8 @@ impl RpcHandler for DaemonApi {
             "review.evidence" => self.review_evidence(params),
             "review.request_changes" => self.review_request_changes(params),
             "host.metrics" => self.host_metrics(params),
+            "settings.get" => self.settings_get(params),
+            "settings.set" => self.settings_set(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
             "usage.localTools" => self.local_usage_read(params),
@@ -1496,6 +1507,8 @@ mod conversations;
 mod coordinator;
 #[path = "api_host.rs"]
 mod host;
+#[path = "api_load.rs"]
+pub(crate) mod load;
 #[path = "api_models.rs"]
 mod models;
 #[path = "api_queue.rs"]
@@ -1503,6 +1516,8 @@ mod queue;
 #[path = "api_review.rs"]
 mod review;
 use review::map_review_error;
+#[path = "api_settings.rs"]
+mod settings;
 #[path = "api_usage.rs"]
 mod usage;
 #[path = "api_usage_local.rs"]
@@ -1515,6 +1530,10 @@ mod usage_tests;
 #[cfg(test)]
 #[path = "api_queue_tests.rs"]
 mod queue_tests;
+
+#[cfg(test)]
+#[path = "api_settings_tests.rs"]
+mod settings_tests;
 #[path = "api_workstreams.rs"]
 mod workstreams;
 

@@ -55,10 +55,13 @@ pub enum Capability {
     /// pending proposals (DPES-1105). Not advertised by an older daemon, which
     /// never parses a reply.
     OrchestratorActions,
+    /// `settings.get` and the user-only `settings.set`: the machine load limits and the
+    /// live state of the load gate (DPES-1105).
+    Settings,
 }
 
 impl Capability {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -77,6 +80,7 @@ impl Capability {
         Self::ConversationSelection,
         Self::PermissionLevels,
         Self::OrchestratorActions,
+        Self::Settings,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -99,6 +103,7 @@ impl Capability {
             Self::ConversationSelection => "conversation_selection",
             Self::PermissionLevels => "permission_levels",
             Self::OrchestratorActions => "orchestrator_actions",
+            Self::Settings => "settings",
         }
     }
 

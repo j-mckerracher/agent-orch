@@ -401,6 +401,22 @@ impl Client {
         self.call_feature(Capability::Host, "host.metrics", Value::Null)
     }
 
+    /// `settings.get`: the machine load limits and the live state of the load gate.
+    pub fn settings_get(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Settings, "settings.get", json!({}))
+    }
+
+    /// `settings.set`: changes some load limits (`load` holds `cpu_percent`,
+    /// `memory_percent` and `disk_percent` as wanted). The daemon refuses a session
+    /// that did not prove the approver secret.
+    pub fn settings_set(&mut self, load: Value, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::Settings,
+            "settings.set",
+            json!({"idempotency_key": idempotency_key, "load": load}),
+        )
+    }
+
     pub fn review_evidence(
         &mut self,
         task_id: &str,

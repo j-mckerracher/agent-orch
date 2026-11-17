@@ -119,7 +119,13 @@ fn api_with(
 ) -> (tempfile::TempDir, DaemonApi) {
     let directory = tempfile::tempdir().unwrap();
     let mut api = DaemonApi::new(directory.path()).unwrap();
-    api.conversations = ConversationService::new(api.store.clone(), runtime, workstreams, pinned);
+    api.conversations = ConversationService::new(
+        api.store.clone(),
+        runtime,
+        workstreams,
+        pinned,
+        api.config.load.clone(),
+    );
     (directory, api)
 }
 
@@ -153,6 +159,21 @@ fn kinds(page: &Value) -> Vec<String> {
         .iter()
         .map(|entry| entry["kind"].as_str().unwrap().to_owned())
         .collect()
+}
+
+#[test]
+fn a_closed_load_gate_does_not_block_a_chat_turn() {
+    let runtime = TestRuntime::new(Mode::Reply(vec!["Hello".into()]));
+    let (_directory, api) = pinned(runtime.clone());
+    crate::api::load::tests::close_gate(&api.config.load);
+
+    let sent = send(&api, global(), "hi", "k1").unwrap();
+
+    assert_eq!(sent["turn"]["state"], "completed");
+    assert_eq!(runtime.started.load(Ordering::SeqCst), 1);
+    let requests = runtime.requests.lock().unwrap();
+    let context = requests[0].1.as_deref().unwrap();
+    assert!(context.contains("Machine load: gate closed."), "{context}");
 }
 
 #[test]

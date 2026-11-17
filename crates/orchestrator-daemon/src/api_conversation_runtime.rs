@@ -20,6 +20,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Instant;
 
 use orchestrator_agents::SelectionReason;
 use orchestrator_core::orchestrator_action::{
@@ -34,6 +35,7 @@ use orchestrator_store::{
 };
 
 use super::conversation_snapshot::build_snapshot;
+use super::load::LoadHandle;
 
 /// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
@@ -222,6 +224,8 @@ impl WorkstreamDirectory for NoWorkstreams {
 
 struct Shared {
     store: Arc<SqliteStore>,
+    /// Read for the snapshot's machine load line. A closed gate never holds a turn.
+    load: Arc<LoadHandle>,
     controls: Mutex<HashMap<String, Box<dyn TurnControl>>>,
 }
 
@@ -451,10 +455,12 @@ impl ConversationService {
         runtime: Arc<dyn ConversationRuntime>,
         workstreams: Arc<dyn WorkstreamDirectory>,
         pinned: bool,
+        load: Arc<LoadHandle>,
     ) -> Self {
         Self {
             shared: Arc::new(Shared {
                 store,
+                load,
                 controls: Mutex::new(HashMap::new()),
             }),
             runtime,
@@ -574,7 +580,12 @@ impl ConversationService {
             choice: choice.cloned(),
             level,
             history: self.history(target, turn_id),
-            context: Some(build_snapshot(&self.shared.store, target, actions)),
+            context: Some(build_snapshot(
+                &self.shared.store,
+                target,
+                actions,
+                &self.shared.load.read(Instant::now()),
+            )),
             actions,
         };
         let sink = ReplySink {

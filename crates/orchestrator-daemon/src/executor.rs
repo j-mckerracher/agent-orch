@@ -31,7 +31,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
@@ -50,6 +50,8 @@ use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
     UsageReceipt, UsageSource,
 };
+
+use crate::api::load::LoadHandle;
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -90,6 +92,12 @@ pub(crate) struct ExecutorConfig {
     /// timeout. The read itself continues in the background and fills the
     /// cache for the retry.
     pub(crate) catalog_wait: Duration,
+    /// The machine load gate the scheduler pass asks before it starts a task.
+    pub(crate) load: Arc<LoadHandle>,
+    /// Whether the host sampler feeds `load`. Off in unit tests, and off when the
+    /// daemon starts with `AGENT_ORCH_LOAD_GATE=off`, so a spawned test daemon
+    /// does not read the real machine's load.
+    pub(crate) load_feed: bool,
 }
 
 /// No client waits on a launch, so its catalog check can wait for a slow CLI.
@@ -145,8 +153,20 @@ impl ExecutorConfig {
     }
 }
 
+/// Whether the host sampler feeds the load gate. Read once, from the daemon's own
+/// environment, which an agent process cannot set (DPES-1105 Q17).
+pub(crate) fn load_feed_enabled(setting: Option<&str>, under_test: bool) -> bool {
+    !under_test && setting != Some("off")
+}
+
 impl ExecutorConfig {
     pub(crate) fn for_data_dir(data_dir: &Path) -> Self {
+        let diagnostics = Diagnostics::stderr();
+        let load_setting = std::env::var("AGENT_ORCH_LOAD_GATE").ok();
+        let load_feed = load_feed_enabled(load_setting.as_deref(), cfg!(test));
+        if !cfg!(test) && !load_feed {
+            diagnostics.warn(LOG, "load_gate_feed_disabled", &[("source", "environment")]);
+        }
         Self {
             worktrees_root: data_dir.join("worktrees"),
             data_dir: data_dir.to_path_buf(),
@@ -163,9 +183,11 @@ impl ExecutorConfig {
             wait_for_exit_before_identity: false,
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1200),
-            diagnostics: Diagnostics::stderr(),
+            diagnostics,
             catalog_timeout: Duration::from_millis(1500),
             catalog_wait: Duration::from_millis(1100),
+            load: Arc::default(),
+            load_feed,
         }
     }
 }
@@ -199,6 +221,13 @@ impl Executor {
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
+        });
+        // A weak reference: the gate outlives the executor and must not keep it alive.
+        let weak = Arc::downgrade(&inner);
+        inner.config.load.on_open(move || {
+            if let Some(inner) = weak.upgrade() {
+                inner.request_pass();
+            }
         });
         let worker = inner.clone();
         let handle = thread::Builder::new()
@@ -448,6 +477,8 @@ impl Inner {
         // Authorization: the authenticated IPC session already authorized the
         // submission; a task may start only while its project is registered.
         let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
+        // A closed load gate leaves every task Queued; running tasks are not touched.
+        let scheduler = scheduler.with_start_gate(self.config.load.start_gate(Instant::now()));
         let plan = scheduler.schedule(Some(&authorization));
         *last_started_project = plan.last_started_project;
         for task_id in &plan.started {

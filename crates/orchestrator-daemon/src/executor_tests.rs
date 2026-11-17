@@ -88,6 +88,8 @@ impl Fixture {
             diagnostics: orchestrator_diagnostics::Diagnostics::memory(),
             catalog_timeout: Duration::from_secs(5),
             catalog_wait: Duration::from_secs(5),
+            load: Default::default(),
+            load_feed: false,
         }
     }
 
@@ -411,6 +413,60 @@ fn scheduler_limits_hold_and_a_finished_task_releases_its_slot() {
     fs::write(&release, "go").unwrap();
     wait_state(&api, &first, "Verifying");
     wait_state(&api, &second, "Verifying");
+    api.shutdown();
+}
+
+#[test]
+fn a_closed_load_gate_keeps_a_queued_task_queued_and_leaves_a_running_task_alone() {
+    use crate::api::load::tests::close_gate;
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let load = Arc::new(crate::api::load::LoadHandle::default());
+    let shared = load.clone();
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), move |config| {
+        config.load = shared;
+    });
+    let running = fixture.submit(&api, "load-running", 0);
+    wait_state(&api, &running, "Running");
+
+    close_gate(&load);
+    let queued = fixture.submit(&api, "load-queued", 0);
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+    assert_eq!(task(&api, &running)["state"], "Running");
+
+    // The running task finishes as usual; the closed gate still holds the queued one.
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &running, "Verifying");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+    api.shutdown();
+}
+
+#[test]
+fn opening_the_load_gate_starts_a_queued_task_without_waiting_for_the_poll() {
+    use crate::api::load::tests::{at, close_gate, cpu};
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let load = Arc::new(crate::api::load::LoadHandle::default());
+    let shared = load.clone();
+    // The poll is far longer than the wait below, so only the wake can start the task.
+    let last = close_gate(&load);
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), move |config| {
+        config.load = shared;
+        config.poll = Duration::from_secs(60);
+    });
+    let queued = fixture.submit(&api, "load-wake", 0);
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &queued)["state"], "Queued");
+
+    for n in 1..=8 {
+        load.record(cpu(0.0), at(last, n));
+    }
+
+    wait_state(&api, &queued, "Running");
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &queued, "Verifying");
     api.shutdown();
 }
 

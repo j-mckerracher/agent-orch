@@ -24,10 +24,12 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 3] = [
+const NEGOTIATED: [Capability; 5] = [
     Capability::Health,
     Capability::OrchestratorActions,
     Capability::Approvals,
+    Capability::Review,
+    Capability::Settings,
 ];
 
 /// Answers with the method name and records every call that reaches it, so a
@@ -216,6 +218,29 @@ fn a_secret_round_trips_through_hex_and_matches_only_itself() {
     }
     let other = ApproverSecret::generate().unwrap();
     assert!(!secret.matches(&other.to_wire()), "two secrets matched");
+}
+
+#[test]
+fn an_all_zero_secret_is_refused() {
+    // A test vector, not a secret. `generate` never yields it, so only a
+    // placeholder or a host bug can.
+    let zeros = "0".repeat(64);
+    assert!(
+        ApproverSecret::from_wire(&zeros).is_none(),
+        "an all-zero value parsed"
+    );
+    assert!(
+        ApproverSecret::from_wire(&format!("{zeros}\n")).is_none(),
+        "an all-zero value with a newline parsed"
+    );
+    let mut input = zeros.as_bytes();
+    assert!(matches!(
+        ApproverSecret::read_from(&mut input),
+        Err(IpcError::Operation)
+    ));
+    // One non-zero digit is enough to be accepted.
+    let almost = format!("{}1", "0".repeat(63));
+    assert!(ApproverSecret::from_wire(&almost).is_some());
 }
 
 #[test]
@@ -511,6 +536,9 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
         &[
             "actions.resolve",
             "approvals.resolve",
+            "review.request_approval",
+            "review.request_changes",
+            "settings.set",
         ]
     );
     assert_eq!(
@@ -521,12 +549,84 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
         method_capability("approvals.resolve"),
         Some(Capability::Approvals)
     );
+    // `review.evidence` only reads, so it stays open to a token-only session.
+    assert_eq!(
+        method_capability("review.request_approval"),
+        Some(Capability::Review)
+    );
+    assert_eq!(
+        method_capability("review.request_changes"),
+        Some(Capability::Review)
+    );
+    assert!(!USER_ONLY_METHODS.contains(&"review.evidence"));
+    assert_eq!(
+        method_capability("settings.set"),
+        Some(Capability::Settings)
+    );
+    // `settings.get` only reads, so it stays open to a token-only session.
+    assert!(!USER_ONLY_METHODS.contains(&"settings.get"));
     for &method in USER_ONLY_METHODS {
         assert!(
             method_capability(method).is_some(),
             "{method} is not a routed method"
         );
     }
+}
+
+#[test]
+fn settings_get_is_open_to_a_token_only_session_and_settings_set_is_not() {
+    let dir = TempDir::new().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let approver = new_secret();
+    let daemon = serve(dir.path(), &recorder, Some(&approver));
+
+    let load = json!({"cpu_percent": 60});
+    let mut token_only = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Settings],
+        None,
+    );
+    assert!(token_only.settings_get().is_ok());
+    assert!(matches!(
+        token_only.settings_set(load.clone(), "key-1"),
+        Err(IpcError::Forbidden)
+    ));
+    assert_eq!(recorder.calls(), ["settings.get"]);
+
+    let mut user = connect(
+        dir.path(),
+        &[Capability::Health, Capability::Settings],
+        Some(&approver),
+    );
+    assert!(user.settings_set(load, "key-2").is_ok());
+    assert_eq!(recorder.calls(), ["settings.get", "settings.set"]);
+    stop(dir.path(), daemon);
+}
+
+#[test]
+fn settings_methods_need_the_settings_capability() {
+    let dir = TempDir::new().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let approver = new_secret();
+    let daemon = serve(dir.path(), &recorder, Some(&approver));
+    for proof in [None, Some(&approver)] {
+        let mut client = connect(dir.path(), &[Capability::Health], proof);
+        for method in ["settings.get", "settings.set"] {
+            assert!(
+                matches!(
+                    client.call(method, json!({})),
+                    Err(IpcError::UnsupportedCapability)
+                ),
+                "{method} was not refused as an unnegotiated capability"
+            );
+        }
+        assert!(matches!(
+            client.settings_get(),
+            Err(IpcError::UnsupportedCapability)
+        ));
+    }
+    assert!(recorder.calls().is_empty());
+    stop(dir.path(), daemon);
 }
 
 #[test]

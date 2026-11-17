@@ -312,7 +312,7 @@ fn approving_task_propose_creates_one_admitted_task_with_the_chat_envelope_field
     // The card names the project by its folder, never by its path.
     assert_eq!(
         approved["proposal"]["target"],
-        json!({"project_name": "alpha"})
+        json!({"project_name": "alpha", "machine_busy": false})
     );
     assert_eq!(approved["proposal"]["denial"], Value::Null);
 
@@ -472,13 +472,35 @@ fn task_propose_for_a_missing_workstream_or_a_foreign_objective_creates_no_task(
 }
 
 #[test]
+fn a_task_proposal_reports_machine_busy_while_the_gate_is_closed() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let ids = propose(&api, "t1", &task_block(&project_code(ALPHA), OBJECTIVE, ""));
+    let target = |api: &DaemonApi| {
+        let pending = api.dispatch("actions.pending", Value::Null).unwrap();
+        pending["proposals"][0]["target"].clone()
+    };
+    assert_eq!(target(&api)["machine_busy"], false);
+
+    crate::api::load::tests::close_gate(&api.config.load);
+    assert_eq!(target(&api)["machine_busy"], true);
+    // Advisory only: approval still goes through.
+    let approved = resolve(&api, &ids[0], "approve", "k-busy").unwrap();
+    assert_eq!(approved["proposal"]["state"], "executed");
+    assert_eq!(approved["proposal"]["target"]["machine_busy"], true);
+}
+
+#[test]
 fn task_propose_with_an_unknown_or_ambiguous_project_code_fails_not_found_or_conflict() {
     let (_directory, api) = new_api();
     register_project(&api, ALPHA);
     let unknown = propose(&api, "t1", &task_block("p-00000000", OBJECTIVE, ""));
     let result = resolve(&api, &unknown[0], "approve", "k-1").unwrap();
     assert_failed(&result, "not_found");
-    assert_eq!(result["proposal"]["target"], json!({"project_name": null}));
+    assert_eq!(
+        result["proposal"]["target"],
+        json!({"project_name": null, "machine_busy": false})
+    );
 
     // Two folders whose ids hash to one code: the proposal cannot say which it means.
     register_project(&api, "/w/45318");
@@ -1063,16 +1085,32 @@ fn actions_pending_lists_global_and_workstream_proposals_pending_only() {
 #[test]
 fn actions_pending_stops_at_one_page_and_says_more() {
     let (_directory, api) = new_api();
-    let ids: Vec<String> = (0..=100)
-        .map(|turn| {
-            let create = format!(r#"{{"kind": "workstream.create", "title": "Pending {turn}"}}"#);
-            propose(&api, &format!("t{turn}"), &create)[0].clone()
-        })
-        .collect();
+    // A conversation holds at most 20 pending proposals (the store's cap), so a page of 100
+    // is only reached across scopes: Global plus five workstreams fill 120, and 101 of them
+    // is more than one page.
+    let mut ids: Vec<String> = Vec::new();
+    let mut targets = vec![ConversationTarget::Global];
+    for number in 0..5 {
+        let workstream = create_workstream(&api, &format!("Scope {number}"), &format!("ws-{number}"));
+        targets.push(ConversationTarget::Workstream(workstream));
+    }
+    for (index, target) in targets.iter().enumerate() {
+        for turn in 0..20 {
+            let create = format!(
+                r#"{{"kind": "workstream.create", "title": "Pending {index} {turn}"}}"#
+            );
+            ids.extend(propose_in(
+                &api,
+                target,
+                &format!("t{index}-{turn}"),
+                PermissionLevel::Restricted,
+                &create,
+            ));
+        }
+    }
     let page = call(&api, "actions.pending", json!({})).unwrap();
     let listed = page["proposals"].as_array().unwrap();
-    assert_eq!(listed.len(), 100, "one hundred and one are pending");
-    assert_eq!(listed[0]["id"], ids[100].as_str());
+    assert_eq!(listed.len(), 100, "{} are pending, one page is 100", ids.len());
     assert_eq!(page["more"], true);
 }
 

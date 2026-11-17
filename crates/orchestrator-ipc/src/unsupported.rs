@@ -150,6 +150,12 @@ impl Client {
     pub fn host_metrics(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn settings_get(&mut self) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn settings_set(&mut self, _: Value, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn review_evidence(
         &mut self,
         _: &str,

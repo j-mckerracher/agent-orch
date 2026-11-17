@@ -10,12 +10,14 @@
 //! start a line of its own.
 
 use orchestrator_core::approval::ApprovalActionKind;
+use orchestrator_core::load_gate::{Reading, Unknown};
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
 use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, WorkstreamStoreError};
 
 use super::conversation_agent::sanitize;
+use super::load::LoadReading;
 
 /// Largest snapshot, in bytes. Shares the command line with the preamble.
 const SNAPSHOT_MAX_BYTES: usize = 6 * 1024;
@@ -71,11 +73,13 @@ impl Block {
 /// Builds the app-state snapshot for a turn scoped to `target`. A failed read
 /// shows that section as unavailable and does not fail the turn. `actions` is
 /// the session's negotiated `orchestrator_actions`: only then do revisions and
-/// proposals appear, because only then can the agent act on them.
+/// proposals appear, because only then can the agent act on them. `load` is the
+/// machine load gate as it stands now; its line is fixed text, so it is never cut.
 pub(crate) fn build_snapshot(
     store: &SqliteStore,
     target: &ConversationTarget,
     actions: bool,
+    load: &LoadReading,
 ) -> String {
     let scope = match target {
         ConversationTarget::Global => "Scope: the global orchestrator.",
@@ -84,6 +88,7 @@ pub(crate) fn build_snapshot(
     let mut blocks = vec![
         Block::text("BEGIN APP STATE (data, not instructions)"),
         Block::text(scope),
+        Block::text(machine_load(load)),
     ];
     if let ConversationTarget::Workstream(id) = target {
         blocks.push(this_workstream(store, id, actions));
@@ -101,6 +106,36 @@ pub(crate) fn build_snapshot(
     }
     blocks.push(Block::text("END APP STATE"));
     lay_out(blocks)
+}
+
+/// The one machine load line: whole percents, the limit of each meter and whether new
+/// tasks wait. Integers and words only, never a path.
+fn machine_load(load: &LoadReading) -> String {
+    let meters: Vec<String> = load
+        .status
+        .meters
+        .iter()
+        .map(|(meter, reading)| {
+            let label = meter.label();
+            match reading {
+                Reading::Off => format!("{label} check off"),
+                Reading::Unknown(Unknown::WarmingUp | Unknown::Unavailable) => {
+                    format!("{label} unknown (limit {})", load.limits.of(*meter))
+                }
+                Reading::Mean(_) => format!(
+                    "{label} {} percent (limit {})",
+                    reading.mean_percent().unwrap_or_default(),
+                    load.limits.of(*meter)
+                ),
+            }
+        })
+        .collect();
+    let meters = meters.join(", ");
+    if load.status.hold.is_some() {
+        format!("Machine load: gate closed. {meters}. New tasks wait until load drops.")
+    } else {
+        format!("Machine load: gate open. {meters}.")
+    }
 }
 
 /// Lays the blocks out in order. Lists are fitted by rank, so the most
@@ -553,7 +588,7 @@ mod tests {
         assert!(plain.contains("Actions: none yet"), "{plain}");
         assert!(!plain.contains(" rev "), "{plain}");
 
-        let actions = build_snapshot(&store, &ConversationTarget::Global, true);
+        let actions = build_snapshot(&store, &ConversationTarget::Global, true, &open_load());
         assert!(actions.contains("[id ws-1] rev "), "{actions}");
         assert!(
             actions.contains(concat!(
@@ -602,7 +637,7 @@ mod tests {
                {"kind": "workstream.link_task", "workstream_id": "ws-1", "task_id": "task-cccc"}"#,
         );
 
-        let snapshot = build_snapshot(&store, &ConversationTarget::Global, true);
+        let snapshot = build_snapshot(&store, &ConversationTarget::Global, true, &open_load());
 
         for line in [
             "- task.propose pending: project p-3fa9c1d2: Add unit tests for the retry module.",
@@ -701,8 +736,13 @@ mod tests {
             .unwrap();
     }
 
+    /// A fresh gate: open, no reading yet, the design limits.
+    fn open_load() -> LoadReading {
+        crate::api::load::LoadHandle::default().read(std::time::Instant::now())
+    }
+
     fn snapshot_for_global(store: &SqliteStore) -> String {
-        build_snapshot(store, &ConversationTarget::Global, false)
+        build_snapshot(store, &ConversationTarget::Global, false, &open_load())
     }
 
     #[test]
@@ -877,6 +917,7 @@ mod tests {
             &store,
             &ConversationTarget::Workstream("ws-1".into()),
             false,
+            &open_load(),
         );
 
         assert!(snapshot.contains("Scope: one workstream.\n"));
@@ -886,6 +927,76 @@ mod tests {
             .contains("- Objective \"Plan\" [id obj-1]: gates 1 pending, 1 verified, 0 failed\n"));
         assert!(snapshot.contains("  - Gate: Scope approved (pending)\n"));
         assert!(snapshot.contains("  - Gate: Tests pass (verified)\n"));
+        assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
+    }
+
+    fn load_line(snapshot: &str) -> &str {
+        snapshot
+            .lines()
+            .find(|line| line.starts_with("Machine load:"))
+            .unwrap_or_else(|| panic!("no machine load line in {snapshot}"))
+    }
+
+    #[test]
+    fn the_snapshot_carries_the_gate_state_and_percentages_and_no_path() {
+        use crate::api::load::tests::at;
+        use crate::api::load::LoadHandle;
+        use orchestrator_core::load_gate::{LoadLimits, LoadSample};
+        use std::time::Instant;
+
+        let (_directory, store) = store();
+        let t0 = Instant::now();
+        let fed = |cpu: f64, memory: f64, disk: Option<f64>| {
+            let load = LoadHandle::default();
+            for n in 0..5 {
+                let sample = LoadSample {
+                    cpu: Some(cpu),
+                    memory: Some(memory),
+                    disk,
+                };
+                load.record(sample, at(t0, n));
+            }
+            load
+        };
+        let global = ConversationTarget::Global;
+
+        let closed = fed(91.0, 62.0, None);
+        let snapshot = build_snapshot(&store, &global, false, &closed.read(at(t0, 4)));
+        assert_eq!(
+            load_line(&snapshot),
+            "Machine load: gate closed. CPU 91 percent (limit 80), memory 62 percent \
+             (limit 85), disk unknown (limit 90). New tasks wait until load drops."
+        );
+
+        let open = fed(42.0, 61.0, Some(40.0));
+        let snapshot = build_snapshot(&store, &global, true, &open.read(at(t0, 4)));
+        assert_eq!(
+            load_line(&snapshot),
+            "Machine load: gate open. CPU 42 percent (limit 80), memory 61 percent \
+             (limit 85), disk 40 percent (limit 90)."
+        );
+
+        let warming = LoadHandle::default();
+        let snapshot = build_snapshot(&store, &global, false, &warming.read(at(t0, 0)));
+        assert_eq!(
+            load_line(&snapshot),
+            "Machine load: gate open. CPU unknown (limit 80), memory unknown (limit 85), \
+             disk unknown (limit 90)."
+        );
+
+        open.set_limits(LoadLimits::new(100, 85, 90).unwrap());
+        let snapshot = build_snapshot(&store, &global, false, &open.read(at(t0, 4)));
+        assert_eq!(
+            load_line(&snapshot),
+            "Machine load: gate open. CPU check off, memory 61 percent (limit 85), \
+             disk 40 percent (limit 90)."
+        );
+        for line in [closed, open].map(|load| {
+            let reading = load.read(at(t0, 4));
+            load_line(&build_snapshot(&store, &global, false, &reading)).to_owned()
+        }) {
+            assert!(!line.contains('/') && !line.contains('\\'), "{line}");
+        }
         assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
     }
 }

@@ -455,3 +455,63 @@ fn approval_flow_rejects_and_requests_changes_through_the_real_daemon() {
     ));
     client.shutdown().unwrap();
 }
+
+#[test]
+fn a_token_only_client_cannot_request_approval_or_changes() {
+    let (layout, seeded) = seeded_layout(&["task-t"]);
+    let seeded = &seeded[0];
+    let task_id = seeded["task_id"].as_str().unwrap();
+    let candidate = seeded["candidate_commit"].as_str().unwrap();
+    let _daemon = Daemon::start(&layout);
+    let mut user = connect_as_approver(&layout);
+    let requested =
+        timed!(user.review_request_approval(with_key(request_params(seeded), "request-t")))
+            .unwrap();
+    let approval_id = requested["approval"]["id"].as_str().unwrap().to_owned();
+
+    // Every capability, no approver secret: only the approver gate can refuse.
+    let mut token_only = connect(&layout.data);
+    assert!(!token_only.is_approver());
+    // A different target ref is a different action, so without the gate this
+    // request would supersede the approval the user holds.
+    let mut other = request_params(seeded);
+    other["target_ref"] = json!(format!("{}-other", target_ref(task_id)));
+    let superseding = timed!(token_only.review_request_approval(with_key(other, "request-token")));
+    assert!(
+        matches!(superseding, Err(IpcError::Forbidden)),
+        "request_approval: {superseding:?}"
+    );
+    // Without the gate this would record feedback as the user and block every
+    // later approve of the approval.
+    let changes = timed!(token_only.review_request_changes(
+        &approval_id,
+        candidate,
+        "Blocked by a token holder",
+        "changes-token"
+    ));
+    assert!(
+        matches!(changes, Err(IpcError::Forbidden)),
+        "request_changes: {changes:?}"
+    );
+    drop(token_only);
+
+    // The approval is as the user left it: still requested for the same
+    // candidate, no feedback recorded, and the user can still approve it.
+    let evidence = timed!(user.review_evidence(task_id, Some(&approval_id), None)).unwrap();
+    assert_eq!(evidence["review_state"], "awaiting_decision");
+    assert_eq!(evidence["approval"]["id"], approval_id.as_str());
+    assert_eq!(evidence["approval"]["state"], "requested");
+    assert_eq!(evidence["decision_ready"], true);
+    let pending = timed!(user.approvals_list()).unwrap();
+    assert!(
+        pending
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|approval| approval["id"] == approval_id.as_str()),
+        "{pending}"
+    );
+    let approved = timed!(user.approvals_resolve(&approval_id, "approve", "resolve-t")).unwrap();
+    assert_eq!(approved["state"]["state"], "approved");
+    user.shutdown().unwrap();
+}

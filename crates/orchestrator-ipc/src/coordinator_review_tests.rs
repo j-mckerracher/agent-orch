@@ -2,7 +2,10 @@
 //! `Server` API. These tests use no platform-specific socket code, so they also
 //! compile and run on Windows.
 
-use crate::{Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server, ServerConfig};
+use crate::{
+    ApproverSecret, Capability, Client, IpcError, IpcEvent, RpcError, RpcHandler, Server,
+    ServerConfig,
+};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -57,6 +60,10 @@ impl RpcHandler for Recorder {
 /// server never waits for this timeout to reap a worker.
 const STREAM_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The approver secret every server here is given and every client here presents. The review
+/// methods that change a decision are user-only (DPES-1105), so a client without it is refused.
+const TEST_APPROVER: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
 fn serve(dir: &Path, handler: &Arc<Recorder>) -> JoinHandle<()> {
     let dir = dir.to_path_buf();
     let handler = handler.clone();
@@ -64,7 +71,8 @@ fn serve(dir: &Path, handler: &Arc<Recorder>) -> JoinHandle<()> {
         Server::serve_with_handler(
             ServerConfig::new(dir, "coordinator-review-test")
                 .with_idle_timeout(Duration::from_secs(30))
-                .with_stream_timeout(STREAM_TIMEOUT),
+                .with_stream_timeout(STREAM_TIMEOUT)
+                .with_approver(ApproverSecret::from_wire(TEST_APPROVER).unwrap()),
             handler,
         )
         .unwrap();
@@ -74,7 +82,13 @@ fn serve(dir: &Path, handler: &Arc<Recorder>) -> JoinHandle<()> {
 fn connect(dir: &Path, capabilities: &[Capability]) -> Client {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        match Client::connect_with_capabilities(dir, capabilities) {
+        let approver = Arc::new(ApproverSecret::from_wire(TEST_APPROVER).unwrap());
+        match Client::connect_with_approver(
+            dir,
+            capabilities,
+            crate::DEFAULT_IO_TIMEOUT,
+            Some(approver),
+        ) {
             Ok(client) => return client,
             Err(error) => {
                 assert!(Instant::now() < deadline, "daemon not ready: {error}");

@@ -819,7 +819,7 @@ impl DaemonApi {
     }
 
     /// What the app needs to name a task proposal's subject, read now: the project's
-    /// folder name for `task.propose`, or the task's title and state for the kinds that
+    /// folder name and whether the machine is busy for `task.propose`, or the task's title and state for the kinds that
     /// name a task. Null for the other kinds, and for a task that no longer exists. Never
     /// a path, and no id beyond what the proposal's parameters already hold.
     fn proposal_target(&self, proposal: &ActionProposal) -> Value {
@@ -832,7 +832,14 @@ impl DaemonApi {
                     .resolve_project(&propose.project)
                     .ok()
                     .and_then(|id| project_name(&id).map(str::to_owned));
-                return json!({"project_name": name});
+                // Advisory: the gate as it is now, which can change before the user decides.
+                let machine_busy = self
+                    .config
+                    .load
+                    .status(std::time::Instant::now())
+                    .hold
+                    .is_some();
+                return json!({"project_name": name, "machine_busy": machine_busy});
             }
             Action::TaskCancel(cancel) => &cancel.task_id,
             Action::TaskRetry(retry) => &retry.task_id,

@@ -46,12 +46,14 @@
 //!
 //! Approver credential (DPES-1105). Only the desktop host holds the 32-byte
 //! approver secret: it generates it, passes it to the daemon it spawns over an
-//! inherited pipe, and presents it in each handshake. The proof is compared in
+//! inherited pipe, and presents it in the `approver` field of its handshakes,
+//! until a daemon refuses it and it clears the secret. The proof is compared in
 //! constant time once, at handshake. The welcome always carries `approver`
 //! (true only when the proof held; a daemon that predates it omits the field,
 //! which reads as false). A missing, malformed or wrong value does not fail the
 //! handshake: the session connects as a non-approver. A non-approver calling a
-//! user-only method (`actions.resolve`, `approvals.resolve`) gets `Forbidden`,
+//! user-only method (`actions.resolve`, `approvals.resolve`,
+//! `review.request_approval`, `review.request_changes`) gets `Forbidden`,
 //! code -32012, after the capability check and before the handler runs. This
 //! closes the protocol-level hole (token plus socket is enough to approve); it
 //! is not a sandbox. The secret never appears in errors, logs or debug output.

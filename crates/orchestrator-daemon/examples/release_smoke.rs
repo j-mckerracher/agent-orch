@@ -321,6 +321,8 @@ impl Daemon {
             command.arg("--approver-stdin");
         }
         let mut child = command
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .env("AGENT_ORCH_CODEX_PROGRAM", &env.agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", env.work.join("no-such-agent"))
             .env("AGENT_ORCH_PI_PROGRAM", env.work.join("no-such-agent"))
@@ -661,14 +663,14 @@ fn scenario(options: &Options) -> Value {
     let reject_id = reject["task_id"].as_str().unwrap();
     let candidate = approve["candidate_commit"].as_str().unwrap();
     let daemon = Daemon::start(&options.new_daemon, &env, true);
-    let requested = call(&env.data, "review.request_approval", |client| {
+    let requested = call_as_approver(&env.data, "review.request_approval", |client| {
         client
             .review_request_approval(review_params(&approve, "smoke-request-a"))
             .ok()
     });
     assert_eq!(requested["approval"]["state"], "requested");
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_owned();
-    let rejected_request = call(&env.data, "review.request_approval", |client| {
+    let rejected_request = call_as_approver(&env.data, "review.request_approval", |client| {
         client
             .review_request_approval(review_params(&reject, "smoke-request-r"))
             .ok()

@@ -31,6 +31,8 @@ impl Daemon {
         command
             .arg("--data-dir")
             .arg(data_dir)
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .stdout(Stdio::piped());
         Self::spawn(&mut command, data_dir)
     }
@@ -43,6 +45,8 @@ impl Daemon {
             .arg("--data-dir")
             .arg(data_dir)
             .arg("--approver-stdin")
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         let mut daemon = Self::spawn(&mut command, data_dir);
@@ -169,6 +173,8 @@ fn the_approver_flag_without_a_secret_fails_startup() {
         .arg("--data-dir")
         .arg(dir.path())
         .arg("--approver-stdin")
+        // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+        .env("AGENT_ORCH_LOAD_GATE", "off")
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -228,6 +234,8 @@ fn second_daemon_reports_holder_and_shutdown_removes_resources() {
     let second = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
         .arg("--data-dir")
         .arg(dir.path())
+        // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+        .env("AGENT_ORCH_LOAD_GATE", "off")
         .output()
         .unwrap();
     assert!(!second.status.success());
@@ -258,6 +266,8 @@ fn daemon_survives_accept_descriptor_exhaustion() {
         .arg(env!("CARGO_BIN_EXE_orchestrator-daemon"))
         .arg("--data-dir")
         .arg(dir.path())
+        // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+        .env("AGENT_ORCH_LOAD_GATE", "off")
         .stdout(Stdio::piped());
     let mut daemon = Daemon::spawn(&mut command, dir.path());
     wait_for_ipc(dir.path(), &mut daemon);
@@ -694,6 +704,8 @@ impl RunningAgentFixture {
         command
             .arg("--data-dir")
             .arg(&self.data)
+            // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
+            .env("AGENT_ORCH_LOAD_GATE", "off")
             .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
             // Never probe a real claude or pi: the report must not depend
             // on what is installed on the machine or on CPU load.

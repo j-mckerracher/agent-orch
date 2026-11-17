@@ -44,9 +44,13 @@ impl ApproverSecret {
     }
 
     /// Strict: exactly 64 lowercase hex characters, after removing at most one
-    /// trailing newline.
+    /// trailing newline. All zeros is refused: `generate` never produces it, so
+    /// it can only be a placeholder or a host bug.
     pub fn from_wire(text: &str) -> Option<Self> {
         let bytes = decode(text.strip_suffix('\n').unwrap_or(text))?;
+        if bytes == [0u8; 32] {
+            return None;
+        }
         Some(Self { bytes })
     }
 
@@ -81,10 +85,17 @@ impl ApproverSecret {
 /// whole change that protects it. Public so the daemon's wire test can walk the
 /// same list. Pinned by a test, so a change to this list forces a review. One
 /// name per line, so two changes that add names do not conflict.
+///
+/// The two `review.*` writes are listed because they act as the user: a request
+/// supersedes the user's Approved approval for another candidate, and recorded
+/// changes block every later approve of that approval.
 #[rustfmt::skip]
 pub const USER_ONLY_METHODS: &[&str] = &[
     "actions.resolve",
     "approvals.resolve",
+    "review.request_approval",
+    "review.request_changes",
+    "settings.set",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session
