@@ -25,6 +25,7 @@ pub mod records;
 pub mod retry;
 pub mod scheduler;
 pub mod task;
+pub mod task_envelope;
 pub mod workstream;
 
 pub use identity::ProcessIdentity;

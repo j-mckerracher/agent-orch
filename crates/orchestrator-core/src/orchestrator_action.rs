@@ -10,6 +10,9 @@
 //! Design: `docs/design/orchestrator-actions.md`.
 
 use crate::approval::ParameterDigest;
+use crate::authorization::Authorization;
+use crate::contract::{DeliveryPolicy, TaskKind};
+use crate::task_envelope::{check_task, Denial};
 use crate::workstream::{
     validate_id, validate_text, validate_title, WorkstreamRuleError, WorkstreamState,
     INITIAL_REVISION, MAX_GATES,
@@ -27,6 +30,13 @@ pub const MAX_ACTION_BLOCK_BYTES: usize = 16 * 1024;
 pub const MAX_ACTIONS_PER_BLOCK: usize = 10;
 /// Longest `ref` name, in characters.
 pub const MAX_REF_CHARS: usize = 32;
+/// Longest proposed task objective, in bytes. The contract allows 64 KiB; the
+/// card shows the whole text and the canonical JSON must fit the store's
+/// `params_json` limit (20 KiB), so chat proposals stop at 8 KiB.
+pub const MAX_TASK_OBJECTIVE_BYTES: usize = 8 * 1024;
+/// Agents a chat proposal may name. Mirrors `canonicalAgentId` in
+/// `apps/desktop/src/ui/submission.ts`.
+pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -38,15 +48,23 @@ pub enum ActionKind {
     WorkstreamUpdate,
     ObjectiveAdd,
     ObjectiveRevise,
+    TaskPropose,
+    TaskCancel,
+    TaskRetry,
+    WorkstreamLinkTask,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 8] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
         Self::ObjectiveRevise,
+        Self::TaskPropose,
+        Self::TaskCancel,
+        Self::TaskRetry,
+        Self::WorkstreamLinkTask,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -56,6 +74,10 @@ impl ActionKind {
             Self::WorkstreamUpdate => "workstream.update",
             Self::ObjectiveAdd => "objective.add",
             Self::ObjectiveRevise => "objective.revise",
+            Self::TaskPropose => "task.propose",
+            Self::TaskCancel => "task.cancel",
+            Self::TaskRetry => "task.retry",
+            Self::WorkstreamLinkTask => "workstream.link_task",
         }
     }
 
@@ -77,6 +99,14 @@ pub enum Action {
     ObjectiveAdd(AddObjective),
     #[serde(rename = "objective.revise")]
     ObjectiveRevise(ReviseObjective),
+    #[serde(rename = "task.propose")]
+    TaskPropose(ProposeTask),
+    #[serde(rename = "task.cancel")]
+    TaskCancel(CancelTask),
+    #[serde(rename = "task.retry")]
+    TaskRetry(RetryTask),
+    #[serde(rename = "workstream.link_task")]
+    WorkstreamLinkTask(LinkTask),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -134,12 +164,71 @@ pub struct ReviseObjective {
     pub add_gates: Vec<String>,
 }
 
+fn default_task_kind() -> TaskKind {
+    TaskKind::Implement
+}
+
+fn default_delivery() -> DeliveryPolicy {
+    DeliveryPolicy::LocalReview
+}
+
+/// `task.propose`. At most one of `workstream_id` or `workstream_ref` is set;
+/// `objective_id` needs `workstream_id`. Both defaults are written into the
+/// canonical form, so the card shows what would run. A proposal never names
+/// autonomy, verification, permission, or attempt limits: the envelope and the
+/// daemon fix them.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProposeTask {
+    /// The `p-xxxxxxxx` code the snapshot shows after a project's folder name.
+    pub project: String,
+    pub objective: String,
+    pub agent: String,
+    #[serde(default = "default_task_kind")]
+    pub task_kind: TaskKind,
+    #[serde(default = "default_delivery")]
+    pub delivery: DeliveryPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workstream_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workstream_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective_id: Option<String>,
+}
+
+/// `task.cancel`.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelTask {
+    pub task_id: String,
+}
+
+/// `task.retry`.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetryTask {
+    pub task_id: String,
+}
+
+/// `workstream.link_task`. Links an existing task to a workstream, and to one
+/// of its objectives when `objective_id` is set.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkTask {
+    pub workstream_id: String,
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective_id: Option<String>,
+}
+
 /// A validated block. `parent(i)` is the index of the earlier
 /// `workstream.create` that action `i`'s `workstream_ref` names.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActionBlock {
     actions: Vec<Action>,
     parents: Vec<Option<usize>>,
+    /// The envelope's refusal of each action. All `None` until [`Self::checked`].
+    denials: Vec<Option<Denial>>,
 }
 
 impl ActionBlock {
@@ -151,6 +240,27 @@ impl ActionBlock {
     /// Index of the create action that action `index` refers to, if any.
     pub fn parent(&self, index: usize) -> Option<usize> {
         self.parents.get(index).copied().flatten()
+    }
+
+    /// The block with each `task.propose` checked against `envelope`.
+    /// [`parse_block`] leaves every denial `None`, so a block that was never
+    /// checked is never denied. The daemon calls this once, after the scope
+    /// checks.
+    pub fn checked(mut self, envelope: &Authorization) -> Self {
+        self.denials = self
+            .actions
+            .iter()
+            .map(|action| match action {
+                Action::TaskPropose(propose) => check_task(propose, envelope).err(),
+                _ => None,
+            })
+            .collect();
+        self
+    }
+
+    /// The envelope's refusal of action `index`, if any. Always `None` for the other kinds.
+    pub fn denial(&self, index: usize) -> Option<Denial> {
+        self.denials.get(index).copied().flatten()
     }
 }
 
@@ -235,7 +345,12 @@ pub fn parse_block(held: &str, scope: BlockScope<'_>) -> Result<ActionBlock, Blo
         check_fields(action)?;
     }
     check_scope(&actions, scope)?;
-    Ok(ActionBlock { actions, parents })
+    let denials = vec![None; actions.len()];
+    Ok(ActionBlock {
+        actions,
+        parents,
+        denials,
+    })
 }
 
 /// Splits the text after the fence line into the body and the text after the closing fence line.
@@ -283,17 +398,24 @@ fn resolve_refs(actions: &[Action]) -> Result<Vec<Option<usize>>, BlockError> {
             }
         }
     }
+    let resolve = |reference: &str, index: usize| match creates.get(reference) {
+        Some(&create) if create < index => Ok(Some(create)),
+        _ => Err(BlockError::BadReference),
+    };
     actions
         .iter()
         .enumerate()
         .map(|(index, action)| match action {
             Action::ObjectiveAdd(add) => match (&add.workstream_id, &add.workstream_ref) {
                 (Some(_), None) => Ok(None),
-                (None, Some(reference)) => match creates.get(reference.as_str()) {
-                    Some(&create) if create < index => Ok(Some(create)),
-                    _ => Err(BlockError::BadReference),
-                },
+                (None, Some(reference)) => resolve(reference, index),
                 _ => Err(BlockError::InvalidField("workstream")),
+            },
+            // A task names no workstream, an existing one, or one created earlier in the block.
+            Action::TaskPropose(task) => match (&task.workstream_id, &task.workstream_ref) {
+                (_, None) => Ok(None),
+                (None, Some(reference)) => resolve(reference, index),
+                (Some(_), Some(_)) => Err(BlockError::BadReference),
             },
             _ => Ok(None),
         })
@@ -357,7 +479,66 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             }
             check_gates(&revise.add_gates)
         }
+        Action::TaskPropose(propose) => check_propose(propose),
+        Action::TaskCancel(cancel) => check(validate_id("task_id", &cancel.task_id), "task_id"),
+        Action::TaskRetry(retry) => check(validate_id("task_id", &retry.task_id), "task_id"),
+        Action::WorkstreamLinkTask(link) => {
+            check(
+                validate_id("workstream_id", &link.workstream_id),
+                "workstream_id",
+            )?;
+            check(validate_id("task_id", &link.task_id), "task_id")?;
+            if let Some(objective_id) = &link.objective_id {
+                check(validate_id("objective_id", objective_id), "objective_id")?;
+            }
+            Ok(())
+        }
     }
+}
+
+/// Applies the `task.propose` field rules. The workstream and ref pairing is
+/// checked earlier, in `resolve_refs`.
+fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
+    if !is_project_code(&propose.project) {
+        return Err(BlockError::InvalidField("project"));
+    }
+    if propose.objective.trim().is_empty()
+        || propose.objective.len() > MAX_TASK_OBJECTIVE_BYTES
+        || propose.objective.chars().any(is_disallowed_objective_char)
+    {
+        return Err(BlockError::InvalidField("objective"));
+    }
+    if !TASK_AGENTS.contains(&propose.agent.as_str()) {
+        return Err(BlockError::InvalidField("agent"));
+    }
+    if let Some(workstream_id) = &propose.workstream_id {
+        check(validate_id("workstream_id", workstream_id), "workstream_id")?;
+    }
+    if let Some(objective_id) = &propose.objective_id {
+        if propose.workstream_id.is_none() {
+            return Err(BlockError::InvalidField("objective_id"));
+        }
+        check(validate_id("objective_id", objective_id), "objective_id")?;
+    }
+    Ok(())
+}
+
+/// Whether `code` is `p-` and exactly eight lowercase hex digits.
+fn is_project_code(code: &str) -> bool {
+    code.strip_prefix("p-").is_some_and(|digits| {
+        digits.len() == 8 && digits.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+    })
+}
+
+/// Whether `c` may not appear in a proposed task objective: any control
+/// character except tab, LF and CR, and the bidirectional formatting controls.
+/// The same set `contract::check_free_text` refuses; a test keeps the two in step.
+fn is_disallowed_objective_char(c: char) -> bool {
+    let bidi_control = matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    );
+    (c.is_control() && !matches!(c, '\n' | '\r' | '\t')) || bidi_control
 }
 
 fn check(result: Result<(), WorkstreamRuleError>, field: &'static str) -> Result<(), BlockError> {
@@ -395,6 +576,14 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             }
             // The owning workstream of a revised objective is checked against the store.
             Action::ObjectiveRevise(_) => true,
+            // A task proposed here is always linked to this workstream.
+            Action::TaskPropose(propose) => {
+                propose.workstream_ref.is_none()
+                    && propose.workstream_id.as_deref() == Some(workstream)
+            }
+            // The workstream that owns a cancelled or retried task is checked against the store.
+            Action::TaskCancel(_) | Action::TaskRetry(_) => true,
+            Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
         };
         if !inside {
             return Err(BlockError::OutOfScope);
@@ -419,6 +608,10 @@ impl Action {
             Self::WorkstreamUpdate(_) => ActionKind::WorkstreamUpdate,
             Self::ObjectiveAdd(_) => ActionKind::ObjectiveAdd,
             Self::ObjectiveRevise(_) => ActionKind::ObjectiveRevise,
+            Self::TaskPropose(_) => ActionKind::TaskPropose,
+            Self::TaskCancel(_) => ActionKind::TaskCancel,
+            Self::TaskRetry(_) => ActionKind::TaskRetry,
+            Self::WorkstreamLinkTask(_) => ActionKind::WorkstreamLinkTask,
         }
     }
 
@@ -450,6 +643,36 @@ impl Action {
         }
     }
 
+    /// The task a `task.cancel` or `task.retry` names, which must already
+    /// belong to the conversation's workstream: the daemon's workstream-scope
+    /// check. A `workstream.link_task` is not listed, because the task it
+    /// names is not linked yet.
+    pub fn target_task(&self) -> Option<&str> {
+        match self {
+            Self::TaskCancel(cancel) => Some(cancel.task_id.as_str()),
+            Self::TaskRetry(retry) => Some(retry.task_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The workstream a `task.propose` (by id) or a `workstream.link_task` names.
+    pub fn linked_workstream(&self) -> Option<&str> {
+        match self {
+            Self::TaskPropose(propose) => propose.workstream_id.as_deref(),
+            Self::WorkstreamLinkTask(link) => Some(link.workstream_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The objective a `task.propose` or a `workstream.link_task` names.
+    pub fn linked_objective(&self) -> Option<&str> {
+        match self {
+            Self::TaskPropose(propose) => propose.objective_id.as_deref(),
+            Self::WorkstreamLinkTask(link) => link.objective_id.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Supersede key: a pending proposal with the same kind and subject but a
     /// different digest is replaced by the newer one.
     fn subject(&self, parent: Option<&str>) -> String {
@@ -461,6 +684,14 @@ impl Action {
                 format!("objective.add:{workstream}/{}", normalize(&add.title))
             }
             Self::ObjectiveRevise(revise) => revise.objective_id.clone(),
+            // The hash keeps the subject inside the store's 512-byte limit.
+            Self::TaskPropose(propose) => {
+                let objective = Sha256::digest(normalize(&propose.objective).as_bytes());
+                format!("{}/{}", propose.project, hex(&objective))
+            }
+            Self::TaskCancel(cancel) => cancel.task_id.clone(),
+            Self::TaskRetry(retry) => retry.task_id.clone(),
+            Self::WorkstreamLinkTask(link) => link.task_id.clone(),
         }
     }
 }
@@ -618,9 +849,31 @@ pub enum HeldBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{validate_proposal, Validation};
+    use crate::task_envelope::{chat_task_envelope, task_proposal};
+    use serde_json::json;
 
     const CREATE: &str = r#"{"kind":"workstream.create","ref":"a","title":"Post-MVP work","summary":"Work after the MVP."}"#;
     const ADD_REF: &str = r#"{"kind":"objective.add","workstream_ref":"a","title":"Plan post-MVP scope","gates":["Scope list approved"]}"#;
+    const PROPOSE: &str = r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"Add unit tests for the retry module.","agent":"codex"}"#;
+    const CANCEL: &str = r#"{"kind":"task.cancel","task_id":"task-1"}"#;
+    const RETRY: &str = r#"{"kind":"task.retry","task_id":"task-1"}"#;
+    const LINK: &str =
+        r#"{"kind":"workstream.link_task","workstream_id":"ws-1","task_id":"task-1"}"#;
+
+    /// A `task.propose` action: the valid base with `fields` set over it.
+    fn propose(fields: &[(&str, Value)]) -> String {
+        let mut action = json!({
+            "kind": "task.propose",
+            "project": "p-3fa9c1d2",
+            "objective": "Add unit tests for the retry module.",
+            "agent": "codex",
+        });
+        for (key, value) in fields {
+            action[*key] = value.clone();
+        }
+        action.to_string()
+    }
 
     fn fenced(body: &str) -> String {
         format!("{ACTION_FENCE}\n{body}\n```")
@@ -896,6 +1149,433 @@ mod tests {
             assert_eq!(ActionKind::parse(kind.as_str()), Some(kind));
         }
         assert_eq!(ActionKind::parse("workstream.delete"), None);
+    }
+
+    #[test]
+    fn the_action_kind_list_names_all_eight_kinds() {
+        let names = ActionKind::ALL.map(ActionKind::as_str);
+        assert_eq!(
+            names,
+            [
+                "workstream.create",
+                "workstream.update",
+                "objective.add",
+                "objective.revise",
+                "task.propose",
+                "task.cancel",
+                "task.retry",
+                "workstream.link_task",
+            ]
+        );
+        assert_eq!(
+            ActionKind::parse("task.propose"),
+            Some(ActionKind::TaskPropose)
+        );
+        assert_eq!(ActionKind::parse("task.delete"), None);
+        for text in [PROPOSE, CANCEL, RETRY, LINK] {
+            let parsed = parse(&block(text)).expect("valid block");
+            assert!(
+                names.contains(&parsed.actions()[0].kind().as_str()),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn task_propose_parses_and_defaults_are_written_into_the_canonical_form() {
+        let parsed = parse(&block(PROPOSE)).expect("valid block");
+        let action = &parsed.actions()[0];
+        assert_eq!(action.kind(), ActionKind::TaskPropose);
+        let Action::TaskPropose(task) = action else {
+            panic!("expected a task.propose action");
+        };
+        assert_eq!(task.task_kind, TaskKind::Implement);
+        assert_eq!(task.delivery, DeliveryPolicy::LocalReview);
+        assert_eq!(parsed.parent(0), None);
+        assert_eq!(parsed.denial(0), None);
+        assert_eq!(
+            action.canonical(None).json,
+            r#"{"agent":"codex","delivery":"LocalReview","kind":"task.propose","objective":"Add unit tests for the retry module.","project":"p-3fa9c1d2","task_kind":"Implement"}"#
+        );
+
+        let explicit = propose(&[
+            ("task_kind", json!("Investigate")),
+            ("delivery", json!("ReportOnly")),
+            ("workstream_id", json!("ws-1")),
+            ("objective_id", json!("obj-1")),
+        ]);
+        let parsed = parse(&block(&explicit)).expect("valid block");
+        let action = &parsed.actions()[0];
+        assert_eq!(action.linked_workstream(), Some("ws-1"));
+        assert_eq!(action.linked_objective(), Some("obj-1"));
+        assert_eq!(action.target_task(), None);
+        assert_eq!(
+            action.canonical(None).json,
+            r#"{"agent":"codex","delivery":"ReportOnly","kind":"task.propose","objective":"Add unit tests for the retry module.","objective_id":"obj-1","project":"p-3fa9c1d2","task_kind":"Investigate","workstream_id":"ws-1"}"#
+        );
+
+        // `PullRequest` parses so that the envelope, not the parser, denies it.
+        let pull_request = propose(&[("delivery", json!("PullRequest"))]);
+        assert!(parse(&block(&pull_request)).is_ok());
+        for (field, value) in [("delivery", "Merge"), ("task_kind", "Refactor")] {
+            let bad = propose(&[(field, json!(value))]);
+            assert_eq!(parse(&block(&bad)), Err(BlockError::Malformed), "{field}");
+        }
+    }
+
+    #[test]
+    fn an_omitted_delivery_and_an_explicit_local_review_share_one_digest() {
+        let digest_of = |text: &str| {
+            let parsed = parse(&block(text)).expect("valid block");
+            parsed.actions()[0].canonical(None).digest
+        };
+        let bare = digest_of(&propose(&[]));
+        let explicit = digest_of(&propose(&[
+            ("delivery", json!("LocalReview")),
+            ("task_kind", json!("Implement")),
+        ]));
+        assert_eq!(bare, explicit);
+        assert_ne!(
+            bare,
+            digest_of(&propose(&[("delivery", json!("ReportOnly"))]))
+        );
+        assert_ne!(
+            bare,
+            digest_of(&propose(&[("task_kind", json!("Investigate"))]))
+        );
+    }
+
+    #[test]
+    fn task_propose_rejects_a_bad_project_code_an_empty_or_oversize_objective_a_control_character_and_an_unknown_agent(
+    ) {
+        let oversize = "x".repeat(MAX_TASK_OBJECTIVE_BYTES + 1);
+        let rejected = [
+            ("project", ""),
+            ("project", "p-3fa9c1d"),
+            ("project", "p-3fa9c1d22"),
+            ("project", "p-3FA9C1D2"),
+            ("project", "q-3fa9c1d2"),
+            ("project", "p-3fa9c1dg"),
+            ("project", "/Users/someone/repo"),
+            ("objective", ""),
+            ("objective", " \n\t "),
+            ("objective", oversize.as_str()),
+            ("objective", "a\u{0}b"),
+            ("objective", "a\u{7}b"),
+            ("objective", "a\u{1b}[31mb"),
+            ("objective", "a\u{7f}b"),
+            ("objective", "a\u{85}b"),
+            ("objective", "a\u{202e}b"),
+            ("objective", "a\u{200f}b"),
+            ("objective", "a\u{2066}b"),
+            ("agent", ""),
+            ("agent", "gemini"),
+            ("agent", "Codex"),
+            ("agent", "claude"),
+            ("agent", "codex claude-code"),
+        ];
+        for (field, value) in rejected {
+            let text = propose(&[(field, json!(value))]);
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{field}: {value:.40?}"
+            );
+        }
+
+        let exactly_full = "y".repeat(MAX_TASK_OBJECTIVE_BYTES);
+        let accepted = [
+            ("project", "p-0123abcd"),
+            ("objective", exactly_full.as_str()),
+            ("objective", "Line one.\n\tLine two.\r\nLine three."),
+            ("agent", "claude-code"),
+        ];
+        for (field, value) in accepted {
+            let text = propose(&[(field, json!(value))]);
+            assert!(parse(&block(&text)).is_ok(), "{field}: {value:.40?}");
+        }
+    }
+
+    #[test]
+    fn task_propose_refuses_both_workstream_id_and_ref_and_an_objective_with_a_ref() {
+        let with_create = |fields: &[(&str, Value)]| format!("{CREATE},{}", propose(fields));
+        let both = with_create(&[
+            ("workstream_id", json!("ws-1")),
+            ("workstream_ref", json!("a")),
+        ]);
+        assert_eq!(parse(&block(&both)), Err(BlockError::BadReference));
+
+        let objective_with_ref = with_create(&[
+            ("workstream_ref", json!("a")),
+            ("objective_id", json!("obj-1")),
+        ]);
+        assert_eq!(
+            parse(&block(&objective_with_ref)),
+            Err(BlockError::InvalidField("objective_id"))
+        );
+        let objective_alone = propose(&[("objective_id", json!("obj-1"))]);
+        assert_eq!(
+            parse(&block(&objective_alone)),
+            Err(BlockError::InvalidField("objective_id"))
+        );
+
+        let bad_workstream = propose(&[("workstream_id", json!("ws 1"))]);
+        assert_eq!(
+            parse(&block(&bad_workstream)),
+            Err(BlockError::InvalidField("workstream_id"))
+        );
+        let bad_objective = propose(&[
+            ("workstream_id", json!("ws-1")),
+            ("objective_id", json!("obj 1")),
+        ]);
+        assert_eq!(
+            parse(&block(&bad_objective)),
+            Err(BlockError::InvalidField("objective_id"))
+        );
+        let linked = propose(&[
+            ("workstream_id", json!("ws-1")),
+            ("objective_id", json!("obj-1")),
+        ]);
+        assert!(parse(&block(&linked)).is_ok());
+    }
+
+    #[test]
+    fn task_propose_may_name_a_workstream_create_ref_and_becomes_its_dependent() {
+        let by_ref = propose(&[("workstream_ref", json!("a"))]);
+        let parsed = parse(&block(&format!("{CREATE},{by_ref}"))).expect("valid block");
+        assert_eq!(parsed.parent(0), None);
+        assert_eq!(parsed.parent(1), Some(0));
+
+        let action = &parsed.actions()[1];
+        let first = action.canonical(Some("proposal-1"));
+        let second = action.canonical(Some("proposal-2"));
+        assert!(first.json.contains(r#""workstream_ref":"proposal-1""#));
+        assert_ne!(first.digest, second.digest);
+        assert_eq!(first.subject, second.subject);
+
+        let unlinked = parse(&block(PROPOSE)).expect("valid block");
+        assert_eq!(unlinked.parent(0), None);
+
+        let forward = format!("{by_ref},{CREATE}");
+        assert_eq!(parse(&block(&forward)), Err(BlockError::BadReference));
+        let unknown = propose(&[("workstream_ref", json!("zz"))]);
+        assert_eq!(
+            parse(&block(&format!("{CREATE},{unknown}"))),
+            Err(BlockError::BadReference)
+        );
+        assert_eq!(parse(&block(&by_ref)), Err(BlockError::BadReference));
+    }
+
+    #[test]
+    fn task_cancel_retry_and_link_reject_unknown_fields_and_bad_ids() {
+        let parsed = parse(&block(&format!("{CANCEL},{RETRY},{LINK}"))).expect("valid block");
+        let [cancel, retry, link] = parsed.actions() else {
+            panic!("expected three actions");
+        };
+        assert_eq!(cancel.target_task(), Some("task-1"));
+        assert_eq!(retry.target_task(), Some("task-1"));
+        // A linked task belongs to no workstream yet, so there is no target to check.
+        assert_eq!(link.target_task(), None);
+        assert_eq!(link.linked_workstream(), Some("ws-1"));
+        assert_eq!(link.linked_objective(), None);
+        assert_eq!(cancel.linked_workstream(), None);
+        assert_eq!(
+            cancel.canonical(None).json,
+            r#"{"kind":"task.cancel","task_id":"task-1"}"#
+        );
+        assert_eq!(
+            retry.canonical(None).json,
+            r#"{"kind":"task.retry","task_id":"task-1"}"#
+        );
+        assert_eq!(
+            link.canonical(None).json,
+            r#"{"kind":"workstream.link_task","task_id":"task-1","workstream_id":"ws-1"}"#
+        );
+
+        for text in [CANCEL, RETRY, LINK, PROPOSE] {
+            let extra = text.replace('}', r#","force":true}"#);
+            assert_eq!(parse(&block(&extra)), Err(BlockError::Malformed), "{extra}");
+        }
+        // A proposal never carries policy, limits, dependencies, or a parent.
+        for field in [
+            "autonomy",
+            "verification",
+            "permission",
+            "max_retries",
+            "max_repairs",
+            "dependencies",
+            "parent_id",
+            "model_selection",
+        ] {
+            let text = propose(&[(field, json!("x"))]);
+            assert_eq!(parse(&block(&text)), Err(BlockError::Malformed), "{field}");
+        }
+
+        let missing = [
+            r#"{"kind":"task.cancel"}"#,
+            r#"{"kind":"task.retry"}"#,
+            r#"{"kind":"workstream.link_task","task_id":"task-1"}"#,
+            r#"{"kind":"workstream.link_task","workstream_id":"ws-1"}"#,
+        ];
+        for text in missing {
+            assert_eq!(parse(&block(text)), Err(BlockError::Malformed), "{text}");
+        }
+
+        for bad in ["", "task 1", "t\u{e9}che", &"t".repeat(129)] {
+            for kind in ["task.cancel", "task.retry"] {
+                let text = json!({"kind": kind, "task_id": bad}).to_string();
+                assert_eq!(
+                    parse(&block(&text)),
+                    Err(BlockError::InvalidField("task_id")),
+                    "{kind} {bad:.20?}"
+                );
+            }
+            let text =
+                json!({"kind": "workstream.link_task", "workstream_id": "ws-1", "task_id": bad})
+                    .to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField("task_id")),
+                "link {bad:.20?}"
+            );
+        }
+        let bad_workstream =
+            r#"{"kind":"workstream.link_task","workstream_id":"ws 1","task_id":"task-1"}"#;
+        assert_eq!(
+            parse(&block(bad_workstream)),
+            Err(BlockError::InvalidField("workstream_id"))
+        );
+        let bad_objective = r#"{"kind":"workstream.link_task","workstream_id":"ws-1","task_id":"task-1","objective_id":"obj 1"}"#;
+        assert_eq!(
+            parse(&block(bad_objective)),
+            Err(BlockError::InvalidField("objective_id"))
+        );
+        let objective = r#"{"kind":"workstream.link_task","workstream_id":"ws-1","task_id":"task-1","objective_id":"obj-1"}"#;
+        let parsed = parse(&block(objective)).expect("valid block");
+        assert_eq!(parsed.actions()[0].linked_objective(), Some("obj-1"));
+    }
+
+    #[test]
+    fn in_a_workstream_conversation_propose_and_link_must_name_that_workstream() {
+        let scope = BlockScope::Workstream("ws-1");
+        let refused = [
+            PROPOSE.to_owned(),
+            propose(&[("workstream_id", json!("ws-2"))]),
+            format!("{CREATE},{}", propose(&[("workstream_ref", json!("a"))])),
+            LINK.replace("ws-1", "ws-2"),
+        ];
+        for action in refused {
+            assert_eq!(
+                parse_block(&block(&action), scope),
+                Err(BlockError::OutOfScope),
+                "{action}"
+            );
+        }
+        let allowed = [
+            propose(&[("workstream_id", json!("ws-1"))]),
+            propose(&[
+                ("workstream_id", json!("ws-1")),
+                ("objective_id", json!("obj-1")),
+            ]),
+            LINK.to_owned(),
+            // The owning workstream of a cancelled or retried task is checked against the store.
+            CANCEL.to_owned(),
+            RETRY.to_owned(),
+        ];
+        for action in allowed {
+            assert!(parse_block(&block(&action), scope).is_ok(), "{action}");
+        }
+        let global = [
+            PROPOSE.to_owned(),
+            propose(&[("workstream_id", json!("ws-2"))]),
+            CANCEL.to_owned(),
+            RETRY.to_owned(),
+            LINK.replace("ws-1", "ws-2"),
+        ];
+        for action in global {
+            assert!(parse(&block(&action)).is_ok(), "{action}");
+        }
+    }
+
+    #[test]
+    fn a_task_subject_supersedes_only_the_same_kind_and_target() {
+        let canonical_of = |text: &str| {
+            let parsed = parse(&block(text)).expect("valid block");
+            parsed.actions()[0].canonical(None)
+        };
+        let base = canonical_of(PROPOSE);
+        let objective_hash = hex(&Sha256::digest(
+            "add unit tests for the retry module.".as_bytes(),
+        ));
+        assert_eq!(base.subject, format!("p-3fa9c1d2/{objective_hash}"));
+        assert!(base.subject.len() <= 512);
+
+        // Same project and objective text up to case and spacing: same subject. A
+        // different delivery changes the digest, so the newer proposal supersedes.
+        let respaced = canonical_of(&propose(&[(
+            "objective",
+            json!("  ADD unit   tests for\nthe retry module. "),
+        )]));
+        let report = canonical_of(&propose(&[("delivery", json!("ReportOnly"))]));
+        assert_eq!(respaced.subject, base.subject);
+        assert_eq!(report.subject, base.subject);
+        assert_ne!(report.digest, base.digest);
+
+        let other_objective = canonical_of(&propose(&[("objective", json!("Fix the parser."))]));
+        let other_project = canonical_of(&propose(&[("project", json!("p-00000000"))]));
+        assert_ne!(other_objective.subject, base.subject);
+        assert_ne!(other_project.subject, base.subject);
+
+        // Cancel, retry and link subjects are the task id; the store keys on the kind too.
+        let cancel = canonical_of(CANCEL);
+        assert_eq!(cancel.subject, "task-1");
+        assert_eq!(canonical_of(RETRY).subject, "task-1");
+        assert_eq!(canonical_of(LINK).subject, "task-1");
+        assert_eq!(
+            canonical_of(&LINK.replace("ws-1", "ws-2")).subject,
+            "task-1"
+        );
+        assert_ne!(
+            canonical_of(&CANCEL.replace("task-1", "task-2")).subject,
+            cancel.subject
+        );
+        assert_ne!(cancel.json, canonical_of(RETRY).json);
+    }
+
+    #[test]
+    fn a_checked_block_denies_only_a_pull_request_task_propose() {
+        let pull_request = propose(&[("delivery", json!("PullRequest"))]);
+        let text = block(&format!("{CREATE},{PROPOSE},{pull_request},{CANCEL}"));
+        let parsed = parse(&text).expect("valid block");
+        assert!((0..4).all(|index| parsed.denial(index).is_none()));
+
+        let checked = parsed.clone().checked(&chat_task_envelope());
+        assert_eq!(checked.actions(), parsed.actions());
+        assert_eq!(checked.parent(1), parsed.parent(1));
+        let denials: Vec<_> = (0..5).map(|index| checked.denial(index)).collect();
+        assert_eq!(denials, [None, None, Some(Denial::Delivery), None, None]);
+    }
+
+    #[test]
+    fn the_objective_rule_refuses_the_same_characters_as_the_contract_check() {
+        let Action::TaskPropose(base) =
+            parse(&block(PROPOSE)).expect("valid block").actions()[0].clone()
+        else {
+            panic!("expected a task.propose action");
+        };
+        let envelope = chat_task_envelope();
+        for c in (0..=0xFFFF).filter_map(char::from_u32) {
+            let action = ProposeTask {
+                objective: format!("a{c}b"),
+                ..base.clone()
+            };
+            let verdict = validate_proposal(&task_proposal(&action, &envelope), &envelope);
+            assert_eq!(
+                matches!(verdict, Validation::Invalid(_)),
+                is_disallowed_objective_char(c),
+                "{c:?}"
+            );
+        }
     }
 
     #[test]
