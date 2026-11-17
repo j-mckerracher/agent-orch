@@ -453,6 +453,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         // DPES-1105 phase 5b: the user's notes share the grants capability. `notes.list` is
         // open; `notes.set` is user-only because a note is persistent text the next prompt carries.
         "notes.list" | "notes.set" => Some(Capability::StandingApprovals),
+        // DPES-1105: watched pull requests. Both only read (a refresh asks the daemon for one
+        // fresh view, which it rate limits), so neither is user-only.
+        "pulls.list" | "pulls.refresh" => Some(Capability::Landing),
         "queue.snapshot" => Some(Capability::Queue),
         "workstreams.create"
         | "workstreams.list"

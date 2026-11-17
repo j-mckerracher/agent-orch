@@ -19,6 +19,8 @@ pub mod env_policy;
 mod error;
 mod git;
 mod git_path;
+pub mod github;
+pub mod github_fake;
 pub mod reconcile;
 mod repository;
 pub mod verification;

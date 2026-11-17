@@ -67,6 +67,7 @@ mod sqlite_lineage;
 mod sqlite_notes;
 mod sqlite_ops;
 mod sqlite_project_defaults;
+mod sqlite_pull_requests;
 mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
@@ -92,6 +93,10 @@ pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, Coordinat
 pub use sqlite_holds::{DecisionHold, HoldError, HoldState, HoldSubject};
 pub use sqlite_lineage::{LineageError, LineageRelation, TaskLineage};
 pub use sqlite_project_defaults::{ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow};
+pub use sqlite_pull_requests::{
+    MergeAttempt, MergeClaim, MergeState, PullRequestChange, PullRequestError, PullRequestRow,
+    PullRequestSeen, StoredCheck, MAX_STORED_CHECKS,
+};
 pub use sqlite_reports::{
     ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
 };

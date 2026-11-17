@@ -67,10 +67,14 @@ pub enum Capability {
     /// approvals, plus the open `monitoring.brief` and `monitoring.brief_ack` return brief and
     /// the open `notes.list` with the user-only `notes.set` (DPES-1105). Not advertised by an older daemon.
     StandingApprovals,
+    /// `pulls.list` and `pulls.refresh` (both open, read-only): the pull requests the daemon
+    /// watches. Merging is not a method: it is the `delivery.merge` action kind, resolved through
+    /// `actions.resolve` (DPES-1105). Not advertised by an older daemon.
+    Landing,
 }
 
 impl Capability {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -93,6 +97,7 @@ impl Capability {
         Self::Monitoring,
         Self::Holds,
         Self::StandingApprovals,
+        Self::Landing,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -119,6 +124,7 @@ impl Capability {
             Self::Monitoring => "monitoring",
             Self::Holds => "holds",
             Self::StandingApprovals => "standing_approvals",
+            Self::Landing => "landing",
         }
     }
 

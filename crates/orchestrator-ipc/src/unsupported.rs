@@ -195,6 +195,12 @@ impl Client {
     pub fn grants_list(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn pulls_list(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn pulls_refresh(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn notes_list(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }

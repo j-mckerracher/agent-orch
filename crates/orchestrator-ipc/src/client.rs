@@ -549,6 +549,17 @@ impl Client {
         self.call_feature(Capability::StandingApprovals, "notes.list", params)
     }
 
+    /// `pulls.list`: the watched pull requests, from `params` (`project_id`, optional).
+    pub fn pulls_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Landing, "pulls.list", params)
+    }
+
+    /// `pulls.refresh`: one fresh read of one task's pull request, from `params` (`task_id`).
+    /// The daemon rate limits it per task.
+    pub fn pulls_refresh(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::Landing, "pulls.refresh", params)
+    }
+
     /// `notes.set`: replaces one scope's notes, from `params` (`scope`, `notes`, an idempotency
     /// key). The daemon refuses a session that did not prove the approver secret.
     pub fn notes_set(&mut self, params: Value) -> Result<Value, IpcError> {

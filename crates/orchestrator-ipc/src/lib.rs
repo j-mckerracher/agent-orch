@@ -126,6 +126,9 @@ mod idle_subscription_tests;
 #[cfg(all(test, unix))]
 #[path = "integration_tests.rs"]
 mod integration_tests;
+#[cfg(all(test, any(unix, windows)))]
+#[path = "landing_tests.rs"]
+mod landing_tests;
 #[cfg(all(test, unix))]
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
