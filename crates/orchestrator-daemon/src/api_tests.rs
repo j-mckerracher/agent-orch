@@ -186,7 +186,7 @@ fn task_submission_is_deduplicated_and_hides_project_path() {
     let project_list = api.dispatch("projects.list", Value::Null).unwrap();
     assert_eq!(
         project_list,
-        json!([{"id": "project-1", "coordinator_active": true}])
+        json!([{"id": "project-1", "coordinator_active": false}])
     );
     assert!(!project_list.to_string().contains("/private/project-root"));
 
@@ -921,7 +921,7 @@ fn project_registration_validates_the_repository_and_is_idempotent() {
     );
     assert_eq!(
         api.dispatch("projects.list", Value::Null).unwrap(),
-        json!([{"id": root, "coordinator_active": true}])
+        json!([{"id": root, "coordinator_active": false}])
     );
     assert_eq!(api.store.get_project(&root).unwrap().root_path, root);
 
@@ -934,6 +934,56 @@ fn project_registration_validates_the_repository_and_is_idempotent() {
         );
     }
     assert_eq!(api.store.list_projects().unwrap().len(), 1);
+}
+
+#[test]
+fn registering_a_project_only_makes_it_available_and_adds_no_coordinator() {
+    let (_directory, api) = new_api();
+    let repository = tempfile::tempdir().unwrap();
+    git_init(repository.path());
+    let registered = api
+        .dispatch(
+            "projects.register",
+            json!({"path": repository.path().to_str().unwrap()}),
+        )
+        .unwrap();
+    let id = registered["id"].as_str().unwrap().to_owned();
+
+    assert_eq!(
+        api.dispatch("projects.list", Value::Null).unwrap(),
+        json!([{"id": id, "coordinator_active": false}])
+    );
+    assert_eq!(
+        api.dispatch("coordinator.get", json!({"project_id": id})),
+        Err(RpcError::NotFound)
+    );
+    assert_eq!(
+        api.dispatch(
+            "coordinator.send_message",
+            json!({"project_id": id, "text": "hi", "idempotency_key": "n1"})
+        ),
+        Err(RpcError::NotFound)
+    );
+    assert!(api.store.list_workstreams(None).unwrap().is_empty());
+
+    // The user adds a coordinator explicitly.
+    let added = api
+        .dispatch(
+            "coordinator.restore",
+            json!({"project_id": id, "idempotency_key": "a1"}),
+        )
+        .unwrap();
+    assert_eq!(added["changed"], true);
+    assert_eq!(
+        api.dispatch("projects.list", Value::Null).unwrap(),
+        json!([{"id": id, "coordinator_active": true}])
+    );
+    assert!(api
+        .dispatch(
+            "coordinator.send_message",
+            json!({"project_id": id, "text": "hi", "idempotency_key": "n2"})
+        )
+        .is_ok());
 }
 
 #[test]

@@ -42,8 +42,9 @@ pub struct CoordinatorChange {
     pub clear_generation: i64,
 }
 
-/// A project coordinator's state. A project with no row has an active coordinator
-/// that was never cleared.
+/// A project coordinator's state. Coordinators are opt-in (migration 0053): a project
+/// has one only after `restore_coordinator` adds it, so a project with no row has no
+/// coordinator and generation 0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoordinatorScope {
     pub removed: bool,
@@ -157,8 +158,9 @@ impl SqliteStore {
         })
     }
 
-    /// Restore a removed coordinator. It starts empty, because removal deleted its log.
-    /// Idempotent: an active coordinator is left as it is.
+    /// Add a coordinator to a project that has none, either never added or removed.
+    /// It starts empty, because removal deleted its log. Idempotent: an active
+    /// coordinator is left as it is.
     pub fn restore_coordinator(&self, project_id: &str) -> Result<CoordinatorChange, StoreError> {
         let project_id = project_id.to_owned();
         self.call(move |pool| async move {
@@ -175,8 +177,9 @@ impl SqliteStore {
                 });
             }
             sqlx::query(
-                "UPDATE coordinator_scopes SET removed = 0, changed_at = CURRENT_TIMESTAMP \
-                 WHERE project_id = ?",
+                "INSERT INTO coordinator_scopes (project_id, removed) VALUES (?, 0) \
+                 ON CONFLICT(project_id) DO UPDATE SET removed = 0, \
+                 changed_at = CURRENT_TIMESTAMP",
             )
             .bind(&project_id)
             .execute(&mut *transaction)
@@ -203,8 +206,8 @@ impl SqliteStore {
         })
     }
 
-    /// The coordinator state of one project. Unknown and never-touched projects read
-    /// as active with generation 0.
+    /// The coordinator state of one project. Unknown projects and projects whose
+    /// coordinator was never added read as removed with generation 0.
     pub fn coordinator_scope(&self, project_id: &str) -> Result<CoordinatorScope, StoreError> {
         let project_id = project_id.to_owned();
         self.call(move |pool| async move {
@@ -220,18 +223,19 @@ impl SqliteStore {
                     clear_generation: row.try_get("clear_generation")?,
                 },
                 None => CoordinatorScope {
-                    removed: false,
+                    removed: true,
                     clear_generation: 0,
                 },
             })
         })
     }
 
-    /// Project ids whose coordinator is removed.
-    pub fn removed_coordinator_projects(&self) -> Result<Vec<String>, StoreError> {
+    /// Ids of registered projects that have no active coordinator.
+    pub fn projects_without_coordinator(&self) -> Result<Vec<String>, StoreError> {
         self.call(|pool| async move {
             Ok(sqlx::query_scalar(
-                "SELECT project_id FROM coordinator_scopes WHERE removed = 1 ORDER BY project_id",
+                "SELECT id FROM projects WHERE id NOT IN \
+                 (SELECT project_id FROM coordinator_scopes WHERE removed = 0) ORDER BY id",
             )
             .fetch_all(&pool)
             .await?)
@@ -380,7 +384,7 @@ async fn coordinator_removed(
             .bind(project_id)
             .fetch_optional(&mut *connection)
             .await?;
-    Ok(removed == Some(1))
+    Ok(removed != Some(0))
 }
 
 async fn coordinator_generation(

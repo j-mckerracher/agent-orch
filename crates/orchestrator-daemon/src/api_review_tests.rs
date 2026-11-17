@@ -98,6 +98,7 @@ fn fixture() -> Fixture {
             settings: json!({}),
         })
         .unwrap();
+    api.store.restore_coordinator("project-1").unwrap();
     api.store
         .create(&contract(
             "task-1",

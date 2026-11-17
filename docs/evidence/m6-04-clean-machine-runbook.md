@@ -20,11 +20,11 @@ Gatekeeper and SmartScreen rows are UNPROVEN** until someone runs sections 4 and
 
 | Step | Proves |
 | --- | --- |
-| 1 | the daemon starts, authenticates a client, registers a project and stores a coordinator message |
+| 1 | the daemon starts, authenticates a client and registers a project |
 | 2 | a running agent is cancelled: task `Cancelled`, agent process gone |
 | 3 | a daemon killed hard while an agent runs (Unix: the agent is left running; Windows: the kill-on-close job object ends it) |
 | 4 | the new daemon starts over the old data directory; both `daemon_start` versions are printed (`UPGRADE: <old> -> <new>`), checked with `--expect-old-version` / `--expect-new-version` |
-| 5 | the project, the coordinator message and the cancelled task written by the old daemon read back unchanged |
+| 5 | the project and the cancelled task written by the old daemon read back unchanged; the project has no coordinator until `coordinator.restore` adds one, which then stores and returns a message |
 | 6 | no orphan survives; the interrupted task is `Failed` and is **not** relaunched; `tasks.retry` starts a new process |
 | 7 | cancellation again, on the new daemon |
 | 8-9 | two reviewable tasks are seeded, approvals are requested, and they survive a hard daemon kill and restart |

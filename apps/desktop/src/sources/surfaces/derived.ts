@@ -242,7 +242,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
             ? "Coordinator removed. Its notes were deleted; the project and its tasks are unchanged."
             : "That coordinator was already removed."
           : result.changed
-            ? "Coordinator restored. It starts with no notes."
+            ? "Coordinator added. It starts with no notes."
             : "That coordinator is already active.",
       };
     } catch (error) {

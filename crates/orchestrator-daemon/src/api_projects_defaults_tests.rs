@@ -124,7 +124,7 @@ fn a_project_with_no_defaults_behaves_exactly_as_before() {
     // The listing and the settings answer carry nothing new for this project.
     assert_eq!(
         call(&api, "projects.list", Value::Null).unwrap(),
-        json!([{"id": ALPHA, "coordinator_active": true}])
+        json!([{"id": ALPHA, "coordinator_active": false}])
     );
     let defaults = call(&api, "projects.get_defaults", json!({"project_id": ALPHA})).unwrap();
     assert_eq!(

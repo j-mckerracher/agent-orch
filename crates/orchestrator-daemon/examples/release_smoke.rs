@@ -27,8 +27,9 @@
 //!    the kill-on-close job object ends the agent with the daemon); the next daemon (the
 //!    upgraded one) terminates any orphan, marks the task `Failed` without relaunching, and
 //!    `tasks.retry` starts a new attempt;
-//! 4. upgrade: records written by the old daemon (project, coordinator message, canceled
-//!    task) are read back unchanged by the new one;
+//! 4. upgrade: records written by the old daemon (project, canceled task) are read back
+//!    unchanged by the new one, and the registered project has no coordinator until
+//!    `coordinator.restore` adds one;
 //! 5. approvals: a requested approval survives a hard daemon kill and restart; approve
 //!    delivers a review ref at exactly the candidate commit; reject delivers nothing and
 //!    blocks a later approve or delivery. The new daemon is started as the desktop host
@@ -540,12 +541,6 @@ fn scenario(options: &Options) -> Value {
         client.projects_register(&repo.display().to_string()).ok()
     });
     let project_id = project["id"].as_str().expect("project id").to_owned();
-    let message = call(&env.data, "coordinator.send_message", |client| {
-        client
-            .coordinator_send_message(&project_id, "Plan it", "smoke-msg-1")
-            .ok()
-    });
-    assert_eq!(message["author"], "user");
 
     step(2, "phase A: cancel a running agent");
     let cancelled = submit(&env.data, &project_id, "smoke-cancel");
@@ -603,7 +598,8 @@ fn scenario(options: &Options) -> Value {
 
     step(
         5,
-        "records written by the old daemon are read back unchanged",
+        "records written by the old daemon are read back unchanged; the project has no \
+         coordinator until one is added",
     );
     let projects = call(&env.data, "projects.list", |client| {
         client.projects_list().ok()
@@ -616,15 +612,35 @@ fn scenario(options: &Options) -> Value {
             .any(|p| p["id"] == project_id.as_str()),
         "project survives: {projects}"
     );
-    let page = call(&env.data, "coordinator.get", |client| {
-        client.coordinator_get(&project_id, None).ok()
-    });
-    assert_eq!(page["entries"][0]["body"], "Plan it");
     assert_eq!(
         task(&env.data, &cancelled),
         cancelled_record,
         "the canceled task is unchanged"
     );
+    // Registering a directory makes it available for work and nothing more. An old
+    // daemon that created a coordinator on registration has it removed by the upgrade.
+    call(&env.data, "coordinator.get (none)", |client| {
+        match client.coordinator_get(&project_id, None) {
+            Err(IpcError::NotFound) => Some(()),
+            Ok(page) => panic!("registration created a coordinator: {page}"),
+            Err(_) => None,
+        }
+    });
+    call(&env.data, "coordinator.restore", |client| {
+        client
+            .coordinator_restore(&project_id, "smoke-coordinator-add-1")
+            .ok()
+    });
+    let message = call(&env.data, "coordinator.send_message", |client| {
+        client
+            .coordinator_send_message(&project_id, "Plan it", "smoke-msg-1")
+            .ok()
+    });
+    assert_eq!(message["author"], "user");
+    let page = call(&env.data, "coordinator.get", |client| {
+        client.coordinator_get(&project_id, None).ok()
+    });
+    assert_eq!(page["entries"][0]["body"], "Plan it");
 
     step(
         6,

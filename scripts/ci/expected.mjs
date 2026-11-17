@@ -52,7 +52,8 @@ export const WINDOWS = {
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on Windows): the unit binary is 212 and
   // conversation_runtime 61, with 281 passed plus 1 ignored.
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 601 becomes 610.
-  daemon: { passed: 610, ignored: 1, sequence: [516, 81, 2, 5, 0, 1, 2, 4] },
+  // Opt-in project coordinators add 1 portable daemon unit test (registration adds no coordinator): 610 becomes 611.
+  daemon: { passed: 611, ignored: 1, sequence: [517, 81, 2, 5, 0, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -92,7 +93,8 @@ export const WINDOWS = {
   // DPES-1105 action resolve (PR #116, CI run 43998558420, measured on Windows): action_proposals.rs is 14 tests, so 195 passed.
   // DPES-1105 task actions and settings (CI run 44023050296, measured on Windows): action_proposals.rs is 23 tests and a new
   // orchestrator_settings.rs binary adds 12, so 216 passed.
-  store: { passed: 349, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 7, 14, 3, 2, 5, 12, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
+  // Opt-in project coordinators add 2 portable conversation_history tests: 13 becomes 15, so 349 becomes 351 passed.
+  store: { passed: 351, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 12, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 98 },
@@ -136,7 +138,8 @@ export const MACOS = {
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on macOS): the unit binary is 282 and
   // conversation_runtime 66, daemon.rs 13, with 369 passed plus 1 ignored.
   // OX-W9 workstream plan editing adds 9 portable daemon unit tests: 696 becomes 705.
-  daemon: { passed: 705, ignored: 1, sequence: [593, 86, 2, 5, 13, 1, 2, 4] },
+  // Opt-in project coordinators add 1 portable daemon unit test: 705 becomes 706.
+  daemon: { passed: 706, ignored: 1, sequence: [594, 86, 2, 5, 13, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -165,7 +168,8 @@ export const MACOS = {
   // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 1258 becomes 1289.
   // CI run 44023050296: 1289 becomes 1432.
   // OX-W9 workstream plan editing adds 9 daemon tests: 2074 becomes 2083.
-  workspace: { passed: 2083, ignored: 2 },
+  // Opt-in project coordinators add 3 tests (1 daemon, 2 store): 2083 becomes 2086.
+  workspace: { passed: 2086, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
@@ -182,7 +186,8 @@ export const MACOS = {
   // conversation_history 10 becomes 13, so 182 becomes 192 passed.
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): action_proposals.rs is 14 tests, so 199 passed.
   // DPES-1105 task actions and settings (CI run 44023050296, measured on macOS): 220 passed.
-  store: { passed: 353, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 7, 14, 4, 2, 5, 12, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
+  // Opt-in project coordinators add 2 conversation_history tests: 13 becomes 15, so 353 becomes 355 passed.
+  store: { passed: 355, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 12, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 100 },

@@ -102,7 +102,8 @@ describe("real M5-02 daemon: projects, tasks and errors", () => {
     expect(first.id).toBe(projectId);
     const again = await api.projectsRegister(daemon.repo);
     expect(again.id).toBe(projectId);
-    expect(await api.projectsList()).toEqual([{ id: projectId, coordinator_active: true }]);
+    // Registering a directory makes it available for work and adds no coordinator.
+    expect(await api.projectsList()).toEqual([{ id: projectId, coordinator_active: false }]);
     session.close();
   });
 
@@ -206,7 +207,7 @@ describe("real M5-02 daemon: ConnectionManager and AppData", () => {
     manager.start();
     await until(() => manager.getSnapshot().status === "connected", "connected");
     await until(() => data.getSnapshot().tasks.status === "ready", "tasks loaded");
-    expect(data.getSnapshot().projects.data).toEqual([{ id: projectId, coordinator_active: true }]);
+    expect(data.getSnapshot().projects.data).toEqual([{ id: projectId, coordinator_active: false }]);
 
     // An unsupported agent cannot succeed, so its dependent remains cancellable.
     const blockerSession = new DaemonSession(await new NodeConnector(daemon.dataDir).open(M5_03_CAPABILITIES));
@@ -349,6 +350,8 @@ describe("real daemon: M5-02b/M5-02c methods", () => {
       kind: "not-found",
     });
 
+    await expect(api.coordinatorGet(projectId)).rejects.toMatchObject({ kind: "not-found" });
+    expect(await api.coordinatorRestore(projectId, "m502b-key-add")).toMatchObject({ changed: true });
     const message = await api.coordinatorSendMessage(projectId, "hello coordinator", "m502b-key-msg");
     expect(message).toMatchObject({ kind: "message", author: "user", body: "hello coordinator" });
     const replay = await api.coordinatorSendMessage(projectId, "hello coordinator", "m502b-key-msg");

@@ -412,11 +412,15 @@ start. For a conversation, a cursor ahead of the newest entry is `ReplayGap`;
 the desktop treats that as a reset as well, not as an error.
 
 **Coordinators.** Migration `0032` adds `coordinator_scopes` with a `removed`
-flag and a `clear_generation`. No row means active and never cleared.
-`coordinator.remove` deletes the log and sets `removed`. `coordinator.restore`
-clears the flag, and the coordinator starts empty. `coordinator.clear` empties
-the log. Sends, proposals and reads refuse a removed coordinator with `not_found`.
-`projects.list` returns `coordinator_active` for each project.
+flag and a `clear_generation`. A coordinator is opt-in: a project has one only
+while its row has `removed = 0`. Registering a project only makes it available
+for work and adds no coordinator. `coordinator.restore` adds one (shown as
+"Add coordinator"), and it starts empty. `coordinator.remove` deletes the log and
+sets `removed`. `coordinator.clear` empties the log. Sends, proposals and reads
+refuse a project without a coordinator with `not_found`. `projects.list` returns
+`coordinator_active` for each project. Migration `0053_coordinators_opt_in.sql`
+removes every coordinator that existed before this rule, with its notes, and
+writes one `remove` audit row for each one it removes.
 
 **Methods and capability.** The methods are `conversations.clear
 {target, idempotency_key}`, `coordinator.clear {project_id, idempotency_key}`,

@@ -251,7 +251,7 @@ export class FakeDaemon implements DaemonConnector {
         const path = String(params.path);
         if (!path.startsWith("/")) return fail(-32602, "path must be absolute");
         const row = { id: path };
-        if (!this.projects.some((p) => p.id === path)) this.projects.push(row);
+        if (!this.projects.some((p) => p.id === path)) this.projects.push({ ...row, coordinator_active: false });
         return reply(row);
       }
       case "tasks.list":

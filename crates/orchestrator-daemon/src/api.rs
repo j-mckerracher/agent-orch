@@ -547,11 +547,12 @@ impl DaemonApi {
             self.store.archived_project_ids().map_err(map_store_error)?
         };
         let projects = self.store.list_projects().map_err(map_store_error)?;
-        // `coordinator_active` is false while a project's coordinator is removed
-        // (DPES-1105). The project itself is listed either way.
-        let removed = self
+        // `coordinator_active` is true only after the project's coordinator was added
+        // with `coordinator.restore`: registration does not create one. The project
+        // itself is listed either way.
+        let without_coordinator = self
             .store
-            .removed_coordinator_projects()
+            .projects_without_coordinator()
             .map_err(map_store_error)?;
         // `mode` appears only for a project that has a defaults row, and `archived` only
         // (as true) for an archived one, so a project that never set a default lists as before.
@@ -568,7 +569,7 @@ impl DaemonApi {
                 .into_iter()
                 .filter(|project| !archived.contains(&project.id))
                 .map(|project| {
-                    let coordinator_active = !removed.contains(&project.id);
+                    let coordinator_active = !without_coordinator.contains(&project.id);
                     let mut row =
                         json!({"id": project.id, "coordinator_active": coordinator_active});
                     if let Some(mode) = modes.get(&project.id) {

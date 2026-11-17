@@ -6,7 +6,8 @@
 //! per method and is never read from the wire.
 //!
 //! DPES-1105: `coordinator.clear` deletes a log, and `coordinator.remove` deletes it
-//! and hides the coordinator. `coordinator.restore` brings it back empty. The idempotency
+//! and hides the coordinator. `coordinator.restore` adds a coordinator, empty. A project
+//! has none until it is added: registration does not create one. The idempotency
 //! record for a send keeps references only, so a cleared message leaves no text behind.
 
 use orchestrator_core::decomposition::{self, DecompositionError};
@@ -183,7 +184,8 @@ impl DaemonApi {
         )
     }
 
-    /// Restores a removed coordinator. It starts empty. Idempotent.
+    /// Adds a coordinator to a project that has none, never added or removed. It starts
+    /// empty. Idempotent.
     pub(super) fn coordinator_restore(&self, params: Value) -> Result<Value, RpcError> {
         let request: CoordinatorHistoryParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
@@ -224,7 +226,8 @@ impl DaemonApi {
         }
     }
 
-    /// Fails with NotFound for an unknown project and for a removed coordinator.
+    /// Fails with NotFound for an unknown project and for a project without an active
+    /// coordinator.
     fn require_active_coordinator(&self, project_id: &str) -> Result<(), RpcError> {
         self.require_project(project_id)?;
         let scope = self
