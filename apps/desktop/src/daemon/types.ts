@@ -412,6 +412,25 @@ export interface ChangeRequestRecord {
   created_at: string;
 }
 
+/** One session of the task under review: what the contract requested beside what usage receipts reported. */
+export interface ReviewAttemptWire {
+  session_id: string;
+  agent: string;
+  requested: { model: string | null; effort: string | null } | null;
+  reported_model: string | null;
+  /** A figure no receipt reported is null, never zero. */
+  usage: {
+    input_tokens: number | null;
+    cache_read_tokens: number | null;
+    cache_write_tokens: number | null;
+    output_tokens: number | null;
+    reasoning_tokens: number | null;
+  };
+  /** Reported cost in nano-units of `currency`. */
+  cost: { amount_nanos: number; currency: string } | null;
+  coverage: "reported" | "partial" | "unknown";
+}
+
 /** `review.evidence` result. */
 export interface ReviewEvidenceWire {
   task_id: string;
@@ -438,6 +457,7 @@ export interface ReviewEvidenceWire {
     diff_bytes: number;
   } | null;
   change_request: ChangeRequestRecord | null;
+  attempts?: ReviewAttemptWire[];
 }
 
 export interface ReviewChangesResult {

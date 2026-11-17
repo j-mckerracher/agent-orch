@@ -28,6 +28,7 @@ import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
 import { DecisionTabs } from "./DecisionTabs";
 import { ProposedActions } from "./ProposedActions";
+import type { AttemptsLoader } from "./Attempts";
 import { SixFactsRecord } from "./ReviewRecord";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
 import { filterByTab, indexMeta, tabsFor, type TabId } from "./queue";
@@ -120,6 +121,14 @@ export function ReviewDecisionsView({
     [changesOverride, fixtureMode, changesScenario, connection],
   );
 
+  const loadAttempts = useMemo<AttemptsLoader | undefined>(
+    () =>
+      fixtureMode || evidenceOverride
+        ? undefined
+        : async (taskId, approvalId) => (await connection.api().reviewEvidence(taskId, approvalId)).attempts ?? [],
+    [fixtureMode, evidenceOverride, connection],
+  );
+
   // The nav count reads the proposals slice, which refreshes on its own. The list re-reads when the pending ids in
   // that slice change, and keeps the last answer on screen meanwhile, so the list and the count do not stay apart.
   const { proposals } = useStore(data);
@@ -175,7 +184,7 @@ export function ReviewDecisionsView({
         session={session}
         embedded={slots}
         workstreamOf={workstreamOf}
-        record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} />}
+        record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} loadAttempts={loadAttempts} />}
       />
     </div>
   );

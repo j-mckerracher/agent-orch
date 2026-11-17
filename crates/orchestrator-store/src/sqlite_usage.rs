@@ -404,6 +404,47 @@ impl SqliteStore {
         })
     }
 
+    /// Every provider-reported receipt of one task, oldest observation first.
+    /// Estimated receipts are left out: they are not a provider report.
+    pub fn usage_receipts_for_task(&self, task_id: &str) -> Result<Vec<UsageReceipt>, StoreError> {
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "SELECT session_id, receipt_key, window_start_ms, window_end_ms, reported_at_ms, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, reasoning_tokens, cost_nanos, currency, model FROM usage_receipts WHERE task_id = ? AND source = 'provider_reported' ORDER BY reported_at_ms, sequence",
+            )
+            .bind(&task_id)
+            .fetch_all(&pool)
+            .await?;
+            rows.iter()
+                .map(|row| {
+                    let cost = match (
+                        optional_u64(row, "cost_nanos")?,
+                        row.try_get::<Option<String>, _>("currency")?,
+                    ) {
+                        (Some(nanos), Some(currency)) => Some((nanos, currency)),
+                        _ => None,
+                    };
+                    Ok(UsageReceipt {
+                        task_id: task_id.clone(),
+                        session_id: row.try_get("session_id")?,
+                        source: UsageSource::ProviderReported,
+                        receipt_key: row.try_get("receipt_key")?,
+                        window_start_ms: optional_u64(row, "window_start_ms")?.unwrap_or(0),
+                        window_end_ms: optional_u64(row, "window_end_ms")?.unwrap_or(0),
+                        reported_at_ms: optional_u64(row, "reported_at_ms")?.unwrap_or(0),
+                        input_tokens: optional_u64(row, "input_tokens")?,
+                        cache_read_tokens: optional_u64(row, "cache_read_tokens")?,
+                        cache_write_tokens: optional_u64(row, "cache_write_tokens")?,
+                        output_tokens: optional_u64(row, "output_tokens")?,
+                        reasoning_tokens: optional_u64(row, "reasoning_tokens")?,
+                        cost,
+                        model: row.try_get("model")?,
+                    })
+                })
+                .collect()
+        })
+    }
+
     /// Summarize usage over `[start_ms, end_ms)` by provider.
     ///
     /// Receipts are selected by `window_end_ms`. Coverage counts sessions that
