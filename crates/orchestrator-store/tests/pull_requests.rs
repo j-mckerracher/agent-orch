@@ -642,6 +642,37 @@ fn pr_a_second_claim_of_one_proposal_never_claims_twice() {
 }
 
 #[test]
+fn landing_two_callers_on_one_claim_call_the_host_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, _path) = seeded(directory.path());
+    store
+        .observe_pull_request(&seen("t1", "p1", 5), NOW)
+        .unwrap();
+    assert!(matches!(
+        claim(&store, "prop-1", "t1", 5),
+        MergeClaim::Claimed(_)
+    ));
+
+    // Only the first caller moves the row, so only it may call the host.
+    assert!(store.issue_pull_request_merge("prop-1").unwrap());
+    assert!(!store.issue_pull_request_merge("prop-1").unwrap());
+    assert_eq!(
+        store.pull_request_merge("prop-1").unwrap().unwrap().state,
+        MergeState::Issued
+    );
+    // A settled attempt is never moved back to issued.
+    store
+        .advance_pull_request_merge("prop-1", MergeState::Merged, None, None)
+        .unwrap();
+    assert!(!store.issue_pull_request_merge("prop-1").unwrap());
+    assert_eq!(
+        store.pull_request_merge("prop-1").unwrap().unwrap().state,
+        MergeState::Merged
+    );
+    assert!(store.issue_pull_request_merge("no-such-proposal").is_err());
+}
+
+#[test]
 fn pr_an_open_attempt_blocks_a_claim_by_another_proposal_on_the_same_pull_request() {
     let directory = tempfile::tempdir().unwrap();
     let (store, _path) = seeded(directory.path());

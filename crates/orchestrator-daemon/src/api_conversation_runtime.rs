@@ -36,7 +36,7 @@ use orchestrator_store::{
 
 use super::actions::promotion_denial;
 use super::conversation_snapshot::build_snapshot_with_notes;
-use super::landing_api::merge_denial;
+use super::landing_api::{merge_denial, with_project_merge_methods};
 use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
@@ -441,6 +441,9 @@ impl ReplySink {
             // or `chat_pr_delivery` may change before the user decides (DPES-1105).
             Ok(block) if self.targets_in_scope(&block) => {
                 let store = &*self.shared.store;
+                // A merge without a method gets the project's method now, so the card shows
+                // and the digest binds the method that will run.
+                let block = with_project_merge_methods(store, block);
                 TurnBlock::Accepted(block.checked_with(|action| match action {
                     Action::TaskPropose(propose) => {
                         denial_of(store, propose).or_else(|| promotion_denial(store, propose))

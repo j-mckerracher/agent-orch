@@ -339,6 +339,7 @@ mod tests {
                 state: CheckState::Passed,
             }],
             merge_sha: None,
+            same_repository: true,
         }
     }
 

@@ -11,7 +11,10 @@
 --
 -- The kind rules of the core crate are held here as well. A grant that names `delivery.merge`
 -- names no other kind, is scoped to a project, carries the confirmation, has at most 20 uses and
--- lives at most 24 hours. A branch prefix belongs to a merge grant alone. Nothing here turns a
+-- lives at most 24 hours and names the head-branch prefix it covers. A branch prefix belongs to
+-- a merge grant alone. Two more additions: the audit rows carry the head commit a merge was
+-- bound to, and `pull_request_repos` keeps the repository the poller first bound a task's pull
+-- request to. Nothing here turns a
 -- merge grant on: no row exists until the user creates one (grants.create is user-only).
 
 CREATE TABLE standing_grants_new (
@@ -35,7 +38,7 @@ CREATE TABLE standing_grants_new (
     revoked_at_ms INTEGER CHECK (revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms),
     -- The user's explicit consent to merging with no per-action click. Merge grants only.
     confirm_unattended_merge INTEGER NOT NULL DEFAULT 0 CHECK (confirm_unattended_merge IN (0, 1)),
-    -- Head-branch prefix a merge grant covers. NULL covers every branch of the project.
+    -- Head-branch prefix a merge grant covers. Required for a merge grant, NULL for any other.
     branch_prefix TEXT CHECK (branch_prefix IS NULL OR length(branch_prefix) BETWEEN 1 AND 64),
     CHECK (expires_at_ms > created_at_ms AND expires_at_ms - created_at_ms <= 604800000),
     CHECK (uses_used BETWEEN 0 AND max_uses),
@@ -43,6 +46,7 @@ CREATE TABLE standing_grants_new (
         json_array_length(kinds) = 1
         AND scope_kind = 'project'
         AND confirm_unattended_merge = 1
+        AND branch_prefix IS NOT NULL
         AND max_uses <= 20
         AND expires_at_ms - created_at_ms <= 86400000)),
     CHECK (branch_prefix IS NULL OR instr(kinds, '"delivery.merge"') > 0)
@@ -86,3 +90,17 @@ BEFORE DELETE ON standing_grants
 BEGIN
     SELECT RAISE(ABORT, 'standing grants are never deleted');
 END;
+
+-- The head commit a merge grant's `used` and closing rows were bound to. NULL for every other
+-- kind. The events table survives a history clear, so this reads back without the proposal.
+ALTER TABLE standing_grant_events ADD COLUMN head_sha TEXT
+    CHECK (head_sha IS NULL OR (length(head_sha) = 40 AND head_sha NOT GLOB '*[^0-9a-f]*'));
+
+-- The repository (owner and name, no host or path) a task's pull request was first bound to by
+-- the poller. The first binding stays: a changed remote never moves it. No foreign key, so a
+-- history clear is not in the way.
+CREATE TABLE pull_request_repos (
+    task_id TEXT PRIMARY KEY CHECK (length(task_id) > 0),
+    owner TEXT NOT NULL CHECK (length(owner) BETWEEN 1 AND 100),
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100)
+);

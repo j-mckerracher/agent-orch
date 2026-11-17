@@ -120,7 +120,8 @@ pub enum GrantRefusal {
     MergeKindNeedsProject,
     /// A merge grant needs `confirm_unattended_merge`.
     MergeNeedsConfirmation,
-    /// The branch prefix is malformed, or the grant is not a merge grant.
+    /// The branch prefix is malformed, absent on a merge grant, or the grant is not a merge
+    /// grant.
     BranchPrefixInvalid,
 }
 
@@ -232,6 +233,10 @@ impl GrantTerms {
         if !(1..=MAX_TOKEN_BUDGET).contains(&self.token_budget) {
             return Err(GrantRefusal::BudgetOutOfRange);
         }
+        // A merge grant names the head branches it covers: no prefix would cover every branch.
+        if merge && self.branch_prefix.is_none() {
+            return Err(GrantRefusal::BranchPrefixInvalid);
+        }
         if let Some(prefix) = &self.branch_prefix {
             if !merge || !valid_branch_prefix(prefix) {
                 return Err(GrantRefusal::BranchPrefixInvalid);
@@ -326,11 +331,12 @@ impl StandingGrant {
                 && matches!(self.scope, GrantScope::Project(_)))
     }
 
-    /// Whether a merge grant covers a pull request whose head branch is `head_branch`.
+    /// Whether a merge grant covers a pull request whose head branch is `head_branch`. A grant
+    /// with no prefix covers no branch: a merge grant is never created without one.
     pub fn covers_branch(&self, head_branch: &str) -> bool {
         self.branch_prefix
             .as_deref()
-            .is_none_or(|prefix| head_branch.starts_with(prefix))
+            .is_some_and(|prefix| head_branch.starts_with(prefix))
     }
 }
 
@@ -355,6 +361,7 @@ mod tests {
             kinds: vec![ActionKind::DeliveryMerge],
             max_uses: MERGE_DEFAULT_MAX_USES,
             confirm_unattended_merge: true,
+            branch_prefix: Some("moa/".to_owned()),
             ..terms()
         }
     }
@@ -534,6 +541,15 @@ mod tests {
     }
 
     #[test]
+    fn mergegrant_core_refuses_a_merge_grant_without_a_branch_prefix() {
+        let mut bare = merge_terms();
+        bare.branch_prefix = None;
+        assert_eq!(bare.validate(), Err(GrantRefusal::BranchPrefixInvalid));
+        bare.branch_prefix = Some(String::new());
+        assert_eq!(bare.validate(), Err(GrantRefusal::BranchPrefixInvalid));
+    }
+
+    #[test]
     fn a_branch_prefix_is_for_a_merge_grant_and_must_be_plain() {
         let mut with_prefix = merge_terms();
         with_prefix.branch_prefix = Some("moa/".to_owned());
@@ -569,7 +585,10 @@ mod tests {
     #[test]
     fn a_branch_prefix_covers_only_the_branches_that_start_with_it() {
         let mut stored = grant();
-        assert!(stored.covers_branch("anything"));
+        assert!(
+            !stored.covers_branch("anything"),
+            "no prefix covers no branch"
+        );
         stored.branch_prefix = Some("moa/".to_owned());
         assert!(stored.covers_branch("moa/add-tests"));
         assert!(!stored.covers_branch("feature/moa/add-tests"));

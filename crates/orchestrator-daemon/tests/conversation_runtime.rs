@@ -19,6 +19,7 @@ use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
 use orchestrator_core::records::Project;
+use orchestrator_core::task::{Attempt, AttemptState, TaskEvent};
 use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayEvent, USER_ONLY_METHODS};
 use orchestrator_store::{
     ActionBlockOutcome, ConversationTarget, ConversationUsageReceipt, ReceiptOutcome, SqliteStore,
@@ -2418,6 +2419,7 @@ fn merge_grant_create_is_refused_to_a_token_only_session_on_a_real_daemon() {
         "kinds": ["delivery.merge"],
         "token_budget": 1000,
         "confirm_unattended_merge": true,
+        "branch_prefix": "moa/",
         "idempotency_key": "m-1",
     });
 
@@ -3741,11 +3743,63 @@ fn the_mcp_data_line_follows_the_server_in_the_launch_prompt() {
 const MERGE_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// Seeds a task whose pull request the app has already read: open, mergeable, one required check
-/// passed, in a project that is in a pull request mode. The task stays `Created`, so the poller
-/// never reads it.
+/// passed, in a project that is in a pull request mode. The task delivers by pull request and
+/// has succeeded, as a merge needs.
 fn seed_merge_target(layout: &Layout) {
-    seed_idle_task(layout, SEEDED_TASK);
     let store = store_after_stop(layout);
+    store
+        .register_project(&Project {
+            id: "seed-project".into(),
+            root_path: layout.repo.to_string_lossy().into_owned(),
+            settings: json!({}),
+        })
+        .unwrap();
+    store
+        .create(&TaskContract {
+            id: SEEDED_TASK.into(),
+            project_id: "seed-project".into(),
+            parent_id: None,
+            objective: "Seeded task".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::PullRequest,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: Default::default(),
+        })
+        .unwrap();
+    store.transition(SEEDED_TASK, TaskEvent::Admit).unwrap();
+    store
+        .add_attempt(
+            SEEDED_TASK,
+            &Attempt {
+                id: "attempt-1".into(),
+                task_id: SEEDED_TASK.into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+            },
+        )
+        .unwrap();
+    store
+        .transition(SEEDED_TASK, TaskEvent::ExecutionStarted)
+        .unwrap();
+    store
+        .update_attempt_state(SEEDED_TASK, "attempt-1", AttemptState::Running)
+        .unwrap();
+    store
+        .update_attempt_state(SEEDED_TASK, "attempt-1", AttemptState::CandidateReady)
+        .unwrap();
+    store
+        .transition(SEEDED_TASK, TaskEvent::CandidateReady)
+        .unwrap();
+    store
+        .transition(SEEDED_TASK, TaskEvent::VerificationOutcome { passed: true })
+        .unwrap();
     store
         .set_project_defaults(&orchestrator_store::ProjectDefaultsRow {
             project_id: "seed-project".to_owned(),

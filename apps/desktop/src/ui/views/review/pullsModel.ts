@@ -5,9 +5,9 @@ import { presentError, type DaemonError } from "../../../daemon/errors";
 import type { PullFacts, PullItem } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\u{e0000}-\u{e007f}]/gu;
 
-/** One line of at most `max` characters: control characters become spaces, runs of space collapse, the cut is on a character boundary. */
+/** One line of at most `max` characters: control, bidi, zero-width and tag characters become spaces, runs of space collapse, the cut is on a character boundary. */
 export function plainRemote(value: string, max = 120): string {
   const line = value.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
   const chars = Array.from(line);

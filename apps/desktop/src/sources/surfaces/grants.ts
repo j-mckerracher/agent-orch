@@ -15,7 +15,7 @@ import type { GrantPolicyWire, GrantWire, GrantsCreateParams } from "../../daemo
 import type { SurfaceFixtureScenario } from "./fixtures";
 import { liveRead } from "./liveSupport";
 import { notOk, observation, okResult } from "./result";
-import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, GrantsSource, Provenance } from "./types";
+import type { GrantItem, GrantPolicy, GrantTerms, MergePolicy, GrantsSnapshot, GrantsSource, Provenance } from "./types";
 
 export const GRANTS_METHODS = ["grants.list", "grants.create", "grants.revoke"] as const;
 
@@ -40,6 +40,16 @@ export function mapGrant(wire: GrantWire): GrantItem {
   };
 }
 
+/** The merge limits as the daemon sends them (`merge_*`, in seconds); null unless the daemon says the merge kind is available. */
+function mapMergePolicy(wire: GrantPolicyWire): MergePolicy | null {
+  if (wire.merge_kind_available !== true) return null;
+  return {
+    ...(wire.merge_default_max_uses === undefined ? {} : { defaultUses: wire.merge_default_max_uses }),
+    ...(wire.merge_max_max_uses === undefined ? {} : { maxUses: wire.merge_max_max_uses }),
+    ...(wire.merge_max_expires_in_secs === undefined ? {} : { maxExpiryHours: Math.floor(wire.merge_max_expires_in_secs / 3600) }),
+  };
+}
+
 export function mapPolicy(wire: GrantPolicyWire): GrantPolicy {
   return {
     grantableKinds: wire.grantable_kinds,
@@ -49,10 +59,7 @@ export function mapPolicy(wire: GrantPolicyWire): GrantPolicy {
     defaultMaxUses: wire.default_max_uses,
     maxMaxUses: wire.max_max_uses,
     maxTokenBudget: wire.max_token_budget,
-    mergePolicy:
-      wire.merge_policy === undefined
-        ? null
-        : { defaultUses: wire.merge_policy.default_uses, maxUses: wire.merge_policy.max_uses, maxExpiryHours: wire.merge_policy.max_expiry_hours },
+    mergePolicy: mapMergePolicy(wire),
   };
 }
 

@@ -346,6 +346,21 @@ impl ActionBlock {
         self
     }
 
+    /// The block with the method of each `delivery.merge` that names none set to
+    /// `resolve(task_id)`, when that gives one. The daemon calls it before the block is stored,
+    /// so the digest binds the method the card shows and a later change of the project's
+    /// default cannot change what an approved card runs.
+    pub fn with_merge_methods(mut self, resolve: impl Fn(&str) -> Option<MergeMethod>) -> Self {
+        for action in &mut self.actions {
+            if let Action::DeliveryMerge(merge) = action {
+                if merge.method.is_none() {
+                    merge.method = resolve(&merge.task_id).map(|method| method.as_str().to_owned());
+                }
+            }
+        }
+        self
+    }
+
     /// The envelope's refusal of action `index`, if any. Always `None` for the other kinds.
     pub fn denial(&self, index: usize) -> Option<Denial> {
         self.denials.get(index).copied().flatten()
@@ -2047,6 +2062,34 @@ mod tests {
             assert_ne!(base, other);
         }
         assert_eq!(base, digest(&[]));
+    }
+
+    #[test]
+    fn landing_a_merge_without_a_method_gets_the_resolved_one_in_its_digest() {
+        let canonical = |text: &str, resolved: Option<MergeMethod>| {
+            parse(&block(text))
+                .expect("valid block")
+                .with_merge_methods(|_| resolved)
+                .actions()[0]
+                .canonical(None)
+        };
+        let bare = merge_text(&[]);
+
+        let squash = canonical(&bare, Some(MergeMethod::Squash));
+        let rebase = canonical(&bare, Some(MergeMethod::Rebase));
+
+        assert!(
+            squash.json.contains(r#""method":"squash""#),
+            "{}",
+            squash.json
+        );
+        assert_ne!(squash.digest, rebase.digest);
+        // The filled-in method is the same as one written by the model.
+        let written = merge_text(&[("method", json!("squash"))]);
+        assert_eq!(squash, canonical(&written, None));
+        // A method the model wrote is never replaced, and nothing resolved leaves it absent.
+        assert_eq!(squash, canonical(&written, Some(MergeMethod::Rebase)));
+        assert!(!canonical(&bare, None).json.contains("method"));
     }
 
     #[test]

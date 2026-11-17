@@ -321,6 +321,7 @@ fn a_merge_grant_claim_approves_a_merge_proposal_and_spends_one_use_in_one_trans
     let mut asked = terms(2);
     asked.kinds = vec![ActionKind::DeliveryMerge];
     asked.confirm_unattended_merge = true;
+    asked.branch_prefix = Some("moa/".to_owned());
     let grant = store
         .create_standing_grant("merge-grant", &asked, NOW)
         .unwrap();

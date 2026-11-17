@@ -32,7 +32,8 @@ use crate::{SqliteStore, StoreError};
 const COLUMNS: &str = "id, scope_kind, scope_id, kinds, created_at_ms, expires_at_ms, max_uses, \
                        uses_used, token_budget, proposal_floor, revoked_at_ms, \
                        confirm_unattended_merge, branch_prefix";
-const EVENT_COLUMNS: &str = "sequence, grant_id, event, proposal_id, digest, task_id, code, at_ms";
+const EVENT_COLUMNS: &str =
+    "sequence, grant_id, event, proposal_id, digest, task_id, code, head_sha, at_ms";
 
 /// What one audit row records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +81,8 @@ pub struct GrantEvent {
     pub digest: Option<String>,
     pub task_id: Option<String>,
     pub code: Option<String>,
+    /// The head commit a merge was bound to, on the rows of a merge grant's use.
+    pub head_sha: Option<String>,
     pub at_ms: u64,
 }
 
@@ -766,6 +769,43 @@ async fn tokens_spent(
     u64::try_from(total).map_err(|_| corrupt("a token total is negative".to_owned()))
 }
 
+/// The head commit a `delivery.merge` proposal is bound to, for the audit row of its use: read
+/// from the proposal's parameters when the use is claimed, and from the use's own row when it
+/// closes (the proposal may be gone by then). `None` for every other kind and for anything
+/// that is not 40 lower-case hex characters.
+async fn bound_head(
+    connection: &mut SqliteConnection,
+    grant_id: &str,
+    event: GrantEventKind,
+    proposal_id: &str,
+) -> Result<Option<String>, StoreError> {
+    let found: Option<Option<String>> = match event {
+        GrantEventKind::Used => {
+            sqlx::query_scalar(
+                "SELECT json_extract(params_json, '$.head_sha') FROM action_proposals \
+                 WHERE id = ? AND kind = 'delivery.merge'",
+            )
+            .bind(proposal_id)
+            .fetch_optional(&mut *connection)
+            .await?
+        }
+        GrantEventKind::Executed | GrantEventKind::Stopped => {
+            sqlx::query_scalar(
+                "SELECT head_sha FROM standing_grant_events \
+                 WHERE grant_id = ? AND event = 'used' AND proposal_id = ?",
+            )
+            .bind(grant_id)
+            .bind(proposal_id)
+            .fetch_optional(&mut *connection)
+            .await?
+        }
+        GrantEventKind::Created | GrantEventKind::Revoked => None,
+    };
+    Ok(found.flatten().filter(|head| {
+        head.len() == 40 && head.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }))
+}
+
 async fn insert_event(
     connection: &mut SqliteConnection,
     grant_id: &str,
@@ -775,9 +815,14 @@ async fn insert_event(
     code: Option<&str>,
     at_ms: i64,
 ) -> Result<(), StoreError> {
+    let head_sha = match proposal {
+        Some((proposal_id, _)) => bound_head(connection, grant_id, event, proposal_id).await?,
+        None => None,
+    };
     sqlx::query(
-        "INSERT INTO standing_grant_events (grant_id, event, proposal_id, digest, task_id, code, at_ms) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO standing_grant_events \
+         (grant_id, event, proposal_id, digest, task_id, code, head_sha, at_ms) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(grant_id)
     .bind(event.as_str())
@@ -785,6 +830,7 @@ async fn insert_event(
     .bind(proposal.map(|(_, digest)| digest))
     .bind(task_id)
     .bind(code)
+    .bind(head_sha)
     .bind(at_ms)
     .execute(connection)
     .await?;
@@ -840,6 +886,7 @@ fn event_from_row(row: &SqliteRow) -> Result<GrantEvent, StoreError> {
         digest: row.try_get("digest")?,
         task_id: row.try_get("task_id")?,
         code: row.try_get("code")?,
+        head_sha: row.try_get("head_sha")?,
         at_ms: to_u64(row, "at_ms")?,
     })
 }

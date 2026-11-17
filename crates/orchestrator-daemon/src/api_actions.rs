@@ -37,7 +37,7 @@ const INVALID: &str = "invalid";
 /// Failure codes of a proposal a grant approved but that did not start: the grant was revoked,
 /// or had expired, by then.
 pub(super) const GRANT_REVOKED: &str = "grant_revoked";
-const GRANT_EXPIRED: &str = "grant_expired";
+pub(super) const GRANT_EXPIRED: &str = "grant_expired";
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -192,7 +192,29 @@ fn grants_create_replays_by_key_and_list_shows_the_policy() {
 fn merge_params(key: &str) -> Value {
     let mut params = create_params(alpha_scope(), json!(["delivery.merge"]), key);
     params["confirm_unattended_merge"] = json!(true);
+    params["branch_prefix"] = json!("moa/");
     params
+}
+
+#[test]
+fn merge_grant_without_a_branch_prefix_is_refused() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let mut absent = merge_params("m-no-prefix");
+    absent.as_object_mut().unwrap().remove("branch_prefix");
+    assert_eq!(
+        call(&api, "grants.create", absent).unwrap_err(),
+        RpcError::GrantInvalid
+    );
+    let mut empty = merge_params("m-empty-prefix");
+    empty["branch_prefix"] = json!("");
+    assert_eq!(
+        call(&api, "grants.create", empty).unwrap_err(),
+        RpcError::GrantInvalid
+    );
+    // Nothing was written.
+    let listed = call(&api, "grants.list", json!({})).unwrap();
+    assert_eq!(listed["grants"], json!([]), "{listed}");
 }
 
 #[test]

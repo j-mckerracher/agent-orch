@@ -12,6 +12,7 @@ import {
   INTRO_TEXT,
   INVALID_REASON,
   MERGE_BADGE,
+  MERGE_BUDGET_NOTE,
   MERGE_CONFIRM_TEXT,
   MERGE_INTRO_TEXT,
   MERGE_INVALID_REASON,
@@ -343,7 +344,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
               )}
             </div>
             <div className="settings-row">
-              <label htmlFor={mergeIds.prefix}>Branch prefix (optional)</label>
+              <label htmlFor={mergeIds.prefix}>Branch prefix</label>
               <input
                 id={mergeIds.prefix}
                 type="text"
@@ -354,7 +355,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
                 onChange={(event) => updateMerge({ prefix: event.target.value }, "prefix")}
               />
               <p id={`${mergeIds.prefix}-hint`} className="settings-hint">
-                Merge only pull requests whose branch starts with this, for example moa/. Leave empty to cover any branch of the project.
+                Merge only pull requests whose branch starts with this, for example moa/. Required.
               </p>
               {mergeShown("prefix") && (
                 <p id={`${mergeIds.prefix}-error`} role="alert" className="settings-error">
@@ -381,7 +382,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
             <NumberField
               id={mergeIds.budget}
               label="Merge approval token budget"
-              hint={TOKEN_NOTE}
+              hint={MERGE_BUDGET_NOTE}
               value={mergeDraft.budget}
               error={mergeShown("budget")}
               onChange={(budget) => updateMerge({ budget }, "budget")}

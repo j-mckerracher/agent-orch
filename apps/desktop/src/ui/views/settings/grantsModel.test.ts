@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DaemonError } from "../../../daemon/errors";
+import { mapPolicy } from "../../../sources/surfaces/grants";
 import type { ActionProposal, GrantItem, GrantPolicy } from "../../../sources/surfaces/types";
 import { approvedByText, failureText } from "../workspace/actionCardModel";
 import {
@@ -7,6 +8,9 @@ import {
   initialDraft,
   initialMergeDraft,
   isActive,
+  MERGE_BUDGET_NOTE,
+  MERGE_PREFIX_REQUIRED,
+  mergeOffered,
   mergeTermsOf,
   validateMerge,
   offeredKinds,
@@ -161,7 +165,52 @@ describe("grant label on a card", () => {
 });
 
 describe("unattended merge model", () => {
-  const MERGE: GrantPolicy = { ...POLICY, grantableKinds: [...POLICY.grantableKinds, "delivery.merge"], mergePolicy: { defaultUses: 5, maxUses: 20, maxExpiryHours: 24 } };
+  const MERGE: GrantPolicy = { ...POLICY, mergePolicy: { defaultUses: 5, maxUses: 20, maxExpiryHours: 24 } };
+  /** Field for field what `grant_policy()` in the daemon sends: the merge kind is not in `grantable_kinds`. */
+  const DAEMON_POLICY = {
+    grantable_kinds: ["workstream.update", "objective.add", "objective.revise", "task.propose", "task.retry", "workstream.link_task"],
+    never_grantable_kinds: ["project.remove", "task.cancel", "task.revise"],
+    default_expires_in_secs: 28800,
+    max_expires_in_secs: 604800,
+    min_expires_in_secs: 60,
+    default_max_uses: 20,
+    max_max_uses: 200,
+    max_token_budget: 1_000_000_000,
+    merge_kind_available: true,
+    merge_default_max_uses: 5,
+    merge_max_max_uses: 20,
+    merge_max_expires_in_secs: 86400,
+  };
+
+  it("mergegrant_the_merge_form_appears_for_the_daemons_real_policy", () => {
+    const policy = mapPolicy(DAEMON_POLICY);
+    expect(mergeOffered(policy)).toBe(true);
+    expect(policy.mergePolicy).toEqual({ defaultUses: 5, maxUses: 20, maxExpiryHours: 24 });
+    const draft = { ...initialMergeDraft(policy), scopeId: "p-1a2b3c4d", budget: "1000", confirmed: true };
+    expect(draft.hours).toBe("8");
+    expect(draft.uses).toBe("5");
+    expect(validateMerge({ ...draft, hours: "24" }, policy).hours).toBeNull();
+    expect(validateMerge({ ...draft, hours: "25" }, policy).hours).not.toBeNull();
+    expect(validateMerge({ ...draft, uses: "20" }, policy).uses).toBeNull();
+    expect(validateMerge({ ...draft, uses: "21" }, policy).uses).not.toBeNull();
+    expect(mergeOffered(mapPolicy({ ...DAEMON_POLICY, merge_kind_available: false }))).toBe(false);
+  });
+
+  it("mergegrant_the_ordinary_form_never_offers_the_merge_kind_even_when_listed", () => {
+    const listed = mapPolicy({ ...DAEMON_POLICY, grantable_kinds: [...DAEMON_POLICY.grantable_kinds, "delivery.merge"] });
+    expect(offeredKinds(listed)).toEqual(DAEMON_POLICY.grantable_kinds);
+    expect(offeredKinds(listed)).not.toContain("delivery.merge");
+    expect(offeredKinds(mapPolicy(DAEMON_POLICY))).not.toContain("delivery.merge");
+    // A kind listed but no merge support: no merge form either.
+    expect(mergeOffered(mapPolicy({ ...DAEMON_POLICY, merge_kind_available: undefined, grantable_kinds: ["delivery.merge"] }))).toBe(false);
+  });
+
+  it("mergegrant_the_form_starts_on_the_default_prefix_and_needs_one", () => {
+    const draft = { ...initialMergeDraft(MERGE), scopeId: "p-1a2b3c4d", budget: "1000", confirmed: true };
+    expect(draft.prefix).toBe("moa/");
+    expect(validateMerge({ ...draft, prefix: "  " }, MERGE).prefix).toBe(MERGE_PREFIX_REQUIRED);
+    expect(MERGE_BUDGET_NOTE).toBe("A merge uses no tokens, so the budget never runs out; it is required for every grant.");
+  });
 
   it("mergegrant_model_defaults_and_limits_come_from_the_merge_policy", () => {
     const draft = { ...initialMergeDraft(MERGE), scopeId: "p-1a2b3c4d", budget: "1000", confirmed: true };

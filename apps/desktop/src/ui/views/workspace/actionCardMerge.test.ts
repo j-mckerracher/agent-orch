@@ -80,7 +80,12 @@ describe("delivery.merge card", () => {
     const card = merge({}, null);
     expect(rows(card)["Check summary"]).toBe("(not available)");
     expect(rows(card)["Merge method"]).toBe("(not available)");
-    expect(viewOf(card, null, CTX).approve.enabled).toBe(true);
+  });
+
+  it("landing_card_without_facts_has_approve_disabled", () => {
+    const view = viewOf(merge({}, null), null, CTX);
+    expect(view.approve).toMatchObject({ enabled: false, reason: "No pull request facts yet. Refresh the list." });
+    expect(view.reject.enabled).toBe(true);
   });
 
   it("landing_card_denied_at_creation_is_failed_with_the_reason_and_no_decision", () => {

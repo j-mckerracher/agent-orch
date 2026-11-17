@@ -43,6 +43,19 @@ const PULL_REQUEST_COLUMNS: &str = "task_id, project_id, number, branch, base_br
 const MERGE_COLUMNS: &str = "proposal_id, task_id, number, head_sha, method, state, refusal, \
      merge_sha, created_at, updated_at";
 
+/// What [`SqliteStore::issue_pull_request_merge_under_grant`] decided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GrantIssue {
+    /// This caller moved the claim to `issued` and may call the host.
+    Issued,
+    /// The attempt was no longer `claimed`: another caller owns the call.
+    NotMoved,
+    GrantRevoked,
+    GrantExpired,
+    /// The proposal is no longer `approved` (a revoke ended it, or a history clear).
+    ProposalNotApproved,
+}
+
 /// One required check as stored.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredCheck {
@@ -681,6 +694,130 @@ impl SqliteStore {
                 .ok_or_else(|| corrupt("the merge attempt just updated is missing".to_owned()))?;
             transaction.commit().await?;
             Ok(saved)
+        })
+    }
+
+    /// Moves an attempt from `Claimed` to `Issued`, a compare-and-set: `true` for the ONE call
+    /// that moved it, `false` for any other (the attempt is already `Issued` or further on).
+    /// Only the caller that gets `true` may ask the host to merge. An unknown proposal fails
+    /// with `RecordNotFound`.
+    pub fn issue_pull_request_merge(&self, proposal_id: &str) -> Result<bool, StoreError> {
+        let proposal_id = proposal_id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            read_merge(&mut transaction, &proposal_id)
+                .await?
+                .ok_or_else(|| StoreError::RecordNotFound {
+                    entity: "pull request merge",
+                    id: proposal_id.clone(),
+                })?;
+            let moved = sqlx::query(
+                "UPDATE pull_request_merges SET state = 'issued', updated_at = CURRENT_TIMESTAMP \
+                 WHERE proposal_id = ? AND state = 'claimed'",
+            )
+            .bind(&proposal_id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            transaction.commit().await?;
+            Ok(moved > 0)
+        })
+    }
+
+    /// [`Self::issue_pull_request_merge`] for an attempt a merge grant approved: in the SAME
+    /// `BEGIN IMMEDIATE` transaction that moves the claim, the grant is read again (not
+    /// revoked, not expired at `now_ms`) and the proposal must still be `approved`. A revoke
+    /// commits before or after this transaction, never inside it, so a merge stopped by a
+    /// revoke never reaches `issued`. Nothing is written unless the claim moves. An unknown
+    /// proposal fails with `RecordNotFound`.
+    pub fn issue_pull_request_merge_under_grant(
+        &self,
+        proposal_id: &str,
+        grant_id: &str,
+        now_ms: u64,
+    ) -> Result<GrantIssue, StoreError> {
+        let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
+        let proposal_id = proposal_id.to_owned();
+        let grant_id = grant_id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            read_merge(&mut transaction, &proposal_id)
+                .await?
+                .ok_or_else(|| StoreError::RecordNotFound {
+                    entity: "pull request merge",
+                    id: proposal_id.clone(),
+                })?;
+            let grant: Option<(Option<i64>, i64)> = sqlx::query_as(
+                "SELECT revoked_at_ms, expires_at_ms FROM standing_grants WHERE id = ?",
+            )
+            .bind(&grant_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            // A grant row that does not exist fails closed, as a revoked one.
+            match grant {
+                None | Some((Some(_), _)) => return Ok(GrantIssue::GrantRevoked),
+                Some((None, expires)) if now >= expires => return Ok(GrantIssue::GrantExpired),
+                Some(_) => {}
+            }
+            let state: Option<String> =
+                sqlx::query_scalar("SELECT state FROM action_proposals WHERE id = ?")
+                    .bind(&proposal_id)
+                    .fetch_optional(&mut *transaction)
+                    .await?;
+            if state.as_deref() != Some("approved") {
+                return Ok(GrantIssue::ProposalNotApproved);
+            }
+            let moved = sqlx::query(
+                "UPDATE pull_request_merges SET state = 'issued', updated_at = CURRENT_TIMESTAMP \
+                 WHERE proposal_id = ? AND state = 'claimed'",
+            )
+            .bind(&proposal_id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            transaction.commit().await?;
+            Ok(if moved > 0 {
+                GrantIssue::Issued
+            } else {
+                GrantIssue::NotMoved
+            })
+        })
+    }
+
+    /// Binds a task's pull request to the repository the poller read it from. The FIRST
+    /// binding stays: a later call with another repository changes nothing, so a remote that
+    /// moves afterwards is a mismatch, not a new truth. Only owner and name are kept.
+    pub fn bind_pull_request_repo(
+        &self,
+        task_id: &str,
+        owner: &str,
+        name: &str,
+    ) -> Result<(), StoreError> {
+        let (task_id, owner, name) = (task_id.to_owned(), owner.to_owned(), name.to_owned());
+        self.call(move |pool| async move {
+            sqlx::query(
+                "INSERT INTO pull_request_repos (task_id, owner, name) VALUES (?, ?, ?) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&task_id)
+            .bind(&owner)
+            .bind(&name)
+            .execute(&pool)
+            .await?;
+            Ok(())
+        })
+    }
+
+    /// The `(owner, name)` a task's pull request was first bound to, or `None`.
+    pub fn pull_request_repo(&self, task_id: &str) -> Result<Option<(String, String)>, StoreError> {
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            Ok(
+                sqlx::query_as("SELECT owner, name FROM pull_request_repos WHERE task_id = ?")
+                    .bind(&task_id)
+                    .fetch_optional(&pool)
+                    .await?,
+            )
         })
     }
 

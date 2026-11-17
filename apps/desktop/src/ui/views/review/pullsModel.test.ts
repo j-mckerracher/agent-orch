@@ -62,6 +62,10 @@ describe("pull request words", () => {
     expect(shortSha("abc123def4567890abc123def4567890abc12345")).toBe("abc123def456");
   });
 
+  it("landing_model_remote_text_loses_bidi_zero_width_and_tag_characters", () => {
+    expect(plainRemote("a\u202eb\u2066c\u200bd\ufeffe\u{e0041}f")).toBe("a b c d e f");
+  });
+
   it("landing_model_merge_request_states_name_the_wait_and_the_refusal", () => {
     expect(mergeStateText(null)).toBeNull();
     expect(mergeStateText({ state: "issued", refusal: null })).toBe("Checking whether it merged");

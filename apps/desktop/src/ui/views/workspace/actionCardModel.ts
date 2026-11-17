@@ -85,6 +85,7 @@ const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>
       "The app asked GitHub to merge but could not confirm it. Check the pull request on GitHub before asking again.",
     not_signed_in: "The GitHub command line is not signed in on this machine. Nothing was merged.",
     project_mode: "This project's mode is local-only. Nothing was merged.",
+    delivery_not_authorized: "This task does not deliver by pull request, or it has not finished. Nothing was merged.",
     not_found: "The task or its pull request is no longer known. Nothing was merged.",
     conflict: "The task is not in a state that allows a merge. Nothing was merged.",
     invalid: "The app could not read this merge request. Nothing was merged. Ask the orchestrator to propose again.",
@@ -523,11 +524,14 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
   }
 }
 
+const NO_PULL_FACTS = "No pull request facts yet. Refresh the list.";
+
 /** Why a pending merge card cannot be approved: the daemon says a merge would be refused now. Null for any other card. */
 function mergeNotReady(p: ActionProposal): string | null {
   if (p.kind !== "delivery.merge") return null;
   const verdict = mergeVerdict(p.target?.pull, p.denial);
-  return verdict !== null && !verdict.ready ? verdict.text : null;
+  if (verdict === null) return NO_PULL_FACTS;
+  return verdict.ready ? null : verdict.text;
 }
 
 /**

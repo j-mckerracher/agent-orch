@@ -16,7 +16,9 @@
 //!    row, with the head commit the card bound.
 //! 4. The attempt moves to `issued` and the state is committed BEFORE the host is called.
 //! 5. The host is called once, with the bound head (`--match-head-commit`): the host refuses
-//!    when the head moved.
+//!    when the head moved. Only the caller that moved the attempt from `claimed` to `issued`
+//!    calls it. The merge is recorded when a read shows the pull request merged at the bound
+//!    head; a call that went through and shows nothing yet (a merge queue) stays `unknown`.
 //!
 //! A restart or a lost reply never repeats step 5. An attempt left `issued` or `unknown` is
 //! settled by reading the pull request alone ([`DaemonApi::settle_attempt`]). A red or
@@ -25,33 +27,41 @@
 //!
 //! A merge grant (N8) is the one other authority. The matcher approves a `delivery.merge`
 //! proposal under it with no click, and the same steps run under [`MergePolicy::GrantGreenOnly`],
-//! which adds, on the fresh read and in this order: `stale_head`, `checks_not_green`,
-//! `branch_not_covered`, `own_upstream`, then the rule of [`merge_verdict`]. Each refusal ends
-//! the card `failed` with that code and the grant records `stopped`. The merge still goes out
-//! once, bound to the head, and the ledger decides that, not the grant.
+//! which adds, on the fresh read and in this order: `stale_head`, `cross_repo`,
+//! `checks_not_green`, `branch_not_covered`, `own_upstream`, `repo_not_tracked` (the repository
+//! is not the one the poller first bound the pull request to), then the rule of
+//! [`merge_verdict`]. Each refusal ends the card `failed` with that code and the grant records
+//! `stopped`. The grant is read again, with the proposal's state, in the one store call that moves the
+//! claim to `issued`: a revoke before it stops the merge, one after it cannot stop a call
+//! already made. The merge still goes out once, bound to the head, and the ledger decides
+//! that, not the grant.
 //!
 //! Remote text (a title, a check name) is plain, redacted and cut before it leaves the daemon.
 
 use std::collections::BTreeMap;
 
+use orchestrator_core::contract::DeliveryPolicy;
 use orchestrator_core::landing::{
     merge_verdict, CheckState, MergeMethod, MergeRefusal, PrObservation, PrState, FRESH_MAX_AGE_MS,
     STORED_MAX_AGE_MS,
 };
 use orchestrator_core::orchestrator_action::{
-    Action, ActionKind as ProposalKind, MergePullRequest,
+    Action, ActionBlock, ActionKind as ProposalKind, MergePullRequest,
 };
 use orchestrator_core::project_mode::ProjectMode;
 use orchestrator_core::standing_grant::{GrantScope, StandingGrant};
 use orchestrator_core::task_envelope::Denial;
 use orchestrator_git::github::{GitHubError, PullRequestView, RepoRef};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, GrantError, GrantOutcome, MergeAttempt, MergeClaim, MergeState,
-    PullRequestRow, ResolveError,
+    ActionOutcome, ActionProposal, GrantError, GrantIssue, GrantOutcome, MergeAttempt, MergeClaim,
+    MergeState, PullRequestRow, ResolveError, TaskRecord,
 };
 
 use super::actions::{cut_at_char, map_resolve_error};
-use super::landing::{lock, Watched, REFRESH_MIN_MS, SETTLE_INTERVAL_MS, SETTLE_READS};
+use super::landing::{
+    lock, Watched, REFRESH_GLOBAL_CAP, REFRESH_MIN_MS, REFRESH_WINDOW_MS, SETTLE_INTERVAL_MS,
+    SETTLE_READS,
+};
 use super::*;
 
 const LOG: &str = "landing";
@@ -66,8 +76,11 @@ const UNCONFIRMED: &str = "unconfirmed";
 /// The proposal's failure code for it.
 const MERGE_UNCONFIRMED: &str = "merge_unconfirmed";
 const INVALID: &str = "invalid";
-/// The name of MCAO's own repository, whatever its owner. A merge grant never merges here.
+/// The name of MCAO's own repository, whatever its owner, and the owner and name of its
+/// upstream as `git remote` reports them for this repository (`origin` is
+/// `git@github.com:mc-innersource/motif-mcao.git`). A merge grant never merges here.
 const OWN_UPSTREAM_REPO_NAME: &str = "motif-mcao";
+const OWN_UPSTREAM_OWNER: &str = "mc-innersource";
 
 /// Who stands behind a merge, read from the proposal's approver.
 pub(super) enum MergePolicy {
@@ -85,17 +98,31 @@ struct ListParams {
     project_id: Option<String>,
 }
 
-/// Whether `repo` is MCAO's own upstream. Decided by the repository NAME alone, case
-/// insensitive and for every owner, so a fork or a moved repository is covered too. A project
-/// that happens to hold another repository with that name is refused as well: refusing too
-/// much is the safe side here.
+/// Whether `repo` is MCAO's own upstream: the compiled-in owner and name pair, or the NAME
+/// under any owner (case insensitive), so a fork or a moved repository is covered too. A
+/// project that happens to hold another repository with that name is refused as well:
+/// refusing too much is the safe side here. A repository renamed on the host is caught by
+/// [`repo_is_tracked`], not here.
 fn is_own_upstream(repo: &RepoRef) -> bool {
     repo.name().eq_ignore_ascii_case(OWN_UPSTREAM_REPO_NAME)
+        || (repo.owner().eq_ignore_ascii_case(OWN_UPSTREAM_OWNER)
+            && repo.name().eq_ignore_ascii_case(OWN_UPSTREAM_REPO_NAME))
+}
+
+/// Whether `repo` is the repository the poller first bound the task's pull request to. No
+/// binding (a pull request never read since the binding existed) is not tracked.
+fn repo_is_tracked(store: &SqliteStore, task_id: &str, repo: &RepoRef) -> Result<bool, StoreError> {
+    Ok(store
+        .pull_request_repo(task_id)?
+        .is_some_and(|(owner, name)| {
+            owner.eq_ignore_ascii_case(repo.owner()) && name.eq_ignore_ascii_case(repo.name())
+        }))
 }
 
 /// The refusal a merge grant adds to a fresh read, or `None`. In this order: the head is not
-/// the bound one, a required check is missing or not green, the head branch is outside the
-/// grant's prefix, the repository is MCAO's own. No clock, no I/O.
+/// the bound one, the pull request comes from a fork, a required check is missing or not
+/// green, the head branch is outside the grant's prefix, the repository is MCAO's own. No
+/// clock, no I/O.
 fn grant_refusal(
     grant: &StandingGrant,
     merge: &MergePullRequest,
@@ -104,6 +131,9 @@ fn grant_refusal(
 ) -> Option<&'static str> {
     if view.head_sha != merge.head_sha {
         return Some("stale_head");
+    }
+    if !view.same_repository {
+        return Some("cross_repo");
     }
     if view.checks.is_empty()
         || view
@@ -165,6 +195,7 @@ fn host_code(error: GitHubError) -> &'static str {
         GitHubError::NotMergeable => "not_mergeable",
         GitHubError::RateLimited => "rate_limited",
         GitHubError::Timeout => "timed_out",
+        GitHubError::Failed("cross_repo") => "cross_repo",
         GitHubError::Failed(_) => "host_error",
     }
 }
@@ -188,6 +219,26 @@ fn to_i64(ms: u64) -> i64 {
     i64::try_from(ms).unwrap_or(i64::MAX)
 }
 
+/// Whether a task can have its pull request merged: it delivers by pull request and it
+/// finished, as the poller reads only such tasks.
+fn task_may_merge(task: &TaskRecord) -> bool {
+    task.contract.delivery == DeliveryPolicy::PullRequest && task.state == TaskState::Succeeded
+}
+
+/// The block with the project's merge method written into each `delivery.merge` that names
+/// none, for the reply sink to call before it stores the block. The card then shows, and the
+/// digest binds, the method that will run: a later change of the project's default changes
+/// nothing for a card already stored.
+pub(super) fn with_project_merge_methods(store: &SqliteStore, block: ActionBlock) -> ActionBlock {
+    block.with_merge_methods(|task_id| {
+        let task = store.get(task_id).ok()?;
+        let row = store
+            .project_defaults_or_local(&task.contract.project_id)
+            .ok()?;
+        Some(super::projects_defaults::typed(&row).merge_method)
+    })
+}
+
 /// The refusal a `delivery.merge` meets against the STORED pull request, for the card when it
 /// is made and again when the user approves. Local reads only. A task or pull request that is
 /// not stored, or a store that cannot be read, refuses (`stale`): no reading is not green. A
@@ -201,6 +252,9 @@ pub(super) fn merge_denial(
     let Ok(task) = store.get(&merge.task_id) else {
         return refuse(MergeRefusal::Stale);
     };
+    if !task_may_merge(&task) {
+        return Some(Denial::Delivery);
+    }
     let row = match store.pull_request(&merge.task_id) {
         Ok(Some(row)) => row,
         _ => return refuse(MergeRefusal::Stale),
@@ -351,7 +405,9 @@ impl DaemonApi {
         let task = self.store.get(&request.task_id).map_err(map_store_error)?;
         let project_id = task.contract.project_id.clone();
         let (mode, method) = self.project_landing(&project_id).map_err(map_store_error)?;
+        // Only what the poller would store: a pull request delivery of a finished task.
         if mode == ProjectMode::LocalOnly
+            || !task_may_merge(&task)
             || self
                 .store
                 .project_is_archived(&project_id)
@@ -361,13 +417,21 @@ impl DaemonApi {
         }
         {
             let mut schedule = lock(&self.landing.schedule);
+            // The poller's rate-limit pause holds for a refresh too.
+            if now_ms < schedule.paused_until_ms {
+                return Err(RpcError::Conflict);
+            }
             let limited = schedule
                 .refreshed
                 .get(&request.task_id)
                 .is_some_and(|last| now_ms < last.saturating_add(REFRESH_MIN_MS));
-            if limited {
+            schedule
+                .refresh_times
+                .retain(|at| now_ms < at.saturating_add(REFRESH_WINDOW_MS));
+            if limited || schedule.refresh_times.len() >= REFRESH_GLOBAL_CAP {
                 return Err(RpcError::Conflict);
             }
+            schedule.refresh_times.push(now_ms);
             // Set before the read: a failing read counts, so the limit holds.
             schedule.refreshed.insert(request.task_id.clone(), now_ms);
             if schedule.refreshed.len() > 1_000 {
@@ -396,10 +460,12 @@ impl DaemonApi {
             branch,
             number: stored.map(|row| row.number),
         };
-        let repo = self.repo_for_project(&project_id).map_err(refresh_error)?;
+        let repo = self
+            .repo_for_project(&project_id)
+            .map_err(|error| self.refresh_error(error, now_ms))?;
         let mut calls = 0;
         self.observe_one(&watched, &repo, now_ms, &mut calls)
-            .map_err(refresh_error)?
+            .map_err(|error| self.refresh_error(error, now_ms))?
             .ok_or(RpcError::NotFound)?;
         let row = self
             .store
@@ -407,6 +473,19 @@ impl DaemonApi {
             .map_err(map_store_error)?
             .ok_or(RpcError::NotFound)?;
         self.pull_wire(&row, mode, method, now_ms)
+    }
+
+    /// How a host failure of a refresh reads to the caller. Fixed codes only. A rate limit
+    /// pauses the poller too.
+    fn refresh_error(&self, error: GitHubError, now_ms: u64) -> RpcError {
+        match error {
+            GitHubError::NotFound => RpcError::NotFound,
+            GitHubError::RateLimited => {
+                self.pause(now_ms);
+                RpcError::Conflict
+            }
+            _ => RpcError::Internal,
+        }
     }
 
     /// One pull request as the wire shows it. Remote text is redacted and cut.
@@ -580,6 +659,9 @@ impl DaemonApi {
             Err(StoreError::NotFound(_)) => return Err("not_found"),
             Err(_) => return Err("internal"),
         };
+        if !task_may_merge(&task) {
+            return Err("conflict");
+        }
         let project_id = task.contract.project_id;
         match self.store.project_is_archived(&project_id) {
             Ok(false) => {}
@@ -690,6 +772,10 @@ impl DaemonApi {
             if !same_branch {
                 return refuse("pr_not_tracked");
             }
+            // And in the repository the poller bound it to, not a mirror under another name.
+            if !repo_is_tracked(&self.store, &merge.task_id, &repo).map_err(map_store_error)? {
+                return refuse("repo_not_tracked");
+            }
         }
         // The rule runs on THIS read, never on a stored row.
         let seen = observation_of(&view, to_i64(now_ms));
@@ -705,25 +791,61 @@ impl DaemonApi {
             return refuse(refusal.code());
         }
         // Committed before the call: a restart after this point never calls `merge` again.
-        self.advance_merge(id, MergeState::Issued, None, None)?;
+        // Only the caller that moves the row calls the host; a second caller on the same claim
+        // stands down, and the first one ends the card.
+        // Under a grant the grant and the proposal are read again in the same call, so a
+        // revoke that committed after the check above stops the merge here.
+        let issued = match &grant {
+            Some(grant) => match self
+                .store
+                .issue_pull_request_merge_under_grant(id, &grant.id, now_ms)
+                .map_err(map_store_error)?
+            {
+                GrantIssue::Issued => true,
+                GrantIssue::NotMoved => false,
+                GrantIssue::GrantRevoked => return refuse(super::actions::GRANT_REVOKED),
+                GrantIssue::GrantExpired => return refuse(super::actions::GRANT_EXPIRED),
+                GrantIssue::ProposalNotApproved => return refuse("conflict"),
+            },
+            None => self
+                .store
+                .issue_pull_request_merge(id)
+                .map_err(map_store_error)?,
+        };
+        if !issued {
+            return Ok(());
+        }
         match self
             .github
             .merge(&repo, merge.pr_number, &merge.head_sha, job.method)
         {
             Ok(()) => {
-                let merge_sha = self
+                // A call that went through is not a merge: a merge queue or auto-merge only
+                // queues it. It is recorded merged only when a read shows the bound head merged.
+                let confirmed = self
                     .github
                     .view(&repo, merge.pr_number)
                     .ok()
-                    .filter(|view| view.state == PrState::Merged)
-                    .and_then(|view| view.merge_sha);
-                self.advance_merge(id, MergeState::Merged, None, merge_sha.as_deref())?;
-                self.finish_merge(
-                    Some(proposal),
-                    ActionOutcome::Executed {
-                        result_ref: &merged_ref(merge),
-                    },
-                )
+                    .filter(|view| {
+                        view.state == PrState::Merged && view.head_sha == merge.head_sha
+                    });
+                match confirmed {
+                    Some(view) => {
+                        let merge_sha = view.merge_sha.as_deref();
+                        self.advance_merge(id, MergeState::Merged, None, merge_sha)?;
+                        self.finish_merge(
+                            Some(proposal),
+                            ActionOutcome::Executed {
+                                result_ref: &merged_ref(merge),
+                            },
+                        )
+                    }
+                    None => {
+                        // Left for `settle_attempt`, which reads the pull request again.
+                        self.advance_merge(id, MergeState::Unknown, None, None)?;
+                        Ok(())
+                    }
+                }
             }
             Err(error)
                 if matches!(error, GitHubError::HeadMoved | GitHubError::NotMergeable)
@@ -816,6 +938,8 @@ impl DaemonApi {
             )
         };
         match view.state {
+            // Merged at a head this attempt did not bind: someone else's merge, not ours.
+            PrState::Merged if view.head_sha != attempt.head_sha => refuse(UNCONFIRMED),
             PrState::Merged => {
                 self.advance_merge(id, MergeState::Merged, None, view.merge_sha.as_deref())?;
                 self.finish_merge(
@@ -959,15 +1083,6 @@ impl DaemonApi {
             }
             Err(error) => Err(map_resolve_error(error)),
         }
-    }
-}
-
-/// How a host failure of a refresh reads to the caller. Fixed codes only.
-fn refresh_error(error: GitHubError) -> RpcError {
-    match error {
-        GitHubError::NotFound => RpcError::NotFound,
-        GitHubError::RateLimited => RpcError::Conflict,
-        _ => RpcError::Internal,
     }
 }
 

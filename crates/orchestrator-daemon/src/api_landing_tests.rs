@@ -7,11 +7,16 @@
 use orchestrator_core::task::Attempt;
 use orchestrator_git::github::{CheckRun, GitHub, GitHubError, PullRequestView, RepoRef};
 use orchestrator_git::github_fake::{Call, FakeGitHub, Method};
-use orchestrator_store::{ConversationTarget, ProjectDefaultsRow, ProposalState};
+use orchestrator_store::{
+    ConversationTarget, ProjectDefaultsRow, ProposalState, PullRequestSeen, StoredCheck,
+};
 
 use super::actions_tests::{call, proposal, propose};
 use super::conversation_snapshot::build_snapshot;
-use super::landing::{lock, PollReport, BACKOFF_CAP_MS, BUSY_INTERVAL_MS, IDLE_INTERVAL_MS};
+use super::landing::{
+    lock, PollReport, BACKOFF_CAP_MS, BUSY_INTERVAL_MS, IDLE_INTERVAL_MS, REFRESH_GLOBAL_CAP,
+    REFRESH_WINDOW_MS,
+};
 use super::*;
 
 pub(super) const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -66,7 +71,7 @@ pub(super) fn succeeded_pr_task(api: &DaemonApi, id: &str, project: &str, branch
 }
 
 /// A finished task with `delivery` and a workspace on `branch`.
-fn succeeded_task(
+pub(super) fn succeeded_task(
     api: &DaemonApi,
     id: &str,
     project: &str,
@@ -128,6 +133,77 @@ fn succeeded_task(
         .unwrap();
 }
 
+/// A task that delivers by pull request and failed.
+pub(super) fn failed_pr_task(api: &DaemonApi, id: &str, project: &str) {
+    api.store
+        .create(&TaskContract {
+            id: id.to_owned(),
+            project_id: project.to_owned(),
+            parent_id: None,
+            objective: format!("Add tests ({id})"),
+            kind: TaskKind::Implement,
+            agent: "codex".to_owned(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::PullRequest,
+            autonomy: AutonomyPolicy::ApprovalRequired,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: PermissionLevel::Restricted,
+        })
+        .unwrap();
+    api.store.transition(id, TaskEvent::Admit).unwrap();
+    api.store
+        .add_attempt(
+            id,
+            &Attempt {
+                id: "attempt-1".into(),
+                task_id: id.into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+            },
+        )
+        .unwrap();
+    api.store
+        .transition(id, TaskEvent::ExecutionStarted)
+        .unwrap();
+    api.store
+        .update_attempt_state(id, "attempt-1", AttemptState::Running)
+        .unwrap();
+    api.store
+        .record_attempt_failure(id, "attempt-1", "the run failed")
+        .unwrap();
+    api.store
+        .transition(id, TaskEvent::ExecutionFailed)
+        .unwrap();
+}
+
+/// Stores a green, open pull request for `task` as the poller would, bypassing its filters.
+pub(super) fn store_pull_request(api: &DaemonApi, task: &str, project: &str, number: u64) {
+    api.store
+        .observe_pull_request(
+            &PullRequestSeen {
+                task_id: task.to_owned(),
+                project_id: project.to_owned(),
+                number,
+                branch: format!("moa/{task}"),
+                base_branch: "main".to_owned(),
+                state: orchestrator_core::landing::PrState::Open,
+                head_sha: HEAD.to_owned(),
+                mergeable: Some(true),
+                checks: vec![StoredCheck {
+                    name: "ci / build".to_owned(),
+                    state: orchestrator_core::landing::CheckState::Passed,
+                }],
+                title: "Add tests".to_owned(),
+            },
+            i64::try_from(now()).unwrap(),
+        )
+        .unwrap();
+}
+
 /// A green, open pull request of `branch`: two required checks, both passed.
 pub(super) fn view(number: u64, branch: &str) -> PullRequestView {
     PullRequestView {
@@ -149,6 +225,7 @@ pub(super) fn view(number: u64, branch: &str) -> PullRequestView {
             },
         ],
         merge_sha: None,
+        same_repository: true,
     }
 }
 
@@ -354,7 +431,7 @@ fn landing_poller_ignores_tasks_that_do_not_deliver_by_pull_request_or_have_not_
 }
 
 /// A task that delivers by pull request and is still `Created`.
-fn submit_pr_task_not_finished(api: &DaemonApi, project: &str) -> String {
+pub(super) fn submit_pr_task_not_finished(api: &DaemonApi, project: &str) -> String {
     let id = "task-queued".to_owned();
     api.store
         .create(&TaskContract {
@@ -733,6 +810,104 @@ fn landing_pulls_refresh_maps_a_host_failure_to_a_fixed_error() {
             .unwrap_err(),
         RpcError::Conflict
     );
+}
+
+#[test]
+fn landing_refresh_has_a_global_cap() {
+    let l = landing();
+    let t = now();
+    let tasks: Vec<String> = (0..=REFRESH_GLOBAL_CAP)
+        .map(|index| format!("task-cap-{index}"))
+        .collect();
+    for (index, task) in tasks.iter().enumerate() {
+        let branch = format!("moa/cap-{index}");
+        succeeded_pr_task(&l.api, task, &l.project, &branch);
+        l.github
+            .set_pull_request(&l.repo, view(100 + index as u64, &branch));
+    }
+
+    // Each task is read once, so only the global cap can refuse the last one.
+    for task in &tasks[..REFRESH_GLOBAL_CAP] {
+        assert!(l.api.pulls_refresh_at(json!({"task_id": task}), t).is_ok());
+    }
+    let calls = l.calls().len();
+    assert_eq!(
+        l.api
+            .pulls_refresh_at(json!({"task_id": tasks[REFRESH_GLOBAL_CAP]}), t + 1_000)
+            .unwrap_err(),
+        RpcError::Conflict
+    );
+    assert_eq!(l.calls().len(), calls);
+
+    // The cap is per minute: it lifts when the window has passed.
+    assert!(l
+        .api
+        .pulls_refresh_at(
+            json!({"task_id": tasks[REFRESH_GLOBAL_CAP]}),
+            t + REFRESH_WINDOW_MS
+        )
+        .is_ok());
+}
+
+#[test]
+fn landing_refresh_waits_while_the_poller_is_paused() {
+    let l = landing();
+    let t = now();
+    l.github
+        .fail_next(Method::FindByBranch, GitHubError::RateLimited);
+    assert_eq!(l.tick(t).failed, 1);
+    let calls = l.calls().len();
+
+    // The host said rate limited: a refresh does not ask it again until the pause ends.
+    assert_eq!(
+        l.api
+            .pulls_refresh_at(json!({"task_id": l.task}), t + 1_000)
+            .unwrap_err(),
+        RpcError::Conflict
+    );
+    assert_eq!(l.calls().len(), calls);
+    assert!(l
+        .api
+        .pulls_refresh_at(json!({"task_id": l.task}), t + BACKOFF_CAP_MS)
+        .is_ok());
+
+    // A rate limit answered to a refresh pauses the poller as well.
+    let later = t + BACKOFF_CAP_MS + 20_000;
+    l.github.fail_next(Method::View, GitHubError::RateLimited);
+    assert_eq!(
+        l.api
+            .pulls_refresh_at(json!({"task_id": l.task}), later)
+            .unwrap_err(),
+        RpcError::Conflict
+    );
+    assert!(lock(&l.api.landing.schedule).paused_until_ms > later);
+}
+
+#[test]
+fn landing_refresh_stores_only_what_the_poller_would_store() {
+    let l = landing();
+    succeeded_task(
+        &l.api,
+        "task-local",
+        &l.project,
+        "moa/task-local",
+        DeliveryPolicy::LocalReview,
+    );
+    l.github
+        .set_pull_request(&l.repo, view(30, "moa/task-local"));
+    let queued = submit_pr_task_not_finished(&l.api, &l.project);
+
+    for task in ["task-local", queued.as_str()] {
+        assert_eq!(
+            l.api
+                .pulls_refresh_at(json!({"task_id": task}), now())
+                .unwrap_err(),
+            RpcError::NotFound,
+            "{task}"
+        );
+        assert!(l.api.store.pull_request(task).unwrap().is_none(), "{task}");
+    }
+    assert!(l.calls().is_empty());
 }
 
 #[test]

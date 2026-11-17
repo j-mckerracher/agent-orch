@@ -192,7 +192,15 @@ describe("standing approvals section", () => {
   });
 });
 
-const MERGE_POLICY = { ...POLICY, grantable_kinds: [...POLICY.grantable_kinds, "delivery.merge"], merge_policy: { default_uses: 5, max_uses: 20, max_expiry_hours: 24 } };
+// As the daemon's `grant_policy()` sends it: the merge kind is not in `grantable_kinds`.
+const MERGE_POLICY = {
+  ...POLICY,
+  never_grantable_kinds: ["project.remove", "task.cancel", "task.revise"],
+  merge_kind_available: true,
+  merge_default_max_uses: 5,
+  merge_max_max_uses: 20,
+  merge_max_expires_in_secs: 86400,
+};
 const MERGE_GRANT = { ...GRANT, id: "grant-merge00001", kinds: ["delivery.merge"], branch_prefix: "moa/", confirm_unattended_merge: true };
 
 const withMerge = (daemon: FakeDaemon, grants: unknown[] = [GRANT]) => daemon.stub("grants.list", () => ({ grants, more: false, policy: MERGE_POLICY }));
@@ -202,7 +210,6 @@ const saveMerge = () => screen.findByRole("button", { name: "Save unattended mer
 async function fillMerge(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => expect(within(screen.getByRole("combobox", { name: "Project for unattended merges" })).getAllByRole("option")).toHaveLength(2));
   await user.selectOptions(screen.getByRole("combobox", { name: "Project for unattended merges" }), CODE);
-  await user.type(screen.getByRole("textbox", { name: "Branch prefix (optional)" }), "moa/");
   await user.type(screen.getByRole("textbox", { name: "Merge approval token budget" }), "2000000");
 }
 
@@ -214,6 +221,23 @@ describe("unattended merge grant form", () => {
     expect(values).toEqual(POLICY.grantable_kinds);
     expect(values).not.toContain("delivery.merge");
     expect(NEVER_GRANTED_TEXT).toBe("These always need your approval: cancel a task, revise a task, remove a project.");
+  });
+
+  it("mergegrant_the_merge_form_appears_for_the_daemons_real_policy", async () => {
+    await section({ configure: (daemon) => withMerge(daemon) });
+    await mergeForm();
+    expect(screen.getByRole("textbox", { name: "Branch prefix" })).toHaveValue("moa/");
+    expect(screen.getByText("A merge uses no tokens, so the budget never runs out; it is required for every grant.")).toBeInTheDocument();
+  });
+
+  it("mergegrant_save_is_disabled_while_the_prefix_is_empty", async () => {
+    const { user } = await section({ configure: (daemon) => withMerge(daemon) });
+    await mergeForm();
+    await fillMerge(user);
+    await user.click(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT }));
+    expect(await saveMerge()).toBeEnabled();
+    await user.clear(screen.getByRole("textbox", { name: "Branch prefix" }));
+    expect(await saveMerge()).toBeDisabled();
   });
 
   it("mergegrant_form_is_hidden_without_daemon_support", async () => {
@@ -242,7 +266,8 @@ describe("unattended merge grant form", () => {
     await user.clear(uses);
     await user.type(uses, "21");
     expect(screen.getByText("Enter a whole number of uses from 1 to 20.")).toBeInTheDocument();
-    const prefix = screen.getByRole("textbox", { name: "Branch prefix (optional)" });
+    const prefix = screen.getByRole("textbox", { name: "Branch prefix" });
+    await user.clear(prefix);
     await user.type(prefix, "orchestrator/");
     expect(prefix).toHaveAttribute("aria-invalid", "true");
     expect(await saveMerge()).toBeDisabled();

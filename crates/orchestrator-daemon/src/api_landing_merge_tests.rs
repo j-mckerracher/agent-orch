@@ -7,7 +7,7 @@
 use orchestrator_core::landing::CheckState;
 use orchestrator_core::landing::MergeMethod;
 use orchestrator_core::orchestrator_action::{parse_block, Action, BlockScope};
-use orchestrator_git::github::{CheckRun, GitHub, GitHubError, RepoRef};
+use orchestrator_git::github::{CheckRun, GitHub, GitHubError, PullRequestView, RepoRef};
 use orchestrator_git::github_fake::{Call, Method};
 use orchestrator_store::{
     ConversationTarget, GrantClaimError, GrantEventKind, MergeClaim, MergeState, ProposalState,
@@ -17,11 +17,13 @@ use orchestrator_store::{
 use super::actions_task_tests::{register_project, ALPHA};
 use super::actions_tests::{call, proposal, propose, propose_in, resolve};
 use super::landing::{lock, SETTLE_INTERVAL_MS};
-use super::landing_api::{merge_denial, MergePolicy};
+use super::landing_api::{merge_denial, with_project_merge_methods, MergePolicy};
 use super::landing_tests::{
-    landing, merge_action, now, set_mode, view, Landing, BRANCH, HEAD, NUMBER, OTHER,
+    failed_pr_task, landing, merge_action, now, set_mode, store_pull_request,
+    submit_pr_task_not_finished, succeeded_task, view, Landing, BRANCH, HEAD, NUMBER, OTHER,
 };
 use super::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SHORT: &str = "pr:7@0123456789ab";
 
@@ -69,9 +71,10 @@ fn propose_checked(api: &DaemonApi, turn: &str, action: &str) -> Vec<String> {
         .unwrap();
     let held = format!("```mcao-actions\n{{\"mcao_actions\": 1, \"actions\": [{action}]}}\n```");
     let at = i64::try_from(now()).unwrap();
-    let block = parse_block(&held, BlockScope::Global)
-        .unwrap()
-        .checked_with(|action| match action {
+    // As the reply sink does: the project's method is written in before the block is stored.
+    let parsed = parse_block(&held, BlockScope::Global).unwrap();
+    let block =
+        with_project_merge_methods(&api.store, parsed).checked_with(|action| match action {
             Action::DeliveryMerge(merge) => merge_denial(&api.store, merge, at),
             _ => None,
         });
@@ -83,6 +86,12 @@ fn propose_checked(api: &DaemonApi, turn: &str, action: &str) -> Vec<String> {
 
 /// Closes the daemon and opens another over the same data directory and `GitHub` double.
 fn restart(l: Landing) -> Landing {
+    let host = l.github.clone() as Arc<dyn GitHub>;
+    restart_over(l, host)
+}
+
+/// `restart` over another `GitHub`, which may wrap the same double.
+fn restart_over(l: Landing, host: Arc<dyn GitHub>) -> Landing {
     let Landing {
         data,
         repo_dir,
@@ -93,7 +102,7 @@ fn restart(l: Landing) -> Landing {
         task,
     } = l;
     drop(api);
-    let api = DaemonApi::with_github(data.path(), github.clone() as Arc<dyn GitHub>).unwrap();
+    let api = DaemonApi::with_github(data.path(), host).unwrap();
     Landing {
         data,
         repo_dir,
@@ -102,6 +111,90 @@ fn restart(l: Landing) -> Landing {
         repo,
         project,
         task,
+    }
+}
+
+/// Sets the merge method the project allows, keeping its mode.
+fn set_method(l: &Landing, method: &str) {
+    l.api
+        .store
+        .set_project_defaults(&orchestrator_store::ProjectDefaultsRow {
+            project_id: l.project.clone(),
+            mode: "no-mistakes".to_owned(),
+            base_branch: None,
+            branch_prefix: None,
+            checks: vec![vec!["cargo".to_owned(), "test".to_owned()]],
+            merge_method: method.to_owned(),
+            updated_at: String::new(),
+        })
+        .unwrap();
+}
+
+/// A host that accepts a merge call and only queues it: the call succeeds, nothing merges and
+/// the pull request stays open, as a merge queue or auto-merge does.
+struct QueueingHost {
+    inner: Arc<orchestrator_git::github_fake::FakeGitHub>,
+    merges: AtomicUsize,
+}
+
+impl GitHub for QueueingHost {
+    fn repo_of(&self, repository: &orchestrator_git::Repository) -> Result<RepoRef, GitHubError> {
+        self.inner.repo_of(repository)
+    }
+
+    fn find_by_branch(&self, repo: &RepoRef, branch: &str) -> Result<Option<u64>, GitHubError> {
+        self.inner.find_by_branch(repo, branch)
+    }
+
+    fn view(&self, repo: &RepoRef, number: u64) -> Result<PullRequestView, GitHubError> {
+        self.inner.view(repo, number)
+    }
+
+    fn merge(
+        &self,
+        _repo: &RepoRef,
+        _number: u64,
+        _head_sha: &str,
+        _method: MergeMethod,
+    ) -> Result<(), GitHubError> {
+        self.merges.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// A host that runs `hook` once, right after the first pull request read: the moment between the
+/// grant's check and the host's merge call.
+struct RevokingHost {
+    inner: Arc<orchestrator_git::github_fake::FakeGitHub>,
+    hook: std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl GitHub for RevokingHost {
+    fn repo_of(&self, repository: &orchestrator_git::Repository) -> Result<RepoRef, GitHubError> {
+        self.inner.repo_of(repository)
+    }
+
+    fn find_by_branch(&self, repo: &RepoRef, branch: &str) -> Result<Option<u64>, GitHubError> {
+        self.inner.find_by_branch(repo, branch)
+    }
+
+    fn view(&self, repo: &RepoRef, number: u64) -> Result<PullRequestView, GitHubError> {
+        let seen = self.inner.view(repo, number);
+        let hook = self.hook.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        seen
+    }
+
+    fn merge(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        head_sha: &str,
+        method: MergeMethod,
+    ) -> Result<(), GitHubError> {
+        self.inner.merge(repo, number, head_sha, method)
     }
 }
 
@@ -311,7 +404,7 @@ fn landing_a_head_that_moves_between_the_read_and_the_merge_is_refused_by_the_ho
 }
 
 #[test]
-fn landing_checks_that_turn_red_after_the_read_are_refused_by_the_host() {
+fn landing_the_fake_host_refuses_checks_that_turn_red_after_the_read() {
     let l = landing();
     let id = card(&l);
     approve(&l, &id, "k-1");
@@ -352,6 +445,7 @@ fn landing_red_pending_missing_and_unknown_checks_fail_the_card_with_no_merge_ca
     }
 }
 
+/// Sequential replays only: two callers at once are `landing_two_callers_on_one_claim_call_the_host_once`.
 #[test]
 fn landing_the_same_proposal_approved_twice_merges_once() {
     let l = landing();
@@ -718,6 +812,228 @@ fn landing_a_restart_resumes_an_approved_merge_that_never_started() {
     assert_eq!(proposal(&l.api, &id).state, ProposalState::Executed);
 }
 
+#[test]
+fn landing_a_host_merge_that_the_view_does_not_confirm_is_not_recorded_as_merged() {
+    let l = landing();
+    let id = card(&l);
+    approve(&l, &id, "k-1");
+    let host = Arc::new(QueueingHost {
+        inner: l.github.clone(),
+        merges: AtomicUsize::new(0),
+    });
+    let l = restart_over(l, host.clone() as Arc<dyn GitHub>);
+
+    l.api.merge_pending(now());
+
+    // The call went through and the pull request is still open: not a merge.
+    assert_eq!(host.merges.load(Ordering::SeqCst), 1);
+    let ledger = attempt(&l, &id);
+    assert_eq!(ledger.state, MergeState::Unknown);
+    assert_eq!(ledger.merge_sha, None);
+    assert_eq!(proposal(&l.api, &id).state, ProposalState::Approved);
+    // A later read settles it and the host is never asked again.
+    l.api.merge_pending(now() + SETTLE_INTERVAL_MS);
+    assert_eq!(host.merges.load(Ordering::SeqCst), 1);
+    assert_ne!(attempt(&l, &id).state, MergeState::Merged);
+    assert_ne!(proposal(&l.api, &id).state, ProposalState::Executed);
+}
+
+#[test]
+fn landing_two_callers_on_one_claim_call_the_host_once() {
+    let l = landing();
+    let id = card(&l);
+    approve(&l, &id, "k-1");
+    let approved = proposal(&l.api, &id);
+    let barrier = std::sync::Barrier::new(2);
+
+    // The final state is not asserted: in production one landing thread runs merges, so a
+    // second caller settling an `issued` attempt while the first is mid-call is not modeled.
+    // What holds for any interleaving is the number of host calls.
+    std::thread::scope(|scope| {
+        for _ in 0..2 {
+            scope.spawn(|| {
+                barrier.wait();
+                let _ = l.api.merge_inner(&approved, &MergePolicy::PerAction, now());
+            });
+        }
+    });
+
+    // Whichever caller moved the claim to issued called the host; the other stood down.
+    assert_eq!(l.github.merge_count(), 1);
+    // A caller that finds the claim already issued never calls the host either.
+    assert!(!l.api.store.issue_pull_request_merge(&id).unwrap());
+}
+
+#[test]
+fn landing_a_pull_request_merged_at_another_head_is_not_recorded_as_our_merge() {
+    let l = landing();
+    let id = card(&l);
+    approve(&l, &id, "k-1");
+    claim(&l, &id);
+    l.api
+        .store
+        .advance_pull_request_merge(&id, MergeState::Issued, None, None)
+        .unwrap();
+    // Someone else merged the pull request, at a head this card never bound.
+    let mut theirs = l.github.pull_request(&l.repo, NUMBER).unwrap();
+    theirs.state = orchestrator_core::landing::PrState::Merged;
+    theirs.head_sha = OTHER.to_owned();
+    theirs.merge_sha = Some(OTHER.to_owned());
+    l.github.set_pull_request(&l.repo, theirs);
+    let l = restart(l);
+
+    l.api.merge_pending(now());
+
+    assert_eq!(l.github.merge_count(), 0);
+    assert_failed_with(&l, &id, "merge_unconfirmed");
+    let ledger = attempt(&l, &id);
+    assert_eq!(ledger.state, MergeState::Refused);
+    assert_eq!(ledger.refusal.as_deref(), Some("unconfirmed"));
+}
+
+#[test]
+fn landing_a_merge_runs_with_the_method_the_card_showed() {
+    // The card is stored with the project's method, so the digest binds it.
+    let l = landing();
+    set_method(&l, "merge");
+    l.tick(now());
+    let id = propose_checked(&l.api, "t1", &merge_action(&l.task, NUMBER, HEAD))[0].clone();
+    let stored = proposal(&l.api, &id);
+    let Ok(Action::DeliveryMerge(shown)) = serde_json::from_str::<Action>(&stored.params_json)
+    else {
+        panic!("a merge card must store a merge: {stored:?}");
+    };
+    assert_eq!(shown.method.as_deref(), Some("merge"));
+    approve(&l, &id, "k-1");
+
+    l.api.merge_pending(now());
+
+    assert_eq!(
+        l.github.merge_calls(),
+        vec![Call::Merge {
+            repo: l.repo.clone(),
+            number: NUMBER,
+            head_sha: HEAD.to_owned(),
+            method: MergeMethod::Merge,
+        }]
+    );
+
+    // A later change of the project's default never changes what a stored card runs: the
+    // card is refused, and the host is not asked with another method.
+    let l = landing();
+    l.tick(now());
+    let id = propose_checked(&l.api, "t1", &merge_action(&l.task, NUMBER, HEAD))[0].clone();
+    set_method(&l, "rebase");
+    let result = approve(&l, &id, "k-1");
+    assert_eq!(result["proposal"]["state"], "failed", "{result}");
+    assert_eq!(
+        result["proposal"]["denial"], "method_not_allowed",
+        "{result}"
+    );
+    l.api.merge_pending(now());
+    assert_eq!(l.github.merge_count(), 0);
+}
+
+#[test]
+fn landing_a_merge_for_a_failed_or_local_review_task_is_denied() {
+    let l = landing();
+    succeeded_task(
+        &l.api,
+        "task-local",
+        &l.project,
+        "moa/task-local",
+        DeliveryPolicy::LocalReview,
+    );
+    failed_pr_task(&l.api, "task-failed", &l.project);
+    let queued = submit_pr_task_not_finished(&l.api, &l.project);
+    let tasks = ["task-local", "task-failed", queued.as_str()];
+    for (index, task) in tasks.into_iter().enumerate() {
+        store_pull_request(&l.api, task, &l.project, 20 + index as u64);
+    }
+
+    for (index, task) in tasks.into_iter().enumerate() {
+        let number = 20 + index as u64;
+        // At propose time: the card is stored failed.
+        let checked = propose_checked(
+            &l.api,
+            &format!("turn-checked-{index}"),
+            &merge_action(task, number, HEAD),
+        );
+        let stored = proposal(&l.api, &checked[0]);
+        assert_eq!(stored.state, ProposalState::Failed, "{task}");
+        assert_eq!(
+            stored.denial.as_deref(),
+            Some("delivery_not_authorized"),
+            "{task}"
+        );
+
+        // At approve time, for a card that was stored pending anyway.
+        let pending = propose(
+            &l.api,
+            &format!("turn-approve-{index}"),
+            &merge_action(task, number, HEAD),
+        )[0]
+        .clone();
+        let result = approve(&l, &pending, &format!("k-{index}"));
+        assert_eq!(result["proposal"]["state"], "failed", "{task}: {result}");
+        assert_eq!(
+            result["proposal"]["denial"], "delivery_not_authorized",
+            "{task}: {result}"
+        );
+
+        // At execution, for a proposal approved behind the check.
+        let behind = propose(
+            &l.api,
+            &format!("turn-run-{index}"),
+            &merge_action(task, number, OTHER),
+        )[0]
+        .clone();
+        l.api
+            .store
+            .approve_action_proposal(&behind, "user")
+            .unwrap();
+        l.api.merge_pending(now());
+        assert_failed_with(&l, &behind, "conflict");
+        assert!(l.api.store.pull_request_merge(&behind).unwrap().is_none());
+    }
+    assert_eq!(l.github.merge_count(), 0);
+    assert!(l.calls().is_empty());
+}
+
+#[test]
+fn landing_a_grant_without_the_merge_kind_cannot_approve_a_merge() {
+    let l = landing();
+    // A grant of another kind on the same project: the matcher never approves a merge under
+    // it, and a claim made behind the matcher's back is refused before the host.
+    let other = call(
+        &l.api,
+        "grants.create",
+        json!({
+            "scope": {"kind": "project", "id": project_code(&l.project)},
+            "kinds": ["task.retry"],
+            "token_budget": 5_000,
+            "idempotency_key": "g-retry",
+        }),
+    )
+    .unwrap()["grant"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id = card(&l);
+
+    assert_eq!(match_once(&l), 0);
+    assert_eq!(proposal(&l.api, &id).state, ProposalState::Pending);
+
+    let digest = proposal(&l.api, &id).digest;
+    l.api
+        .store
+        .approve_action_proposal_by_grant(&id, &digest, &other, now())
+        .unwrap();
+    l.api.merge_pending(now());
+    assert_failed_with(&l, &id, "project_not_covered");
+    assert_eq!(l.github.merge_count(), 0);
+}
+
 // ----- the unattended merge grant (N8) ------------------------------------------------------
 
 /// A merge grant on the project of `l`. `extra` adds or replaces request fields.
@@ -727,6 +1043,7 @@ fn merge_grant(l: &Landing, key: &str, extra: Value) -> String {
         "kinds": ["delivery.merge"],
         "token_budget": 1_000,
         "confirm_unattended_merge": true,
+        "branch_prefix": "moa/",
         "idempotency_key": key,
     });
     for (name, value) in extra.as_object().unwrap() {
@@ -1007,7 +1324,7 @@ fn merge_grant_never_merges_in_a_local_only_project() {
 }
 
 #[test]
-fn merge_grant_a_revoked_grant_merges_nothing() {
+fn merge_grant_a_revoked_grant_merges_nothing_before_the_check() {
     let l = landing();
     let grant = merge_grant(&l, "g-1", json!({}));
     let waiting = card(&l);
@@ -1040,7 +1357,7 @@ fn merge_grant_a_revoked_grant_merges_nothing() {
 }
 
 #[test]
-fn merge_grant_an_expired_grant_merges_nothing() {
+fn merge_grant_an_expired_grant_merges_nothing_before_the_check() {
     let l = landing();
     let grant = merge_grant(&l, "g-1", json!({"expires_in_secs": 3_600}));
     let first = card(&l);
@@ -1079,7 +1396,7 @@ fn merge_grant_a_used_up_grant_leaves_the_next_card_for_the_user() {
 }
 
 #[test]
-fn merge_grant_the_same_proposal_taken_twice_merges_once() {
+fn merge_grant_the_same_proposal_taken_twice_in_turn_merges_once() {
     let l = landing();
     let grant = merge_grant(&l, "g-1", json!({}));
     let id = card(&l);
@@ -1166,6 +1483,7 @@ fn merge_grant_a_grant_of_another_project_neither_approves_nor_runs_a_merge() {
             "kinds": ["delivery.merge"],
             "token_budget": 1_000,
             "confirm_unattended_merge": true,
+            "branch_prefix": "moa/",
             "idempotency_key": "g-other",
         }),
     )
@@ -1225,4 +1543,262 @@ fn merge_grant_a_user_approval_still_runs_with_the_per_action_policy() {
         [(GrantEventKind::Created, None)],
         "a user approval writes no grant event"
     );
+}
+
+#[test]
+fn merge_grant_a_cross_repository_pull_request_never_merges() {
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    let id = card(&l);
+    assert_eq!(match_once(&l), 1);
+    // The host now reports the head in a fork, as a read of the same number could.
+    let mut forked = view(NUMBER, BRANCH);
+    forked.same_repository = false;
+    l.github.set_pull_request(&l.repo, forked);
+
+    l.api.merge_pending(now());
+
+    assert_failed_with(&l, &id, "cross_repo");
+    assert_eq!(l.github.merge_count(), 0);
+    assert_eq!(attempt(&l, &id).state, MergeState::Refused);
+    assert_eq!(
+        grant_events(&l, &grant).last(),
+        Some(&(GrantEventKind::Stopped, Some("cross_repo".to_owned())))
+    );
+}
+
+#[test]
+fn merge_grant_a_revoke_between_the_check_and_the_host_call_stops_the_merge() {
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    let id = card(&l);
+    assert_eq!(match_once(&l), 1);
+    let host = Arc::new(RevokingHost {
+        inner: l.github.clone(),
+        hook: std::sync::Mutex::new(None),
+    });
+    let l = restart_over(l, host.clone() as Arc<dyn GitHub>);
+    let store = l.api.store.clone();
+    let revoked = grant.clone();
+    // Runs after the grant was checked and the pull request read, before the claim is issued.
+    *host.hook.lock().unwrap() = Some(Box::new(move || {
+        store
+            .revoke_standing_grant_and_stop(&revoked, now())
+            .unwrap();
+    }));
+
+    l.api.merge_pending(now());
+
+    assert_eq!(l.github.merge_count(), 0);
+    assert_failed_with(&l, &id, "grant_revoked");
+    assert_eq!(attempt(&l, &id).state, MergeState::Refused);
+    let stopped: Vec<_> = grant_events(&l, &grant)
+        .into_iter()
+        .filter(|(event, _)| *event == GrantEventKind::Stopped)
+        .collect();
+    assert_eq!(
+        stopped,
+        [(GrantEventKind::Stopped, Some("grant_revoked".to_owned()))]
+    );
+}
+
+#[test]
+fn merge_grant_the_own_upstream_pair_is_refused_under_any_name() {
+    // The compiled-in pair, the same pair in other letter case, and the name under any owner.
+    let pairs = [
+        ("mc-innersource", "motif-mcao"),
+        ("MC-Innersource", "Motif-MCAO"),
+        ("someone-else", "motif-mcao"),
+    ];
+    for (owner, name) in pairs {
+        let l = landing();
+        let own = RepoRef::parse(owner, name).unwrap();
+        l.github.set_repo(own.clone());
+        l.github.set_pull_request(&own, view(NUMBER, BRANCH));
+        merge_grant(&l, "g-1", json!({}));
+        let id = card(&l);
+        assert_eq!(match_once(&l), 1, "{owner}/{name}");
+
+        l.api.merge_pending(now());
+
+        assert_failed_with(&l, &id, "own_upstream");
+        assert_eq!(l.github.merge_count(), 0, "{owner}/{name}");
+    }
+}
+
+#[test]
+fn merge_grant_a_repository_other_than_the_one_the_project_tracks_is_refused() {
+    let l = landing();
+    merge_grant(&l, "g-1", json!({}));
+    let id = card(&l);
+    assert_eq!(match_once(&l), 1);
+    // The poller bound the pull request to the repository it read it from.
+    assert_eq!(
+        l.api.store.pull_request_repo(&l.task).unwrap(),
+        Some(("acme".to_owned(), "widgets".to_owned()))
+    );
+    // Then the remote now names a mirror under another name, which holds the same number.
+    let mirror = RepoRef::parse("acme", "mirror").unwrap();
+    l.github.set_repo(mirror.clone());
+    l.github.set_pull_request(&mirror, view(NUMBER, BRANCH));
+
+    l.api.merge_pending(now());
+
+    assert_failed_with(&l, &id, "repo_not_tracked");
+    assert_eq!(l.github.merge_count(), 0);
+    // The first binding stays: a later read of the mirror never moves it.
+    l.api
+        .store
+        .bind_pull_request_repo(&l.task, mirror.owner(), mirror.name())
+        .unwrap();
+    assert_eq!(
+        l.api.store.pull_request_repo(&l.task).unwrap(),
+        Some(("acme".to_owned(), "widgets".to_owned()))
+    );
+}
+
+#[test]
+fn merge_grant_a_failed_or_local_review_task_never_merges_unattended() {
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    succeeded_task(
+        &l.api,
+        "task-local",
+        &l.project,
+        "moa/task-local",
+        DeliveryPolicy::LocalReview,
+    );
+    failed_pr_task(&l.api, "task-failed", &l.project);
+    for (index, (task, number)) in [("task-local", 20), ("task-failed", 21)]
+        .into_iter()
+        .enumerate()
+    {
+        store_pull_request(&l.api, task, &l.project, number);
+        // Claimed behind the matcher's back: the worker refuses it before the host.
+        let behind = propose(
+            &l.api,
+            &format!("tb-{index}"),
+            &merge_action(task, number, OTHER),
+        )[0]
+        .clone();
+        let digest = proposal(&l.api, &behind).digest;
+        l.api
+            .store
+            .approve_action_proposal_by_grant(&behind, &digest, &grant, now())
+            .unwrap();
+        l.api.merge_pending(now());
+        assert_failed_with(&l, &behind, "conflict");
+
+        // Through the matcher: approved or denied, never merged.
+        let matched = propose(
+            &l.api,
+            &format!("tm-{index}"),
+            &merge_action(task, number, HEAD),
+        )[0]
+        .clone();
+        match_once(&l);
+        l.api.merge_pending(now());
+        assert_eq!(
+            proposal(&l.api, &matched).state,
+            ProposalState::Failed,
+            "{task}"
+        );
+        assert!(l.api.store.pull_request_merge(&matched).unwrap().is_none());
+    }
+    assert_eq!(l.github.merge_count(), 0);
+}
+
+#[test]
+fn merge_grant_the_audit_rows_name_the_head_commit() {
+    // A merge that ran: the use and its close both name the bound head.
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    card(&l);
+    assert_eq!(match_once(&l), 1);
+    l.api.merge_pending(now());
+    let heads = |l: &Landing, grant: &str| -> Vec<(GrantEventKind, Option<String>)> {
+        l.api
+            .store
+            .grant_events(grant, 0, 100)
+            .unwrap()
+            .into_iter()
+            .map(|event| (event.event, event.head_sha))
+            .collect()
+    };
+    assert_eq!(
+        heads(&l, &grant),
+        [
+            (GrantEventKind::Created, None),
+            (GrantEventKind::Used, Some(HEAD.to_owned())),
+            (GrantEventKind::Executed, Some(HEAD.to_owned()))
+        ]
+    );
+
+    // A merge that stopped: the close names the head the card bound, not the moved one.
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    card(&l);
+    assert_eq!(match_once(&l), 1);
+    l.github.set_head(&l.repo, NUMBER, OTHER);
+    l.api.merge_pending(now());
+    assert_eq!(
+        heads(&l, &grant),
+        [
+            (GrantEventKind::Created, None),
+            (GrantEventKind::Used, Some(HEAD.to_owned())),
+            (GrantEventKind::Stopped, Some(HEAD.to_owned()))
+        ]
+    );
+}
+
+#[test]
+fn merge_grant_a_merge_the_host_does_not_confirm_is_not_recorded_as_merged() {
+    let l = landing();
+    let grant = merge_grant(&l, "g-1", json!({}));
+    let id = card(&l);
+    assert_eq!(match_once(&l), 1);
+    let host = Arc::new(QueueingHost {
+        inner: l.github.clone(),
+        merges: AtomicUsize::new(0),
+    });
+    let l = restart_over(l, host.clone() as Arc<dyn GitHub>);
+
+    l.api.merge_pending(now());
+
+    // The call went through and the pull request is still open: not a merge, not executed.
+    assert_eq!(host.merges.load(Ordering::SeqCst), 1);
+    assert_eq!(attempt(&l, &id).state, MergeState::Unknown);
+    assert_eq!(proposal(&l.api, &id).state, ProposalState::Approved);
+    assert_eq!(
+        grant_events(&l, &grant),
+        [
+            (GrantEventKind::Created, None),
+            (GrantEventKind::Used, None)
+        ]
+    );
+}
+
+#[test]
+fn merge_grant_two_callers_on_one_proposal_merge_once() {
+    let l = landing();
+    merge_grant(&l, "g-1", json!({}));
+    let id = card(&l);
+    assert_eq!(match_once(&l), 1);
+    let approved = proposal(&l.api, &id);
+    let barrier = std::sync::Barrier::new(2);
+
+    // The final state is not asserted: what holds for any interleaving is the number of
+    // host calls, because only the caller that moved the claim to issued calls the host.
+    std::thread::scope(|scope| {
+        for _ in 0..2 {
+            scope.spawn(|| {
+                let policy = l.api.merge_policy(&approved).unwrap();
+                barrier.wait();
+                let _ = l.api.merge_inner(&approved, &policy, now());
+            });
+        }
+    });
+
+    assert_eq!(l.github.merge_count(), 1);
+    assert!(!l.api.store.issue_pull_request_merge(&id).unwrap());
 }

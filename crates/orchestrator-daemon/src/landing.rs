@@ -43,6 +43,9 @@ pub(super) const MAX_CALLS_PER_TICK: usize = 20;
 pub(super) const BACKOFF_CAP_MS: u64 = 15 * 60 * 1000;
 /// Fewest milliseconds between two `pulls.refresh` of one task.
 pub(super) const REFRESH_MIN_MS: u64 = 10_000;
+/// The window, in milliseconds, and the most `pulls.refresh` reads inside it across all tasks.
+pub(super) const REFRESH_WINDOW_MS: u64 = 60_000;
+pub(super) const REFRESH_GLOBAL_CAP: usize = 20;
 /// Milliseconds between two reads that settle a merge whose reply was lost.
 pub(super) const SETTLE_INTERVAL_MS: u64 = 120_000;
 /// Reads of a still-open pull request after which a lost merge reply is given up.
@@ -71,6 +74,8 @@ pub(super) struct Schedule {
     pub(super) failures: BTreeMap<String, u32>,
     /// When `pulls.refresh` last read each task.
     pub(super) refreshed: BTreeMap<String, u64>,
+    /// When each `pulls.refresh` read of the last minute was made, any task.
+    pub(super) refresh_times: Vec<u64>,
     /// Projects already named in a log line this run.
     pub(super) announced: BTreeSet<String>,
     /// No settle read of this merge attempt before this time.
@@ -384,6 +389,11 @@ impl DaemonApi {
             .store
             .observe_pull_request(&seen, now)
             .map_err(|_| GitHubError::Failed("store"))?;
+        // The first repository a pull request is read from stays its repository: a merge grant
+        // merges nowhere else.
+        self.store
+            .bind_pull_request_repo(&task.task_id, repo.owner(), repo.name())
+            .map_err(|_| GitHubError::Failed("store"))?;
         if matches!(
             change,
             PullRequestChange::Created | PullRequestChange::Changed
@@ -458,7 +468,7 @@ impl DaemonApi {
         );
     }
 
-    fn pause(&self, now_ms: u64) {
+    pub(super) fn pause(&self, now_ms: u64) {
         lock(&self.landing.schedule).paused_until_ms = now_ms + BACKOFF_CAP_MS;
         self.config.diagnostics.warn(LOG, "poller_paused", &[]);
     }

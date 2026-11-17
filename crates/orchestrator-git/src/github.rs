@@ -228,6 +228,10 @@ pub struct PullRequestView {
     pub checks: Vec<CheckRun>,
     /// Set when the pull request is merged.
     pub merge_sha: Option<String>,
+    /// The head lives in the base repository itself, not in a fork. A client that cannot tell
+    /// refuses the view (`cross_repo`), so a real view is always `true`; the merge grant
+    /// checks it again for itself.
+    pub same_repository: bool,
 }
 
 /// Why a GitHub call failed. Fixed text only: never the child's output.
@@ -475,6 +479,8 @@ pub fn parse_view(
         title: plain(text_field(&value, "title")?, MAX_TITLE_CHARS),
         checks: Vec::new(),
         merge_sha,
+        // `is_from_repo` refused a fork above.
+        same_repository: true,
     })
 }
 

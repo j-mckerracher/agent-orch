@@ -971,7 +971,7 @@ fn a_merge_grant_is_stored_whole_and_the_database_holds_its_rules() {
         .unwrap();
     assert_eq!(again, created);
     let mut other = merge_terms(3);
-    other.branch_prefix = None;
+    other.branch_prefix = Some("release/".to_owned());
     let error = store
         .create_standing_grant("merge-1", &other, now())
         .unwrap_err();
@@ -1063,6 +1063,8 @@ fn a_merge_grant_is_stored_whole_and_the_database_holds_its_rules() {
     )
     .is_ok());
     assert!(insert("raw-8", merge, "project", "2", "5", "3601000", "").is_err());
+    // A merge grant with no prefix would cover every branch: the database refuses it too.
+    assert!(insert("raw-9", merge, "project", "1", "5", "3601000", "").is_err());
     // The confirmation and the prefix are fixed terms.
     assert!(try_sql(
         &path,
