@@ -21,7 +21,6 @@ export const WAKE_SAVED_TEXT = "Saved. New limits apply from the next automatic 
 export const FIXTURE_SAVE_TEXT = "Fixture data: nothing was saved.";
 export const CROSS_FIELD_ERROR = "The fastest interval cannot be slower than the check interval.";
 export const INVALID_REASON = "Fix the fields marked as invalid before saving.";
-export const UNCHANGED_REASON = "Change a value to save.";
 
 export type SupervisionField = "baseMinutes" | "minSeconds" | "wallMinutes";
 export type WakeField = "hourlyCap" | "dailyCap" | "dailyTokenBudget";
@@ -95,15 +94,16 @@ export function supervisionErrors(saved: SupervisionSettings, typed: Supervision
   };
 }
 
-/** What Save sends: only valid fields that differ from the saved value, with the base in seconds. */
+/** What Save sends: every valid field, from its typed text or else the saved value, with the base in seconds. */
 export function supervisionPatch(saved: SupervisionSettings, typed: SupervisionTyped): Partial<SupervisionSettings> {
+  const shown = { ...supervisionText(saved), ...typed };
   const patch: Partial<SupervisionSettings> = {};
-  const baseMinutes = typed.baseMinutes === undefined ? null : inRange(typed.baseMinutes, BASE_MINUTES_MIN, BASE_MINUTES_MAX);
-  if (baseMinutes !== null && baseMinutes * 60 !== saved.baseIntervalSecs) patch.baseIntervalSecs = baseMinutes * 60;
-  const minSeconds = typed.minSeconds === undefined ? null : parseWhole(typed.minSeconds);
-  if (minSeconds !== null && minSeconds !== saved.minIntervalSecs) patch.minIntervalSecs = minSeconds;
-  const wall = typed.wallMinutes === undefined ? null : inRange(typed.wallMinutes, WALL_MINUTES_MIN, WALL_MINUTES_MAX);
-  if (wall !== null && wall !== saved.attemptWallMinutes) patch.attemptWallMinutes = wall;
+  const baseMinutes = inRange(shown.baseMinutes, BASE_MINUTES_MIN, BASE_MINUTES_MAX);
+  if (baseMinutes !== null) patch.baseIntervalSecs = baseMinutes * 60;
+  const minSeconds = parseWhole(shown.minSeconds);
+  if (minSeconds !== null) patch.minIntervalSecs = minSeconds;
+  const wall = inRange(shown.wallMinutes, WALL_MINUTES_MIN, WALL_MINUTES_MAX);
+  if (wall !== null) patch.attemptWallMinutes = wall;
   return patch;
 }
 
@@ -170,16 +170,15 @@ export function wakeText(saved: WakeLimitSettings): Record<WakeField, string> {
 export const WAKE_FIELDS: readonly WakeField[] = ["hourlyCap", "dailyCap", "dailyTokenBudget"];
 
 /**
- * What Save sends: each valid field that differs from the saved value. A cleared field is `null`, which the daemon reads
- * as "no limit", so empty on screen but 6 on the daemon is a change. An untouched field is not sent.
+ * What Save sends: every valid field, from its typed text or else the saved value, so a save with no edit still writes.
+ * A cleared field is `null`, which the daemon reads as "no limit".
  */
 export function wakePatch(saved: WakeLimitSettings, typed: WakeTyped): Partial<WakeLimitSettings> {
+  const shown = { ...wakeText(saved), ...typed };
   const patch: Partial<WakeLimitSettings> = {};
   for (const field of WAKE_FIELDS) {
-    const text = typed[field];
-    if (text === undefined) continue;
-    const value = parseCap(text, WAKE_MAX[field]);
-    if (value !== undefined && value !== saved[field]) patch[field] = value;
+    const value = parseCap(shown[field], WAKE_MAX[field]);
+    if (value !== undefined) patch[field] = value;
   }
   return patch;
 }

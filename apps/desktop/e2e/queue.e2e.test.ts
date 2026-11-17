@@ -46,14 +46,14 @@ afterAll(async () => {
 });
 
 describe("real daemon: queue.snapshot and the live D11 adapter", () => {
-  it("negotiates the queue capability and returns the documented shape with the default 2/2 limits", async () => {
+  it("negotiates the queue capability and returns the documented shape with the default 10/10 limits", async () => {
     const session = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
     try {
       expect(session.welcome.capabilities).toContain("queue");
       const api = new DaemonApi(session);
       await api.projectsRegister(daemon.repo);
       const snapshot = await api.queueSnapshot();
-      expect(snapshot.limits).toEqual({ max_concurrent_workers: 2, max_workers_per_project: 2 });
+      expect(snapshot.limits).toEqual({ max_concurrent_workers: 10, max_workers_per_project: 10 });
       expect(typeof snapshot.dispatch_blocked).toBe("boolean");
       expect(typeof snapshot.epoch).toBe("string");
       expect(Array.isArray(snapshot.running)).toBe(true);
@@ -86,7 +86,7 @@ describe("real daemon: queue.snapshot and the live D11 adapter", () => {
       if (result.status !== "ok") return;
       expect(result.provenance).toMatchObject({ kind: "daemon", id: "D11" });
       expect(result.data.slots.status).toBe("ok");
-      if (result.data.slots.status === "ok") expect(result.data.slots.value.limit).toBe(2);
+      if (result.data.slots.status === "ok") expect(result.data.slots.value.limit).toBe(10);
 
       const rows = [...result.data.running, ...result.data.queued].filter((row) => ids.includes(row.taskId));
       expect(rows.map((row) => row.taskId).sort()).toEqual([...ids].sort());

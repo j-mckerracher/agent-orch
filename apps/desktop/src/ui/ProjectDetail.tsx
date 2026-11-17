@@ -11,7 +11,6 @@ import {
   draftOf,
   hasErrors,
   saveFailureText,
-  sameDefaults,
   validateDraft,
   type DefaultsDraft,
 } from "../sources/surfaces/projectDefaults";
@@ -21,14 +20,14 @@ import { TASK_STATES, basename, pendingApprovals, stateLabel } from "./format";
 import { buildSubmission } from "./submission";
 import { useGate, useServices, useSource, useStore, useSurface } from "./services";
 import { NOT_CONNECTED_REASON } from "./views/settings/settingsModel";
+import { SaveButton, useSaveGuard } from "./views/settings/SaveBar";
 import { ErrorNotice, LoadableRegion, Notice, SourceSection } from "./widgets";
 import { Button } from "./theme";
 
 const SAVED_TEXT = "Saved. These defaults apply to this project from now on.";
 const INVALID_REASON = "Fix the fields marked as invalid before saving.";
-const UNCHANGED_REASON = "Change a value to save.";
 const PREFIX_HINT =
-  "Task branches start with this. Letters, digits, dot, dash, underscore and slash, ending with a slash (for example moa/). Not orchestrator/. Leave empty to use the machine-wide prefix.";
+  "Task branches start with this. Letters, digits, dot, dash, underscore and slash, ending with a slash (for example mcao/). Not orchestrator/. Leave empty to use the machine-wide prefix.";
 const CHECKS_HINT = `Each command runs without a shell: type the program and its arguments separated by spaces. Quotes and variables are not interpreted. Up to ${MAX_CHECKS} commands.`;
 
 const describedBy = (...ids: Array<string | false | null | undefined>) => ids.filter(Boolean).join(" ") || undefined;
@@ -48,6 +47,7 @@ function ProjectDefaultsSection({ projectId }: { projectId: string }) {
   const busy = useRef(false);
   const ids = { hint: useId(), prefix: useId(), base: useId(), checks: useId(), reason: useId(), mode: useId() };
 
+  const { tried, guard } = useSaveGuard();
   useEffect(() => setFresh(null), [loaded]);
 
   if (loaded.status === "loading" || loaded.status === "unsupported" || (loaded.status !== "ok" && gate.settling)) return null;
@@ -73,15 +73,13 @@ function ProjectDefaultsSection({ projectId }: { projectId: string }) {
       ? APPROVER_REQUIRED_NOTICE
       : hasErrors(errors)
         ? INVALID_REASON
-        : sameDefaults(defaultsOf(draft), saved)
-          ? UNCHANGED_REASON
-          : null;
+        : null;
   const update = (patch: Partial<DefaultsDraft>) => setTyped({ ...draft, ...patch });
   const setCheck = (index: number, line: string) => update({ checks: draft.checks.map((item, i) => (i === index ? line : item)) });
   const known = (options: ReadonlyArray<{ value: string }>, value: string) => options.some((option) => option.value === value);
 
   const save = async () => {
-    if (reason !== null || busy.current) return;
+    if (busy.current) return;
     busy.current = true;
     setSaving(true);
     setResult(null);
@@ -110,14 +108,7 @@ function ProjectDefaultsSection({ projectId }: { projectId: string }) {
       <p className="muted">
         Delivery mode, branches and checks for tasks in this project. Chat can ask for a pull request only when Settings allows it.
       </p>
-      <form
-        noValidate
-        className="ps-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
+      <form noValidate className="ps-form" onSubmit={guard(reason, () => void save())}>
         <fieldset className="ps-wide" aria-describedby={describedBy(locked && ids.reason)}>
           <legend>Delivery mode</legend>
           {MODE_OPTIONS.map((option) => (
@@ -242,20 +233,7 @@ function ProjectDefaultsSection({ projectId }: { projectId: string }) {
         </label>
 
         <div className="ps-form-footer">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={reason !== null}
-            aria-busy={saving}
-            aria-describedby={describedBy(reason !== null && ids.reason)}
-          >
-            Save project defaults
-          </Button>
-          {reason !== null && (
-            <p id={ids.reason} className="muted">
-              {reason}
-            </p>
-          )}
+          <SaveButton label="Save project defaults" reason={reason} saving={saving} tried={tried} reasonId={ids.reason} />
           <div role="status" aria-live="polite" aria-label="Project defaults save result">
             {result?.kind === "saved" && <p>{SAVED_TEXT}</p>}
             {result?.kind === "fixture" && <p>{FIXTURE_SAVE_TEXT}</p>}

@@ -136,6 +136,14 @@
   text-decoration: underline;
 }
 
+/* The Save button of a settings form: larger than a row button so it is not missed. */
+.ui-btn-save {
+  min-height: 40px;
+  padding: 8px 24px;
+  font-size: 14px;
+  box-shadow: 0 0 0 2px var(--soft-strong);
+}
+
 .ui-btn-danger {
   border-color: var(--red);
   background: var(--red-bg);

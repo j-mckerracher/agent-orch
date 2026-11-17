@@ -147,17 +147,19 @@ fn rejects_zero_and_unbounded_limits() {
 }
 
 #[test]
-fn default_global_limit_starts_two_tasks() {
-    let tasks = [
-        fixture("a", "a-project", TaskState::Queued, &[]),
-        fixture("b", "b-project", TaskState::Queued, &[]),
-        fixture("c", "c-project", TaskState::Queued, &[]),
-    ];
+fn default_global_limit_starts_ten_tasks() {
+    let ids: Vec<String> = (0..11).map(|i| format!("t{i:02}")).collect();
+    let projects: Vec<String> = ids.iter().map(|id| format!("{id}-project")).collect();
+    let tasks: Vec<_> = ids
+        .iter()
+        .zip(&projects)
+        .map(|(id, project)| fixture(id, project, TaskState::Queued, &[]))
+        .collect();
 
     let plan = run(&tasks, SchedulerLimits::default(), None, Some(&allow_all)).unwrap();
 
-    assert_eq!(plan.started, ["a", "b"]);
-    assert_eq!(rejection(&plan, "c"), &RejectionReason::GlobalLimitReached);
+    assert_eq!(plan.started, ids[..10]);
+    assert_eq!(rejection(&plan, "t10"), &RejectionReason::GlobalLimitReached);
 }
 
 #[test]
@@ -440,8 +442,8 @@ fn same_branch_name_in_different_projects_does_not_conflict() {
 #[test]
 fn limit_accessors_report_configured_values_and_defaults() {
     let defaults = SchedulerLimits::default();
-    assert_eq!(defaults.max_concurrent_workers(), 2);
-    assert_eq!(defaults.max_workers_per_project(), 2);
+    assert_eq!(defaults.max_concurrent_workers(), 10);
+    assert_eq!(defaults.max_workers_per_project(), 10);
     let limits = SchedulerLimits::new(Some(5), Some(3)).unwrap();
     assert_eq!(limits.max_concurrent_workers(), 5);
     assert_eq!(limits.max_workers_per_project(), 3);

@@ -7,6 +7,7 @@ import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, Workstream } f
 import { useGate, useServices, useStore, useSurface } from "../../services";
 import { Badge, Button, Pill } from "../../theme";
 import { Notice } from "../../widgets";
+import { SaveButton, useSaveGuard } from "./SaveBar";
 import {
   FIXTURE_TEXT,
   INTRO_TEXT,
@@ -74,6 +75,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
   const [announcement, setAnnouncement] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [mergeTyped, setMergeTyped] = useState<MergeDraft | null>(null);
   const [mergeTouched, setMergeTouched] = useState<ReadonlySet<MergeField>>(new Set());
+  const mergeGuard = useSaveGuard();
   const rows = useRef(new Map<string, HTMLLIElement>());
   const working = useRef(false);
   const ids = { reason: useId(), scope: useId(), kinds: useId(), hours: useId(), uses: useId(), budget: useId(), select: useId() };
@@ -153,7 +155,8 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
     }, createFailureText);
   const createMerge = () =>
     submit(mergeReason, "merge", mergeTermsOf(mergeDraft), () => {
-      setMergeTyped(null);
+      // The prefix stays: it is a per-machine choice, not part of one approval.
+      setMergeTyped({ ...initialMergeDraft(policy), prefix: mergeDraft.prefix });
       setMergeTouched(new Set());
     }, mergeCreateFailureText);
 
@@ -312,8 +315,9 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
           aria-disabled={locked || undefined}
           className="settings-danger"
           onSubmit={(event) => {
-            event.preventDefault();
-            void createMerge();
+            mergeGuard.guard(mergeReason, () => void createMerge())(event);
+            // A blocked save shows every field's error, not only the ones already touched.
+            if (mergeReason !== null) setMergeTouched(new Set<MergeField>(["scope", "prefix", "hours", "uses", "budget", "confirmed"]));
           }}
         >
           <fieldset className="settings-fieldset" disabled={locked || busy !== null}>
@@ -355,7 +359,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
                 onChange={(event) => updateMerge({ prefix: event.target.value }, "prefix")}
               />
               <p id={`${mergeIds.prefix}-hint`} className="settings-hint">
-                Merge only pull requests whose branch starts with this, for example moa/. Required.
+                Merge only pull requests whose branch starts with this, for example mcao/. Required.
               </p>
               {mergeShown("prefix") && (
                 <p id={`${mergeIds.prefix}-error`} role="alert" className="settings-error">
@@ -406,20 +410,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
             </div>
           </fieldset>
           <div className="settings-actions">
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={mergeReason !== null || busy !== null}
-              aria-busy={busy === "merge"}
-              aria-describedby={mergeReason === null ? undefined : mergeIds.reason}
-            >
-              Save unattended merge approval
-            </Button>
-            {mergeReason !== null && (
-              <p id={mergeIds.reason} className="settings-reason">
-                {mergeReason}
-              </p>
-            )}
+            <SaveButton label="Save unattended merge approval" reason={mergeReason} saving={busy === "merge"} tried={mergeGuard.tried} reasonId={mergeIds.reason} />
           </div>
         </form>
       )}

@@ -226,18 +226,18 @@ describe("unattended merge grant form", () => {
   it("mergegrant_the_merge_form_appears_for_the_daemons_real_policy", async () => {
     await section({ configure: (daemon) => withMerge(daemon) });
     await mergeForm();
-    expect(screen.getByRole("textbox", { name: "Branch prefix" })).toHaveValue("moa/");
+    expect(screen.getByRole("textbox", { name: "Branch prefix" })).toHaveValue("mcao/");
     expect(screen.getByText("A merge uses no tokens, so the budget never runs out; it is required for every grant.")).toBeInTheDocument();
   });
 
-  it("mergegrant_save_is_disabled_while_the_prefix_is_empty", async () => {
+  it("mergegrant_save_is_blocked_with_a_reason_while_the_prefix_is_empty", async () => {
     const { user } = await section({ configure: (daemon) => withMerge(daemon) });
     await mergeForm();
     await fillMerge(user);
     await user.click(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT }));
     expect(await saveMerge()).toBeEnabled();
     await user.clear(screen.getByRole("textbox", { name: "Branch prefix" }));
-    expect(await saveMerge()).toBeDisabled();
+    expect(await saveMerge()).toBeEnabled();
   });
 
   it("mergegrant_form_is_hidden_without_daemon_support", async () => {
@@ -270,7 +270,7 @@ describe("unattended merge grant form", () => {
     await user.clear(prefix);
     await user.type(prefix, "orchestrator/");
     expect(prefix).toHaveAttribute("aria-invalid", "true");
-    expect(await saveMerge()).toBeDisabled();
+    expect(await saveMerge()).toBeEnabled();
   });
 
   it("mergegrant_unconfirmed_blocks_save", async () => {
@@ -278,8 +278,11 @@ describe("unattended merge grant form", () => {
     await mergeForm();
     await fillMerge(user);
     const save = await saveMerge();
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription(/tick the confirmation/);
+    await user.click(save);
+    expect(screen.getByText(/tick the confirmation/)).toHaveAttribute("role", "alert");
+    expect(fake.callsTo("grants.create")).toHaveLength(0);
     await user.click(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT }));
     expect(save).toBeEnabled();
     expect(fake.callsTo("grants.create")).toHaveLength(0);
@@ -307,7 +310,7 @@ describe("unattended merge grant form", () => {
       scope: { kind: "project", id: CODE },
       kinds: ["delivery.merge"],
       confirm_unattended_merge: true,
-      branch_prefix: "moa/",
+      branch_prefix: "mcao/",
       expires_in_secs: 28800,
       max_uses: 5,
       token_budget: 2_000_000,
@@ -318,7 +321,7 @@ describe("unattended merge grant form", () => {
     await section({ approver: false, configure: (daemon) => withMerge(daemon) });
     await mergeForm();
     const save = await saveMerge();
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
     expect(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT })).toBeDisabled();
     expect(screen.getByRole("combobox", { name: "Project for unattended merges" })).toBeDisabled();

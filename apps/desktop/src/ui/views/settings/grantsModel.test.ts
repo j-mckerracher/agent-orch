@@ -207,7 +207,7 @@ describe("unattended merge model", () => {
 
   it("mergegrant_the_form_starts_on_the_default_prefix_and_needs_one", () => {
     const draft = { ...initialMergeDraft(MERGE), scopeId: "p-1a2b3c4d", budget: "1000", confirmed: true };
-    expect(draft.prefix).toBe("moa/");
+    expect(draft.prefix).toBe("mcao/");
     expect(validateMerge({ ...draft, prefix: "  " }, MERGE).prefix).toBe(MERGE_PREFIX_REQUIRED);
     expect(MERGE_BUDGET_NOTE).toBe("A merge uses no tokens, so the budget never runs out; it is required for every grant.");
   });
@@ -224,7 +224,7 @@ describe("unattended merge model", () => {
   });
 
   it("mergegrant_model_terms_name_only_the_merge_kind_in_a_project", () => {
-    const terms = mergeTermsOf({ scopeId: "p-1a2b3c4d", prefix: " moa/ ", hours: "2", uses: "3", budget: "500", confirmed: true });
+    const terms = mergeTermsOf({ scopeId: "p-1a2b3c4d", prefix: " mcao/ ", hours: "2", uses: "3", budget: "500", confirmed: true });
     expect(terms).toEqual({
       scopeKind: "project",
       scopeId: "p-1a2b3c4d",
@@ -233,7 +233,7 @@ describe("unattended merge model", () => {
       maxUses: 3,
       tokenBudget: 500,
       confirmUnattendedMerge: true,
-      branchPrefix: "moa/",
+      branchPrefix: "mcao/",
     });
   });
 });

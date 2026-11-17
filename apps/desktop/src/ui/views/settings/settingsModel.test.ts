@@ -44,12 +44,11 @@ describe("settingsModel", () => {
     expect([parseLimit("50"), parseLimit("100"), parseLimit(" 70 ")]).toEqual([50, 100, 70]);
   });
 
-  it("a_limit_patch_holds_only_the_valid_fields_that_differ_from_the_saved_limits_in_a_fixed_order", () => {
-    expect(limitPatch(SAVED, {})).toEqual({});
-    expect(limitPatch(SAVED, { cpu: "80", memory: "85", disk: "90" })).toEqual({});
-    expect(limitPatch(SAVED, { cpu: "85", memory: "85", disk: "abc" })).toEqual({ cpu: 85 });
-    expect(limitPatch(SAVED, { disk: "100" })).toEqual({ disk: 100 });
-    expect(Object.keys(limitPatch(SAVED, { disk: "60", cpu: "70" }))).toEqual(["cpu", "disk"]);
+  it("a_limit_patch_holds_every_valid_meter_from_its_typed_text_or_else_the_saved_limit_in_a_fixed_order", () => {
+    expect(limitPatch(SAVED, {})).toEqual({ cpu: 80, memory: 85, disk: 90 });
+    expect(limitPatch(SAVED, { cpu: "85", memory: "85", disk: "abc" })).toEqual({ cpu: 85, memory: 85 });
+    expect(limitPatch(SAVED, { disk: "100" })).toEqual({ cpu: 80, memory: 85, disk: 100 });
+    expect(Object.keys(limitPatch(SAVED, { disk: "60", cpu: "70" }))).toEqual(["cpu", "memory", "disk"]);
     expect(LOAD_METERS).toEqual(["cpu", "memory", "disk"]);
   });
 

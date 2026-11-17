@@ -76,13 +76,13 @@ describe("project defaults section", () => {
     expect(screen.queryByText(/could not be read/)).not.toBeInTheDocument();
   });
 
-  it("project_detail_defaults_marks_a_bad_prefix_with_linked_text_and_disables_save_with_a_reason", async () => {
+  it("project_detail_defaults_marks_a_bad_prefix_with_linked_text_and_explains_why_save_is_blocked", async () => {
     const user = await page(source(answering(SAVED), vi.fn()));
     const prefix = await screen.findByRole("textbox", { name: "Branch prefix" });
     await user.type(prefix, "orchestrator/");
     expect(prefix).toHaveAttribute("aria-invalid", "true");
     expect(prefix).toHaveAccessibleDescription(/Do not start with orchestrator\//);
-    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toBeEnabled();
     expect(saveButton()).toHaveAccessibleDescription("Fix the fields marked as invalid before saving.");
   });
 
@@ -90,7 +90,7 @@ describe("project defaults section", () => {
     const set = vi.fn();
     const user = await page(source(answering(SAVED), set));
     await user.click(await screen.findByRole("radio", { name: "Pull request, full verification (no-mistakes)" }));
-    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toBeEnabled();
     expect(screen.getByRole("group", { name: "Checks" })).toHaveAccessibleDescription(/Full verification needs at least one check command/);
     await user.click(screen.getByRole("button", { name: "Add check command" }));
     await user.type(screen.getByRole("textbox", { name: "Check command 1" }), "cargo test");
@@ -118,7 +118,7 @@ describe("project defaults section", () => {
     await waitFor(() => expect(live).toHaveTextContent("Saved."));
     // The section keeps focus, so the result is read where the user was.
     expect(screen.getByRole("region", { name: SECTION })).toHaveFocus();
-    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toBeEnabled();
   });
 
   it("project_detail_defaults_shows_the_daemons_refusal_in_plain_words_and_keeps_what_was_typed", async () => {
@@ -133,7 +133,7 @@ describe("project defaults section", () => {
   it("project_detail_defaults_locks_every_control_with_the_approver_notice_for_a_non_approver", async () => {
     await page(source(answering(SAVED), vi.fn()), false);
     const region = await screen.findByRole("region", { name: SECTION });
-    expect(saveButton()).toBeDisabled();
+    expect(saveButton()).toBeEnabled();
     expect(saveButton()).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
     for (const control of [
       ...within(region).getAllByRole("radio"),

@@ -88,7 +88,7 @@ describe("Supervision and automatic reply sections", () => {
     expect(await input(HOURLY)).toHaveAccessibleDescription("Leave empty for no limit.");
   });
 
-  it("supervision_sections_mark_an_invalid_field_with_linked_error_text_and_disable_save_with_a_reason", async () => {
+  it("supervision_sections_mark_an_invalid_field_with_linked_error_text_and_explain_why_save_is_blocked", async () => {
     const user = userEvent.setup();
     const { services } = await connected();
     page(services);
@@ -96,21 +96,21 @@ describe("Supervision and automatic reply sections", () => {
     expect(field).toHaveAttribute("aria-invalid", "true");
     expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 240\./);
     const save = screen.getByRole("button", { name: SAVE_CHECKS });
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription("Fix the fields marked as invalid before saving.");
   });
 
-  it("supervision_sections_disable_save_with_the_approver_notice_when_the_connection_is_not_an_approver", async () => {
+  it("supervision_sections_explain_the_approver_notice_when_the_connection_is_not_an_approver", async () => {
     const { services } = await connected(WITH_GROUPS, false);
     page(services);
     await input(BASE);
     const save = await screen.findByRole("button", { name: SAVE_CHECKS });
-    expect(save).toBeDisabled();
+    expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
     expect(screen.getByRole("button", { name: SAVE_REPLIES })).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
   });
 
-  it("supervision_sections_save_sends_one_settings_set_with_only_the_changed_groups_and_fields", async () => {
+  it("supervision_sections_save_sends_one_settings_set_with_every_valid_field_of_the_saved_group", async () => {
     const user = userEvent.setup();
     const { fake, services } = await connected();
     page(services);
@@ -121,7 +121,7 @@ describe("Supervision and automatic reply sections", () => {
     expect(calls).toHaveLength(1);
     const { idempotency_key, ...groups } = calls[0]!.params as Record<string, unknown>;
     expect(idempotency_key).toEqual(expect.any(String));
-    expect(groups).toEqual({ supervision: { base_interval_secs: 1200 } });
+    expect(groups).toEqual({ supervision: { base_interval_secs: 1200, min_interval_secs: 60, attempt_wall_minutes: 120 } });
     expect(await input(BASE)).toHaveValue(20);
   });
 
@@ -195,6 +195,6 @@ describe("Supervision and automatic reply sections", () => {
     await user.click(screen.getByRole("button", { name: "Save machine load limits" }));
     await waitFor(() => expect(fake.callsTo("settings.set")).toHaveLength(1));
     const { idempotency_key: _key, ...groups } = fake.callsTo("settings.set")[0]!.params as Record<string, unknown>;
-    expect(groups).toEqual({ load: { cpu_percent: 85 } });
+    expect(groups).toEqual({ load: { cpu_percent: 85, memory_percent: 85, disk_percent: 90 } });
   });
 });

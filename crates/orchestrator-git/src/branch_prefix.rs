@@ -2,7 +2,7 @@
 //!
 //! The prefix lives in `<data_dir>/config/branch-prefix`, one line such as
 //! `team1/`. A missing, unreadable, or blank file selects [`BranchPrefix::default`]
-//! (`moa/`). A value that is not a safe Git ref prefix is an error rather than a
+//! (`mcao/`). A value that is not a safe Git ref prefix is an error rather than a
 //! silent fallback, so a typo cannot quietly rename every task branch.
 
 use std::fs;
@@ -11,7 +11,7 @@ use std::path::Path;
 use crate::Error;
 
 /// Prefix used when no `config/branch-prefix` value is set.
-pub const DEFAULT_BRANCH_PREFIX: &str = "moa/";
+pub const DEFAULT_BRANCH_PREFIX: &str = "mcao/";
 
 /// Location of the prefix file relative to the data directory.
 pub const BRANCH_PREFIX_FILE: &str = "config/branch-prefix";
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn absent_file_reads_default() {
         let dir = data_dir_with(None);
-        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "moa/");
+        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "mcao/");
     }
 
     #[test]
@@ -180,9 +180,9 @@ mod tests {
     #[test]
     fn blank_file_reads_default() {
         let dir = data_dir_with(Some(b" \n"));
-        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "moa/");
+        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "mcao/");
         let dir = data_dir_with(Some(b""));
-        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "moa/");
+        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "mcao/");
     }
 
     #[test]
@@ -190,7 +190,7 @@ mod tests {
         // A directory at the file path cannot be read as a string.
         let dir = TempDir::new().unwrap();
         fs::create_dir_all(dir.path().join(BRANCH_PREFIX_FILE)).unwrap();
-        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "moa/");
+        assert_eq!(BranchPrefix::read(dir.path()).unwrap().as_str(), "mcao/");
     }
 
     #[test]
