@@ -400,7 +400,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
-      // Actions exist only at Restricted: an Auto turn gets no action block, so the chat must be switched first.
+      // Action proposals are carried only by Restricted turns (DPES-1105); the chat defaults to Auto.
       await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
       await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
       // user-event reads "[[" as a literal "[".
@@ -414,7 +414,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(screen.getByRole("log", { name: /Conversation with Global orchestrator/ }).textContent).not.toContain("mcao-actions");
 
       await userEvent.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-      // The card re-renders when the daemon confirms, so read it again instead of holding the first node.
+      // The card is re-rendered once the action completes, so read the current one, not the pre-approval node.
       await waitFor(
         () => expect(screen.getByRole("article", { name: "Proposed: Create workstream" }).querySelector(".ui-pill")?.textContent).toContain("Created"),
         { timeout: 15000 },
