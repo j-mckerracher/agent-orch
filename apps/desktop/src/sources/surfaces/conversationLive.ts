@@ -21,6 +21,7 @@ import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type {
   ActionProposalWire,
+  ConversationRoutedInWire,
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
@@ -39,6 +40,7 @@ import type {
   ModelChoice,
   PermissionLevel,
   Provenance,
+  RoutedIn,
   SendReceipt,
   WakeRecord,
 } from "./types";
@@ -135,6 +137,11 @@ export function failureText(code: string | null, runtime?: RefusedRuntime): stri
 
 export function toWireTarget(target: LiveTarget): ConversationWireTarget {
   return target.kind === "global" ? { kind: "global" } : { kind: "workstream", workstream_id: target.workstreamId };
+}
+
+/** Copies a routed-in row from the wire. The state stays the daemon's string, so an unknown one shows as unknown. */
+export function mapRoutedIn(wire: ConversationRoutedInWire): RoutedIn {
+  return { taskId: wire.task_id, title: wire.title, routedAt: wire.routed_at, state: wire.state };
 }
 
 /** Copies a wake record from the wire. State, outcome and reason stay the daemon's strings, so an unknown one shows as unknown. */
@@ -317,6 +324,7 @@ export function createLiveConversation(
           let proposalsMore: boolean | undefined;
           let wakeRecords: WakeRecordWire[] | undefined;
           let wakeMore: boolean | undefined;
+          let routedIn: ConversationRoutedInWire[] | undefined;
           let jumpedTo: number | null = null;
           // The first read starts at the beginning and learns `latest_sequence`. A long log is then
           // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
@@ -334,6 +342,7 @@ export function createLiveConversation(
             proposalsMore = result.proposals_more;
             wakeRecords = result.wake_records;
             wakeMore = result.wake_records_more;
+            routedIn = result.routed_in;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
@@ -358,6 +367,7 @@ export function createLiveConversation(
             actionBlocks: actionBlocksOf(entries, turn),
             ...(wakeRecords ? { wake: wakeRecords.map(mapWakeRecord) } : {}),
             wakeMore: wakeMore ?? false,
+            ...(routedIn && routedIn.length > 0 ? { routedIn: routedIn.map(mapRoutedIn) } : {}),
           };
       };
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));

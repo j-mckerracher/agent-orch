@@ -283,6 +283,15 @@ export interface ConversationTranscript {
   wake?: WakeRecord[];
   /** True when the daemon held older wake records than it sent. */
   wakeMore?: boolean;
+  /** Workstream targets only: tasks the global conversation routed here, newest first (DPES-1105). Absent when none. */
+  routedIn?: RoutedIn[];
+}
+/** A task routed to a workstream by the global conversation (DPES-1105). Titles only: no path, token or output. */
+export interface RoutedIn {
+  taskId: string;
+  title: string;
+  routedAt: string;
+  state: string;
 }
 export interface SendReceipt {
   /** True for fixture receipts: nothing was recorded anywhere. */
@@ -686,6 +695,8 @@ export interface GroupsPatch {
   wakeLimits?: Partial<WakeLimitSettings>;
   /** Whether chat may propose tasks that end in a pull request. */
   chatPrDelivery?: boolean;
+  /** Whether the orchestrator chat gets the read-only task tools. */
+  mcpEnabled?: boolean;
 }
 export interface SettingsSnapshot {
   limits: LoadLimits;
@@ -693,6 +704,8 @@ export interface SettingsSnapshot {
   wakeLimits?: WakeLimitSettings;
   /** Absent from a daemon that cannot change it. */
   chatPrDelivery?: boolean;
+  /** Absent from a daemon that cannot change it. */
+  mcpEnabled?: boolean;
   gate: { state: "open" | "closed"; hold: LoadHold | null; readings: Record<LoadMeterName, LoadReading> };
   /** `disabled_by_environment` only on a test daemon: no load check runs there, so tasks start whatever the load. */
   feed: "sampler" | "disabled_by_environment";

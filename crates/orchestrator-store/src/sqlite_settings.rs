@@ -31,6 +31,14 @@ pub struct OrchestratorSettings {
     pub mode: MonitoringMode,
     /// Phase 4b: chat may propose a task that ends in a pull request. Off by default.
     pub chat_pr_delivery: bool,
+    /// Phase 6b: the read-only task tools for the orchestrator chat. Off by default.
+    pub mcp: McpSettings,
+}
+
+/// The read-only MCP server setting (migration 0049). Only `settings.set` changes it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct McpSettings {
+    pub enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +82,11 @@ pub struct LoadPatch {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct McpPatch {
+    pub enabled: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SupervisionPatch {
     pub base_interval_secs: Option<u32>,
     pub min_interval_secs: Option<u32>,
@@ -98,6 +111,7 @@ pub struct SettingsPatch {
     /// `settings.set` never sets it; `monitoring.set` sets only it.
     pub mode: Option<MonitoringMode>,
     pub chat_pr_delivery: Option<bool>,
+    pub mcp: McpPatch,
 }
 
 impl SettingsPatch {
@@ -121,7 +135,7 @@ impl Bound {
 
 const SETTINGS_COLUMNS: &str = "load_cpu_percent, load_memory_percent, load_disk_percent, \
     monitoring_mode, base_interval_secs, min_interval_secs, wake_hourly_cap, wake_daily_cap, \
-    wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery";
+    wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery, mcp_server_enabled";
 
 impl SqliteStore {
     /// The settings row. A new store holds the defaults: load limits 80, 85 and 90, mode on,
@@ -234,6 +248,9 @@ impl SqliteStore {
             }
             if let Some(value) = patch.chat_pr_delivery {
                 named.push(("chat_pr_delivery", Bound::Integer(i64::from(value))));
+            }
+            if let Some(value) = patch.mcp.enabled {
+                named.push(("mcp_server_enabled", Bound::Integer(i64::from(value))));
             }
 
             // Set only the columns the patch names. A write must never touch a column it was
@@ -412,6 +429,9 @@ async fn read_settings(
         wake_limits,
         mode,
         chat_pr_delivery: row.try_get::<i64, _>("chat_pr_delivery")? != 0,
+        mcp: McpSettings {
+            enabled: row.try_get::<i64, _>("mcp_server_enabled")? != 0,
+        },
     })
 }
 

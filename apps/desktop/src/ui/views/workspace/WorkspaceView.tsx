@@ -26,6 +26,7 @@ import { ModelPicker } from "./ModelPicker";
 import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTurnIds, unseenFor } from "./monitoringModel";
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { ReturnBrief } from "./ReturnBrief";
+import { RoutedInStrip } from "./RoutedInStrip";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
@@ -718,6 +719,12 @@ function Conversation({
           </span>
         </div>
       )}
+
+      <RoutedInStrip
+        key={option.key}
+        snapshot={transcript.status === "ok" ? transcript.data : null}
+        workstream={target.kind === "workstream"}
+      />
 
       <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
         <textarea

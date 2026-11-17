@@ -381,6 +381,28 @@ fn every_user_only_method_is_refused_to_a_token_only_session() {
     stop(dir.path(), daemon);
 }
 
+/// The read-only MCP setting (DPES-1105 phase 6b) has no method of its own: it rides on
+/// `settings.set`, so a token-only session must be refused with the `mcp` group in the patch.
+#[test]
+fn mcp_setting_is_refused_to_a_token_only_session() {
+    assert!(USER_ONLY_METHODS.contains(&"settings.set"));
+    let dir = TempDir::new().unwrap();
+    let recorder = Arc::new(Recorder::default());
+    let approver = new_secret();
+    let daemon = serve(dir.path(), &recorder, Some(&approver));
+    let mut client = connect_for(dir.path(), "settings.set", None);
+    assert!(!client.is_approver());
+    assert!(matches!(
+        client.call(
+            "settings.set",
+            json!({"idempotency_key": "mcp-token", "mcp": {"enabled": true}})
+        ),
+        Err(IpcError::Forbidden)
+    ));
+    assert!(recorder.calls().is_empty());
+    stop(dir.path(), daemon);
+}
+
 #[test]
 fn every_user_only_method_reaches_the_handler_for_an_approver_session() {
     let dir = TempDir::new().unwrap();

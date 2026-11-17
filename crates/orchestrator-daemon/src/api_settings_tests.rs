@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use orchestrator_core::load_gate::LoadLimits;
+use orchestrator_store::{McpPatch, SettingsPatch};
 
 use super::load::tests::{at, close_gate, cpu};
 use super::*;
@@ -283,4 +284,71 @@ fn settings_get_reports_the_feed_and_the_environment_switch_turns_it_off() {
 fn settings_are_advertised_as_a_capability() {
     let (_directory, api) = new_api();
     assert!(api.capabilities().contains(&Capability::Settings));
+}
+
+fn set_mcp(api: &DaemonApi, key: &str, mcp: Value) -> Result<Value, RpcError> {
+    api.dispatch("settings.set", json!({"idempotency_key": key, "mcp": mcp}))
+}
+
+#[test]
+fn mcp_setting_is_always_present_and_off_by_default() {
+    let (_directory, api) = new_api();
+    assert_eq!(get(&api)["mcp"], json!({"enabled": false}));
+    assert!(!api.store.orchestrator_settings().unwrap().mcp.enabled);
+}
+
+#[test]
+fn mcp_setting_turns_on_and_off_and_leaves_the_other_groups_alone() {
+    let (_directory, api) = new_api();
+    let before = get(&api);
+
+    let on = set_mcp(&api, "mcp-1", json!({"enabled": true})).unwrap();
+    assert_eq!(on["mcp"], json!({"enabled": true}));
+    assert!(api.store.orchestrator_settings().unwrap().mcp.enabled);
+    for group in ["load", "supervision", "wake_limits", "chat_pr_delivery"] {
+        assert_eq!(on[group], before[group], "{group} changed");
+    }
+
+    // A change to another group keeps the setting.
+    set(&api, "mcp-2", json!({"cpu_percent": 60})).unwrap();
+    assert_eq!(get(&api)["mcp"], json!({"enabled": true}));
+
+    let off = set_mcp(&api, "mcp-3", json!({"enabled": false})).unwrap();
+    assert_eq!(off["mcp"], json!({"enabled": false}));
+}
+
+#[test]
+fn mcp_setting_refuses_an_empty_group_a_non_boolean_and_unknown_fields() {
+    let (_directory, api) = new_api();
+    for (key, mcp) in [
+        ("mcp-e", json!({})),
+        ("mcp-n", json!({"enabled": null})),
+        ("mcp-s", json!({"enabled": "true"})),
+        ("mcp-i", json!({"enabled": 1})),
+        ("mcp-u", json!({"enabled": true, "tools": ["tasks.get"]})),
+    ] {
+        assert_eq!(
+            set_mcp(&api, key, mcp.clone()),
+            Err(RpcError::InvalidParams),
+            "{mcp}"
+        );
+    }
+    assert_eq!(get(&api)["mcp"], json!({"enabled": false}));
+}
+
+#[test]
+fn mcp_setting_replays_the_same_key_without_a_second_write() {
+    let (_directory, api) = new_api();
+    let first = set_mcp(&api, "mcp-r", json!({"enabled": true})).unwrap();
+    api.store
+        .update_orchestrator_settings(&SettingsPatch {
+            mcp: McpPatch {
+                enabled: Some(false),
+            },
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    let replay = set_mcp(&api, "mcp-r", json!({"enabled": true})).unwrap();
+    assert_eq!(replay, first);
+    assert!(!api.store.orchestrator_settings().unwrap().mcp.enabled);
 }

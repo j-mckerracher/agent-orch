@@ -11,6 +11,11 @@
 mod api;
 mod executor;
 mod idempotency;
+// Nothing starts a turn server until the turn wiring lands, so it is dead code until then.
+#[allow(dead_code)]
+mod mcp_relay;
+#[allow(dead_code)]
+mod mcp_server;
 
 use api::DaemonApi;
 use executor::ExecutorConfig;
@@ -27,6 +32,14 @@ const USAGE: &str = "usage: orchestrator-daemon [--data-dir PATH] [--approver-st
 const APPROVER_REJECTED: &str = "approver secret on stdin is missing or malformed";
 
 fn main() {
+    // The MCP relay runs before diagnostics, the data lock, the approver stdin and the IPC
+    // server: it never reads or locks the data directory and never starts a daemon.
+    if std::env::args_os()
+        .skip(1)
+        .any(|arg| arg == mcp_relay::RELAY_FLAG)
+    {
+        std::process::exit(mcp_relay::run(std::env::args_os().skip(1)));
+    }
     let diagnostics = Diagnostics::stderr();
     install_panic_hook(diagnostics.clone(), "daemon");
     diagnostics.info(

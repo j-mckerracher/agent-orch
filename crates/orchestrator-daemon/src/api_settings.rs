@@ -22,6 +22,11 @@
 //! - Phase 4b (DPES-1105) adds `chat_pr_delivery`, a boolean in both answers and an optional
 //!   field of `settings.set` (off by default). `settings.set` stays user-only. A `report_relay_auto`
 //!   setting does not exist.
+//! - Phase 6b (DPES-1105) adds `mcp: {enabled}`, always present in both answers (off by
+//!   default) and an optional group of `settings.set`: the read-only task tools for the
+//!   orchestrator chat. `enabled` is a JSON boolean; an `mcp` group with no field is
+//!   `InvalidParams`. No new method: `settings.set` stays user-only, so a token-only session
+//!   cannot turn it on.
 
 use std::time::Instant;
 
@@ -29,7 +34,7 @@ use orchestrator_core::load_gate::{
     LoadLimits, LoadMeter, LoadStatus, Reading, Unknown, MIN_LIMIT, OFF,
 };
 use orchestrator_store::{
-    LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, WakeLimitsPatch,
+    LoadPatch, McpPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, WakeLimitsPatch,
 };
 use serde::Deserializer;
 
@@ -61,6 +66,33 @@ struct SetParams {
     /// default. A loosening, so only this user-only method sets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chat_pr_delivery: Option<bool>,
+    /// The read-only MCP tools for the orchestrator chat (phase 6b). Off by default; a
+    /// loosening, so only the user-only method sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mcp: Option<McpParams>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct McpParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+}
+
+impl McpParams {
+    /// At least one field.
+    fn validate(&self) -> Result<(), RpcError> {
+        if self.enabled.is_none() {
+            return Err(RpcError::InvalidParams);
+        }
+        Ok(())
+    }
+
+    fn patch(&self) -> McpPatch {
+        McpPatch {
+            enabled: self.enabled,
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -221,6 +253,7 @@ impl DaemonApi {
             && request.supervision.is_none()
             && request.wake_limits.is_none()
             && request.chat_pr_delivery.is_none()
+            && request.mcp.is_none()
         {
             return Err(RpcError::InvalidParams);
         }
@@ -232,6 +265,9 @@ impl DaemonApi {
         }
         if let Some(wake_limits) = &request.wake_limits {
             wake_limits.validate()?;
+        }
+        if let Some(mcp) = &request.mcp {
+            mcp.validate()?;
         }
         let key = request.idempotency_key.clone();
         idempotency::run(
@@ -260,6 +296,11 @@ impl DaemonApi {
                     // `settings.set` never sets the mode.
                     mode: None,
                     chat_pr_delivery: request.chat_pr_delivery,
+                    mcp: request
+                        .mcp
+                        .as_ref()
+                        .map(McpParams::patch)
+                        .unwrap_or_default(),
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
@@ -277,6 +318,9 @@ impl DaemonApi {
                 );
                 if let Some(value) = request.chat_pr_delivery {
                     fields.push(("chat_pr_delivery", value.to_string()));
+                }
+                if let Some(value) = request.mcp.as_ref().and_then(|mcp| mcp.enabled) {
+                    fields.push(("mcp_enabled", value.to_string()));
                 }
                 let saved = self.store.update_orchestrator_settings(&patch);
                 self.finish(saved, request.load.is_some(), &fields)
@@ -344,6 +388,7 @@ impl DaemonApi {
                 "daily_token_budget": settings.wake_limits.daily_tokens,
             },
             "chat_pr_delivery": settings.chat_pr_delivery,
+            "mcp": { "enabled": settings.mcp.enabled },
         }))
     }
 }

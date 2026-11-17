@@ -96,8 +96,8 @@ pub use sqlite_reports::{
 };
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_settings::{
-    AwayWindows, LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch,
-    SupervisionSettings, WakeLimitsPatch,
+    AwayWindows, LoadPatch, McpPatch, McpSettings, OrchestratorSettings, SettingsPatch,
+    SupervisionPatch, SupervisionSettings, WakeLimitsPatch,
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
 pub use sqlite_wake::{

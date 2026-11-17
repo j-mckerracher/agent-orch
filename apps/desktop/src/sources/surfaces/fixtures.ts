@@ -590,6 +590,7 @@ function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
     supervision: { baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 },
     wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
     chatPrDelivery: false,
+    mcpEnabled: false,
   });
   const simulated = () =>
     Promise.resolve({

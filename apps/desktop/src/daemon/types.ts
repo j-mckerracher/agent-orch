@@ -756,6 +756,13 @@ export interface SettingsWire {
   wake_limits?: WakeLimitsWire;
   /** Whether chat may propose tasks that end in a pull request. Absent from an older daemon (DPES-1105). */
   chat_pr_delivery?: boolean;
+  /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
+  mcp?: McpWire;
+}
+
+/** `settings.get` mcp group: whether the read-only task tools are on. Off by default. */
+export interface McpWire {
+  enabled: boolean;
 }
 
 /** `settings.get` supervision group: the stall-check intervals in seconds and the attempt wall-time bound in minutes. */
@@ -778,6 +785,7 @@ export interface SettingsPatchWire {
   supervision?: Partial<SupervisionWire>;
   wake_limits?: Partial<WakeLimitsWire>;
   chat_pr_delivery?: boolean;
+  mcp?: McpWire;
 }
 
 /** Where a wake record or a monitoring count belongs; the same shape as a conversation target. */
@@ -962,6 +970,14 @@ export interface GrantRevokeResultWire {
   stopped: number;
 }
 
+/** A task the global conversation routed to this workstream (DPES-1105 6a). `title` is the daemon's short objective. */
+export interface ConversationRoutedInWire {
+  task_id: string;
+  title: string;
+  routed_at: string;
+  state: string;
+}
+
 /** `conversations.get` result: cursor paging, no push stream. */
 export interface ConversationWirePage {
   authority: "none";
@@ -981,6 +997,8 @@ export interface ConversationWirePage {
   /** The scope's newest wake records, oldest first. Absent from daemons without `monitoring`. */
   wake_records?: WakeRecordWire[];
   wake_records_more?: boolean;
+  /** Workstream target only: tasks the global conversation routed here, newest first. Absent or empty otherwise (DPES-1105). */
+  routed_in?: ConversationRoutedInWire[];
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */
