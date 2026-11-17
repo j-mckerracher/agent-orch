@@ -18,7 +18,7 @@ export const WINDOWS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): 3 call-context tests, so 59 becomes 62.
   // DPES-1105 action resolve (PR #116, CI run 43998558420, measured on Windows): the ipc lib has 64 tests.
   // DPES-1105 approver credential and task actions (CI run 44023050296, measured on Windows): the ipc lib has 83 tests.
-  ipc: { passed: 112, sequence: [112, 0] },
+  ipc: { passed: 117, sequence: [117, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
@@ -49,20 +49,20 @@ export const WINDOWS = {
   // conversation_runtime 44, with 239 passed plus 1 ignored.
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on Windows): the unit binary is 212 and
   // conversation_runtime 61, with 281 passed plus 1 ignored.
-  daemon: { passed: 519, ignored: 1, sequence: [427, 79, 2, 5, 0, 1, 2, 4] },
+  daemon: { passed: 601, ignored: 1, sequence: [507, 81, 2, 5, 0, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
   // CI run 43998558420: the Windows ipc lib has 64 tests, so 50 are filtered out.
   // CI run 44023050296: the Windows ipc lib has 83 tests, so 69 are filtered out.
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 98 },
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 103 },
   // DPES-1105 approver credential (CI run 44023050296, measured on Windows): four host tests (launch and the real-daemon bridge), 18 passed.
   tauri: { passed: 20, sequence: [20, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
   // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
   // git-lib: 58 = 56 portable tests + 2 cfg(windows) tests (macOS: 56 + 2 cfg(unix) = 58).
-  gitLib: { passed: 63, sequence: [63] },
+  gitLib: { passed: 97, sequence: [97] },
   cliCleanupSafety: { passed: 3, sequence: [3] },
   // 4 portable tests + 7 in the cfg(windows) module (the DACL tests; the inherited-ACE regression for
   // `.orchestrator.lock` is one of them).
@@ -89,7 +89,7 @@ export const WINDOWS = {
   // DPES-1105 action resolve (PR #116, CI run 43998558420, measured on Windows): action_proposals.rs is 14 tests, so 195 passed.
   // DPES-1105 task actions and settings (CI run 44023050296, measured on Windows): action_proposals.rs is 23 tests and a new
   // orchestrator_settings.rs binary adds 12, so 216 passed.
-  store: { passed: 326, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 6, 14, 3, 2, 5, 12, 6, 3, 11, 4, 12, 7, 2, 1, 1, 13, 0] },
+  store: { passed: 349, ignored: 1, sequence: [99, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 7, 14, 3, 2, 5, 12, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 98 },
@@ -106,7 +106,7 @@ export const MACOS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): 3 call-context tests, so 58 becomes 61.
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): the ipc lib has 63 tests.
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): the ipc lib has 82 tests.
-  ipc: { passed: 111, sequence: [111, 0] },
+  ipc: { passed: 116, sequence: [116, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
@@ -132,7 +132,7 @@ export const MACOS = {
   // conversation_runtime 49, with 325 passed plus 1 ignored.
   // DPES-1105 approver credential, task actions and load gate core (CI run 44023050296, measured on macOS): the unit binary is 282 and
   // conversation_runtime 66, daemon.rs 13, with 369 passed plus 1 ignored.
-  daemon: { passed: 614, ignored: 1, sequence: [504, 84, 2, 5, 13, 1, 2, 4] },
+  daemon: { passed: 696, ignored: 1, sequence: [584, 86, 2, 5, 13, 1, 2, 4] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -160,10 +160,10 @@ export const MACOS = {
   // DPES-1105 action proposals (macOS workspace-tests gate, PR #113, CI run 43981399384): 1203 becomes 1258.
   // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 1258 becomes 1289.
   // CI run 44023050296: 1289 becomes 1432.
-  workspace: { passed: 1895, ignored: 2 },
+  workspace: { passed: 2074, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
-  gitLib: { passed: 63, sequence: [63] },
+  gitLib: { passed: 99, sequence: [99] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
@@ -177,7 +177,7 @@ export const MACOS = {
   // conversation_history 10 becomes 13, so 182 becomes 192 passed.
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): action_proposals.rs is 14 tests, so 199 passed.
   // DPES-1105 task actions and settings (CI run 44023050296, measured on macOS): 220 passed.
-  store: { passed: 330, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 6, 14, 4, 2, 5, 12, 6, 3, 11, 5, 12, 7, 2, 1, 1, 13, 0] },
+  store: { passed: 353, ignored: 1, sequence: [101, 7, 31, 9, 2, 7, 9, 13, 1, 13, 11, 9, 11, 3, 7, 14, 4, 2, 5, 12, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 100 },
@@ -224,7 +224,7 @@ export const NODE_SELF_TESTS = { passed: 137 };
 // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 3 new files and 57 tests, 84 files 1773 tests.
 // DPES-1105 task cards, the proposed actions queue and the approver notice (CI run 44023050296): 86 files, 1856 tests.
 // DPES-1105 phases 2 to 6 (CI run 44084375506): 116 files, 2134 tests.
-export const VITEST = { files: 116, tests: 2134 };
+export const VITEST = { files: 120, tests: 2199 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

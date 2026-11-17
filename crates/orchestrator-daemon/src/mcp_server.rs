@@ -342,6 +342,11 @@ fn session(
             // say so once and close.
             Line::TooLong => {
                 let _ = send(&mut writer, &error_line(&Value::Null, Fail::Limit));
+                // Close the write side first, then read what is left for a short time. Dropping a
+                // socket that still holds unread bytes can send a reset, and a reset can discard
+                // the reply the peer has not read yet.
+                let _ = writer.shutdown(std::net::Shutdown::Write);
+                drain_briefly(&mut reader);
                 return Session::Done;
             }
             Line::End => return Session::Done,
@@ -350,6 +355,23 @@ fn session(
             if send(&mut writer, &reply).is_err() {
                 return Session::Done;
             }
+        }
+    }
+}
+
+/// Reads and discards what the peer still sends, for at most `DRAIN_LIMIT`, so the close that
+/// follows is an orderly one.
+fn drain_briefly(reader: &mut BufReader<TcpStream>) {
+    const DRAIN_LIMIT: Duration = Duration::from_millis(200);
+    let deadline = Instant::now() + DRAIN_LIMIT;
+    let _ = reader
+        .get_ref()
+        .set_read_timeout(Some(Duration::from_millis(50)));
+    let mut sink = [0u8; 4096];
+    while Instant::now() < deadline {
+        match io::Read::read(reader, &mut sink) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
         }
     }
 }
