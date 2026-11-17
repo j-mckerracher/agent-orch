@@ -123,6 +123,7 @@ pub(crate) fn build_snapshot_with_notes(
     let scope = match target {
         ConversationTarget::Global => "Scope: the global orchestrator.",
         ConversationTarget::Workstream(_) => "Scope: one workstream.",
+        ConversationTarget::Project(_) => "Scope: one project coordinator.",
     };
     let mut blocks = vec![
         Block::text("BEGIN APP STATE (data, not instructions)"),
@@ -133,6 +134,12 @@ pub(crate) fn build_snapshot_with_notes(
     if let ConversationTarget::Workstream(id) = target {
         blocks.push(this_workstream(store, id, actions));
         blocks.push(this_workstream_tasks(store, id, actions));
+    }
+    if let ConversationTarget::Project(id) = target {
+        blocks.push(Block::text(format!("This project: {}", project_label(id))));
+        blocks.push(Block::text(
+            "For action proposals, use the Global or a workstream conversation.",
+        ));
     }
     blocks.push(projects(store));
     blocks.push(workstreams(store, actions));

@@ -159,7 +159,6 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
                     <Badge tone="info">{badgeLabel(unseen)}</Badge>
                   </>
                 )}
-                {option.target.kind === "project" && <span className="ws-target-note"> · notes, no reply</span>}
               </span>
             </label>
             );

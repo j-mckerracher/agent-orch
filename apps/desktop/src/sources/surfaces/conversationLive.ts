@@ -1,5 +1,5 @@
 /**
- * Live D10 conversation for Global and workstream targets (M7-24), bound to
+ * Live D10 conversation for Global, project and workstream targets, bound to
  * `conversations.send`, `conversations.get`, `conversations.cancel` and `actions.resolve` (DPES-1105).
  *
  * What this shows, and what it does not:
@@ -78,9 +78,8 @@ function dropPartialLeadingTurn(entries: ConversationWireEntry[]): ConversationW
   return first > 0 ? entries.slice(first) : entries;
 }
 
-export type LiveTarget = Exclude<ConversationTarget, { kind: "project" }>;
-
-export const isLiveTarget = (target: ConversationTarget): target is LiveTarget => target.kind !== "project";
+export const PROJECT_CONVERSATIONS_REQUIRED =
+  "Update the daemon to enable project coordinator replies. Your message has not been sent.";
 
 export const LIVE_METHODS = [
   "conversations.get",
@@ -135,7 +134,8 @@ export function failureText(code: string | null, runtime?: RefusedRuntime): stri
   return FAILURE_TEXT[code] ?? `The turn failed (${code}). No reply was produced.`;
 }
 
-export function toWireTarget(target: LiveTarget): ConversationWireTarget {
+export function toWireTarget(target: ConversationTarget): ConversationWireTarget {
+  if (target.kind === "project") return { kind: "project", project_id: target.projectId };
   return target.kind === "global" ? { kind: "global" } : { kind: "workstream", workstream_id: target.workstreamId };
 }
 
@@ -281,13 +281,17 @@ export const sendNotice = (turn: ConversationTurnInfo): string =>
       ? "Recorded by the daemon. Waiting for the orchestrator's reply."
       : "Recorded by the daemon.";
 
-const describeNotFound = (target: LiveTarget) => (error: unknown) =>
-  target.kind === "workstream" && asDaemonError(error).kind === "not-found"
-    ? "The daemon's workstream lookup did not find this workstream (not-found)."
+const describeNotFound = (target: ConversationTarget) => (error: unknown) =>
+  target.kind !== "global" && asDaemonError(error).kind === "not-found"
+    ? `The daemon's ${target.kind} lookup did not find this ${target.kind} (not-found).`
     : undefined;
 
-function refuseFixture(target: LiveTarget): void {
-  if (target.kind === "workstream" && isFixtureLikeId(target.workstreamId)) {
+function fixtureTarget(target: ConversationTarget): boolean {
+  return target.kind !== "global" && isFixtureLikeId(target.kind === "project" ? target.projectId : target.workstreamId);
+}
+
+function refuseFixture(target: ConversationTarget): void {
+  if (fixtureTarget(target)) {
     throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
   }
 }
@@ -298,19 +302,25 @@ export function createLiveConversation(
   keys: IdempotencyTracker,
   now: () => number,
 ): Required<Pick<ConversationSource, "cancel" | "clear" | "resolve">> & {
-  transcript: (target: LiveTarget) => ReturnType<ConversationSource["transcript"]>;
-  send: (target: LiveTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
+  transcript: ConversationSource["transcript"];
+  send: (target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
 } {
-  const scopeOf = (target: LiveTarget) => (target.kind === "global" ? "global" : `workstream:${target.workstreamId}`);
+  const scopeOf = (target: ConversationTarget) => JSON.stringify(toWireTarget(target));
+  const requireSupported = (target: ConversationTarget) => {
+    if (target.kind === "project" && !connection.getSnapshot().capabilities.includes("project_conversations")) {
+      throw new DaemonError("capability-unavailable", PROJECT_CONVERSATIONS_REQUIRED);
+    }
+  };
   // The unverified versions already warned about in this app session. Kept in memory only, never stored.
   const warned = new Set<string>();
 
   return {
     async transcript(target) {
-      if (target.kind === "workstream" && isFixtureLikeId(target.workstreamId)) {
+      if (fixtureTarget(target)) {
         return notOk(provenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
       const readOnce = async () => {
+          requireSupported(target);
           const api = connection.api();
           const wire = toWireTarget(target);
           let entries: ConversationWireEntry[] = [];
@@ -360,6 +370,7 @@ export function createLiveConversation(
             target,
             entries: mapEntries(entries, new Set(mapped.map((proposal) => proposal.turnId))),
             repliesExpected: true,
+            clearGeneration: generation ?? 0,
             truncated,
             turn: turn === null ? null : turnInfo(turn),
             proposals: mapped,
@@ -375,6 +386,7 @@ export function createLiveConversation(
 
     async send(target, text, selection, permission) {
       refuseFixture(target);
+      requireSupported(target);
       const scope = `send:${scopeOf(target)}`;
       // A retry with another choice is another message: it must not reuse the key of the first. A request
       // without a permission keeps the key it always had.
@@ -413,10 +425,8 @@ export function createLiveConversation(
     },
 
     async clear(target): Promise<ClearReceipt> {
-      if (!isLiveTarget(target)) {
-        throw new DaemonError("method-unavailable", "Only Global and workstream history is cleared through conversations.clear.");
-      }
       refuseFixture(target);
+      requireSupported(target);
       const scope = `clear:${scopeOf(target)}`;
       const key = keys.keyFor(scope, scopeOf(target));
       try {
@@ -439,8 +449,8 @@ export function createLiveConversation(
     resolve: createLiveResolve(connection, provenance, keys),
 
     async cancel(target, turnId) {
-      if (!isLiveTarget(target)) throw new DaemonError("method-unavailable", "Only Global and workstream turns can be canceled.");
       refuseFixture(target);
+      requireSupported(target);
       if (isFixtureLikeId(turnId)) throw new DaemonError("invalid-params", "Fixture turn ids are never sent to the daemon.");
       const scope = `cancel:${scopeOf(target)}:${turnId}`;
       const key = keys.keyFor(scope, turnId);

@@ -18,7 +18,7 @@ M7-25 (see "M7-25: the agent runtime" below).
 ## Data model
 
 - `conversations` is implicit per target: `conversation:global` or
-  `conversation:workstream:<id>`.
+  `conversation:workstream:<id>`, or `conversation:project:<project_id>`.
 - `conversation_turns`: one per user message. States `running`, `completed`,
   `failed`, `cancelled`. At most one `running` turn per conversation (partial
   unique index). Records the runtime name and version used.
@@ -94,8 +94,31 @@ Names are proposals so concurrent daemon work does not collide; no new
   target's conversation (otherwise `NotFound`). Finishes the turn `cancelled`,
   then asks the runtime to stop (best effort). `cancel_applied=false` when the
   turn had already ended.
-- `target` is `{"kind":"global"}` or `{"kind":"workstream","workstream_id":"…"}`.
+- `target` is `{"kind":"global"}`, `{"kind":"workstream","workstream_id":"…"}`,
+  or `{"kind":"project","project_id":"…"}`.
   Unknown fields are rejected.
+
+### Project coordinator replies
+
+The `project_conversations` capability advertises project targets on the shared
+runtime. The project must exist and its coordinator must be active. Replies,
+model selection, permission levels, cancellation, idempotency, and restart
+recovery use the same path as Global and workstreams. The snapshot identifies
+the project by its sanitized label, not its root path.
+
+Project turns retain the coordinator's no-action authority: action blocks are
+stripped and cannot create proposals. Monitoring remains Global/workstream-only.
+Legacy `coordinator.get` notes remain readable and are shown before runtime
+exchanges; they are not replayed as agent requests. Clearing or removing a
+coordinator deletes both histories in one transaction and refuses while a user
+turn runs. Restore starts empty. Older clients may still use the legacy note API;
+new clients never fall back to it for sending.
+
+Migration 0054 adds project conversation scopes without changing existing
+conversation IDs or entries. It follows 0053's opt-in transition: removed
+coordinators remain removed, and cleared notes are not restored. The store holds
+one connection with foreign keys disabled during
+migration, restores enforcement, and verifies all foreign keys before opening.
 
 Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 `permission_denied`, `version_mismatch` (a required flag is absent from a

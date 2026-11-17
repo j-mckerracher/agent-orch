@@ -11,17 +11,17 @@
 import type { ConnectionManager } from "../../daemon/connection";
 import { asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
-import type { BriefItemWire, BriefWire, ConversationWireTarget, MonitoringWire } from "../../daemon/types";
+import type { BriefItemWire, BriefWire, MonitoringTargetWire, MonitoringWire } from "../../daemon/types";
 import { liveRead } from "./liveSupport";
 import type { Brief, BriefItem, LiveConversationTarget, MonitoringSource, MonitoringState, Provenance } from "./types";
 
 export const MONITORING_METHODS = ["monitoring.get", "monitoring.set", "monitoring.ack", "monitoring.brief", "monitoring.brief_ack"] as const;
 
-function targetOf(wire: ConversationWireTarget): LiveConversationTarget {
+function targetOf(wire: MonitoringTargetWire): LiveConversationTarget {
   return wire.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.workstream_id };
 }
 
-export function toWireTarget(target: LiveConversationTarget): ConversationWireTarget {
+export function toWireTarget(target: LiveConversationTarget): MonitoringTargetWire {
   return target.kind === "global" ? { kind: "global" } : { kind: "workstream", workstream_id: target.workstreamId };
 }
 

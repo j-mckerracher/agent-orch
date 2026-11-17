@@ -64,12 +64,12 @@ const targets: ConversationTarget[] = [{ kind: "global" }, { kind: "workstream",
 describe("D10 mutation safety", () => {
   it.each(targets)("rejects failed sends for $kind without fixture fallback", async (target) => {
     const { surfaces, fake } = await setup();
-    const method = target.kind === "project" ? "coordinator.send_message" : "conversations.send";
+    const method = "conversations.send";
     fake.failNext(method, { code: -32603, message: "send failed" });
     await expect(surfaces.conversation.send(target, "hello")).rejects.toBeInstanceOf(DaemonError);
     expect(fake.callsTo(method)).toHaveLength(1);
   });
-  it.each(targets.slice(0, 2))("rejects failed cancels for $kind without fixture fallback", async (target) => {
+  it.each(targets)("rejects failed cancels for $kind without fixture fallback", async (target) => {
     const { surfaces, fake } = await setup();
     fake.failNext("conversations.cancel", { code: -32603, message: "cancel failed" });
     await expect(surfaces.conversation.cancel!(target, "turn-1")).rejects.toBeInstanceOf(DaemonError);

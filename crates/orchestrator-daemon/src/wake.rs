@@ -68,6 +68,7 @@ pub(crate) fn scope_of(target: &ConversationTarget) -> String {
     match target {
         ConversationTarget::Global => GLOBAL_SCOPE.to_owned(),
         ConversationTarget::Workstream(id) => format!("{WORKSTREAM_PREFIX}{id}"),
+        ConversationTarget::Project(id) => format!("conversation:project:{id}"),
     }
 }
 

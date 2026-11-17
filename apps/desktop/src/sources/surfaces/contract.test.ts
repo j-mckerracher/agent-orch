@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
+import { stubConversation } from "../../test/m724Stubs";
 import { createFixtureSurfaces } from "./fixtures";
 import { notOk, observation } from "./result";
 import { ALPHA, READ_METHODS, clock, connect, populate } from "./testkit";
@@ -71,6 +72,7 @@ const derivedHarness: Harness = {
   async build(scenario) {
     const fake = new FakeDaemon();
     if (scenario === "ok") populate(fake);
+    if (scenario === "ok" || scenario === "empty") stubConversation(fake);
     if (scenario === "ok" || scenario === "empty") fake.stub("usage.summary", usageWire(scenario === "ok"));
     if (scenario === "empty") {
       fake.stub("agents.capabilities", []);

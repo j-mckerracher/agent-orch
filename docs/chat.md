@@ -6,6 +6,8 @@ The Orchestrator Workspace is where you talk to an agent. Each message can use a
 
 The target picker lists Global, project coordinators, and workstreams. Click anywhere on a target's row to load its conversation and restore its unsent draft. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository.
 
+Project coordinators answer through the same agent runtime as Global and workstreams, using your chosen model and permission level. Earlier coordinator notes remain visible above new exchanges. Project conversations do not propose actions; use Global or a workstream to request actionable plans. If the daemon predates project conversations, update it before sending; the app keeps your draft instead of saving an unanswered note.
+
 ## Choose an agent and model
 
 Codex, Claude Code, and GitHub Copilot can answer chat. The model picker lists the models and efforts the daemon's catalog reports. Your choice is sent with each message and remembered in the app until you change it. If you name no agent, the daemon uses Codex, then Claude Code.

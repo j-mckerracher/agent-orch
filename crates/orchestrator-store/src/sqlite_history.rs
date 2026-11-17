@@ -10,7 +10,7 @@
 
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
-use crate::{SqliteStore, StoreError};
+use crate::{ConversationError, ConversationTarget, SqliteStore, StoreError};
 
 /// Fingerprint kept for a send whose message was cleared. The message is gone, and
 /// a hash of a short message could be checked against a guess, so the hash goes too.
@@ -69,92 +69,28 @@ impl SqliteStore {
     /// Clear one project coordinator's log. The project and its tasks are untouched.
     ///
     /// Fails with `RecordNotFound` for an unknown project or a removed coordinator.
-    pub fn clear_coordinator_history(&self, project_id: &str) -> Result<ClearOutcome, StoreError> {
-        let project_id = project_id.to_owned();
-        self.call(move |pool| async move {
-            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            require_project(&mut transaction, &project_id).await?;
-            if coordinator_removed(&mut transaction, &project_id).await? {
-                return Err(StoreError::RecordNotFound {
-                    entity: "coordinator",
-                    id: project_id,
-                });
-            }
-            let entries = count_coordinator_entries(&mut transaction, &project_id).await?;
-            if entries == 0 {
-                let clear_generation =
-                    coordinator_generation(&mut transaction, &project_id).await?;
-                transaction.commit().await?;
-                return Ok(ClearOutcome {
-                    cleared: false,
-                    entries_deleted: 0,
-                    turns_deleted: 0,
-                    clear_generation,
-                });
-            }
-            let deleted = wipe_coordinator(&mut transaction, &project_id).await?;
-            let clear_generation = bump_coordinator(&mut transaction, &project_id, false).await?;
-            record_audit(
-                &mut transaction,
-                "clear",
-                &coordinator_scope_id(&project_id),
-                deleted,
-                0,
-            )
-            .await?;
-            transaction.commit().await?;
-            Ok(ClearOutcome {
-                cleared: true,
-                entries_deleted: deleted,
-                turns_deleted: 0,
-                clear_generation,
-            })
-        })
-        .and_then(|outcome| {
-            self.checkpoint_wal()?;
-            Ok(outcome)
-        })
+    pub fn clear_coordinator_history(
+        &self,
+        project_id: &str,
+    ) -> Result<ClearOutcome, ConversationError> {
+        self.clear_conversation_history(&ConversationTarget::Project(project_id.to_owned()))
     }
 
     /// Remove a project's coordinator: delete its log permanently and mark it removed.
     /// Idempotent: a coordinator that is already removed is left as it is.
-    pub fn remove_coordinator(&self, project_id: &str) -> Result<CoordinatorChange, StoreError> {
-        let project_id = project_id.to_owned();
-        self.call(move |pool| async move {
-            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            require_project(&mut transaction, &project_id).await?;
-            if coordinator_removed(&mut transaction, &project_id).await? {
-                let clear_generation =
-                    coordinator_generation(&mut transaction, &project_id).await?;
-                transaction.commit().await?;
-                return Ok(CoordinatorChange {
-                    changed: false,
-                    removed: true,
-                    entries_deleted: 0,
-                    clear_generation,
-                });
-            }
-            let deleted = wipe_coordinator(&mut transaction, &project_id).await?;
-            let clear_generation = bump_coordinator(&mut transaction, &project_id, true).await?;
-            record_audit(
-                &mut transaction,
-                "remove",
-                &coordinator_scope_id(&project_id),
-                deleted,
-                0,
-            )
-            .await?;
-            transaction.commit().await?;
-            Ok(CoordinatorChange {
-                changed: true,
-                removed: true,
-                entries_deleted: deleted,
-                clear_generation,
-            })
-        })
-        .and_then(|outcome| {
-            self.checkpoint_wal()?;
-            Ok(outcome)
+    pub fn remove_coordinator(
+        &self,
+        project_id: &str,
+    ) -> Result<CoordinatorChange, ConversationError> {
+        let outcome = self.clear_conversation_history_as(
+            &ConversationTarget::Project(project_id.to_owned()),
+            true,
+        )?;
+        Ok(CoordinatorChange {
+            changed: outcome.cleared,
+            removed: true,
+            entries_deleted: outcome.entries_deleted,
+            clear_generation: outcome.clear_generation,
         })
     }
 
@@ -361,7 +297,7 @@ pub(crate) async fn tombstone_coordinator_messages(
     Ok(())
 }
 
-async fn require_project(
+pub(crate) async fn require_project(
     connection: &mut SqliteConnection,
     project_id: &str,
 ) -> Result<(), StoreError> {
@@ -375,7 +311,7 @@ async fn require_project(
     })
 }
 
-async fn coordinator_removed(
+pub(crate) async fn coordinator_removed(
     connection: &mut SqliteConnection,
     project_id: &str,
 ) -> Result<bool, StoreError> {
@@ -387,7 +323,7 @@ async fn coordinator_removed(
     Ok(removed != Some(0))
 }
 
-async fn coordinator_generation(
+pub(crate) async fn coordinator_generation(
     connection: &mut SqliteConnection,
     project_id: &str,
 ) -> Result<i64, StoreError> {
@@ -399,7 +335,7 @@ async fn coordinator_generation(
     Ok(generation.unwrap_or(0))
 }
 
-async fn count_coordinator_entries(
+pub(crate) async fn count_coordinator_entries(
     connection: &mut SqliteConnection,
     project_id: &str,
 ) -> Result<u64, StoreError> {
@@ -412,7 +348,7 @@ async fn count_coordinator_entries(
 }
 
 /// Deletes a coordinator's messages and proposals with the gate open. Returns the count.
-async fn wipe_coordinator(
+pub(crate) async fn wipe_coordinator(
     connection: &mut SqliteConnection,
     project_id: &str,
 ) -> Result<u64, StoreError> {
@@ -428,7 +364,7 @@ async fn wipe_coordinator(
 }
 
 /// Advances the coordinator's generation, creating its row if needed, and sets `removed`.
-async fn bump_coordinator(
+pub(crate) async fn bump_coordinator(
     connection: &mut SqliteConnection,
     project_id: &str,
     removed: bool,

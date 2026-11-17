@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
+import { PROJECT_CONVERSATIONS_REQUIRED } from "../../../sources/surfaces/conversationLive";
 import type { ProjectRow } from "../../../daemon/types";
 import type {
   ActionBlock,
@@ -60,8 +61,8 @@ export function WorkspaceView() {
   const gate = useGate();
   const monitoring = useMonitoring();
   const live = surfaces.conversation.provenance.kind === "daemon";
-  // Live targets are the daemon's workstreams plus the projects with a coordinator (project coordinators take
-  // notes only; registering a project adds none); fixtures derive project targets from the placeholder workstreams.
+  // Live targets are workstreams and projects with an explicitly added coordinator;
+  // fixtures derive project targets from the placeholder workstreams.
   // A workstream created on the Workstreams view becomes a target here as soon as it lands (DPES-1105).
   const workstreamsVersion = useWorkstreamsVersion();
   const workstreams = useSurface(
@@ -285,7 +286,7 @@ function fallbackOption(key: string, live: boolean): TargetOption {
 /**
  * The target to show. A stored choice wins while the list is still loading or once it is
  * confirmed; otherwise the default is Global in fixture mode and the first project live,
- * because the daemon has no Global orchestrator. `null` means "wait for the list".
+ * to open the registered project's coordinator. `null` means "wait for the list".
  */
 function resolveKey(
   stored: string | null,
@@ -457,24 +458,20 @@ function Conversation({
   const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
   // Action proposals run at Restricted and Auto: at Full the daemon gives the agent no block format (DPES-1105).
   const actionsLevelNote = live && target.kind !== "project" && actionsShown && shownLevel === "full";
-  // A coordinator note runs no agent, so it carries no level (the daemon refuses one there).
-  const permissionOnWire = live && target.kind !== "project" ? permissionForSend(permission, !olderDaemon) : undefined;
-  // A coordinator note runs no agent either, so it carries no choice (the daemon refuses one there). The picker keeps the
-  // choice, so a note never clears or changes it (DPES-1105).
-  const choiceOnWire = target.kind === "project" ? undefined : (choice ?? undefined);
+  const permissionOnWire = live ? permissionForSend(permission, !olderDaemon) : undefined;
+  const choiceOnWire = choice ?? undefined;
   const choosePermission = (next: PermissionLevel) => {
     saveLevel(next);
     setPermission(next);
   };
-  // The level is chosen in the model picker, so a coordinator note, which runs no agent, has no level to choose.
-  const permissionControl =
-    target.kind === "project" ? undefined : { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission };
+  const permissionControl = { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission };
 
   let blocked: string | null = null;
   if (live) {
     const id = targetId(target);
     if (id !== null && isFixtureId(id)) blocked = "This is a placeholder target; it has nothing to send to.";
     else if (!gate.can("coordinator")) blocked = "Sending needs a live daemon connection that supports conversations.";
+    else if (target.kind === "project" && !gate.can("project_conversations")) blocked = PROJECT_CONVERSATIONS_REQUIRED;
     else if (choiceOnWire !== undefined && !gate.can("conversation_selection"))
       blocked =
         'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
@@ -636,7 +633,6 @@ function Conversation({
       <header className="ws-head">
         <h2 id={headingId}>Talking to: {option.label}</h2>
         {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
-        {target.kind === "project" && <Badge tone="neutral">Notes, no reply</Badge>}
         <p className="ws-scope">{option.scope}</p>
         {target.kind !== "project" && (
           <MonitoringChip
