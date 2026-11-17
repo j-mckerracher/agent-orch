@@ -132,6 +132,8 @@ const NO_ID_METHODS = new Set<string>([
   "settingsSetGroups",
   "monitoringGet",
   "monitoringSet",
+  "briefGet",
+  "briefAck",
   "holdsList",
   "grantsList",
 ]);

@@ -715,7 +715,7 @@ export interface SettingsSource {
 
 // Monitoring (DPES-1105 Phase 3). Derived: monitoring.get / monitoring.set / monitoring.ack (capability `monitoring`).
 /** The modes the user can choose. The daemon's own word stays a string in `MonitoringState`. */
-export type MonitoringMode = "on" | "quiet" | "off";
+export type MonitoringMode = "on" | "quiet" | "off" | "away";
 export interface WakeRecord {
   id: string;
   event: string;
@@ -764,6 +764,62 @@ export interface MonitoringSource {
   set(mode: MonitoringMode): Promise<MonitoringReceipt>;
   /** Derived: `monitoring.ack`. Fixture: nothing. */
   ack(target: LiveConversationTarget): Promise<void>;
+  /** Derived: `monitoring.brief` (capability `standing_approvals`). Null data: no brief is due. Fixture: one brief. */
+  brief(): Promise<SurfaceResult<Brief | null>>;
+  /** Derived: `monitoring.brief_ack`, which only marks the brief seen. Fixture: nothing is saved and `simulated` is true. */
+  briefAck(): Promise<{ simulated: boolean }>;
+}
+
+// Return brief (DPES-1105 Phase 5b). Counts, ids, short titles and state words only; never text an agent wrote.
+export interface BriefCounts {
+  tasksSucceeded: number;
+  tasksFailed: number;
+  tasksStalled: number;
+  tasksRunning: number;
+  proposalsApprovedByUser: number;
+  proposalsApprovedByGrant: number;
+  executedByGrant: number;
+  failedUnderGrant: number;
+  proposalsWaiting: number;
+  deliveriesWaiting: number;
+  decisionsHeld: number;
+  grantUses: number;
+  grantsExpired: number;
+  grantsRevoked: number;
+  quietUpdates: number;
+  repliesPausedByLimit: number;
+}
+
+export interface BriefGrant {
+  id: string;
+  scopeKind: string;
+  /** A project code or a cut workstream title. */
+  scopeLabel: string;
+  usesInWindow: number;
+  usesUsed: number;
+  maxUses: number;
+  status: string;
+}
+
+export interface BriefItem {
+  /** `proposal_waiting`, `delivery_waiting`, `task_failed`, `task_stalled` or `sign_in_needed`; an unknown word is kept. */
+  kind: string;
+  id: string;
+  title: string;
+  state: string;
+  project: string | null;
+  atMs: number;
+}
+
+export interface Brief {
+  fromMs: number;
+  toMs: number;
+  /** True while the user is still away: the window ends now. */
+  open: boolean;
+  counts: BriefCounts;
+  grants: BriefGrant[];
+  waiting: BriefItem[];
+  attention: BriefItem[];
 }
 
 // Holds (DPES-1105 Phase 4d). Derived: holds.list / holds.set / holds.release (capability `holds`).

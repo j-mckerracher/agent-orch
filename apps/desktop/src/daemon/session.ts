@@ -95,6 +95,8 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "monitoring.get": "monitoring",
   "monitoring.set": "monitoring",
   "monitoring.ack": "monitoring",
+  "monitoring.brief": "standing_approvals",
+  "monitoring.brief_ack": "standing_approvals",
   "holds.set": "holds",
   "holds.release": "holds",
   "holds.list": "holds",

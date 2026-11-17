@@ -48,11 +48,13 @@ describe("monitoring model", () => {
       "Monitoring: quiet",
       "Monitoring: off",
     ]);
-    expect(chipLabel(state("away"))).toBe("Monitoring: unknown");
+    expect(chipLabel(state("away"))).toBe("Monitoring: away");
+    expect(chipLabel(state("later"))).toBe("Monitoring: unknown");
     expect(MODE_OPTIONS.map((option) => option.text)).toEqual([
       "On: tell me about updates",
       "Quiet: keep updates, do not notify me",
       "Off: notices only, no automatic replies",
+      "Away: replies stay quiet, standing approvals keep working, and you get a summary when you return. It adds no permissions.",
     ]);
   });
 

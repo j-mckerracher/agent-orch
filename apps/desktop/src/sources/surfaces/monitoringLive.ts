@@ -11,11 +11,11 @@
 import type { ConnectionManager } from "../../daemon/connection";
 import { asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
-import type { ConversationWireTarget, MonitoringWire } from "../../daemon/types";
+import type { BriefItemWire, BriefWire, ConversationWireTarget, MonitoringWire } from "../../daemon/types";
 import { liveRead } from "./liveSupport";
-import type { LiveConversationTarget, MonitoringSource, MonitoringState, Provenance } from "./types";
+import type { Brief, BriefItem, LiveConversationTarget, MonitoringSource, MonitoringState, Provenance } from "./types";
 
-export const MONITORING_METHODS = ["monitoring.get", "monitoring.set", "monitoring.ack"] as const;
+export const MONITORING_METHODS = ["monitoring.get", "monitoring.set", "monitoring.ack", "monitoring.brief", "monitoring.brief_ack"] as const;
 
 function targetOf(wire: ConversationWireTarget): LiveConversationTarget {
   return wire.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.workstream_id };
@@ -30,6 +30,53 @@ export function mapMonitoring(wire: MonitoringWire): MonitoringState {
     mode: wire.mode,
     paused: wire.paused.map((item) => ({ target: targetOf(item.target), reason: item.reason, until: item.until })),
     unseen: wire.unseen.map((item) => ({ target: targetOf(item.target), count: item.count })),
+  };
+}
+
+const mapItem = (wire: BriefItemWire): BriefItem => ({
+  kind: wire.kind,
+  id: wire.id,
+  title: wire.title,
+  state: wire.state,
+  project: wire.project,
+  atMs: wire.at_ms,
+});
+
+export function mapBrief(wire: BriefWire): Brief {
+  const c = wire.counts;
+  return {
+    fromMs: wire.from_ms,
+    toMs: wire.to_ms,
+    open: wire.open,
+    counts: {
+      tasksSucceeded: c.tasks_succeeded,
+      tasksFailed: c.tasks_failed,
+      tasksStalled: c.tasks_stalled,
+      tasksRunning: c.tasks_running,
+      proposalsApprovedByUser: c.proposals_approved_by_user,
+      proposalsApprovedByGrant: c.proposals_approved_by_grant,
+      executedByGrant: c.executed_by_grant,
+      failedUnderGrant: c.failed_under_grant,
+      proposalsWaiting: c.proposals_waiting,
+      deliveriesWaiting: c.deliveries_waiting,
+      decisionsHeld: c.decisions_held,
+      grantUses: c.grant_uses,
+      grantsExpired: c.grants_expired,
+      grantsRevoked: c.grants_revoked,
+      quietUpdates: c.quiet_updates,
+      repliesPausedByLimit: c.replies_paused_by_limit,
+    },
+    grants: wire.grants.map((grant) => ({
+      id: grant.id,
+      scopeKind: grant.scope_kind,
+      scopeLabel: grant.scope_label,
+      usesInWindow: grant.uses_in_window,
+      usesUsed: grant.uses_used,
+      maxUses: grant.max_uses,
+      status: grant.status,
+    })),
+    waiting: wire.waiting.map(mapItem),
+    attention: wire.attention.map(mapItem),
   };
 }
 
@@ -60,6 +107,23 @@ export function createLiveMonitoring(
       try {
         await connection.api().monitoringAck(toWireTarget(target), key);
         keys.settle(scope, null);
+      } catch (error) {
+        keys.settle(scope, asDaemonError(error));
+        throw error;
+      }
+    },
+    brief: () =>
+      liveRead(provenance, now, async () => {
+        const { brief } = await connection.api().briefGet();
+        return brief === null ? null : mapBrief(brief);
+      }),
+    async briefAck() {
+      const scope = "monitoring:brief_ack";
+      const key = keys.keyFor(scope, "ack");
+      try {
+        await connection.api().briefAck(key);
+        keys.settle(scope, null);
+        return { simulated: false };
       } catch (error) {
         keys.settle(scope, asDaemonError(error));
         throw error;

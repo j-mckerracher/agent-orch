@@ -806,6 +806,73 @@ export interface MonitoringWire {
   paused: Array<{ target: MonitoringTargetWire; reason: string; until: string | null }>;
   unseen: Array<{ target: MonitoringTargetWire; count: number }>;
   epoch: string;
+  /** Phase 5b: set while the mode is `away`. Absent from a daemon without `standing_approvals`. */
+  away_since_ms?: number | null;
+  brief_pending?: boolean;
+}
+
+/** Totals for the return brief window (capability `standing_approvals`, DPES-1105 Phase 5b). */
+export interface BriefCountsWire {
+  tasks_succeeded: number;
+  tasks_failed: number;
+  tasks_stalled: number;
+  tasks_running: number;
+  proposals_approved_by_user: number;
+  proposals_approved_by_grant: number;
+  executed_by_grant: number;
+  failed_under_grant: number;
+  proposals_waiting: number;
+  deliveries_waiting: number;
+  decisions_held: number;
+  grant_uses: number;
+  grants_expired: number;
+  grants_revoked: number;
+  quiet_updates: number;
+  replies_paused_by_limit: number;
+}
+
+/** A standing approval used, expired or revoked in the window. `scope_label` is a project code or a cut title. */
+export interface BriefGrantWire {
+  id: string;
+  scope_kind: "project" | "workstream" | (string & {});
+  scope_label: string;
+  uses_in_window: number;
+  uses_used: number;
+  max_uses: number;
+  status: string;
+}
+
+/** One decision or problem in the brief. `kind` and `state` stay strings so a newer word survives. */
+export interface BriefItemWire {
+  kind: string;
+  id: string;
+  title: string;
+  state: string;
+  project: string | null;
+  at_ms: number;
+}
+
+export interface BriefWire {
+  from_ms: number;
+  to_ms: number;
+  /** True while the user is still away: the window ends now. */
+  open: boolean;
+  counts: BriefCountsWire;
+  grants: BriefGrantWire[];
+  waiting: BriefItemWire[];
+  attention: BriefItemWire[];
+}
+
+/** `monitoring.brief` result: the brief, or `null` when none is due. */
+export interface BriefResultWire {
+  authority: "none";
+  brief: BriefWire | null;
+}
+
+/** `monitoring.brief_ack` result. */
+export interface BriefAckWire {
+  authority: "none";
+  brief_pending: boolean;
 }
 
 /** `monitoring.ack` result. */

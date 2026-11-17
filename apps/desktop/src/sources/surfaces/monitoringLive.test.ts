@@ -65,4 +65,15 @@ describe("live monitoring source", () => {
     await surfaces.monitoring.ack({ kind: "workstream", workstreamId: "ws-1" });
     expect(fake.callsTo("monitoring.ack")[0]!.params).toMatchObject({ target: { kind: "workstream", workstream_id: "ws-1" } });
   });
+
+  it("brief_live_reads_the_brief_and_acks_it_with_a_key", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.stub("monitoring.brief", () => ({ authority: "none", brief: null }));
+    fake.stub("monitoring.brief_ack", { authority: "none", brief_pending: false });
+    const surfaces = await live(fake);
+    const result = await surfaces.monitoring.brief();
+    expect(result.status === "ok" && result.data).toBeNull();
+    await expect(surfaces.monitoring.briefAck()).resolves.toEqual({ simulated: false });
+    expect(Object.keys(fake.callsTo("monitoring.brief_ack")[0]!.params as object)).toEqual(["idempotency_key"]);
+  });
 });

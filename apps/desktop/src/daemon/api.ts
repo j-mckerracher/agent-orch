@@ -60,6 +60,8 @@ import type {
   SettingsPatchWire,
   MonitoringWire,
   MonitoringAckWire,
+  BriefAckWire,
+  BriefResultWire,
   GrantCreateResultWire,
   GrantRevokeResultWire,
   GrantsCreateParams,
@@ -551,6 +553,16 @@ export class DaemonApi {
   /** DPES-1105 Phase 3. Marks a scope's wake records seen. Changes no decision, so it is not user-only. */
   async monitoringAck(target: ConversationWireTarget, idempotencyKey: string): Promise<MonitoringAckWire> {
     return this.session.request("monitoring.ack", { idempotency_key: idempotencyKey, target: realTarget(target) });
+  }
+
+  /** DPES-1105 Phase 5b. The return brief for the away window, or `brief: null`. A read; needs `standing_approvals`. */
+  briefGet(): Promise<BriefResultWire> {
+    return this.session.request("monitoring.brief", {});
+  }
+
+  /** DPES-1105 Phase 5b. Marks the closed brief seen. Changes no decision and deletes no data, so it is not user-only. */
+  briefAck(idempotencyKey: string): Promise<BriefAckWire> {
+    return this.session.request("monitoring.brief_ack", { idempotency_key: idempotencyKey });
   }
 
   /** DPES-1105 Phase 4. Hides one decision until a date (`YYYY-MM-DD`). User-only; needs the `holds` capability. */

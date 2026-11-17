@@ -44,6 +44,7 @@ import type {
   ProposalItem,
   ResolveReceipt,
   SendReceipt,
+  Brief,
   MonitoringMode,
   MonitoringSource,
   MonitoringState,
@@ -610,6 +611,8 @@ function monitoringSource(ctx: Ctx): MonitoringSource {
   const envelope = conversationFixture as unknown as Envelope<ConversationData>;
   const prov = provenance("D10", envelope);
   const state: MonitoringState = { mode: "on", paused: [], unseen: [{ target: { kind: "global" }, count: 1 }] };
+  // One window for the session, so an acknowledged fixture brief does not come back as a new one.
+  let brief: Brief | null = null;
   return {
     provenance: prov,
     get: () => resolve<ConversationData, MonitoringState>("D10", envelope, ctx, () => ({ ...state }), () => ({ ...state, unseen: [] })),
@@ -621,6 +624,41 @@ function monitoringSource(ctx: Ctx): MonitoringSource {
       state.unseen = [];
       return Promise.resolve();
     },
+    brief: () =>
+      resolve<ConversationData, Brief | null>("D10", envelope, ctx, (_data, nowMs) => (brief ??= fixtureBrief(nowMs)), () => null),
+    // A fixture saves nothing; the panel says so.
+    briefAck: () => Promise.resolve({ simulated: true }),
+  };
+}
+
+/** The one fixture brief: a closed window of the last four hours. */
+function fixtureBrief(nowMs: number): Brief {
+  const hour = 3600 * 1000;
+  return {
+    fromMs: nowMs - 4 * hour,
+    toMs: nowMs,
+    open: false,
+    counts: {
+      tasksSucceeded: 3,
+      tasksFailed: 1,
+      tasksStalled: 0,
+      tasksRunning: 2,
+      proposalsApprovedByUser: 0,
+      proposalsApprovedByGrant: 4,
+      executedByGrant: 4,
+      failedUnderGrant: 0,
+      proposalsWaiting: 2,
+      deliveriesWaiting: 1,
+      decisionsHeld: 0,
+      grantUses: 4,
+      grantsExpired: 0,
+      grantsRevoked: 0,
+      quietUpdates: 5,
+      repliesPausedByLimit: 0,
+    },
+    grants: [{ id: "fixture:grant-1", scopeKind: "project", scopeLabel: "p-00000000", usesInWindow: 4, usesUsed: 4, maxUses: 20, status: "active" }],
+    waiting: [{ kind: "proposal_waiting", id: "fixture:proposal-1", title: "workstream.update", state: "pending", project: "p-00000000", atMs: nowMs - hour }],
+    attention: [{ kind: "task_failed", id: "fixture:task-1", title: "Sample failed task", state: "Failed", project: "p-00000000", atMs: nowMs - 2 * hour }],
   };
 }
 

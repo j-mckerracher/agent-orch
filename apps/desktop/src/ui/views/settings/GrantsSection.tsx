@@ -169,6 +169,8 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
                 </label>
               ))}
             </div>
+          </div>
+          <div className="settings-row">
             <label htmlFor={ids.select} className="settings-label">
               {draft.scopeKind === "project" ? "Project" : "Workstream"}
             </label>

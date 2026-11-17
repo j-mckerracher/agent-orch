@@ -27,15 +27,15 @@ function mount(value: MonitoringModel, canChange = true) {
 }
 
 describe("MonitoringChip", () => {
-  it("monitoring_chip_renders_the_mode_and_opens_a_menu_of_three_radios_with_one_checked", async () => {
+  it("monitoring_chip_renders_the_mode_and_opens_a_menu_of_four_radios_with_one_checked", async () => {
     const { user, button } = mount(model());
     expect(button()).toHaveTextContent("Monitoring: on");
     expect(button()).toHaveAttribute("aria-haspopup", "menu");
     await user.click(button());
     expect(button()).toHaveAttribute("aria-expanded", "true");
     const items = screen.getAllByRole("menuitemradio");
-    expect(items).toHaveLength(3);
-    expect(items.map((item) => item.getAttribute("aria-checked"))).toEqual(["true", "false", "false"]);
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.getAttribute("aria-checked"))).toEqual(["true", "false", "false", "false"]);
     expect(screen.getByRole("link", { name: "Checks and limits are on the Settings page" })).toHaveAttribute("href", "#/settings");
   });
 
@@ -97,6 +97,30 @@ describe("MonitoringChip", () => {
   it("monitoring_chip_is_not_rendered_without_the_capability", () => {
     mount(model({ supported: false }));
     expect(screen.queryByRole("button", { name: /Monitoring:/ })).not.toBeInTheDocument();
+  });
+
+  it("brief_away_item_explains_itself_and_sets_away_for_an_approver", async () => {
+    const value = model();
+    const { user, button } = mount(value);
+    await user.click(button());
+    const away = screen.getByRole("menuitemradio", { name: /^Away: replies stay quiet, standing approvals keep working, and you get a summary when you return\. It adds no permissions\.$/ });
+    await user.click(away);
+    expect(value.setMode).toHaveBeenCalledTimes(1);
+    expect(value.setMode).toHaveBeenCalledWith("away");
+  });
+
+  it("brief_away_item_is_locked_for_a_non_approver_with_the_notice", async () => {
+    const value = model({ state: { mode: "away", paused: [], unseen: [] } });
+    const { user, button } = mount(value, false);
+    expect(button()).toHaveTextContent("Monitoring: away");
+    await user.click(button());
+    const notice = screen.getByText(APPROVER_REQUIRED_NOTICE);
+    const away = screen.getByRole("menuitemradio", { name: /^Away:/ });
+    expect(away).toHaveAttribute("aria-checked", "true");
+    expect(away).toHaveAttribute("aria-disabled", "true");
+    expect(away.getAttribute("aria-describedby")).toBe(notice.id);
+    await user.click(screen.getByRole("menuitemradio", { name: /^Quiet:/ }));
+    expect(value.setMode).not.toHaveBeenCalled();
   });
 
   it("monitoring_chip_shows_the_fixture_note_after_a_change", () => {

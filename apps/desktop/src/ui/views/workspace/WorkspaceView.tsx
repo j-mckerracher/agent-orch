@@ -25,6 +25,7 @@ import { MonitoringChip } from "./MonitoringChip";
 import { ModelPicker } from "./ModelPicker";
 import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTurnIds, unseenFor } from "./monitoringModel";
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
+import { ReturnBrief } from "./ReturnBrief";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
@@ -643,6 +644,7 @@ function Conversation({
             canChange={!live || (gate.can("monitoring") && gate.connection.approver)}
           />
         )}
+        {target.kind !== "project" && <ReturnBrief />}
         {target.kind !== "workstream" && (
           <ConversationActions
             option={option}

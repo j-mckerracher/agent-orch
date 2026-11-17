@@ -22,6 +22,10 @@ export const MODE_OPTIONS: ReadonlyArray<{ mode: MonitoringMode; text: string }>
   { mode: "on", text: "On: tell me about updates" },
   { mode: "quiet", text: "Quiet: keep updates, do not notify me" },
   { mode: "off", text: "Off: notices only, no automatic replies" },
+  {
+    mode: "away",
+    text: "Away: replies stay quiet, standing approvals keep working, and you get a summary when you return. It adds no permissions.",
+  },
 ];
 
 const isMode = (mode: string): mode is MonitoringMode => MODE_OPTIONS.some((option) => option.mode === mode);
