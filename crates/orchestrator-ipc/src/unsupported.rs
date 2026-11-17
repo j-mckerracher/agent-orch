@@ -171,6 +171,12 @@ impl Client {
     pub fn monitoring_ack(&mut self, _: Value, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn monitoring_brief(&mut self) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn monitoring_brief_ack(&mut self, _: &str) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn holds_set(&mut self, _: &str, _: &str, _: &str, _: &str) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }

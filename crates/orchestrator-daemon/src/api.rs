@@ -396,6 +396,8 @@ impl RpcHandler for DaemonApi {
             "monitoring.get" => self.monitoring_get(params),
             "monitoring.set" => self.monitoring_set(params),
             "monitoring.ack" => self.monitoring_ack(params),
+            "monitoring.brief" => self.monitoring_brief(params),
+            "monitoring.brief_ack" => self.monitoring_brief_ack(params),
             "queue.snapshot" => self.queue_snapshot(params),
             "usage.summary" => self.usage_summary(params),
             "usage.localTools" => self.local_usage_read(params),
@@ -1593,6 +1595,8 @@ thread_local! {
 #[path = "api_actions.rs"]
 mod actions;
 use actions::project_code;
+#[path = "api_brief.rs"]
+mod brief;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
 #[path = "api_conversation_help.rs"]

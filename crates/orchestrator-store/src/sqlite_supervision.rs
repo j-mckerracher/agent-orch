@@ -66,7 +66,7 @@ fn workstream_scope(workstream_id: Option<String>) -> String {
 
 /// One line of at most 80 bytes: control characters become spaces, runs of spaces collapse,
 /// and the cut falls on a character boundary.
-fn one_line(text: &str) -> String {
+pub(crate) fn one_line(text: &str) -> String {
     let flat: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })

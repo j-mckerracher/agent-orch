@@ -512,6 +512,20 @@ impl Client {
         )
     }
 
+    /// `monitoring.brief`: the return brief for the away window, or `null` when none is due.
+    pub fn monitoring_brief(&mut self) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "monitoring.brief", json!({}))
+    }
+
+    /// `monitoring.brief_ack`: marks the closed brief seen. Idempotent.
+    pub fn monitoring_brief_ack(&mut self, idempotency_key: &str) -> Result<Value, IpcError> {
+        self.call_feature(
+            Capability::StandingApprovals,
+            "monitoring.brief_ack",
+            json!({"idempotency_key": idempotency_key}),
+        )
+    }
+
     /// `grants.create`: creates one standing grant from `params` (scope, kinds, expiry, use
     /// limit, token budget and an idempotency key). The daemon refuses a session that did
     /// not prove the approver secret.

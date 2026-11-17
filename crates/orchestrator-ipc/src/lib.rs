@@ -100,6 +100,9 @@ mod actions_tests;
 #[path = "approver_tests.rs"]
 mod approver_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "brief_tests.rs"]
+mod brief_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "coordinator_review_tests.rs"]
 mod coordinator_review_tests;
 #[cfg(all(test, any(unix, windows)))]

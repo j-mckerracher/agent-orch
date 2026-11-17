@@ -56,6 +56,7 @@ mod sqlite_actions;
 mod sqlite_approvals;
 mod sqlite_archive;
 mod sqlite_attempts;
+mod sqlite_brief;
 mod sqlite_conversation_usage;
 mod sqlite_conversations;
 mod sqlite_delivery;
@@ -95,8 +96,8 @@ pub use sqlite_reports::{
 };
 pub use sqlite_review::{ChangeRequest, CoordinatorEntry, ReviewError, MAX_FEEDBACK_BYTES};
 pub use sqlite_settings::{
-    LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch, SupervisionSettings,
-    WakeLimitsPatch,
+    AwayWindows, LoadPatch, OrchestratorSettings, SettingsPatch, SupervisionPatch,
+    SupervisionSettings, WakeLimitsPatch,
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
 pub use sqlite_wake::{

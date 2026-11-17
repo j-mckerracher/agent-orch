@@ -53,6 +53,18 @@ impl OrchestratorSettings {
     }
 }
 
+/// The away window and the return brief window (phase 5b). Not a setting: `monitoring.set`
+/// and `monitoring.brief_ack` write it through [`SqliteStore::set_monitoring_mode`] and
+/// [`SqliteStore::ack_brief`], and `settings.set` never does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AwayWindows {
+    /// Set while the mode is `away`.
+    pub away_since_ms: Option<u64>,
+    /// The closed window of the last away period, until the user acknowledges it.
+    pub brief_from_ms: Option<u64>,
+    pub brief_to_ms: Option<u64>,
+}
+
 /// `None` leaves a limit as it is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LoadPatch {
@@ -251,6 +263,98 @@ impl SqliteStore {
             Ok(saved)
         })
     }
+
+    /// The away window columns (migration 0048).
+    pub fn away_windows(&self) -> Result<AwayWindows, StoreError> {
+        self.call(|pool| async move {
+            let mut connection = pool.acquire().await?;
+            read_away(&mut connection).await
+        })
+    }
+
+    /// Sets the monitoring mode and keeps the away window in step, in one transaction. Entering
+    /// `away` stores `away_since_ms = now_ms` when none is set. Leaving `away` closes the
+    /// window into `brief_from_ms` and `brief_to_ms` (an earlier brief the user never
+    /// acknowledged keeps its start) and clears `away_since_ms`. Away to away changes nothing.
+    /// `now_ms` comes from the caller, so a test injects the clock. Returns the mode that was
+    /// stored before. Only `monitoring.set` calls this; no other column is touched.
+    pub fn set_monitoring_mode(
+        &self,
+        mode: MonitoringMode,
+        now_ms: u64,
+    ) -> Result<MonitoringMode, StoreError> {
+        let now = i64::try_from(now_ms)
+            .map_err(|_| invalid_input("the time is above the storable range"))?;
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let before_text: String = sqlx::query_scalar(
+                "SELECT monitoring_mode FROM orchestrator_settings WHERE id = 1",
+            )
+            .fetch_one(&mut *transaction)
+            .await?;
+            let before = MonitoringMode::parse(&before_text).ok_or_else(damaged)?;
+            let windows = read_away(&mut transaction).await?;
+            let to_i64 = |value: u64| i64::try_from(value).map_err(|_| damaged());
+            let mut away_since = windows.away_since_ms.map(to_i64).transpose()?;
+            let mut brief_from = windows.brief_from_ms.map(to_i64).transpose()?;
+            // `None` leaves the stored end as it is.
+            let mut brief_to: Option<i64> = None;
+            if mode == MonitoringMode::Away {
+                if away_since.is_none() {
+                    away_since = Some(now);
+                }
+            } else if let Some(since) = away_since.take() {
+                let from = *brief_from.get_or_insert(since);
+                brief_to = Some(now.max(from));
+            }
+            sqlx::query(
+                "UPDATE orchestrator_settings SET monitoring_mode = ?, away_since_ms = ?, \
+                 brief_from_ms = ?, brief_to_ms = COALESCE(?, brief_to_ms), \
+                 updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+            )
+            .bind(mode.as_str())
+            .bind(away_since)
+            .bind(brief_from)
+            .bind(brief_to)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(before)
+        })
+    }
+
+    /// Clears the closed brief window. The user has seen the brief. Idempotent; it changes no
+    /// other column and the open away window stays.
+    pub fn ack_brief(&self) -> Result<(), StoreError> {
+        self.call(|pool| async move {
+            sqlx::query(
+                "UPDATE orchestrator_settings SET brief_from_ms = NULL, brief_to_ms = NULL, \
+                 updated_at = CURRENT_TIMESTAMP WHERE id = 1 \
+                 AND (brief_from_ms IS NOT NULL OR brief_to_ms IS NOT NULL)",
+            )
+            .execute(&pool)
+            .await?;
+            Ok(())
+        })
+    }
+}
+
+async fn read_away(connection: &mut SqliteConnection) -> Result<AwayWindows, StoreError> {
+    let row = sqlx::query(
+        "SELECT away_since_ms, brief_from_ms, brief_to_ms FROM orchestrator_settings WHERE id = 1",
+    )
+    .fetch_one(connection)
+    .await?;
+    let read = |column: &str| -> Result<Option<u64>, StoreError> {
+        row.try_get::<Option<i64>, _>(column)?
+            .map(|value| u64::try_from(value).map_err(|_| damaged()))
+            .transpose()
+    };
+    Ok(AwayWindows {
+        away_since_ms: read("away_since_ms")?,
+        brief_from_ms: read("brief_from_ms")?,
+        brief_to_ms: read("brief_to_ms")?,
+    })
 }
 
 async fn read_settings(

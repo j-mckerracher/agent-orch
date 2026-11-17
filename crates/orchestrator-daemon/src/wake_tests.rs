@@ -803,9 +803,9 @@ fn turning_monitoring_off_skips_pending_records_and_cancels_the_running_turn() {
 }
 
 #[test]
-fn monitoring_set_takes_only_a_mode_and_refuses_away() {
+fn monitoring_set_accepts_away_and_rejects_unknown_words() {
     let f = fixture();
-    for bad in ["away", "sometimes", ""] {
+    for bad in ["sometimes", "", "Away"] {
         assert_eq!(set_mode(&f, bad), Err(RpcError::InvalidParams), "{bad}");
     }
     assert_eq!(
@@ -815,6 +815,10 @@ fn monitoring_set_takes_only_a_mode_and_refuses_away() {
         ),
         Err(RpcError::InvalidParams)
     );
+    let away = set_mode(&f, "away").unwrap();
+    assert_eq!(away["mode"], "away");
+    assert_eq!(away["away_since_ms"], f.clock.now_ms());
+    assert_eq!(away["brief_pending"], false);
     assert_eq!(set_mode(&f, "quiet").unwrap()["mode"], "quiet");
     assert_eq!(monitoring(&f)["authority"], "none");
 }
@@ -1684,4 +1688,153 @@ fn chat_turns_write_usage_receipts_for_user_and_wake() {
     }
     // Only the wake turn's tokens count toward the wake budget.
     assert_eq!(f.api.store.wake_tokens_since(GLOBAL_SCOPE, 0).unwrap(), 7);
+}
+
+// ---- away mode and the return brief (phase 5b) -------------------------------------------
+
+fn return_brief(f: &Fixture) -> Value {
+    f.api.dispatch("monitoring.brief", json!({})).unwrap()["brief"].clone()
+}
+
+fn brief_ack(f: &Fixture, key: &str) -> Value {
+    f.api
+        .dispatch("monitoring.brief_ack", json!({"idempotency_key": key}))
+        .unwrap()
+}
+
+#[test]
+fn the_return_brief_is_null_then_open_while_away_then_closed_until_acknowledged() {
+    let f = fixture();
+    assert_eq!(return_brief(&f), Value::Null);
+    assert_eq!(monitoring(&f)["brief_pending"], false);
+    assert_eq!(monitoring(&f)["away_since_ms"], Value::Null);
+
+    set_mode(&f, "away").unwrap();
+    fail_task(&f, "t-1", "Fix /Users/me/secret/repo/main.rs now");
+    advance(&f, MINUTE);
+    let open = return_brief(&f);
+    assert_eq!(open["open"], true);
+    assert_eq!(open["counts"]["tasks_failed"], 1);
+    assert_eq!(open["attention"][0]["id"], "t-1");
+    assert_eq!(open["attention"][0]["kind"], "task_failed");
+    let title = open["attention"][0]["title"].as_str().unwrap();
+    assert!(
+        title.contains("[path]") && !title.contains("/Users"),
+        "{title}"
+    );
+    let project = open["attention"][0]["project"].as_str().unwrap();
+    assert!(
+        project.starts_with("p-") && project.len() == 10,
+        "{project}"
+    );
+
+    set_mode(&f, "on").unwrap();
+    let closed = return_brief(&f);
+    assert_eq!(closed["open"], false);
+    assert_eq!(closed["counts"]["tasks_failed"], 1);
+    assert_eq!(monitoring(&f)["brief_pending"], true);
+    assert_eq!(monitoring(&f)["away_since_ms"], Value::Null);
+
+    // The brief is read-only: reading it again changes nothing.
+    assert_eq!(return_brief(&f), closed);
+    assert_eq!(brief_ack(&f, "ack-1")["authority"], "none");
+    assert_eq!(return_brief(&f), Value::Null);
+    assert_eq!(monitoring(&f)["brief_pending"], false);
+    // A second acknowledgement, under a new key, is a no-op.
+    brief_ack(&f, "ack-2");
+    assert_eq!(return_brief(&f), Value::Null);
+}
+
+#[test]
+fn a_brief_acknowledgement_leaves_the_live_away_window_in_place() {
+    let f = fixture();
+    set_mode(&f, "away").unwrap();
+    brief_ack(&f, "ack-live");
+    assert_eq!(return_brief(&f)["open"], true);
+    assert_eq!(monitoring(&f)["mode"], "away");
+}
+
+#[test]
+fn the_brief_methods_take_no_unknown_parameters() {
+    let f = fixture();
+    assert_eq!(
+        f.api.dispatch("monitoring.brief", json!({"from": 0})),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(
+        f.api.dispatch(
+            "monitoring.brief_ack",
+            json!({"idempotency_key": "k", "to": 5})
+        ),
+        Err(RpcError::InvalidParams)
+    );
+}
+
+#[test]
+fn an_away_wake_turn_still_stops_at_the_hourly_cap() {
+    let f = fixture();
+    set_mode(&f, "away").unwrap();
+    f.probe.replying(Some("ok"));
+    for index in 0..6 {
+        fail_task(&f, &format!("t-{index}"), "Fix it");
+        tick(&f);
+        assert_eq!(start_batch(&f).started, 1, "turn {index}");
+    }
+    fail_task(&f, "t-6", "Fix it");
+    tick(&f);
+    let report = start_batch(&f);
+
+    assert_eq!(report.started, 0);
+    assert_eq!(f.probe.started(), 6, "away spends no turn past the cap");
+    let seventh = records_of(&f, WakeKind::TaskFailed)
+        .into_iter()
+        .find(|record| record.subject == "t-6")
+        .unwrap();
+    assert_eq!(seventh.skip_reason, Some(SkipReason::LimitHourly));
+    assert_eq!(monitoring(&f)["paused"][0]["reason"], "hourly");
+}
+
+#[test]
+fn away_runs_wake_turns_and_changing_to_it_cancels_nothing() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    assert!(running_turn(&f).is_some());
+
+    set_mode(&f, "away").unwrap();
+    tick(&f);
+
+    assert!(running_turn(&f).is_some(), "away is not off");
+    assert!(records_of(&f, WakeKind::TaskFailed)
+        .iter()
+        .all(|record| record.skip_reason.is_none()));
+}
+
+#[test]
+fn the_return_brief_never_enters_a_wake_snapshot_or_prompt() {
+    let f = fixture();
+    set_mode(&f, "away").unwrap();
+    fail_task(&f, "t-1", "one");
+    advance(&f, MINUTE);
+    tick(&f);
+    start_batch(&f);
+
+    let seen = f.probe.last();
+    assert!(
+        seen.context.contains("Monitoring: away"),
+        "{}",
+        seen.context
+    );
+    for needle in [
+        "tasks_failed",
+        "approved_by_grant",
+        "proposals_waiting",
+        "While you were away",
+        "away_since",
+        "brief_pending",
+    ] {
+        assert!(!seen.context.contains(needle), "{needle} in context");
+        assert!(!seen.prompt.contains(needle), "{needle} in prompt");
+    }
 }

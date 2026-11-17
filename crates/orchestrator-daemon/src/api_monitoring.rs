@@ -1,22 +1,22 @@
-//! `monitoring.get`, `monitoring.set` and `monitoring.ack` (DPES-1105 phase 3c).
+//! `monitoring.get`, `monitoring.set` and `monitoring.ack` (DPES-1105 phase 3c). The return
+//! brief methods are in `api_brief.rs`.
 //!
 //! Contract (plan: `plan-3.md` 6.6):
 //! - Capability `monitoring`. `monitoring.get` and `monitoring.ack` are open to any session
 //!   with the capability: the first reads, the second only marks wake records seen and changes
 //!   no decision. `monitoring.set` is user-only: the transport refuses a session that did not
 //!   prove the approver secret before this handler runs, so the handler has no check of its own.
-//! - `monitoring.set` takes `{idempotency_key, mode}` and sets only the mode: `on`, `quiet` or
-//!   `off`. `away` is Phase 5 and, like an unknown word, is `InvalidParams`. The caps and
-//!   intervals go through `settings.set`.
+//! - `monitoring.set` takes `{idempotency_key, mode}` and sets only the mode: `on`, `quiet`,
+//!   `off` or `away`. An unknown word is `InvalidParams`. `away` adds no authority: it is quiet
+//!   plus a return brief window, and every cap, the token budget, the debounce and the load gate
+//!   apply to it as to quiet. The caps and intervals go through `settings.set`.
 //! - Every result states `"authority": "none"`. No path and no id of a task appears in any
 //!   result beyond the ids the wake records already carry.
 
 use std::collections::HashSet;
 
 use orchestrator_core::supervision::{admit, Admission, MonitoringMode};
-use orchestrator_store::{
-    ConversationTarget, SettingsPatch, WakeOutcome, WakeRecord, WakeState, WAKE_PAGE_SIZE,
-};
+use orchestrator_store::{ConversationTarget, WakeOutcome, WakeRecord, WakeState, WAKE_PAGE_SIZE};
 
 use super::conversations::TargetParam;
 use super::wake::{scope_of, target_of};
@@ -47,10 +47,7 @@ impl DaemonApi {
 
     pub(super) fn monitoring_set(&self, params: Value) -> Result<Value, RpcError> {
         let request: SetModeParams = parse_params(params)?;
-        let mode = match MonitoringMode::parse(&request.mode) {
-            Some(mode @ (MonitoringMode::On | MonitoringMode::Quiet | MonitoringMode::Off)) => mode,
-            _ => return Err(RpcError::InvalidParams),
-        };
+        let mode = MonitoringMode::parse(&request.mode).ok_or(RpcError::InvalidParams)?;
         let key = request.idempotency_key.clone();
         idempotency::run(
             &self.store,
@@ -61,15 +58,7 @@ impl DaemonApi {
             || {
                 let before = self
                     .store
-                    .orchestrator_settings()
-                    .map_err(map_store_error)?
-                    .mode;
-                let patch = SettingsPatch {
-                    mode: Some(mode),
-                    ..SettingsPatch::default()
-                };
-                self.store
-                    .update_orchestrator_settings(&patch)
+                    .set_monitoring_mode(mode, self.now_ms())
                     .map_err(map_store_error)?;
                 if before != mode {
                     if let Some(wake) = &self.wake {
@@ -117,7 +106,7 @@ impl DaemonApi {
             .map_err(map_store_error)
     }
 
-    fn now_ms(&self) -> u64 {
+    pub(super) fn now_ms(&self) -> u64 {
         self.wake
             .as_ref()
             .map_or_else(crate::executor::unix_now_ms, |wake| wake.now_ms())
@@ -159,9 +148,12 @@ impl DaemonApi {
             .into_iter()
             .map(|(scope, count)| json!({"target": target_wire(&scope), "count": count}))
             .collect();
+        let away = self.store.away_windows().map_err(map_store_error)?;
         Ok(json!({
             "authority": "none",
             "mode": settings.mode.as_str(),
+            "away_since_ms": away.away_since_ms,
+            "brief_pending": away.brief_to_ms.is_some(),
             "paused": paused,
             "unseen": unseen,
             "epoch": self.store.store_epoch().map_err(map_store_error)?,
