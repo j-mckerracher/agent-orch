@@ -4,7 +4,8 @@
 //! objective, kind, agent and delivery. Autonomy and verification never come
 //! from the agent: [`task_proposal`] takes both from the envelope, and the
 //! proposal sets no permission, so chat can never raise any of them. The
-//! envelope is least-authority and fixed until a settings store can supply it.
+//! envelope is least-authority; [`task_envelope_for`] widens it only from a
+//! project's defaults and the `chat_pr_delivery` setting.
 //! A refused proposal gets a [`Denial`] key and never reaches the user as an
 //! approvable card.
 //!
@@ -12,9 +13,11 @@
 
 use crate::authorization::Authorization;
 use crate::contract::{
-    validate_proposal, AutonomyPolicy, DeliveryPolicy, TaskProposal, Validation, VerificationPolicy,
+    validate_proposal, AutonomyPolicy, DeliveryPolicy, TaskKind, TaskProposal, Validation,
+    VerificationPolicy,
 };
 use crate::orchestrator_action::ProposeTask;
+use crate::project_mode::ProjectDefaults;
 
 /// `error_code` of a proposal the envelope refused.
 pub const ACTION_DENIED: &str = "action_denied";
@@ -33,6 +36,50 @@ pub fn chat_task_envelope() -> Authorization {
             .into_iter()
             .collect(),
         verification: VerificationPolicy::None,
+    }
+}
+
+/// The envelope for a task of `kind` in a project with `defaults` (`None` means no row).
+/// `chat_pr_delivery` is the global setting that lets chat ask for a pull request; it
+/// is off by default and only the user turns it on.
+///
+/// Least authority first: approval always required; an `Investigate` task (a scout)
+/// is `{ReportOnly}` with no verification in every mode; an `Implement` task gets
+/// `{ReportOnly, LocalReview}`, plus `PullRequest` only for a pull-request mode with
+/// `chat_pr_delivery` on, and the project's verification. A pull-request mode with the
+/// setting off changes the card, never what chat may ask.
+pub fn task_envelope_for(
+    defaults: Option<&ProjectDefaults>,
+    chat_pr_delivery: bool,
+    kind: TaskKind,
+) -> Authorization {
+    let local = chat_task_envelope();
+    let Some(defaults) = defaults else {
+        return match kind {
+            TaskKind::Implement => local,
+            TaskKind::Investigate => report_only(local),
+        };
+    };
+    match kind {
+        TaskKind::Investigate => report_only(local),
+        TaskKind::Implement => {
+            let mut envelope = Authorization {
+                verification: defaults.verification(),
+                ..local
+            };
+            if chat_pr_delivery && defaults.mode.delivery() == DeliveryPolicy::PullRequest {
+                envelope.delivery.insert(DeliveryPolicy::PullRequest);
+            }
+            envelope
+        }
+    }
+}
+
+fn report_only(envelope: Authorization) -> Authorization {
+    Authorization {
+        delivery: [DeliveryPolicy::ReportOnly].into_iter().collect(),
+        verification: VerificationPolicy::None,
+        ..envelope
     }
 }
 
@@ -101,7 +148,7 @@ fn refuse(proposal: &TaskProposal, envelope: &Authorization) -> Result<(), Denia
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::TaskKind;
+    use crate::project_mode::ProjectMode;
 
     fn propose(delivery: DeliveryPolicy) -> ProposeTask {
         ProposeTask {
@@ -132,6 +179,88 @@ mod tests {
         assert!(envelope.delivery_grants(DeliveryPolicy::ReportOnly));
         assert!(envelope.delivery_grants(DeliveryPolicy::LocalReview));
         assert!(!envelope.delivery_grants(DeliveryPolicy::PullRequest));
+    }
+
+    #[test]
+    fn a_project_with_no_defaults_gets_the_chat_envelope_unchanged() {
+        for setting in [false, true] {
+            assert_eq!(
+                task_envelope_for(None, setting, TaskKind::Implement),
+                chat_task_envelope()
+            );
+            assert_eq!(
+                task_envelope_for(Some(&ProjectDefaults::LOCAL), setting, TaskKind::Implement),
+                chat_task_envelope()
+            );
+        }
+    }
+
+    fn defaults(mode: ProjectMode) -> ProjectDefaults {
+        ProjectDefaults {
+            mode,
+            checks: vec![vec!["cargo".to_owned(), "test".to_owned()]],
+            ..ProjectDefaults::LOCAL
+        }
+    }
+
+    #[test]
+    fn the_scout_envelope_is_report_only_in_every_mode() {
+        let expected = Authorization {
+            autonomy: AutonomyPolicy::ApprovalRequired,
+            delivery: [DeliveryPolicy::ReportOnly].into_iter().collect(),
+            verification: VerificationPolicy::None,
+        };
+        for setting in [false, true] {
+            assert_eq!(task_envelope_for(None, setting, TaskKind::Investigate), expected);
+            for mode in ProjectMode::ALL {
+                assert_eq!(
+                    task_envelope_for(Some(&defaults(mode)), setting, TaskKind::Investigate),
+                    expected,
+                    "{mode:?} {setting}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_ship_envelope_follows_mode_and_the_pr_setting() {
+        let pr_modes = [ProjectMode::DirectPr, ProjectMode::NoMistakes];
+        for mode in ProjectMode::ALL {
+            let project = defaults(mode);
+            for setting in [false, true] {
+                let envelope = task_envelope_for(Some(&project), setting, TaskKind::Implement);
+                let pr = pr_modes.contains(&mode) && setting;
+                assert_eq!(envelope.autonomy, AutonomyPolicy::ApprovalRequired);
+                assert_eq!(envelope.verification, project.verification(), "{mode:?}");
+                assert!(envelope.delivery_grants(DeliveryPolicy::ReportOnly));
+                assert!(envelope.delivery_grants(DeliveryPolicy::LocalReview));
+                assert_eq!(
+                    envelope.delivery_grants(DeliveryPolicy::PullRequest),
+                    pr,
+                    "{mode:?} {setting}"
+                );
+                // The proposal check agrees with the envelope.
+                assert_eq!(
+                    check_task(&propose(DeliveryPolicy::PullRequest), &envelope),
+                    if pr { Ok(()) } else { Err(Denial::Delivery) }
+                );
+                assert_eq!(
+                    check_task(&propose(DeliveryPolicy::LocalReview), &envelope),
+                    Ok(())
+                );
+            }
+        }
+        // Checks are carried to the proposal for a mode that runs them, never for local-only.
+        assert_eq!(
+            task_envelope_for(Some(&defaults(ProjectMode::LocalOnly)), true, TaskKind::Implement)
+                .verification,
+            VerificationPolicy::None
+        );
+        assert_ne!(
+            task_envelope_for(Some(&defaults(ProjectMode::DirectPr)), false, TaskKind::Implement)
+                .verification,
+            VerificationPolicy::None
+        );
     }
 
     #[test]

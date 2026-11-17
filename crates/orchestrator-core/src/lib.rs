@@ -23,6 +23,7 @@ pub mod interval;
 pub mod load_gate;
 pub mod orchestrator_action;
 pub mod permission;
+pub mod project_mode;
 pub mod records;
 pub mod retry;
 pub mod scheduler;
@@ -32,6 +33,7 @@ pub mod task_envelope;
 pub mod workstream;
 
 pub use identity::ProcessIdentity;
+pub use project_mode::{DefaultsError, MergeMethod, ProjectDefaults, ProjectMode};
 pub use records::{Artifact, Project, VerificationRun, Workspace};
 
 pub use contract::{

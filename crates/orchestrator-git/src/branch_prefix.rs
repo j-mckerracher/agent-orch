@@ -16,6 +16,41 @@ pub const DEFAULT_BRANCH_PREFIX: &str = "moa/";
 /// Location of the prefix file relative to the data directory.
 pub const BRANCH_PREFIX_FILE: &str = "config/branch-prefix";
 
+/// Longest prefix a project may hold. Equals the `project_defaults` column bound.
+pub const MAX_BRANCH_PREFIX_LEN: usize = 64;
+
+/// Longest branch name `is_safe_branch_name` accepts. Equals the `base_branch` column bound.
+pub const MAX_BRANCH_NAME_LEN: usize = 100;
+
+/// Namespace of MCAO's own review refs (`refs/heads/orchestrator/review/`). No prefix may use it.
+const RESERVED_NAMESPACE: &str = "orchestrator/";
+
+/// Whether `name` is a branch name safe to pass to Git and to store: 1 to
+/// [`MAX_BRANCH_NAME_LEN`] bytes of ASCII letters, digits, `.`, `_`, `-` and `/`
+/// only (so no space, control character, `@{`, `~`, `^`, `:` or backslash). No
+/// component may be empty, start with `-` or `.`, or end in `.lock`, so the name
+/// has no leading dash, no `..`, no leading, trailing or doubled slash, and no
+/// trailing `.lock`. A trailing `.` and the name `HEAD` are refused.
+pub fn is_safe_branch_name(name: &str) -> bool {
+    // `..` is refused anywhere in a ref name; the per-component checks below allow a single `.`.
+    if name.is_empty()
+        || name.len() > MAX_BRANCH_NAME_LEN
+        || name == "HEAD"
+        || name.ends_with('.')
+        || name.contains("..")
+    {
+        return false;
+    }
+    name.split('/').all(|component| {
+        !component.is_empty()
+            && component
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+            && !component.starts_with(['-', '.'])
+            && !component.ends_with(".lock")
+    })
+}
+
 /// A validated branch-name prefix: one or more `/`-terminated components.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BranchPrefix(String);
@@ -26,7 +61,9 @@ impl BranchPrefix {
     /// Accepts ASCII letters, digits, `.`, `_`, `-`, and `/` only. The value
     /// must end in `/`, every component must be non-empty, and no component may
     /// start with `-` or `.` or end in `.lock`, so the result is always a valid
-    /// ref prefix and never reads as a Git option.
+    /// ref prefix and never reads as a Git option. At most
+    /// [`MAX_BRANCH_PREFIX_LEN`] bytes, and never inside the machine-wide
+    /// `orchestrator/` namespace, which holds MCAO's review refs.
     pub fn parse(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         let invalid = |reason: &'static str| Error::InvalidBranchPrefix {
@@ -36,6 +73,12 @@ impl BranchPrefix {
         let Some(components) = value.strip_suffix('/') else {
             return Err(invalid("must end with `/`"));
         };
+        if value.len() > MAX_BRANCH_PREFIX_LEN {
+            return Err(invalid("is too long"));
+        }
+        if value.starts_with(RESERVED_NAMESPACE) {
+            return Err(invalid("must not use the reserved `orchestrator/` namespace"));
+        }
         for component in components.split('/') {
             if component.is_empty() {
                 return Err(invalid("must not start with `/` or contain `//`"));
@@ -52,6 +95,9 @@ impl BranchPrefix {
                 return Err(invalid(
                     "components must not start with `-` or `.` or end with `.lock`",
                 ));
+            }
+            if component.contains("..") {
+                return Err(invalid("must not contain `..`"));
             }
         }
         Ok(Self(value.to_owned()))
@@ -149,6 +195,7 @@ mod tests {
             "a//b/",
             "../",
             "a/../b/",
+            "a..b/",
             "-x/",
             ".hidden/",
             "a.lock/",
@@ -167,6 +214,79 @@ mod tests {
                 ),
                 "{value:?} should be rejected"
             );
+        }
+    }
+
+    #[test]
+    fn the_reserved_review_namespace_is_refused_as_a_prefix() {
+        for value in ["orchestrator/", "orchestrator/review/", "orchestrator/x/"] {
+            assert!(
+                matches!(
+                    BranchPrefix::parse(value),
+                    Err(Error::InvalidBranchPrefix { .. })
+                ),
+                "{value:?} should be rejected"
+            );
+        }
+        assert!(BranchPrefix::parse("orchestrator-x/").is_ok());
+        assert!(BranchPrefix::parse("team/orchestrator/").is_ok());
+    }
+
+    #[test]
+    fn a_prefix_over_the_length_bound_is_refused() {
+        let longest = format!("{}/", "a".repeat(MAX_BRANCH_PREFIX_LEN - 1));
+        assert!(BranchPrefix::parse(&longest).is_ok());
+        let too_long = format!("{}/", "a".repeat(MAX_BRANCH_PREFIX_LEN));
+        assert!(BranchPrefix::parse(&too_long).is_err());
+    }
+
+    #[test]
+    fn safe_branch_names_are_accepted() {
+        for name in ["main", "release/1.2", "feat/DPES-1105_x", "a.b", "v1.0.0"] {
+            assert!(is_safe_branch_name(name), "{name:?} should be accepted");
+        }
+        assert!(is_safe_branch_name(&"a".repeat(MAX_BRANCH_NAME_LEN)));
+    }
+
+    #[test]
+    fn every_unsafe_branch_name_is_rejected() {
+        let too_long = "a".repeat(MAX_BRANCH_NAME_LEN + 1);
+        for name in [
+            "",
+            "HEAD",
+            "-x",
+            "--upload-pack=x",
+            "a/-b",
+            "a..b",
+            "..",
+            "a/../b",
+            ".hidden",
+            "a/.b",
+            "a b",
+            " a",
+            "a\tb",
+            "a\nb",
+            "a\u{7}b",
+            "a\u{7f}b",
+            "a@{1}",
+            "@{u}",
+            "x.lock",
+            "a/x.lock",
+            "a/",
+            "/a",
+            "a//b",
+            "a.",
+            "a~1",
+            "a^",
+            "a:b",
+            "a?",
+            "a*",
+            "a[b",
+            "a\\b",
+            "é",
+            too_long.as_str(),
+        ] {
+            assert!(!is_safe_branch_name(name), "{name:?} should be rejected");
         }
     }
 
