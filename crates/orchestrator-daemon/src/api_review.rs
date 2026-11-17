@@ -214,6 +214,11 @@ impl DaemonApi {
             return Err(RpcError::Conflict);
         }
         let workspace = workspaces.pop();
+        let receipts = self
+            .store
+            .usage_receipts_for_task(&request.task_id)
+            .map_err(map_store_error)?;
+        let attempts = attempts_json(&task, &receipts);
 
         let mut approvals = self
             .store
@@ -410,8 +415,107 @@ impl DaemonApi {
             "artifacts": artifacts,
             "snapshot": snapshot,
             "change_request": change_request.as_ref().map(change_json),
+            "attempts": attempts,
         }))
     }
+}
+
+/// Sums provider-reported receipts per session. A figure no receipt reported
+/// stays `None`; it is never zero.
+#[derive(Default)]
+struct SessionUsage {
+    receipts: usize,
+    input: Option<u64>,
+    cache_read: Option<u64>,
+    cache_write: Option<u64>,
+    output: Option<u64>,
+    reasoning: Option<u64>,
+    costs: std::collections::BTreeMap<String, u128>,
+    model: Option<String>,
+}
+
+fn add_known(total: &mut Option<u64>, value: Option<u64>) {
+    if let Some(value) = value {
+        *total = Some(total.unwrap_or(0).saturating_add(value));
+    }
+}
+
+/// One row per session of the task: the contract's requested selection beside
+/// what the usage receipts reported. `coverage` is `reported` when every token
+/// figure and the cost were reported, `partial` when only some were (or the
+/// cost spans several currencies), and `unknown` when no receipt exists.
+fn attempts_json(
+    task: &orchestrator_store::TaskRecord,
+    receipts: &[orchestrator_store::UsageReceipt],
+) -> Vec<Value> {
+    let requested = task
+        .contract
+        .model_selection
+        .as_ref()
+        .map(|selection| json!({"model": selection.model, "effort": selection.effort}));
+    task.sessions
+        .iter()
+        .map(|session| {
+            let mut usage = SessionUsage::default();
+            // Receipts arrive oldest first, so the last model wins.
+            for receipt in receipts.iter().filter(|r| r.session_id == session.id) {
+                usage.receipts += 1;
+                add_known(&mut usage.input, receipt.input_tokens);
+                add_known(&mut usage.cache_read, receipt.cache_read_tokens);
+                add_known(&mut usage.cache_write, receipt.cache_write_tokens);
+                add_known(&mut usage.output, receipt.output_tokens);
+                add_known(&mut usage.reasoning, receipt.reasoning_tokens);
+                if let Some((nanos, currency)) = &receipt.cost {
+                    *usage.costs.entry(currency.clone()).or_insert(0) += u128::from(*nanos);
+                }
+                if receipt.model.is_some() {
+                    usage.model = receipt.model.clone();
+                }
+            }
+            let single_cost = match usage.costs.len() {
+                1 => usage.costs.iter().next().and_then(|(currency, nanos)| {
+                    u64::try_from(*nanos)
+                        .ok()
+                        .map(|nanos| json!({"amount_nanos": nanos, "currency": currency}))
+                }),
+                _ => None,
+            };
+            let figures = [
+                usage.input,
+                usage.cache_read,
+                usage.cache_write,
+                usage.output,
+                usage.reasoning,
+            ];
+            let coverage = if usage.receipts == 0 {
+                "unknown"
+            } else if figures.iter().all(Option::is_some) && single_cost.is_some() {
+                "reported"
+            } else if figures.iter().any(Option::is_some)
+                || !usage.costs.is_empty()
+                || usage.model.is_some()
+            {
+                "partial"
+            } else {
+                "unknown"
+            };
+            json!({
+                "session_id": session.id,
+                "agent": session.adapter,
+                "requested": requested,
+                "reported_model": usage.model,
+                "usage": {
+                    "input_tokens": usage.input,
+                    "cache_read_tokens": usage.cache_read,
+                    "cache_write_tokens": usage.cache_write,
+                    "output_tokens": usage.output,
+                    "reasoning_tokens": usage.reasoning,
+                },
+                "cost": single_cost,
+                "coverage": coverage,
+            })
+        })
+        .collect()
 }
 
 /// Compare the approval digest with its readable parameters and the current

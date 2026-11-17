@@ -1101,3 +1101,164 @@ fn evidence_snapshot_lists_at_most_one_thousand_files() {
     assert_eq!(snapshot["files_truncated"], true, "{}", summary(snapshot));
     assert_eq!(files[0], "candidate.txt", "Git byte order is kept");
 }
+
+fn attempts_api(
+    selection: Option<orchestrator_core::contract::ModelSelection>,
+    sessions: &[&str],
+) -> (TempDir, DaemonApi) {
+    use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState};
+    let directory = tempfile::tempdir().unwrap();
+    let api = DaemonApi::new(&directory.path().join("data")).unwrap();
+    api.store
+        .register_project(&Project {
+            id: "project-1".into(),
+            root_path: directory.path().to_string_lossy().into_owned(),
+            settings: json!({}),
+        })
+        .unwrap();
+    let mut task = contract("task-1", "project-1", DeliveryPolicy::LocalReview);
+    task.model_selection = selection;
+    api.store.create(&task).unwrap();
+    api.store.transition("task-1", TaskEvent::Admit).unwrap();
+    for (index, id) in sessions.iter().enumerate() {
+        let attempt_id = format!("attempt-{index}");
+        api.store
+            .add_attempt(
+                "task-1",
+                &Attempt {
+                    id: attempt_id.clone(),
+                    task_id: "task-1".into(),
+                    attempt_number: u32::try_from(index).unwrap() + 1,
+                    state: AttemptState::Pending,
+                    failure_reason: None,
+                },
+            )
+            .unwrap();
+        api.store
+            .add_session(
+                "task-1",
+                &Session {
+                    id: (*id).into(),
+                    attempt_id,
+                    adapter: "codex".into(),
+                    state: SessionState::Spawning,
+                },
+            )
+            .unwrap();
+    }
+    (directory, api)
+}
+
+fn receipt(session: &str, key: &str, at: u64) -> orchestrator_store::UsageReceipt {
+    orchestrator_store::UsageReceipt {
+        task_id: "task-1".into(),
+        session_id: session.into(),
+        source: orchestrator_store::UsageSource::ProviderReported,
+        receipt_key: key.into(),
+        window_start_ms: 0,
+        window_end_ms: at,
+        reported_at_ms: at,
+        input_tokens: None,
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        output_tokens: None,
+        reasoning_tokens: None,
+        cost: None,
+        model: None,
+    }
+}
+
+fn attempts_of(api: &DaemonApi) -> Vec<Value> {
+    api.dispatch("review.evidence", json!({"task_id": "task-1"}))
+        .unwrap()["attempts"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn evidence_without_sessions_has_an_empty_attempt_list() {
+    let (_directory, api) = attempts_api(None, &[]);
+    assert!(attempts_of(&api).is_empty());
+}
+
+#[test]
+fn evidence_lists_a_receiptless_attempt_as_unknown_never_zero() {
+    let selection = orchestrator_core::contract::ModelSelection {
+        model: Some("gpt-6-luna".into()),
+        effort: None,
+    };
+    let (_directory, api) = attempts_api(Some(selection), &["s1"]);
+    let rows = attempts_of(&api);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["session_id"], "s1");
+    assert_eq!(rows[0]["agent"], "codex");
+    assert_eq!(
+        rows[0]["requested"],
+        json!({"model": "gpt-6-luna", "effort": null})
+    );
+    assert_eq!(rows[0]["reported_model"], Value::Null);
+    assert_eq!(rows[0]["coverage"], "unknown");
+    assert_eq!(rows[0]["cost"], Value::Null);
+    for field in [
+        "input_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+    ] {
+        assert_eq!(rows[0]["usage"][field], Value::Null, "{field}");
+    }
+}
+
+#[test]
+fn evidence_shows_two_attempts_with_requested_and_reported_models() {
+    let selection = orchestrator_core::contract::ModelSelection {
+        model: Some("gpt-6-luna".into()),
+        effort: Some("high".into()),
+    };
+    let (_directory, api) = attempts_api(Some(selection), &["s1", "s2"]);
+    let mut first = receipt("s1", "a", 10);
+    first.input_tokens = Some(100);
+    first.output_tokens = Some(40);
+    first.model = Some("gpt-6-sol".into());
+    api.store.record_usage_receipt(&first).unwrap();
+    let mut second = receipt("s1", "b", 20);
+    second.input_tokens = Some(5);
+    second.cache_read_tokens = Some(0);
+    second.cache_write_tokens = Some(1);
+    second.output_tokens = Some(2);
+    second.reasoning_tokens = Some(3);
+    second.cost = Some((1_500_000_000, "USD".into()));
+    api.store.record_usage_receipt(&second).unwrap();
+
+    let rows = attempts_of(&api);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0]["requested"]["effort"], "high");
+    assert_eq!(rows[0]["reported_model"], "gpt-6-sol");
+    assert_eq!(rows[0]["usage"]["input_tokens"], 105);
+    assert_eq!(rows[0]["usage"]["cache_read_tokens"], 0);
+    assert_eq!(rows[0]["usage"]["output_tokens"], 42);
+    assert_eq!(
+        rows[0]["cost"],
+        json!({"amount_nanos": 1_500_000_000u64, "currency": "USD"})
+    );
+    assert_eq!(rows[0]["coverage"], "reported");
+    assert_eq!(rows[1]["session_id"], "s2");
+    assert_eq!(rows[1]["coverage"], "unknown");
+    assert_eq!(rows[1]["usage"]["input_tokens"], Value::Null);
+}
+
+#[test]
+fn evidence_marks_a_partly_reported_attempt_partial() {
+    let (_directory, api) = attempts_api(None, &["s1"]);
+    let mut only_input = receipt("s1", "a", 10);
+    only_input.input_tokens = Some(7);
+    api.store.record_usage_receipt(&only_input).unwrap();
+    let rows = attempts_of(&api);
+    assert_eq!(rows[0]["requested"], Value::Null);
+    assert_eq!(rows[0]["coverage"], "partial");
+    assert_eq!(rows[0]["usage"]["input_tokens"], 7);
+    assert_eq!(rows[0]["usage"]["output_tokens"], Value::Null);
+    assert_eq!(rows[0]["cost"], Value::Null);
+}
