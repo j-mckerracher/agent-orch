@@ -14,11 +14,9 @@ Each item has a working default that this design uses until the user decides.
 - **N2. Phase order.** Recommended: the order in "Phases" below (context, workstream proposals, task proposals, wake-up loop, shapes and landing, standing approvals, fleet). Cost: unattended supervision (phase 3) waits for task proposals (phase 2). Moving the wake-up loop first would let the orchestrator notice events it cannot act on.
 - **N3. Autonomy default.** Recommended: every action needs a per-action approval. Phases 1 to 4 ship with no other path. Cost: one click per action, including harmless ones such as adding an objective.
 - **N4. Standing-approval scope.** Recommended: a grant names one project or one workstream, a set of action kinds, an optional branch prefix, an expiry (default 8 hours, maximum 7 days), a use count (default 20) and a token budget. Only the user creates a grant, in the UI, never by proposal. Destructive kinds are never grantable (see "Standing approvals"). Cost: away mode cannot cover a project the user did not name before leaving. Wider grants (all projects, no expiry) cost the user's ability to say what ran without them.
-- **N5. Terminal multiplexer backends.** Recommended: do not adopt tmux, Herdr or Zellij. The outcome (see live output, step in) is delivered by the Agents and Sessions view, cancel and retry, and phase 4 revise. Cost: no keystroke-level intervention in a running worker. Adopting a backend costs a per-OS dependency, a Windows story, and a second process supervisor beside the daemon's.
-- **N6. Relay replies on public channels.** Recommended: out of scope until the user asks. If adopted, every public post is a per-action approval and never grantable. Cost of no: firstmate parity has one missing integration. Cost of yes: posts under the user's identity, a credential to store, and public prompt injection as an input.
-- **N7. The app patching itself.** Recommended: the MCAO repository can be registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) needs a per-action approval and is never grantable. Cost: the user approves each upstream step. Cost of a hard no: the orchestrator cannot help improve MCAO, which firstmate does for itself.
-- **N8. Unattended pushes to protected branches.** Recommended: allowed only as a phase 5 standing approval of the merge kind, scoped to one project, green required checks only, the head commit bound to the approval, an audit entry per use. Cost: a wrong grant lands code unattended. Cost of a hard no: no `+yolo` parity.
-- **N9. Wake-turn budget defaults.** Recommended: at most 6 wake turns per hour and 40 per day per target, a daily wake token budget the user sets (default off until set, so the loop runs only deterministic notices), and wake turns always at Restricted. Cost: a busy fleet waits up to 10 minutes for interpretation.
+- **N5. The app patching itself. Approved by the user.** The MCAO repository can be registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) needs a per-action approval and is never grantable. Cost: the user approves each upstream step. Cost of a hard no: the orchestrator cannot help improve MCAO, which firstmate does for itself.
+- **N6. Unattended pushes to protected branches.** Recommended: allowed only as a phase 5 standing approval of the merge kind, scoped to one project, green required checks only, the head commit bound to the approval, an audit entry per use. Cost: a wrong grant lands code unattended. Cost of a hard no: no `+yolo` parity.
+- **N7. Wake-turn budget defaults.** Recommended: at most 6 wake turns per hour and 40 per day per target, a daily wake token budget the user sets (default off until set, so the loop runs only deterministic notices), and wake turns always at Restricted. Cost: a busy fleet waits up to 10 minutes for interpretation.
 
 ## What the code says today
 
@@ -69,7 +67,7 @@ Events the daemon records as wake candidates:
 Rules:
 
 - **Debounce.** Events coalesce per target for 60 seconds. One wake turn per target runs at a time. A user turn takes precedence and the wake waits until it ends.
-- **Limits.** Hourly and daily wake-turn caps per target (N9). A daily wake token budget, enforced from usage receipts that chat turns must start writing (phase 3 prerequisite). When a cap is reached the loop falls back to deterministic notices and the header says "Monitoring paused: limit reached".
+- **Limits.** Hourly and daily wake-turn caps per target (N7). A daily wake token budget, enforced from usage receipts that chat turns must start writing (phase 3 prerequisite). When a cap is reached the loop falls back to deterministic notices and the header says "Monitoring paused: limit reached".
 - **Level.** Wake turns run at Restricted, whatever the user's last choice. Nobody watches a wake turn, and it needs no tools.
 - **Output.** A wake turn may reply, propose, or answer with the quiet token. A quiet answer stores one collapsed line, "Checked 3 updates. Nothing needs you." An empty-looking transcript never hides a failure: failures are deterministic notices first.
 - **Records.** `wake_records` hold the event, the coalesced set, and the turn that handled it. A record closes when its turn completes, or when the user dismisses it.
@@ -83,7 +81,6 @@ Rules:
 | See live agent output | Agents and Sessions view, `sessions.events` with replay | None |
 | Stop or restart a worker | `tasks.cancel`, `tasks.retry` | Phase 2: the orchestrator can propose them |
 | Steer with new instructions | None | Phase 4 `task.revise`: cancel plus a new contract with the added intent, linked to the old task |
-| Type into the worker's terminal | None | Decision N5 |
 
 ### Secondmates and the "sub-orchestrator" request
 
@@ -199,7 +196,7 @@ Firstmate's `+yolo`, away mode and captain-approved autonomy become explicit gra
 
 The daemon matches each new proposal against active grants. A full match executes and the card says "Approved by standing approval", with a revoke link. Anything outside the scope gets a normal card.
 
-Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, publishing to MCAO's own upstream (N7), and public posts (N6). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
+Never grantable: grant creation or change (only the user, in the UI, never by proposal), `project.remove`, discarding work, a delivery that widens the envelope, a permission level above Auto, a merge with a red or missing required check, and publishing to MCAO's own upstream (N5). The default stays per-action approval; phase 5 adds grants, and nothing earlier uses them.
 
 ## Human control and safety
 

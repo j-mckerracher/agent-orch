@@ -147,9 +147,9 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
-| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7, approved: the MCAO repository is registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) is a per-action approval, never grantable. |
+| M2 | Patch its own code and publish upstream only with consent | GAP | Decision N5, approved: the MCAO repository is registered as an ordinary project with the same approvals. Publishing to its upstream (push, PR, issue) is a per-action approval, never grantable. |
 | M3 | Curate durable operational memory (stow) | GAP | Phase 5: user-visible orchestrator notes the snapshot includes, editable and deletable. |
-| M4 | Unattended push to a protected branch | NEEDS USER DECISION | Decision N8: a scoped standing approval, not a hard no. |
+| M4 | Unattended push to a protected branch | NEEDS USER DECISION | Decision N6: a scoped standing approval, not a hard no. |
 
 ## Firstmate rules and what they protect
 
@@ -160,7 +160,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | Hard rule 3: never tear down unlanded work | Work that exists nowhere else | No action kind discards a worktree or branch in phases 1 to 5. |
 | Hard rule 4: workers never address the user | One interface | Task agents have no conversation write path. Their results reach the user through the orchestrator and daemon-confirmed records. |
 | Hard rule 5: report outcomes faithfully | Trust in the summary | The UI shows only daemon-confirmed results. The preamble forbids early claims. |
-| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Decision N7. |
+| Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Decision N5. |
 | "Evidence is never authorization" | Action from a report or recommendation alone | A report produces proposals, never execution. |
 | "Away never changes the authority set" | Silent widening while nobody watches | Away is a preset of grants the user made. It adds none. |
 | "Standing autonomy is scoped consent per project" | Unbounded delegation | Standing approvals have scope, kinds, expiry, count and spend limits, a visible indicator, revoke and an audit entry per use. |
