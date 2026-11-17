@@ -226,7 +226,7 @@ fn fixture() -> (Fixture, Vec<Expected>) {
             "worktree",
             "add",
             "-b",
-            "moa/t-running",
+            "mcao/t-running",
             worktree.to_str().unwrap(),
             "main",
         ],
@@ -327,7 +327,7 @@ fn fixture() -> (Fixture, Vec<Expected>) {
             id: "t-running-workspace-1".to_owned(),
             task_id: "t-running".to_owned(),
             path: fixture.worktree.display().to_string(),
-            branch: "moa/t-running".to_owned(),
+            branch: "mcao/t-running".to_owned(),
             base_commit: fixture.candidate.clone(),
         })
         .unwrap();

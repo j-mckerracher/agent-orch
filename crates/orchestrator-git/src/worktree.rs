@@ -299,7 +299,7 @@ mod tests {
         let wt = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default())
             .unwrap();
         assert!(wt.path().exists());
-        assert_eq!(wt.branch(), "moa/task-a1b2c3");
+        assert_eq!(wt.branch(), "mcao/task-a1b2c3");
         assert_eq!(wt.base_sha(), head);
         // Worktree content is the committed base (line endings per the
         // checkout on this platform).
@@ -460,7 +460,7 @@ mod tests {
                 "rev-parse",
                 "--verify",
                 "--quiet",
-                "refs/heads/moa/too-long"
+                "refs/heads/mcao/too-long"
             ]
         ));
     }
@@ -525,7 +525,7 @@ mod tests {
         // Symbols are replaced, not rejected: "~~~" becomes a valid id.
         let ok =
             create_task_worktree(&repo, "~~~", "HEAD", &wts, &BranchPrefix::default()).unwrap();
-        assert_eq!(ok.branch(), "moa/___");
+        assert_eq!(ok.branch(), "mcao/___");
     }
 
     #[test]
@@ -557,8 +557,8 @@ mod tests {
         let second =
             create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default())
                 .unwrap();
-        assert_eq!(first.branch(), "moa/task-a1b2c3");
-        assert_eq!(second.branch(), "moa/task-a1b2c3-1");
+        assert_eq!(first.branch(), "mcao/task-a1b2c3");
+        assert_eq!(second.branch(), "mcao/task-a1b2c3-1");
         assert!(
             first.path().exists() && second.path().exists(),
             "both worktrees must coexist"
@@ -569,9 +569,9 @@ mod tests {
     #[test]
     fn preexisting_branch_skipped() {
         let (tmp, wts, repo) = fixture();
-        git(tmp.path().join("repo").as_path(), &["branch", "moa/x"]);
+        git(tmp.path().join("repo").as_path(), &["branch", "mcao/x"]);
         let wt = create_task_worktree(&repo, "x", "HEAD", &wts, &BranchPrefix::default()).unwrap();
-        assert_eq!(wt.branch(), "moa/x-1");
+        assert_eq!(wt.branch(), "mcao/x-1");
         assert!(wt.path().exists());
     }
 
@@ -594,7 +594,7 @@ mod tests {
                 source,
             }) => {
                 assert_eq!(path, &wts.join("fail-test"));
-                assert_eq!(branch, "moa/fail-test");
+                assert_eq!(branch, "mcao/fail-test");
                 assert!(
                     matches!(**source, Error::Io(_)),
                     "expected an Io failure, got {source:?}"
@@ -618,7 +618,7 @@ mod tests {
                     "rev-parse",
                     "--verify",
                     "--quiet",
-                    "refs/heads/moa/fail-test"
+                    "refs/heads/mcao/fail-test"
                 ]
             ),
             "no branch may remain after a failed add (git itself never created it)"
@@ -626,19 +626,19 @@ mod tests {
         assert_eq!(git(&repo_dir, &["rev-parse", "HEAD"]), head);
     }
 
-    /// A branch named `moa` makes `refs/heads/moa/<slug>`
+    /// A branch named `mcao` makes `refs/heads/mcao/<slug>`
     /// uncreatable (ref directory/file conflict). Git prints a progress line
     /// before its `fatal:` line; the reported error must carry the `fatal:`
     /// cause, not just the progress line, and must keep the original source.
     /// The full ref name appears only on the `fatal:` line, so asserting it
     /// proves the cause survived without depending on Git's message wording.
-    const CAUSE_REF: &str = "refs/heads/moa/cause-test";
+    const CAUSE_REF: &str = "refs/heads/mcao/cause-test";
 
     #[test]
     fn git_add_failure_reports_git_stderr_cause() {
         let (tmp, wts, repo) = fixture();
         let repo_dir = tmp.path().join("repo");
-        git(&repo_dir, &["branch", "moa"]);
+        git(&repo_dir, &["branch", "mcao"]);
         let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts, &BranchPrefix::default())
             .unwrap_err();
         let shown = err.to_string();
@@ -708,7 +708,7 @@ mod tests {
         let wt =
             create_task_worktree(&repo, "race", "HEAD", &wts, &BranchPrefix::default()).unwrap();
         assert_eq!(wt.path(), wts.join("race-1"));
-        assert_eq!(wt.branch(), "moa/race-1");
+        assert_eq!(wt.branch(), "mcao/race-1");
     }
 
     #[test]
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn name_collision_is_recognized_only_for_gits_own_conflict_lines() {
-        let branch = "a branch named 'moa/t' already exists";
+        let branch = "a branch named 'mcao/t' already exists";
         assert!(is_name_collision(&format!(
             "Preparing worktree; fatal: {branch}"
         )));

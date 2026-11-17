@@ -28,7 +28,7 @@ const SAVED_TEXT = "Saved. These defaults apply to this project from now on.";
 const INVALID_REASON = "Fix the fields marked as invalid before saving.";
 const UNCHANGED_REASON = "Change a value to save.";
 const PREFIX_HINT =
-  "Task branches start with this. Letters, digits, dot, dash, underscore and slash, ending with a slash (for example moa/). Not orchestrator/. Leave empty to use the machine-wide prefix.";
+  "Task branches start with this. Letters, digits, dot, dash, underscore and slash, ending with a slash (for example mcao/). Not orchestrator/. Leave empty to use the machine-wide prefix.";
 const CHECKS_HINT = `Each command runs without a shell: type the program and its arguments separated by spaces. Quotes and variables are not interpreted. Up to ${MAX_CHECKS} commands.`;
 
 const describedBy = (...ids: Array<string | false | null | undefined>) => ids.filter(Boolean).join(" ") || undefined;
