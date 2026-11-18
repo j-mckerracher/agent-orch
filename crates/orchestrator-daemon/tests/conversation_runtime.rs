@@ -3227,8 +3227,8 @@ fn a_full_turn_cannot_propose_a_task() {
 /// Waits until the task's agent has exited, so that stopping the daemon leaves no agent behind.
 /// Approving a `task.propose` card queues a task and the daemon starts the fake agent for it. A
 /// daemon that stops first does not kill that agent, and on Windows the gate then finds it alive.
-/// `Verifying` counts as settled: the daemon leaves a task there once the agent has exited and its
-/// candidate commit is recorded.
+/// `Verifying` counts as settled: the agent has exited and its candidate commit is recorded. The
+/// checks that verify the candidate run in the daemon, not in an agent, so they need not finish.
 fn wait_for_task_to_settle(layout: &Layout, task_id: &str) {
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut client = connect(&layout.data);

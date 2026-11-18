@@ -250,7 +250,6 @@
    "api::tests::task_submission_normalizes_display_agent_names_and_rejects_unknown_agents",
    "api::tests::task_submission_rejects_a_missing_parent_before_creating_a_task",
    "api::tests::task_submission_accepts_an_existing_parent",
-   "api::tests::verifying_task_cancellation_is_rejected_without_partial_attempt_update",
    "api::usage_tests::an_empty_day_reports_no_providers_and_unknown_totals",
    "api::usage_tests::bad_parameters_are_rejected",
    "api::usage_tests::estimated_figures_stay_apart_from_reported_ones",
@@ -333,7 +332,6 @@
    "executor::tests::usage_paths::usage_is_recorded_when_the_run_is_cancelled_before_any_event",
    "executor::tests::usage_paths::a_run_without_a_model_stays_unpriced_and_a_reported_model_wins",
    "executor::tests::retry_is_bounded_by_the_contract_and_only_for_failed_tasks",
-   "executor::tests::submitted_task_runs_to_candidate_ready_with_every_transition_journaled",
    "executor::tests::restart_terminates_an_orphaned_agent_then_fails_its_task_and_resumes_scheduling",
    "executor::tests::scheduler_limits_hold_and_a_finished_task_releases_its_slot",
    "executor::tests::usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown",
@@ -931,7 +929,17 @@
    "executor::tests::a_candidate_records_its_changed_file_count_and_last_message",
    "executor::tests::an_investigate_agent_that_changes_nothing_still_produces_a_candidate",
    "executor::tests::an_implement_agent_that_changes_nothing_fails_with_the_empty_change_set_reason",
-   "executor::tests::every_agent_exit_failure_stores_a_reason"
+   "executor::tests::every_agent_exit_failure_stores_a_reason",
+   "api::actions_phase4_tests::a_revise_of_a_verifying_task_stops_it_and_queues_a_linked_new_one",
+   "api::tests::in_place_task_with_a_verification_gate_is_refused_at_submit",
+   "api::tests::verifying_task_cancellation_cancels_the_candidate_attempt",
+   "api::tests::verifying_task_cancellation_leaves_reconcile_clean",
+   "api::workstream_plan_tests::remove_cancels_and_unlinks_a_verifying_task",
+   "executor::tests::cancelling_a_slow_verification_kills_its_check_and_cancels_the_task",
+   "executor::tests::candidate_that_fails_its_checks_is_verification_failed_with_the_reason",
+   "executor::tests::candidate_that_passes_its_checks_succeeds_with_a_passed_run",
+   "executor::tests::restart_resumes_a_candidate_left_verifying_and_settles_it",
+   "executor::tests::submitted_task_runs_to_succeeded_with_every_transition_journaled"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1083,7 +1091,8 @@
    "github_fake::tests::fake_github_scripted_failures_apply_once_in_order_per_method",
    "github_fake::tests::fake_github_unknown_pull_request_is_not_found",
    "github::tests::github_a_gh_that_prints_too_much_is_capped",
-   "github::tests::github_a_gh_that_times_out_is_killed_and_reports_timeout"
+   "github::tests::github_a_gh_that_times_out_is_killed_and_reports_timeout",
+   "verification::tests::canceled_command_is_killed_and_recorded"
   ],
   "cli-cleanup-safety": [
    "cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree",
@@ -1488,7 +1497,11 @@
    "sqlite_wake::tests::fail_wake_records_with_notice_rewrites_the_notice",
    "sqlite_wake::tests::settle_wake_records_changes_only_the_named_running_records",
    "sqlite_wake::tests::unseen_wake_counts_include_unanswered_outcomes",
-   "attempt_summary_and_changed_files_round_trip_and_clear"
+   "attempt_summary_and_changed_files_round_trip_and_clear",
+   "failing_settlement_fails_the_attempt_with_its_reason",
+   "passing_settlement_succeeds_the_attempt_and_records_the_run",
+   "cancel_verifying_task_requires_verifying_and_no_live_session",
+   "settlement_after_cancel_is_superseded_and_writes_nothing"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

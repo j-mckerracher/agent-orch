@@ -17,7 +17,7 @@ use orchestrator_store::{
 use super::actions::{lineage_write_error, project_code, ActionError};
 use super::actions_task_tests::{
     assert_executed, assert_failed, chat_submit, failed_task, proposed_task_id, register_project,
-    running_task, submit_queued, task_count, ALPHA,
+    running_task, submit_queued, task_count, verifying_task, ALPHA,
 };
 use super::actions_tests::{call, create_workstream, new_api, proposal, propose, resolve};
 use super::holds::civil_from_days;
@@ -157,6 +157,26 @@ fn approving_task_revise_stops_the_old_task_and_queues_a_linked_new_one() {
     // The same key replays the answer and makes nothing more.
     assert_eq!(resolve(&api, &ids[0], "approve", "k-1").unwrap(), result);
     assert_eq!(task_count(&api), 2);
+}
+
+/// A task whose candidate is being verified is stopped like a queued one, and its replacement
+/// is queued.
+#[test]
+fn a_revise_of_a_verifying_task_stops_it_and_queues_a_linked_new_one() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let old = verifying_task(&api, "s-1");
+    let ids = propose(&api, "t1", &revise_action(&old, INTENT));
+
+    let result = resolve(&api, &ids[0], "approve", "k-1").unwrap();
+    let new = proposed_task_id(&ids[0]);
+    assert_executed(&result, &new);
+
+    assert_eq!(api.store.get(&old).unwrap().state, TaskState::Cancelled);
+    assert_eq!(api.store.get(&new).unwrap().state, TaskState::Queued);
+    let lineage = api.store.task_lineage(&new).unwrap().unwrap();
+    assert_eq!(lineage.parent_task_id, old);
+    assert_eq!(lineage.relation, LineageRelation::RevisedFrom);
 }
 
 /// A task that already finished is not revised: nothing is stopped, made or linked.

@@ -24,7 +24,7 @@ A task the global orchestrator proposes joins the "Global tasks" workstream, whi
 
 ## Task states
 
-A task moves through Created, Queued, Running, and Verifying. It ends as Succeeded, Failed, VerificationFailed, or Canceled.
+A task moves through Created, Queued, Running, and Verifying. It ends as Succeeded, Failed, VerificationFailed, or Canceled. Verifying runs the checks on the candidate and settles to Succeeded or VerificationFailed. Canceling a Verifying task ends it as Canceled at once.
 
 ## Machine load
 

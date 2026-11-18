@@ -1030,6 +1030,14 @@ Pull request: Push an authorized branch and create a PR, initially using the Git
 
 For the MVP, support report-only and local-review delivery. Add PR automation after safe local delivery is working.
 
+Implementation note
+
+The engine's `verify_attempt` is the only way a Verifying task leaves that state. The daemon calls it on the task's supervisor thread once the agent exits, and the CLI calls the same function. A daemon restart runs it again for every task that is Verifying with a CandidateReady attempt. Each contract command is trusted exactly as admitted, so the repository's own configuration cannot add or change a command at verification time. Each command has a 30-minute wall-clock limit.
+
+A contract with no verification command still records a run. It passes with `details.gate` set to `"none"`, so the record shows that no gate ran. A project opened in place has no candidate commit, so its run is synthetic. A contract with a gate is refused at submit for such a project.
+
+Canceling a Verifying task ends it as Canceled and records a `VerificationCancelled` audit event. An in-memory flag kills the running check's process group, and a result that arrives after the cancel is discarded. Protected-path globs are not implemented yet.
+
 ## 13. Security architecture
 
 Security is a first-class implementation requirement because the application launches coding agents that can execute arbitrary code.

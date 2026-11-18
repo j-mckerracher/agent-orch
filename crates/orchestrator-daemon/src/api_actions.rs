@@ -462,12 +462,12 @@ impl ReviseTaskExec {
     }
 
     /// Refuses a revise that could not stop the old task, before anything is made. Only a
-    /// queued task, or a running one whose owner is alive, can be asked to stop. A finished
-    /// task is not revised: `task.retry` and `task.propose` start new work.
+    /// queued or verifying task, or a running one whose owner is alive, can be asked to stop.
+    /// A finished task is not revised: `task.retry` and `task.propose` start new work.
     fn preflight(&self, api: &DaemonApi) -> Result<(), ActionError> {
         let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
         match old.state {
-            TaskState::Queued => {}
+            TaskState::Queued | TaskState::Verifying => {}
             TaskState::Running => {
                 api.require_live_cancellation_owner(&self.old_task_id)?;
                 // No owner at all passes the check above and leaves nothing to take the request.
@@ -496,7 +496,10 @@ impl ReviseTaskExec {
             return Ok(());
         }
         let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
-        if matches!(old.state, TaskState::Queued | TaskState::Running) {
+        if matches!(
+            old.state,
+            TaskState::Queued | TaskState::Running | TaskState::Verifying
+        ) {
             api.cancel_task_inner(&self.old_task_id)?;
         }
         Ok(())

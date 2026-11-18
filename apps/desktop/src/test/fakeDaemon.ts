@@ -14,10 +14,14 @@ import type {
   Session,
   SessionEntry,
   TaskRecord,
+  TaskState,
 } from "../daemon/types";
 import { DEFAULT_QUEUE_SETTINGS, fakeQueueSnapshot, type FakeQueueSettings } from "./queueSnapshot";
 
 export type Failure = { code: number; message: string } | "hang";
+
+/** States the daemon accepts `tasks.cancel` from; mirrors the daemon, so the fake does not import UI code. */
+const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued", "Running", "Verifying"]);
 
 export class FakeChannel implements RpcChannel {
   private messageListeners: Array<(message: unknown) => void> = [];
@@ -275,7 +279,11 @@ export class FakeDaemon implements DaemonConnector {
       case "tasks.cancel": {
         const task = this.tasks.find((t) => t.contract.id === params.task_id);
         if (!task) return fail(-32010, "task not found");
+        if (!CANCELLABLE_STATES.has(task.state)) return fail(-32011, `task is ${task.state}; it cannot be canceled`);
         task.state = "Cancelled";
+        for (const attempt of task.attempts) {
+          if (attempt.state === "CandidateReady") attempt.state = "Cancelled";
+        }
         task.version += 1;
         return reply(task);
       }

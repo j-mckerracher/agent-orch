@@ -706,14 +706,11 @@ fn running_task_without_owner_rejects_cancellation_without_partial_updates() {
     );
 }
 
-#[test]
-fn verifying_task_cancellation_is_rejected_without_partial_attempt_update() {
-    use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState};
+/// A task whose candidate awaits verification. Its run has exited, so no session is live.
+fn create_verifying_task(api: &DaemonApi, task_id: &str) {
+    use orchestrator_core::task::{AttemptState, SessionState, TaskEvent};
 
-    let (_directory, api) = new_api();
-    register_project(&api);
-    let task_id = "verifying-task";
-    create_running_task(&api, task_id);
+    create_running_task(api, task_id);
     api.store
         .update_session_state(task_id, "session-1", SessionState::Exited)
         .unwrap();
@@ -723,35 +720,84 @@ fn verifying_task_cancellation_is_rejected_without_partial_attempt_update() {
     api.store
         .transition(task_id, TaskEvent::CandidateReady)
         .unwrap();
-    let before = api.store.get(task_id).unwrap();
-    let audit_before = api.store.event_journal(0).unwrap();
-    let stream_before = api.store.stream_events_after(0, 100).unwrap();
+}
+
+#[test]
+fn verifying_task_cancellation_cancels_the_candidate_attempt() {
+    use orchestrator_core::task::{AttemptState, AuditEvent, SessionState, TaskState};
+
+    let (_directory, api) = new_api();
+    register_project(&api);
+    let task_id = "verifying-task";
+    create_verifying_task(&api, task_id);
 
     let result = api.dispatch(
         "tasks.cancel",
         json!({"task_id": task_id, "idempotency_key": "cancel-verifying"}),
     );
     let after = api.store.get(task_id).unwrap();
-    let audit_after = api.store.event_journal(0).unwrap();
-    let stream_after = api.store.stream_events_after(0, 100).unwrap();
+    let verification_cancels = after
+        .events
+        .iter()
+        .filter(|event| **event == AuditEvent::VerificationCancelled)
+        .count();
 
     assert!(
-        matches!(&result, Err(RpcError::Conflict))
-            && before == after
-            && after.state == TaskState::Verifying
-            && after.attempts[0].state == AttemptState::CandidateReady
+        matches!(&result, Ok(task) if task["state"] == "Cancelled")
+            && after.state == TaskState::Cancelled
+            && after.attempts[0].state == AttemptState::Cancelled
             && after.sessions[0].state == SessionState::Exited
-            && audit_before == audit_after
-            && stream_before == stream_after,
+            && verification_cancels == 1,
         "result={result:?}, task={:?}, attempt={:?}, session={:?}, \
-         audit_events={}->{}, durable_events={}->{}",
+         verification_cancels={verification_cancels}",
         after.state,
         after.attempts[0].state,
         after.sessions[0].state,
-        audit_before.len(),
-        audit_after.len(),
-        stream_before.len(),
-        stream_after.len()
+    );
+}
+
+#[test]
+fn verifying_task_cancellation_leaves_reconcile_clean() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+    create_verifying_task(&api, "verifying-task");
+    api.dispatch(
+        "tasks.cancel",
+        json!({"task_id": "verifying-task", "idempotency_key": "cancel-verifying"}),
+    )
+    .unwrap();
+
+    assert_eq!(
+        orchestrator_engine::reconcile::reconcile_before_scheduling(&api.store),
+        Ok(())
+    );
+}
+
+#[test]
+fn in_place_task_with_a_verification_gate_is_refused_at_submit() {
+    let (_directory, api) = new_api();
+    api.store
+        .register_project(&Project {
+            id: "home".into(),
+            root_path: "/private/home".into(),
+            settings: json!({"in_place": true}),
+        })
+        .unwrap();
+    let mut gated = submit_params("gated", "Verify in place");
+    gated["contract"]["project_id"] = json!("home");
+    gated["contract"]["verification"] = json!({"Commands": {"commands": [["cargo", "test"]]}});
+
+    assert_eq!(
+        api.dispatch("tasks.submit", gated),
+        Err(RpcError::InvalidParams)
+    );
+    assert_eq!(api.store.list().unwrap().len(), 0);
+
+    let mut ungated = submit_params("ungated", "Report in place");
+    ungated["contract"]["project_id"] = json!("home");
+    assert_eq!(
+        api.dispatch("tasks.submit", ungated).unwrap()["state"],
+        "Queued"
     );
 }
 

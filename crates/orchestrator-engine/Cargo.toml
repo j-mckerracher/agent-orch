@@ -13,3 +13,6 @@ orchestrator-git = { path = "../orchestrator-git" }
 orchestrator-runtime = { path = "../orchestrator-runtime" }
 orchestrator-store = { path = "../orchestrator-store" }
 serde_json = "=1.0.154"
+
+[dev-dependencies]
+tempfile = "=3.27.0"

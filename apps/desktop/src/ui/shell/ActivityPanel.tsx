@@ -46,7 +46,7 @@ import type {
   WaitingReason,
 } from "../../sources/surfaces/types";
 import { heldSets } from "../../sources/surfaces/holds";
-import { basename, decisionCountText, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
+import { basename, canCancel, decisionCountText, pendingDecisionCount, pendingProposals, stateLabel } from "../format";
 import { useGate, useServices, useStore } from "../services";
 import { Badge, Button, Disclosure, EmptyState, Pill, type Tone } from "../theme";
 import { usePopover } from "../usePopover";
@@ -135,6 +135,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
   const [busy, setBusy] = useState(false);
   const stopId = useId();
   const confirmId = useId();
+  const reasonId = useId();
   const settled = useRef(false);
   // Keyboard focus follows the swap between Stop and its confirmation buttons.
   useEffect(() => {
@@ -144,6 +145,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
 
   const waiting = entry.waiting ? WAITING_LABEL[entry.waiting.reason] : null;
   const label = `${entry.objective} (${entry.taskId})`;
+  const cancelReason = canCancel(entry.state) ? null : `The task is ${stateLabel(entry.state)}; it can no longer be canceled.`;
   return (
     <li className="activity-row" data-testid={`activity-task-${entry.taskId}`}>
       <details className="activity-item">
@@ -163,6 +165,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
           )}
           {entry.waiting && <span className="activity-row-meta">{entry.waiting.detail}</span>}
           {entry.waiting?.nextStep && <span className="activity-row-meta">Next step: {entry.waiting.nextStep}</span>}
+          {cancelReason && <span id={reasonId} className="activity-row-meta">{cancelReason}</span>}
           {confirming ? (
             <div className="activity-row-actions" role="group" aria-label={`Confirm stop of ${label}`}>
               <Button
@@ -197,8 +200,8 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
                 id={stopId}
                 variant="danger"
                 aria-label={`Stop ${label}`}
-                aria-describedby={stop.blockedReason ? stop.describedBy : undefined}
-                disabled={stop.blockedReason !== null}
+                aria-describedby={stop.blockedReason ? stop.describedBy : cancelReason ? reasonId : undefined}
+                disabled={stop.blockedReason !== null || cancelReason !== null}
                 onClick={() => setConfirming(true)}
               >
                 Stop

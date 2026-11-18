@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptySubmitDraft, type SubmitDraft } from "./drafts";
-import { decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
+import { TASK_STATES, canCancel, decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
 import { NO_HELD } from "../sources/surfaces/holds";
@@ -134,6 +134,12 @@ describe("matchesFilter", () => {
     expect(ids("review")).toEqual(["ok"]);
     expect(ids("state:Succeeded")).toEqual(["done"]);
     expect(ids("all")).toHaveLength(5);
+  });
+});
+
+describe("canCancel", () => {
+  it("allows cancel only in the states the daemon accepts it from", () => {
+    expect(TASK_STATES.filter(canCancel)).toEqual(["Created", "Queued", "Running", "Verifying"]);
   });
 });
 

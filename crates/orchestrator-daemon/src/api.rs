@@ -878,6 +878,10 @@ impl DaemonApi {
         if project.is_in_place() && contract.delivery != DeliveryPolicy::ReportOnly {
             return Err(RpcError::InvalidParams);
         }
+        // Nor is there a candidate there for a verification gate to run against.
+        if project.is_in_place() && contract.verification.clone().has_gate() {
+            return Err(RpcError::InvalidParams);
+        }
         // A removed project takes no new task until it is registered again.
         if self
             .store
@@ -1150,7 +1154,8 @@ impl DaemonApi {
     }
 
     /// The cancel write, shared with action execution. The caller holds the idempotency gate.
-    /// A running task only has its cancellation requested; the owner confirms later.
+    /// A running task only has its cancellation requested; the owner confirms later. A
+    /// verifying task is cancelled at once, and its verification run is interrupted.
     pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         self.cancel_task_record(task_id)?;
         serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
@@ -1190,6 +1195,16 @@ impl DaemonApi {
                         .update_attempt_state(task_id, &attempt.id, AttemptState::Cancelled)
                         .map_err(map_store_error)?;
                 }
+            }
+            TaskState::Verifying => {
+                // The store cancels the attempt and records the cancel in one transaction.
+                self.store
+                    .cancel_verifying_task(task_id)
+                    .map_err(map_store_error)?;
+                if let Some(executor) = &self.executor {
+                    executor.cancel_verification(task_id);
+                }
+                return Ok(());
             }
             _ => return Err(RpcError::Conflict),
         };

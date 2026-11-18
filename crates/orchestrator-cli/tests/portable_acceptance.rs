@@ -236,7 +236,7 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
         .expect("run CLI");
     assert_success(&run, "run");
     let run_out = stdout(&run);
-    assert!(run_out.contains("status: Verifying"), "{run_out}");
+    assert!(run_out.contains("status: Succeeded"), "{run_out}");
     let worktree = PathBuf::from(labeled(&run_out, "worktree: "));
     let branch = labeled(&run_out, "branch: ");
     let candidate = labeled(&run_out, "candidate: ");
@@ -274,7 +274,7 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
         .expect("run tasks");
     assert_success(&tasks, "tasks");
     assert!(
-        stdout(&tasks).contains("accept-run\tVerifying"),
+        stdout(&tasks).contains("accept-run\tSucceeded"),
         "{}",
         stdout(&tasks)
     );
@@ -282,7 +282,7 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
     let inspect = cli(&fixture, "inspect", "accept-run");
     assert_success(&inspect, "inspect");
     let inspect_out = stdout(&inspect);
-    assert!(inspect_out.contains("status: Verifying"), "{inspect_out}");
+    assert!(inspect_out.contains("status: Succeeded"), "{inspect_out}");
     assert!(inspect_out.contains(&branch), "{inspect_out}");
 
     let diff = cli(&fixture, "diff", "accept-run");

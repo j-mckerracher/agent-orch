@@ -17,6 +17,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command as ProcessCommand, Output, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,6 +38,7 @@ use orchestrator_engine::reconcile::delivery_blocks;
 #[cfg(test)]
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::reconcile::{reconcile_before_scheduling, reconcile_cancellation_owners};
+use orchestrator_engine::verify::{verify_attempt, Verified};
 use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
 #[cfg(test)]
 use orchestrator_runtime::reconcile::DeliveryEvidence;
@@ -723,9 +725,31 @@ pub async fn run_task(
                     )
                 })?;
                 println!("candidate: {commit}");
-                println!("status: Verifying (candidate preserved for review)");
-                println!("exit code: 0");
-                Ok(0)
+                match verify_attempt(&store, &task_id, &attempt_id, &AtomicBool::new(false))? {
+                    Verified::Passed { .. } => {
+                        println!("status: Succeeded");
+                        println!("exit code: 0");
+                        Ok(0)
+                    }
+                    Verified::Failed { reason, .. } => {
+                        println!("status: VerificationFailed ({reason})");
+                        Err(format!(
+                            "task {task_id} failed verification; worktree {} is preserved",
+                            metadata.worktree.display()
+                        ))
+                    }
+                    Verified::Superseded => {
+                        let state = store
+                            .get(&task_id)
+                            .map_err(|error| format!("cannot inspect task {task_id}: {error}"))?
+                            .state;
+                        println!("status: {state:?}");
+                        Ok(130)
+                    }
+                    Verified::Interrupted => Err(format!(
+                        "verification of task {task_id} was interrupted; task remains Verifying"
+                    )),
+                }
             }
             AgentExit::Completed { code, .. } => {
                 fail_after_agent_exit(
@@ -1154,9 +1178,16 @@ pub fn cancel_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     let task = store
         .get(task_id)
         .map_err(|error| format!("cannot cancel task {task_id}: {error}"))?;
+    if task.state == TaskState::Verifying {
+        store
+            .cancel_verifying_task(task_id)
+            .map_err(|error| format!("cannot cancel verifying task {task_id}: {error}"))?;
+        println!("task {task_id} cancelled; its candidate was discarded");
+        return Ok(());
+    }
     if task.state != TaskState::Running {
         return Err(format!(
-            "task {task_id} is {:?}, not Running; no cancellation request was sent",
+            "task {task_id} is {:?}, not Running or Verifying; no cancellation request was sent",
             task.state
         ));
     }

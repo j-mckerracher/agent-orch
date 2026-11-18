@@ -6,13 +6,33 @@
 //! replaces a prior result. It stores evidence only and opens no referenced
 //! worktree or log paths.
 //!
+//! [`SqliteStore::settle_verification`] records a run and settles its candidate
+//! attempt and task in one transaction. A result that arrives after the task has
+//! left `Verifying` is discarded, so a cancellation always wins.
+//!
 //! Updated: 2026-11-07T23:46:24-07:00.
 
 use orchestrator_core::records::VerificationRun;
+use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState, TransitionError};
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{Row, Sqlite, Transaction};
 
+use crate::sqlite_events::append_durable_event;
+use crate::sqlite_ops::{
+    apply_task_event_in, bump_task_version, current_task_state, decode, encode, validate_task_id,
+};
 use crate::{SqliteStore, StoreError};
+
+/// Outcome of [`SqliteStore::settle_verification`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settlement {
+    /// The run was recorded, the attempt was settled, and the task left
+    /// `Verifying` with this outcome.
+    Settled { passed: bool },
+    /// The task or attempt was no longer `Verifying` and `CandidateReady`, for
+    /// example because it was cancelled while the check ran. Nothing was written.
+    Superseded,
+}
 
 impl SqliteStore {
     /// Appends verifier-owned JSON evidence and timestamps for one run.
@@ -29,19 +49,146 @@ impl SqliteStore {
         let run = run.clone();
         let details = serde_json::to_string(details)?;
         self.call(move |pool| async move {
-            sqlx::query(
-                "INSERT INTO verification_runs (id, task_id, \"commit\", status, log_path, result_json, started_at_ms, finished_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            insert_verification_run_in(
+                &mut transaction,
+                &run,
+                started_at_ms,
+                finished_at_ms,
+                &details,
             )
-            .bind(run.id)
-            .bind(run.task_id)
-            .bind(run.commit)
-            .bind(run.status)
-            .bind(run.log_path)
-            .bind(details)
-            .bind(started_at_ms)
-            .bind(finished_at_ms)
-            .execute(&pool)
             .await?;
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Records a verification run and settles its candidate in one `BEGIN IMMEDIATE`
+    /// transaction. A run whose `status` is `"passed"` succeeds the attempt and
+    /// applies a passing outcome. Any other status fails the attempt and stores
+    /// `failure_reason` on it.
+    ///
+    /// Returns [`Settlement::Superseded`] and writes nothing unless the task is
+    /// `Verifying` and the attempt is `CandidateReady`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn settle_verification(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        run: &VerificationRun,
+        started_at_ms: i64,
+        finished_at_ms: i64,
+        details: &Value,
+        failure_reason: Option<&str>,
+    ) -> Result<Settlement, StoreError> {
+        validate_task_id(task_id)?;
+        let task_id = task_id.to_owned();
+        let attempt_id = attempt_id.to_owned();
+        let run = run.clone();
+        let details = serde_json::to_string(details)?;
+        let failure_reason = failure_reason.map(str::to_owned);
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            if current_task_state(&mut transaction, &task_id).await? != TaskState::Verifying {
+                return Ok(Settlement::Superseded);
+            }
+            let attempt_state = sqlx::query_scalar::<_, String>(
+                "SELECT state FROM attempts WHERE task_id = ? AND id = ?",
+            )
+            .bind(&task_id)
+            .bind(&attempt_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| StoreError::NoAttempt {
+                attempt_id: attempt_id.clone(),
+                task_id: task_id.clone(),
+            })?;
+            if decode::<AttemptState>(&attempt_state)? != AttemptState::CandidateReady {
+                return Ok(Settlement::Superseded);
+            }
+
+            let passed = run.status == "passed";
+            let settled = if passed {
+                AttemptState::Succeeded
+            } else {
+                AttemptState::Failed
+            };
+            insert_verification_run_in(
+                &mut transaction,
+                &run,
+                started_at_ms,
+                finished_at_ms,
+                &details,
+            )
+            .await?;
+            sqlx::query(
+                "UPDATE attempts SET state = ?, failure_reason = ? WHERE task_id = ? AND id = ?",
+            )
+            .bind(encode(&settled)?)
+            .bind(failure_reason.as_deref())
+            .bind(&task_id)
+            .bind(&attempt_id)
+            .execute(&mut *transaction)
+            .await?;
+            bump_task_version(&mut transaction, &task_id).await?;
+            let payload = serde_json::json!({
+                "attempt_id": &attempt_id,
+                "state": settled,
+                "failure_reason_available": failure_reason.is_some(),
+            });
+            append_durable_event(
+                &mut transaction,
+                &task_id,
+                None,
+                "attempt.state_changed",
+                &payload,
+            )
+            .await?;
+            apply_task_event_in(
+                &mut transaction,
+                &task_id,
+                TaskEvent::VerificationOutcome { passed },
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok(Settlement::Settled { passed })
+        })
+    }
+
+    /// Cancels a task whose candidate is awaiting verification. One `BEGIN IMMEDIATE`
+    /// transaction requires the task to be `Verifying` with no live agent session,
+    /// moves its non-terminal attempts to `Cancelled`, and applies `CancelRequested`.
+    ///
+    /// Any other task state fails with `IllegalTransition`. A live session fails
+    /// with `CancellationConflict`.
+    pub fn cancel_verifying_task(&self, task_id: &str) -> Result<(), StoreError> {
+        validate_task_id(task_id)?;
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let state = current_task_state(&mut transaction, &task_id).await?;
+            if state != TaskState::Verifying {
+                return Err(StoreError::IllegalTransition(TransitionError::Illegal {
+                    from: state,
+                    event: TaskEvent::CancelRequested,
+                }));
+            }
+            let sessions =
+                sqlx::query_scalar::<_, String>("SELECT state FROM sessions WHERE task_id = ?")
+                    .bind(&task_id)
+                    .fetch_all(&mut *transaction)
+                    .await?;
+            for session_state in sessions {
+                if !decode::<SessionState>(&session_state)?.is_terminal() {
+                    return Err(StoreError::CancellationConflict {
+                        task_id: task_id.clone(),
+                        detail: "an agent session is still live",
+                    });
+                }
+            }
+            cancel_non_terminal_attempts(&mut transaction, &task_id).await?;
+            apply_task_event_in(&mut transaction, &task_id, TaskEvent::CancelRequested).await?;
+            transaction.commit().await?;
             Ok(())
         })
     }
@@ -85,4 +232,66 @@ impl SqliteStore {
                 .collect()
         })
     }
+}
+
+/// Appends one run row inside the caller's transaction.
+async fn insert_verification_run_in(
+    transaction: &mut Transaction<'_, Sqlite>,
+    run: &VerificationRun,
+    started_at_ms: i64,
+    finished_at_ms: i64,
+    details: &str,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "INSERT INTO verification_runs (id, task_id, \"commit\", status, log_path, result_json, started_at_ms, finished_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&run.id)
+    .bind(&run.task_id)
+    .bind(&run.commit)
+    .bind(&run.status)
+    .bind(run.log_path.as_deref())
+    .bind(details)
+    .bind(started_at_ms)
+    .bind(finished_at_ms)
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+/// Moves every non-terminal attempt of the task to `Cancelled`, one event each.
+async fn cancel_non_terminal_attempts(
+    transaction: &mut Transaction<'_, Sqlite>,
+    task_id: &str,
+) -> Result<(), StoreError> {
+    let rows = sqlx::query("SELECT id, state FROM attempts WHERE task_id = ?")
+        .bind(task_id)
+        .fetch_all(&mut **transaction)
+        .await?;
+    for row in rows {
+        let attempt_id: String = row.try_get("id")?;
+        let current: AttemptState = decode(&row.try_get::<String, _>("state")?)?;
+        if current.is_terminal() {
+            continue;
+        }
+        sqlx::query("UPDATE attempts SET state = ? WHERE task_id = ? AND id = ?")
+            .bind(encode(&AttemptState::Cancelled)?)
+            .bind(task_id)
+            .bind(&attempt_id)
+            .execute(&mut **transaction)
+            .await?;
+        bump_task_version(transaction, task_id).await?;
+        let payload = serde_json::json!({
+            "attempt_id": &attempt_id,
+            "state": AttemptState::Cancelled,
+        });
+        append_durable_event(
+            transaction,
+            task_id,
+            None,
+            "attempt.state_changed",
+            &payload,
+        )
+        .await?;
+    }
+    Ok(())
 }

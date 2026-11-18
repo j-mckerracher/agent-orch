@@ -238,6 +238,27 @@ describe("Agents & Sessions, live mode", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());
   });
 
+  it("cancels a Verifying task and marks its candidate attempt Cancelled", async () => {
+    const fake = seeded();
+    fake.tasks.push(
+      mkTask("t-verify", REPO, {
+        state: "Verifying",
+        attempts: [{ id: "attempt-verify", task_id: "t-verify", attempt_number: 1, state: "CandidateReady" }],
+      }),
+    );
+    const { user } = await mountAgents(fake, { live: true });
+    await screen.findByRole("tab", { name: "Active (2)" });
+    await user.click(screen.getByRole("button", { name: /t-verify/ }));
+    const cancel = await screen.findByRole("button", { name: "Cancel attempt" });
+    expect(cancel).toBeEnabled();
+    await user.click(cancel);
+    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled/)).toBeInTheDocument();
+    expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
+    expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ task_id: "t-verify" });
+    expect(fake.tasks.find((task) => task.contract.id === "t-verify")!.attempts[0]!.state).toBe("Cancelled");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel attempt" })).toBeDisabled());
+  });
+
   it("shows the selected session's recent output read-only in the detail", async () => {
     const fake = seeded();
     fake.outputs.set("s-1", {
@@ -359,7 +380,10 @@ describe("Agents & Sessions, live mode", () => {
   });
 
   it("disables unsupported controls with reasons and applies Cancel only to nonterminal tasks", async () => {
-    const { user } = await liveView();
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-verify", REPO, { state: "Verifying" }));
+    const { user } = await mountAgents(fake, { live: true });
+    await screen.findByRole("tab", { name: "Active (2)" });
     await user.click(screen.getByRole("button", { name: /t-run/ }));
     const retry = await screen.findByRole("button", { name: "Reassign via new attempt" });
     await waitFor(() => expect(retry).toBeDisabled());
@@ -386,6 +410,8 @@ describe("Agents & Sessions, live mode", () => {
       expect(button).toBeDisabled();
       expect(button).toHaveAccessibleDescription(/not available/i);
     }
+    await user.click(screen.getByRole("button", { name: /t-verify/ }));
+    expect(await screen.findByRole("button", { name: "Cancel attempt" })).toBeEnabled();
     await user.click(screen.getByRole("tab", { name: "Queued (1)" }));
     await user.click(screen.getByRole("button", { name: /t-queued/ }));
     expect(await screen.findByRole("button", { name: "Cancel attempt" })).toBeEnabled();

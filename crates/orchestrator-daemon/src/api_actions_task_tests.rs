@@ -230,6 +230,18 @@ pub(super) fn running_task(api: &DaemonApi, key: &str) -> String {
     id
 }
 
+/// A task whose candidate awaits verification, with no session left live.
+pub(super) fn verifying_task(api: &DaemonApi, key: &str) -> String {
+    let id = running_task(api, key);
+    api.store
+        .update_attempt_state(&id, "attempt-1", AttemptState::CandidateReady)
+        .unwrap();
+    api.store
+        .transition(&id, TaskEvent::CandidateReady)
+        .unwrap();
+    id
+}
+
 /// A task that ran once and failed, so one retry is allowed.
 pub(super) fn failed_task(api: &DaemonApi, key: &str) -> String {
     let id = running_task(api, key);

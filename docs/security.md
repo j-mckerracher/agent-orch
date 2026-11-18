@@ -87,9 +87,11 @@ These are invariants of the system, not features. Each is backed by code in
    engine evaluates the contract's `VerificationPolicy`. Verification
    commands are argument arrays from the contract — not the repository's
    own configuration — so a worker editing the project's test setup cannot
-   weaken a required gate; they run under an explicit trust policy with
-   resource limits. The verified candidate is the recorded commit, not the
-   agent's claim.
+   weaken a required gate. Each command is trusted exactly as admitted and
+   runs unsandboxed in the task worktree, with the environment allowlist and
+   a 30-minute limit per command. The trust policy fixes what runs, not what
+   it can do. The verified candidate is the recorded commit, not the agent's
+   claim.
 8. **No shell interpolation.** Untrusted task text is never interpolated into
    shell command strings; executables are launched with explicit argument
    arrays and working directories (plan §13).

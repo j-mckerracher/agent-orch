@@ -35,10 +35,11 @@ const CLI: &str = env!("CARGO_BIN_EXE_orchestrator-cli");
 const AGENT_SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/m2_agent.rs");
 const STEP_TIMEOUT: Duration = Duration::from_secs(30);
 
-const SUCCEEDED: [AuditEvent; 3] = [
+const SUCCEEDED: [AuditEvent; 4] = [
     AuditEvent::TaskAdmitted,
     AuditEvent::ExecutionStarted,
     AuditEvent::CandidateRecorded,
+    AuditEvent::VerificationPassed,
 ];
 const RUNNING: [AuditEvent; 2] = [AuditEvent::TaskAdmitted, AuditEvent::ExecutionStarted];
 const FAILED: [AuditEvent; 3] = [
@@ -395,7 +396,7 @@ fn wait_tree_gone(guard: &mut OwnedProcesses, live: &Live) {
     }
 }
 
-/// Releases `live`, requires a clean `Verifying` exit, and returns the candidate.
+/// Releases `live`, requires a clean exit with a passed verification, and returns the candidate.
 fn complete(guard: &mut OwnedProcesses, live: &mut Live) -> String {
     release(&live.run);
     let status = wait_exit(guard, &mut live.run);
@@ -407,7 +408,7 @@ fn complete(guard: &mut OwnedProcesses, live: &mut Live) -> String {
     );
     wait_tree_gone(guard, live);
     let out = fs::read_to_string(&live.run.stdout).unwrap();
-    assert!(out.contains("status: Verifying"), "{out}");
+    assert!(out.contains("status: Succeeded"), "{out}");
     labeled(&out, "candidate: ")
 }
 
@@ -535,8 +536,8 @@ fn two_concurrent_runs_overlap_and_keep_their_changes() {
         assert_states(
             &store,
             id,
-            TaskState::Verifying,
-            AttemptState::CandidateReady,
+            TaskState::Succeeded,
+            AttemptState::Succeeded,
             SessionState::Exited,
             &SUCCEEDED,
         );
@@ -651,16 +652,16 @@ fn crash_victim_scenario(use_hook: bool) {
     assert_states(
         &store,
         "survivor",
-        TaskState::Verifying,
-        AttemptState::CandidateReady,
+        TaskState::Succeeded,
+        AttemptState::Succeeded,
         SessionState::Exited,
         &SUCCEEDED,
     );
     assert_states(
         &store,
         "recovery",
-        TaskState::Verifying,
-        AttemptState::CandidateReady,
+        TaskState::Succeeded,
+        AttemptState::Succeeded,
         SessionState::Exited,
         &SUCCEEDED,
     );

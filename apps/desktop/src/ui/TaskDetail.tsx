@@ -4,7 +4,7 @@ import { timelineKey } from "../daemon/appData";
 import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
-import { TERMINAL_STATES, basename, pendingApprovals, stateLabel } from "./format";
+import { basename, canCancel, pendingApprovals, stateLabel } from "./format";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
@@ -360,7 +360,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
             <section aria-label="Cancellation" className="ps-section">
               <Button
                 variant="danger"
-                disabled={!gate.can("tasks") || cancelling || TERMINAL_STATES.has(record.state)}
+                disabled={!gate.can("tasks") || cancelling || !canCancel(record.state)}
                 onClick={() => void cancel()}
               >
                 Request cancel

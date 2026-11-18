@@ -208,13 +208,13 @@ fn waiting_agent(fixture: &Fixture, release: &Path) -> PathBuf {
 }
 
 #[test]
-fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
+fn submitted_task_runs_to_succeeded_with_every_transition_journaled() {
     let fixture = Fixture::new();
     let api = fixture.api(&succeeding_agent(&fixture));
     let task_id = fixture.submit(&api, "run-1", 0);
 
-    let done = wait_state(&api, &task_id, "Verifying");
-    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let done = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
     assert_eq!(done["sessions"][0]["state"], "Exited");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let workspaces: Vec<_> = store
@@ -250,8 +250,8 @@ fn submitted_task_runs_to_candidate_ready_with_every_transition_journaled() {
         .iter()
         .filter(|kind| kind.as_str() == "task.transition")
         .count();
-    // Admit, ExecutionStarted, CandidateReady.
-    assert_eq!(transitions, 3, "{kinds:?}");
+    // Admit, ExecutionStarted, CandidateReady, VerificationPassed.
+    assert_eq!(transitions, 4, "{kinds:?}");
     for expected in ["task.created", "workspace.added"] {
         assert!(
             kinds.iter().any(|kind| kind == expected),
@@ -327,7 +327,7 @@ fn a_finished_scout_leaves_its_last_message_as_a_redacted_report_and_a_ship_leav
         &format!("The slow query is in the loader, password={secret}"),
     ));
     let scout = submit_kind(&fixture, &api, "scout-1", "Investigate");
-    wait_state(&api, &scout, "Verifying");
+    wait_state(&api, &scout, "Succeeded");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let report = store
         .task_report(&scout)
@@ -379,8 +379,8 @@ fn an_investigate_agent_that_changes_nothing_still_produces_a_candidate() {
     let api = fixture.api(&messaging_agent(&fixture, "The loader is the slow part."));
     let scout = submit_kind(&fixture, &api, "scout-no-change", "Investigate");
 
-    let done = wait_state(&api, &scout, "Verifying");
-    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let done = wait_state(&api, &scout, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let attempt = &store.attempts_for_task(&scout).unwrap()[0];
     assert_eq!(attempt.failure_reason, None);
@@ -445,7 +445,7 @@ fn a_candidate_records_its_changed_file_count_and_last_message() {
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "two-files-1", 0);
 
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
     assert_eq!(attempt.changed_files, Some(2));
@@ -464,7 +464,7 @@ fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
     );
     let api = fixture.api(&reporting);
     let task_id = fixture.submit(&api, "usage-1", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -487,7 +487,7 @@ fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
     let quiet_fixture = Fixture::new();
     let api = quiet_fixture.api(&succeeding_agent(&quiet_fixture));
     let task_id = quiet_fixture.submit(&api, "usage-2", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let summary = api.dispatch("usage.summary", params).unwrap();
     let codex = &summary["providers"][0];
     assert_eq!(codex["sessions"], 1);
@@ -517,11 +517,11 @@ fn failed_agent_fails_the_task_and_retry_appends_a_second_attempt() {
     let retry = json!({"task_id": task_id, "idempotency_key": "retry-1"});
     let queued = api.dispatch("tasks.retry", retry.clone()).unwrap();
     assert!(queued["state"] == "Queued" || queued["state"] == "Running");
-    let done = wait_state(&api, &task_id, "Verifying");
+    let done = wait_state(&api, &task_id, "Succeeded");
     let attempts = done["attempts"].as_array().unwrap();
     assert_eq!(attempts.len(), 2, "the failed attempt is never erased");
     assert_eq!(attempts[0]["state"], "Failed");
-    assert_eq!(attempts[1]["state"], "CandidateReady");
+    assert_eq!(attempts[1]["state"], "Succeeded");
     assert_eq!(attempts[1]["attempt_number"], 2);
 
     // Replaying the same key returns the recorded answer and starts nothing.
@@ -608,8 +608,8 @@ fn scheduler_limits_hold_and_a_finished_task_releases_its_slot() {
     assert_eq!(running, 1);
 
     fs::write(&release, "go").unwrap();
-    wait_state(&api, &first, "Verifying");
-    wait_state(&api, &second, "Verifying");
+    wait_state(&api, &first, "Succeeded");
+    wait_state(&api, &second, "Succeeded");
     api.shutdown();
 }
 
@@ -634,7 +634,7 @@ fn a_closed_load_gate_keeps_a_queued_task_queued_and_leaves_a_running_task_alone
 
     // The running task finishes as usual; the closed gate still holds the queued one.
     fs::write(&release, "go").unwrap();
-    wait_state(&api, &running, "Verifying");
+    wait_state(&api, &running, "Succeeded");
     thread::sleep(Duration::from_millis(300));
     assert_eq!(task(&api, &queued)["state"], "Queued");
     api.shutdown();
@@ -663,7 +663,7 @@ fn opening_the_load_gate_starts_a_queued_task_without_waiting_for_the_poll() {
 
     wait_state(&api, &queued, "Running");
     fs::write(&release, "go").unwrap();
-    wait_state(&api, &queued, "Verifying");
+    wait_state(&api, &queued, "Succeeded");
     api.shutdown();
 }
 
@@ -700,6 +700,159 @@ fn cancelling_a_running_task_stops_the_agent_through_its_owner() {
         !orchestrator_runtime::is_process_running(pid)
     });
     api.shutdown();
+}
+
+/// A task whose candidate must pass `commands` before it succeeds.
+fn checked_contract(fixture: &Fixture, id: &str, commands: Vec<Vec<String>>) -> TaskContract {
+    TaskContract {
+        verification: VerificationPolicy::Commands { commands },
+        ..queued_contract(fixture, id)
+    }
+}
+
+/// The argument vector of a check that runs `script` with `sh -c`.
+fn sh_check(script: &str) -> Vec<String> {
+    vec!["/bin/sh".into(), "-c".into(), script.into()]
+}
+
+/// Stores `contract` and admits it, as the API does, so the executor picks it up.
+fn admit(store: &SqliteStore, contract: &TaskContract) {
+    store.create(contract).unwrap();
+    store.transition(&contract.id, TaskEvent::Admit).unwrap();
+}
+
+#[test]
+fn candidate_that_passes_its_checks_succeeds_with_a_passed_run() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    let contract = checked_contract(
+        &fixture,
+        "checked-pass",
+        vec![sh_check("test -f agent-output.txt")],
+    );
+    admit(&store, &contract);
+    let executor = Executor::start(
+        store.clone(),
+        fixture.config(&data, &succeeding_agent(&fixture)),
+    )
+    .unwrap();
+
+    wait_until("checked task to succeed", || {
+        store.get("checked-pass").unwrap().state == TaskState::Succeeded
+    });
+    let task = store.get("checked-pass").unwrap();
+    assert_eq!(task.attempts[0].state, AttemptState::Succeeded);
+    let runs = store.verification_runs_for_task("checked-pass").unwrap();
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0].status, "passed");
+    executor.shutdown();
+}
+
+#[test]
+fn candidate_that_fails_its_checks_is_verification_failed_with_the_reason() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    let contract = checked_contract(&fixture, "checked-fail", vec![sh_check("exit 3")]);
+    admit(&store, &contract);
+    let executor = Executor::start(
+        store.clone(),
+        fixture.config(&data, &succeeding_agent(&fixture)),
+    )
+    .unwrap();
+
+    wait_until("checked task to fail verification", || {
+        store.get("checked-fail").unwrap().state == TaskState::VerificationFailed
+    });
+    let task = store.get("checked-fail").unwrap();
+    assert_eq!(task.attempts[0].state, AttemptState::Failed);
+    let reason = task.attempts[0].failure_reason.as_deref().unwrap();
+    assert!(!reason.is_empty());
+    let runs = store.verification_runs_for_task("checked-fail").unwrap();
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0].status, "failed");
+    executor.shutdown();
+}
+
+#[test]
+fn cancelling_a_slow_verification_kills_its_check_and_cancels_the_task() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    let pid_file = fixture.marker("check.pid");
+    let slow = sh_check(&format!(
+        "echo $$ > '{}'; exec sleep 60",
+        pid_file.display()
+    ));
+    admit(
+        &store,
+        &checked_contract(&fixture, "checked-cancel", vec![slow]),
+    );
+    let executor = Executor::start(
+        store.clone(),
+        fixture.config(&data, &succeeding_agent(&fixture)),
+    )
+    .unwrap();
+
+    wait_until("check to record its pid", || {
+        fs::read_to_string(&pid_file).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
+    });
+    let pid: u32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    store.cancel_verifying_task("checked-cancel").unwrap();
+    executor.cancel_verification("checked-cancel");
+
+    wait_until("check process to exit", || {
+        !orchestrator_runtime::is_process_running(pid)
+    });
+    assert_eq!(
+        store.get("checked-cancel").unwrap().state,
+        TaskState::Cancelled
+    );
+    executor.shutdown();
+}
+
+#[test]
+fn restart_resumes_a_candidate_left_verifying_and_settles_it() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    // A stopped daemon finished the agent: the session exited and the candidate
+    // was recorded, but verification never ran.
+    seed_interrupted_run(&store, &fixture, "resumed", None);
+    store
+        .update_session_state("resumed", "resumed-session-1", SessionState::Exited)
+        .unwrap();
+    store
+        .update_attempt_state("resumed", "resumed-attempt-1", AttemptState::CandidateReady)
+        .unwrap();
+    store
+        .transition("resumed", TaskEvent::CandidateReady)
+        .unwrap();
+    assert_eq!(store.get("resumed").unwrap().state, TaskState::Verifying);
+
+    let executor = Executor::start(
+        store.clone(),
+        fixture.config(&data, &succeeding_agent(&fixture)),
+    )
+    .unwrap();
+
+    wait_until("resumed candidate to succeed", || {
+        store.get("resumed").unwrap().state == TaskState::Succeeded
+    });
+    assert_eq!(
+        store.get("resumed").unwrap().attempts[0].state,
+        AttemptState::Succeeded
+    );
+    executor.shutdown();
 }
 
 fn message_line(text: &str) -> String {
@@ -758,8 +911,8 @@ fn output_tail_is_read_only_and_leaves_a_running_agent_and_its_exit_untouched() 
     assert_eq!(task(&api, &task_id)["sessions"][0]["state"], "Running");
 
     fs::write(&release, "").unwrap();
-    let done = wait_state(&api, &task_id, "Verifying");
-    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let done = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
     assert_eq!(done["sessions"][0]["state"], "Exited");
 
     let tail = output_tail(&api, &task_id, json!({})).unwrap();
@@ -786,8 +939,8 @@ fn output_tail_flood_stays_within_the_ring_and_line_caps_and_the_run_still_succe
     );
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "flood-1", 0);
-    let done = wait_state(&api, &task_id, "Verifying");
-    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let done = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
 
     let tail = output_tail(&api, &task_id, json!({"limit": 100_000})).unwrap();
     assert_eq!(tail["limit"], MAX_TAIL_LINES);
@@ -818,7 +971,7 @@ fn output_tail_defaults_clamps_and_rejects_bad_input_and_unknown_sessions() {
     );
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "rows-1", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
 
     let default = output_tail(&api, &task_id, json!({})).unwrap();
     assert_eq!(default["limit"], DEFAULT_TAIL_LINES);
@@ -875,7 +1028,7 @@ fn output_tail_of_a_session_the_daemon_has_no_output_for_is_empty_and_flagged() 
     let agent = succeeding_agent(&fixture);
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "restart-1", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     api.shutdown();
 
     // A new daemon over the same data has the session on record but no ring.
@@ -1447,7 +1600,7 @@ fn restart_terminates_an_orphaned_agent_then_fails_its_task_and_resumes_scheduli
     assert_eq!(orphaned.sessions[0].state, SessionState::Exited);
     // Scheduling resumed only after the gate passed.
     wait_until("queued task to run", || {
-        store.get("waiting").unwrap().state == TaskState::Verifying
+        store.get("waiting").unwrap().state == TaskState::Succeeded
     });
     assert_eq!(executor.blocked_reason(), None);
     executor.shutdown();
@@ -1771,7 +1924,7 @@ fn a_task_is_created_from_the_projects_base_branch_and_prefix() {
         .unwrap();
     let task_id = fixture.submit(&api, "base-1", 0);
 
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let workspace = store
         .list_workspaces()
         .unwrap()
@@ -1831,7 +1984,7 @@ fn a_tag_with_the_base_branchs_name_never_decides_the_base() {
         .unwrap();
     let task_id = fixture.submit(&api, "base-3", 0);
 
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let workspace = store
         .list_workspaces()
         .unwrap()
@@ -2165,7 +2318,7 @@ fn queue_snapshot_orders_the_queue_from_the_executors_fairness_cursor() {
     assert_eq!(result["queued"][0]["waiting_reason"], "global_cap");
     api.shutdown();
     fs::write(&release, "go").unwrap();
-    wait_state(&api, "p1", "Verifying");
+    wait_state(&api, "p1", "Succeeded");
 }
 
 mod usage_paths {
@@ -2539,7 +2692,7 @@ fn a_start_over_the_cpu_threshold_is_deferred_with_a_reason_then_admitted_when_i
     assert_eq!(task(&api, &task_id)["state"], "Queued");
 
     cpu.store(10, Ordering::SeqCst);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let state = admission(&api);
     assert_eq!(state["decision"]["reason_code"], "admitted");
     assert_eq!(state["deferred_task_ids"], json!([]));
@@ -2559,7 +2712,7 @@ fn an_unreadable_meter_never_blocks_a_start_and_is_reported_unknown() {
         };
     });
     let task_id = fixture.submit(&api, "admit-unknown", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let state = admission(&api);
     assert_eq!(state["decision"]["reason_code"], "admitted_metric_unknown");
     assert_eq!(state["decision"]["unknown"], json!(["memory"]));
@@ -2585,8 +2738,8 @@ fn the_running_agent_threshold_defers_the_next_start_without_touching_running_wo
     assert_eq!(task(&api, &second)["state"], "Queued");
 
     fs::write(&release, "go").unwrap();
-    wait_state(&api, &first, "Verifying");
-    wait_state(&api, &second, "Verifying");
+    wait_state(&api, &first, "Succeeded");
+    wait_state(&api, &second, "Succeeded");
     api.shutdown();
 }
 
@@ -2595,7 +2748,7 @@ fn without_thresholds_admission_is_off_and_starts_are_unchanged() {
     let fixture = Fixture::new();
     let api = fixture.api(&succeeding_agent(&fixture));
     let task_id = fixture.submit(&api, "admit-off", 0);
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let state = admission(&api);
     assert_eq!(state["enabled"], false);
     assert_eq!(state["deferred_task_ids"], json!([]));
@@ -2639,7 +2792,7 @@ fn a_task_for_an_in_place_project_runs_in_the_directory_without_a_worktree_or_co
         .unwrap()
         .to_owned();
 
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
 
     // The agent ran in the directory, and nothing turned it into a repository.
     assert_eq!(

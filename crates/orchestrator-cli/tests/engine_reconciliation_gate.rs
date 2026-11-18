@@ -731,7 +731,7 @@ fn run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated() {
         identity.start_time_micros.is_some() || cfg!(windows),
         "identity must carry a start time to defeat PID reuse: {identity:?}"
     );
-    assert_eq!(store.get("ident-run").unwrap().state, TaskState::Verifying);
+    assert_eq!(store.get("ident-run").unwrap().state, TaskState::Succeeded);
 
     assert_eq!(
         fs::read(&legacy).unwrap(),
@@ -749,7 +749,7 @@ fn run_persists_launch_identity_in_sqlite_and_leaves_legacy_json_unmigrated() {
     );
     let tasks = cli(&fixture, &["tasks"]);
     assert_success(&tasks, "tasks");
-    assert!(stdout(&tasks).contains("ident-run\tVerifying"));
+    assert!(stdout(&tasks).contains("ident-run\tSucceeded"));
     assert!(
         !stdout(&tasks).contains("legacy-json-task"),
         "legacy JSON records are not migrated: {}",
@@ -785,7 +785,7 @@ fn live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock() {
         .output()
         .expect("run CLI");
     assert_success(&second, "second run beside a live task");
-    assert!(stdout(&second).contains("status: Verifying"));
+    assert!(stdout(&second).contains("status: Succeeded"));
     assert_eq!(snapshot(&fixture.repo), before);
 
     assert!(
@@ -979,7 +979,7 @@ fn planned_and_admitted_tasks_without_attempts_do_not_block_scheduling() {
         .output()
         .expect("run CLI");
     assert_success(&run, "run beside queued tasks that have no attempt");
-    assert!(stdout(&run).contains("status: Verifying"));
+    assert!(stdout(&run).contains("status: Succeeded"));
     let store = open_store(&fixture);
     assert_eq!(store.get("queued-admitted").unwrap().attempts.len(), 0);
     assert_eq!(store.get("queued-planned").unwrap().attempts.len(), 0);
@@ -988,8 +988,8 @@ fn planned_and_admitted_tasks_without_attempts_do_not_block_scheduling() {
 #[test]
 fn settled_candidate_ready_attempt_does_not_block_scheduling() {
     let fixture = fixture();
-    // A finished run preserved for review: session Exited, attempt CandidateReady
-    // and task Verifying. That is settled, not an unfinished launch.
+    // A run that stopped before its verification settled: session Exited, attempt
+    // CandidateReady and task Verifying. The session is settled, not an unfinished launch.
     seed_running_session(&fixture, "awaiting-review", None);
     let store = open_store(&fixture);
     store
@@ -1073,7 +1073,7 @@ fn interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evid
         .output()
         .expect("run CLI");
     assert_success(&run, "run after recovering known-owned interrupted tasks");
-    assert!(stdout(&run).contains("status: Verifying"));
+    assert!(stdout(&run).contains("status: Succeeded"));
 
     let store = open_store(&fixture);
     for id in ids {
@@ -1086,7 +1086,7 @@ fn interrupted_task_with_known_owned_workspace_resumes_scheduling_and_keeps_evid
     }
     assert_eq!(
         store.get("after-crashes").unwrap().state,
-        TaskState::Verifying
+        TaskState::Succeeded
     );
     assert!(matching.exists());
     assert_eq!(
@@ -1383,7 +1383,7 @@ fn consistent_delivery_journals_do_not_block_scheduling() {
         .output()
         .expect("run CLI");
     assert_success(&run, "run beside consistent delivery journals");
-    assert!(stdout(&run).contains("status: Verifying"));
+    assert!(stdout(&run).contains("status: Succeeded"));
 }
 
 // ---- live owners are exempt from process blockers, never from delivery journals ----
@@ -1539,7 +1539,7 @@ fn live_owner_with_consistent_not_applied_journal_does_not_block_scheduling() {
         .output()
         .expect("run CLI");
     assert_success(&second, "run beside a live owner with a consistent journal");
-    assert!(stdout(&second).contains("status: Verifying"));
+    assert!(stdout(&second).contains("status: Succeeded"));
     assert_eq!(snapshot(&fixture.repo), before);
     assert_eq!(
         open_store(&fixture).get("live-consistent").unwrap().state,
