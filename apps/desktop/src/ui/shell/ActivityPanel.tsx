@@ -23,12 +23,12 @@
  *
  * Layout: a compact trigger button ("Workspace activity", attention count) sits in the shell's
  * activity column at the top-right, beside main. Its disclosure is a card anchored under the trigger
- * (`aria-expanded`/`aria-controls`), closed on load and not remembered; the column is reserved whether
- * or not the card is open, so the card never covers the conversation. Escape, a pointer press
- * outside, or focus leaving it closes it and returns focus to the trigger (`usePopover`). The
+ * (`aria-expanded`/`aria-controls`), open on load and not remembered; the column is reserved whether
+ * or not the card is open, so the card never covers the conversation. Escape closes it and returns
+ * focus to the trigger; a pointer press outside or focus leaving it also closes it (`usePopover`). The
  * sections are direct children of `.activity-sections`: Execution queue, Attention, Agent slots,
- * then System Usage (the shell's `resources` slot, reserved as the last child). Every section and
- * every queue row starts collapsed. This component renders no landmark of its own.
+ * then System Usage (the shell's `resources` slot, reserved as the last child). System Usage starts
+ * expanded; the other sections and every queue row start collapsed. This component renders no landmark.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { isFixtureId } from "../../daemon/api";
@@ -319,7 +319,7 @@ export function ActivityPanel() {
     appData.approvals.data,
   ]);
   const usage = useRefreshing(() => surfaces.usage.usage(), surfaces.usage.provenance, [surfaces.usage, ...connectionDeps]);
-  const popover = usePopover();
+  const popover = usePopover(undefined, true);
   const popoverId = useId();
 
   const snapshot: ActivitySnapshot | null = activity.status === "ok" ? activity.data : null;

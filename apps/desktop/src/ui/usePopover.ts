@@ -10,8 +10,8 @@ import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from
  * the panel before the click reaches the item. A blur with no related target is ignored for the
  * same reason.
  */
-export function usePopover(onOpen?: () => void) {
-  const [open, setOpen] = useState(false);
+export function usePopover(onOpen?: () => void, defaultOpen = false) {
+  const [open, setOpen] = useState(defaultOpen);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const pressingInside = useRef(false);

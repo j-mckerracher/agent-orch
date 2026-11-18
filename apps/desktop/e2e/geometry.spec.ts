@@ -122,10 +122,12 @@ test("System Usage stays reachable and unclipped in the activity popover at 960 
   await openFixture(page, viewport.width);
 
   const activity = page.getByTestId("workspace-activity");
-  await activity.getByRole("button", { name: /^Workspace activity/ }).click();
+  await expect(activity.getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
   const usage = activity.getByTestId("resource-strip");
-  // The System Usage section opens by default, as in the wireframe.
   await expect(usage).toHaveAttribute("open", "");
+  for (const section of ["activity-queue", "activity-attention", "activity-slots"]) {
+    await expect(activity.getByTestId(section)).not.toHaveAttribute("open");
+  }
 
   for (const name of resourceLabels) {
     await expect(usage.getByText(name, { exact: true })).toBeVisible();
@@ -168,7 +170,7 @@ test("activity controls receive pointer input and activate at 760 CSS px", async
   await openFixture(page, 760);
 
   const activity = page.getByTestId("workspace-activity");
-  await activity.getByRole("button", { name: /^Workspace activity/ }).click();
+  await expect(activity.getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
   const slots = activity.getByTestId("activity-slots");
   await slots.locator("summary").click();
   await expect(slots).toHaveAttribute("open", "");
@@ -509,9 +511,13 @@ for (const [width, height] of [
       const b = (await conversation.boundingBox())!;
       return b.x + b.width;
     };
+    const trigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
     const collapsedRight = await conversationRight();
 
-    await page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ }).click();
+    await trigger.click();
     const card = page.getByTestId("activity-popover");
     await expect(card).toBeVisible();
     const cardBox = (await card.boundingBox())!;
@@ -562,6 +568,9 @@ test.describe("connection strip collapse (DPES-1105)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/?fixture=1#/workspace");
       await expect(page.getByTestId("fixture-banner")).toBeVisible();
+      const activityTrigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
+      await activityTrigger.click();
+      await expect(activityTrigger).toHaveAttribute("aria-expanded", "false");
       const strip = page.getByTestId("shell-connection");
       const content = page.locator("#shell-main");
       const measure = async () => ({
