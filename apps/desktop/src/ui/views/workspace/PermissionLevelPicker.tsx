@@ -100,6 +100,8 @@ export function PermissionLevelPicker({
 export interface LastTurnLevel {
   daemonLevel: PermissionLevel | null;
   sentLevel: PermissionLevel | null;
+  /** `wake` for an automatic update the user did not send. Absent from an older daemon. */
+  trigger?: "user" | "wake";
 }
 
 /**
@@ -119,9 +121,17 @@ export function PermissionLevelNotes({ olderDaemon, lastTurn }: { olderDaemon: b
   );
 }
 
-function LastTurn({ daemonLevel, sentLevel }: LastTurnLevel) {
+function LastTurn({ daemonLevel, sentLevel, trigger }: LastTurnLevel) {
   if (daemonLevel === null) {
     return <p className="ws-small">The daemon has not recorded a permission level for the last turn.</p>;
+  }
+  // An automatic update was never sent by the user, so there is no sent level to compare against.
+  if (trigger === "wake") {
+    return (
+      <p className="ws-small">
+        The last automatic update ran at {permissionLabel(daemonLevel)}, as automatic updates always do.
+      </p>
+    );
   }
   if (sentLevel !== null && sentLevel !== daemonLevel) {
     return (

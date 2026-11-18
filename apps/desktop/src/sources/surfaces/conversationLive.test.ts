@@ -98,6 +98,14 @@ describe("mapEntries", () => {
     }
   });
 
+  it("says the agent's usage or spending limit refused the turn, and offers the way out", () => {
+    const entries = mapEntries([wire(1, "t1", "user_message", "hi"), wire(2, "t1", "turn_failed", "", "runtime_provider_limit")]);
+    expect(entries[1]).toMatchObject({ kind: "status", role: "system", errorCode: "runtime_provider_limit" });
+    expect(entries[1]!.text).toBe(
+      "The orchestrator's agent refused the turn: its usage or spending limit is reached. Raise the limit or choose another agent in Settings. No reply was produced.",
+    );
+  });
+
   it("marks a completed turn without a reply and a canceled turn as statuses", () => {
     const entries = mapEntries([wire(1, "t1", "turn_completed"), wire(2, "t2", "turn_cancelled")]);
     expect(entries.map((e) => e.kind)).toEqual(["status", "status"]);

@@ -30,6 +30,17 @@ describe("WakeNotice", () => {
     expect(screen.getAllByText("Update, not a reply to you")).toHaveLength(2);
   });
 
+  it("wake_notice_names_the_agent_and_version_that_ran_a_known_update", () => {
+    render(<WakeLines text="Task t-2 failed." runtime={{ name: "claude-code", version: "2.1.311" }} />);
+    expect(screen.getByText("Update, not a reply to you · Claude Code 2.1.311")).toBeInTheDocument();
+    expect(screen.queryByText("Update, not a reply to you")).not.toBeInTheDocument();
+  });
+
+  it("wake_notice_shows_an_unknown_agent_id_as_the_daemon_named_it", () => {
+    render(<WakeLines text="Task t-2 failed." runtime={{ name: "new-agent", version: "3" }} />);
+    expect(screen.getByText("Update, not a reply to you · new-agent 3")).toBeInTheDocument();
+  });
+
   it("wake_notice_a_skipped_record_names_the_reason_in_words", () => {
     render(<WakeNotice record={record({ state: "skipped", skipReason: "mode_off" })} />);
     expect(screen.getByText("Monitoring was off")).toBeInTheDocument();

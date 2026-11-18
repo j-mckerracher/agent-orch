@@ -110,4 +110,9 @@ describe("monitoring model", () => {
     expect(skipText("limit_daily")).toBe("Monitoring paused: limit reached");
     expect(skipText("new_word")).toMatch(/does not know/);
   });
+
+  it("monitoring_model_agent_failing_skip_says_updates_are_paused_for_the_agent", () => {
+    expect(skipText("agent_failing")).toBe("Automatic updates are paused while the agent is failing");
+    expect(skipText("agent_failing")).not.toMatch(/does not know/);
+  });
 });

@@ -796,7 +796,7 @@ export interface WakeRecord {
   state: string;
   /** `replied` or `quiet`; null until handled. */
   outcome: string | null;
-  /** `mode_off`, `limit_hourly`, `limit_daily` or `limit_tokens`; null unless skipped. */
+  /** `mode_off`, `limit_hourly`, `limit_daily`, `limit_tokens` or `agent_failing`; null unless skipped. */
   skipReason: string | null;
   turnId: string | null;
   anchorSequence: number;

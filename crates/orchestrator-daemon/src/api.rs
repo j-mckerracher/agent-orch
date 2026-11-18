@@ -256,6 +256,7 @@ impl DaemonApi {
             config.clone(),
             catalog_cache.clone(),
             conversation_agent::ConversationConfig::for_data_dir(data_dir),
+            store.clone(),
         );
         let pinned = !runtime.pins().is_empty();
         let conversations = conversation_runtime::ConversationService::new(

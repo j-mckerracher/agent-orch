@@ -10,7 +10,7 @@ Project coordinators answer through the same agent runtime as Global and workstr
 
 ## Choose an agent and model
 
-Codex, Claude Code, and GitHub Copilot can answer chat. The model picker lists the models and efforts the daemon's catalog reports. Your choice is sent with each message and remembered in the app until you change it. If you name no agent, the daemon uses Codex, then Claude Code.
+Codex, Claude Code, and GitHub Copilot can answer chat. The model picker lists the models and efforts the daemon's catalog reports. Your choice is sent with each message and remembered in the app until you change it. If you name no agent, the daemon uses the default agent set in Settings, with the model and effort saved for it. With no default set, it uses Codex, then Claude Code.
 
 ## Choose a permission level
 

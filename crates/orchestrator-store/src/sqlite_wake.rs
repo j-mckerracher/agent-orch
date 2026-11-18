@@ -41,6 +41,8 @@ pub enum WakeKind {
     DaemonStart,
     WorkCheck,
     ScoutReportReady,
+    /// The default agent failed wake turns in a row. A notice only, it never starts a turn.
+    AgentFailing,
 }
 
 impl WakeKind {
@@ -54,6 +56,7 @@ impl WakeKind {
             Self::DaemonStart => "daemon_start",
             Self::WorkCheck => "work_check",
             Self::ScoutReportReady => "scout_report_ready",
+            Self::AgentFailing => "agent_failing",
         }
     }
 
@@ -67,6 +70,7 @@ impl WakeKind {
             "daemon_start" => Some(Self::DaemonStart),
             "work_check" => Some(Self::WorkCheck),
             "scout_report_ready" => Some(Self::ScoutReportReady),
+            "agent_failing" => Some(Self::AgentFailing),
             _ => None,
         }
     }
@@ -146,6 +150,8 @@ pub enum SkipReason {
     LimitHourly,
     LimitDaily,
     LimitTokens,
+    /// The default agent is failing: automatic updates are paused.
+    AgentFailing,
 }
 
 impl SkipReason {
@@ -155,6 +161,7 @@ impl SkipReason {
             Self::LimitHourly => "limit_hourly",
             Self::LimitDaily => "limit_daily",
             Self::LimitTokens => "limit_tokens",
+            Self::AgentFailing => "agent_failing",
         }
     }
 
@@ -164,6 +171,7 @@ impl SkipReason {
             "limit_hourly" => Some(Self::LimitHourly),
             "limit_daily" => Some(Self::LimitDaily),
             "limit_tokens" => Some(Self::LimitTokens),
+            "agent_failing" => Some(Self::AgentFailing),
             _ => None,
         }
     }
@@ -233,6 +241,29 @@ macro_rules! wake_columns {
          skip_reason, batch_id, turn_id, attempts, anchor_sequence, notify_reply, seen, \
          created_at, updated_at"
     };
+}
+
+/// A failed wake turn, as `consecutive_failed_wake_turns` reports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WakeFailure {
+    pub turn_id: String,
+    pub error_code: String,
+    /// When the turn's batch was claimed, on the caller's clock. `None` once the ledger row
+    /// has been pruned.
+    pub started_ms: Option<u64>,
+}
+
+fn decode_failure(row: &SqliteRow) -> Result<WakeFailure, StoreError> {
+    let error_code: Option<String> = row.try_get("error_code")?;
+    let started_ms: Option<i64> = row.try_get("started_ms")?;
+    let started_ms = started_ms
+        .map(|value| u64::try_from(value).map_err(|_| corrupt("negative wake start".to_owned())))
+        .transpose()?;
+    Ok(WakeFailure {
+        turn_id: row.try_get("id")?,
+        error_code: error_code.ok_or_else(|| corrupt("failed wake turn has no code".to_owned()))?,
+        started_ms,
+    })
 }
 
 fn invalid(detail: &'static str) -> StoreError {
@@ -615,6 +646,38 @@ impl SqliteStore {
         })
     }
 
+    /// The failed wake turns `runtime_name` has in a row. The run is the failed wake turns
+    /// newer than the newest completed or cancelled wake turn of that runtime, so a running
+    /// turn does not end it. The first element is the streak length, and the first row is the
+    /// newest failure.
+    pub fn consecutive_failed_wake_turns(
+        &self,
+        runtime_name: &str,
+    ) -> Result<(u32, Option<WakeFailure>), StoreError> {
+        let runtime = runtime_name.to_owned();
+        self.call(move |pool| async move {
+            let rows = sqlx::query(
+                "WITH last_settled AS ( \
+                     SELECT COALESCE(MAX(rowid), 0) AS last_rowid FROM conversation_turns \
+                     WHERE trigger_kind = 'wake' AND runtime_name = ? \
+                       AND state IN ('completed', 'cancelled')) \
+                 SELECT t.id, t.error_code, l.started_ms \
+                 FROM conversation_turns t \
+                 LEFT JOIN wake_turn_ledger l ON l.turn_id = t.id \
+                 WHERE t.trigger_kind = 'wake' AND t.runtime_name = ? AND t.state = 'failed' \
+                   AND t.rowid > (SELECT last_rowid FROM last_settled) \
+                 ORDER BY t.rowid DESC",
+            )
+            .bind(&runtime)
+            .bind(&runtime)
+            .fetch_all(&pool)
+            .await?;
+            let count = u32::try_from(rows.len()).unwrap_or(u32::MAX);
+            let newest = rows.first().map(decode_failure).transpose()?;
+            Ok((count, newest))
+        })
+    }
+
     /// Deletes ledger rows that started before `before_ms`. Returns how many.
     pub fn prune_wake_ledger(&self, before_ms: u64) -> Result<usize, StoreError> {
         let before = to_i64(before_ms)?;
@@ -727,7 +790,7 @@ impl SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConversationTarget, TurnOutcome};
+    use crate::{ConversationTarget, TurnOutcome, TurnTrigger};
 
     const GLOBAL: &str = "conversation:global";
 
@@ -844,6 +907,221 @@ mod tests {
                 sqlx::query("INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice, needs_model, state)
                     VALUES (?, 'conversation:global', ?, 't', ?, 'Check.', 1, 'pending')")
                     .bind(kind).bind(kind).bind(kind).execute(&pool).await.unwrap();
+            }
+            pool.close().await;
+        });
+    }
+
+    fn failed(code: &str) -> TurnOutcome {
+        TurnOutcome::Failed(code.to_owned())
+    }
+
+    /// A finished wake turn of `runtime`, with its ledger row when `started_ms` is given.
+    fn wake_turn(
+        store: &SqliteStore,
+        id: &str,
+        runtime: &str,
+        outcome: TurnOutcome,
+        started_ms: Option<i64>,
+    ) {
+        store
+            .begin_conversation_turn_as(
+                &ConversationTarget::Global,
+                id,
+                "Update.",
+                runtime,
+                "1",
+                TurnTrigger::Wake,
+            )
+            .unwrap();
+        store.finish_conversation_turn(id, &outcome).unwrap();
+        if let Some(started) = started_ms {
+            let started = started.to_string();
+            execute(
+                store,
+                "INSERT INTO wake_turn_ledger (turn_id, scope, started_ms) VALUES (?, ?, ?)",
+                &[id, GLOBAL, started.as_str()],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn agent_failing_is_a_notice_kind_with_its_own_skip_reason() {
+        assert!(!WakeKind::AgentFailing.needs_model());
+        assert_eq!(WakeKind::AgentFailing.as_str(), "agent_failing");
+        assert_eq!(
+            WakeKind::parse("agent_failing"),
+            Some(WakeKind::AgentFailing)
+        );
+        assert_eq!(SkipReason::AgentFailing.as_str(), "agent_failing");
+        assert_eq!(
+            SkipReason::parse("agent_failing"),
+            Some(SkipReason::AgentFailing)
+        );
+    }
+
+    #[test]
+    fn consecutive_failed_wake_turns_count_from_the_last_settled_turn() {
+        let (_directory, store) = open();
+        wake_turn(&store, "w-1", "codex", TurnOutcome::Completed, Some(1_000));
+        wake_turn(
+            &store,
+            "w-2",
+            "codex",
+            failed("runtime_failed"),
+            Some(2_000),
+        );
+        wake_turn(
+            &store,
+            "w-3",
+            "codex",
+            failed("runtime_provider_limit"),
+            Some(3_000),
+        );
+        let (count, newest) = store.consecutive_failed_wake_turns("codex").unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(
+            newest,
+            Some(WakeFailure {
+                turn_id: "w-3".to_owned(),
+                error_code: "runtime_provider_limit".to_owned(),
+                started_ms: Some(3_000),
+            })
+        );
+
+        wake_turn(&store, "w-4", "codex", TurnOutcome::Cancelled, Some(4_000));
+        assert_eq!(
+            store.consecutive_failed_wake_turns("codex").unwrap(),
+            (0, None)
+        );
+    }
+
+    #[test]
+    fn consecutive_failed_wake_turns_ignore_user_turns_and_other_runtimes() {
+        let (_directory, store) = open();
+        store
+            .begin_conversation_turn_as(
+                &ConversationTarget::Global,
+                "u-1",
+                "Hi.",
+                "codex",
+                "1",
+                TurnTrigger::User,
+            )
+            .unwrap();
+        store
+            .finish_conversation_turn("u-1", &failed("runtime_failed"))
+            .unwrap();
+        wake_turn(
+            &store,
+            "w-1",
+            "claude-code",
+            failed("runtime_failed"),
+            Some(1_000),
+        );
+
+        assert_eq!(
+            store.consecutive_failed_wake_turns("codex").unwrap(),
+            (0, None)
+        );
+        assert_eq!(
+            store
+                .consecutive_failed_wake_turns("claude-code")
+                .unwrap()
+                .0,
+            1
+        );
+    }
+
+    #[test]
+    fn a_failure_whose_ledger_row_was_pruned_has_no_start_time() {
+        let (_directory, store) = open();
+        wake_turn(
+            &store,
+            "w-1",
+            "codex",
+            failed("runtime_failed"),
+            Some(1_000),
+        );
+        wake_turn(&store, "w-2", "codex", failed("runtime_failed"), None);
+
+        let (count, newest) = store.consecutive_failed_wake_turns("codex").unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(newest.unwrap().started_ms, None);
+    }
+
+    #[test]
+    fn agent_failing_migration_keeps_records_and_accepts_the_new_kind_and_skip_reason() {
+        use sqlx::migrate::Migrator;
+        use std::borrow::Cow;
+
+        static MIGRATIONS: Migrator = sqlx::migrate!("./migrations");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await
+                .unwrap();
+            let before = Migrator {
+                migrations: Cow::Owned(
+                    MIGRATIONS
+                        .iter()
+                        .filter(|m| m.version < 58)
+                        .cloned()
+                        .collect(),
+                ),
+                ..Migrator::DEFAULT
+            };
+            before.run(&pool).await.unwrap();
+            sqlx::raw_sql(
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, skip_reason)
+                 VALUES ('kept', 'conversation:global', 'task_failed', 't', 'failed:t:1',
+                    'Failed.', 1, 'skipped', 'limit_hourly')",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            MIGRATIONS.run(&pool).await.unwrap();
+
+            let kept: String =
+                sqlx::query_scalar("SELECT skip_reason FROM wake_records WHERE id = 'kept'")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(kept, "limit_hourly");
+            sqlx::raw_sql(
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, skip_reason)
+                 VALUES ('notice', 'conversation:global', 'agent_failing', 'agent',
+                    'agent_failing:codex:w-1', 'Paused.', 0, 'noticed', NULL),
+                    ('held', 'conversation:global', 'task_failed', 't', 'failed:t:2',
+                    'Failed.', 1, 'skipped', 'agent_failing')",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(sqlx::query(
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state) VALUES ('bogus', 'conversation:global', 'bogus', 't',
+                    'bogus:1', 'Bogus.', 0, 'noticed')",
+            )
+            .execute(&pool)
+            .await
+            .is_err());
+            for statement in [
+                "DELETE FROM wake_records WHERE id = 'kept'",
+                "UPDATE wake_records SET notice = 'changed' WHERE id = 'kept'",
+            ] {
+                assert!(
+                    sqlx::query(statement).execute(&pool).await.is_err(),
+                    "{statement}"
+                );
             }
             pool.close().await;
         });

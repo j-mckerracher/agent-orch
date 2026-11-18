@@ -45,6 +45,7 @@ pub struct Parser {
     phase: Phase,
     last_message: Option<String>,
     turn_finished: bool,
+    turn_failure: Option<String>,
     violation: Option<ProtocolViolation>,
     turns_completed: u64,
     usage: Vec<UsageReport>,
@@ -62,6 +63,7 @@ impl Parser {
             phase: Phase::AwaitingThread,
             last_message: None,
             turn_finished: false,
+            turn_failure: None,
             violation: None,
             turns_completed: 0,
             usage: Vec::new(),
@@ -86,6 +88,11 @@ impl Parser {
     /// The most recent `agent_message` text, if any.
     pub fn last_message(&self) -> Option<&str> {
         self.last_message.as_deref()
+    }
+
+    /// Provider-reported failure text from a top-level `error` or `turn.failed`, if any.
+    pub fn turn_failure(&self) -> Option<&str> {
+        self.turn_failure.as_deref()
     }
 
     /// Translate one stdout line in order. Returns `None` when the line has
@@ -224,18 +231,69 @@ impl Parser {
                     outcome: TurnOutcome::Success,
                 }))
             }
+            "error" => {
+                if self.phase == Phase::AwaitingThread {
+                    return Err(ProtocolViolation::Ordering(
+                        "error requires thread.started first".into(),
+                    ));
+                }
+                let message = r
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .ok_or(ProtocolViolation::BadField("message"))?;
+                if let Some(failure) = sanitize_failure(message) {
+                    self.turn_failure = Some(failure);
+                }
+                Ok(None)
+            }
+            "turn.failed" => {
+                if self.phase != Phase::InTurn {
+                    return Err(ProtocolViolation::Ordering(
+                        "turn.failed outside a turn".into(),
+                    ));
+                }
+                let message = r
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                    .ok_or(ProtocolViolation::BadField("error.message"))?;
+                if self.turn_failure.is_none() {
+                    self.turn_failure = sanitize_failure(message);
+                }
+                self.phase = Phase::TurnDone;
+                Ok(Some(AgentEvent::TurnFinished {
+                    outcome: TurnOutcome::Failure,
+                }))
+            }
             other => Err(ProtocolViolation::UnknownType(other.to_string())),
         }
     }
 }
 
+/// Failure text is capped at this many bytes before it reaches an exit reason.
+const FAILURE_MAX_BYTES: usize = 300;
+
+/// Cap `s` at `max` bytes on a character boundary, marking any cut with an ellipsis.
 fn truncate(s: &str, max: usize) -> String {
-    let b = s.len().min(max);
-    let mut t = s.get(..b).unwrap_or(s).to_string();
-    if b < s.len() {
-        t.push('…');
+    if s.len() <= max {
+        return s.to_string();
     }
-    t
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
+/// Provider text is untrusted: control characters become spaces, whitespace runs collapse,
+/// and the result is capped. Text that is blank after that yields `None`.
+fn sanitize_failure(text: &str) -> Option<String> {
+    let flat: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!flat.is_empty()).then(|| truncate(&flat, FAILURE_MAX_BYTES))
 }
 
 #[cfg(test)]
@@ -386,16 +444,77 @@ mod tests {
     }
 
     #[test]
-    fn turn_failed_is_an_unknown_type_and_never_completes_the_turn() {
+    fn turn_failed_ends_the_turn_as_a_failure_with_its_message() {
         let mut p = Parser::new();
         p.feed(&thread()).unwrap().unwrap();
         assert_eq!(p.feed(TURN_STARTED), None);
-        let err = p
+        let event = p
             .feed(r#"{"type":"turn.failed","error":{"message":"boom"}}"#)
             .unwrap()
-            .unwrap_err();
-        assert!(matches!(err, ProtocolViolation::UnknownType(t) if t == "turn.failed"));
+            .unwrap();
+        assert_eq!(
+            event,
+            AgentEvent::TurnFinished {
+                outcome: TurnOutcome::Failure
+            }
+        );
         assert!(!p.turn_finished());
+        assert_eq!(p.turn_failure(), Some("boom"));
+        assert_eq!(p.violation(), None);
+
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        assert_eq!(p.feed(TURN_STARTED), None);
+        assert!(matches!(
+            p.feed(r#"{"type":"turn.failed","error":{}}"#),
+            Some(Err(ProtocolViolation::BadField("error.message")))
+        ));
+    }
+
+    #[test]
+    fn a_top_level_error_is_kept_as_the_turn_failure() {
+        // The spend-cap sequence from `codex exec --json`: a pre-turn warning, then the turn
+        // fails with a top-level `error` followed by a `turn.failed` with the same message.
+        const CAP: &str = "You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.";
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        assert_eq!(
+            p.feed(r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].codex_hooks` is deprecated. Use `[features].hooks` instead."}}"#),
+            None
+        );
+        assert_eq!(p.feed(TURN_STARTED), None);
+        assert_eq!(
+            p.feed(&format!(r#"{{"type":"error","message":"{CAP}"}}"#)),
+            None
+        );
+        assert_eq!(p.turn_failure(), Some(CAP));
+        assert_eq!(
+            p.feed(&format!(
+                r#"{{"type":"turn.failed","error":{{"message":"{CAP}"}}}}"#
+            )),
+            Some(Ok(AgentEvent::TurnFinished {
+                outcome: TurnOutcome::Failure
+            }))
+        );
+        assert_eq!(p.turn_failure(), Some(CAP));
+        assert!(!p.turn_finished());
+        assert_eq!(p.violation(), None);
+    }
+
+    #[test]
+    fn top_level_error_text_is_flattened_and_capped() {
+        let mut p = Parser::new();
+        p.feed(&thread()).unwrap().unwrap();
+        let line = format!(
+            r#"{{"type":"error","message":"line one\n\u001b[31mred\tend {}"}}"#,
+            "é".repeat(400)
+        );
+        assert_eq!(p.feed(&line), None);
+        let failure = p.turn_failure().unwrap();
+        assert!(failure.starts_with("line one [31mred end é"), "{failure:?}");
+        assert!(!failure.chars().any(char::is_control), "{failure:?}");
+        assert!(failure.ends_with('…'), "{failure:?}");
+        assert!(failure.len() <= FAILURE_MAX_BYTES + '…'.len_utf8());
     }
 
     #[test]

@@ -144,6 +144,24 @@ describe("Workspace monitoring", () => {
     expect(screen.getByText("Retry it.")).toBeInTheDocument();
   });
 
+  it("workspace_monitoring_names_the_agent_only_on_the_latest_update", async () => {
+    const { fake } = daemon({
+      turn: { ...turn("w2", "wake"), state: "completed" },
+      entries: [
+        entry(1, "w1", "user_message", "user", "Task t-8 failed.", "wake"),
+        entry(2, "w1", "reply_chunk", "orchestrator", "Older reply."),
+        entry(3, "w1", "turn_completed", "system", ""),
+        entry(4, "w2", "user_message", "user", "Task t-9 failed.", "wake"),
+        entry(5, "w2", "reply_chunk", "orchestrator", "Retry it."),
+        entry(6, "w2", "turn_completed", "system", ""),
+      ],
+    });
+    await mount(fake);
+    expect(await screen.findByText("Retry it.")).toBeInTheDocument();
+    expect(screen.getAllByText("Update, not a reply to you · Codex 1")).toHaveLength(2);
+    expect(screen.getAllByText("Update, not a reply to you")).toHaveLength(2);
+  });
+
   it("workspace_monitoring_global_option_shows_the_badge_text_and_the_accessible_name", async () => {
     const { fake } = daemon({ monitoring: { ...MONITORING, unseen: [{ target: { kind: "global" }, count: 2 }] } });
     const user = await mount(fake, null);

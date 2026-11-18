@@ -140,6 +140,31 @@ function stubReportedLevel(fake: FakeDaemon, daemonLevel: string | null) {
   }));
 }
 
+/** A Global conversation whose latest turn is an automatic update the user did not send, at `daemonLevel`. */
+function stubLatestWakeTurn(fake: FakeDaemon, daemonLevel: string) {
+  fake.stub("conversations.get", () => ({
+    authority: "none",
+    target: { kind: "global" },
+    entries: [],
+    more: false,
+    next_after_sequence: 0,
+    latest_sequence: 0,
+    clear_generation: 0,
+    turn: {
+      id: "wake-1",
+      state: "completed",
+      error_code: null,
+      runtime: { name: "stub", version: "1" },
+      reply_bytes: 0,
+      created_at: "2026-11-15T12:00:00Z",
+      updated_at: "2026-11-15T12:00:01Z",
+      permission_level: daemonLevel,
+      trigger: "wake",
+    },
+    epoch: "epoch-1",
+  }));
+}
+
 describe("permission level in the chat composer, live daemon", () => {
   it("sends Auto with each message by default, on a daemon that advertises permission_levels", async () => {
     const fake = liveDaemon();
@@ -232,6 +257,18 @@ describe("permission level in the chat composer, live daemon", () => {
     await pickGlobal(user);
     await sendFromGlobal(user, "hello");
     expect(await screen.findByText("The daemon reports the last reply ran at Auto.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("describes a last automatic update in its own words, with no mismatch alert", async () => {
+    const fake = liveDaemon();
+    stubLatestWakeTurn(fake, "restricted");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickGlobal(user);
+    expect(await screen.findByText("The last automatic update ran at Restricted, as automatic updates always do.")).toBeInTheDocument();
+    expect(screen.queryByText(/last reply ran at/)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

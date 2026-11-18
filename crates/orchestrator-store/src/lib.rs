@@ -107,8 +107,8 @@ pub use sqlite_settings::{
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
 pub use sqlite_wake::{
-    NewWakeRecord, Settle, SkipReason, StaleProposal, WakeKind, WakeOutcome, WakeRecord, WakeState,
-    WAKE_PAGE_SIZE,
+    NewWakeRecord, Settle, SkipReason, StaleProposal, WakeFailure, WakeKind, WakeOutcome,
+    WakeRecord, WakeState, WAKE_PAGE_SIZE,
 };
 pub use sqlite_workstreams::{
     WorkstreamRevision, WorkstreamStoreError, WorkstreamTask, WorkstreamTasks,
