@@ -112,9 +112,11 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
       const task = await api.tasksSubmit(`usage-e2e-${agent}`, submission(projectId, agent));
       await until(async () => {
         const state = (await api.tasksGet(task.contract.id)).state;
-        if (state === "Failed") throw new Error(`${agent} task failed: ${reporting.stderr()}`);
-        return state === "Verifying";
-      }, `${agent} task to finish`);
+        if (state === "Failed" || state === "VerificationFailed") {
+          throw new Error(`${agent} task ended ${state}: ${reporting.stderr()}`);
+        }
+        return state === "Succeeded";
+      }, `${agent} task to succeed`);
     }
     session.close();
   });

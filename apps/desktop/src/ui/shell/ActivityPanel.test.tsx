@@ -276,6 +276,24 @@ describe("live mode", () => {
     await waitFor(() => expect(within(panel).getByTestId("activity-notice")).toHaveFocus());
   });
 
+  it("stops a Verifying task through tasks.cancel", async () => {
+    const fake = liveDaemon();
+    fake.tasks.push(mkTask("t5", REPO, { state: "Verifying" }));
+    const { panel, user } = await mountPanel(fake);
+    await user.click(await within(panel).findByRole("button", { name: /Stop objective of t5/ }));
+    await user.click(within(panel).getByRole("button", { name: "Confirm stop" }));
+    await waitFor(() => expect(fake.callsTo("tasks.cancel")).toHaveLength(1));
+    expect(fake.callsTo("tasks.cancel")[0].params).toMatchObject({ task_id: "t5" });
+  });
+
+  it("offers no Stop for Succeeded or Failed tasks", async () => {
+    const fake = liveDaemon();
+    fake.tasks.push(mkTask("t6", REPO, { state: "Succeeded" }), mkTask("t7", REPO, { state: "Failed" }));
+    const { panel } = await mountPanel(fake);
+    await within(panel).findByRole("button", { name: /Stop objective of t1/ });
+    expect(within(panel).queryByRole("button", { name: /Stop objective of t[67]/ })).not.toBeInTheDocument();
+  });
+
   it("disables Stop with a reason when the daemon is not connected", async () => {
     const fake = new FakeDaemon();
     fake.openError = new DaemonError("disconnected", "down");

@@ -436,6 +436,19 @@ describe("S4 task and session detail", () => {
     );
   });
 
+  it("lets a Verifying task be canceled from its detail", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-v", REPO, { state: "Verifying" }));
+    const { user } = await mount(fake, { route: taskRoute("t-v") });
+    await screen.findByTestId("task-state");
+    expect(screen.getByRole("button", { name: "Request cancel" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
+    expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
+    expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ task_id: "t-v" });
+  });
+
   it("shows the daemon's reason when cancel fails", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route: taskRoute("t-q") });

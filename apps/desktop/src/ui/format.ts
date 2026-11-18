@@ -33,6 +33,13 @@ export const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
   "Cancelled",
 ]);
 
+/** States the daemon accepts `tasks.cancel` from; any other state is refused. */
+export const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued", "Running", "Verifying"]);
+
+export function canCancel(state: TaskState): boolean {
+  return CANCELLABLE_STATES.has(state);
+}
+
 export const FILTER_LABELS: Array<{ filter: TaskFilter; label: string }> = [
   { filter: "all", label: "All" },
   { filter: "queued", label: "Queued" },
