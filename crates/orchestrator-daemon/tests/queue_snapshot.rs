@@ -55,6 +55,10 @@ fn main() {
 /// cannot leave it behind).
 fn agent(dir: &Path) {
     use std::io::Write;
+    if std::env::args().skip(1).eq(["exec", "--help"]) {
+        println!("  --json\n  --sandbox <MODE>\n  --ignore-user-config");
+        return;
+    }
     if std::env::args().any(|arg| arg == "--version") {
         println!("queue-fake-agent 0.0.0");
         return;

@@ -59,7 +59,8 @@ export const WINDOWS = {
   // Adaptive wakes add six portable daemon regressions.
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
-  daemon: { passed: 678, ignored: 1, sequence: [575, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // The shared compatibility policy replaces six obsolete chat-only helper tests.
+  daemon: { passed: 672, ignored: 1, sequence: [569, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -154,7 +155,8 @@ export const MACOS = {
   // Adaptive wakes add six portable daemon regressions.
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 794 becomes 795.
-  daemon: { passed: 795, ignored: 1, sequence: [665, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // Six chat-only helper tests removed; the Unix executable-replacement regression adds one.
+  daemon: { passed: 790, ignored: 1, sequence: [660, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -188,7 +190,7 @@ export const MACOS = {
   // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
-  workspace: { passed: 2225, ignored: 2 },
+  workspace: { passed: 2220, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
@@ -267,7 +269,8 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // `npm --prefix apps/desktop test` after integrating main measured 125 files and 2303 tests.
 // Popovers that stay open while WebKit moves focus during a press add two tests to ConversationActions.test.tsx: 2305.
 // Workstream list actions replace the create-form tests and add prioritize and archive tests: 2313 becomes 2315.
-export const VITEST = { files: 125, tests: 2315 };
+// Repository Settings on main adds two tests; the capability picker replaces tests in place.
+export const VITEST = { files: 125, tests: 2317 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

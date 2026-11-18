@@ -60,7 +60,9 @@ Names that start with `AGENT_ORCH_` are never forwarded. Only names are logged, 
 | `AGENT_ORCH_CONVERSATION_TIMEOUT_MS` | Chat turn timeout in milliseconds. Default 180000, range 100 to 600000. |
 | `AGENT_ORCH_COPILOT_CREDIT_CAP` | Set to `1` to pass `--max-ai-credits 30` to Copilot |
 
-A CLI version that is not pinned still works, but the chat shows an unverified-version warning.
+Version pins only control the chat's unverified-version warning. The daemon checks the installed CLI's command options for the requested operation and permission level. It does not send a prompt to check compatibility.
+
+Direct task submissions check the installed CLI before queueing work. If the check refuses the submission, the daemon log names the missing option or says that the check could not confirm compatibility. The executor checks again before launch. If the CLI changed while the task was queued, the attempt records the refusal without starting the agent.
 
 ## Diagnostics
 

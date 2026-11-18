@@ -294,9 +294,23 @@ impl CopilotAdapter {
         };
         let usage_file = run.usage_file();
         let working_dir = run.cwd();
+        let args = Self::sign_in_check_args(&usage_file, &working_dir, credit_cap);
+        use crate::cli_compat::{CompatibilityCache, CompatibilityError, Executable};
+        let Ok(executable) = Executable::read(&program) else {
+            return SignInRecord::refused(CompatibilityError::Unconfirmed.to_string());
+        };
+        let help = CompatibilityCache::default()
+            .help(COPILOT_AGENT, &program, &executable, VERSION_TIMEOUT)
+            .await;
+        if let Err(error) = help
+            .ok_or(CompatibilityError::Unconfirmed)
+            .and_then(|help| help.check(COPILOT_AGENT, &args))
+        {
+            return SignInRecord::refused(error.to_string());
+        }
         let request = AgentLaunchRequest {
             program,
-            args: Self::sign_in_check_args(&usage_file, &working_dir, credit_cap),
+            args,
             working_dir,
         };
         let mut handle = match spawn_copilot_handle(request, Some(run)) {
@@ -538,20 +552,14 @@ impl AgentAdapter for CopilotAdapter {
         AgentKind::GithubCopilot
     }
 
-    /// Checks that the executable exists and reports [`PINNED_VERSION`]. Any
-    /// other version is refused, because its stream has not been verified.
+    /// Checks that the executable exists and responds to a metadata probe.
     async fn detect(&self) -> Result<AgentCapabilities> {
         let program = self
             .locate()
             .ok_or_else(|| AgentError::NotFound(self.program().to_string_lossy().into_owned()))?;
-        let version = probe_version(&program, VERSION_TIMEOUT)
+        probe_version(&program, VERSION_TIMEOUT)
             .await
             .map_err(AgentError::Unavailable)?;
-        if version != PINNED_VERSION {
-            return Err(AgentError::Unavailable(format!(
-                "GitHub Copilot CLI {version} is not the verified version {PINNED_VERSION}"
-            )));
-        }
         Ok(self.capabilities())
     }
 

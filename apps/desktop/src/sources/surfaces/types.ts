@@ -618,6 +618,7 @@ export interface ModelOption {
   defaultEffort?: string | null;
 }
 export interface ModelProvider {
+  chatCompatibility?: Partial<Record<PermissionLevel, { retryable: boolean; reason: string }>>;
   /** Derived: the daemon agent id. */
   id: string;
   name: string;

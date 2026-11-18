@@ -6,7 +6,7 @@
 
 use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use orchestrator_agents::{
     AgentAdapter, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, PiRpcAdapter, SignInRecord,
@@ -638,6 +638,10 @@ impl DaemonApi {
         if let Some(reply) = idempotency::replay(&self.store, "tasks.submit", &key, &request)? {
             return Ok(reply);
         }
+        // An unconfirmed work item is invalid regardless of CLI availability.
+        if let Some(item) = &request.contract.work_item {
+            contract::validate_work_item(item).map_err(|_| RpcError::InvalidParams)?;
+        }
         let (resolved, selection_catalog) = self.resolve_submission(&request.contract)?;
         // The fingerprint is the request as sent; the write sees what it resolved to.
         let resolved = TaskSubmitParams {
@@ -662,6 +666,8 @@ impl DaemonApi {
         &self,
         submission: &TaskSubmission,
     ) -> Result<(TaskSubmission, Option<orchestrator_agents::AgentCatalog>), RpcError> {
+        // Both metadata reads must fit under the 2 s IPC deadline.
+        let deadline = Instant::now() + Duration::from_millis(1700);
         let resolved = self.resolve_dispatch_defaults(submission)?;
         let selection_catalog = self
             .selection_catalog(&resolved.agent, resolved.model_selection.as_ref())
@@ -673,7 +679,65 @@ impl DaemonApi {
                     );
                 }
             })?;
+        // A store-only API has no task launcher and does not probe host executables.
+        if self.executor.is_some() {
+            self.check_submission_cli(
+                &resolved,
+                deadline.saturating_duration_since(Instant::now()),
+            )?;
+        }
         Ok((resolved, selection_catalog))
+    }
+
+    fn check_submission_cli(
+        &self,
+        submission: &TaskSubmission,
+        budget: Duration,
+    ) -> Result<(), RpcError> {
+        use orchestrator_agents::cli_compat::{CompatibilityError, Executable};
+        let permission = submission.permission.unwrap_or_default();
+        let Some((_, args)) = agent_command(
+            &self.config,
+            &submission.agent,
+            "objective",
+            submission.model_selection.as_ref(),
+            permission,
+        ) else {
+            return Ok(());
+        };
+        // Keep accepting work while a CLI is not installed. The executor
+        // checks again before any launch, including after an update or retry.
+        let Some(program) = self.config.locate_agent(&submission.agent) else {
+            return Ok(());
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| RpcError::Internal)?;
+        let result = match Executable::read(&program) {
+            Ok(executable) => runtime.block_on(async {
+                tokio::time::timeout(
+                    budget,
+                    self.config
+                        .check_launch(&submission.agent, &program, &executable, &args),
+                )
+                .await
+                .unwrap_or(Err(CompatibilityError::Unconfirmed))
+            }),
+            Err(_) => Err(CompatibilityError::Unconfirmed),
+        };
+        result.map_err(|error| {
+            self.config.diagnostics.warn(
+                "api",
+                "task_submit_cli_compatibility_refused",
+                &[
+                    ("agent", &submission.agent),
+                    ("permission", permission.as_str()),
+                    ("reason", &error.to_string()),
+                ],
+            );
+            RpcError::Conflict
+        })
     }
 
     /// Explicit choices and named work classes win. A different explicit model does not
@@ -924,21 +988,25 @@ impl DaemonApi {
             copilot = copilot.with_program(program);
         }
         let limit = self.config.probe_timeout;
-        let (codex, claude, pi, copilot) = runtime.block_on(async {
-            tokio::join!(
-                probe(limit, codex.detect()),
-                probe(limit, claude.detect()),
-                probe(limit, pi.detect()),
-                probe(limit, copilot.detect())
-            )
-        });
+        let (codex, claude, pi, copilot, codex_chat, claude_chat, copilot_chat) =
+            runtime.block_on(async {
+                tokio::join!(
+                    probe(limit, codex.detect()),
+                    probe(limit, claude.detect()),
+                    probe(limit, pi.detect()),
+                    probe(limit, copilot.detect()),
+                    conversation_agent::check_chat_provider(&self.config, "codex"),
+                    conversation_agent::check_chat_provider(&self.config, "claude-code"),
+                    conversation_agent::check_chat_provider(&self.config, COPILOT_AGENT),
+                )
+            });
         let sign_in = self.config.copilot_sign_in.snapshot();
         Ok(json!([
-            agent_entry("codex", true, codex),
-            agent_entry("claude-code", true, claude),
+            with_chat_compatibility(agent_entry("codex", true, codex), codex_chat),
+            with_chat_compatibility(agent_entry("claude-code", true, claude), claude_chat),
             // The daemon has no stdin RPC launcher for Pi yet.
             agent_entry("pi", false, pi),
-            copilot_entry(copilot, &sign_in),
+            with_chat_compatibility(copilot_entry(copilot, &sign_in), copilot_chat),
         ]))
     }
 
@@ -977,7 +1045,7 @@ impl DaemonApi {
                     Err(error) => {
                         return SignInRecord::failed(format!(
                             "could not start a runtime for the check: {error}"
-                        ))
+                        ));
                     }
                 };
                 let mut copilot = CopilotAdapter::new();
@@ -1642,9 +1710,39 @@ async fn probe<T>(
     }
 }
 
-/// Copilot's `agents.capabilities` entry. It is launchable when the CLI is
-/// installed and pinned. It also carries the sign-in record, so a client can
-/// say why.
+fn with_chat_compatibility(
+    mut entry: Value,
+    result: Option<
+        Vec<(
+            PermissionLevel,
+            Result<(), orchestrator_agents::cli_compat::CompatibilityError>,
+        )>,
+    >,
+) -> Value {
+    if let Some(levels) = result {
+        use orchestrator_agents::cli_compat::CompatibilityError;
+        entry["installed"] = json!(true);
+        let failures: serde_json::Map<String, Value> = levels
+            .into_iter()
+            .filter_map(|(level, answer)| {
+                let error = answer.err()?;
+                Some((
+                    level.as_str().to_owned(),
+                    json!({
+                        "retryable": error == CompatibilityError::Unconfirmed,
+                        "reason": error.to_string(),
+                    }),
+                ))
+            })
+            .collect();
+        if !failures.is_empty() {
+            entry["chat_compatibility"] = json!(failures);
+        }
+    }
+    entry
+}
+
+/// Copilot additionally carries the cached sign-in record.
 fn copilot_entry(
     detected: orchestrator_agents::Result<orchestrator_agents::AgentCapabilities>,
     sign_in: &SignInRecord,
@@ -1777,8 +1875,6 @@ pub(crate) mod admission;
 mod brief;
 #[path = "api_conversation_agent.rs"]
 mod conversation_agent;
-#[path = "api_conversation_help.rs"]
-mod conversation_help;
 #[path = "api_conversation_orphans.rs"]
 mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]

@@ -26,7 +26,7 @@
 //!
 //! Environment: `AGENT_ORCH_FAKE_VERSION` (default `0.0.0-fake`),
 //! `AGENT_ORCH_FAKE_VERSION_MODE` (`fail`, `garbage`, `hang` or `flood`: how
-//! `--version` misbehaves), `AGENT_ORCH_FAKE_HELP_MODE` (`full`, the default,
+//! `--version` misbehaves), `FAKE_AGENT_HELP_MODE` (`full`, the default,
 //! lists every chat flag; `missing:<flag>` leaves one flag out; `unreadable`
 //! prints no flags, so the probe cannot read them), `FAKE_AGENT_LOG` (appends one line per turn
 //! with the working directory and arguments) and `FAKE_AGENT_PID_FILE`
@@ -50,6 +50,8 @@ const CODEX_EXEC_FLAGS: &[&str] = &[
     "--ignore-user-config",
     "--model",
     "--config",
+    "-m",
+    "-c",
 ];
 
 /// The flags Claude Code's `--help` lists for the chat argv, with the effort and
@@ -69,15 +71,18 @@ const CLAUDE_FLAGS: &[&str] = &[
     "--tools",
     "--allowedTools",
     "--append-system-prompt",
+    "--system-prompt",
+    "--disallowedTools",
+    "--allow-dangerously-skip-permissions",
     "--effort",
     "--model",
 ];
 
-/// Prints a help text that lists `flags`, as `AGENT_ORCH_FAKE_HELP_MODE` says.
+/// Prints a help text that lists `flags`, as `FAKE_AGENT_HELP_MODE` says.
 /// `missing:<flag>` leaves one out, so the probe refuses it. `unreadable`
 /// prints no flags at all, so the probe cannot tell what is offered.
 fn print_help(flags: &[&str]) {
-    match std::env::var("AGENT_ORCH_FAKE_HELP_MODE").as_deref() {
+    match std::env::var("FAKE_AGENT_HELP_MODE").as_deref() {
         Ok("unreadable") => println!("Run the agent with a prompt."),
         Ok(mode) if mode.starts_with("missing:") => {
             let gone = &mode["missing:".len()..];

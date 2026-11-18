@@ -76,7 +76,7 @@ describe("ModelPicker in a live chat", () => {
     const onChoiceChange = vi.fn<(choice: ModelChoice | null) => void>();
     render(
       <ModelPicker
-        catalog={catalog([provider("codex", "Codex"), copilot()])}
+        catalog={catalog([copilot()])}
         provenance={provenance}
         copilotSignIn={copilotSource(signIn("ready"))}
         onChoiceChange={onChoiceChange}
@@ -84,7 +84,9 @@ describe("ModelPicker in a live chat", () => {
     );
     await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     expect(screen.queryByText(/premium requests or AI credits/)).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByRole("combobox", { name: "Provider" }), "github-copilot");
+    const select = screen.getByRole("combobox", { name: "Provider" });
+    expect(select).toHaveValue("");
+    await user.selectOptions(select, "github-copilot");
     await waitFor(() => expect(onChoiceChange).toHaveBeenLastCalledWith({ agent: "github-copilot" }));
     expect(screen.getByText("A Copilot message uses premium requests or AI credits on your Copilot seat.")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Model" })).toBeDisabled();
@@ -402,13 +404,20 @@ describe("ModelPicker permission level in a chat", () => {
   it("shows the level at the end of the chip and offers the four levels in the panel", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(
+    const onRetry = vi.fn();
+    const copilotWithReadFailure = {
+      ...copilot(),
+      chatCompatibility: { auto: { retryable: true, reason: "Could not confirm CLI compatibility. Retry the check." } },
+    };
+    const picker = (level: "auto" | "restricted") => (
       <ModelPicker
-        catalog={catalog([provider("codex", "Codex")])}
+        catalog={catalog([provider("codex", "Codex"), copilotWithReadFailure])}
         provenance={provenance}
-        permission={{ level: "auto", daemonAdvertises: true, onChange }}
-      />,
+        permission={{ level, daemonAdvertises: true, onChange }}
+        onRetry={onRetry}
+      />
     );
+    const { rerender } = render(picker("auto"));
     const chip = screen.getByRole("button", { name: "Model settings: Codex · default model · default effort · Auto" });
     expect(chip).toHaveTextContent("Codex · default · Auto");
     await user.click(chip);
@@ -421,8 +430,14 @@ describe("ModelPicker permission level in a chat", () => {
       "Full",
     ]);
     expect(within(level).getByRole("option", { name: "Extended (not available for chat yet)" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: "GitHub Copilot (compatibility not confirmed)" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Retry compatibility check" }));
+    expect(onRetry).toHaveBeenCalledOnce();
     await user.selectOptions(level, "Restricted");
     expect(onChange).toHaveBeenCalledWith("restricted");
+    rerender(picker("restricted"));
+    expect(screen.getByRole("option", { name: "GitHub Copilot" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Retry compatibility check" })).not.toBeInTheDocument();
   });
 
   it("asks before Full, and on Cancel returns focus to the chip with the panel closed", async () => {

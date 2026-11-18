@@ -44,7 +44,12 @@ impl Fixture {
         fs::write(
             &program,
             format!(
-                "#!/bin/sh\ncase \"$1\" in\n\
+                "#!/bin/sh\n\
+                 if [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n\
+                   printf '%s\\n' --json --sandbox --ignore-user-config --approve-for-me -m -c\n\
+                   exit 0\n\
+                 fi\n\
+                 case \"$1\" in\n\
                  login) echo 'Logged in using ChatGPT'; exit 0;;\n\
                  debug) cat '{}'; exit 0;;\n\
                  esac\n\

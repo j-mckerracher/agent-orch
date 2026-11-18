@@ -208,26 +208,24 @@ no flag.
   `claude-code` 2.1.311, `github-copilot` at its pinned version). 0.167.2 was
   checked against its `codex exec --json` event order and command lifecycle.
   These run with no warning. An operator marks another version verified with
-  `AGENT_ORCH_CONVERSATION_PINS=name@version,...`, and a pinned version's help
-  is never read. The pin list is the only thing that decides whether the
-  warning shows; it does not decide whether a version may run.
+  `AGENT_ORCH_CONVERSATION_PINS=name@version,...`. The pin list decides whether
+  the warning shows; it does not decide whether a version may run.
 - **Unverified versions (DPES-1106).** A CLI version the list does not name
   runs, and the desktop shows once per agent and version per app session:
   `<Agent> <version> has not been verified with MCAO. Replies may fail.` The
   warning is informational and never blocks a send, and needs no action. The
   turn records the version it ran on, and `conversations.get` reports
   `verified: false` for it.
-- **Help probe.** Before an unverified version runs, the daemon reads the
-  installed CLI's help once per program and version (`codex exec --help`;
-  `--help` for Claude Code and Copilot), with a 5 s limit and 256 KiB of
-  output. It reads only help text, never a turn. The flags the chat argv
-  needs at the requested level are taken from the adapter's own argv, so the
-  check cannot drift from what runs. The version is refused with
-  `version_mismatch` only when the help was read and a required flag is
-  definitely absent. The refusal names the flag: the terminal entry's body
-  carries it, and the desktop names the agent, version and flag. When the help
-  times out, fails, or shows no flags, the version is not refused and the turn
-  runs with the warning.
+- **Help probe.** Before launch, the daemon checks the CLI's help
+  (`codex exec --help`; `--help` for Claude Code and Copilot). The metadata
+  probe is bounded by the probe timeout and 256 KiB of output; it sends no
+  prompt. Successful results are cached briefly by executable identity. The
+  daemon checks the actual command options for the requested permission level,
+  even for a verified version. A missing required option produces
+  `version_mismatch` and names the option. A failed, timed-out, or unreadable
+  probe produces `runtime_compatibility_unconfirmed`; retry the check. Neither
+  case starts the agent. Advertised options are not evidence that vendor
+  behavior or structured output has stayed the same.
 - **Provider limits (DPES-1106).** A failed turn whose agent reports a spend
   cap, usage limit, rate limit, quota, insufficient quota, HTTP 429 or billing
   refusal fails `runtime_provider_limit`, and its entry's body is
@@ -359,8 +357,8 @@ chose for that message. The rules:
   failed turn with that reason's code. The message stays in the transcript, and
   no agent is launched and no other agent answers.
 - **Copilot is chosen like the others, with its own limits (DPES-1105).** A
-  Copilot choice runs only when the daemon can launch the CLI at the pinned
-  version. A missing or unpinned CLI fails the turn with `runtime_unavailable`.
+  Copilot choice runs when the CLI is available and advertises the required
+  command options. A missing CLI fails the turn with `runtime_unavailable`.
   The Copilot CLI cannot list models or efforts without a billable call, so its
   catalog offers neither: a model is refused with `selection_models_unsupported`
   and an effort with `selection_effort_unsupported`. A choice with neither runs

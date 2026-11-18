@@ -108,6 +108,7 @@ export function createLiveModels(
             name: agentDisplayName(entry.agent),
             installed: entry.installed,
             launchable: entry.launchable,
+            ...(entry.chat_compatibility ? { chatCompatibility: entry.chat_compatibility } : {}),
             modelSelection: supported,
             models,
             modelsNote: row && models.status === "ok" && row.models.detail ? row.models.detail : undefined,

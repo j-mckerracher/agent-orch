@@ -35,7 +35,8 @@ fn fake_copilot(dir: &Path, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join("copilot");
     let text = format!(
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n{body}\n"
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --model --max-ai-credits\n  exit 0\nfi\n{body}\n"
     );
     std::fs::write(&path, text).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();

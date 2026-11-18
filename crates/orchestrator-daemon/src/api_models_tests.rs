@@ -13,7 +13,9 @@ const MODELS: &str = r#"{"models":[
     {"slug":"hidden-model","visibility":"hide","supported_reasoning_levels":[]}
 ]}"#;
 const CLAUDE_HELP: &str =
-    "Options:\n  --effort <level>    Effort level\n                      (low, medium, high)\n";
+    "Options:\n  --effort <level>    Effort level\n                      (low, medium, high)\n\
+     -p\n--verbose\n--output-format\n--include-partial-messages\n--permission-mode\n\
+     --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--model\n";
 
 struct Agents {
     codex: PathBuf,
@@ -526,6 +528,7 @@ fn the_copilot_check_returns_at_once_and_its_answer_reaches_capabilities() {
         "fake-copilot",
         &format!(
             "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n\
+             if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --model\n  exit 0\nfi\n\
              echo run >> '{runs}'\nsleep 2\ncat '{stream}'\nexit 0\n",
             runs = runs.display(),
             stream = stream.display(),

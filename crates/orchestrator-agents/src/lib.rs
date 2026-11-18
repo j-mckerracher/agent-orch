@@ -9,6 +9,7 @@
 
 pub mod catalog;
 pub mod claude_code_adapter;
+pub mod cli_compat;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;

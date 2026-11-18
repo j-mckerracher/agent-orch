@@ -66,7 +66,18 @@ impl Fixture {
 
     fn script(&self, name: &str, body: &str) -> PathBuf {
         let path = self.root.path().join(name);
-        fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
+        let help = if body.contains("--help") {
+            ""
+        } else {
+            "if [ \"$1\" = '--help' ] || { [ \"$1\" = 'exec' ] && [ \"$2\" = '--help' ]; }; then\n\
+              printf '%s\\n' --json --sandbox --ignore-user-config --skip-git-repo-check --approve-for-me --ephemeral -m -c \
+              -p --verbose --output-format --include-partial-messages --permission-mode --permission-prompts --restricted \
+              --strict-mcp-config --tools --allowedTools --disallowedTools --allow-dangerously-skip-permissions --model --effort \
+              --prompt --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir \
+              --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --max-ai-credits\n\
+              exit 0\nfi\n"
+        };
+        fs::write(&path, format!("#!/bin/sh\n{help}{body}")).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         path
     }
@@ -86,6 +97,7 @@ impl Fixture {
             // Never probe a real copilot from a test: a missing path is a fact.
             copilot_program: Some(self.root.path().join("no-such-copilot")),
             copilot_sign_in: Default::default(),
+            compatibility: Default::default(),
             limits: SchedulerLimits::default(),
             admission: Default::default(),
             poll: Duration::from_millis(25),
@@ -1565,6 +1577,63 @@ fn failed_agent_is_reported_with_its_exit_and_the_preserved_worktree() {
 }
 
 #[test]
+fn task_launch_refuses_a_replaced_cli_without_required_permission_options() {
+    use crate::api::load::tests::{at, close_gate, cpu};
+
+    let fixture = Fixture::new();
+    let launched = fixture.marker("inference-started");
+    let program = fixture.script("fake-codex", &format!("touch '{}'\n", launched.display()));
+    let load = Arc::new(crate::api::load::LoadHandle::default());
+    let last = close_gate(&load);
+    let api = fixture.api_with(&program, |config| config.load = load.clone());
+    // Prime the help cache via discovery so a stale cache would permit this task.
+    api.dispatch("agents.capabilities", Value::Null).unwrap();
+    let task_id = fixture.submit(&api, "changed-cli", 0);
+    assert_eq!(task(&api, &task_id)["state"], "Queued");
+    let replacement = fixture.script(
+        "new-codex",
+        &format!(
+            "if [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n\
+             printf '%s\\n' --json --ignore-user-config\nexit 0\nfi\n\
+             touch '{}'\n",
+            launched.display(),
+        ),
+    );
+    fs::rename(replacement, &program).unwrap();
+    assert_eq!(
+        api.dispatch(
+            "tasks.submit",
+            json!({
+                "idempotency_key": "refuse-replacement",
+                "contract": {
+                    "project_id": fixture.project_id(),
+                    "parent_id": null,
+                    "objective": "never launch this task",
+                    "agent": "codex",
+                    "kind": "Implement",
+                    "dependencies": [],
+                    "verification": "None",
+                    "delivery": "ReportOnly",
+                    "autonomy": "WorkspaceWrites",
+                    "max_retries": 0,
+                    "max_repairs": 0
+                }
+            }),
+        ),
+        Err(RpcError::Conflict)
+    );
+    for n in 1..=8 {
+        load.record(cpu(0.0), at(last, n));
+    }
+    wait_state(&api, &task_id, "Failed");
+    assert!(task(&api, &task_id)["attempts"][0]["failure_reason"]
+        .as_str()
+        .unwrap()
+        .contains("--sandbox"));
+    assert!(!launched.exists());
+}
+
+#[test]
 fn launch_failure_is_reported_without_leaking_the_credential_in_the_program_path() {
     let fixture = Fixture::new();
     let diag = Diagnostics::memory();
@@ -1583,7 +1652,7 @@ fn launch_failure_is_reported_without_leaking_the_credential_in_the_program_path
     let launch = &events(&diag, "agent_launch_failed")[0];
     assert_eq!(launch["task_id"], task_id.as_str());
     assert_eq!(launch["agent"], "codex");
-    assert!(launch["error"].as_str().unwrap().contains("[REDACTED]"));
+    assert_eq!(launch["error"], "the agent executable was not found");
     for line in diag.lines() {
         assert!(!line.contains("SECRETVALUE"), "credential leaked: {line}");
     }

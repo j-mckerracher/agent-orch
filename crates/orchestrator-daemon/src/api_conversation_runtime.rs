@@ -147,6 +147,7 @@ pub(crate) enum RuntimeFailure {
     /// The installed agent's help no longer lists a flag this chat needs at its
     /// permission level. The flag is the detail, a daemon-chosen token.
     MissingFlag(String),
+    CompatibilityUnconfirmed,
     /// No pins are configured, so no selected agent may receive a message.
     Unpinned,
     /// The selected agent changed between the pin check and the launch. The
@@ -171,6 +172,7 @@ impl RuntimeFailure {
             Self::CredentialsMissing => "credentials_missing",
             Self::PermissionDenied => "permission_denied",
             Self::MissingFlag(_) => "version_mismatch",
+            Self::CompatibilityUnconfirmed => "runtime_compatibility_unconfirmed",
             Self::Unpinned => "runtime_unpinned",
             Self::RuntimeChanged => "runtime_changed",
             Self::Failed => "runtime_failed",

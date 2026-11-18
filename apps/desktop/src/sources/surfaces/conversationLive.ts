@@ -96,6 +96,7 @@ const FAILURE_TEXT: Record<string, string> = {
   permission_denied: "The orchestrator was denied permission to run. No reply was produced.",
   version_mismatch: "The orchestrator runtime has an unsupported version. No reply was produced.",
   runtime_changed: "The orchestrator's agent changed before this message was sent, so no reply was produced. Send the message again.",
+  runtime_compatibility_unconfirmed: "The daemon could not confirm CLI compatibility. No agent ran. Retry the message.",
   runtime_unpinned: "The orchestrator runtime is not pinned to a version. No reply was produced.",
   runtime_failed: "The orchestrator runtime failed. The reply is incomplete or missing.",
   runtime_provider_limit:

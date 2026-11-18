@@ -20,6 +20,10 @@ The permission level control is in the model picker's panel. Auto is the default
 
 The picker offers Copilot when the daemon can launch the `copilot` CLI, and shows why when it cannot. A Copilot message uses premium requests or AI credits on your Copilot seat. The picker has a sign-in check that makes one billable Copilot call, so use it only when needed.
 
+Copilot does not expose a free model or effort inventory to the picker. Choose Copilot as the provider to use the model configured in Copilot.
+
+After an update to Copilot, Claude Code, or Codex, an unfamiliar version can still run. The daemon checks the installed CLI's help for the command options and permission controls the operation needs. When it cannot confirm those options, it does not start the agent. Retry the check or change your selection. MCAO does not silently replace a saved provider or weaken the requested permissions.
+
 ## Clear history or remove a coordinator
 
 The conversation header menu has Clear history and, for a project coordinator, Remove coordinator. Both ask for confirmation first.
