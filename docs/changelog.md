@@ -5,6 +5,52 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.3](https://github.com/mc-innersource/motif-mcao/compare/v0.1.2...v0.1.3) (2026-11-17)
+
+
+### Features
+
+* Cap sidebar task titles at five words and default global tasks to a Global tasks workstream ([a967139](https://github.com/mc-innersource/motif-mcao/commit/a967139052bb3fdc02b1326845196a7ed3c03e1f))
+* **daemon:** DPES-1105 - Integrate host admission, output tail and work-class defaults ([#129](https://github.com/mc-innersource/motif-mcao/issues/129)) ([7a63102](https://github.com/mc-innersource/motif-mcao/commit/7a63102e93c46739704c975c9c21ca7154ee3e1c))
+* **desktop:** DPES-856 - Notify and remind pending decisions ([6b1c978](https://github.com/mc-innersource/motif-mcao/commit/6b1c9784f0ee12cc2ba15edd795129e25c5b464f))
+* **desktop:** DPES-856 - Notify and remind pending decisions ([cb6d053](https://github.com/mc-innersource/motif-mcao/commit/cb6d0539dd2f1c47f07d3374e184b1760d751906))
+* **desktop:** DPES-856 - Remind unanswered decisions every four hours ([23d99e6](https://github.com/mc-innersource/motif-mcao/commit/23d99e62d8410ed9ac2b26da6f6160efa63929a5))
+* **desktop:** Show why queued tasks wait in task lists ([9e9ac53](https://github.com/mc-innersource/motif-mcao/commit/9e9ac53205cb87801c5546ec178daf2e4409a6bb))
+* Run tasks in a configurable home directory when no project is clear ([2d66dad](https://github.com/mc-innersource/motif-mcao/commit/2d66dad947c85f3f69ce49dd20f1f4b6629e2301))
+* **settings:** Add default provider, model, and effort for dispatched agents ([a5c3bf9](https://github.com/mc-innersource/motif-mcao/commit/a5c3bf90c90879af70fc82ba9dc4360f115d1eac))
+* **settings:** Add default provider, model, and effort for dispatched agents ([3aceb74](https://github.com/mc-innersource/motif-mcao/commit/3aceb7462167f754775e42bf3c5dc54c90fb6a91))
+* **tasks:** Add a home directory and a Global tasks default ([527da61](https://github.com/mc-innersource/motif-mcao/commit/527da61c77fad86ae6329e8ca987f3615117f39a))
+* **workstreams:** Enable task plan editing actions ([2aeb591](https://github.com/mc-innersource/motif-mcao/commit/2aeb591ab2f7573dc85ce588e6ea23cf20ca978d))
+
+
+### Bug Fixes
+
+* **conversations:** Enable project coordinator replies ([204cdb1](https://github.com/mc-innersource/motif-mcao/commit/204cdb11dcd6de4fb1d056d16eaf802463b34441))
+* **conversations:** Enable project coordinator replies ([707e10c](https://github.com/mc-innersource/motif-mcao/commit/707e10ca234f3b4eb7b4baacbf7c85bf4e5e6e14))
+* Default branch prefix to mcao/, keep Settings Save enabled, default to 10 workers ([b87cb25](https://github.com/mc-innersource/motif-mcao/commit/b87cb256ab1f5d5ad49eee74b585ca01918f94bb))
+* **desktop:** DPES-856 - Type the 4-hour interval choices in the reminder select ([8f1f450](https://github.com/mc-innersource/motif-mcao/commit/8f1f450ed0f6a41e2c50d0fd767d3976c26d8fd7))
+* **desktop:** Explain queued task blockers and recovery steps ([79886d2](https://github.com/mc-innersource/motif-mcao/commit/79886d24292b7e14c8943b7152830a46d9283131))
+* **desktop:** Explain queued task blockers and recovery steps ([ac8e9dc](https://github.com/mc-innersource/motif-mcao/commit/ac8e9dc89f82b5bf91d155adf9c2614da5d3d02b))
+* **desktop:** Load conversations when target rows are clicked ([93a3964](https://github.com/mc-innersource/motif-mcao/commit/93a3964b478d5e20b3e5324a13546d8ce20c45a3))
+* **desktop:** Load conversations when target rows are clicked ([5d0d41b](https://github.com/mc-innersource/motif-mcao/commit/5d0d41b4d657bd82bdfab4e3e522b2677b5122ae))
+* **desktop:** Open a workstream's view from its sidebar tree row ([8f7f70a](https://github.com/mc-innersource/motif-mcao/commit/8f7f70a92d60b5da94995e3941a02ae589be2454))
+* **desktop:** Open the owning workstream from every sidebar tree row ([ddd619e](https://github.com/mc-innersource/motif-mcao/commit/ddd619e1f71351d1d5fa01401751d41dc78ab505))
+* **desktop:** Route sidebar tasks to their owning workstreams ([3f74a74](https://github.com/mc-innersource/motif-mcao/commit/3f74a74923e3e582528af2552d46b3bc69989696))
+* Registering a directory no longer creates a project coordinator ([8a7c1e4](https://github.com/mc-innersource/motif-mcao/commit/8a7c1e4ce529f41083fb73e92a51be35f2ad9ed2))
+
+
+### Documentation
+
+* Add user documentation and rework README ([4702370](https://github.com/mc-innersource/motif-mcao/commit/47023709aa51c1df6efb7526f8f1ef4ff6530068))
+* **conversations:** Record opt-in behavior and validated test totals ([0b418ab](https://github.com/mc-innersource/motif-mcao/commit/0b418ab3dc77f85fd03e9507d7815c6d5c6434a5))
+
+
+### CI
+
+* **gates:** Sync expected counts from CI evidence ([7a03d8e](https://github.com/mc-innersource/motif-mcao/commit/7a03d8ee14ef90e4203ca3ead71fd6fe989a086c))
+* **native:** DPES-856 - Update the native test inventories from main CI ([467a07b](https://github.com/mc-innersource/motif-mcao/commit/467a07b8f4758fa33c4eeaccc2d4d72df1845ccf))
+* **native:** DPES-856 - Update the native test inventories from main run 44189711506 ([ad7581b](https://github.com/mc-innersource/motif-mcao/commit/ad7581b9e125d2cf7c3ba8452c8cb1783fa247b7))
+
 ## [0.1.2](https://github.com/mc-innersource/motif-mcao/compare/v0.1.1...v0.1.2) (2026-11-17)
 
 
