@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WakeRecord } from "../../../sources/surfaces/types";
 import { WakeLines, WakeNotice, WakeRecords } from "./WakeNotice";
@@ -82,5 +83,14 @@ describe("WakeNotice", () => {
   it("wake_notice_state_is_in_words_not_colour", () => {
     render(<WakeNotice record={record({ state: "failed" })} />);
     expect(screen.getByText("The automatic reply failed.")).toBeInTheDocument();
+  });
+
+  it("wake_notice_copies_its_words_with_one_click_from_outside_the_status_text", async () => {
+    const user = userEvent.setup();
+    render(<WakeNotice record={record({ state: "failed" })} />);
+    // Inside the status region, a copy result would re-announce the whole update.
+    expect(within(screen.getByRole("status")).queryByRole("button")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Copy update" }));
+    expect(await navigator.clipboard.readText()).toBe("Task t-1 (Fix the login bug) failed.\nThe automatic reply failed.");
   });
 });

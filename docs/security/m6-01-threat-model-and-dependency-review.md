@@ -112,9 +112,11 @@ Only the crates.io registry is allowed; there are no git dependencies.
 
 npm: every dependency is pinned to an exact version and `package-lock.json`
 is committed. Production dependencies are `react`, `react-dom`, and
-`@tauri-apps/api`. One optional package has an install script (`fsevents`, a
-macOS file-watch helper pulled in by vite for development); it is not in the
-shipped bundle.
+`@tauri-apps/api`. Since this review, chat rendering added `react-markdown`,
+`remark-gfm`, and `remark-breaks`: raw HTML in a message is shown as text,
+links are not followed, and images are not fetched. One optional package has
+an install script (`fsevents`, a macOS file-watch helper pulled in by vite for
+development); it is not in the shipped bundle.
 
 Plugins: the Tauri host registers no plugins and its capability grants no
 shell, fs, http, or opener permissions. There is no auto-updater. Agent

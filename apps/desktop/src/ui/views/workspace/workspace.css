@@ -63,7 +63,6 @@
 }
 
 .ws-log .ui-bubble-body {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -419,6 +418,36 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
+}
+
+/* The daemon joins event lines with newlines; keep them as lines. */
+.ws-wake-lines {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* An update with its copy control on the right. The control sits outside the status text, so copying does not
+   re-announce the whole update. */
+.ws-wake-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ws-wake-body {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ws-wake-item > .ui-copy,
+.ws-turn-status > .ui-copy {
+  margin: -4px -6px -4px 0;
+}
+
+.ws-turn-status-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ws-wake-note,

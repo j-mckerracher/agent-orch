@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import { Badge, Bubble, Button, Disclosure, EmptyState, Meter, Panel, Pill } from "./primitives";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Markdown } from "./Markdown";
+import { Badge, Bubble, Button, CopyButton, Disclosure, EmptyState, Meter, Panel, Pill } from "./primitives";
 
 describe("Disclosure", () => {
   it("is a native details element whose summary is in the tab order and toggles", async () => {
@@ -157,5 +158,67 @@ describe("Meter", () => {
     expect(screen.queryByRole("meter")).toBeNull();
     expect(screen.getAllByText("unavailable")).toHaveLength(2);
     expect(screen.queryByText("0")).toBeNull();
+  });
+});
+
+describe("Markdown", () => {
+  it("renders emphasis, code, headings, lists and single line breaks, never the literal markers", () => {
+    const { container } = render(<Markdown text={"# Plan\n**Ready** to ship `v2`.\nNext line\n\n- one\n- two"} />);
+    expect(screen.getByText("Ready").tagName).toBe("STRONG");
+    expect(screen.getByText("v2").tagName).toBe("CODE");
+    // Message headings sit under the view's h2.
+    expect(screen.getByRole("heading", { level: 3, name: "Plan" })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["one", "two"]);
+    expect(container.querySelector("br")).not.toBeNull();
+    expect(container.textContent).not.toMatch(/\*\*|`|#/);
+  });
+
+  it("shows links and images as text, never followed or fetched, and keeps raw HTML literal", () => {
+    const { container } = render(
+      <Markdown text="See [the docs](https://example.com/docs) and ![the diagram](https://example.com/d.png). <img src=x onerror=alert(1)>" />,
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText("the docs")).toHaveAttribute("title", "https://example.com/docs");
+    expect(screen.getByText("the diagram")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
+  });
+});
+
+describe("CopyButton", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("copies its exact text with one click and says so", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<CopyButton text="**Plan** ready" />);
+    await user.click(screen.getByRole("button", { name: "Copy message" }));
+    expect(await navigator.clipboard.readText()).toBe("**Plan** ready");
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveAttribute("data-state", "copied");
+  });
+
+  it("returns to the copy icon two seconds after a copy", async () => {
+    userEvent.setup(); // Only for its clipboard stub.
+    vi.useFakeTimers();
+    const { container } = render(<CopyButton text="x" />);
+    // userEvent needs real timers, so the click is a plain event.
+    fireEvent.click(screen.getByRole("button", { name: "Copy message" }));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+    expect(container.firstElementChild).toHaveAttribute("data-state", "copied");
+    await act(async () => void (await vi.advanceTimersByTimeAsync(2000)));
+    expect(container.firstElementChild).toHaveAttribute("data-state", "idle");
+    expect(screen.queryByText("Copied")).toBeNull();
+  });
+
+  it("says so when the clipboard refuses", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    const { container } = render(<CopyButton text="x" label="Copy status" />);
+    await user.click(screen.getByRole("button", { name: "Copy status" }));
+    expect(await screen.findByText("Copy failed")).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveAttribute("data-state", "failed");
   });
 });

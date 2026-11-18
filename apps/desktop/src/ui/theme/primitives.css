@@ -223,6 +223,169 @@
   margin-bottom: 0;
 }
 
+/* Negative margins keep a 24px control from making the 11px header row taller. */
+.ui-bubble-actions {
+  display: inline-flex;
+  align-self: center;
+  margin: -4px -8px -4px auto;
+}
+
+/* CopyButton: the icon is the control; the result is a check or a cross, plus words for screen readers. */
+.ui-copy {
+  /* Contains the visually hidden result text, so it cannot escape a scroll container. */
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.ui-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+}
+
+.ui-copy-button:hover {
+  border-color: var(--line);
+  background: var(--soft-strong);
+  color: var(--ink);
+}
+
+.ui-copy[data-state="copied"] .ui-copy-button {
+  color: var(--green);
+}
+
+.ui-copy[data-state="failed"] .ui-copy-button {
+  color: var(--red);
+}
+
+.ui-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Markdown: compact block spacing sized for 13px message text. */
+.ui-md {
+  min-width: 0;
+}
+
+.ui-md p,
+.ui-md ul,
+.ui-md ol,
+.ui-md pre,
+.ui-md blockquote,
+.ui-md hr,
+.ui-md .ui-md-table {
+  margin: 0 0 8px;
+}
+
+.ui-md > :last-child,
+.ui-md li > :last-child {
+  margin-bottom: 0;
+}
+
+.ui-md ul,
+.ui-md ol {
+  padding-left: 20px;
+}
+
+.ui-md li + li {
+  margin-top: 2px;
+}
+
+.ui-md h3,
+.ui-md h4,
+.ui-md h5,
+.ui-md h6 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ui-md h3 {
+  font-size: 15px;
+}
+
+.ui-md h4 {
+  font-size: 14px;
+}
+
+.ui-md > :first-child {
+  margin-top: 0;
+}
+
+.ui-md code {
+  padding: 1px 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.ui-md pre {
+  overflow-x: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.ui-md pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.ui-md blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--subtle);
+}
+
+.ui-md hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.ui-md-table {
+  overflow-x: auto;
+}
+
+.ui-md table {
+  border-collapse: collapse;
+}
+
+.ui-md th,
+.ui-md td {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  /* Words stay whole in a cell; a wide table scrolls in .ui-md-table instead. */
+  overflow-wrap: normal;
+}
+
+/* Shown, not followed: the app has no way to open an outside page, so the target is in the tooltip. */
+.ui-md-link {
+  color: var(--blue);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
 /* EmptyState */
 .ui-empty {
   padding: 24px 16px;
