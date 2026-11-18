@@ -605,7 +605,6 @@ fn audit_journal_is_complete_after_concurrent_failure_and_crash_paths() {
     assert!(!run_bounded(fault_command).status.success());
     let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
     assert!(store.get("audit-fault").unwrap().events.is_empty());
-    for entry in store.event_journal(0).unwrap() { eprintln!("JOURNAL {} {:?} {:?}", entry.task_id, entry.event, entry.sequence); }
     assert_eq!(store.event_journal(0).unwrap().len(), 6);
     let clear_fault = Command::new("sqlite3")
         .arg("-batch")
