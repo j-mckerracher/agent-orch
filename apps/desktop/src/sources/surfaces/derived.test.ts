@@ -181,7 +181,7 @@ describe("derived D10 conversation", () => {
     const s = await live(fake);
     const receipt = await s.conversation.send({ kind: "global" }, "hi");
     expect(receipt).toMatchObject({ simulated: false, turn: { state: "failed", errorCode: "runtime_unavailable" } });
-    expect(receipt.notice).toMatch(/runtime unavailable/i);
+    expect(receipt.notice).toBe("Recorded by the daemon.");
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
     expect(fake.callsTo("conversations.send")).toHaveLength(1);
   });

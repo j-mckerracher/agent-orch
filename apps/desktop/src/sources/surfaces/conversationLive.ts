@@ -276,7 +276,7 @@ export function unverifiedWarning(turn: ConversationTurnInfo, warned: Set<string
 
 export const sendNotice = (turn: ConversationTurnInfo): string =>
   turn.state === "failed"
-    ? `Recorded by the daemon. ${failureText(turn.errorCode, turn.runtime)}`
+    ? "Recorded by the daemon."
     : turn.state === "running"
       ? "Recorded by the daemon. Waiting for the orchestrator's reply."
       : "Recorded by the daemon.";

@@ -364,8 +364,8 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(params.target).toEqual({ kind: "global" });
     expect(params.text).toBe("hello global");
     expect(await screen.findByText("hello global")).toBeInTheDocument();
-    const banner = await screen.findAllByText(/Orchestrator runtime unavailable/);
-    expect(banner.length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getAllByText(/Orchestrator runtime unavailable/)).toHaveLength(1));
+    expect(screen.getByText("Recorded by the daemon.")).toBeInTheDocument();
     expect(screen.queryByText(/SIMULATED/)).toBeNull();
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(0);
     expect(screen.queryByText(/Hello from the runtime/)).toBeNull();
