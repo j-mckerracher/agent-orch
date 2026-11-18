@@ -5,6 +5,19 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.8](https://github.com/mc-innersource/motif-mcao/compare/v0.1.7...v0.1.8) (2026-11-18)
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1106 - Count only active and waiting tasks in the top bar ([07e85d7](https://github.com/mc-innersource/motif-mcao/commit/07e85d793b9b42ce663414072f4b622e351a469f))
+
+
+### CI
+
+* **release:** DPES-1106 - Stop re-running CI and audits in the release build ([501d0f2](https://github.com/mc-innersource/motif-mcao/commit/501d0f22998a734fa802e2f8e2d2f303f6bb19b6))
+* **release:** DPES-1106 - Stop re-running CI and audits in the release build ([f90f771](https://github.com/mc-innersource/motif-mcao/commit/f90f7713654a439f75fb038dcc932001b5d2e3c3))
+
 ## [0.1.7](https://github.com/mc-innersource/motif-mcao/compare/v0.1.6...v0.1.7) (2026-11-18)
 
 
