@@ -15,7 +15,7 @@ const MODELS: &str = r#"{"models":[
 const CLAUDE_HELP: &str =
     "Options:\n  --effort <level>    Effort level\n                      (low, medium, high)\n\
      -p\n--verbose\n--output-format\n--include-partial-messages\n--permission-mode\n\
-     --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--model\n";
+     --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--model\n--plugin-dir\n--agent\n";
 
 struct Agents {
     codex: PathBuf,
@@ -755,6 +755,8 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "--sandbox",
             "workspace-write",
             "--ignore-user-config",
+            "-c",
+            "developer_instructions=\"fixture instructions\"",
             "-m",
             "gpt-6-luna",
             "-c",
@@ -811,6 +813,8 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "--sandbox",
             "workspace-write",
             "--ignore-user-config",
+            "-c",
+            "developer_instructions=\"fixture instructions\"",
             "--",
             "objective of plain-1"
         ]

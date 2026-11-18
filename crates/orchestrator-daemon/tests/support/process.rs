@@ -88,6 +88,9 @@ pub struct Layout {
     pub repo: PathBuf,
     pub worktrees: PathBuf,
     pub log: PathBuf,
+    /// The daemon's home: it holds no pstack plugin, so the daemon runs without the workflow
+    /// agent on every machine, as CI does. Never created.
+    pub home: PathBuf,
     approver: Arc<ApproverSecret>,
 }
 
@@ -106,6 +109,7 @@ impl Layout {
             repo: root.path().join("r"),
             worktrees: root.path().join("w"),
             log: root.path().join("daemon.log"),
+            home: root.path().join("no-home"),
             approver: Arc::new(ApproverSecret::generate().unwrap()),
             _root: root,
         }
@@ -172,6 +176,8 @@ impl Daemon {
         let mut child = command
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", &layout.home)
+            .env("USERPROFILE", &layout.home)
             .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())

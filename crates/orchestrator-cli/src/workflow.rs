@@ -21,6 +21,8 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use orchestrator_agents::catalog::codex_developer_instructions_arg;
+use orchestrator_agents::workflow_agent::{self, WorkflowAgent};
 use orchestrator_agents::{
     AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, CodexAdapter,
 };
@@ -302,7 +304,8 @@ pub async fn run_task(
     }
 
     let agent_path = resolve_program(agent_program)?;
-    check_agent_command_line(&agent_path, objective)?;
+    let workflow_agent = workflow_agent::locate();
+    check_agent_command_line(&agent_path, objective, workflow_agent.as_ref())?;
     let adapter = CodexAdapter::new().with_program(agent_path.clone());
     let capabilities = adapter
         .detect()
@@ -446,7 +449,13 @@ pub async fn run_task(
     fault_injection::before_agent_launch();
     let wrapper = std::env::current_exe()
         .map_err(|error| format!("cannot locate CLI executable for Codex supervision: {error}"))?;
-    let wrapper_args = capture_args(&agent_path, &task_paths, objective)?;
+    if workflow_agent.is_none() {
+        let _ = log_session_message(
+            &task_paths.session_log,
+            "pstack workflow agent not found; launching without it",
+        );
+    }
+    let wrapper_args = capture_args(&agent_path, &task_paths, objective, workflow_agent.as_ref())?;
     let handle = match adapter
         .spawn(AgentLaunchRequest {
             program: wrapper,
@@ -1877,6 +1886,7 @@ fn capture_args(
     agent_program: &Path,
     task_paths: &Paths,
     objective: &str,
+    workflow_agent: Option<&WorkflowAgent>,
 ) -> Result<Vec<String>, String> {
     let mut args = vec![
         "__codex_capture".to_string(),
@@ -1885,24 +1895,35 @@ fn capture_args(
         path_string(&task_paths.stderr_log)?,
         "--".to_string(),
     ];
-    args.extend(codex_exec_args(objective));
+    args.extend(codex_exec_args(objective, workflow_agent));
     Ok(args)
 }
 
-fn codex_exec_args(objective: &str) -> Vec<String> {
-    ["exec", "--json", "--approve-for-me", "--"]
+fn codex_exec_args(objective: &str, workflow_agent: Option<&WorkflowAgent>) -> Vec<String> {
+    let mut args: Vec<String> = ["exec", "--json", "--approve-for-me"]
         .into_iter()
         .map(str::to_string)
-        .chain(std::iter::once(objective.to_string()))
-        .collect()
+        .collect();
+    if let Some(agent) = workflow_agent {
+        args.extend(codex_developer_instructions_arg(agent));
+    }
+    args.extend(["--".to_string(), objective.to_string()]);
+    args
 }
 
 /// Refuses an objective the operating system could not pass to Codex, before
 /// any record is written. The supervisor repeats the check for the wrapper's
 /// slightly longer command line.
-fn check_agent_command_line(agent_program: &Path, objective: &str) -> Result<(), String> {
-    orchestrator_runtime::check_command_line(agent_program, &codex_exec_args(objective))
-        .map_err(|error| error.to_string())
+fn check_agent_command_line(
+    agent_program: &Path,
+    objective: &str,
+    workflow_agent: Option<&WorkflowAgent>,
+) -> Result<(), String> {
+    orchestrator_runtime::check_command_line(
+        agent_program,
+        &codex_exec_args(objective, workflow_agent),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn path_string(path: &Path) -> Result<String, String> {
@@ -2119,11 +2140,11 @@ mod tests {
         // Over the per-argument limit on Unix and the whole-line limit on
         // Windows, so this holds on every platform.
         let objective = "x".repeat(200_000);
-        let message = check_agent_command_line(Path::new("codex"), &objective).unwrap_err();
+        let message = check_agent_command_line(Path::new("codex"), &objective, None).unwrap_err();
         assert!(message.contains("Shorten the task objective"), "{message}");
         assert!(message.contains("argument 5"), "{message}");
         assert!(
-            check_agent_command_line(Path::new("codex"), "fix the parser").is_ok(),
+            check_agent_command_line(Path::new("codex"), "fix the parser", None).is_ok(),
             "a normal objective must pass"
         );
     }
@@ -2132,8 +2153,26 @@ mod tests {
     #[test]
     fn a_65000_character_objective_is_refused_before_any_record_on_windows() {
         let objective = "y".repeat(65_000);
-        let message = check_agent_command_line(Path::new("codex.exe"), &objective).unwrap_err();
+        let message =
+            check_agent_command_line(Path::new("codex.exe"), &objective, None).unwrap_err();
         assert!(message.contains("32767"), "{message}");
+    }
+
+    #[test]
+    fn codex_exec_args_pass_the_workflow_agent_before_the_objective() {
+        let agent = WorkflowAgent {
+            plugin_dir: PathBuf::from("/fixture/pstack"),
+            codex_instructions: "be the workflow agent".to_owned(),
+        };
+        let args = codex_exec_args("fix the parser", Some(&agent));
+        assert_eq!(args[..3], ["exec", "--json", "--approve-for-me"]);
+        assert_eq!(args[3], "-c");
+        assert!(args[4].starts_with("developer_instructions="), "{args:?}");
+        assert_eq!(args[5..], ["--", "fix the parser"]);
+        assert_eq!(
+            codex_exec_args("fix the parser", None),
+            ["exec", "--json", "--approve-for-me", "--", "fix the parser"]
+        );
     }
 
     fn register_test_owner(

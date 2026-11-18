@@ -263,6 +263,8 @@ fn scenario(base: &Path) {
             .arg(&data)
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", base.join("no-home"))
+            .env("USERPROFILE", base.join("no-home"))
             .env("AGENT_ORCH_CODEX_PROGRAM", &agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)
