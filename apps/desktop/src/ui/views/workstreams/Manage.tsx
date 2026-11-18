@@ -393,10 +393,11 @@ export function UnlinkButton({ group, task, controls }: { group: WsGroup; task: 
     <>
       <Button
         disabled={controls.busy || controls.locked !== null || cited}
+        aria-label={`Unlink ${taskLabelOf(task)}`}
         aria-describedby={cited ? reasonId : undefined}
         onClick={() => void controls.run(`Unlink task ${task.id}`, () => surfaces.workstreams.unlinkTask(group.id, task.id))}
       >
-        Unlink {taskLabelOf(task)}
+        Unlink
       </Button>
       {cited && (
         <span className="ws-reason" id={reasonId}>

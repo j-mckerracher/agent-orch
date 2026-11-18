@@ -221,6 +221,27 @@
   font-weight: 600;
 }
 
+/* Long task objectives are capped in width and lines; the full text stays in the title. */
+.ws-task-label {
+  display: -webkit-box;
+  max-width: 28rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.ws-table-action .ui-btn {
+  white-space: nowrap;
+}
+
+.ws-table-action .ws-reason {
+  display: block;
+  min-width: 12rem;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .ws-sr {
   position: absolute;
   width: 1px;
