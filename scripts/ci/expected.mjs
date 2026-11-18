@@ -65,7 +65,7 @@ export const WINDOWS = {
   // CI run 44023050296: the Windows ipc lib has 83 tests, so 69 are filtered out.
   windowsTransport: { passed: 14, sequence: [14], filteredOut: 108 },
   // DPES-1105 approver credential (CI run 44023050296, measured on Windows): four host tests (launch and the real-daemon bridge), 18 passed.
-  tauri: { passed: 20, sequence: [20, 0, 0] },
+  tauri: { passed: 40, sequence: [40, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
   // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
@@ -184,7 +184,7 @@ export const MACOS = {
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   workspace: { passed: 2202, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
-  tauri: { passed: 22, sequence: [22, 0, 0] },
+  tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 8, sequence: [8, 0] },

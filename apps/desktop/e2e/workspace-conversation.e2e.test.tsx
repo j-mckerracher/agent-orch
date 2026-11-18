@@ -282,7 +282,10 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
       await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
-      await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Model" }), "fake-model");
+      const model = await screen.findByRole("combobox", { name: "Model" });
+      // The picker renders before the catalog reaches it; choose once the model is an option.
+      await waitFor(() => expect([...(model as HTMLSelectElement).options].map((o) => o.value)).toContain("fake-model"), { timeout: 15000 });
+      await userEvent.selectOptions(model, "fake-model");
       const effort = screen.getByRole("combobox", { name: "Effort" });
       await waitFor(() => expect((effort as HTMLSelectElement).disabled).toBe(false), { timeout: 15000 });
       await userEvent.selectOptions(effort, "high");
