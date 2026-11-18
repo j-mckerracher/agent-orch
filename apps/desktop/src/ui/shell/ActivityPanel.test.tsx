@@ -23,12 +23,6 @@ function servicesFor(fake: FakeDaemon | null) {
 
 type Tester = ReturnType<typeof userEvent.setup>;
 
-/** Opens the popover from its trigger, as a user does. */
-async function openActivity(user: Tester, panel: HTMLElement) {
-  const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
-  if (trigger.getAttribute("aria-expanded") !== "true") await user.click(trigger);
-}
-
 /** The <details> of a top-level section or queue sub-group, found by its visible title. */
 function detailsFor(panel: HTMLElement, title: string): HTMLDetailsElement {
   const summary = within(panel).getByText(title, { selector: "summary > .ui-disclosure-title" }).closest("summary");
@@ -40,14 +34,12 @@ async function expandSection(user: Tester, panel: HTMLElement, title: string) {
   if (!details.open) await user.click(details.querySelector("summary") as HTMLElement);
 }
 
-async function mountPanel(fake: FakeDaemon | null, options: { open?: boolean } = {}) {
-  const { open = true } = options;
+async function mountPanel(fake: FakeDaemon | null) {
   const services = servicesFor(fake);
   const user = userEvent.setup();
   render(<App services={services} shellSlots={{ activity: <ActivityPanel /> }} />);
   if (fake) await connected();
   const panel = await screen.findByTestId("workspace-activity");
-  if (open) await openActivity(user, panel);
   return { services, user, panel };
 }
 
@@ -82,7 +74,6 @@ describe("fixture mode", () => {
     render(<App services={services} shellSlots={{ activity: <ActivityPanel /> }} />);
     await connected();
     const panel = await screen.findByTestId("workspace-activity");
-    await openActivity(user, panel);
     await expandSection(user, panel, "Execution queue");
     await expandSection(user, panel, "Agent slots");
     const before = fake.calls.length;
@@ -289,7 +280,6 @@ describe("live mode", () => {
     const services = servicesFor(fake);
     render(<App services={services} shellSlots={{ activity: <ActivityPanel /> }} />);
     const panel = await screen.findByTestId("workspace-activity");
-    await openActivity(userEvent.setup(), panel);
     await waitFor(() => expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—"));
     expect(within(panel).queryByRole("button", { name: /^Stop .*\(/ })).not.toBeInTheDocument();
     expect(within(panel).getByText("Queue not available.")).toBeInTheDocument();
@@ -328,27 +318,30 @@ describe("accessibility", () => {
 });
 
 describe("workspace activity popover", () => {
-  it("starts collapsed: a labeled trigger with aria-expanded=false and a hidden card it controls", async () => {
-    const { panel } = await mountPanel(null, { open: false });
+  it("starts expanded: a labeled trigger with aria-expanded=true and a visible card it controls", async () => {
+    const { panel } = await mountPanel(null);
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-    const card = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
-    expect(card).not.toBeNull();
-    expect(card).not.toBeVisible();
-  });
-
-  it("expands from the trigger, which then exposes its card", async () => {
-    const { panel, user } = await mountPanel(null, { open: false });
-    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
-    await user.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     const card = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+    expect(card).not.toBeNull();
+    expect(card).toBeVisible();
+  });
+
+  it("collapses and reopens from the trigger", async () => {
+    const { panel, user } = await mountPanel(null);
+    const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
+    await user.click(trigger);
+    const card = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(card).not.toBeVisible();
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(card).toBeVisible();
     expect(card).toHaveTextContent("Execution queue");
   });
 
   it("shows the attention count on the trigger, matching the pending approvals", async () => {
-    const { panel } = await mountPanel(liveDaemon(), { open: false });
+    const { panel } = await mountPanel(liveDaemon());
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
     await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(trigger).toHaveAccessibleName(/1 require attention/);
@@ -358,7 +351,7 @@ describe("workspace activity popover", () => {
     const fake = liveDaemon();
     // The holds read never answers, so nothing is known to be held.
     fake.stub("holds.list", () => new Promise(() => undefined));
-    const { panel } = await mountPanel(fake, { open: false });
+    const { panel } = await mountPanel(fake);
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
     await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
@@ -371,7 +364,7 @@ describe("workspace activity popover", () => {
     fake.stub("holds.list", () => ({
       holds: [{ id: "h1", subject_kind: "approval", subject_id: "t1", until_date: "2099-01-01", state: "active" }],
     }));
-    const { panel } = await mountPanel(fake, { open: false });
+    const { panel } = await mountPanel(fake);
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
     await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
@@ -380,9 +373,8 @@ describe("workspace activity popover", () => {
   });
 
   it("closes on Escape and returns focus to the trigger", async () => {
-    const { panel, user } = await mountPanel(null, { open: false });
+    const { panel, user } = await mountPanel(null);
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
-    await user.click(trigger);
     const summary = detailsFor(panel, "Agent slots").querySelector("summary") as HTMLElement;
     summary.focus();
     await user.keyboard("{Escape}");
@@ -391,16 +383,15 @@ describe("workspace activity popover", () => {
   });
 
   it("closes on a pointer press outside the card and stays open for presses inside it", async () => {
-    const { panel, user } = await mountPanel(null, { open: false });
+    const { panel, user } = await mountPanel(null);
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
-    await user.click(trigger);
     await user.click(detailsFor(panel, "Agent slots").querySelector("summary") as HTMLElement);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     await user.click(document.body);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("starts every top-level section and every queue row collapsed, Running included", async () => {
+  it("starts queue, attention, slots and every queue row collapsed", async () => {
     const { panel, user } = await mountPanel(null);
     for (const title of ["Execution queue", "Attention", "Agent slots"]) expect(detailsFor(panel, title).open).toBe(false);
     await expandSection(user, panel, "Execution queue");
@@ -413,7 +404,7 @@ describe("workspace activity popover", () => {
     expect(within(runningRow).getByRole("button", { name: /^Stop Add refresh-token expiry/ })).toBeInTheDocument();
   });
 
-  it("places System Usage as the last section, open by default, inside the popover", async () => {
+  it("places the resources slot last inside the popover", async () => {
     const { panel } = await mountPanel(null);
     const sections = panel.querySelector(".activity-sections") as HTMLElement;
     // The shell's resources slot is reserved as the last child; here it holds the default placeholder.
@@ -464,7 +455,7 @@ describe("pending decision count", () => {
 
   it("nav_top_bar_and_activity_badge_show_pending_approvals_plus_proposed_actions_as_one_number", async () => {
     const { fake } = daemonWithProposals(2);
-    const { panel } = await mountPanel(fake, { open: false });
+    const { panel } = await mountPanel(fake);
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
     expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention");
@@ -475,7 +466,7 @@ describe("pending decision count", () => {
 
   it("the_count_drops_in_all_three_places_when_a_proposal_is_decided_and_the_list_is_read_again", async () => {
     const { fake, keep } = daemonWithProposals(2);
-    const { services, panel } = await mountPanel(fake, { open: false });
+    const { services, panel } = await mountPanel(fake);
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
     keep(1);
     await act(async () => services.data.refreshProposals());
@@ -507,7 +498,7 @@ describe("pending decision count", () => {
   it("all_three_places_show_a_dash_while_the_proposals_list_has_not_loaded_though_approvals_have", async () => {
     const { fake } = daemonWithProposals(1);
     fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 20);
-    const { services, panel } = await mountPanel(fake, { open: false });
+    const { services, panel } = await mountPanel(fake);
     await waitFor(() => {
       expect(services.data.getSnapshot().approvals.status).toBe("ready");
       expect(services.data.getSnapshot().proposals.status).toBe("error");

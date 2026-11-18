@@ -435,11 +435,13 @@ describe("ResourceStrip in the shell", () => {
       />,
     );
     const panel = await screen.findByTestId("workspace-activity");
-    await userEvent.setup().click(within(panel).getByRole("button", { name: /^Workspace activity/ }));
+    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
     const section = within(panel).getByTestId("resource-strip");
     expect(section.parentElement).toHaveClass("activity-sections");
     expect(section.parentElement?.lastElementChild).toBe(section);
     expect(section).toHaveAttribute("open");
+    expect(section).toBeVisible();
+    expect(await within(section).findByRole("meter", { name: "CPU utilization" })).toHaveAttribute("aria-valuenow", "44");
     expect(await within(section).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 44%");
     expect(within(section).getByTestId("badge-D13")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
@@ -450,7 +452,6 @@ describe("ResourceStrip in the shell", () => {
     const services = fixtureServices();
     render(<App services={services} shellSlots={{ activity: <ActivityPanel />, resources: null }} />);
     const panel = await screen.findByTestId("workspace-activity");
-    await userEvent.setup().click(within(panel).getByRole("button", { name: /^Workspace activity/ }));
     expect(within(panel).queryByTestId("resource-strip")).toBeNull();
     expect(within(panel).queryByRole("meter")).toBeNull();
   });
