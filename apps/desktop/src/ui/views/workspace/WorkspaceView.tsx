@@ -393,6 +393,10 @@ function Conversation({
 
   // The daemon has no push stream: read again while the latest turn is still running.
   const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
+  const turnStatusInTranscript =
+    turn !== null &&
+    transcript.status === "ok" &&
+    transcript.data.entries.some((entry) => entry.turnId === turn.id && entry.kind === "status");
   const running = live && turn?.state === "running";
   // A wake turn is the orchestrator's own: sending is allowed and the daemon cancels it first (DPES-1105 Phase 3).
   const wakeRunning = running && turn?.trigger === "wake";
@@ -563,7 +567,8 @@ function Conversation({
   );
   const modelCatalog = useRetained(modelLoaded, "workspace-models");
   const retryModels = useCallback(() => setModelNonce((value) => value + 1), []);
-  const runtimeUnavailable = live && turn?.state === "failed" && turn.errorCode === "runtime_unavailable";
+  const runtimeUnavailable =
+    live && turn?.state === "failed" && turn.errorCode === "runtime_unavailable" && !turnStatusInTranscript;
 
   const parentOf = (p: ActionProposal): ActionProposal | null =>
     shownProposals.find((other) => other.id === p.dependsOn) ?? null;

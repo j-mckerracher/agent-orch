@@ -700,6 +700,12 @@ impl WakeService {
         if matches!(self.load.start_gate(Instant::now()), StartGate::Closed(_)) {
             return Ok(());
         }
+        // A wake turn runs the daemon's default agent. A user message settles only the agent
+        // it names, so the default is settled here; until it is, nothing is claimed and the
+        // windows stay due, as with the load gate.
+        if self.conversations.prepare(None).is_err() {
+            return Ok(());
+        }
         let pending: HashMap<String, WakeRecord> = self
             .store
             .pending_wake_records()

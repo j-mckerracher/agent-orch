@@ -120,6 +120,9 @@ impl DaemonApi {
     pub(super) fn reports_relay(&self, params: Value, actions: bool) -> Result<Value, RpcError> {
         let request: ReportRelayParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
+        // A relay runs the daemon's default agent, which a message that named its own agent
+        // never settled. Settled before the request gate, like `conversations.send`.
+        self.conversations.prepare(None)?;
         let reference = idempotency::run(
             &self.store,
             &self.idempotency_gate,
