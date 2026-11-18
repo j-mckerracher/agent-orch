@@ -156,7 +156,8 @@ export const MACOS = {
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 794 becomes 795.
   // Six chat-only helper tests removed; the Unix executable-replacement regression adds one.
-  daemon: { passed: 820, ignored: 1, sequence: [690, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // Running task attempts as the pstack workflow agent (DPES-1044) adds four Unix-only executor tests: 820 becomes 824 (CI run 44356323793, measured on macOS).
+  daemon: { passed: 824, ignored: 1, sequence: [694, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -190,7 +191,8 @@ export const MACOS = {
   // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
-  workspace: { passed: 2281, ignored: 2 },
+  // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
+  workspace: { passed: 2294, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 100, sequence: [100] },
