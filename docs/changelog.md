@@ -5,6 +5,26 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.4](https://github.com/mc-innersource/motif-mcao/compare/v0.1.3...v0.1.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **desktop:** Keep popovers open while WebKit moves focus on a press ([b762da0](https://github.com/mc-innersource/motif-mcao/commit/b762da0a6e8e06cf2d1543bd934a39a2a03727fb))
+* **orchestrator:** Restore workload-scaled wakes ([a040422](https://github.com/mc-innersource/motif-mcao/commit/a04042277bce11cacf1862a0a271c33da36706e5))
+
+
+### Tests
+
+* **desktop:** DPES-1106 - Add the coordinator before messaging it in the bridge test ([2070e35](https://github.com/mc-innersource/motif-mcao/commit/2070e35b6502a7e143ec2b4a4e06f2d4d8d94590))
+* **desktop:** DPES-1106 - Choose the e2e model once the catalog lists it ([0f2b05d](https://github.com/mc-innersource/motif-mcao/commit/0f2b05daf37d91ab1e94e92e827bc5cb246d8455))
+
+
+### CI
+
+* **audit:** DPES-1106 - Block on the shipped npm tree and warn on build tooling ([671c8e4](https://github.com/mc-innersource/motif-mcao/commit/671c8e4d87d8eee834be96bc65d8770762ea0a3f))
+* **gates:** DPES-1106 - Sync the tauri test pins from CI evidence ([9928c09](https://github.com/mc-innersource/motif-mcao/commit/9928c09d388089e9f392a54f9de2ab76060e88ce))
+
 ## [0.1.3](https://github.com/mc-innersource/motif-mcao/compare/v0.1.2...v0.1.3) (2026-11-17)
 
 
