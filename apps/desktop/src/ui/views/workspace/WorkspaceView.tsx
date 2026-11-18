@@ -45,6 +45,9 @@ const globalOption = (live: boolean): TargetOption => ({
   scope: "All workstreams · Cross-workstream coordination",
   placeholder: !live,
 });
+// The daemon's "Global tasks" workstream. Its id is sha256 of GLOBAL_TASKS_KEY in
+// crates/orchestrator-daemon/src/api_workstreams.rs, stable by design. It is not a target; Global is.
+export const GLOBAL_TASKS_WORKSTREAM_ID = "workstream-5818152acb87dfc515296cfdcaf4a3d3e40116e6cdab78c5ed1a0ff0a84d3e80";
 const POLL_MS = 1000;
 const COMPOSER_PLACEHOLDER = "Ask a question, redirect work, or discuss the plan…";
 
@@ -233,7 +236,7 @@ function buildOptions(
     live && workstreams.status === "ok"
       ? workstreams.data.flatMap((ws) => {
           const id = ws.workstreamId ?? ws.id;
-          return isFixtureId(id)
+          return isFixtureId(id) || id === GLOBAL_TASKS_WORKSTREAM_ID
             ? []
             : [
                 {
@@ -295,6 +298,8 @@ function resolveKey(
   loading: boolean,
   live: boolean,
 ): string | null {
+  // A selection saved while the Global tasks workstream was offered lands on Global.
+  if (stored === targetKey({ kind: "workstream", workstreamId: GLOBAL_TASKS_WORKSTREAM_ID })) return "global";
   if (stored !== null && parseTargetKey(stored) !== null && (known || loading)) return stored;
   if (loading && live) return null;
   if (live) return options.find((item) => item.target.kind === "project")?.key ?? "global";
